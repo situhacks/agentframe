@@ -4,7 +4,7 @@
   <img src="assets/readme/banner.png" alt="AgentFrame: Marketing — a full-stack marketing workspace inside your AI coding agent" width="100%" />
 </p>
 
-> **A full-stack marketing workspace inside your AI coding agent.** File-native. Dogfooded daily. Evolves with your workflow. Two `AGENTS.md` modes carry the work — **CMO** ships campaigns, **Builder** evolves the system. Plan a campaign and publish your first post in an hour, without leaving your IDE.
+> **A full-stack marketing workspace inside your AI coding agent.** File-native. Built for solo operators. Evolves with your workflow. Two `AGENTS.md` modes carry the work — **CMO** ships campaigns, **Builder** evolves the system. Plan a campaign and publish your first post in an hour, without leaving your IDE.
 
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" /></a>
@@ -42,14 +42,18 @@
 
 ## Quick start
 
-```bash
-git clone https://github.com/situhacks/agentframe-marketing.git
-cd agentframe-marketing
-```
+1. **Clone the repo:**
 
-1. Open the folder in your coding agent — Claude Code, Codex, Cursor, VS Code, Antigravity, anything that respects `AGENTS.md`.
-2. Tell the agent **"Help me onboard"**. It walks the [onboarding checklist](onboarding-checklist.md): import your operator context (voice, profile, positioning), drop in optional connector keys for Gemini and Composio (both have generous free tiers and are optional — the system still runs without them, you just lose Deep Research and direct publishing), and optionally install the Open Design runtime.
-3. Tell the agent **"Start a new campaign"** and run your first one end-to-end.
+   ```bash
+   git clone https://github.com/situhacks/agentframe-marketing.git
+   cd agentframe-marketing
+   ```
+
+2. **Open the folder in your coding agent** — Claude Code, Codex, Cursor, VS Code, Antigravity, anything that respects `AGENTS.md`.
+
+3. **Onboard.** Tell the agent **"Help me onboard"**. It walks the [onboarding checklist](onboarding-checklist.md): import your operator context (voice, profile, positioning), drop in optional connector keys for Gemini and Composio (both have generous free tiers and are optional — the system still runs without them, you just lose Deep Research and direct publishing), and optionally install the Open Design runtime.
+
+4. **Start your first campaign.** Tell the agent **"Start a new campaign"** and run it end-to-end.
 
 ### Mode swaps
 
@@ -72,9 +76,7 @@ I looked around for alternatives. What I found was prompt wrappers sitting on to
 
 I didn't like what I saw. So I built my ideal system myself.
 
-**AgentFrame Marketing** is a file-native marketing workspace that sits inside the coding agent I already use. Two `AGENTS.md` modes carry the work — **CMO** ships campaigns, **Builder** evolves the system. Campaign state lives in markdown files under `workspace/campaigns/`. Voice rules, templates, and processes live in `library/`. Skills and connectors are swappable; when something sharper ships, I replace the skill and the system keeps working.
-
-Open your coding agent and say `start a new campaign`. CMO reads my operator profile, scaffolds the campaign folder, and calls Composio to pull workplace signals — what I've been writing about, meeting on, or working on lately — to inform the campaign topic. Then it routes into research. Gemini Deep Research lands an artifact at `phase-1-research/research-artifact-vF.md`. CMO drafts copy in my locked voice, then stages an Open Design handoff with the design language and first prompt already loaded. Composio publishes or schedules the post when it's done. Every campaign ends with a retro, and the retro patches templates and processes. The next run starts sharper than this one did.
+**AgentFrame Marketing** is a file-native marketing workspace that sits inside the coding agent I already use. Two `AGENTS.md` modes carry the work — **CMO** ships campaigns, **Builder** evolves the system. Campaign state lives in markdown files under `workspace/campaigns/`. Voice rules, templates, and processes live in `library/`. Skills and connectors are swappable; when something sharper ships, I replace the skill and the system keeps working. See the [walkthrough below](#a-real-campaign-step-by-step) for what an end-to-end campaign actually looks like.
 
 I've been dogfooding AgentFrame for a while and it's gone through multiple major revisions. The repo evolves with my workflow, not on a release schedule. It's free to fork — take what's useful.
 
@@ -99,7 +101,7 @@ A solo-flow walkthrough using the example campaign at `workspace/campaigns/examp
 <tr>
 <td width="50%" valign="top">
 <img src="assets/readme/walkthrough-01-cmo-kickoff.png" alt="01 · CMO kickoff" /><br/>
-<sub><b>01 · CMO kickoff</b> — Composio pulls your real workplace context — topics in recent emails, team meeting notes, doc activity — so the campaign starts from what you actually care about that week, not a cold prompt.</sub>
+<sub><b>01 · CMO kickoff</b> — Tell your coding agent <code>start a new campaign</code>. CMO reads your operator profile, scaffolds the campaign folder, and calls Composio to pull workplace context — recent emails, meeting notes, doc activity — so the campaign starts from what you actually care about that week, not a cold prompt.</sub>
 </td>
 <td width="50%" valign="top">
 <img src="assets/readme/walkthrough-02-research.png" alt="02 · Gemini Deep Research" /><br/>
@@ -509,7 +511,7 @@ Open Design is a concrete example of the swap pattern. AgentFrame owns campaign 
 
 ## Status
 
-Actively dogfooded. The full loop runs today — kickoff, research, drafting, image/video production, publication, and retro all working end-to-end.
+The full loop runs today — kickoff, research, drafting, image/video production, publication, and retro all working end-to-end. I run real campaigns through it.
 
 
 

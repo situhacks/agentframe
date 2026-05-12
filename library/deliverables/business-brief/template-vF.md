@@ -58,7 +58,7 @@ State transitions: `drafting` → `locked` (or `drafting` → `deferred`). When 
 - Internal draft approved by operator
 - Frontmatter `status` set to `locked`
 - Campaign tracker updated per selected `campaign_flow`
-- Word + PPT exports generated to `phase-2-strategy/business-brief/exports/` (see [`system/skills/export-assets/README.md`](../../../system/skills/export-assets/README.md))
+- Word + PPT exports generated to `phase-2-strategy/business-brief/exports/`
 - **If external review is the path:** reviewer feedback applied so `review: complete`, OR explicitly `waived` with reason logged to `activity.md` + `phase_override` entry in the campaign's `activity.md`. **If review is `not_required`**: no review step — drafting → lock is the path; no override log needed.
 - Final markdown saved with `last_updated` frontmatter set
 - Unblocks Campaign Brief
@@ -76,8 +76,7 @@ State transitions: `drafting` → `locked` (or `drafting` → `deferred`). When 
 When this deliverable locks, export to Word + PowerPoint:
 
 - **Supported formats**: `.docx`, `.pptx`
-- **Master templates**: `system/skills/export-assets/templates/business-brief.{docx,pptx}` (per-campaign override resolves first; see `system/skills/export-assets/templates/README.md`)
-- **Brand config**: `system/skills/export-assets/config.yaml`
+- **Template source**: campaign-local templates are optional at `workspace/campaigns/{slug}/exports/templates/business-brief.{docx,pptx}`
 - **Output path**: `workspace/campaigns/{slug}/phase-2-strategy/business-brief/exports/business-brief-v{N}.{ext}`
 
 For `.pptx`, run discovery before slide drafting:

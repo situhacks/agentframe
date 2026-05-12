@@ -3,22 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Cursor-brained Playwright browser fallback runtime for AgentFrame Marketing.",
+  "description": "AgentFrame controlled browser wrapper for browser-harness workflows.",
   "scripts": {
-    "test": "node --test tests/*.test.js",
-    "work-browser": "node src/work-browser.js",
-    "record": "node src/demo-recorder.js",
-    "record:stop": "node src/demo-recorder-stop.js",
-    "compact": "node src/demo-compactor.js"
-  },
-  "dependencies": {
-    "dotenv": "^17.4.2",
-    "playwright-core": "^1.59.1",
-    "zod": "^4.4.2"
-  },
-  "devDependencies": {
-    "@types/node": "^25.6.0",
-    "tsx": "^4.21.0",
-    "typescript": "^6.0.3"
+    "work-browser": "node src/work-browser.js"
   }
 }

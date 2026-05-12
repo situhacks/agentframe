@@ -379,7 +379,7 @@ sections: [{
 
 For AgentFrame Marketing docx exports, the cover (page 1) is rendered as HTML at print resolution, screenshotted via local Chrome headless, and embedded as a full-page `ImageRun`. This unlocks per-campaign display fonts (via Google Fonts CDN) and inline SVG motifs that docx-js cannot natively draw. Body content (pages 2+) uses native docx-js so text remains selectable and TOC stays functional.
 
-See [`library/context/operator/design-language.md#cover-html--png-pipeline`](../../../../library/context/operator/design-language.md) for the design contract and [`system/skills/export-assets/templates/cover.html`](../export-assets/templates/cover.html) for the template.
+See [`library/context/operator/design-language.md#cover-html--png-pipeline`](../../../../library/context/operator/design-language.md) for the design contract and use a campaign-local `cover.html` template when you need branded cover rendering.
 
 **Architecture:** the docx has TWO sections —
 1. **Cover section** with zero margins, `titlePage: true`, and a single `Paragraph` containing the cover `ImageRun` sized to full page (8.5" × 11" = 12240 × 15840 DXA = 7200 × 9600 pixels at 600dpi or 2550 × 3300 pixels at 300dpi).
@@ -394,7 +394,7 @@ const { execSync } = require('child_process');
 const { Document, Packer, Paragraph, ImageRun, SectionType, /* ... */ } = require('docx');
 
 // Step 1: Read template
-const tmpl = fs.readFileSync('system/skills/export-assets/templates/cover.html', 'utf8');
+const tmpl = fs.readFileSync(`workspace/campaigns/${slug}/exports/templates/cover.html`, 'utf8');
 
 // Step 2: Read campaign DL light_variant (parse YAML or grep the block)
 //   If light_variant.cover_font_family + cover_font_url + cover_motif_svg all present
@@ -712,7 +712,7 @@ After running `comment.py` (see Step 2), add markers to document.xml. For replie
 
 ## Known Gotchas
 
-- If renders behave unexpectedly, check [`../docx-gotchas.md`](../docx-gotchas.md) before debugging from scratch.
+- If renders behave unexpectedly, check [`gotchas.md`](gotchas.md) before debugging from scratch.
 
 ---
 

@@ -100,7 +100,7 @@
 
 
 
-AgentFrame Marketing ships with **11 public deliverable templates**, **11 process files**, **10 skill bundles**, **2 campaign flows**, a **two-mode persona model**, a **preview server**, and **two-layer traceability** (`activity.md` + audit DB).
+AgentFrame Marketing ships with **11 public deliverable templates**, **13 process files**, **11 skill bundles**, **2 campaign flows**, a **two-mode persona model**, a **preview server**, and **two-layer traceability** (`activity.md` + audit DB).
 
 
 
@@ -182,6 +182,10 @@ Process files load on demand, only when the workflow they describe is in play, s
 
 | `voice-mini-retro` | Lightweight voice quality feedback loop |
 
+| `deliverable-versioning` | Surgical-vs-replacement rule and version-bump procedure for `*-vF.md` deliverables |
+
+| `research-and-signals` | Shared kickoff for campaign research: workspace-context definition, live MCP scan, research-method offer |
+
 
 
 ### Skills
@@ -212,6 +216,8 @@ Skills are this operator's current stack for full production - swap any of them 
 | `gsap` | Vendored animation skill for HyperFrames workflows |
 
 | `open-design` | Vendored local-first runtime from [nexu-io/open-design](https://github.com/nexu-io/open-design) for image/deck/template-style visual production, with AgentFrame handoff rules in `system/skills/open-design/HANDOFF.md` |
+
+| `browser-harness` | Vendored browser-use harness for controlled CDP-driven browser workflows; routed through Edge with AgentFrame boundary notes in `system/skills/browser-harness/AGENTS.md` |
 
 
 
@@ -349,7 +355,7 @@ The README keeps motion minimal by design: **one hero visual (GIF/WebM recommend
 
 2. Open it in your preferred coding agent (defaults to Builder mode).
 
-3. Tell the agent: **"Help me onboard."** Builder walks through `onboarding-checklist.md` end-to-end.
+3. Open [`AGENTS.md`](AGENTS.md) — the **First run** line points at [`onboarding-checklist.md`](onboarding-checklist.md). Tell the agent **"Help me onboard"** and complete that checklist end-to-end.
 
 
 
@@ -357,7 +363,7 @@ The README keeps motion minimal by design: **one hero visual (GIF/WebM recommend
 
 
 
-Fresh clones default to Builder mode. Say "help me onboard" and Builder walks through [`onboarding-checklist.md`](onboarding-checklist.md):
+Fresh clones default to Builder mode. Follow the **First run** section in [`AGENTS.md`](AGENTS.md), then work through [`onboarding-checklist.md`](onboarding-checklist.md):
 
 
 
@@ -367,7 +373,7 @@ Fresh clones default to Builder mode. Say "help me onboard" and Builder walks th
 
 3. Optional Open Design runtime setup - Builder can install local deps and check for a code-agent CLI.
 
-4. Swap to CMO and start your first campaign.
+4. Remove the **First run** reminder from [`AGENTS.builder.md`](AGENTS.builder.md) and [`AGENTS.md`](AGENTS.md), delete the checklist file, swap to CMO, and log the mode change (see checklist for exact order).
 
 
 
@@ -604,7 +610,7 @@ agentframe-marketing/
 
 │   │   └── campaign-flows/
 
-│   └── context/operator/
+│   └── context/operator.example/
 
 ├── system/
 
@@ -618,17 +624,11 @@ agentframe-marketing/
 
 │   └── builder-backlog.md
 
-├── workspace/
+└── workspace/
 
-│   ├── campaigns/
+    └── campaigns/
 
-│   │   └── example-ai-automation-pov/
-
-│   └── research/
-
-├── docs/superpowers/specs/
-
-└── career/
+        └── example-ai-automation-pov/
 
 ```
 

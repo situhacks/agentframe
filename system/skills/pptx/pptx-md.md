@@ -2,7 +2,7 @@
 
 PPT-MD ("PowerPoint-flavored Markdown") is the intermediate format the agent and user iterate on in chat *before* rendering a `.pptx`. It bridges the gap between prose markdown (great for `.docx`, awkward for slides) and the structured slide-by-slide reality of PowerPoint.
 
-**The flow**: prose `draft.md` -> agent translates to PPT-MD -> user iterates with agent in chat -> agent renders `.pptx` from final PPT-MD using `system/skills/pptx/` + `system/skills/export-assets/templates/{type}.pptx`.
+**The flow**: prose `draft.md` -> agent translates to PPT-MD -> user iterates with agent in chat -> agent renders `.pptx` from final PPT-MD using `system/skills/pptx/` and any optional campaign-local template.
 
 PPT-MD is human-readable, agent-editable, and deterministically renderable. Don't render directly from prose markdown - pre-translation lets the user steer slide selection and content trimming before bytes hit disk.
 
@@ -83,14 +83,14 @@ All fields required unless marked optional.
 
 | Field | Type | Notes |
 |---|---|---|
-| `template` | string | Filename (not full path) of the master template inside `system/skills/export-assets/templates/` or campaign override folder. |
+| `template` | string (optional) | Filename (not full path) of a campaign-local template in `workspace/campaigns/{slug}/exports/templates/`. |
 | `deliverable_type` | string | One of: `business-brief`, `campaign-brief`. Used for output-path resolution. |
 | `campaign` | string | Campaign slug. Determines export destination. |
 | `title` | string | Cover slide title. |
 | `subtitle` | string (optional) | Cover slide subtitle. Defaults to deliverable type if absent. |
-| `author` | string | Author name for cover + footer. Inherits from `system/skills/export-assets/config.yaml#default_author`. |
+| `author` | string | Author name for cover + footer. |
 | `date` | ISO date string | Document date. |
-| `brand` | object (optional) | Per-deck color overrides. Keys: `accent`, `text`, `bg`. Falls back to config.yaml palette. |
+| `brand` | object (optional) | Per-deck color overrides. Keys: `accent`, `text`, `bg`. |
 
 ---
 
@@ -106,7 +106,7 @@ Slide blocks use a fenced syntax: `::: slide layout=<name>` opening, `:::` closi
 :::
 ```
 
-- `layout` is required and must match one of the names in `pptx_layout_catalog` from `system/skills/export-assets/config.yaml`.
+- `layout` is required and must match one of the layout names in this spec.
 - All other fields are layout-specific (see below).
 - Use YAML's `|` block-scalar syntax for multi-line content (preserves newlines).
 - Bullet points are written as markdown bullets inside `body`/`left_body`/`right_body` block scalars.
@@ -115,7 +115,7 @@ Slide blocks use a fenced syntax: `::: slide layout=<name>` opening, `:::` closi
 
 ## Layout Catalog
 
-The agent populates these from the master template's named slide layouts. Adding or removing layouts requires updating BOTH this spec AND `system/skills/export-assets/config.yaml#pptx_layout_catalog` AND the master `.pptx` template.
+The agent populates these from the chosen rendering approach and optional campaign template. Adding or removing layouts requires updating this spec and the rendering prompt/implementation used for deck generation.
 
 ### `cover`
 Title slide. Always slide 1.
@@ -180,7 +180,7 @@ Final slide. Decision needed, CTA, or next steps.
 3. User reacts: "drop slide 4," "split slide 6 into two," "callout the Anthropic quote."
 4. Agent revises PPT-MD, re-pastes.
 5. Once user approves, agent writes to `workspace/campaigns/{slug}/phase-2-strategy/{type}/exports/{type}-v{N}.pptx-md` (the source of truth, kept alongside the rendered `.pptx`).
-6. Agent renders `.pptx` from PPT-MD using `system/skills/pptx/` + master template.
+6. Agent renders `.pptx` from PPT-MD using `system/skills/pptx/` and optional campaign template input.
 
 ---
 

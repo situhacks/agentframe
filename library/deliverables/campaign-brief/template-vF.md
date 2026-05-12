@@ -74,15 +74,14 @@ exports:
 When this deliverable locks, the agent exports it to Word + PowerPoint per the agent-first export pipeline:
 
 - **Supported formats**: `.docx`, `.pptx`
-- **Master templates**: `system/skills/export-assets/templates/campaign-brief.{docx,pptx}` (per-campaign override resolves first; see `system/skills/export-assets/templates/README.md`)
-- **Brand config**: `system/skills/export-assets/config.yaml`
+- **Template source**: campaign-local templates are optional at `workspace/campaigns/{slug}/exports/templates/campaign-brief.{docx,pptx}`
 - **PPT discovery first**: ask audience, time budget, presenter style, and decision-vs-handoff; propose slide count + section structure + density tier; get approval before drafting slides.
 - **PPT-MD intermediate** (for `.pptx`): `system/skills/pptx/pptx-md.md` — agent drafts PPT-MD in chat, iterates with user, then renders the final `.pptx`.
 - **Output path**: `workspace/campaigns/{slug}/phase-2-strategy/campaign-brief/exports/campaign-brief-v{N}.{ext}`
 
 Mechanics: agent loads the relevant skill (`system/skills/{docx,pptx}/SKILL.md`), reads the master template + config, writes inline `python-docx` / `python-pptx` code, saves the file, updates `draft-vF.md` frontmatter `exports:` array, and appends `lock_event` + `export_generated` events to the campaign's `activity.md`. No standalone export script exists or is needed.
 
-Full architecture: [`system/skills/export-assets/README.md`](../../../system/skills/export-assets/README.md).
+Full architecture is defined by the deliverable template, `system/skills/{docx,pptx}/SKILL.md`, and campaign state files.
 
 ## Exceptions / Branches
 

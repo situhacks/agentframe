@@ -21,7 +21,7 @@ Loaded by the agent on every export turn. Not loaded for prose work.
 | `divider` | `[#D6D6D2]` | Hairlines, table row separators |
 | `accent_primary` | `[#1F3A5F]` | H1 underline, table header fills, callout left rules |
 
-Adjust to fit your visual identity. The token names are the contract `system/skills/export-assets/config.yaml` reads — keep the keys, change the values.
+Adjust to fit your visual identity. Keep token names stable so export prompts and templates can map values consistently.
 
 ---
 
@@ -52,6 +52,6 @@ The agent reads all three on every export turn. If they conflict, per-campaign o
 ## What's NOT in this file
 
 - Per-deliverable layout decisions (slide masters, page templates) — those live in `workspace/campaigns/{slug}/exports/templates/`.
-- Cover render parameters (Chrome headless flags, dimensions) — those live in `system/skills/export-assets/config.yaml`.
+- Cover render parameters (Chrome headless flags, dimensions) — keep those in your export workflow docs/scripts.
 - Voice (verbal tone) — `voice.md`.
 - Strategic positioning — `positioning.md`.

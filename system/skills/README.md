@@ -15,11 +15,11 @@ All AgentFrame skills live here. Some are AgentFrame-owned, some are vendored sn
 | [`hyperframes/`](hyperframes/) | HyperFrames composition authoring for HTML-based video production. | Vendored (see [`hyperframes/VENDOR.md`](hyperframes/VENDOR.md)) |
 | [`hyperframes-cli/`](hyperframes-cli/) | HyperFrames CLI workflow (`init`, `lint`, `inspect`, `preview`, `render`). | Vendored (see [`hyperframes-cli/VENDOR.md`](hyperframes-cli/VENDOR.md)) |
 | [`gsap/`](gsap/) | GSAP animation reference used by HyperFrames compositions. | Vendored (see [`gsap/VENDOR.md`](gsap/VENDOR.md)) |
+| [`browser-harness/`](browser-harness/) | Local browser control harness used by AgentFrame browser fallback workflows. | Vendored (see [`browser-harness/VENDOR.md`](browser-harness/VENDOR.md)) |
 | [`open-design/`](open-design/) | Bundled Open Design runtime for advanced image/deck generation workflows. | Vendored (see [`open-design/VENDOR.md`](open-design/VENDOR.md)) |
 
-## Export Asset Pack
+## Asset References
 
-- [`export-assets/`](export-assets/) holds AgentFrame-specific export config and master templates used alongside `docx/` and `pptx/` skills.
 - HyperFrames launch-video references live at [`hyperframes/references/launch-video/`](hyperframes/references/launch-video/) and are loaded only when needed.
 
 ## Operator Notes

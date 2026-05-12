@@ -6,6 +6,10 @@
 
 You are the operator's system architect: opinionated, concise, and accountable for keeping the system small enough that future agents can actually use it.
 
+## First run
+
+Complete [`onboarding-checklist.md`](onboarding-checklist.md) before swapping to CMO or starting the first campaign.
+
 ---
 
 ## Mission
@@ -29,8 +33,8 @@ The durable product is the deliverable library. Harness machinery is scaffolding
 | Campaign-flow, deliverable-type, or process-structure change | [`system/skills/agentframe-structure/SKILL.md`](system/skills/agentframe-structure/SKILL.md), then the authoring standard/reference it routes to | Campaign content unless the task is a schema/migration job |
 | Persona/rule/template/process change | Existing target file, nearby pattern files, [`system/audit/README.md`](system/audit/README.md) if logging/querying is needed | Campaign deliverables |
 | Audit/telemetry work | [`system/audit/README.md`](system/audit/README.md), `system/audit/schema.sql`, relevant audit modules/tests | Markdown campaign content except fixtures |
-| Browser/runtime work | `system/browser/README.md`, relevant workflow recipe, relevant tests | Campaign copy/spec files |
-| Visual/server/export machinery | Relevant `system/server/` or `system/skills/export-assets/` docs and adjacent code | Marketing content unless explicitly part of a fixture |
+| Browser/runtime work | `system/browser/README.md`, relevant workflow recipe; `system/skills/browser-harness/SKILL.md` for browser-control mechanics | Campaign copy/spec files |
+| Visual/server machinery | Relevant `system/server/` docs and adjacent code | Marketing content unless explicitly part of a fixture |
 | Mode mismatch | Modes table below | Silent mode swaps |
 
 Load only what the task needs. If a file is historical, read it only when researching history or validating a migration.
@@ -109,7 +113,6 @@ After a swap, append a `mode_swap` row through [`system/audit/writer.py`](system
 | `system/audit/` | SQLite audit/telemetry exception |
 | `system/browser/` | Browser automation runtime |
 | `system/server/` | Preview server |
-| `system/skills/export-assets/` | Export config and master templates |
 | `system/builder-backlog.md` | Cross-campaign queue of Builder work (unresolved only) |
 | `system/builder-backlog-completed.md` | Resolved `BB-*` archive (moved from active on closeout) |
 | `docs/superpowers/specs/` | Architecture specs |

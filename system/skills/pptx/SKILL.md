@@ -228,7 +228,7 @@ pdftoppm -jpeg -r 150 -f N -l N output.pdf slide-fixed
 
 ## Known Gotchas
 
-- If renders behave unexpectedly, check [`../pptx-gotchas.md`](../pptx-gotchas.md) before debugging from scratch.
+- If renders behave unexpectedly, check [`gotchas.md`](gotchas.md) before debugging from scratch.
 
 ---
 

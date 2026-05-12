@@ -14,15 +14,13 @@ workflows/<workflow-id>/
 
 Load `recipe.md` first for every run. Load `browser-use/` only when the run needs local browser control through browser-harness.
 
-Shared subroutines live under `_shared/`. App workflows can call those recipes instead of copying common behavior. Example: use `_shared/auth-handoff/recipe.md` for account picker, enterprise SSO, and human-secret handoff before returning to the app-specific workflow.
-
 ## Minimal Shape
 
 ```markdown
 # {Workflow Name}
 
 workflow_id: {stable-id}
-status: learning | cursor_replay | promotion_candidate | promoted
+status: learning | cursor_replay
 app_url: {starting URL}
 approval_mode: human_review | autonomous_when_whitelisted
 tool_routing: browser_use_only
@@ -43,8 +41,8 @@ Only the files, folders, URLs, or operator choices needed to run.
 ## Human Gate
 Where Cursor must stop for the operator unless the workflow has explicit autonomous approval.
 
-## Promotion Notes
-What evidence would justify changing this workflow's status.
+## Durable Notes
+What browser-harness quirks or repair patterns should survive into future runs.
 ```
 
 Keep these files compact. If the workflow starts needing many branches, keep Cursor in the loop instead of over-hardening it.

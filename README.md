@@ -1,94 +1,139 @@
 # AgentFrame: Marketing
 
+<p align="center">
+  <img src="assets/readme/banner.png" alt="AgentFrame: Marketing — a full-stack marketing workspace inside your AI coding agent" width="100%" />
+</p>
 
+> **A full-stack marketing workspace inside your AI coding agent.** File-native. Dogfooded daily. Evolves with your workflow. Two `AGENTS.md` modes carry the work — **CMO** ships campaigns, **Builder** evolves the system. Plan a campaign and publish your first post in an hour, without leaving your IDE.
 
-> **A complete marketing workspace inside the AI coding agent you already use.** No more chat sprawl, no more decisions lost between sessions, no more sycophantic AI freelancing on your writing voice. AgentFrame is a file-native system that rides on top of your favourite AI model, with two `AGENTS.md` modes carrying the work - **CMO** ships campaigns, **Builder** evolves the system itself. Everything in the system is built to evolve with you, improving itself with each campaign you run or when a new marketing skill gets released. Start a campaign, create content and launch your first post in an hour - all in one place.
-
-
-
-![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)
-
-![Works With](https://img.shields.io/badge/works%20with-claude%20code%20%7C%20codex%20%7C%20cursor%20%7C%20vscode%20%7C%20antigravity-blue)
-
-
-
-**Jump to:** [Why](#why-this-exists) · [Quick Start](#quick-start) · [Architecture](#architecture) · [Example Campaign](#example-campaign-workflow) · [Roadmap](#roadmap)
-
-
-
-## Table of Contents
+<p align="center">
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" /></a>
+  <img alt="Works with" src="https://img.shields.io/badge/works%20with-claude%20code%20%7C%20codex%20%7C%20cursor%20%7C%20vscode%20%7C%20antigravity-blue?style=flat-square" />
+  <img alt="Status" src="https://img.shields.io/badge/status-dogfooded-orange?style=flat-square" />
+</p>
 
 
 
-- [Why This Exists](#why-this-exists)
+**Jump to:** [Quick start](#quick-start) · [Why](#why-this-exists) · [Walkthrough](#a-real-campaign-step-by-step) · [Architecture](#architecture) · [Roadmap](#roadmap)
 
-- [At A Glance](#at-a-glance)
 
-- [Six Architectural Principles](#six-architectural-principles)
 
-- [Demo](#demo)
+## Table of contents
 
-- [Quick Start](#quick-start)
-
-- [Recommended Connectors](#recommended-connectors)
-
+- [Quick start](#quick-start)
+- [Why this exists](#why-this-exists)
+- [A real campaign, step by step](#a-real-campaign-step-by-step)
+- [At a glance](#at-a-glance)
+- [Six architectural principles](#six-architectural-principles)
+- [Recommended connectors](#recommended-connectors)
 - [Architecture](#architecture)
-
-- [Repository Structure](#repository-structure)
-
-- [Example Campaign Workflow](#example-campaign-workflow)
-
+- [Repository structure](#repository-structure)
 - [Customizability](#customizability)
-
-- [Mode Model: CMO vs Builder](#mode-model-cmo-vs-builder)
-
-- [Solo-flow vs Standard-flow](#solo-flow-vs-standard-flow)
-
-- [Preview Server](#preview-server)
-
-- [Auditability and State](#auditability-and-state)
-
+- [Preview server](#preview-server)
+- [Auditability and state](#auditability-and-state)
 - [Roadmap](#roadmap)
-
 - [Status](#status)
-
 - [Contributing](#contributing)
-
-- [References and Lineage](#references-and-lineage)
-
+- [References and lineage](#references-and-lineage)
 - [License](#license)
-
 - [Contact](#contact)
 
 
 
-## Why This Exists
+## Quick start
+
+1. Clone the repo and open it in your coding agent. It boots in Builder mode.
+2. Open [`AGENTS.md`](AGENTS.md). The **First run** line points at [`onboarding-checklist.md`](onboarding-checklist.md). Tell the agent **"Help me onboard"** and walk through it end-to-end.
+
+### First-run Builder onboarding
+
+The checklist covers:
+
+1. Importing your operator context — voice, profile, positioning. Builder can lift this from an existing chat-bot memory if you have one.
+2. Setting up the optional connector keys for Gemini and Composio. Both have generous free tiers, and both are optional — the system still runs campaigns without them, you just lose Deep Research and direct publishing.
+3. Optional: setting up the Open Design runtime. Builder can install local deps and check for a code-agent CLI on your `PATH`.
+4. Removing the **First run** reminder, deleting the checklist, swapping to CMO, and logging the mode change.
+
+### Mode swaps
+
+Two `AGENTS.md` modes, and you swap depending on what you're doing:
+
+- **Swap to CMO when you're running a campaign** — drafting copy, generating images, publishing, doing a retro. CMO is scoped to `workspace/campaigns/` so it can't accidentally edit your templates or processes mid-campaign.
+- **Swap to Builder when you're improving the system itself** — editing a template, adding a process, swapping a skill, applying retro patches. Builder is scoped to `system/` and `library/`.
+
+You don't run shell commands by hand. Just tell the agent `swap to Builder` or `swap to CMO`. It handles the file swap and logs the transition to the audit DB.
+
+### Compatibility
+
+Works with any coding agent that respects `AGENTS.md` in the working directory — Claude Code, Codex, Cursor, VS Code, Antigravity-flavored workflows.
+
+[Back to top](#agentframe-marketing)
 
 
 
-- **Problem.** I looked at the existing AI-marketing landscape and did not think any of the subscription or vibe-coded products were worth it. Why pay monthly for someone else's thin prompt wrapper when I can build my own - one that evolves over time, is not stateless, and is truly portable across whichever coding agent I am using this week?
+## Why this exists
 
-- **Personal story.** I tried running my own marketing campaigns out of a Claude Code Pro subscription and hit every wall the chat-only workflow has: sycophantic AI, brittle handoffs between sessions, voice rules remembered yesterday and forgotten today, no consistent state for what was actually shipping.
+I used to run my marketing campaigns out of Claude Code. For a while I tried doing it all in chat sessions: write the post here, paste the voice rules there, ask for a rewrite, lose the thread, start over tomorrow. It works for something small, but for multi-post campaigns, things get lost and context starts to degrade. The voice rules I'd "saved" were forgotten by next session. State lived in scrollback. I spent more time retyping my instructions than I wanted.
 
-- **A concrete moment.** Open your coding agent and say: "Plan an AI automation POV campaign." CMO reads your operator profile and voice rules, scaffolds a fresh campaign folder, and routes into research. Gemini gets called to produce a deep research artifact under `phase-1-research/`. CMO drafts post copy from the template in your voice, then prepares an Open Design handoff with the campaign design language, visual brief, and first prompt already staged. You open the prepared Open Design project, press Send, revise or export, then Composio schedules the post. After all posts are out, you run a retro, and the patches from that retro make the next campaign sharper.
+I looked around for alternatives. What I found was prompt wrappers sitting on top of the same models I'm already paying for, and marketing repos with horrible token efficiency — one of them burned through my whole session before the first post was even done.
 
-- **Approach.** Two `AGENTS.md` modes carry the work - CMO ships campaigns, Builder evolves the system. Skills, templates, processes, and flows are interchangeable parts. The durable product is the template/process library, and retros continuously improve it.
+I didn't like what I saw. So I built my ideal system myself.
 
-- **What it is not.** Not a SaaS. Not a managed agent.
+**AgentFrame Marketing** is a file-native marketing workspace that sits inside the coding agent I already use. Two `AGENTS.md` modes carry the work — **CMO** ships campaigns, **Builder** evolves the system. Campaign state lives in markdown files under `workspace/campaigns/`. Voice rules, templates, and processes live in `library/`. Skills and connectors are swappable; when something sharper ships, I replace the skill and the system keeps working.
 
-- **Lean by design.** The system is lazy-loaded. Only `AGENTS.md` is always present. Flows, processes, templates, and skills are loaded on demand so context stays focused on the current task, enabling longer sessions without context bloat.
+Open your coding agent and say `start a new campaign`. CMO reads my operator profile, scaffolds the campaign folder, and calls Composio to pull workplace signals — what I've been writing about, meeting on, or working on lately — to inform the campaign topic. Then it routes into research. Gemini Deep Research lands an artifact at `phase-1-research/research-artifact-vF.md`. CMO drafts copy in my locked voice, then stages an Open Design handoff with the design language and first prompt already loaded. Composio publishes or schedules the post when it's done. Every campaign ends with a retro, and the retro patches templates and processes. The next run starts sharper than this one did.
 
-- **Stands on shoulders of:**
+I've been dogfooding AgentFrame for a while and it's gone through multiple major revisions. The repo evolves with my workflow, not on a release schedule. It's free to fork — take what's useful.
 
-  - **[Composio](https://composio.dev/)** for connector-driven publishing and workplace signals.
+**Stands on the shoulders of:**
 
-  - **[heygen-com/hyperframes](https://github.com/heygen-com/hyperframes)** for HTML-to-video composition.
+- **[Composio](https://composio.dev/)** — all-in-one MCP hub. One connection exposes 100+ workplace and publishing tools (Gmail, Calendar, Drive, LinkedIn, X, Instagram, TikTok, etc.) instead of installing a separate MCP server for each.
+- **[Gemini Deep Research](https://gemini.google/us/overview/deep-research/?hl=en)** — detailed research artifacts at campaign start. Runs through the Gemini API so it doesn't burn coding-agent session credits.
+- **[Gemini image generation](https://ai.google.dev/gemini-api/docs/image-generation)** (Nano Banana 2 / Pro) — raster image generation, fast variants and high-fidelity hero visuals.
+- **[nexu-io/open-design](https://github.com/nexu-io/open-design)** — local-first runtime for images, decks, and template-style visual work. AgentFrame stages the handoff by setting up the project, first prompt and design language; OD owns the generation UI and exports.
+- **[heygen-com/hyperframes](https://github.com/heygen-com/hyperframes)** — HTML-to-video composition for motion deliverables.
+- **[blader/humanizer](https://github.com/blader/humanizer)** — copy humanization pass before lock.
 
-  - **[nexu-io/open-design](https://github.com/nexu-io/open-design)** for local-first design and deck workflows.
+[Back to top](#agentframe-marketing)
 
-  - **[Gemini Deep Research](https://gemini.google/us/overview/deep-research/?hl=en)** for research and image generation.
 
-  - **[blader/humanizer](https://github.com/blader/humanizer)** for copy humanization.
+
+## A real campaign, step by step
+
+A solo-flow walkthrough using the example campaign at `workspace/campaigns/example-ai-automation-pov/`. One operator, six moves, no team handoffs.
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<img src="assets/readme/walkthrough-01-cmo-kickoff.png" alt="01 · CMO kickoff" /><br/>
+<sub><b>01 · CMO kickoff</b> — Composio pulls your real workplace context — topics in recent emails, team meeting notes, doc activity — so the campaign starts from what you actually care about that week, not a cold prompt.</sub>
+</td>
+<td width="50%" valign="top">
+<img src="assets/readme/walkthrough-02-research.png" alt="02 · Gemini Deep Research" /><br/>
+<sub><b>02 · Gemini Deep Research</b> — Deep Research runs against your chosen direction and lands a structured artifact at <code>phase-1-research/research-artifact-vF.md</code>.</sub>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src="assets/readme/walkthrough-03-post-copy.png" alt="03 · Post copy versioning" /><br/>
+<sub><b>03 · Post copy in your voice</b> — Drafts inherit your locked voice rules from <code>library/context/operator/voice.md</code>, then run through the humanizer skill before lock to strip AI tells. Every revision snapshots into <code>version_history</code> so you can roll back, compare, or read why the copy changed.</sub>
+</td>
+<td width="50%" valign="top">
+<img src="assets/readme/walkthrough-04-image-production.png" alt="04 · Open Design handoff" /><br/>
+<sub><b>04 · Media creation, your pick</b> — Pick the path that fits the deliverable: HTML render in your coding agent for slide-shaped visuals, Gemini Nano Banana 2/Pro for raster image variants, Open Design for higher-fidelity decks and carousels, or HyperFrames for HTML-to-video. AgentFrame stages the prompt and design language; the chosen tool owns generation and exports. (I usually take the OD export into Figma to clean it up. Optional — most people finish inside OD and ship.)</sub>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src="assets/readme/walkthrough-05-published.png" alt="05 · Published via Composio" /><br/>
+<sub><b>05 · Published via Composio</b> — Composio's connector to LinkedIn (or X, Instagram, TikTok) sends or schedules the post. Live URL and shipped frontmatter land back in the post folder.</sub>
+</td>
+<td width="50%" valign="top">
+<img src="assets/readme/walkthrough-06-retro.png" alt="06 · Retro" /><br/>
+<sub><b>06 · Retro</b> — The agent suggests patches to voice rules, templates, processes, and skill behavior based on what actually happened during the run. You approve or reject each one. AgentFrame tracks the small details throughout the campaign so you don't have to remember them.</sub>
+</td>
+</tr>
+</table>
 
 
 
@@ -96,144 +141,100 @@
 
 
 
-## At A Glance
+## At a glance
 
 
 
-AgentFrame Marketing ships with **11 public deliverable templates**, **13 process files**, **11 skill bundles**, **2 campaign flows**, a **two-mode persona model**, a **preview server**, and **two-layer traceability** (`activity.md` + audit DB).
+In the box: **11 deliverable templates**, **13 process files**, **11 skill bundles**, **2 campaign flows**, a two-mode persona model, a local preview server, and a two-layer audit trail (`activity.md` + SQLite DB).
 
 
 
-### Campaign Flows
+### Campaign flows
 
-Campaign flows are full CRUD - add a new one under `library/process/campaign-flows/` to match how your team actually ships.
+Add or edit any flow under `library/process/campaign-flows/` to match how you actually ship.
 
 | Flow | Purpose |
-
 | --- | --- |
-
 | `solo-flow` (default) | Lightweight campaign workflow for one operator moving fast |
-
-| `standard-flow` | Heavier flow closest to enterprise-style campaigns, with broader deliverable coverage and more review gates |
-
+| `standard-flow` | Heavier flow with broader deliverable coverage and more review gates — closer to an enterprise-style campaign |
 
 
-### Deliverable Templates
-Templates are yours to evolve - duplicate, restructure, or add new deliverable types under `library/deliverables/` to fit your campaign shape.
+
+### Deliverable templates
+
+Edit, duplicate, or add new deliverable types under `library/deliverables/`.
 
 
 
 | Template | Output |
-
 | --- | --- |
-
 | `business-brief` | Business context and objective framing |
-
 | `research-artifact` | Research synthesis with sources and implications |
-
 | `messaging-architecture` | Core message map and audience framing |
-
 | `design-language` | Visual and style direction |
-
 | `campaign-brief` | Campaign-level strategy and constraints |
-
 | `post-copy` | Platform-ready post copy |
-
 | `carousel-spec` | Slide-by-slide carousel plan |
-
 | `video-spec` | Video concept, scenes, and production plan |
-
 | `campaign-retro` | Campaign-level learnings and improvements |
-
 | `template-retro` | Template quality review and updates |
-
 | `system-retro` | System-level process and architecture improvements |
 
 
 
-### Process Files
-Process files load on demand, only when the workflow they describe is in play, so they stay out of the way until needed.
+### Process files
+
+Process files load on demand — only when the workflow they describe is in play. They stay out of context until they're needed.
 
 
 
 | Process | Purpose |
-
 | --- | --- |
-
 | `campaign-flow-authoring` | How to design or evolve campaign flows |
-
 | `process-authoring` | How to design or evolve process files |
-
 | `video-production` | Video workflow from spec to renders |
-
 | `image-production` | Image generation workflow |
-
 | `preview-server` | When and how to use the local preview hub |
-
 | `lock-event` | Lock-state transitions and quality gates |
-
 | `humanizer-integration` | Humanization pass integration |
-
 | `campaign-frontmatter` | Frontmatter schema and state handling |
-
 | `browser-fallback` | Browser automation fallback strategy |
-
 | `composio-notes` | Connector usage notes and caveats |
-
 | `voice-mini-retro` | Lightweight voice quality feedback loop |
-
 | `deliverable-versioning` | Surgical-vs-replacement rule and version-bump procedure for `*-vF.md` deliverables |
-
 | `research-and-signals` | Shared kickoff for campaign research: workspace-context definition, live MCP scan, research-method offer |
 
 
 
 ### Skills
-Skills are this operator's current stack for full production - swap any of them out for a sharper tool without touching campaign templates or processes.
+
+My current production stack. Swap any of them for a sharper tool without touching templates or processes.
 
 
 
 | Skill | Source |
-
 | --- | --- |
-
 | `agentframe-structure` | Project skill |
-
 | `deliverable-scaffolding` | Project skill |
-
 | `system-improvement` | Project skill |
-
 | `docx` | Project skill |
-
 | `pptx` | Project skill |
-
 | `humanizer` | Vendored from [blader/humanizer](https://github.com/blader/humanizer) |
-
 | `hyperframes` | Vendored from [heygen-com/hyperframes](https://github.com/heygen-com/hyperframes) |
-
 | `hyperframes-cli` | Vendored from [heygen-com/hyperframes](https://github.com/heygen-com/hyperframes) |
-
 | `gsap` | Vendored animation skill for HyperFrames workflows |
-
 | `open-design` | Vendored local-first runtime from [nexu-io/open-design](https://github.com/nexu-io/open-design) for image/deck/template-style visual production, with AgentFrame handoff rules in `system/skills/open-design/HANDOFF.md` |
-
 | `browser-harness` | Vendored browser-use harness for controlled CDP-driven browser workflows; routed through Edge with AgentFrame boundary notes in `system/skills/browser-harness/AGENTS.md` |
 
 
 
-### Other Core Surfaces
+### Everything else that ships in the box
 
-
-
-- **Two-mode routing:** `AGENTS.cmo.md` and `AGENTS.builder.md`
-
-- **State as files:** YAML frontmatter plus campaign artifacts in `workspace/campaigns/`
-
-- **Auditability + traceability:** `activity.md` (campaign-readable timeline) + append-only SQLite audit DB at `system/audit/agentframe.db`
-
-- **Preview hub:** `system/server/` for HTML/image/video/PDF/PPTX/DOCX previews
-
-- **Browser harness:** `system/browser/` is browser-use-first for live actions, with documented fallbacks when a workflow needs a hand-driven Chromium session
+- Two-mode routing via `AGENTS.cmo.md` and `AGENTS.builder.md`
+- YAML frontmatter and campaign artifacts under `workspace/campaigns/`
+- `activity.md` per campaign for human-readable history, plus an append-only SQLite audit DB at `system/audit/agentframe.db`
+- Local preview server at `system/server/` for HTML, image, video, PDF, PPTX, and DOCX previews
+- Browser harness at `system/browser/` using browser-use, with documented fallbacks when a workflow needs a hand-driven Chromium session
 
 
 
@@ -241,65 +242,38 @@ Skills are this operator's current stack for full production - swap any of them 
 
 
 
-## Six Architectural Principles
+## Six architectural principles
 
 
 
-### P1 - File-Native State
+### P1 — File-native state
 
+Campaign state lives in markdown files: frontmatter, deliverables, `activity.md`. Not in a chat window. Change models, change machines, come back next week — the campaign picks up where it left off.
 
+### P2 — Lazy loading
 
-Campaign progress, decisions, and history live in lightweight files (campaign frontmatter, deliverable markdown, `activity.md`) rather than in a chat window that can clear. Sessions, models, and even machines can change underneath you - the campaign keeps going from where it left off.
+`AGENTS.md` is the only always-on router. Flows, processes, templates, and skills load on demand. Context stays focused on the task in front of you.
 
+### P3 — The library is the product
 
+Templates, processes, campaign flows, and personas are the durable layer — they capture how you actually run campaigns and they improve over time. Skills and connectors (Composio, Gemini, Open Design, HyperFrames) are swappable. Replace a skill when something sharper ships; the campaign system is untouched.
 
-### P2 - Lazy Loading for Context Efficiency
+### P4 — Two modes, one operator
 
+CMO ships campaigns. Builder evolves the system. The split means CMO can't accidentally edit `library/` mid-campaign, and Builder can't accidentally touch a locked deliverable mid-refactor.
 
+### P5 — Retros patch the system
 
-`AGENTS.md` routes work, but flows/processes/templates/skills are loaded only when needed. This controls token and context footprint so long sessions stay useful.
+Every campaign ends with a retro. The agent surfaces specific patches to templates, processes, and skill behavior based on what actually happened, and you approve them. The library evolves campaign by campaign.
 
-
-
-### P3 - The Library Is the Product, Not the Harness
-
-
-
-Templates, processes, campaign flows, personas, and system prompts are the durable product - they capture how you run campaigns and they improve over time. Skills and connectors (Composio, Gemini, Open Design, HyperFrames, image/video tools) are the swappable layer; when something sharper ships, replace the skill and keep the campaign system intact.
-
-
-
-### P4 - Two-Mode Persona Model (CMO + Builder)
-
-
-
-CMO ships campaigns. Builder evolves system architecture. This split prevents accidental system edits during campaign execution and accidental campaign edits during infrastructure work.
-
-
-
-### P5 - Self-Improving Through Retros
-
-
-
-Campaign, template, and system retros convert lived execution feedback into concrete improvements. The system gets stronger with each run.
-
-
-
-### P6 - Auditable and Traceable
-
-
+### P6 — Auditable and traceable
 
 Two layers capture history:
 
+- `activity.md` per campaign for the human-readable timeline.
+- Append-only SQLite audit DB at `system/audit/agentframe.db` for system events (`mode_swap`, `system_changes`, retro outcomes).
 
-
-- `activity.md` for campaign-level, human-readable activity
-
-- append-only audit DB for system-level events (`mode_swap`, `system_changes`, retro outcomes)
-
-
-
-Together, these surfaces support timeline reconstruction, metric tracking, and evidence-based iteration.
+Useful when you want to reconstruct what happened, time how long a phase took, or trace why a template changed.
 
 
 
@@ -307,174 +281,51 @@ Together, these surfaces support timeline reconstruction, metric tracking, and e
 
 
 
-## Demo
+## Recommended connectors
 
 
 
-The README keeps motion minimal by design: **one hero visual (GIF/WebM recommended)** plus static proof assets.
+External services AgentFrame integrates with. Recommended for the full loop, but all optional — both Gemini and Composio have generous free tiers, and the system still runs campaigns without any of them. You just lose the automation each connector provides.
 
+### Gemini Deep Research
 
+- Deep research artifacts at campaign start — sources, implications, audience signals — saved as structured markdown under `phase-1-research/`.
+- Free credits from [Google AI Studio](https://aistudio.google.com) cover solo-operator usage.
+- Key: `GEMINI_API_KEY`.
 
-| 01 · CMO entry | 02 · Research artifact |
+### Gemini image generation (Nano Banana 2 / Pro)
 
-| --- | --- |
-
-| ![CMO entry](assets/readme/01-cmo-entry.svg) | ![Research artifact](assets/readme/02-research-artifact.svg) |
-
-
-
-| 03 · Template-driven deliverable | 04 · Posts |
-
-| --- | --- |
-
-| ![Template deliverable](assets/readme/03-template-deliverable.svg) | ![Posts](assets/readme/04-posts.svg) |
-
-
-
-| 05 · Retros | 06 · Mode swap |
-
-| --- | --- |
-
-| ![Retros](assets/readme/05-retros.svg) | ![Mode swap](assets/readme/06-mode-swap.svg) |
-
-
-
-[Back to top](#agentframe-marketing)
-
-
-
-## Quick Start
-
-
-
-### Happy Path
-
-
-
-1. Clone the repo.
-
-2. Open it in your preferred coding agent (defaults to Builder mode).
-
-3. Open [`AGENTS.md`](AGENTS.md) — the **First run** line points at [`onboarding-checklist.md`](onboarding-checklist.md). Tell the agent **"Help me onboard"** and complete that checklist end-to-end.
-
-
-
-### First-Run Builder Onboarding
-
-
-
-Fresh clones default to Builder mode. Follow the **First run** section in [`AGENTS.md`](AGENTS.md), then work through [`onboarding-checklist.md`](onboarding-checklist.md):
-
-
-
-1. Import operator context (voice, profile, positioning) - Builder will offer to lift this from an existing chat-bot memory if you have one.
-
-2. Recommended connector keys (Gemini, Composio) with how-to-get-it guidance.
-
-3. Optional Open Design runtime setup - Builder can install local deps and check for a code-agent CLI.
-
-4. Remove the **First run** reminder from [`AGENTS.builder.md`](AGENTS.builder.md) and [`AGENTS.md`](AGENTS.md), delete the checklist file, swap to CMO, and log the mode change (see checklist for exact order).
-
-
-
-### Mode Swaps
-
-
-
-You usually do not run shell commands manually. Tell the agent:
-
-
-
-- "swap to Builder"
-
-- "swap to CMO"
-
-
-
-The agent handles the file swap and logs the transition.
-
-
-
-### Compatibility
-
-
-
-Works with coding agents that respect `AGENTS.md` in the working directory, including Claude Code, Codex, Cursor, VS Code, and Antigravity-flavored workflows.
-
-
-
-[Back to top](#agentframe-marketing)
-
-
-
-## Recommended Connectors
-
-
-
-External services AgentFrame integrates with - recommended for the full loop, but not hard-required.
-
-
-
-### Gemini API
-
-
-
-- research generation at campaign start
-
-- image generation for production deliverables
-
-- free credits from [Google AI Studio](https://aistudio.google.com) are usually enough for solo operators
-
-
+- Fast A/B/C variants for standard illustrations (Nano Banana 2: `gemini-3.1-flash-image-preview`).
+- High-fidelity hero and text-in-image visuals (Nano Banana Pro: `gemini-3-pro-image-preview`).
+- Routed through `system/server/lib/image_generate.py`; per-post records save as `image-prompt-vF.md`.
+- Shares the same `GEMINI_API_KEY` as Deep Research.
 
 ### Composio
 
-
-
-- workplace signal collection (email, calendar, docs, notes, platform data)
-
-- publishing connectors (LinkedIn, X, Instagram, TikTok, and others)
-
-- analytics pullback for retros and iteration
-
-
-
-Get started at [composio.dev](https://composio.dev).
-
-
+- All-in-one MCP hub. One connection exposes 100+ tools (Gmail, Calendar, Drive, LinkedIn, X, Instagram, TikTok, etc.) instead of installing a separate MCP server for each.
+- Workplace signal collection (email, calendar, docs, notes) feeds campaign research and retros.
+- Publishing — schedule or send directly to LinkedIn, X, Instagram, TikTok, and others.
+- Analytics pullback to feed performance data into campaign retros.
+- Get started at [composio.dev](https://composio.dev).
 
 ### Open Design
 
-- bundled local-first visual runtime at `system/skills/open-design/source/`
-
-- useful for higher-fidelity images, carousels, decks, and template-style visual work
-
-- fresh clones may need runtime dependency setup (`corepack`, `pnpm install`, Node 24), not a separate Open Design product install
-
-- can use a local code-agent CLI on `PATH` (Claude Code, Codex, Gemini CLI, etc.) or BYOK provider keys as a fallback
-
-- AgentFrame prepares the handoff through the Open Design daemon API: campaign design system, selected OD mode/skill, project creation, and the first unsent prompt
-
-- intended operator flow: open the prepared Open Design project, press Send, revise/export inside Open Design, then bring the locked asset back into the campaign
-
+- Bundled local-first visual runtime at `system/skills/open-design/source/`.
+- Used for higher-fidelity images, carousels, decks, and template-style visual work.
+- Fresh clones may need runtime dependency setup (`corepack`, `pnpm install`, Node 24). Not a separate Open Design product install.
+- Uses a local code-agent CLI on `PATH` (Claude Code, Codex, Gemini CLI, etc.), or BYOK provider keys as a fallback.
+- AgentFrame stages the handoff through the OD daemon API: campaign design system, selected OD mode/skill, project creation, and the first unsent prompt.
+- Operator flow: open the prepared OD project, press Send, revise or export inside OD, then bring the locked asset back into the campaign.
 
 ### `.env` shape
 
-
-
 ```bash
-
 GEMINI_API_KEY=
-
 COMPOSIO_API_KEY=
-
 COMPOSIO_MCP_URL=https://connect.composio.dev/mcp
-
 ```
 
-
-
-Use whichever model your coding agent provides; these keys support non-LLM runtime surfaces.
+Your coding agent provides the LLM. These keys power the non-LLM tools (research generation, image generation, publishing).
 
 
 
@@ -486,84 +337,71 @@ Use whichever model your coding agent provides; these keys support non-LLM runti
 
 
 
-### Mode Boundary
+### Mode boundary
 
 
 
-```mermaid
+```text
+                                  ┌─── owns ──▶  workspace/campaigns
+                  ┌──── CMO ─────┤
+                  │              └─── reads ─▶  system + library
+   Operator ──────┤
+                  │              ┌─── owns ──▶  system + library
+                  └─── Builder ──┤
+                                 └─── reads ──▶  workspace/campaigns
 
-flowchart LR
-
-    Operator((Operator)) -->|swap AGENTS.md| CMO[CMO Mode]
-
-    Operator -->|swap AGENTS.md| Builder[Builder Mode]
-
-    CMO -->|owns| Campaigns[workspace/campaigns]
-
-    Builder -->|owns| System[system + library structure]
-
-    CMO -->|reads| System
-
-    Builder -->|reads| Campaigns
-
+   ── swap AGENTS.md to flip between modes ──
 ```
 
 
 
-### Load Path for a Task
+### Load path for a task
 
 
 
-```mermaid
-
-flowchart TB
-
-    AgentsMd[AGENTS.md] --> Flow[campaign-flow]
-
-    Flow --> Process[process file]
-
-    Process --> Template[deliverable template]
-
-    Process --> Skill[skill]
-
-    Template --> Artifact[campaign artifact]
-
-    Artifact --> Activity[activity.md]
-
-    Process --> AuditDB[(audit DB)]
-
+```text
+   AGENTS.md
+       │
+       ▼
+   campaign-flow
+       │
+       ▼
+   process file ──────────────┐
+       │                      │
+       ├──▶ deliverable template
+       │         │
+       │         ▼
+       │     campaign artifact
+       │         │
+       │         ▼
+       │     activity.md
+       │
+       ├──▶ skill
+       │
+       └──▶ audit DB
 ```
 
 
 
-### File-Memory Data Flow
+### File-memory data flow
 
 
 
-```mermaid
-
-flowchart LR
-
-    OperatorInput[Operator Input] --> Agent[CMO or Builder]
-
-    Agent --> Frontmatter[Artifact Frontmatter]
-
-    Agent --> Deliverable[Deliverable Markdown]
-
-    Agent --> ActivityLog[activity.md]
-
-    Agent --> AuditWriter[system/audit/writer.py]
-
-    AuditWriter --> AuditDB[(agentframe.db)]
-
-    Deliverable --> Retro[Retro Deliverables]
-
-    ActivityLog --> Retro
-
-    AuditDB --> Retro
-
-    Retro --> LibraryPatches[Template/Process/Skill Patches]
-
+```text
+                          ┌──▶ artifact frontmatter ──┐
+                          │                           │
+                          ├──▶ deliverable markdown ──┤
+   Operator Input ──▶ Agent                           │
+   (CMO or Builder)       ├──▶ activity.md ───────────┤
+                          │                           │
+                          └──▶ audit writer ──▶ audit DB
+                                                      │
+                                                      ▼
+                                              Retro deliverables
+                                                      │
+                                                      ▼
+                                       Template / process / skill patches
+                                              (library evolves)
 ```
 
 
@@ -584,83 +422,32 @@ Architecture summary:
 
 
 
-## Repository Structure
+## Repository structure
 
 
 
 ```text
-
 agentframe-marketing/
-
 ├── AGENTS.md
-
 ├── AGENTS.cmo.md
-
 ├── AGENTS.builder.md
-
 ├── README.md
-
 ├── .env.example
-
 ├── library/
-
 │   ├── deliverables/
-
 │   ├── process/
-
 │   │   └── campaign-flows/
-
 │   └── context/operator.example/
-
 ├── system/
-
 │   ├── skills/
-
 │   ├── server/
-
 │   ├── audit/
-
 │   ├── browser/
-
 │   └── builder-backlog.md
-
 └── workspace/
-
     └── campaigns/
-
         └── example-ai-automation-pov/
-
 ```
-
-
-
-[Back to top](#agentframe-marketing)
-
-
-
-## Example Campaign Workflow
-
-
-
-See the end-to-end walkthrough in `workspace/campaigns/example-ai-automation-pov/`.
-
-
-
-Workflow shape:
-
-
-
-1. **Research** - deep research artifacts and source material
-
-2. **Strategy** - messaging and design direction
-
-3. **Planning** - campaign and post planning
-
-4. **Production** - post copy, carousel, video/image deliverables
-
-5. **Publish** - channel-ready output and connector handoff
-
-6. **Retro** - campaign feedback converted into reusable system improvements
 
 
 
@@ -672,23 +459,14 @@ Workflow shape:
 
 
 
-Everything is swappable:
+Everything in the library and skills layer is meant to be edited:
 
+- Add or evolve templates under `library/deliverables/`
+- Add or evolve processes under `library/process/`
+- Swap skill bundles under `system/skills/`
+- Set voice and positioning once in `library/context/operator/` (copy from `operator.example/` on first run), reuse everywhere
 
-
-- **Templates:** add or evolve files under `library/deliverables/`
-
-- **Processes:** add or evolve files under `library/process/`
-
-- **Skills:** add or swap bundles under `system/skills/`
-
-- **Modes:** route between CMO and Builder based on task ownership
-
-- **Voice and positioning:** configure once in `library/context/operator/`, then reuse everywhere
-
-
-
-If a better tool appears, swap the skill and keep the campaign system intact. Open Design is now bundled as one concrete example of this pattern: AgentFrame owns campaign state, templates, and the prepared handoff; Open Design owns the generation UI, runtime, revisions, and exports. Locked OD assets return to the calling deliverable's `visuals/imports/` folder.
+Open Design is a concrete example of the swap pattern. AgentFrame owns campaign state, templates, and the staged handoff. Open Design owns generation, revisions, and exports. Locked OD assets return to the calling deliverable's `visuals/imports/` folder.
 
 
 
@@ -696,81 +474,31 @@ If a better tool appears, swap the skill and keep the campaign system intact. Op
 
 
 
-## Mode Model: CMO vs Builder
-
-
-
-- **CMO owns:** campaign execution artifacts under `workspace/campaigns/`
-
-- **Builder owns:** system/process/template architecture under `system/` and `library/`
-
-- **Swaps are tracked:** mode changes are logged to audit surfaces
-
-## Solo-flow vs Standard-flow
-
-
-
-- **solo-flow (default):** lean, single-operator workflow optimised for speed
-
-- **standard-flow:** heavier flow closest to enterprise-style campaigns, with broader deliverable coverage and more review gates
-
-
-
-[Back to top](#agentframe-marketing)
-
-
-
-## Preview Server
-
-
+## Preview server
 
 <details>
-
 <summary>Show preview server details</summary>
 
-
-
-- Local preview hub lives in `system/server/`
-
-- Supports HTML, images, video, PDF, PPTX, and DOCX preview surfaces
-
-- Uses folder-tree navigation and hide rules to reduce noise
-
+- Local preview hub at `system/server/`
+- Previews HTML, images, video, PDF, PPTX, and DOCX
+- Folder-tree navigation with hide rules to keep noise down
 - Run with `py -3 system/server/run.py`
-
-
 
 ![Preview hub](assets/readme/preview-hub.svg)
 
-
-
 </details>
 
-
-
-## Auditability and State
-
-
+## Auditability and state
 
 <details>
-
 <summary>Show auditability details</summary>
 
-
-
-- **Campaign layer:** `activity.md` in each campaign for readable timeline tracking
-
-- **System layer:** append-only SQLite audit DB at `system/audit/agentframe.db`
-
-- **Writer:** `system/audit/writer.py`
-
-- **Use case:** reconstruct what happened, how long phases took, and what changed
-
-
+- Campaign layer: `activity.md` in each campaign for the human-readable timeline.
+- System layer: append-only SQLite audit DB at `system/audit/agentframe.db`.
+- Writer: `system/audit/writer.py`.
+- Useful for reconstructing what happened, timing a phase, or tracing why a template changed.
 
 ![Audit trail](assets/readme/audit-trace.svg)
-
-
 
 </details>
 
@@ -792,9 +520,7 @@ If a better tool appears, swap the skill and keep the campaign system intact. Op
 
 ## Status
 
-
-
-AgentFrame Marketing is actively dogfooded. The full loop runs today: mode-aware routing, flow-driven execution, deliverable generation, preview, publication handoff, and retro-fed system improvement.
+Actively dogfooded. The full loop runs today — kickoff, research, drafting, image/video production, publication, and retro all working end-to-end.
 
 
 
@@ -808,7 +534,7 @@ AgentFrame Marketing is actively dogfooded. The full loop runs today: mode-aware
 
 
 
-## References and Lineage
+## References and lineage
 
 
 
@@ -838,15 +564,11 @@ MIT. See [`LICENSE`](LICENSE).
 
 
 
-Add operator contact links here:
+Built by Brandon Situ over many weekends — and likely many more.
 
+- LinkedIn: [linkedin.com/in/brandonsitu](https://www.linkedin.com/in/brandonsitu/)
+- Email: brandonzsitu@gmail.com
 
-
-- LinkedIn
-
-- Personal site
-
-- X
 
 
 

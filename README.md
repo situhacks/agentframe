@@ -9,7 +9,7 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" /></a>
   <img alt="Works with" src="https://img.shields.io/badge/works%20with-claude%20code%20%7C%20codex%20%7C%20cursor%20%7C%20vscode%20%7C%20antigravity-blue?style=flat-square" />
-  <img alt="Status" src="https://img.shields.io/badge/status-dogfooded-orange?style=flat-square" />
+  <img alt="Status" src="https://img.shields.io/badge/status-actively%20used-orange?style=flat-square" />
 </p>
 
 
@@ -42,30 +42,23 @@
 
 ## Quick start
 
-1. Clone the repo and open it in your coding agent. It boots in Builder mode.
-2. Open [`AGENTS.md`](AGENTS.md). The **First run** line points at [`onboarding-checklist.md`](onboarding-checklist.md). Tell the agent **"Help me onboard"** and walk through it end-to-end.
+```bash
+git clone https://github.com/situhacks/agentframe-marketing.git
+cd agentframe-marketing
+```
 
-### First-run Builder onboarding
-
-The checklist covers:
-
-1. Importing your operator context — voice, profile, positioning. Builder can lift this from an existing chat-bot memory if you have one.
-2. Setting up the optional connector keys for Gemini and Composio. Both have generous free tiers, and both are optional — the system still runs campaigns without them, you just lose Deep Research and direct publishing.
-3. Optional: setting up the Open Design runtime. Builder can install local deps and check for a code-agent CLI on your `PATH`.
-4. Removing the **First run** reminder, deleting the checklist, swapping to CMO, and logging the mode change.
+1. Open the folder in your coding agent — Claude Code, Codex, Cursor, VS Code, Antigravity, anything that respects `AGENTS.md`.
+2. Tell the agent **"Help me onboard"**. It walks the [onboarding checklist](onboarding-checklist.md): import your operator context (voice, profile, positioning), drop in optional connector keys for Gemini and Composio (both have generous free tiers and are optional — the system still runs without them, you just lose Deep Research and direct publishing), and optionally install the Open Design runtime.
+3. Tell the agent **"Start a new campaign"** and run your first one end-to-end.
 
 ### Mode swaps
 
-Two `AGENTS.md` modes, and you swap depending on what you're doing:
+AgentFrame ships with two `AGENTS.md` modes. You swap depending on what you're doing:
 
 - **Swap to CMO when you're running a campaign** — drafting copy, generating images, publishing, doing a retro. CMO is scoped to `workspace/campaigns/` so it can't accidentally edit your templates or processes mid-campaign.
 - **Swap to Builder when you're improving the system itself** — editing a template, adding a process, swapping a skill, applying retro patches. Builder is scoped to `system/` and `library/`.
 
 You don't run shell commands by hand. Just tell the agent `swap to Builder` or `swap to CMO`. It handles the file swap and logs the transition to the audit DB.
-
-### Compatibility
-
-Works with any coding agent that respects `AGENTS.md` in the working directory — Claude Code, Codex, Cursor, VS Code, Antigravity-flavored workflows.
 
 [Back to top](#agentframe-marketing)
 
@@ -120,7 +113,7 @@ A solo-flow walkthrough using the example campaign at `workspace/campaigns/examp
 </td>
 <td width="50%" valign="top">
 <img src="assets/readme/walkthrough-04-image-production.png" alt="04 · Open Design handoff" /><br/>
-<sub><b>04 · Media creation, your pick</b> — Pick the path that fits the deliverable: HTML render in your coding agent for slide-shaped visuals, Gemini Nano Banana 2/Pro for raster image variants, Open Design for higher-fidelity decks and carousels, or HyperFrames for HTML-to-video. AgentFrame stages the prompt and design language; the chosen tool owns generation and exports. (I usually take the OD export into Figma to clean it up. Optional — most people finish inside OD and ship.)</sub>
+<sub><b>04 · Media creation, your pick</b> — Pick the path that fits the deliverable: HTML render in your coding agent for slide-shaped visuals, Gemini Nano Banana 2/Pro for raster image variants, Open Design for higher-fidelity decks and carousels, or HyperFrames for HTML-to-video. For Open Design specifically, AgentFrame stages the project for you — design language, selected mode, and first prompt already loaded. Just open it and press send. (I usually take the OD export into Figma to clean it up. Optional — most people finish inside OD and ship.)</sub>
 </td>
 </tr>
 <tr>
@@ -224,7 +217,7 @@ My current production stack. Swap any of them for a sharper tool without touchin
 | `hyperframes-cli` | Vendored from [heygen-com/hyperframes](https://github.com/heygen-com/hyperframes) |
 | `gsap` | Vendored animation skill for HyperFrames workflows |
 | `open-design` | Vendored local-first runtime from [nexu-io/open-design](https://github.com/nexu-io/open-design) for image/deck/template-style visual production, with AgentFrame handoff rules in `system/skills/open-design/HANDOFF.md` |
-| `browser-harness` | Vendored browser-use harness for controlled CDP-driven browser workflows; routed through Edge with AgentFrame boundary notes in `system/skills/browser-harness/AGENTS.md` |
+| `browser-harness` | Vendored from [browser-use/browser-harness](https://github.com/browser-use/browser-harness) for CDP-driven browser workflows; routed through Edge with AgentFrame boundary notes in `system/skills/browser-harness/AGENTS.md` |
 
 
 
@@ -250,9 +243,9 @@ My current production stack. Swap any of them for a sharper tool without touchin
 
 Campaign state lives in markdown files: frontmatter, deliverables, `activity.md`. Not in a chat window. Change models, change machines, come back next week — the campaign picks up where it left off.
 
-### P2 — Lazy loading
+### P2 — Token efficiency at its core
 
-`AGENTS.md` is the only always-on router. Flows, processes, templates, and skills load on demand. Context stays focused on the task in front of you.
+I designed AgentFrame so context loads only when it's needed, not all at once. `AGENTS.md` is the only always-on router. Flows, processes, templates, and skills are pulled in on demand based on the task — most of the time you're working with a small, focused context. That means longer sessions before hitting limits, fewer tokens burned per campaign, and less of the "agent forgets what we were doing" drift you get when the whole library is loaded upfront.
 
 ### P3 — The library is the product
 
@@ -484,8 +477,6 @@ Open Design is a concrete example of the swap pattern. AgentFrame owns campaign 
 - Folder-tree navigation with hide rules to keep noise down
 - Run with `py -3 system/server/run.py`
 
-![Preview hub](assets/readme/preview-hub.svg)
-
 </details>
 
 ## Auditability and state
@@ -497,8 +488,6 @@ Open Design is a concrete example of the swap pattern. AgentFrame owns campaign 
 - System layer: append-only SQLite audit DB at `system/audit/agentframe.db`.
 - Writer: `system/audit/writer.py`.
 - Useful for reconstructing what happened, timing a phase, or tracing why a template changed.
-
-![Audit trail](assets/readme/audit-trace.svg)
 
 </details>
 

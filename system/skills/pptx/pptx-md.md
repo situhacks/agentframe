@@ -18,7 +18,7 @@ template: business-brief.pptx
 deliverable_type: business-brief
 campaign: secondbrain
 title: "SecondBrain — Business Brief"
-author: "Brandon Situ"
+author: "John Doe"
 date: "2026-04-18"
 brand:
   accent: "#E45A2E"
@@ -27,7 +27,7 @@ brand:
 ::: slide layout=cover
 title: SecondBrain
 subtitle: Business Brief
-footer: Brandon Situ · April 2026
+footer: John Doe · April 2026
 :::
 
 ::: slide layout=section_divider
@@ -64,7 +64,7 @@ right_body: |
 
 ::: slide layout=callout_quote
 quote: "I'm not building a note-taker. I'm building a passive dataset of myself."
-attribution: Brandon Situ
+attribution: John Doe
 :::
 
 ::: slide layout=closing

@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Phase B demo \u2014 MarketingOS preview server</title>
+  <link rel="stylesheet" href="/system/server/static/preview-chrome.css">
+</head>
+<body class="preview-chrome">
+  <header class="preview-header">
+    <h1>Phase B demo</h1>
+    <span class="preview-crumbs">system / server / static / demo</span>
+    <span class="preview-status">livereload</span>
+  </header>
+
+  <main class="preview-stack">
+    <section class="preview-card">
+      <h2>What this is</h2>
+      <p class="preview-meta">Stub artifacts that exercise the three preview patterns from <code>runtime/preview-server.md</code>. Real campaign artifacts live under <code>workspace/campaigns/&lt;slug&gt;/phase-3-planning/design-language/preview/</code> and follow the same shapes.</p>
+      <ul>
+        <li><a href="./direction-compare.html">Pattern A &mdash; direction-compare.html</a> (Carousel Spec sub-artifact 1)</li>
+        <li><a href="./design-language.html">Pattern B &mdash; design-language.html</a> (Carousel Spec sub-artifact 2)</li>
+        <li><a href="./post-1.html">Pattern C &mdash; post-1.html</a> (Carousel Spec sub-artifact 3)</li>
+      </ul>
+    </section>
+
+    <section class="preview-card">
+      <h2>How to use</h2>
+      <ol>
+        <li>Start the server: <code>python system/server/run.py</code></li>
+        <li>Open: <code>http://localhost:8080/system/server/static/demo/index.html</code></li>
+        <li>Edit <code>system/server/static/demo/tokens.yaml</code>, then run <code>python -m system.server.lib.tokens_to_css system/server/static/demo/tokens.yaml --out system/server/static/demo/assets/tokens.css</code> &mdash; the open tabs auto-refresh.</li>
+      </ol>
+    </section>
+  </main>
+
+  <footer class="preview-footer">
+    Phase B demo. Delete <code>system/server/static/demo/</code> once you have a real campaign at the visual phase.
+  </footer>
+</body>
+</html>

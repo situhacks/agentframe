@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Slide 1 \u2014 cover</title>
+  <link rel="stylesheet" href="../../assets/tokens.css">
+  <style>
+    html, body { margin: 0; }
+    .slide {
+      width: var(--slide-w); height: var(--slide-h);
+      background: var(--bg); color: var(--text);
+      font-family: var(--font-body);
+      padding: var(--slide-safe);
+      box-sizing: border-box;
+      display: flex; flex-direction: column; justify-content: space-between;
+    }
+    .hook {
+      font-family: var(--font-headline);
+      font-size: 96px; line-height: var(--lh-headline); font-weight: var(--fw-headline);
+    }
+    .hook em { color: var(--accent_primary); font-style: normal; }
+    .meta { font-family: var(--font-mono); font-size: 18px; opacity: .65; }
+  </style>
+</head>
+<body>
+  <div class="slide" data-role="cover">
+    <div class="hook">When your AI agents <em>push back</em>, you stop being the bottleneck.</div>
+    <div class="meta">marketingos / post 1 / cover</div>
+  </div>
+</body>
+</html>

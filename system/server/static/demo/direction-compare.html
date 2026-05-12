@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Direction compare \u2014 demo</title>
+  <link rel="stylesheet" href="/system/server/static/preview-chrome.css">
+  <style>
+    .direction { padding: 24px; border-radius: 8px; min-height: 360px; display: flex; flex-direction: column; justify-content: space-between; }
+    .direction h3 { margin: 0 0 8px; font-family: var(--font-headline); font-size: 28px; line-height: 1.1; }
+    .direction p  { margin: 0; font-family: var(--font-body); font-size: 14px; line-height: 1.45; }
+    .direction .swatches { display: flex; gap: 6px; margin-top: 12px; }
+    .direction .swatch { width: 28px; height: 28px; border-radius: 4px; border: 1px solid rgba(0,0,0,.15); }
+    .direction .meta { font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px; opacity: .7; margin-top: 16px; }
+  </style>
+</head>
+<body class="preview-chrome">
+  <header class="preview-header">
+    <h1>Pattern A &mdash; direction-compare</h1>
+    <span class="preview-crumbs">demo / 3 directions side-by-side</span>
+    <span class="preview-status">scoped CSS vars per direction</span>
+  </header>
+
+  <main>
+    <div class="preview-grid cols-3">
+      <section class="direction" style="
+        --bg:#F4F1EC; --text:#0E0E0E; --accent:#E45A2E;
+        --font-headline: 'Tiempos Headline', Georgia, serif;
+        --font-body: 'Inter', system-ui, sans-serif;
+        background: var(--bg); color: var(--text);">
+        <div>
+          <h3 style="color: var(--accent);">Direction 1 \u2014 editorial restraint</h3>
+          <p style="font-family: var(--font-body);">Cream paper, monospaced captions, photography that looks scanned. Audience: someone who reads the Atlantic on the bus.</p>
+        </div>
+        <div>
+          <div class="swatches">
+            <div class="swatch" style="background:#F4F1EC"></div>
+            <div class="swatch" style="background:#0E0E0E"></div>
+            <div class="swatch" style="background:#E45A2E"></div>
+          </div>
+          <div class="meta">palette: cream / ink / rust   |   type: serif headline + sans body</div>
+        </div>
+      </section>
+
+      <section class="direction" style="
+        --bg:#0E1320; --text:#F0F2F8; --accent:#7DF9C4;
+        --font-headline: 'Inter', system-ui, sans-serif;
+        --font-body: 'Inter', system-ui, sans-serif;
+        background: var(--bg); color: var(--text);">
+        <div>
+          <h3 style="color: var(--accent); font-weight: 800;">Direction 2 \u2014 terminal kid</h3>
+          <p style="font-family: var(--font-body);">Deep navy, neon mint accents, all sans, lots of negative space. Audience: builder/operator who hates marketing fluff.</p>
+        </div>
+        <div>
+          <div class="swatches">
+            <div class="swatch" style="background:#0E1320"></div>
+            <div class="swatch" style="background:#F0F2F8"></div>
+            <div class="swatch" style="background:#7DF9C4"></div>
+          </div>
+          <div class="meta">palette: navy / paper / mint   |   type: sans only, weight contrast</div>
+        </div>
+      </section>
+
+      <section class="direction" style="
+        --bg:#FFFCEF; --text:#1B0F33; --accent:#7333E5;
+        --font-headline: 'Times New Roman', Georgia, serif;
+        --font-body: 'Times New Roman', Georgia, serif;
+        background: var(--bg); color: var(--text);">
+        <div>
+          <h3 style="color: var(--accent); font-style: italic;">Direction 3 \u2014 zine pamphlet</h3>
+          <p style="font-family: var(--font-body);">All serif, italic emphasis, electric purple accent. High contrast type stacks. Audience: someone who treats the feed as a magazine.</p>
+        </div>
+        <div>
+          <div class="swatches">
+            <div class="swatch" style="background:#FFFCEF"></div>
+            <div class="swatch" style="background:#1B0F33"></div>
+            <div class="swatch" style="background:#7333E5"></div>
+          </div>
+          <div class="meta">palette: parchment / aubergine / electric   |   type: all serif</div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="preview-footer">demo: this is what the agent writes when the user is at Carousel Spec sub-artifact 1.</footer>
+</body>
+</html>

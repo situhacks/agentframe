@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Slide 2 \u2014 pullquote</title>
+  <link rel="stylesheet" href="../../assets/tokens.css">
+  <style>
+    html, body { margin: 0; }
+    .slide {
+      width: var(--slide-w); height: var(--slide-h);
+      background: var(--bg); color: var(--text);
+      font-family: var(--font-body);
+      padding: var(--slide-safe);
+      box-sizing: border-box;
+      display: flex; flex-direction: column; justify-content: center;
+    }
+    .quote {
+      font-family: var(--font-headline);
+      font-size: 72px; line-height: 1.1; font-weight: var(--fw-headline);
+      border-left: 8px solid var(--accent_primary);
+      padding-left: 32px;
+    }
+    .attribution { font-family: var(--font-mono); font-size: 18px; opacity: .65; margin-top: 32px; padding-left: 40px; }
+  </style>
+</head>
+<body>
+  <div class="slide" data-role="pullquote">
+    <div>
+      <div class="quote">Most "AI marketing" is stale prompts in a Notion doc. This is infrastructure.</div>
+      <div class="attribution">\u2014 the framing the post lands on</div>
+    </div>
+  </div>
+</body>
+</html>

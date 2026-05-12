@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%"  stop-color="#1f2a3c"/>
+      <stop offset="100%" stop-color="#0d1421"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%"  stop-color="#7aa7ff"/>
+      <stop offset="100%" stop-color="#b793ff"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="800" height="600" fill="url(#bg)"/>
+
+  <rect x="40" y="40" width="720" height="520" rx="16" ry="16"
+        fill="none" stroke="#2a3a55" stroke-width="2"/>
+
+  <rect x="80" y="240" width="640" height="6" rx="3" fill="url(#accent)"/>
+
+  <text x="400" y="190"
+        font-family="-apple-system, Segoe UI, system-ui, sans-serif"
+        font-size="56" font-weight="700" fill="#f0f0f0"
+        text-anchor="middle">[ img ] sample-image.svg</text>
+
+  <text x="400" y="320"
+        font-family="-apple-system, Segoe UI, system-ui, sans-serif"
+        font-size="22" font-weight="400" fill="#9aa7bd"
+        text-anchor="middle">800 x 600 placeholder for the image render branch.</text>
+
+  <text x="400" y="356"
+        font-family="-apple-system, Segoe UI, system-ui, sans-serif"
+        font-size="22" font-weight="400" fill="#9aa7bd"
+        text-anchor="middle">Drop PNG / JPG / WebP / GIF / PDF anywhere under</text>
+
+  <text x="400" y="388"
+        font-family="ui-monospace, SF Mono, Menlo, Consolas, monospace"
+        font-size="20" font-weight="400" fill="#7aa7ff"
+        text-anchor="middle">phase-* / dirs or system/server/static/demo/</text>
+
+  <text x="400" y="492"
+        font-family="-apple-system, Segoe UI, system-ui, sans-serif"
+        font-size="14" font-weight="500" fill="#5a6378"
+        text-anchor="middle" letter-spacing="2">MarketingOS Preview Hub</text>
+</svg>

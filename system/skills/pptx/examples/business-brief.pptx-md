@@ -1,0 +1,124 @@
+---
+template: business-brief.pptx
+deliverable_type: business-brief
+campaign: secondbrain
+title: "SecondBrain — Business Brief"
+subtitle: "Build-in-Public Campaign · April 2026"
+author: "Brandon Situ"
+date: "2026-04-18"
+brand:
+  accent: "#E45A2E"
+---
+
+::: slide layout=cover
+title: SecondBrain
+subtitle: Business Brief — Build in Public
+footer: Brandon Situ · April 2026
+:::
+
+::: slide layout=section_divider
+title: Opportunity
+:::
+
+::: slide layout=content
+title: Why now
+body: |
+  Personal AI infrastructure is moving from "novelty" to "table stakes" for
+  knowledge workers. The window for credible practitioner storytelling is open
+  but closing fast as Notion AI and Anthropic Memory normalize the category.
+
+  - Anthropic ships Claude Memory beta (March 2026)
+  - Cursor launches workspace-scoped agents
+  - Notion AI hits 10M paid seats
+notes: |
+  Lead with Anthropic + Cursor as signal of mainstream momentum. Notion's
+  scale is the proof point. Don't bury the "passive dataset" angle - that's
+  the differentiator.
+:::
+
+::: slide layout=section_divider
+title: Audience
+:::
+
+::: slide layout=two_column
+title: Who this campaign serves
+left_title: Builder-curious professionals
+left_body: |
+  - Building side projects with AI tools after 9-5
+  - Treat personal AI infra as table stakes
+  - Read Stratechery, listen to Lenny's Podcast
+  - Will share posts that make them look smart in their group chat
+right_title: Consultant-builders
+right_body: |
+  - Senior enterprise leaders shipping internal AI tools
+  - Want to understand "personal AI infrastructure" in practice
+  - Often DM after seeing build-in-public posts
+  - Inbound channel for advisory engagements
+:::
+
+::: slide layout=section_divider
+title: Business Goal
+:::
+
+::: slide layout=content
+title: What success looks like
+body: |
+  Inbound signal - DMs from enterprise leaders asking variants of "can you
+  help us build something like this for our team?"
+
+  Binary success criteria:
+  - 2+ inbound DMs from director-or-above titles within 30 days of Post 1
+  - 1+ booked discovery call from inbound traffic
+  - GitHub blueprint repo passes 100 stars within 60 days
+notes: |
+  Reviewer cares about goal #1 most. #2 is the conversion signal. #3 is the
+  vanity metric Brandon won't optimize for but stakeholders ask about.
+:::
+
+::: slide layout=section_divider
+title: Risks
+:::
+
+::: slide layout=content
+title: What could break this
+body: |
+  - **Audience read-through**: enterprise leaders may bounce off the
+    Westworld/Rehoboam reference as too nerdy. Mitigation: lead the post
+    with the practical infrastructure, save the narrative payoff for the end.
+  - **Engagement gating risk**: Post 2 (the GitHub drop) only ships if Post 1
+    earns >50 thoughtful comments. If it underperforms, we burn the series.
+  - **Privacy backlash**: Screenpipe captures screen content. The "I'm
+    building a dataset of myself" framing invites privacy critics. Address
+    head-on in Post 3 (local models).
+:::
+
+::: slide layout=callout_quote
+quote: "I'm not building a note-taker. I'm building a passive dataset of myself."
+attribution: Brandon Situ
+:::
+
+::: slide layout=section_divider
+title: Constraints
+:::
+
+::: slide layout=content
+title: What can't change
+body: |
+  - **Timeline**: Post 1 ships week of April 28. Sundays are the publishing
+    cadence - moving the date breaks the rhythm.
+  - **Channel**: LinkedIn first. Carousel format. GitHub repo as the asset
+    drop on Post 2.
+  - **Voice**: Practitioner POV. No "thought leader" framing. No banned
+    words from voice.md (notably: "leverage", "synergy", "thought leader").
+  - **Series scope**: 2 minimum, 3 if Post 2 hits engagement target. Hard
+    cap at 4 - the system goes from interesting to indulgent past that.
+:::
+
+::: slide layout=closing
+title: Decision needed
+body: |
+  Approve the campaign brief direction by Wednesday April 22 to keep the
+  April 28 publish date. If you have edits to the audience targeting or the
+  GitHub-drop trigger, those are easier to adjust this week than next.
+cta: Reply by Tuesday with your steer or any redlines.
+:::

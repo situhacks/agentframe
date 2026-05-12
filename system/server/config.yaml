@@ -1,0 +1,21 @@
+port: 8080
+host: localhost
+
+watch_globs:
+  - workspace/campaigns/*/phase-*/**/*.html
+  - workspace/campaigns/*/phase-*/**/*.css
+  - workspace/campaigns/*/phase-3-planning/design-language/**
+  - workspace/campaigns/*/phase-4-production/posts/**/visuals/**
+  - workspace/campaigns/*/phase-4-production/posts/**/video/**
+  - workspace/campaigns/*/phase-4-production/posts/**/edit/**
+  - workspace/campaigns/*/phase-3-planning/design-language/preview/assets/tokens.css
+
+exclude_globs:
+  - "**/history/**"
+  - "**/_image_meta.json"
+  - "**/raw/**"
+  - "**/video/assets/**"
+  - "**/video/compositions/**"
+  - "**/image-smoke/**"
+
+debounce_delay_seconds: 0.5

@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Slide 3 \u2014 CTA</title>
+  <link rel="stylesheet" href="../../assets/tokens.css">
+  <style>
+    html, body { margin: 0; }
+    .slide {
+      width: var(--slide-w); height: var(--slide-h);
+      background: var(--text); color: var(--bg);
+      font-family: var(--font-body);
+      padding: var(--slide-safe);
+      box-sizing: border-box;
+      display: flex; flex-direction: column; justify-content: space-between;
+    }
+    .cta-headline { font-family: var(--font-headline); font-size: 80px; line-height: 1.05; font-weight: var(--fw-headline); }
+    .cta-button {
+      display: inline-block;
+      padding: 24px 40px;
+      background: var(--accent_primary); color: var(--bg);
+      font-family: var(--font-headline); font-size: 36px; font-weight: var(--fw-headline);
+      border-radius: 8px;
+      align-self: flex-start;
+    }
+    .meta { font-family: var(--font-mono); font-size: 18px; opacity: .55; }
+  </style>
+</head>
+<body>
+  <div class="slide" data-role="cta">
+    <div class="cta-headline">Want this inside your team?</div>
+    <div>
+      <div class="cta-button">DM me \u2014 let's talk</div>
+    </div>
+    <div class="meta">marketingos / post 1 / cta</div>
+  </div>
+</body>
+</html>

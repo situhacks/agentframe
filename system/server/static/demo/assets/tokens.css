@@ -1,0 +1,48 @@
+/* Auto-generated from tokens.yaml by system/server/lib/tokens_to_css.py */
+/* Do not hand-edit. Edit tokens.yaml and re-run. */
+/* campaign: phase-b-demo  version: 1 */
+
+:root {
+  /* palette */
+  --bg: #F4F1EC;
+  --text: #0E0E0E;
+  --accent_primary: #E45A2E;
+  --accent_secondary: #2C5F8D;
+  --muted: #8A867E;
+  --divider: #C7C2BA;
+
+  /* typography */
+  --font-headline: "Tiempos Headline", Georgia, serif;
+  --fw-headline: 600;
+  --lh-headline: 1.05;
+  --font-body: "Inter", system-ui, sans-serif;
+  --fw-body: 400;
+  --lh-body: 1.5;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --fw-mono: 400;
+
+  /* spacing */
+  --space-unit: 8px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  /* layout */
+  --slide-w: 1080px;
+  --slide-h: 1350px;
+  --slide-safe: 48px;
+  --slide-gutter: 24px;
+
+  /* grid */
+  --grid-cols: 12;
+  --grid-gutter: 24px;
+
+  /* motifs (names only — enforcement lives in renderer + checks) */
+  /* motif: scanned-paper */
+  /* motif: monospaced-caption */
+}

@@ -1,0 +1,16 @@
+{
+  "generated_at": "2026-04-19T01:02:41.514602+00:00",
+  "model": "gemini-3-pro-image-preview",
+  "model_family": "gemini-image",
+  "aspect_ratio": "1:1",
+  "variants_requested": 1,
+  "variants_written": 1,
+  "refusals": [],
+  "negative_prompt": "",
+  "prompt": "test orange shape on cream background",
+  "composed_prompt": "test orange shape on cream background\nSquare 1:1 composition.",
+  "files": [
+    "system\\server\\static\\demo\\image-variant-a.png"
+  ],
+  "auth_mode": "vertex"
+}

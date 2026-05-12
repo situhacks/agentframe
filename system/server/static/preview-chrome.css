@@ -1,0 +1,239 @@
+/*
+ * MarketingOS preview chrome.
+ *
+ * The preview PAGE wrapper. Intentionally separate from the campaign's
+ * tokens.css so the host page can never collide with campaign design.
+ *
+ * Link this BEFORE the campaign's tokens.css:
+ *   <link rel="stylesheet" href="/system/server/static/preview-chrome.css">
+ *   <link rel="stylesheet" href="./assets/tokens.css">
+ *
+ * Conventions used by preview pages:
+ *   <body class="preview-chrome">
+ *     <header class="preview-header">...</header>
+ *     <main class="preview-stack">...</main>     vertical sections
+ *   or <main class="preview-grid cols-3">...</main>   side-by-side directions
+ *     <iframe class="slide-frame" data-w="1080" data-h="1350" ...></iframe>
+ *   </body>
+ */
+
+:root {
+  --pc-bg:           #1f2024;
+  --pc-surface:      #2a2c31;
+  --pc-surface-alt:  #34373d;
+  --pc-text:         #e8e8ea;
+  --pc-text-muted:   #9a9da4;
+  --pc-border:       #3d4148;
+  --pc-accent:       #6aa3ff;
+  --pc-warning:      #f5b042;
+  --pc-success:      #5fc59c;
+  --pc-font:         ui-sans-serif, -apple-system, BlinkMacSystemFont,
+                     "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --pc-mono:         ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --pc-radius:       8px;
+  --pc-pad:          24px;
+  --pc-pad-sm:       12px;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--pc-bg);
+  color: var(--pc-text);
+  font-family: var(--pc-font);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body.preview-chrome {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.preview-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: var(--pc-pad);
+  padding: var(--pc-pad-sm) var(--pc-pad);
+  background: var(--pc-surface);
+  border-bottom: 1px solid var(--pc-border);
+  font-family: var(--pc-mono);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+
+.preview-header h1 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.preview-header .preview-crumbs {
+  color: var(--pc-text-muted);
+}
+
+.preview-header .preview-status {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.preview-header .preview-status::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--pc-success);
+  box-shadow: 0 0 8px rgba(95, 197, 156, 0.6);
+}
+
+.preview-header .preview-status.is-stale::before {
+  background: var(--pc-warning);
+  box-shadow: 0 0 8px rgba(245, 176, 66, 0.6);
+}
+
+main {
+  flex: 1;
+  padding: var(--pc-pad);
+}
+
+.preview-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pc-pad);
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.preview-grid {
+  display: grid;
+  gap: var(--pc-pad);
+  width: 100%;
+  margin: 0 auto;
+}
+
+.preview-grid.cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.preview-grid.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.preview-grid.cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+@media (max-width: 1100px) {
+  .preview-grid.cols-3,
+  .preview-grid.cols-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 720px) {
+  .preview-grid.cols-2,
+  .preview-grid.cols-3,
+  .preview-grid.cols-4 { grid-template-columns: 1fr; }
+}
+
+.preview-card {
+  background: var(--pc-surface);
+  border: 1px solid var(--pc-border);
+  border-radius: var(--pc-radius);
+  padding: var(--pc-pad);
+}
+
+.preview-card h2 {
+  margin: 0 0 var(--pc-pad-sm) 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.preview-card .preview-meta {
+  color: var(--pc-text-muted);
+  font-size: 12px;
+  font-family: var(--pc-mono);
+  margin-bottom: var(--pc-pad-sm);
+}
+
+/*
+ * Slide frames: render carousel slides at exact 1080x1350 (LinkedIn 4:5).
+ * Iframes do NOT auto-scale their content — sizing the iframe smaller than
+ * the slide just clips it and adds an inner scrollbar. So the default is
+ * native 1080x1350; the hub's pan/zoom controls handle viewport scaling.
+ * The .scale-* modifiers exist for static side-by-side layouts that don't
+ * use the hub (they will clip; use only when content is authored to fit).
+ */
+.slide-frame {
+  width: 1080px;
+  height: 1350px;
+  border: 1px solid var(--pc-border);
+  border-radius: var(--pc-radius);
+  background: #fff;
+  display: block;
+  overflow: hidden;
+}
+
+.slide-frame.scale-1x  { width: 1080px; height: 1350px; }
+.slide-frame.scale-50  { width: 540px;  height: 675px; }
+.slide-frame.scale-33  { width: 360px;  height: 450px; }
+.slide-frame.scale-25  { width: 270px;  height: 337px; }
+
+.slide-stack {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pc-pad);
+  align-items: flex-start;
+}
+
+.copy-pane {
+  background: var(--pc-surface-alt);
+  border: 1px solid var(--pc-border);
+  border-radius: var(--pc-radius);
+  padding: var(--pc-pad);
+  font-family: var(--pc-mono);
+  white-space: pre-wrap;
+  font-size: 13px;
+  color: var(--pc-text);
+  max-width: 540px;
+}
+
+.alt-text-toggle {
+  position: absolute;
+  top: var(--pc-pad-sm);
+  right: var(--pc-pad-sm);
+  background: var(--pc-surface-alt);
+  border: 1px solid var(--pc-border);
+  color: var(--pc-text);
+  font-family: var(--pc-mono);
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.alt-text-overlay {
+  display: none;
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 16, 18, 0.92);
+  color: var(--pc-text);
+  padding: var(--pc-pad);
+  overflow: auto;
+  font-size: 13px;
+  border-radius: var(--pc-radius);
+}
+
+.alt-text-overlay.is-visible { display: block; }
+
+.preview-card.has-overlay {
+  position: relative;
+}
+
+footer.preview-footer {
+  padding: var(--pc-pad-sm) var(--pc-pad);
+  color: var(--pc-text-muted);
+  font-family: var(--pc-mono);
+  font-size: 11px;
+  border-top: 1px solid var(--pc-border);
+  text-align: center;
+}

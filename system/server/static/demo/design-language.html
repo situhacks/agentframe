@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Design language \u2014 demo</title>
+  <link rel="stylesheet" href="/system/server/static/preview-chrome.css">
+  <link rel="stylesheet" href="./assets/tokens.css">
+  <style>
+    .swatch-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+    .swatch-tile { border: 1px solid var(--pc-border); border-radius: 8px; overflow: hidden; }
+    .swatch-tile .chip { height: 96px; }
+    .swatch-tile .label { padding: 10px 12px; font-family: var(--pc-mono); font-size: 12px; }
+    .type-row { padding: 16px 0; border-bottom: 1px dashed var(--pc-border); }
+    .type-row:last-child { border-bottom: 0; }
+    .spacing-bars { display: flex; align-items: end; gap: 8px; }
+    .spacing-bar  { background: var(--pc-accent); width: 28px; border-radius: 3px 3px 0 0; }
+    .cover-demo {
+      width: 540px; height: 675px;
+      background: var(--bg); color: var(--text);
+      padding: var(--slide-safe);
+      box-sizing: border-box;
+      border: 1px solid var(--pc-border); border-radius: 8px;
+      display: flex; flex-direction: column; justify-content: space-between;
+    }
+    .cover-demo .hook { font-family: var(--font-headline); font-size: 64px; line-height: var(--lh-headline); font-weight: var(--fw-headline); }
+    .cover-demo .tag  { font-family: var(--font-mono); font-size: 14px; opacity: .65; }
+  </style>
+</head>
+<body class="preview-chrome">
+  <header class="preview-header">
+    <h1>Pattern B &mdash; design-language one-pager</h1>
+    <span class="preview-crumbs">demo / palette + type + spacing + motifs + cover</span>
+    <span class="preview-status">tokens.css driven</span>
+  </header>
+
+  <main class="preview-stack">
+    <section class="preview-card">
+      <h2>Palette</h2>
+      <div class="swatch-grid">
+        <div class="swatch-tile"><div class="chip" style="background: var(--bg)"></div><div class="label">--bg</div></div>
+        <div class="swatch-tile"><div class="chip" style="background: var(--text)"></div><div class="label">--text</div></div>
+        <div class="swatch-tile"><div class="chip" style="background: var(--accent_primary)"></div><div class="label">--accent_primary</div></div>
+        <div class="swatch-tile"><div class="chip" style="background: var(--accent_secondary)"></div><div class="label">--accent_secondary</div></div>
+        <div class="swatch-tile"><div class="chip" style="background: var(--muted)"></div><div class="label">--muted</div></div>
+        <div class="swatch-tile"><div class="chip" style="background: var(--divider)"></div><div class="label">--divider</div></div>
+      </div>
+    </section>
+
+    <section class="preview-card">
+      <h2>Typography</h2>
+      <div class="type-row">
+        <div class="preview-meta">--font-headline / --fw-headline / --lh-headline</div>
+        <div style="font-family: var(--font-headline); font-weight: var(--fw-headline); line-height: var(--lh-headline); font-size: 48px;">Headline at 48px</div>
+      </div>
+      <div class="type-row">
+        <div class="preview-meta">--font-body / --fw-body / --lh-body</div>
+        <div style="font-family: var(--font-body); font-weight: var(--fw-body); line-height: var(--lh-body); font-size: 16px;">Body copy at 16px. The quick brown fox jumps over the lazy dog.</div>
+      </div>
+      <div class="type-row">
+        <div class="preview-meta">--font-mono</div>
+        <div style="font-family: var(--font-mono); font-size: 13px;">caption / metadata in monospace</div>
+      </div>
+    </section>
+
+    <section class="preview-card">
+      <h2>Spacing scale</h2>
+      <div class="spacing-bars">
+        <div class="spacing-bar" style="height: var(--space-1)"></div>
+        <div class="spacing-bar" style="height: var(--space-2)"></div>
+        <div class="spacing-bar" style="height: var(--space-3)"></div>
+        <div class="spacing-bar" style="height: var(--space-4)"></div>
+        <div class="spacing-bar" style="height: var(--space-5)"></div>
+        <div class="spacing-bar" style="height: var(--space-6)"></div>
+        <div class="spacing-bar" style="height: var(--space-7)"></div>
+        <div class="spacing-bar" style="height: var(--space-8)"></div>
+      </div>
+      <div class="preview-meta" style="margin-top: 8px;">--space-1 \u2026 --space-8 (base unit: var(--space-unit))</div>
+    </section>
+
+    <section class="preview-card">
+      <h2>Cover slide example</h2>
+      <div class="preview-meta">Real cover slide pulls hook from Messaging Architecture; this stub demonstrates token-driven rendering.</div>
+      <div class="cover-demo">
+        <div class="hook">When your AI agents <em style="color: var(--accent_primary); font-style: normal;">push back</em>, you stop being the bottleneck.</div>
+        <div class="tag">marketingos / post 1 / cover</div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="preview-footer">demo: real one-pager lives at <code>workspace/campaigns/&lt;slug&gt;/phase-3-planning/design-language/preview/design-language.html</code>.</footer>
+</body>
+</html>

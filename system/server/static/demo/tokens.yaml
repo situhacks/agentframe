@@ -1,0 +1,40 @@
+campaign: phase-b-demo
+version: 1
+palette:
+  bg: "#F4F1EC"
+  text: "#0E0E0E"
+  accent_primary: "#E45A2E"
+  accent_secondary: "#2C5F8D"
+  muted: "#8A867E"
+  divider: "#C7C2BA"
+typography:
+  headline:
+    family: Tiempos Headline
+    fallback: [Georgia, serif]
+    weight: 600
+    line_height: 1.05
+  body:
+    family: Inter
+    fallback: [system-ui, sans-serif]
+    weight: 400
+    line_height: 1.5
+  mono:
+    family: JetBrains Mono
+    fallback: [ui-monospace, monospace]
+    weight: 400
+spacing:
+  base_unit: 8
+  scale: [0.5, 1, 1.5, 2, 3, 4, 6, 8]
+layout:
+  slide_width: 1080
+  slide_height: 1350
+  safe_margin: 48
+  gutter: 24
+grid:
+  columns: 12
+  gutter: 24
+motifs:
+  - name: scanned-paper
+    rule: cream backgrounds with subtle grain
+  - name: monospaced-caption
+    rule: small caption text in mono under headlines

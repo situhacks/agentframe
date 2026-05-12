@@ -1,0 +1,95 @@
+# AgentFrame Marketing Exports — brand + behavior config
+#
+# Read by the agent during any export action. Single source of truth for:
+#   - default author / branding
+#   - palette + fonts to apply when seed/master templates are populated
+#   - versioning + output-path conventions
+#   - cover render pipeline parameters (Chrome headless screenshot)
+#
+# Per-deliverable overrides may live in:
+#   workspace/campaigns/{slug}/exports/templates/{type}.{ext}
+# but values here are the system-wide defaults.
+#
+# Color + typography mirror library/context/operator/design-language.md
+# (the visual truth source). If you change values here, change them there too,
+# and append a template_patch entry to system/logs/audit-log.md.
+
+default_author: "Operator"
+
+# === System default palette ===
+# Monochrome + navy. Mirrors design-language.md "Color Tokens" table.
+# Per-campaign DLs override `accent_primary` via their light_variant.accent_hue.
+default_color_palette:
+  bg: "#FFFFFF"               # Page background, cover background
+  surface: "#F7F7F5"          # Table zebra striping, callout box fills
+  text: "#1A1A1A"             # All body copy, all headings
+  muted: "#6B6B6B"            # Captions, footers, metadata labels, subtitles
+  divider: "#D6D6D2"          # Hairlines, table row separators
+  accent_primary: "#1F3A5F"   # H1 underline, table header fills, callout left rules, cover accent fallback
+  # accent_secondary intentionally removed — system DL declares one accent moment per page section.
+
+# === Body typography (pages 2+) ===
+# Single sans family throughout. Aptos is Microsoft's Office 365 default
+# (replaced Calibri in 2023) — well-tuned for on-screen reading at body sizes.
+# Falls back to Calibri on older Office installs. Cover uses HTML and may load
+# campaign display fonts via Google Fonts CDN — see cover_render block below.
+default_fonts:
+  headings:
+    family: "Aptos"
+    fallback: "Calibri"
+    weight: 700
+  body:
+    family: "Aptos"
+    fallback: "Calibri"
+    weight: 400
+  mono:
+    family: "Consolas"
+    fallback: "Menlo, monospace"
+    weight: 400
+    usage: "footer chrome only"
+
+# === Cover render pipeline ===
+# Cover (page 1) is rendered from system/skills/export-assets/templates/cover.html via
+# local Chrome headless, then embedded as a full-page ImageRun on page 1.
+# See system/skills/docx/SKILL.md "Cover Rendering" for the procedure.
+cover_render:
+  template_path: "system/skills/export-assets/templates/cover.html"
+  output_dimensions:
+    width_px: 2550        # 8.5 inch x 300 dpi
+    height_px: 3300       # 11 inch x 300 dpi
+  embed_dimensions:
+    width_pt: 612         # 8.5 inch x 72 pt/inch — passed to ImageRun.transformation
+    height_pt: 792        # 11 inch x 72 pt/inch
+  chrome:
+    # Path resolution: honor CHROME_PATH env var first; otherwise expect 'chrome' in PATH (Windows: chrome.exe).
+    # macOS users typically need: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    binary_env_var: "CHROME_PATH"
+    flags:
+      - "--headless=new"
+      - "--disable-gpu"
+      - "--hide-scrollbars"
+      - "--window-size=2550,3300"
+      - "--virtual-time-budget=2000"   # ms; waits for fonts + auto-fit JS
+  fallback_accent_hue: "#1F3A5F"        # Used when campaign has no light_variant.accent_hue
+  fallback_font_family: "Inter"          # Used when campaign provides no cover_font_family
+
+# === Versioning ===
+# Stakeholders cite versions in email threads, so we never overwrite — increment instead.
+versioning:
+  scheme: "increment"
+  output_naming: "{deliverable_name}-v{N}.{ext}"
+  initial_version: 1
+
+# Where exports land relative to the campaign root.
+output_path_template: "phase-2-strategy/{deliverable_type}/exports/{filename}"
+
+# === pptx layout catalog ===
+# The contract the PPT-MD spec depends on. If you add a new layout to the
+# master, add it here AND in system/skills/pptx/pptx-md.md.
+pptx_layout_catalog:
+  - cover               # title slide: campaign name + author + date
+  - section_divider     # full-bleed section break with section title
+  - content             # standard title + body (paragraph or bullets)
+  - two_column          # title + two-column body
+  - callout_quote       # large quote / pull-out callout
+  - closing             # final CTA / next-steps slide

@@ -1,0 +1,18 @@
+{
+  "generated_at": "2026-04-18T22:00:29.876721+00:00",
+  "model": "gemini-2.5-flash-image",
+  "model_family": "gemini-image",
+  "aspect_ratio": "4:5",
+  "variants_requested": 3,
+  "variants_written": 3,
+  "refusals": [],
+  "negative_prompt": "no stock photo lighting, no overlay text",
+  "prompt": "Solid cream paper background with one small orange circle, no text, clean minimal flat design.",
+  "composed_prompt": "Solid cream paper background with one small orange circle, no text, clean minimal flat design.\nTall 4:5 vertical composition, suitable for a LinkedIn carousel slide.\nAvoid: no stock photo lighting, no overlay text.",
+  "files": [
+    "system\\server\\static\\demo\\image-smoke\\image-variant-a.png",
+    "system\\server\\static\\demo\\image-smoke\\image-variant-b.png",
+    "system\\server\\static\\demo\\image-smoke\\image-variant-c.png"
+  ],
+  "auth_mode": "vertex"
+}

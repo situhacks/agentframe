@@ -1,0 +1,18 @@
+## DOCX Skill Vendor Record
+
+- Upstream repository: `https://github.com/anthropics/skills`
+- Snapshot date (UTC): `2026-04-18`
+- Source location in AgentFrame: `system/skills/docx/`
+- License: see `system/skills/docx/LICENSE.txt`
+
+### Purpose
+
+Track the upstream source and refresh procedure for the vendored DOCX skill.
+
+### Refresh Procedure
+
+1. Clone upstream to a temporary directory (depth 1 is acceptable for routine refreshes).
+2. Remove `system/skills/docx/` from this repo.
+3. Copy upstream `skills/docx` into `system/skills/docx/`.
+4. Reapply AgentFrame-specific overlays (if any) and verify this file still exists.
+5. Remove the temporary clone directory.

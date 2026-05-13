@@ -1,4 +1,4 @@
----
+﻿---
 # IDENTITY
 name: "AI Automation POV"
 slug: example-ai-automation-pov
@@ -26,31 +26,31 @@ deliverables:
     review: not_required
   research-artifact:
     status: locked
-    file: phase-1-research/research-artifact-vF.md
+    file: phase-1-research/research-artifact-v1.md
     last_updated: 2026-05-11
     review: not_required
   business-brief:
     status: locked
-    file: phase-2-strategy/business-brief/draft-vF.md
+    file: phase-2-strategy/business-brief/draft-v1.md
     last_updated: 2026-05-11
     review: not_required
   messaging-architecture:
     status: locked
-    file: phase-3-planning/messaging-architecture/draft-vF.md
+    file: phase-3-planning/messaging-architecture/draft-v2.md
     last_updated: 2026-05-11
     review: not_required
   design-language:
     status: locked
-    file: phase-3-planning/design-language/design-language-vF.md
+    file: phase-3-planning/design-language/design-language-v1.md
     last_updated: 2026-05-11
   post-1:
     status: shipped
-    file: phase-4-production/posts/post-1/copy-vF.md
+    file: phase-4-production/posts/post-1/copy-v3.md
     last_updated: 2026-05-11
     job: thought-leadership-pov
   post-1-image:
     status: locked
-    file: phase-4-production/posts/post-1/image-prompt-vF.md
+    file: phase-4-production/posts/post-1/image-prompt-v1.md
     last_updated: 2026-05-11
     method: external_operator_asset
   performance-data:
@@ -60,15 +60,15 @@ deliverables:
     source: example_capture
   system-retro:
     status: locked
-    file: phase-5-launch-and-learn/system-retro-vF.md
+    file: phase-5-launch-and-learn/system-retro-v1.md
     last_updated: 2026-05-11
   template-retro:
     status: locked
-    file: phase-5-launch-and-learn/template-retro-vF.md
+    file: phase-5-launch-and-learn/template-retro-v1.md
     last_updated: 2026-05-11
   campaign-retro:
     status: locked
-    file: phase-5-launch-and-learn/campaign-retro-vF.md
+    file: phase-5-launch-and-learn/campaign-retro-v1.md
     last_updated: 2026-05-11
 
 # COUNTERS

@@ -1,9 +1,6 @@
----
+﻿---
 status: locked
 last_updated: 2026-05-11T19:07:00-07:00
-current_version: 1
-version_history:
-  - {v: 1, date: 2026-05-11, note: "Template closeout from copy and image production"}
 scope: copy-image-production
 families:
   - post-copy

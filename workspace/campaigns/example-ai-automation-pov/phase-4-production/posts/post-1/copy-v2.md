@@ -1,8 +1,7 @@
----
+﻿---
 status: snapshot
 last_updated: 2026-05-11T18:55:00-07:00
-current_version: 2
-snapshot_of: copy-vF.md
+snapshot_of: copy-v3.md
 ---
 
 # Post 1 Copy: The Agent Boundary Problem

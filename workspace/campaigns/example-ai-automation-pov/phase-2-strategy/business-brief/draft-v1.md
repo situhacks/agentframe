@@ -1,9 +1,6 @@
----
+﻿---
 status: locked
 last_updated: 2026-05-11T18:20:00-07:00
-current_version: 1
-version_history:
-  - {v: 1, date: 2026-05-11, note: "Initial prefill from locked research artifact and operator positioning; operator approved"}
 exports: []
 ---
 

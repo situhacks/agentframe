@@ -1,16 +1,11 @@
----
+﻿---
 status: shipped
 last_updated: 2026-05-11T19:04:00-07:00
-current_version: 3
-version_history:
-  - {v: 1, date: 2026-05-11, note: "Initial LinkedIn copy draft from locked messaging architecture and design language"}
-  - {v: 2, date: 2026-05-11, note: "Humanizer pass: cut length and reduced AI-polish"}
-  - {v: 3, date: 2026-05-11, note: "Grouped short lines into fuller LinkedIn paragraphs"}
 platform: linkedin
 post_id: post-1
 source_material:
-  - {path: ../../../phase-3-planning/messaging-architecture/draft-vF.md, kind: strategy}
-  - {path: ../../../phase-3-planning/design-language/design-language-vF.md, kind: visual_direction}
+  - {path: ../../../phase-3-planning/messaging-architecture/draft-v2.md, kind: strategy}
+  - {path: ../../../phase-3-planning/design-language/design-language-v1.md, kind: visual_direction}
 shipped_at: 2026-05-11
 published:
   platform: linkedin

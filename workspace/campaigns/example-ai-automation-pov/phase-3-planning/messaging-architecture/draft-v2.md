@@ -1,10 +1,6 @@
----
+﻿---
 status: locked
 last_updated: 2026-05-11T18:35:00-07:00
-current_version: 2
-version_history:
-  - {v: 1, date: 2026-05-11, note: "Initial messaging architecture from locked Business Brief"}
-  - {v: 2, date: 2026-05-11, note: "Expanded hook options and sharpened core message against operator voice patterns; operator approved"}
 exports:
   - {path: exports/messaging-architecture-v2.docx, generated_at: 2026-05-11T18:36:00-07:00}
 ---

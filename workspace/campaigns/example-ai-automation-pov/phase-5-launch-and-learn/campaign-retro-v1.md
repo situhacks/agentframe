@@ -1,9 +1,6 @@
----
+﻿---
 status: locked
 last_updated: 2026-05-11T19:08:00-07:00
-current_version: 1
-version_history:
-  - {v: 1, date: 2026-05-11, note: "Campaign closeout from example performance data"}
 ---
 
 # Campaign Retro: AI Automation POV
@@ -17,19 +14,19 @@ Hit. The campaign cleared the distribution target and produced enough practition
 #### Research Artifact Locked
 
 - **Status:** HIT
-- **Basis:** `phase-1-research/research-artifact-vF.md` is locked and was used as the strategic source for the Business Brief.
+- **Basis:** `phase-1-research/research-artifact-v1.md` is locked and was used as the strategic source for the Business Brief.
 - **Caveat:** None.
 
 #### Business Brief Locked Before Messaging
 
 - **Status:** HIT
-- **Basis:** `phase-2-strategy/business-brief/draft-vF.md` was approved and locked before Messaging Architecture began.
+- **Basis:** `phase-2-strategy/business-brief/draft-v1.md` was approved and locked before Messaging Architecture began.
 - **Caveat:** None.
 
 #### Messaging Architecture Names Audience And Post Job
 
 - **Status:** HIT
-- **Basis:** `phase-3-planning/messaging-architecture/draft-vF.md` was locked before production and post-1 was tracked as `thought-leadership-pov`.
+- **Basis:** `phase-3-planning/messaging-architecture/draft-v2.md` was locked before production and post-1 was tracked as `thought-leadership-pov`.
 - **Caveat:** None.
 
 #### Consultant Living In Both Worlds

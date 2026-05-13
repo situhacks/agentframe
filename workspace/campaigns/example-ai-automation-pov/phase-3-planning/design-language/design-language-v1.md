@@ -1,9 +1,6 @@
----
+﻿---
 status: locked
 last_updated: 2026-05-11T18:45:00-07:00
-current_version: 1
-version_history:
-  - {v: 1, date: 2026-05-11, note: "Initial light visual direction for text-first AI automation POV; operator approved"}
 preview: preview/permission-boundary.html
 tokens: tokens.yaml
 light_variant:

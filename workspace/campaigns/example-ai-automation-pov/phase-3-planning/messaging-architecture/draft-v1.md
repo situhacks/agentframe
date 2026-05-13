@@ -1,8 +1,7 @@
----
+﻿---
 status: snapshot
 last_updated: 2026-05-11T17:55:00-07:00
-current_version: 1
-snapshot_of: draft-vF.md
+snapshot_of: draft-v2.md
 ---
 
 # Messaging Architecture: AI Automation POV

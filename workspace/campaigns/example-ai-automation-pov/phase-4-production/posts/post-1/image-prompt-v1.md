@@ -1,11 +1,6 @@
----
+﻿---
 status: locked
 last_updated: 2026-05-11T19:02:00-07:00
-current_version: 3
-version_history:
-  - {v: 1, date: 2026-05-11, note: "Initial image brief for LinkedIn hero asset"}
-  - {v: 2, date: 2026-05-11, note: "Direct HTML render created from campaign design language"}
-  - {v: 3, date: 2026-05-11, note: "Final Figma-cleaned image selected for public share"}
 image_method: external_operator_asset
 format: linkedin_square_1080
 variants: 1

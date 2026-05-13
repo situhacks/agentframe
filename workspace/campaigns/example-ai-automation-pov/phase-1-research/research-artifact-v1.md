@@ -1,10 +1,6 @@
----
+﻿---
 status: locked
 last_updated: 2026-05-11T18:10:00-07:00
-current_version: 2
-version_history:
-  - {v: 1, date: 2026-05-11, note: "Initial deep research export accepted for strategy"}
-  - {v: 2, date: 2026-05-11, note: "Reshaped into clean campaign-ready research artifact"}
 research_method: gemini_deep_research_api
 source_material:
   - {path: source-material/gemini-deep-research-response.json, kind: raw_export}

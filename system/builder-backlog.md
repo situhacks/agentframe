@@ -1,11 +1,11 @@
-# Builder Backlog
+﻿# Builder Backlog
 
 > **Unresolved Builder-mode tasks only.** When CMO mode hits system friction, it appends here instead of swapping modes mid-campaign. **Resolved** items are **moved** to [`builder-backlog-completed.md`](builder-backlog-completed.md) so this file stays a short queue. When several items accumulate, run a focused Builder session and batch-address them.
 
 ## What appends here
 
 Tasks that:
-- **Are Builder-mode work.** Patches to `library/process/*.md`, `library/deliverables/*/template-vF.md`, `system/skills/*`, `AGENTS.cmo.md`, `AGENTS.builder.md`, `AGENTS.md`, `library/context/operator/*` (process/template/persona surfaces), `system/server/*`, `docs/superpowers/specs/*`. Anything that lives outside `workspace/` and changes how the system itself behaves.
+- **Are Builder-mode work.** Patches to `library/process/*.md`, `library/deliverables/*/template.md`, `system/skills/*`, `AGENTS.cmo.md`, `AGENTS.builder.md`, `AGENTS.md`, `library/context/operator/*` (process/template/persona surfaces), `system/server/*`, `docs/superpowers/specs/*`. Anything that lives outside `workspace/` and changes how the system itself behaves.
 - **Are not yet actioned.** Append new entries here. When an entry is resolved, **cut the full YAML block** from this file and **append** it to [`builder-backlog-completed.md`](builder-backlog-completed.md) under the same date heading (add a `## {YYYY-MM-DD}` section if missing).
 
 ## What does NOT append here
@@ -55,4 +55,5 @@ On operator confirmation (or operator-initiated capture: "add to builder backlog
 
 ## Active entries
 
-_Queue empty — public fork reset. Append new `BB-*` YAML blocks below as CMO or Builder surfaces friction._
+_Queue empty. Append new `BB-*` YAML blocks below as CMO or Builder surfaces friction._
+

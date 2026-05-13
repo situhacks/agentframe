@@ -61,6 +61,10 @@ py -3 -m system.audit.writer init
 Append a system change row:
 
 ```powershell
+# 1. Write the payload to a temp file (prevents PowerShell quote mangling)
+Set-Content "system\audit\_payload.json" '{"key": "value"}'
+
+# 2. Append the row
 py -3 -m system.audit.writer system-change `
   --change-type principle_refinement `
   --actor agent `
@@ -68,7 +72,11 @@ py -3 -m system.audit.writer system-change `
   --target-kind persona_file `
   --target-path AGENTS.builder.md `
   --reason "Operator identified an unearned-runtime-rule failure mode." `
-  --summary "Good current examples now count against adding new runtime constraints."
+  --summary "Good current examples now count against adding new runtime constraints." `
+  --payload-json-file "system\audit\_payload.json"
+
+# 3. Clean up
+Remove-Item "system\audit\_payload.json"
 ```
 
 ## Querying
@@ -99,5 +107,5 @@ LIMIT 10;
 ## Workflow Guidance
 
 - Write `system_changes` only when the system itself changes: process files, templates, personas, skills, schema, runtime machinery, or Builder-owned docs.
-- Keep campaign-facing markdown (`campaign.md`, `activity.md`, deliverable `*-vF.md` / `*-vN.md`) as the human-readable working surface.
+- Keep campaign-facing markdown (`campaign.md`, `activity.md`, deliverable `*-v{N}.md` / `*-vN.md`) as the human-readable working surface.
 - Do not add DB writes for campaign activity unless the operator explicitly reopens the DB telemetry design.

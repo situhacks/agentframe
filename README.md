@@ -12,9 +12,7 @@
   <img alt="Status" src="https://img.shields.io/badge/status-actively%20used-orange?style=flat-square" />
 </p>
 
-<p align="center">
-  <video src="https://github.com/situhacks/agentframe-marketing/releases/download/v0.1/agentframe-trailer-v0.1.mp4" autoplay loop muted playsinline width="100%"></video>
-</p>
+https://github.com/user-attachments/assets/73c6ce7f-cfd8-4457-8cf0-e1a979094e6e
 
 
 

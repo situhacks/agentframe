@@ -1,0 +1,14 @@
+:root {
+  --bg: #F7F5EF;
+  --surface: #FFFFFF;
+  --text: #171717;
+  --muted: #68645E;
+  --divider: #D8D2C7;
+  --accent: #B64A2F;
+  --accent-soft: #E8B8A8;
+  --boundary: #2F3A45;
+  --font-body: Aptos, Inter, system-ui, sans-serif;
+  --font-display: "Space Grotesk", Aptos, Inter, system-ui, sans-serif;
+  --safe-margin: 96px;
+  --corner-radius: 28px;
+}

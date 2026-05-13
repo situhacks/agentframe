@@ -1,0 +1,45 @@
+{
+  "interaction_id": "v1_ChdnWFVDYXNHdUZfanZxdHNQcy1pNHFBcxIXZ1hVQ2FzR3VGX2p2cXRzUHMtaTRxQXM",
+  "status": "completed",
+  "error": null,
+  "usage": {
+    "total_tokens": 1071171,
+    "total_input_tokens": 624544,
+    "input_tokens_by_modality": [
+      {
+        "modality": "text",
+        "tokens": 622399
+      },
+      {
+        "modality": "image",
+        "tokens": 2145
+      }
+    ],
+    "total_cached_tokens": 180224,
+    "total_output_tokens": 32813,
+    "output_tokens_by_modality": [
+      {
+        "modality": "text",
+        "tokens": 31693
+      },
+      {
+        "modality": "image",
+        "tokens": 1120
+      }
+    ],
+    "total_tool_use_tokens": 378985,
+    "total_thought_tokens": 34829
+  },
+  "created_at_utc": "2026-05-12T00:50:14+00:00",
+  "extracted_text_paths": [
+    "outputs[1].text",
+    "outputs[3].text",
+    "outputs[5].text",
+    "outputs[6].text"
+  ],
+  "generated_images": [
+    "source-material/gemini-deep-research-output-2.png",
+    "source-material/gemini-deep-research-output-4.png"
+  ],
+  "report_chars": 54304
+}

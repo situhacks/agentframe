@@ -1,31 +1,30 @@
+# === Secrets ===
 .env
 .env.local
 
 # === Operator content (PII / private to the operator running this fork) ===
 # library/context/operator/ holds positioning, voice, design-language, profile.
-# Forkers seed it from library/context/operator.example/ (committed) — see README/SETUP.
+# Forkers seed it from library/context/operator.example/ (committed) — see README.
 library/context/operator/
 
-# === Operator campaigns + research (real work product, often pre-publication) ===
-workspace/campaigns/
+# === Operator campaigns ===
+# All campaigns are private by default. The bundled walkthrough campaign
+# (example-ai-automation-pov) is the one exception — it ships with the repo
+# so new operators have a real reference to copy from.
+workspace/campaigns/*
+!workspace/campaigns/example-ai-automation-pov/
+
+# === Operator research ===
 workspace/research/
 
-# === Operator career / personal artifacts ===
-career/
-
-# === System logs (operator paths, real campaign slugs, real decisions) ===
-system/logs/audit-log.md
-system/logs/smoke-test-runs/
-system/audit/agentframe.db
-system/audit/agentframe.db-shm
-system/audit/agentframe.db-wal
-system/audit/marketingos.db
-system/audit/marketingos.db-shm
-system/audit/marketingos.db-wal
+# === Runtime / generated state ===
+system/logs/
+system/audit/*.db
+system/audit/*.db-shm
+system/audit/*.db-wal
 
 # === Browser harness runtime ===
 system/browser/runs/
-system/browser/workflows/*/runs/
 system/browser/workflows/**/runs/
 system/browser/cache/
 system/browser/local/
@@ -33,7 +32,7 @@ system/browser/node_modules/
 system/browser/dist/
 system/browser/.env
 
-# === Open Design local runtime/build artifacts (belt-and-suspenders) ===
+# === Open Design local runtime / build artifacts ===
 # Upstream source/.gitignore is canonical; these top-level guards prevent
 # accidental staging from tools that bypass nested ignore rules.
 system/skills/open-design/source/node_modules/
@@ -49,13 +48,11 @@ system/skills/open-design/source/playwright-report/
 system/skills/open-design/source/e2e/.od-data/
 system/skills/open-design/source/e2e/reports/
 
-# === Real export examples (real campaign data) ===
-system/exports/examples/
-
-# === Scratch / scratchpad directories anywhere in tree ===
+# === Scratch / scratchpad directories anywhere in the tree ===
 **/_scratch/
 
-# === Exported deliverable binaries ===
+# === Exported deliverable binaries inside campaigns ===
+# Keep authoring sources in markdown; export binaries are regenerable.
 workspace/**/*.docx
 workspace/**/*.pptx
 

@@ -1,4 +1,4 @@
-# Template: Research Artifact
+﻿# Template: Research Artifact
 
 ## Purpose
 
@@ -51,5 +51,5 @@ For API runs, preserve Gemini's native interaction JSON under `source-material/`
 ## Lock Criteria
 
 - Operator accepts the campaign direction as worth taking into Phase 2.
-- Research artifact is saved at `phase-1-research/research-artifact-vF.md`.
+- Research artifact is saved at `phase-1-research/research-artifact-v{N}.md`.
 - Key factual claims have citations or are clearly marked as hypotheses.

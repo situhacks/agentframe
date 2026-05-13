@@ -1,22 +1,22 @@
-# Template: Campaign Retro
+﻿# Template: Campaign Retro
 
 ## Purpose
 
 The Campaign Retro is the Phase 5 outcome closeout. It answers: did this campaign hit the Business Brief success criteria, and what should the operator conclude from the evidence?
 
-It is not a Builder patch queue and it does not run performance capture. System behavior learning belongs to `system-retro-vF.md`; template learning belongs to `template-retro-vF.md`; performance seeking/capture belongs to Phase 5.3.
+It is not a Builder patch queue and it does not run performance capture. System behavior learning belongs to `system-retro-v{N}.md`; template learning belongs to `template-retro-v{N}.md`; performance seeking/capture belongs to Phase 5.3.
 
 ## Inputs
 
 - **Read only:**
-  - `phase-2-strategy/business-brief/draft-vF.md` for the canonical success criteria.
+  - `phase-2-strategy/business-brief/draft-v{N}.md` for the canonical success criteria.
   - `campaign.md` frontmatter for shipped count, lifecycle state, and deliverable pointers.
   - `phase-5-launch-and-learn/performance-data.csv` as the Phase 5.3 output.
   - `activity.md` only for ship dates, scope changes, back-fill/override evidence, and completion events.
   - Public comment/reply evidence or operator-provided qualitative notes when needed to score a Business Brief criterion.
 - **Dependencies:**
   - Final active post shipped, cancelled, or removed from scope.
-  - `system-retro-vF.md` and `template-retro-vF.md` are complete or intentionally deferred.
+  - `system-retro-v{N}.md` and `template-retro-v{N}.md` are complete or intentionally deferred.
   - Phase 5.3 Performance Capture has either produced `performance-data.csv` or the operator chose to close with partial data.
 - **Context Loading:**
   - Do not load voice context; this is an analytical closeout doc.
@@ -77,7 +77,7 @@ State one of:
 
 ## Draft Frontmatter Convention
 
-Canonical file: `phase-5-launch-and-learn/campaign-retro-vF.md`. Reference the shared versioning convention for snapshot accumulation.
+Canonical file: `phase-5-launch-and-learn/campaign-retro-v{N}.md`. Reference the shared versioning convention for snapshot accumulation.
 
 ```yaml
 ---
@@ -98,7 +98,7 @@ See `library/process/campaign-frontmatter.md` for schema details.
 - Unknown evidence is marked `UNKNOWN`, not guessed.
 - Performance data is referenced from `performance-data.csv` or explicitly marked partial/unknown by operator choice.
 - User approved the closeout decision.
-- `campaign-retro-vF.md` frontmatter set to `status: locked`.
+- `campaign-retro-v{N}.md` frontmatter set to `status: locked`.
 - Follow `library/process/lock-event.md` and the selected campaign flow for tracker updates, lifecycle completion, and folder moving.
 
 ## Exceptions / Branches

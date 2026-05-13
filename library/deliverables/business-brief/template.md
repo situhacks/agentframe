@@ -1,4 +1,4 @@
-# Template: Business Brief
+﻿# Template: Business Brief
 
 ## Purpose
 
@@ -6,7 +6,7 @@ Frame the business case for THIS opportunity. Sets the bar for everything that f
 
 ## Inputs
 
-- Locked Research Artifact at `phase-1-research/research-artifact-vF.md`
+- Locked Research Artifact at `phase-1-research/research-artifact-v{N}.md`
 - `positioning.md` (for POV anchoring)
 - **Note:** Do not load `voice.md` Writing Style Examples (would push tone too casual for stakeholders).
 
@@ -37,7 +37,7 @@ A structured business document for skim, markup, and approval. Bullets and sub-b
 
 ## Draft Frontmatter Convention
 
-The `phase-2-strategy/business-brief/draft-vF.md` file carries this YAML frontmatter:
+The `phase-2-strategy/business-brief/draft-v{N}.md` file carries this YAML frontmatter:
 
 ```yaml
 ---
@@ -85,9 +85,9 @@ For `.pptx`, run discovery before slide drafting:
 2. Propose slide count + section structure + density tier and get approval.
 3. Draft PPT-MD in chat, iterate, then render final `.pptx`.
 
-For both formats, load `system/skills/{docx,pptx}/SKILL.md`, render via inline code, update `draft-vF.md` `exports:` entries, and append export activity events.
+For both formats, load `system/skills/{docx,pptx}/SKILL.md`, render via inline code, update `draft-v{N}.md` `exports:` entries, and append export activity events.
 
 ## Exceptions / Branches
 
-- **Deferred-deliverable shape:** if the brief is intentionally skipped, `draft-vF.md` is a stub containing only frontmatter (`status: deferred`, `reason: "..."`, `back_fill_at: null`, `back_fill_owner: ...`). The reason lives here, not in `campaign.md`.
+- **Deferred-deliverable shape:** if the brief is intentionally skipped, `draft-v{N}.md` is a stub containing only frontmatter (`status: deferred`, `reason: "..."`, `back_fill_at: null`, `back_fill_owner: ...`). The reason lives here, not in `campaign.md`.
 - **External review returns "kill it"**: follow the cancellation rule in [`library/process/campaign-frontmatter.md`](../../process/campaign-frontmatter.md).

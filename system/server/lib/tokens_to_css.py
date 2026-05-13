@@ -1,4 +1,4 @@
-"""Convert a campaign `tokens.yaml` into a CSS `:root { ... }` block.
+﻿"""Convert a campaign `tokens.yaml` into a CSS `:root { ... }` block.
 
 The agent runs this every time `tokens.yaml` is written or updated, so
 the design-language one-pager and per-slide HTML can consume tokens via
@@ -11,7 +11,7 @@ Usage:
 If `--out` is omitted, the CSS is written next to `tokens.yaml` at
 `./preview/assets/tokens.css` (relative to the yaml file).
 
-Schema mapping (from `library/deliverables/carousel-spec/template-vF.md`):
+Schema mapping (from `library/deliverables/carousel-spec/template.md`):
 
 - palette.{key}            -> --{key}                e.g. --bg, --accent_primary
 - typography.{role}.family -> --font-{role}          e.g. --font-headline

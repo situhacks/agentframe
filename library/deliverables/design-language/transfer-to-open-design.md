@@ -1,8 +1,8 @@
-# Transfer To Open Design
+ï»¿# Transfer To Open Design
 
 Bridge resource for the design-language deliverable. Read on demand when the operator wants to take a campaign's locked design language into Open Design.
 
-This file documents the field-by-field mapping from `design-language-vF.md` (plus its `tokens.yaml` and `tokens.css`) into Open Design's canonical 9-section design-system schema. The mapping is one-way (DL ? OD); Open Design changes do not flow back automatically.
+This file documents the field-by-field mapping from `design-language-v{N}.md` (plus its `tokens.yaml` and `tokens.css`) into Open Design's canonical 9-section design-system schema. The mapping is one-way (DL ? OD); Open Design changes do not flow back automatically.
 
 ## Open Design canonical schema
 
@@ -58,8 +58,8 @@ OD also requires:
 | Picker summary line | DL frontmatter `summary` | One sentence. |
 | 1. Visual Theme & Atmosphere | DL "Visual Theme & Atmosphere" paragraph | Direct copy. |
 | 2. Color | DL "Palette" table + `tokens.css` `:root {}` block | Convert palette table to OD format and ensure `tokens.css` has `:root {}` wrapper; copy variables directly. Add `[data-theme="dark"]` block when `dark_variant` is defined. |
-| 3. Typography | DL "Type System" table + Font Labels block | The Font Labels block in the DL template is already OD-shaped — copy verbatim. |
-| 4. Spacing | DL "Layout & Composition" — safe margin and corner radius | If DL specifies more spacing scale, lift those tokens; otherwise infer from `tokens.yaml` `safe_margin` and `corner_radius` and label as `--space-*` variables. |
+| 3. Typography | DL "Type System" table + Font Labels block | The Font Labels block in the DL template is already OD-shaped ï¿½ copy verbatim. |
+| 4. Spacing | DL "Layout & Composition" ï¿½ safe margin and corner radius | If DL specifies more spacing scale, lift those tokens; otherwise infer from `tokens.yaml` `safe_margin` and `corner_radius` and label as `--space-*` variables. |
 | 5. Layout & Composition | DL "Layout & Composition" body | Direct copy of canvas size, grid hints, hero placement notes. |
 | 6. Components | Skip by default | Marketing DL does not carry component specs. Populate this section in OD with a one-line "Campaign DL does not specify components; defer to Open Design defaults" or borrow from a starter system. Operator can override per campaign. |
 | 7. Motion & Interaction | Skip by default | Marketing DL is static unless declared. If the campaign has motion (video, animated cover), promote those notes here. Otherwise: "Static unless declared per asset." |
@@ -70,7 +70,7 @@ OD also requires:
 
 When the operator says "take this DL into Open Design" (or similar):
 
-1. Load `design-language-vF.md`, `tokens.yaml`, and `tokens.css` for the campaign.
+1. Load `design-language-v{N}.md`, `tokens.yaml`, and `tokens.css` for the campaign.
 2. Assemble a new `DESIGN.md` at `system/skills/open-design/source/.od/design-systems/<campaign-slug>/DESIGN.md` (or the OD project's local override path).
 3. For each row in the mapping table, copy or transform the source field into the matching OD section.
 4. For sections marked "Skip by default", emit a one-line note rather than fabricating content. Operator can override per campaign.
@@ -79,7 +79,7 @@ When the operator says "take this DL into Open Design" (or similar):
    - `:root {}` block contains the campaign's color, type, spacing tokens.
    - Font Labels block present in Typography.
    - Real hex codes everywhere, no placeholders.
-6. Drop a comment at the top of the OD `DESIGN.md` linking back to the source `design-language-vF.md` so future Open Design edits can find the upstream.
+6. Drop a comment at the top of the OD `DESIGN.md` linking back to the source `design-language-v{N}.md` so future Open Design edits can find the upstream.
 
 ## Out of scope (deferred to its own plan)
 

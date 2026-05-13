@@ -1,4 +1,4 @@
-# AgentFrame: Marketing
+﻿# AgentFrame: Marketing
 
 <p align="center">
   <img src="assets/readme/banner.png" alt="AgentFrame: Marketing — a full-stack marketing workspace inside your AI coding agent" width="100%" />
@@ -109,7 +109,7 @@ A solo-flow walkthrough using the example campaign at `workspace/campaigns/examp
 </td>
 <td width="50%" valign="top">
 <img src="assets/readme/walkthrough-02-research.png" alt="02 · Gemini Deep Research" /><br/>
-<sub><b>02 · Gemini Deep Research</b> — Deep Research runs against your chosen direction and lands a structured artifact at <code>phase-1-research/research-artifact-vF.md</code>.</sub>
+<sub><b>02 · Gemini Deep Research</b> — Deep Research runs against your chosen direction and lands a structured artifact at <code>phase-1-research/research-artifact-v{N}.md</code>.</sub>
 </td>
 </tr>
 <tr>
@@ -200,7 +200,7 @@ Process files load on demand — only when the workflow they describe is in play
 | `browser-fallback` | Browser automation fallback strategy |
 | `composio-notes` | Connector usage notes and caveats |
 | `voice-mini-retro` | Lightweight voice quality feedback loop |
-| `deliverable-versioning` | Surgical-vs-replacement rule and version-bump procedure for `*-vF.md` deliverables |
+| `deliverable-versioning` | Surgical-vs-replacement rule and version-bump procedure for `*-v{N}.md` deliverables |
 | `research-and-signals` | Shared kickoff for campaign research: workspace-context definition, live MCP scan, research-method offer |
 
 
@@ -296,7 +296,7 @@ External services AgentFrame integrates with. Recommended for the full loop, but
 
 - Fast A/B/C variants for standard illustrations (Nano Banana 2: `gemini-3.1-flash-image-preview`).
 - High-fidelity hero and text-in-image visuals (Nano Banana Pro: `gemini-3-pro-image-preview`).
-- Routed through `system/server/lib/image_generate.py`; per-post records save as `image-prompt-vF.md`.
+- Routed through `system/server/lib/image_generate.py`; per-post records save as `image-prompt-v{N}.md`.
 - Shares the same `GEMINI_API_KEY` as Deep Research.
 
 ### Composio

@@ -1,4 +1,4 @@
-# Template: System Behavior Retro
+﻿# Template: System Behavior Retro
 
 ## Purpose
 
@@ -22,7 +22,7 @@ Read only the smallest set needed to classify Builder-owned system behavior:
 - Current system/process/persona files only when a recommended change needs target-file proof before execution.
 - Do not load voice profile; this is an analytical/operational doc.
 
-Do not run v1 to vF deliverable diff analysis here. That belongs in `library/deliverables/template-retro/template-vF.md`.
+Do not run v1 to vF deliverable diff analysis here. That belongs in `library/deliverables/template-retro/template.md`.
 
 ## Output Shape
 
@@ -84,7 +84,7 @@ End the artifact with this exact prompt:
 
 ## Draft Frontmatter Convention
 
-Target file: `phase-5-launch-and-learn/system-retro-vF.md`
+Target file: `phase-5-launch-and-learn/system-retro-v{N}.md`
 
 ```yaml
 ---
@@ -105,5 +105,5 @@ Follow standard versioning conventions for snapshots. See `library/process/lock-
 - Every item in `Recommended Changes` has a user decision or explicit deferred state.
 - Approved immediate patches have been applied and logged.
 - Approved deferred patches have an existing or newly appended active Builder backlog entry.
-- `system-retro-vF.md` is saved to `phase-5-launch-and-learn/system-retro-vF.md` with frontmatter `status: locked`.
+- `system-retro-v{N}.md` is saved to `phase-5-launch-and-learn/system-retro-v{N}.md` with frontmatter `status: locked`.
 - Campaign tracker updated per `library/process/lock-event.md`.

@@ -1,4 +1,4 @@
-# AgentFrame Marketing — Lock-Event Procedure
+﻿# AgentFrame Marketing — Lock-Event Procedure
 
 Generic lock mechanics for deliverables. Load on demand when a deliverable is being locked by state change or clear operator intent.
 
@@ -8,7 +8,7 @@ Generic lock mechanics for deliverables. Load on demand when a deliverable is be
 
 Fire when either is true:
 
-1. A deliverable `*-vF.md` frontmatter is set to `status: locked` (or being set in the current turn).
+1. A deliverable `*-v{N}.md` frontmatter is set to `status: locked` (or being set in the current turn).
 2. The operator clearly signals lock intent ("lock this", "finalize this", "ship this deliverable", or close variants).
 
 ---
@@ -17,7 +17,7 @@ Fire when either is true:
 
 1. **Verify template lock criteria.** Read the deliverable template and confirm criteria pass; surface gaps before locking.
 2. **Run declared pre-lock quality gates.** If the template includes `## Humanizer Pass` (or another explicit gate), run it using the referenced process.
-3. **Update deliverable frontmatter.** Set `status: locked` and `last_updated` in the canonical `-vF.md`.
+3. **Update deliverable frontmatter.** Set `status: locked` and `last_updated` in the canonical `-v{N}.md`.
 4. **Update campaign tracker in the same turn.** Sync `campaign.md` `deliverables.{slug}` state and any phase/counter implications from the active flow.
 5. **Append activity event.** Record the lock in `workspace/campaigns/{slug}/activity.md`.
 6. **Run voice mini-retro when applicable.** Follow [`library/process/voice-mini-retro.md`](voice-mini-retro.md) trigger/eligibility rules.

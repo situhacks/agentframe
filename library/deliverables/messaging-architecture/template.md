@@ -1,4 +1,4 @@
-# Template: Messaging Architecture
+﻿# Template: Messaging Architecture
 
 ## Purpose
 
@@ -7,7 +7,7 @@ The full execution plan, post by post. Lives where the rubber meets the road: ev
 ## Depends On
 
 - Campaign Brief locked
-- Research Artifact locked (`phase-1-research/research-artifact-vF.md`)
+- Research Artifact locked (`phase-1-research/research-artifact-v{N}.md`)
 - `positioning.md` loaded (POV anchoring)
 - `voice.md` Writing Style Examples NOT loaded yet (this is structure, not output copy)
 
@@ -18,7 +18,7 @@ The full execution plan, post by post. Lives where the rubber meets the road: ev
 - **Story arc** — the spine across the campaign. 3-5 sentences max. Beginning/middle/end.
 - **Audience extraction** (required mini-section, grounded in the research artifact):
   - **Persona label** — one line: role + situation that frames why they care.
-  - **Language tells** — 3-5 phrases they actually use, quoted/paraphrased from `research-artifact-vF.md` sources.
+  - **Language tells** — 3-5 phrases they actually use, quoted/paraphrased from `research-artifact-v{N}.md` sources.
   - **Top 3 objections** — short, specific, grounded.
   - **Disconfirmation** — one line: what would prove this persona does not actually exist or does not care, with the answer.
   - **Multi-persona** — repeat this block only when the campaign genuinely targets more than one audience.
@@ -40,14 +40,14 @@ The full execution plan, post by post. Lives where the rubber meets the road: ev
 - Hook angle for each post is locked, with 1-line rationale (why this angle, not the alternate from Campaign Brief)
 - No two posts have the same job (no two "hooks," no two "payoffs")
 - Risks per post are not empty
-- Audience extraction language tells and objections are grounded in `research-artifact-vF.md` citations or quoted source material, not LLM-prior assumptions.
+- Audience extraction language tells and objections are grounded in `research-artifact-v{N}.md` citations or quoted source material, not LLM-prior assumptions.
 - Per-post sections stay tight: no numbered story-shape narratives, no hero-image notes, no thesis paragraphs, and no slide-by-slide content (those belong in post-copy, image-prompt artifact, or carousel-spec).
 - Anchored in `positioning.md` POV stances
 - Tone is tight; skip qualifiers
 
 ## Draft Frontmatter Convention
 
-Standard deliverable frontmatter per `library/process/campaign-frontmatter.md`. Canonical file is `phase-3-planning/messaging-architecture/draft-vF.md`.
+Standard deliverable frontmatter per `library/process/campaign-frontmatter.md`. Canonical file is `phase-3-planning/messaging-architecture/draft-v{N}.md`.
 
 ## Lock Criteria
 

@@ -1,8 +1,8 @@
-# Image Production
+﻿# Image Production
 
 Available image-creation paths for AgentFrame Marketing. Load this when a deliverable needs to pick an image path. Usage rules, lock criteria, and provenance details are owned by the deliverable that calls this menu.
 
-Used by `library/deliverables/carousel-spec/template-vF.md` and any post that needs `image-prompt-vF.md` records.
+Used by `library/deliverables/carousel-spec/template.md` and any post that needs `image-prompt-v{N}.md` records.
 
 | Path | Use when | Owner deliverable | Outputs |
 |---|---|---|---|
@@ -14,7 +14,7 @@ Used by `library/deliverables/carousel-spec/template-vF.md` and any post that ne
 
 ## Record convention
 
-When an image is generated for a post, save `phase-4-production/posts/post-{n}/image-prompt-vF.md` as the absolute-tiniest record:
+When an image is generated for a post, save `phase-4-production/posts/post-{n}/image-prompt-v{N}.md` as the absolute-tiniest record:
 
 ```yaml
 ---
@@ -29,4 +29,4 @@ variants: <count>
 ---
 ```
 
-Body: the exact prompt text submitted to the model. Nothing else. Gemini API docs own prompt best practices; `design-language-vF.md`, `tokens.yaml`, and any `formats/{name}.md` own reusable composition constraints.
+Body: the exact prompt text submitted to the model. Nothing else. Gemini API docs own prompt best practices; `design-language-v{N}.md`, `tokens.yaml`, and any `formats/{name}.md` own reusable composition constraints.

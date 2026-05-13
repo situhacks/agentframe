@@ -1,4 +1,4 @@
----
+﻿---
 name: system-improvement
 version: 0.1.0
 description: |
@@ -8,7 +8,7 @@ description: |
   agent-facing rule content. Carries the cross-cutting earning rule, the
   prior-patch shape-failure check, the deferred-validation framing, and the SQLite audit append
   cadence baked in. Refuses to draft a patch that cannot cite a
-  feedback-log.md line, a `system_changes` audit row, a v1→vF
+  feedback-log.md line, a `system_changes` audit row, a v1→head
   deliverable diff, or a frozen historical log entry where the absence of the
   constraint caused an observable stray. Refuses to draft a patch on a topic
   with prior-patch history without first naming the shape failure that made
@@ -34,7 +34,7 @@ Load when you are about to patch any of these target file classes:
 
 | Target class | Examples | Owner mode |
 |---|---|---|
-| Deliverable template | `library/deliverables/{type}/template-vF.md` | CMO (System Retro) or Builder |
+| Deliverable template | `library/deliverables/{type}/template.md` | CMO (System Retro) or Builder |
 | Voice rules | `library/context/operator/voice.md` | CMO |
 | Profile (operator-self) | `library/context/operator/profile.md` | CMO (rare; usually Second Brain sync, not pattern-scan) |
 | Positioning (outward-stance) | `library/context/operator/positioning.md` | CMO |
@@ -52,7 +52,7 @@ This skill operationalizes principles that already exist in the agent personas:
 - **Cross-cutting earning rule** (mirrored to `AGENTS.cmo.md` cross-cutting discipline + `AGENTS.builder.md` cross-cutting discipline) — every constraint earns its place from observed strays.
 - **Prior-patch shape check** (`AGENTS.builder.md` + `AGENTS.cmo.md`) — patches on a topic with prior-patch history require an explicit prior-patch shape-failure diagnosis before drafting; validation of the new patch is deferred to real-world stray-recurrence over the next 1-2 campaign cycles.
 - **Constraint shape discipline** — when a rule does not constrain, redesign its shape; do not re-write the same shape with sharper words.
-- **Architectural Truth #1** — skills are generic capabilities; AgentFrame Marketing-specific routing taxonomy lives in `library/deliverables/system-retro/template-vF.md`, NOT in this skill.
+- **Architectural Truth #1** — skills are generic capabilities; AgentFrame Marketing-specific routing taxonomy lives in `library/deliverables/system-retro/template.md`, NOT in this skill.
 - **SQLite audit log** — every live patch writes a `system_changes` row in `system/audit/agentframe.db`. Historical markdown logs are browse-only backfill sources. This skill's Step 6 carries the write path.
 
 This skill does not own routing taxonomy, pattern-strength threshold, override scrutiny, or decisions about whether a given target file class should accept patches at all. Those live in the orchestrating template (System Retro / Campaign Retro) or in the agent persona. This skill is the patch-loop procedure only.
@@ -65,7 +65,7 @@ Six steps. Each gate is binary — pass to the next step, or refuse and surface 
 
 Before any other work, verify the patch is earned.
 
-**Required citation** (one of four classes): (a) a `feedback-log.md` entry (campaign-scoped, file path + line number); (b) a recent `system_changes` row in `system/audit/agentframe.db` for this target/topic; (c) a `v1→vF` diff between deliverable snapshots (the diff IS the citation for deliverable-template patches — see Step 2); (d) a frozen historical log entry where the absence of this constraint caused an observable stray.
+**Required citation** (one of four classes): (a) a `feedback-log.md` entry (campaign-scoped, file path + line number); (b) a recent `system_changes` row in `system/audit/agentframe.db` for this target/topic; (c) a `v1→head` diff between deliverable snapshots (the diff IS the citation for deliverable-template patches — see Step 2); (d) a frozen historical log entry where the absence of this constraint caused an observable stray.
 
 **Required statement**: name the LLM tendency the patch counters in one line. (e.g. "agent enumerated phrases as triggers", "agent over-asked instead of actioning", "agent collapsed marketing logic into a generic skill".)
 
@@ -86,7 +86,7 @@ Load all of the following before drafting:
 - The earning citation source. Three citation classes:
   - `feedback-log.md` line — read the cited line + 5 lines of context above and below.
   - `system_changes` row — read the cited row + any adjacent rows on the same target/topic if the prior-patch shape failure is unclear.
-  - For deliverable-template patches: the v1→vF diff for the deliverable that surfaced the friction. Read **both** `{name}-v1.md` AND `{name}-vF.md`, then read the section that changed. The diff IS the citation — what the operator changed is the literal evidence the template did not produce what the operator wanted.
+  - For deliverable-template patches: the v1→head diff for the deliverable that surfaced the friction. Read **both** `{name}-v1.md` AND `{name}-v{N}.md`, then read the section that changed. The diff IS the citation — what the operator changed is the literal evidence the template did not produce what the operator wanted.
 - The relevant always-loaded persona section that governs this target class:
   - For deliverable templates / voice.md / profile.md / positioning.md / process files → `AGENTS.cmo.md` Agent-Design Principles.
   - For `AGENTS.cmo.md` / `AGENTS.builder.md` itself → `AGENTS.builder.md` Core Design Principles.
@@ -200,7 +200,7 @@ After Step 5's validation expectation is written:
 
 ## What this skill does NOT do
 
-- **Does not own routing taxonomy.** Smart-routing options (a/b/c/d/e/f/g/h) are AgentFrame Marketing product taxonomy and live in `library/deliverables/system-retro/template-vF.md`. The orchestrating template decides where a patch routes; this skill executes the patch.
+- **Does not own routing taxonomy.** Smart-routing options (a/b/c/d/e/f/g/h) are AgentFrame Marketing product taxonomy and live in `library/deliverables/system-retro/template.md`. The orchestrating template decides where a patch routes; this skill executes the patch.
 - **Does not own pattern-strength threshold.** "3+ instances = pattern" is AgentFrame Marketing cadence and lives in System Retro template Section 1. This skill assumes the orchestrator already cleared the pattern bar.
 - **Does not own override scrutiny.** Section 0 of the System Retro template runs first; this skill is invoked per-patch after that scrutiny has run.
 - **Does not own deliverable creation or removal.** Adding a new deliverable type is `system/skills/deliverable-scaffolding/SKILL.md`. Removing one is currently bespoke under Builder (no skill earned its place yet).
@@ -221,7 +221,7 @@ After Step 5's validation expectation is written:
 - **From System Retro template** (Section 2 routing): orchestrator says "load `system/skills/system-improvement/SKILL.md` for this patch".
 - **From Campaign Retro template**: same delegation pattern where the retro overlaps system-improvement work (override scrutiny + SQLite audit appends).
 - **Ad-hoc by Builder or CMO**: when an agent turn surfaces a stray and the operator says "patch that" outside a retro window. Same procedure runs.
-- **From `system/skills/deliverable-scaffolding/SKILL.md`**: when scaffolding a new deliverable wires up routing in `system-retro/template-vF.md` or adds a `current_phase` enum value, that wire-up is itself a patch and goes through this skill.
+- **From `system/skills/deliverable-scaffolding/SKILL.md`**: when scaffolding a new deliverable wires up routing in `system-retro/template.md` or adds a `current_phase` enum value, that wire-up is itself a patch and goes through this skill.
 
 ## Forker note
 

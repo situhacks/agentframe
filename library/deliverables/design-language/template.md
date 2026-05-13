@@ -1,4 +1,4 @@
-# Template: Design Language
+﻿# Template: Design Language
 
 A campaign's locked visual language. One per campaign. Record what, not why unless the rule has historical breakage behind it.
 
@@ -32,11 +32,11 @@ Default authoring procedure when this deliverable is opened:
 1. Agent proposes 2-3 named visual directions backed by short rationale (one paragraph each).
 2. Agent renders all directions into a single `preview/directions-compare.html` as side-by-side columns. One file, no per-direction subfiles, no separate compare hub.
 3. Operator picks one direction (or rejects all and asks for new options).
-4. The picked direction becomes the basis for `tokens.yaml`, `tokens.css`, and the canonical `design-language-vF.md`.
+4. The picked direction becomes the basis for `tokens.yaml`, `tokens.css`, and the canonical `design-language-v{N}.md`.
 
 Single-direction authoring is allowed only when the operator explicitly says "skip the directions, pick one" or chooses text-only defer. Do not invent the single-direction path silently.
 
-No `decisions.md` companion. Reasoning that survives lock lives in `design-language-vF.md` itself; sub-session reasoning is throwaway.
+No `decisions.md` companion. Reasoning that survives lock lives in `design-language-v{N}.md` itself; sub-session reasoning is throwaway.
 
 ## Artifact Shape
 

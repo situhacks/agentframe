@@ -93,11 +93,11 @@ class GeminiDeepResearchTests(unittest.TestCase):
                     title="Research Artifact - Test",
                     raw_filename="raw.json",
                     metadata_filename="metadata.json",
-                    artifact_filename="research-artifact-vF.md",
+                    artifact_filename="research-artifact-v1.md",
                 )
 
             self.assertTrue((research_dir / "source-material" / "raw.json").exists())
-            self.assertFalse((research_dir / "research-artifact-vF.md").exists())
+            self.assertFalse((research_dir / "research-artifact-v1.md").exists())
 
     def test_write_artifact_frontmatter_points_to_raw_metadata_and_media(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -122,7 +122,7 @@ class GeminiDeepResearchTests(unittest.TestCase):
                 title="Research Artifact - Test",
                 raw_filename="raw.json",
                 metadata_filename="metadata.json",
-                artifact_filename="research-artifact-vF.md",
+                artifact_filename="research-artifact-v1.md",
                 last_updated="2026-05-09T18:30:00-07:00",
             )
 

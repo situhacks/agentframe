@@ -1,4 +1,4 @@
----
+﻿---
 name: deliverable-scaffolding
 version: 0.1.0
 description: |
@@ -43,7 +43,7 @@ Do NOT load this skill for:
 
 ## Architectural anchors (why this skill is shaped this way)
 
-- **Architectural Truth #1** (`AGENTS.builder.md` + `AGENTS.cmo.md`) — agent + tools + constraints, separated. This skill scaffolds the *constraint* layer (template-vF.md = declarative WHAT). It does NOT generate procedural skill code wrapped around the deliverable; the agent reads the template + context and writes the deliverable natively.
+- **Architectural Truth #1** (`AGENTS.builder.md` + `AGENTS.cmo.md`) — agent + tools + constraints, separated. This skill scaffolds the *constraint* layer (template.md = declarative WHAT). It does NOT generate procedural skill code wrapped around the deliverable; the agent reads the template + context and writes the deliverable natively.
 - **Architectural Truth #5 (templates are the product)** — the templates this skill creates are the durable artifact. They port to other agent runtimes. Ship them in the canonical shape.
 - **Architectural Truth #6 (resist anticipating future needs)** — this skill itself is a deliberate anticipation exception, justified by the need to keep forked deliverable libraries consistent. The skill therefore enforces strict locate-before-inventing to prevent the anticipation cost from compounding into taxonomic bloat.
 - **Cross-cutting earning rule** — the new deliverable type itself must earn its place, just like a new constraint must. The duplication check in Step 1 is this rule applied to deliverable taxonomy.
@@ -57,13 +57,13 @@ Six steps. Each gate is binary.
 
 Before scaffolding anything, survey existing types.
 
-1. Read every existing `library/deliverables/*/template-vF.md` (use Glob then Read; there are typically 8-12 files, fast).
+1. Read every existing `library/deliverables/*/template.md` (use Glob then Read; there are typically 8-12 files, fast).
 2. For the proposed new type, write a one-paragraph "What this deliverable is" statement (Purpose + Reader + Author POV + the rough Sections list — 3-5 sentences).
 3. Compare against existing types: for each existing type, estimate section overlap and intent overlap with the proposed type.
 4. Decision:
    - **Overlap < 40%**: proceed to Step 2.
    - **Overlap 40-70%**: surface to user — *"The proposed `[new-type]` overlaps `[existing-type]` substantially: [name overlapping sections, name distinguishing sections]. Confirm: extend `[existing-type]` instead, or proceed because [distinguishing job is real]."*
-   - **Overlap >= 70%**: refuse to scaffold. *"The proposed `[new-type]` is largely the same artifact as `[existing-type]`. Adding it would create taxonomic drift (two templates for one job). Either (a) extend `[existing-type]` with a new section or branch, (b) add a Deliverable subtype convention inside `[existing-type]/template-vF.md` (we don't have one yet, but it earns its place if needed), or (c) override and proceed with explicit justification logged."*
+   - **Overlap >= 70%**: refuse to scaffold. *"The proposed `[new-type]` is largely the same artifact as `[existing-type]`. Adding it would create taxonomic drift (two templates for one job). Either (a) extend `[existing-type]` with a new section or branch, (b) add a Deliverable subtype convention inside `[existing-type]/template.md` (we don't have one yet, but it earns its place if needed), or (c) override and proceed with explicit justification logged."*
 5. Record the duplication-check result (which existing types you compared against, the overlap call) — this gets included in the `system_changes` row in Step 6.
 
 **Pass criterion**: explicit overlap call made against every existing type, decision logged.
@@ -74,15 +74,15 @@ Pick a stable reference template from existing types — one that matches the ne
 
 Recommended baselines:
 
-- **Stakeholder-facing analytical doc** (briefs, strategies): `library/deliverables/business-brief/template-vF.md`.
-- **User-voiced creative output** (social posts, scripts): `library/deliverables/post-copy/template-vF.md`.
-- **Internal operational doc** (retros, reviews): `library/deliverables/system-retro/template-vF.md`.
+- **Stakeholder-facing analytical doc** (briefs, strategies): `library/deliverables/business-brief/template.md`.
+- **User-voiced creative output** (social posts, scripts): `library/deliverables/post-copy/template.md`.
+- **Internal operational doc** (retros, reviews): `library/deliverables/system-retro/template.md`.
 
 Read the chosen reference end-to-end. The new template will use its section order and conventions; the user fills in content.
 
 ### Step 3 — Scaffold step
 
-Read `library/deliverables/_meta/template-authoring.md`, then generate `library/deliverables/{new-type}/template-vF.md` using that standard.
+Read `library/deliverables/_meta/template-authoring.md`, then generate `library/deliverables/{new-type}/template.md` using that standard.
 
 The scaffolded template must include only sections that help a future agent decide, execute, compare, or verify. Do not copy a long skeleton into the skill or preserve empty slots for their own sake.
 
@@ -92,7 +92,7 @@ Identify and surface all upstream files that need updating to wire the new deliv
 
 | Wire-up | When needed | If needed, route through |
 |---|---|---|
-| Add letter (i+) to System Retro smart-routing options | If patches to this new deliverable will need their own routing letter (rare — most new deliverable types use existing route (c) "deliverables/{type}/template-vF.md hard constraints") | `system/skills/system-improvement/SKILL.md` (since it's a template patch to `system-retro/template-vF.md`) |
+| Add letter (i+) to System Retro smart-routing options | If patches to this new deliverable will need their own routing letter (rare — most new deliverable types use existing route (c) "deliverables/{type}/template.md hard constraints") | `system/skills/system-improvement/SKILL.md` (since it's a template patch to `system-retro/template.md`) |
 | Add deliverable to a campaign flow | If this deliverable belongs in one or more named flows | `system/skills/agentframe-structure/SKILL.md` (campaign-flow change, then `system-improvement` for the file patch if needed) |
 | Add `current_phase` enum value to `library/process/campaign-frontmatter.md` | Only if this deliverable triggers a brand-new campaign phase (very rare; almost always slots into existing phases) | `system/skills/system-improvement/SKILL.md` |
 | Confirm `status` enum on the new deliverable matches the canonical vocabulary in `library/process/campaign-frontmatter.md` | Always (no-op when scaffold uses the default `drafting | locked | deferred` from Step 3) — surface only if the operator wants a different enum (e.g. adding `shipped` for a deliverable that publishes externally, or proposing a brand-new value) | `system/skills/system-improvement/SKILL.md` (any new value is a `library/process/campaign-frontmatter.md` schema change and must pass the prior-patch shape-failure check when prior history exists) |
@@ -108,7 +108,7 @@ The scaffolded template will be validated by its first 1-2 real uses, not by a s
 
 Write a one-paragraph **validation expectation**:
 
-> **Validation expectation**: the first real use of `library/deliverables/{new-type}/template-vF.md` in a campaign is the validation point. The campaign's deliverable should observably reflect the template's hard constraints + section structure. If the first draft from the new template produces output that visibly hits the constraints (e.g. a Hard Constraint of "audience named at the person level" produces drafts naming a specific person, not "marketers in general"), mark `validation_resolved: pass` in a paired `system_changes` row. If the first draft ignores the template's constraints (output looks the same as a bespoke one would have), the template has the wrong shape — surface to the user, redesign the shape, and append the redesigned scaffold via this skill.
+> **Validation expectation**: the first real use of `library/deliverables/{new-type}/template.md` in a campaign is the validation point. The campaign's deliverable should observably reflect the template's hard constraints + section structure. If the first draft from the new template produces output that visibly hits the constraints (e.g. a Hard Constraint of "audience named at the person level" produces drafts naming a specific person, not "marketers in general"), mark `validation_resolved: pass` in a paired `system_changes` row. If the first draft ignores the template's constraints (output looks the same as a bespoke one would have), the template has the wrong shape — surface to the user, redesign the shape, and append the redesigned scaffold via this skill.
 
 **Common shape rescues** (apply if validation comes back FAIL after first real use):
 
@@ -127,7 +127,7 @@ Append a `system_changes` row via `system/audit/writer.py` for the new deliverab
 ```
 change_type: deliverable_scaffolded
 target_kind: deliverable_template
-target_path: library/deliverables/{new-type}/template-vF.md
+target_path: library/deliverables/{new-type}/template.md
 summary: Scaffolded new deliverable type `{new-type}` from `{reference-type}`.
 payload_json:
   duplication_check: {compared types + overlap + decision}

@@ -1,4 +1,4 @@
-# Template: Template Evolution Retro
+﻿# Template: Template Evolution Retro
 
 ## Purpose
 
@@ -13,17 +13,17 @@ Do not treat normal campaign content evolution as a template gap. Campaigns chan
 - At least one deliverable family in scope has both a first draft snapshot and a locked/current version.
 - The relevant current deliverable template exists.
 - For each deliverable family in scope, read only:
-  - The current deliverable template at `library/deliverables/{family}/template-vF.md`.
+  - The current deliverable template at `library/deliverables/{family}/template.md`.
   - Campaign `v1` and `vF` pairs for that deliverable family.
   - Relevant campaign `feedback-log.md` entries for that deliverable family.
   - The template's `evolution.md` when it exists.
   - Related process/context files only when the gap points outside the deliverable template.
 
-Do not analyze system behavior, mode routing, connector limits, or audit mechanics here. Those belong in `library/deliverables/system-retro/template-vF.md`.
+Do not analyze system behavior, mode routing, connector limits, or audit mechanics here. Those belong in `library/deliverables/system-retro/template.md`.
 
 ## Output Shape
 
-**Scope:** Default to one template retro artifact (`phase-5-launch-and-learn/template-retro-vF.md`). Use `scope:` frontmatter to name what it covered (e.g., `copy-carousel`, `visual-design`). If more than two or three deliverable families are in scope, split the work across sessions, keeping the user-facing deliverable as `template-retro` unless multiple locked artifacts must coexist.
+**Scope:** Default to one template retro artifact (`phase-5-launch-and-learn/template-retro-v{N}.md`). Use `scope:` frontmatter to name what it covered (e.g., `copy-carousel`, `visual-design`). If more than two or three deliverable families are in scope, split the work across sessions, keeping the user-facing deliverable as `template-retro` unless multiple locked artifacts must coexist.
 
 **Decision Filter:** For each meaningful v1 to vF delta, ask:
 - Did the current template already ask for this? If yes, do not patch.
@@ -66,7 +66,7 @@ No inline arrow chains. No separate evidence field. Put the evidence inside `Why
 
 ## Draft Frontmatter Convention
 
-**Canonical current file:** `phase-5-launch-and-learn/template-retro-vF.md`. Snapshots accumulate per the shared versioning convention.
+**Canonical current file:** `phase-5-launch-and-learn/template-retro-v{N}.md`. Snapshots accumulate per the shared versioning convention.
 
 Only template-specific fields are shown below. Reference `library/process/campaign-frontmatter.md` for standard schema.
 

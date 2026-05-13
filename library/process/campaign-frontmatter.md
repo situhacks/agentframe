@@ -39,7 +39,7 @@ Pointers (success criteria source, etc.) live inside the relevant blocks rather 
 | `current_phase` | enum | flow-defined phase ids | first phase in selected flow | Where the campaign is right now. Updated when the agent finishes a phase's last deliverable or the user explicitly transitions. End-of-phase transition rules live in the selected `campaign_flow` file. |
 | `campaign_flow` | enum | flow ids in [`campaign-flows/README.md`](campaign-flows/README.md) | `solo-flow` | Canonical flow selector for this campaign instance. Read this before loading phase rules; then lazy-load `library/process/campaign-flows/{campaign_flow}.md`. |
 | `last_activity` | ISO 8601 datetime | e.g. `2026-04-23T03:00:00+00:00` | scaffold time | Touched whenever any deliverable in this campaign is edited / locked / shipped. Used to compute stale-campaign nudges (>7d). |
-| `shipped_at` | ISO 8601 date or `null` | — | `null` | When the first post in the campaign published. (Sourced from per-post `copy-vF.md` frontmatter `published.posted_at` — see post-copy/template-vF.md "Shipped frontmatter" section.) |
+| `shipped_at` | ISO 8601 date or `null` | — | `null` | When the first post in the campaign published. (Sourced from per-post `copy-v{N}.md` frontmatter `published.posted_at` — see post-copy/template-v{N}.md "Shipped frontmatter" section.) |
 | `completed_at` | ISO 8601 date or `null` | — | `null` | When the campaign retro ran (the formal close — `LIFECYCLE.status` transitions `active → complete` in the same turn). |
 | `cancelled_at` | ISO 8601 date or `null` | — | `null` | When `LIFECYCLE.status` was set to `cancelled`. Mutually exclusive with `completed_at`. |
 | `cancelled_reason` | string or `null` | free text, single line | `null` | One-line reason for cancellation. |
@@ -78,7 +78,7 @@ deliverables:
 | `not_started` | The deliverable has not yet been opened. The `file` may point at a folder rather than a file. **This value lives only in the campaign-tracker mirror** — per-deliverable file frontmatter never carries `not_started` (the file doesn't exist yet to carry frontmatter). | Default for new deliverables that the selected campaign flow says are expected at this phase. |
 | `drafting` | Active work in progress. The `vF.md` file exists with content. **`drafting` includes the in-flight-with-reviewer case** — the orthogonal `review` field carries the external-coordination state; the deliverable itself is still drafting until reviewer feedback is applied (or waived) and the operator locks. | Any state between `not_started` and `locked` / `shipped`. |
 | `locked` | The deliverable is locked — no more substantive edits without an explicit "unlock" event. Downstream work depends on this state. Reached either directly from `drafting` (no reviewer) or via `drafting + review: complete` (reviewer feedback applied). | After lock-event skill fires for the deliverable. |
-| `shipped` | Used for production deliverables once the post has actually been published. The shipped-state record lives in the deliverable's own `{name}-vF.md` frontmatter (`published.{platform,url,posted_at}` + `shipped_media[]`); performance metrics live in `phase-5-launch-and-learn/performance-data.csv`. There is no separate `published.md` file. | After Phase 4.4 publish coordination updates the per-post canonical `-vF.md` frontmatter. |
+| `shipped` | Used for production deliverables once the post has actually been published. The shipped-state record lives in the deliverable's own `{name}-v{N}.md` frontmatter (`published.{platform,url,posted_at}` + `shipped_media[]`); performance metrics live in `phase-5-launch-and-learn/performance-data.csv`. There is no separate `published.md` file. | After Phase 4.4 publish coordination updates the per-post canonical `-v{N}.md` frontmatter. |
 | `deferred` | The deliverable was intentionally skipped or postponed. The reason lives in the deliverable's own `vF.md` frontmatter (NOT here — this row just notes the state). | When the selected campaign flow expected the deliverable but operator + agent agreed to defer or skip with back-fill obligation. |
 
 **Per-deliverable `review` enum** (only for deliverables whose template declares `Review path: external`):
@@ -100,10 +100,10 @@ The retro templates use the `not_required` vs `waived` distinction: `not_require
 |---|---|---|---|
 | `post_count` | integer | derived (count of `post-*` deliverables) | Total planned posts. Update when the arc adds or drops a post. |
 | `posts_published` | integer | derived (count of `post-*` deliverables with `status: shipped`) | Cheap rollup so a state-load can answer "how many shipped?" without walking deliverables[]. |
-| `system_retro_completed` | ISO 8601 date or `null` | `null` | Filled when `phase-5-launch-and-learn/system-retro-vF.md` lands at `status: locked`. |
-| `campaign_retro_completed` | ISO 8601 date or `null` | `null` | Filled when `phase-5-launch-and-learn/campaign-retro-vF.md` lands at `status: locked`. |
+| `system_retro_completed` | ISO 8601 date or `null` | `null` | Filled when `phase-5-launch-and-learn/system-retro-v{N}.md` lands at `status: locked`. |
+| `campaign_retro_completed` | ISO 8601 date or `null` | `null` | Filled when `phase-5-launch-and-learn/campaign-retro-v{N}.md` lands at `status: locked`. |
 
-Template retro batches are tracked as deliverable rows, not top-level counters: use slugs like `template-retro-copy-carousel` with `file: phase-5-launch-and-learn/template-retro-copy-carousel-vF.md`.
+Template retro batches are tracked as deliverable rows, not top-level counters: use slugs like `template-retro-copy-carousel` with `file: phase-5-launch-and-learn/template-retro-copy-carousel-v{N}.md`.
 
 ## Example block (v2)
 
@@ -131,37 +131,37 @@ quarterly_goals_advanced: ["Q2-distribution", "Q2-narrative-consistency"]
 deliverables:
   business-brief:
     status: locked
-    file: phase-2-strategy/business-brief/draft-vF.md
+    file: phase-2-strategy/business-brief/draft-v2.md
     last_updated: 2026-04-19
     review: not_required
   campaign-brief:
     status: locked
-    file: phase-2-strategy/campaign-brief/draft-vF.md
+    file: phase-2-strategy/campaign-brief/draft-v1.md
     last_updated: 2026-04-19
     review: not_required
   messaging-architecture:
     status: locked
-    file: phase-3-planning/messaging-architecture/draft-vF.md
+    file: phase-3-planning/messaging-architecture/draft-v3.md
     last_updated: 2026-04-20
     review: not_required
   design-language:
     status: locked
-    file: phase-3-planning/design-language/design-language-vF.md
+    file: phase-3-planning/design-language/design-language-v1.md
     last_updated: 2026-04-19
   post-1:
     status: shipped
-    file: phase-4-production/posts/post-1/copy-vF.md
+    file: phase-4-production/posts/post-1/copy-v4.md
     last_updated: 2026-04-20
     job: attention
   post-2:
     status: shipped
-    file: phase-4-production/posts/post-2/copy-vF.md
+    file: phase-4-production/posts/post-2/copy-v3.md
     last_updated: 2026-04-20
     job: thought-leadership-soft-CTA
     framing_note: "shifted 2026-04-20 from week-six diagnosis to self-evolving framing"
   post-3:
     status: drafting
-    file: phase-4-production/posts/post-3-middle-ground/copy-vF.md
+    file: phase-4-production/posts/post-3-middle-ground/copy-v2.md
     last_updated: 2026-04-21
     job: thought-leadership-middle-ground
 
@@ -181,7 +181,7 @@ campaign_retro_completed: null
 2. Verify `status` is one of `active | complete | cancelled`.
 3. Verify `current_phase` is one of the allowed flow phase IDs.
 4. Verify `deliverables` has at least one entry when `current_phase` is past `1-research`.
-5. For each `deliverables` row, verify `status` is valid and `file` exists (or is a folder pointer when `status: not_started`).
+5. For each `deliverables` row, verify `status` is valid and `file` exists (or is a folder pointer when `status: not_started`). For each row whose `file` is a versioned file (`{name}-v{N}.md`), verify the named file is the highest `v{N}` in its folder — that's the tracker's head pointer.
 6. For each row at `status: locked`, optionally peek at the deliverable frontmatter for `back_filled: true` and surface it inline.
 7. If any check fails, surface drift inline with last-activity age and ask before fixing.
 
@@ -195,7 +195,7 @@ The agent does not auto-fix drift. It surfaces and asks. Drift fixes are user-ap
   ```
   2026-05-12 — phase_override: skipped messaging-architecture; drafted post-1 copy directly. Reason: "trying a quick test, will back-fill if it works."
   ```
-- **`post_published`** — a post canonical `-vF.md` reconciled to `status: shipped` after the operator confirmed the live URL.
+- **`post_published`** — a post canonical `-v{N}.md` reconciled to `status: shipped` after the operator confirmed the live URL.
   ```
   2026-05-12 — post_published: post-1 → https://www.linkedin.com/posts/{activity-id}
   ```

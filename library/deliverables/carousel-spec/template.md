@@ -1,4 +1,4 @@
-# Template: Carousel Spec
+﻿# Template: Carousel Spec
 
 ## Purpose
 
@@ -7,7 +7,7 @@ The per-post carousel production spec. It tells the human and the rendering agen
 ## Inputs
 
 - **Messaging Architecture**: Locked (post role, arc, hook hypotheses, callbacks).
-- **Design Language**: Locked (`design-language-vF.md` + `tokens.yaml`) when the carousel will be rendered. Do not restate them here.
+- **Design Language**: Locked (`design-language-v{N}.md` + `tokens.yaml`) when the carousel will be rendered. Do not restate them here.
 - **Image Production Menu**: `library/process/image-production.md` when slide planning needs generated-image path selection.
 - **Post Copy**: At least drafted when cover hook / CTA alignment matters.
 - **Voice Rules**: Load `voice.md` when the carousel spec includes user-facing prose (Recommended LinkedIn Copy, post-copy opening hooks, Slide 1 title options, slide titles, captions, body copy, CTA slide text). For pure visual structure, tokens, HTML, and layout notes, voice rules do not apply.
@@ -17,7 +17,7 @@ The per-post carousel production spec. It tells the human and the rendering agen
 **Artifact location**:
 ```text
 phase-4-production/posts/post-{n}/
-  carousel-spec-vF.md
+  carousel-spec-v{N}.md
   visuals/
     carousel-slide-{i}.html
     alt-text.md
@@ -48,7 +48,7 @@ phase-4-production/posts/post-{n}/
 - Slide text stays light. If a slide needs more than two short body sentences, move nuance to the LinkedIn copy.
 - Visual direction is actionable enough for rendering: layout, imagery/icon needs, motif usage, and any slide-specific deviation from the design language.
 - Before inventing a new rendered layout, identify any locked campaign visual components or motifs that should be reused; deviate only when the slide job earns it.
-- Image needs can be named here, but generated-image prompts, variants, and selected outputs belong in `image-prompt-vF.md` / `images/` (recorded using `library/process/image-production.md`).
+- Image needs can be named here, but generated-image prompts, variants, and selected outputs belong in `image-prompt-v{N}.md` / `images/` (recorded using `library/process/image-production.md`).
 - Every slide role from the per-post plan has a corresponding rendered HTML when the carousel is rendered.
 - Alt text is substantive when final visuals exist.
 
@@ -66,7 +66,7 @@ version_history:
 ---
 ```
 
-*Note: `carousel-spec` does not have its own `shipped` state. The post is the shipping unit, and the shipped record lives in `copy-vF.md`.*
+*Note: `carousel-spec` does not have its own `shipped` state. The post is the shipping unit, and the shipped record lives in `copy-v{N}.md`.*
 
 ## Lock Criteria
 
@@ -91,5 +91,5 @@ version_history:
 
 ## Exceptions / Branches
 
-- **`copy-vF.md` already exists**: Link to it. Do not duplicate the full LinkedIn caption unless the operator is explicitly reviewing copy and carousel together.
-- **Single-image post**: Skip carousel spec; image generation flows through `library/process/image-production.md` and records to `image-prompt-vF.md`.
+- **`copy-v{N}.md` already exists**: Link to it. Do not duplicate the full LinkedIn caption unless the operator is explicitly reviewing copy and carousel together.
+- **Single-image post**: Skip carousel spec; image generation flows through `library/process/image-production.md` and records to `image-prompt-v{N}.md`.

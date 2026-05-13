@@ -1,4 +1,4 @@
-# Template: Campaign Brief
+﻿# Template: Campaign Brief
 
 ## Purpose
 
@@ -39,7 +39,7 @@ Author: a marketer drafting this for review. Reader: the same stakeholder who ap
 
 ## Draft Frontmatter Convention
 
-The `phase-2-strategy/campaign-brief/draft-vF.md` file carries this YAML frontmatter:
+The `phase-2-strategy/campaign-brief/draft-v{N}.md` file carries this YAML frontmatter:
 
 ```yaml
 ---
@@ -79,7 +79,7 @@ When this deliverable locks, the agent exports it to Word + PowerPoint per the a
 - **PPT-MD intermediate** (for `.pptx`): `system/skills/pptx/pptx-md.md` — agent drafts PPT-MD in chat, iterates with user, then renders the final `.pptx`.
 - **Output path**: `workspace/campaigns/{slug}/phase-2-strategy/campaign-brief/exports/campaign-brief-v{N}.{ext}`
 
-Mechanics: agent loads the relevant skill (`system/skills/{docx,pptx}/SKILL.md`), reads the master template + config, writes inline `python-docx` / `python-pptx` code, saves the file, updates `draft-vF.md` frontmatter `exports:` array, and appends `lock_event` + `export_generated` events to the campaign's `activity.md`. No standalone export script exists or is needed.
+Mechanics: agent loads the relevant skill (`system/skills/{docx,pptx}/SKILL.md`), reads the master template + config, writes inline `python-docx` / `python-pptx` code, saves the file, updates `draft-v{N}.md` frontmatter `exports:` array, and appends `lock_event` + `export_generated` events to the campaign's `activity.md`. No standalone export script exists or is needed.
 
 Full architecture is defined by the deliverable template, `system/skills/{docx,pptx}/SKILL.md`, and campaign state files.
 

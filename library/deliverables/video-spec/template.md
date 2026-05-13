@@ -1,4 +1,4 @@
-# Template: Video Spec
+﻿# Template: Video Spec
 
 ## Purpose
 
@@ -57,7 +57,7 @@ Generated media files, `video/renders/scenes/`, `video/renders/final/`, `edit/pr
   - HyperFrames: `doctor`, `lint`, `validate`, `inspect`, render.
   - video-use: transcript/EDL artifacts present, preview/final render present, self-eval notes recorded.
 - Known issues are fixed or explicitly accepted by the operator.
-- `copy-vF.md` lock/publish flow knows which video file will ship.
+- `copy-v{N}.md` lock/publish flow knows which video file will ship.
 
 ## Review Path
 
@@ -69,10 +69,10 @@ Generated media files, `video/renders/scenes/`, `video/renders/final/`, `edit/pr
 
 Partial. Run only when `video/SCRIPT.md` is authored or substantively revised. Scope to public-facing script prose: narration, captions, and on-screen editorial text.
 
-Do not run this gate at `video-spec-vF.md` lock time. Skip `STORYBOARD.md`, structured production fields, commands, frontmatter, code, EDL JSON, and model prompt text.
+Do not run this gate at `video-spec-v{N}.md` lock time. Skip `STORYBOARD.md`, structured production fields, commands, frontmatter, code, EDL JSON, and model prompt text.
 
 When needed, follow `library/process/humanizer-integration.md`.
 
 ## Exceptions / Branches
 
-- **Final polish outside AgentFrame Marketing**: allowed. Record the actually shipped file in `copy-vF.md` `shipped_media[]` during publish reconciliation.
+- **Final polish outside AgentFrame Marketing**: allowed. Record the actually shipped file in `copy-v{N}.md` `shipped_media[]` during publish reconciliation.

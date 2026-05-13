@@ -1,4 +1,4 @@
-# Process File Authoring
+﻿# Process File Authoring
 
 Use this when creating or materially reshaping reusable process files under `library/process/`.
 
@@ -26,7 +26,7 @@ Use this order:
 
 - Shared procedures live in `library/process/`.
 - Flow-specific phase sequencing lives in `library/process/campaign-flows/`.
-- Deliverable-specific output requirements live in `library/deliverables/{type}/template-vF.md`.
+- Deliverable-specific output requirements live in `library/deliverables/{type}/template.md`.
 - Cross-cutting invariants live in `AGENTS*.md`.
 
 ## Runtime Cleanliness

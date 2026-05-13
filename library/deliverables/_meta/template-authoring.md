@@ -1,6 +1,6 @@
-# Deliverable Template Authoring
+﻿# Deliverable Template Authoring
 
-Use this when creating or materially reshaping `library/deliverables/{type}/template-vF.md`.
+Use this when creating or materially reshaping `library/deliverables/{type}/template.md`.
 
 ## Purpose
 
@@ -42,7 +42,7 @@ This file is loaded when authoring or materially reshaping templates, not during
 
 Templates that produce factual content (audience claims, market context, language tells, competitive references, statistical claims, opportunity framing) must name the source layer the agent should ground in. Three layers, in order of strength:
 
-1. **Research artifact** — the canonical source for campaign-specific facts. Cite `phase-1-research/research-artifact-vF.md` when the claim came from there.
+1. **Research artifact** — the canonical source for campaign-specific facts. Cite `phase-1-research/research-artifact-v{N}.md` when the claim came from there.
 2. **Light web search** — for time-sensitive checks (competitor name spelling, public stat verification). Earned only when the research artifact lacks the data and a quick check is cheaper than a deep-research rerun.
 3. **LLM-prior** — pretrained-model knowledge. Earns its slot only for structural reasoning (for example, a typical campaign arc with hook/build/payoff), never for factual claims about audience, market, or competitors.
 

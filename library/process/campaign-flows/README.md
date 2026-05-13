@@ -1,4 +1,4 @@
-# Campaign Flows
+﻿# Campaign Flows
 
 Campaign flows are the first-class campaign process definitions for AgentFrame Marketing. A flow owns phase sequence, required deliverables by phase, tracker transitions, flow-specific skips, and completion criteria.
 
@@ -22,7 +22,7 @@ Each campaign instance records its selected flow in `campaign.md` frontmatter as
 - Per-campaign flow selection lives in `workspace/campaigns/{slug}/campaign.md` frontmatter.
 - Flow-specific phase sequencing lives in the flow file.
 - Shared process primitives stay in sibling process files such as `campaign-frontmatter.md`, `lock-event.md`, `voice-mini-retro.md`, and `composio-notes.md`.
-- Deliverable details stay in `library/deliverables/{type}/template-vF.md`.
+- Deliverable details stay in `library/deliverables/{type}/template.md`.
 
 ## Adding Or Changing A Flow
 

@@ -1,4 +1,4 @@
-# Design Language — Default Deliverable Rendering
+﻿# Design Language — Default Deliverable Rendering
 
 > **Placeholder file shipped with the open-source AgentFrame Marketing fork.** Copy `library/context/operator.example/` to `library/context/operator/` (gitignored) and fill in your own visual identity. Sections below mirror the canonical design-language shape; replace bracketed prompts with your own values.
 
@@ -39,7 +39,7 @@ Same contract — the slot names are read by exports config; change the families
 
 ## Composition with Per-Campaign Design Language
 
-A campaign can override the system default by shipping its own DL at `workspace/campaigns/{slug}/phase-3-planning/design-language/design-language-vF.md`. The render pipeline composes:
+A campaign can override the system default by shipping its own DL at `workspace/campaigns/{slug}/phase-3-planning/design-language/design-language-v{N}.md`. The render pipeline composes:
 
 1. **System default** (this file) — safe baseline.
 2. **Per-campaign DL** — overrides specific tokens (often `accent_primary`, sometimes typography for cover).

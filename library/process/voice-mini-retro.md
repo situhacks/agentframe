@@ -1,4 +1,4 @@
-# Voice Mini-Retro (per-deliverable lock event)
+﻿# Voice Mini-Retro (per-deliverable lock event)
 
 ## What this is
 
@@ -14,8 +14,8 @@ A fast-cadence, voice-only mini-retro that fires automatically on every delivera
 
 Same shape as the Lock-Event Trigger — fire on either:
 
-1. **Frontmatter state (canonical):** any deliverable file `{name}-vF.md` transitions `status: drafting` → `status: locked` — OR is being set to `locked` by the operator in the current turn.
-2. **Phrase trigger:** operator says "lock this" / "ship it" / "we're done with [this deliverable]" / "finalize" (or close variants) on a deliverable that has both a `{name}-v1.md` snapshot and a `{name}-vF.md` working file.
+1. **Frontmatter state (canonical):** any deliverable file `{name}-v{N}.md` transitions `status: drafting` → `status: locked` — OR is being set to `locked` by the operator in the current turn.
+2. **Phrase trigger:** operator says "lock this" / "ship it" / "we're done with [this deliverable]" / "finalize" (or close variants) on a deliverable that has both a `{name}-v1.md` snapshot and a `{name}-v{N}.md` working file.
 
 The voice mini-retro fires AFTER the Lock-Event Trigger procedure completes (state update + tracker update + exports). The lock event is the gating dependency — voice mini-retro reads the locked file.
 
@@ -23,7 +23,7 @@ The voice mini-retro fires AFTER the Lock-Event Trigger procedure completes (sta
 
 When the trigger fires:
 
-1. **Load the diff inputs.** Read the deliverable's `{name}-v1.md` (first AI draft) and `{name}-vF.md` (locked operator-approved version) end-to-end.
+1. **Load the diff inputs.** Read the deliverable's `{name}-v1.md` (first AI draft) and `{name}-v{N}.md` (locked operator-approved version) end-to-end.
 
 2. **Earning filter (voice scope only).** Compute the diff. Filter for changes that match voice patterns:
    - Banned-word recurrence (the operator removed a word listed in `voice.md` banned words — the AI used it anyway).
@@ -39,7 +39,7 @@ When the trigger fires:
    - **Single recurrence of a NEW voice-pattern stray** (no existing rule) → carry forward. Keep the diff snippet in the current campaign context and surface it at System Retro; if 3+ deliverables in the same campaign surface the same candidate, the System Retro promotes it to a patch proposal.
    - **3+ instances of the same voice-pattern stray within this single deliverable's diff** → cross the 3+ threshold inside one lock. Surface to operator: "this deliverable's vF removed [pattern] in 3+ places. Patch `voice.md` now (load the system-improvement skill targeting voice.md only) or carry forward to System Retro?"
 
-4. **If operator chose patch-now in step 3:** delegate to [`system/skills/system-improvement/SKILL.md`](../../system/skills/system-improvement/SKILL.md) with target `library/context/operator/voice.md`. The skill handles the full earn → read → diff → propose → defer-validation → apply → log loop. The earning citation is the deliverable's v1→vF diff (named explicitly per Step 2 of the skill — the v1→vF diff is one of the three citation classes).
+4. **If operator chose patch-now in step 3:** delegate to [`system/skills/system-improvement/SKILL.md`](../../system/skills/system-improvement/SKILL.md) with target `library/context/operator/voice.md`. The skill handles the full earn → read → diff → propose → defer-validation → apply → log loop. The earning citation is the deliverable's v1→head diff (named explicitly per Step 2 of the skill — the v1→head diff is one of the three citation classes).
 
 5. **Durable record policy.**
 
@@ -49,9 +49,9 @@ When the trigger fires:
 
 ## Publish/back-fill fallback
 
-This fallback is for post-copy only, after `copy-vF.md` has been reconciled to the copy that actually shipped.
+This fallback is for post-copy only, after `copy-v{N}.md` has been reconciled to the copy that actually shipped.
 
-1. **If a prior in-repo copy exists:** compare the immediately prior `copy-vF.md` body to the shipped/reconciled body. Run the same voice-only earning filter above, but treat content/strategy changes as out of scope.
+1. **If a prior in-repo copy exists:** compare the immediately prior `copy-v{N}.md` body to the shipped/reconciled body. Run the same voice-only earning filter above, but treat content/strategy changes as out of scope.
 2. **If no prior AI draft exists:** do not claim a mini-retro pass. The shipped copy is calibration input only; surface a voice-learning candidate only when the operator asks or when the same shipped-copy pattern appears across 3+ posts.
 3. **If shipped copy matches the prior in-repo copy:** skip silently. No voice signal changed at publish time.
 
@@ -66,4 +66,4 @@ This fallback is for post-copy only, after `copy-vF.md` has been reconciled to t
 ## Defense in depth — state-load checks
 
 When state-loading a campaign or answering a state question, scan the campaign's deliverables block in `campaign.md`:
-- For each `deliverables.{slug}` row at `status: locked`, confirm the deliverable still has both a `{name}-v1.md` snapshot and a `{name}-vF.md` working file. If both exist and the operator asks whether the voice loop ran, rerun the mini-retro from the diff directly; there is no separate live markdown log to consult anymore.
+- For each `deliverables.{slug}` row at `status: locked`, confirm the deliverable still has both a `{name}-v1.md` snapshot and a `{name}-v{N}.md` working file. If both exist and the operator asks whether the voice loop ran, rerun the mini-retro from the diff directly; there is no separate live markdown log to consult anymore.

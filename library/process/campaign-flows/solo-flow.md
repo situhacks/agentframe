@@ -1,4 +1,4 @@
-# AgentFrame Marketing — Solo Campaign Flow
+﻿# AgentFrame Marketing — Solo Campaign Flow
 
 Default campaign flow for solo marketers. This file is a map, not a runbook: it names phase order, expected deliverables, tracker transitions, flow-level gates, and campaign-level completion.
 
@@ -22,16 +22,16 @@ Run a lightweight campaign for one accountable operator with no assumed stakehol
 | Phase | Deliverable | File Target | Owner |
 |---|---|---|---|
 | `1-setup-research` | Campaign Idea Bank | `phase-1-research/idea-bank.md` | flow-owned shape below (no separate template) |
-| `1-setup-research` | Research Artifact | `phase-1-research/research-artifact-vF.md` | [`research-artifact`](../../deliverables/research-artifact/template-vF.md) |
-| `2-business-brief` | Business Brief | `phase-2-strategy/business-brief/draft-vF.md` | [`business-brief`](../../deliverables/business-brief/template-vF.md) |
-| `3-messaging-architecture` | Messaging Architecture | `phase-3-planning/messaging-architecture/draft-vF.md` | [`messaging-architecture`](../../deliverables/messaging-architecture/template-vF.md) |
-| `4-design-language` | Design Language | `phase-3-planning/design-language/design-language-vF.md` | [`design-language`](../../deliverables/design-language/template-vF.md) |
-| `5-produce-ship` | Post Copy | `phase-4-production/posts/post-{n}/copy-vF.md` | [`post-copy`](../../deliverables/post-copy/template-vF.md) |
-| `5-produce-ship` | Media deliverable, when needed | `phase-4-production/posts/post-{n}/{media}-vF.md` | [`carousel-spec`](../../deliverables/carousel-spec/template-vF.md), [`image-production`](../image-production.md), or [`video-spec`](../../deliverables/video-spec/template-vF.md) |
-| `6-learn-close` | System Behavior Retro | `phase-5-launch-and-learn/system-retro-vF.md` | [`system-retro`](../../deliverables/system-retro/template-vF.md) |
-| `6-learn-close` | Template Evolution Retro | `phase-5-launch-and-learn/template-retro-vF.md` | [`template-retro`](../../deliverables/template-retro/template-vF.md) |
+| `1-setup-research` | Research Artifact | `phase-1-research/research-artifact-v{N}.md` | [`research-artifact`](../../deliverables/research-artifact/template.md) |
+| `2-business-brief` | Business Brief | `phase-2-strategy/business-brief/draft-v{N}.md` | [`business-brief`](../../deliverables/business-brief/template.md) |
+| `3-messaging-architecture` | Messaging Architecture | `phase-3-planning/messaging-architecture/draft-v{N}.md` | [`messaging-architecture`](../../deliverables/messaging-architecture/template.md) |
+| `4-design-language` | Design Language | `phase-3-planning/design-language/design-language-v{N}.md` | [`design-language`](../../deliverables/design-language/template.md) |
+| `5-produce-ship` | Post Copy | `phase-4-production/posts/post-{n}/copy-v{N}.md` | [`post-copy`](../../deliverables/post-copy/template.md) |
+| `5-produce-ship` | Media deliverable, when needed | `phase-4-production/posts/post-{n}/{media}-v{N}.md` | [`carousel-spec`](../../deliverables/carousel-spec/template.md), [`image-production`](../image-production.md), or [`video-spec`](../../deliverables/video-spec/template.md) |
+| `6-learn-close` | System Behavior Retro | `phase-5-launch-and-learn/system-retro-v{N}.md` | [`system-retro`](../../deliverables/system-retro/template.md) |
+| `6-learn-close` | Template Evolution Retro | `phase-5-launch-and-learn/template-retro-v{N}.md` | [`template-retro`](../../deliverables/template-retro/template.md) |
 | `6-learn-close` | Performance Data | `phase-5-launch-and-learn/performance-data.csv` | shipped post frontmatter + [`composio-notes`](../composio-notes.md) |
-| `6-learn-close` | Campaign Retro | `phase-5-launch-and-learn/campaign-retro-vF.md` | [`campaign-retro`](../../deliverables/campaign-retro/template-vF.md) |
+| `6-learn-close` | Campaign Retro | `phase-5-launch-and-learn/campaign-retro-v{N}.md` | [`campaign-retro`](../../deliverables/campaign-retro/template.md) |
 
 **Idea-bank shape (keep tight):** a candidate list plus the selected pick, nothing more. Per candidate: title, 1-3 sentence thesis, and one provenance line. Name the selected pick in one line. Do not add per-candidate Risk, Research Questions, Workspace Signal Summary, or Next Research Step sections.
 
@@ -44,7 +44,7 @@ Load-on-demand procedures by phase. Solo flow is the same shape as standard flow
 | Phase | When | Load |
 |---|---|---|
 | `1-setup-research` | Operator starts a new campaign | [`research-and-signals.md`](../research-and-signals.md) for the live Composio/Rube MCP workspace-context scan, the Gemini Deep Research API vs web-handoff offer, and the fallback rule. |
-| `5-produce-ship` | Both per-post copy and visuals drafted | Coherence cross-check defined in [`carousel-spec/template-vF.md`](../../deliverables/carousel-spec/template-vF.md) or [`video-spec/template-vF.md`](../../deliverables/video-spec/template-vF.md). |
+| `5-produce-ship` | Both per-post copy and visuals drafted | Coherence cross-check defined in [`carousel-spec/template.md`](../../deliverables/carousel-spec/template.md) or [`video-spec/template.md`](../../deliverables/video-spec/template.md). |
 | `5-produce-ship` | Post copy locked and publish media selected | [`composio-notes.md`](../composio-notes.md) "Publish Prep" for the connected-tools draft offer; PDF/document carousels stay manual. |
 | `6-learn-close` | ~14 days after each post's `posted_at` | [`composio-notes.md`](../composio-notes.md) "Performance Capture" for the per-platform live MCP scan, canonical CSV columns, and partial-data rule. |
 | Any phase | Operator overrides sequence | Activity event line shape in [`campaign-frontmatter.md`](../campaign-frontmatter.md) "Activity event line shapes." |

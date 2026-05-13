@@ -30,7 +30,7 @@ Per post:
 - No bullets in prose (flowing sentences)
 - Copy does NOT duplicate carousel/image content — copy + visuals divide labour
 - Keep the artifact lean: write the post, do not restate upstream campaign direction, goals, audience, or strategy that already live in Phase 1/2/3 deliverables.
-- `copy-vF.md` owns the full LinkedIn caption, recommended hook, body, and CTA when a separate copy file exists. For carousel-first posts, the operator may choose a combined carousel-and-caption package where `carousel-spec-vF.md` owns the caption and publish record.
+- The head copy file (`copy-v{N}.md`, highest `N`) owns the full LinkedIn caption, recommended hook, body, and CTA when a separate copy file exists. For carousel-first posts, the operator may choose a combined carousel-and-caption package where the head `carousel-spec-v{N}.md` owns the caption and publish record.
 - CTA matches post's role per Messaging Architecture
 - Reads as user's voice (per `voice.md` Writing Style Examples)
 - Canadian English where applicable
@@ -40,12 +40,11 @@ Per post:
 
 ## Draft Frontmatter Convention
 
-Standard deliverable frontmatter per [`library/process/campaign-frontmatter.md`](../../process/campaign-frontmatter.md). 
+Standard deliverable frontmatter per [`library/process/campaign-frontmatter.md`](../../process/campaign-frontmatter.md). Versioning shape (filenames, head selection, iteration flow) lives in [`library/process/deliverable-versioning.md`](../../process/deliverable-versioning.md).
 
-Template-specific versioning notes:
-- **Canonical current file:** `phase-4-production/posts/post-{n}/copy-vF.md`.
-- **Edit-shape examples:** typo fixes, CTA wording swaps, frontmatter shipped-state updates, and small paragraph edits are surgical edits (no version bump). A net-new caption structure, full-body rewrite, or new post angle is a replacement (triggers a version bump).
-- Explicitly named variants (`copy-v{N}-rejected.md`, `copy-v{N}-alternate.md`) are NEVER auto-snapshotted.
+Template-specific edit-shape examples:
+- Typo fixes, CTA wording swaps, shipped-state frontmatter updates, and small paragraph edits are surgical edits (no new version file).
+- A net-new caption structure, full-body rewrite, or new post angle is a replacement (writes the next `copy-v{N+1}.md`).
 
 ## Lock Criteria
 
@@ -54,7 +53,7 @@ Template-specific versioning notes:
 - Cross-checked vs the relevant visual/video artifact: carousel cover or video opening aligns with the hook; CTA placement aligns; no body↔slide/video duplication
 - User-approved
 - Standard lock-event mechanics apply per [`library/process/lock-event.md`](../../process/lock-event.md)
-- For video posts: final or publish-candidate render path recorded in `video-spec-vF.md`
+- For video posts: final or publish-candidate render path recorded in the head `video-spec-v{N}.md`
 
 ## Review Path
 
@@ -66,11 +65,11 @@ Required. See [`library/process/humanizer-integration.md`](../../process/humaniz
 
 ## Publish / Export Mechanics
 
-When the operator publishes the post and tells the agent ("posted post-1, here's the link"), the agent updates `copy-vF.md` in one turn:
+When the operator publishes the post and tells the agent ("posted post-1, here's the link"), the agent updates the head `copy-v{N}.md` in one turn:
 
-1. **Reconcile final copy.** Treat differences from locked copy as a replacement (snapshot to `copy-v{N+1}.md`, bump version, write shipped copy). If verbatim, no snapshot.
+1. **Reconcile final copy.** Treat differences from locked copy as a replacement (write the next `copy-v{N+1}.md` with the shipped copy). If verbatim, no new version.
 2. **Voice fallback.** If copy materially differs, run publish/back-fill fallback per [`library/process/voice-mini-retro.md`](../../process/voice-mini-retro.md).
-3. **Connect shipped media.** Record shipped media files in `copy-vF.md` frontmatter (relative to post folder).
+3. **Connect shipped media.** Record shipped media files in the head `copy-v{N}.md` frontmatter (relative to post folder).
 4. **Update frontmatter to shipped state.** Add the publish record and media references to standard frontmatter:
 ```yaml
 shipped_at: <ISO-8601 date>

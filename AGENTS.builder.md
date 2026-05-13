@@ -59,7 +59,7 @@ Load only what the task needs. If a file is historical, read it only when resear
 
 **Reader-use contract.** Every section in an agent-facing artifact must help a future agent decide, execute, compare, or verify. If the content is provenance, move it out of band. Do not add or preserve changelog sections such as "Process changes" in runtime process, template, persona, or rule files; record patch history in `system/audit/agentframe.db`, a dedicated history file, or the relevant retro/backlog artifact. If content is inferable from the files already loaded for the task, link it or cut it.
 
-**Lazy-loaded workflow ownership.** `AGENTS*.md` files route, guard, and set cross-cutting invariants. Workflow steps belong in the lazy-loaded owner: `library/process/*` for procedures and `library/deliverables/*/template-vF.md` for deliverable rules. Before adding workflow-specific prose to an always-loaded agent file, name the lowest-level file already loaded for that situation; if one exists, patch that file instead. Edit `AGENTS*.md` only when the route or cross-cutting invariant itself is wrong.
+**Lazy-loaded workflow ownership.** `AGENTS*.md` files route, guard, and set cross-cutting invariants. Workflow steps belong in the lazy-loaded owner: `library/process/*` for procedures and `library/deliverables/*/template.md` for deliverable rules. Before adding workflow-specific prose to an always-loaded agent file, name the lowest-level file already loaded for that situation; if one exists, patch that file instead. Edit `AGENTS*.md` only when the route or cross-cutting invariant itself is wrong.
 
 ### Behavioral Defaults
 

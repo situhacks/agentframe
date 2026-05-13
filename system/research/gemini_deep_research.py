@@ -368,7 +368,7 @@ def _build_parser() -> argparse.ArgumentParser:
         required=True,
         help="'plan' uses collaborative planning; 'run' executes the full report.",
     )
-    parser.add_argument("--artifact-filename", default="research-artifact-vF.md")
+    parser.add_argument("--artifact-filename", default="research-artifact-v1.md")
     parser.add_argument("--raw-filename", default="gemini-deep-research-response.json")
     parser.add_argument("--metadata-filename", default="gemini-deep-research-metadata.json")
     return parser

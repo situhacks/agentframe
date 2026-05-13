@@ -1,4 +1,4 @@
-# AgentFrame Marketing — Humanizer Integration
+﻿# AgentFrame Marketing — Humanizer Integration
 
 This file owns gate timing, scope, and logging for `## Humanizer Pass` sections in public-facing deliverables. The skill at [`system/skills/humanizer/SKILL.md`](../../system/skills/humanizer/SKILL.md) owns rewrite technique.
 
@@ -24,7 +24,7 @@ Three trigger points. Run automatically; don't ask permission.
 | **Iteration** | Before a "ready for review" surface where prose has changed since the last pass | Delta pass on regions you rewrote. Skip if the turn was structural-only (table reorderings, frontmatter edits). If the delta is murky after a long session, do a full pass and say so. |
 | **Lock** | Wired into lock-event pre-lock quality gates | Full pass on the prose-carrying artifact before lock/publish handoff. |
 
-If a template names a sub-artifact as prose owner (for example `video/SCRIPT.md`), map first-draft/iteration/lock to that sub-artifact rather than the parent `-vF.md`.
+If a template names a sub-artifact as prose owner (for example `video/SCRIPT.md`), map first-draft/iteration/lock to that sub-artifact rather than the parent `-v{N}.md`.
 
 ---
 

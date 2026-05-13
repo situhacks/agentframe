@@ -1,11 +1,11 @@
-# Deliverable Template Changes
+﻿# Deliverable Template Changes
 
 Use this when adding, retiring, or materially reshaping a deliverable type.
 
 ## Read First
 
 - `library/deliverables/_meta/template-authoring.md`
-- Existing `library/deliverables/*/template-vF.md` files relevant to the proposed type
+- Existing `library/deliverables/*/template.md` files relevant to the proposed type
 - `system/skills/deliverable-scaffolding/SKILL.md` when adding a new deliverable type
 - `system/skills/system-improvement/SKILL.md` when patching an existing template
 

@@ -1,4 +1,4 @@
-# Open Design AgentFrame Handoff
+﻿# Open Design AgentFrame Handoff
 
 Trigger: agent is staging an Open Design project for an AgentFrame deliverable (image / carousel / deck / template / future).
 
@@ -10,10 +10,10 @@ The goal is a non-blank Open Design session: campaign design language staged, co
 
 Load the smallest set that can stage the project:
 
-- Locked campaign `design-language-vF.md`, plus `tokens.yaml` and `tokens.css` when present.
+- Locked campaign `design-language-v{N}.md`, plus `tokens.yaml` and `tokens.css` when present.
 - [`library/deliverables/design-language/transfer-to-open-design.md`](../../../library/deliverables/design-language/transfer-to-open-design.md) for the DL -> OD `DESIGN.md` mapping.
 - Calling deliverable:
-  - `image-prompt-vF.md` body for a single image.
+  - `image-prompt-v{N}.md` body for a single image.
   - `carousel-spec` slide list for carousel work.
   - Deck/template spec for deck or template work.
 - Relevant post copy or messaging architecture excerpt when it helps the visual brief.

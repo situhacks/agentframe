@@ -38,7 +38,9 @@
     "onlyBuiltDependencies": [
       "better-sqlite3",
       "electron",
-      "esbuild"
+      "electron-winstaller",
+      "esbuild",
+      "sharp"
     ]
   }
 }

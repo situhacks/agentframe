@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <video src="https://github.com/user-attachments/assets/7ff210d9-d56d-4e84-8bb4-7d2bcaf3f82d" autoplay loop muted playsinline width="100%"></video>
+  <video src="https://github.com/situhacks/agentframe-marketing/releases/download/v0.1/agentframe-trailer-v0.1.mp4" autoplay loop muted playsinline width="100%"></video>
 </p>
 
 

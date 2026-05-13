@@ -48,6 +48,14 @@ system/skills/open-design/source/playwright-report/
 system/skills/open-design/source/e2e/.od-data/
 system/skills/open-design/source/e2e/reports/
 
+# === Open Design — operator content added under the source subtree ===
+# Match every subdirectory under design-systems/ and skills/. Git only
+# applies gitignore to UNTRACKED paths, so upstream-shipped design systems
+# and skills (already tracked) stay tracked. Anything new the operator adds
+# here is campaign- or operator-specific and stays local.
+system/skills/open-design/source/design-systems/*/
+system/skills/open-design/source/skills/*/
+
 # === Scratch / scratchpad directories anywhere in the tree ===
 **/_scratch/
 

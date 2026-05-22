@@ -12,6 +12,17 @@ Used by `library/deliverables/carousel-spec/template.md` and any post that needs
 | Open Design (bundled) | You want higher-fidelity designed outputs, or you want to render a whole social carousel as a single design pass. | `image-prompt`, `carousel-spec` | Exported files (HTML / PNG / PDF / PPTX / ZIP) saved to the calling post's `visuals/imports/`; use `system/skills/open-design/SKILL.md` |
 | External / stock / operator-provided | Existing assets are already the right fit; no model generation needed. | calling deliverable | Referenced asset path(s) in the post folder |
 
+### Open Design mode + skill defaults
+
+When the Open Design path is picked, stage the project with these defaults (operator can override):
+
+| Calling deliverable shape | OD mode | OD skillId | Why |
+|---|---|---|---|
+| `image-prompt` single image (e.g. 1080x1080 LinkedIn hero) | `image` | `canvas-design` | Image-mode skill for posters, illustrations, and static pieces. Custom canvas sizes are first-class. |
+| `carousel-spec` square social carousel | `image` | `canvas-design` per slide | Best canvas fidelity for LinkedIn/IG square slides. Stage one project per slide, or one project iterated slide-by-slide, so every slide honors the campaign DL. |
+| `carousel-spec` content-heavy, 16:9 acceptable | `deck` | `simple-deck` | Bulk slide generation in one project. Use only when the operator confirms 16:9 is acceptable. |
+| Deck / PPT long-form presentation | `deck` | `magazine-web-ppt` | OD's bundled deck default. PPTX/PDF export is first-class; swap to `pptx` if PPTX editability matters more than visual style. |
+
 ## Record convention
 
 When an image is generated for a post, save `phase-4-production/posts/post-{n}/image-prompt-v{N}.md` as the absolute-tiniest record:

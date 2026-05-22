@@ -220,7 +220,7 @@ My current production stack. Swap any of them for a sharper tool without touchin
 | `hyperframes` | Vendored from [heygen-com/hyperframes](https://github.com/heygen-com/hyperframes) |
 | `hyperframes-cli` | Vendored from [heygen-com/hyperframes](https://github.com/heygen-com/hyperframes) |
 | `gsap` | Vendored animation skill for HyperFrames workflows |
-| `open-design` | Vendored local-first runtime from [nexu-io/open-design](https://github.com/nexu-io/open-design) for image/deck/template-style visual production, with AgentFrame handoff rules in `system/skills/open-design/HANDOFF.md` |
+| `open-design` | Vendored local-first runtime from [nexu-io/open-design](https://github.com/nexu-io/open-design) for image/deck/template-style visual production, with AgentFrame setup, staging, and lock-time import rules in `system/skills/open-design/SKILL.md` |
 | `browser-harness` | Vendored from [browser-use/browser-harness](https://github.com/browser-use/browser-harness) for CDP-driven browser workflows; routed through Edge with AgentFrame boundary notes in `system/skills/browser-harness/AGENTS.md` |
 
 

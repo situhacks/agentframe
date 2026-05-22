@@ -66,21 +66,15 @@ OD also requires:
 | 8. Voice & Brand | DL "Voice & Brand" paragraph | Direct copy. |
 | 9. Anti-patterns | DL "Anti-patterns" section | Direct copy. The DL section name is already aligned with OD. |
 
-## Transfer procedure
+## Procedure
 
-When the operator says "take this DL into Open Design" (or similar):
+See [`system/skills/open-design/SKILL.md`](../../../system/skills/open-design/SKILL.md) § Stage for the end-to-end staging procedure that uses this mapping. This file owns the field-level contract; SKILL.md owns the procedure.
 
-1. Load `design-language-v{N}.md`, `tokens.yaml`, and `tokens.css` for the campaign.
-2. Assemble a new `DESIGN.md` at `system/skills/open-design/source/.od/design-systems/<campaign-slug>/DESIGN.md` (or the OD project's local override path).
-3. For each row in the mapping table, copy or transform the source field into the matching OD section.
-4. For sections marked "Skip by default", emit a one-line note rather than fabricating content. Operator can override per campaign.
-5. Verify the assembled file:
-   - All 9 numbered headings present.
-   - `:root {}` block contains the campaign's color, type, spacing tokens.
-   - Font Labels block present in Typography.
-   - Real hex codes everywhere, no placeholders.
-6. Drop a comment at the top of the OD `DESIGN.md` linking back to the source `design-language-v{N}.md` so future Open Design edits can find the upstream.
+Validation checklist when assembling a campaign-scoped `DESIGN.md`:
 
-## Out of scope (deferred to its own plan)
-
-Runtime pass-through (auto-generate `DESIGN.md` on lock, prepare the first OD prompt at launch, pre-populate the OD design-system picker with the campaign DL, OD source-side changes) is a separate plan. This file is the bridge contract; that plan is the runtime that uses it.
+- All nine numbered headings present.
+- `:root {}` block contains the campaign's color, type, and spacing tokens.
+- Font Labels block present in Typography.
+- Real hex codes everywhere; no `#REPLACE_ME`, `currentColor`, or CSS variable names as values.
+- WCAG AA contrast for text against its paired background.
+- For "skip by default" sections, emit the one-line note rather than fabricating content.

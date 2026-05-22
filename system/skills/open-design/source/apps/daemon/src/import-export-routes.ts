@@ -1,7 +1,13 @@
 import type { Express } from 'express';
 import type { RouteDeps } from './server-context.js';
+import {
+  InlineAssetsLimitError,
+  MAX_INLINE_OWNER_BYTES,
+  inlineRelativeAssets,
+  type InlineAssetReader,
+} from './inline-assets.js';
 
-export interface RegisterImportRoutesDeps extends RouteDeps<'db' | 'http' | 'uploads' | 'node' | 'ids' | 'paths' | 'imports' | 'auth' | 'projectStore' | 'conversations' | 'projectFiles'> {}
+export interface RegisterImportRoutesDeps extends RouteDeps<'db' | 'http' | 'uploads' | 'node' | 'ids' | 'paths' | 'imports' | 'auth' | 'projectStore' | 'conversations' | 'projectFiles' | 'validation'> {}
 
 export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps) {
   const { db } = ctx;
@@ -18,9 +24,10 @@ export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps
     pruneExpiredImportNonces,
     verifyDesktopImportToken,
   } = ctx.auth;
-  const { insertProject } = ctx.projectStore;
+  const { getProject, insertProject, updateProject } = ctx.projectStore;
   const { insertConversation } = ctx.conversations;
   const { setTabs } = ctx.projectFiles;
+  const { validateProjectDesignSystemId } = ctx.validation;
   app.post(
     '/api/import/claude-design',
     importUpload.single('file'),
@@ -86,6 +93,111 @@ export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps
   // No copy, no shadow tree — the user owns the workspace and is
   // responsible for their own version control (git, time machine, etc.),
   // mirroring how Cursor / Claude Code / Aider behave.
+  // Replace an existing project's working directory in-place. Mirrors
+  // the same trust-gate, realpath, and data-dir checks as folder import,
+  // but updates metadata.baseDir on an existing project record.
+  app.post('/api/projects/:id/working-dir', async (req, res) => {
+    try {
+      const projectId = req.params.id;
+      const existing = getProject(db, projectId);
+      if (!existing) {
+        return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
+      }
+      const { baseDir } = req.body || {};
+      if (typeof baseDir !== 'string' || !baseDir.trim()) {
+        return sendApiError(res, 400, 'BAD_REQUEST', 'baseDir required');
+      }
+      let trustedPickerImport = false;
+      if (isDesktopAuthGateActive()) {
+        const secret = desktopAuthSecret();
+        if (secret == null) {
+          return sendApiError(
+            res,
+            503,
+            'DESKTOP_AUTH_PENDING',
+            'desktop auth required but secret not yet registered',
+            {
+              details: { hint: 'restart desktop or wait for sidecar registration' },
+              retryable: true,
+            },
+          );
+        }
+        const headerValue = req.get('x-od-desktop-import-token');
+        const token = typeof headerValue === 'string' ? headerValue : '';
+        const now = Date.now();
+        pruneExpiredImportNonces(now);
+        const verification = verifyDesktopImportToken(
+          secret,
+          baseDir,
+          token,
+          now,
+          consumedImportNonces,
+        );
+        if (!verification.ok) {
+          return sendApiError(
+            res,
+            403,
+            'FORBIDDEN',
+            'desktop import token rejected',
+            { details: { reason: verification.reason } },
+          );
+        }
+        consumedImportNonces.set(verification.nonce, verification.exp);
+        trustedPickerImport = true;
+      }
+
+      const trimmedInput = baseDir.trim();
+      if (!path.isAbsolute(path.normalize(trimmedInput))) {
+        return sendApiError(res, 400, 'BAD_REQUEST', 'baseDir must be absolute');
+      }
+      let normalizedPath: string;
+      try {
+        normalizedPath = await fs.promises.realpath(trimmedInput);
+      } catch {
+        return sendApiError(res, 400, 'BAD_REQUEST', 'folder not found');
+      }
+      let dirStat;
+      try {
+        dirStat = await fs.promises.lstat(normalizedPath);
+      } catch {
+        return sendApiError(res, 400, 'BAD_REQUEST', 'folder not found');
+      }
+      if (!dirStat.isDirectory()) {
+        return sendApiError(res, 400, 'BAD_REQUEST', 'path must be a directory');
+      }
+      if (path.parse(normalizedPath).root === normalizedPath) {
+        return sendApiError(res, 400, 'BAD_REQUEST', 'cannot point at the filesystem root');
+      }
+      if (
+        normalizedPath === RUNTIME_DATA_DIR_CANONICAL ||
+        normalizedPath.startsWith(RUNTIME_DATA_DIR_CANONICAL + path.sep)
+      ) {
+        return sendApiError(res, 400, 'BAD_REQUEST', 'cannot point at the data directory');
+      }
+
+      const entryFile = await detectEntryFile(normalizedPath);
+      const existingMeta = existing.metadata ?? {};
+      const nextMeta = {
+        ...existingMeta,
+        kind: existingMeta.kind ?? 'prototype',
+        baseDir: normalizedPath,
+        importedFrom: 'folder' as const,
+        entryFile,
+        ...(trustedPickerImport ? { fromTrustedPicker: true as const } : {}),
+      };
+      const updated = updateProject(db, projectId, { metadata: nextMeta });
+      if (!updated) {
+        return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
+      }
+      if (entryFile) setTabs(db, projectId, [entryFile], entryFile);
+      /** @type {import('@open-design/contracts').ReplaceProjectWorkingDirResponse} */
+      const body = { project: updated, baseDir: normalizedPath, entryFile };
+      res.json(body);
+    } catch (err: any) {
+      sendApiError(res, 400, 'BAD_REQUEST', String(err));
+    }
+  });
+
   app.post('/api/import/folder', async (req, res) => {
     try {
       const { baseDir, name, skillId, designSystemId } = req.body || {};
@@ -179,12 +291,21 @@ export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps
           ? name.trim()
           : path.basename(normalizedPath);
       const entryFile = await detectEntryFile(normalizedPath);
+      const designSystemValidation = await validateProjectDesignSystemId(designSystemId);
+      if (!designSystemValidation.ok) {
+        return sendApiError(
+          res,
+          400,
+          designSystemValidation.code,
+          designSystemValidation.message,
+        );
+      }
 
       const project = insertProject(db, {
         id,
         name: projectName,
         skillId: skillId ?? null,
-        designSystemId: designSystemId ?? null,
+        designSystemId: designSystemValidation.id,
         pendingPrompt: null,
         metadata: {
           kind: 'prototype',
@@ -216,13 +337,15 @@ export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps
 
 }
 
-export interface RegisterProjectExportRoutesDeps extends RouteDeps<'db' | 'http' | 'paths' | 'projectStore' | 'exports'> {}
+export interface RegisterProjectExportRoutesDeps extends RouteDeps<'db' | 'http' | 'paths' | 'projectStore' | 'exports' | 'projectFiles' | 'validation'> {}
 
 export function registerProjectExportRoutes(app: Express, ctx: RegisterProjectExportRoutesDeps) {
   const { db } = ctx;
   const { sendApiError } = ctx.http;
   const { PROJECTS_DIR } = ctx.paths;
   const { getProject } = ctx.projectStore;
+  const { readProjectFile, resolveProjectFilePath } = ctx.projectFiles;
+  const { isSafeId } = ctx.validation;
   const {
     buildProjectArchive,
     buildBatchArchive,
@@ -345,6 +468,177 @@ export function registerProjectExportRoutes(app: Express, ctx: RegisterProjectEx
     }
   });
 
+  // Export endpoint: serves an HTML body with every same-project
+  // top-level `<link rel=stylesheet>` / `<script src>` inlined.
+  // Counterpart to GET /api/projects/:id/raw/* — that route stays
+  // URL-load (one request per asset; FileViewer's default since
+  // PR #384). This route exists for explicit "Inline top-level
+  // CSS/JS" exports + the screenshot path where the headless browser
+  // fetches the response and renders it.
+  //
+  // Scope is intentionally narrow: only `<link rel=stylesheet>` and
+  // `<script src>` are rewritten. `<img src>`, CSS `url(...)` refs,
+  // `@import`, ES module imports, font sources, and similar remain
+  // external in the response — see the docstring on
+  // `apps/daemon/src/inline-assets.ts` for the full not-rewritten list
+  // and rationale. A fully offline "self-contained" export with image
+  // and font bundling would be a follow-up issue.
+  //
+  // Null-origin (sandboxed iframe srcdoc) callers are intentionally
+  // NOT supported — the only consumers are the daemon UI (same-origin)
+  // and server-side screenshot tooling (no Origin header). The
+  // response also carries `Content-Security-Policy: sandbox
+  // allow-scripts` so top-level browser navigation (no Origin header,
+  // would otherwise pass the daemon middleware) cannot escalate to
+  // daemon-origin privileges through script execution.
+  //
+  // See nexu-io/open-design#368 and the architecture lock at
+  // https://github.com/nexu-io/open-design/issues/368#issuecomment-4366243218.
+  app.get('/api/projects/:id/export/*', async (req, res) => {
+    try {
+      if (!isSafeId(req.params.id)) {
+        return sendApiError(res, 400, 'BAD_REQUEST', 'invalid project id');
+      }
+
+      const inlineRaw =
+        typeof req.query.inline === 'string' ? req.query.inline.trim().toLowerCase() : '';
+      if (!['1', 'true', 'yes', 'on'].includes(inlineRaw)) {
+        return sendApiError(
+          res,
+          400,
+          'BAD_REQUEST',
+          "query parameter 'inline=1' is required",
+        );
+      }
+
+      const project = getProject(db, req.params.id);
+      const relPath = (req.params as any)[0];
+
+      // PR #1312 round-5 (lefarcen P2): stat the owner file BEFORE
+      // readProjectFile so a 100 MiB owner HTML is rejected after a
+      // cheap stat() call, not after a 100 MiB readFile() into memory.
+      // The size check + mime check both run pre-buffer here, mirroring
+      // the sibling-asset stat-then-read contract round 4 already
+      // applied via AssetHandle. Size fires before mime so an oversize
+      // non-HTML file returns 413 (not 415) — that ordering is the
+      // observable Red→Green for this round.
+      //
+      // The helper's ownerBytes check (inline-assets.ts:127-133) stays
+      // as defense-in-depth: it still catches direct in-process callers
+      // that skip the route and any future drift in the size reported
+      // by stat vs the bytes actually returned by readFile.
+      let ownerMeta;
+      try {
+        ownerMeta = await resolveProjectFilePath(
+          PROJECTS_DIR,
+          req.params.id,
+          relPath,
+          project?.metadata,
+        );
+      } catch (err: any) {
+        const status = err && err.code === 'ENOENT' ? 404 : 400;
+        return sendApiError(
+          res,
+          status,
+          status === 404 ? 'FILE_NOT_FOUND' : 'BAD_REQUEST',
+          String(err),
+        );
+      }
+
+      if (ownerMeta.size > MAX_INLINE_OWNER_BYTES) {
+        return sendApiError(
+          res,
+          413,
+          'PAYLOAD_TOO_LARGE',
+          `owner html ${ownerMeta.size} bytes exceeds MAX_INLINE_OWNER_BYTES ${MAX_INLINE_OWNER_BYTES}`,
+        );
+      }
+
+      if (!ownerMeta.mime.startsWith('text/html')) {
+        return sendApiError(
+          res,
+          415,
+          'UNSUPPORTED_MEDIA_TYPE',
+          'export endpoint only supports HTML files',
+        );
+      }
+
+      let file;
+      try {
+        file = await readProjectFile(PROJECTS_DIR, req.params.id, relPath, project?.metadata);
+      } catch (err: any) {
+        const status = err && err.code === 'ENOENT' ? 404 : 400;
+        return sendApiError(
+          res,
+          status,
+          status === 404 ? 'FILE_NOT_FOUND' : 'BAD_REQUEST',
+          String(err),
+        );
+      }
+
+      // PR #1312 round-4 (lefarcen P2): stat first, then read. This
+      // lets the helper short-circuit on maxAssetBytes / maxTotalBytes
+      // BEFORE the buffer is materialized into memory. A 100 MiB
+      // sibling file is rejected after the cheap stat call, not after
+      // a 100 MiB readFile.
+      const fileReader: InlineAssetReader = async (sibling) => {
+        let meta;
+        try {
+          meta = await resolveProjectFilePath(
+            PROJECTS_DIR,
+            req.params.id,
+            sibling,
+            project?.metadata,
+          );
+        } catch {
+          return null;
+        }
+        return {
+          size: meta.size,
+          read: async () => {
+            try {
+              const siblingFile = await readProjectFile(
+                PROJECTS_DIR,
+                req.params.id,
+                sibling,
+                project?.metadata,
+              );
+              return siblingFile.buffer.toString('utf8');
+            } catch {
+              return null;
+            }
+          },
+        };
+      };
+
+      const rendered = await inlineRelativeAssets(
+        file.buffer.toString('utf8'),
+        relPath,
+        fileReader,
+      );
+      // PR #1312 round-2 (lefarcen P2): top-level browser navigation to
+      // this URL sends no Origin header, so the /api middleware lets it
+      // through. Without a CSP, any JS in the exported document would
+      // run at daemon origin with access to /api/, cookies, localStorage,
+      // etc. `sandbox allow-scripts` treats the response like a sandboxed
+      // iframe with an opaque origin — scripts execute (that's the point
+      // of inlining JS for screenshot tooling), but cannot read cookies,
+      // hit /api/, or escalate to daemon-origin privileges.
+      res.setHeader('Content-Security-Policy', 'sandbox allow-scripts');
+      res.type('text/html').send(rendered);
+    } catch (err: any) {
+      // PR #1312 round-3 (lefarcen P2): the inliner's cap-enforcement
+      // throws InlineAssetsLimitError when the owner HTML, candidate
+      // count, or assembled output exceeds the module-level limits.
+      // Map every such throw to a 413 PAYLOAD_TOO_LARGE envelope so
+      // callers see a structured error rather than a generic 400.
+      if (err instanceof InlineAssetsLimitError || err?.name === 'InlineAssetsLimitError') {
+        return sendApiError(res, 413, 'PAYLOAD_TOO_LARGE', String(err));
+      }
+      sendApiError(res, 400, 'BAD_REQUEST', String(err));
+    }
+  });
+
 }
 
 export interface RegisterFinalizeRoutesDeps extends RouteDeps<'db' | 'http' | 'paths' | 'projectStore' | 'validation' | 'finalize'> {}
@@ -355,9 +649,16 @@ export function registerFinalizeRoutes(app: Express, ctx: RegisterFinalizeRoutes
   const { PROJECTS_DIR, DESIGN_SYSTEMS_DIR } = ctx.paths;
   const { getProject } = ctx.projectStore;
   const { isSafeId, validateExternalApiBaseUrl } = ctx.validation;
-  const { finalizeDesignPackage, FinalizePackageLockedError, FinalizeUpstreamError, redactSecrets } = ctx.finalize;
-  app.post('/api/projects/:id/finalize/anthropic', async (req, res) => {
-    const { apiKey, baseUrl, model, maxTokens } = req.body || {};
+  const {
+    defaultBaseUrlForFinalizeProtocol,
+    finalizeDesignPackage,
+    FinalizePackageLockedError,
+    FinalizeUpstreamError,
+    isFinalizeProviderProtocol,
+    redactSecrets,
+  } = ctx.finalize;
+  app.post('/api/projects/:id/finalize/:provider', async (req, res) => {
+    const { apiKey, baseUrl, model, maxTokens, apiVersion, protocol: bodyProtocol } = req.body || {};
     try {
       // Centralized path-traversal guard. `isSafeId` (apps/daemon/src/projects.ts)
       // rejects pure-dot ids (`.`, `..`, etc.) which would otherwise pass
@@ -369,28 +670,49 @@ export function registerFinalizeRoutes(app: Express, ctx: RegisterFinalizeRoutes
         return sendApiError(res, 400, 'BAD_REQUEST', 'invalid project id');
       }
 
+      const protocol = req.params.provider;
+      if (!isFinalizeProviderProtocol(protocol)) {
+        return sendApiError(
+          res,
+          400,
+          'BAD_REQUEST',
+          'provider must be one of anthropic|openai|azure|google|ollama',
+        );
+      }
+      if (bodyProtocol !== undefined && bodyProtocol !== protocol) {
+        return sendApiError(res, 400, 'BAD_REQUEST', 'body protocol must match route provider');
+      }
+
       if (typeof apiKey !== 'string' || !apiKey.trim()) {
         return sendApiError(res, 400, 'BAD_REQUEST', 'apiKey is required');
       }
       if (typeof model !== 'string' || !model.trim()) {
         return sendApiError(res, 400, 'BAD_REQUEST', 'model is required');
       }
+      let effectiveBaseUrl = defaultBaseUrlForFinalizeProtocol(protocol);
       if (baseUrl !== undefined) {
         if (typeof baseUrl !== 'string' || !baseUrl.trim()) {
           return sendApiError(res, 400, 'BAD_REQUEST', 'baseUrl must be a non-empty string when provided');
         }
-        const validated = validateExternalApiBaseUrl(baseUrl);
-        if (validated.error) {
-          return sendApiError(
-            res,
-            validated.forbidden ? 403 : 400,
-            validated.forbidden ? 'FORBIDDEN' : 'BAD_REQUEST',
-            validated.error,
-          );
-        }
+        effectiveBaseUrl = baseUrl.trim();
+      }
+      if (!effectiveBaseUrl) {
+        return sendApiError(res, 400, 'BAD_REQUEST', 'baseUrl is required for this provider');
+      }
+      const validated = await validateExternalApiBaseUrl(effectiveBaseUrl);
+      if (validated.error) {
+        return sendApiError(
+          res,
+          validated.forbidden ? 403 : 400,
+          validated.forbidden ? 'FORBIDDEN' : 'BAD_REQUEST',
+          validated.error,
+        );
       }
       if (maxTokens !== undefined && (typeof maxTokens !== 'number' || maxTokens <= 0)) {
         return sendApiError(res, 400, 'BAD_REQUEST', 'maxTokens must be a positive number when provided');
+      }
+      if (apiVersion !== undefined && typeof apiVersion !== 'string') {
+        return sendApiError(res, 400, 'BAD_REQUEST', 'apiVersion must be a string when provided');
       }
 
       const project = getProject(db, req.params.id);
@@ -411,7 +733,17 @@ export function registerFinalizeRoutes(app: Express, ctx: RegisterFinalizeRoutes
           PROJECTS_DIR,
           DESIGN_SYSTEMS_DIR,
           req.params.id,
-          { apiKey, baseUrl, model, maxTokens, signal: finalizeAbort.signal },
+          {
+            protocol,
+            apiKey,
+            baseUrl: effectiveBaseUrl,
+            model,
+            maxTokens,
+            ...(typeof apiVersion === 'string' && apiVersion.trim()
+              ? { apiVersion: apiVersion.trim() }
+              : {}),
+            signal: finalizeAbort.signal,
+          },
         );
       } finally {
         res.off('close', abortFromRequest);
@@ -425,9 +757,9 @@ export function registerFinalizeRoutes(app: Express, ctx: RegisterFinalizeRoutes
         return sendApiError(res, 409, 'CONFLICT', err.message);
       }
 
-      // Upstream Anthropic error - status-aware mapping using shared
+      // Upstream provider error - status-aware mapping using shared
       // ApiErrorCode values. Run the raw upstream body through
-      // redactSecrets so the API key cannot leak even if Anthropic
+      // redactSecrets so the API key cannot leak even if the provider
       // echoes the inbound headers. Codes per @lefarcen P2 on PR #832:
       // 401 -> UNAUTHORIZED, 429 -> RATE_LIMITED, others -> UPSTREAM_UNAVAILABLE.
       if (err instanceof FinalizeUpstreamError) {
@@ -456,7 +788,7 @@ export function registerFinalizeRoutes(app: Express, ctx: RegisterFinalizeRoutes
       // Log via console.error per the daemon convention; client sees a
       // generic 500 with the shared INTERNAL_ERROR code. Run the message
       // through redactSecrets defensively.
-      console.error('[finalize/anthropic]', err);
+      console.error('[finalize]', err);
       const safeMsg = redactSecrets(String(err?.message || err), [apiKey]);
       return sendApiError(res, 500, 'INTERNAL_ERROR', safeMsg);
     }

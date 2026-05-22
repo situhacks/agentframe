@@ -3,10 +3,13 @@ import type {
   PreviewCommentMember,
   PreviewCommentPosition,
   PreviewCommentSelectionKind,
+  PreviewVisualMarkKind,
 } from './comments';
 import type { ResearchOptions } from './research';
+import type { RunContextSelection } from './context.js';
 
 export type ChatRole = 'user' | 'assistant';
+export type ChatCommentSelectionKind = PreviewCommentSelectionKind | 'visual';
 
 export interface ChatRequest {
   agentId: string;
@@ -30,7 +33,10 @@ export interface ChatRequest {
   commentAttachments?: ChatCommentAttachment[];
   model?: string | null;
   reasoning?: string | null;
+  /** UI locale selected by the client, used by prompt composition for user-visible generated UI. */
+  locale?: string;
   research?: ResearchOptions;
+  context?: RunContextSelection;
 }
 
 export interface ChatRunCreateRequest extends ChatRequest {
@@ -42,8 +48,34 @@ export interface ChatRunCreateRequest extends ChatRequest {
 
 export type ChatRunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'canceled';
 
+export type ChatMessageFeedbackRating = 'positive' | 'negative';
+
+export type ChatMessageFeedbackReasonCode =
+  | 'matched_request'
+  | 'strong_visual'
+  | 'useful_structure'
+  | 'easy_to_continue'
+  | 'followed_design_system'
+  | 'missed_request'
+  | 'weak_visual'
+  | 'incomplete_output'
+  | 'hard_to_use'
+  | 'missed_design_system'
+  | 'other';
+
+export interface ChatMessageFeedback {
+  rating: ChatMessageFeedbackRating;
+  reasonCodes?: ChatMessageFeedbackReasonCode[];
+  customReason?: string;
+  reasonsSubmittedAt?: number;
+  createdAt: number;
+  updatedAt?: number;
+}
+
 export interface ChatRunCreateResponse {
   runId: string;
+  appliedPluginSnapshotId?: string;
+  pluginId?: string;
 }
 
 export interface ChatRunStatusResponse {
@@ -52,11 +84,15 @@ export interface ChatRunStatusResponse {
   conversationId: string | null;
   assistantMessageId: string | null;
   agentId: string | null;
+  appliedPluginSnapshotId?: string | null;
+  pluginId?: string | null;
   status: ChatRunStatus;
   createdAt: number;
   updatedAt: number;
   exitCode?: number | null;
   signal?: string | null;
+  error?: string | null;
+  errorCode?: string | null;
 }
 
 export interface ChatRunListResponse {
@@ -85,9 +121,12 @@ export interface ChatCommentAttachment {
   currentText: string;
   pagePosition: PreviewCommentPosition;
   htmlHint: string;
-  selectionKind?: PreviewCommentSelectionKind;
+  selectionKind?: ChatCommentSelectionKind;
   memberCount?: number;
   podMembers?: PreviewCommentMember[];
+  screenshotPath?: string;
+  markKind?: PreviewVisualMarkKind;
+  intent?: string;
   source?: 'saved-comment' | 'board-batch';
 }
 
@@ -134,6 +173,7 @@ export interface ChatMessage {
   attachments?: ChatAttachment[];
   commentAttachments?: ChatCommentAttachment[];
   producedFiles?: ProjectFile[];
+  feedback?: ChatMessageFeedback;
   /**
    * Request-only marker for the final assistant-message persistence pass.
    * The daemon does not store or return this field; it only uses it to

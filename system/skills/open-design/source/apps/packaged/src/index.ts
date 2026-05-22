@@ -11,6 +11,7 @@ import {
   resolveAppIpcPath,
 } from "@open-design/sidecar";
 import { readProcessStamp } from "@open-design/platform";
+import { join } from "node:path";
 import { app, dialog } from "electron";
 
 import { readPackagedConfig } from "./config.js";
@@ -84,6 +85,9 @@ async function main(): Promise<void> {
     daemonCliEntry: config.daemonCliEntry,
     daemonSidecarEntry: config.daemonSidecarEntry,
     nodeCommand: config.nodeCommand,
+    telemetryRelayUrl: config.telemetryRelayUrl,
+    posthogKey: config.posthogKey,
+    posthogHost: config.posthogHost,
     // PR #974 round-5 (lefarcen P2): the Electron entry runs desktop
     // main alongside the daemon, so the import-folder gate must be
     // pinned ON from request 0. See `apps/packaged/src/headless.ts` for
@@ -113,6 +117,11 @@ async function main(): Promise<void> {
     // Electron's protocol handler.
     async discoverDaemonUrl() {
       return sidecars.daemon.url;
+    },
+    preloadPath: join(app.getAppPath(), "preload.cjs"),
+    update: {
+      currentVersion: config.appVersion,
+      downloadRoot: paths.updateRoot,
     },
   });
 }

@@ -1,8 +1,8 @@
 ## Open Design Vendor Record
 
 - Upstream repository: `https://github.com/nexu-io/open-design`
-- Vendored commit: `5bd9763181f2c868e1439bfc4842859ec69df102`
-- Snapshot date (UTC): `2026-05-11`
+- Vendored commit: `6dcf55e777bf38a8f72531bfd593b30a54907958`
+- Snapshot date (UTC): `2026-05-13`
 - Source location in AgentFrame: `system/skills/open-design/source/`
 - License: Apache-2.0 (preserved at `system/skills/open-design/source/LICENSE`)
 

@@ -22,7 +22,6 @@ od:
   category: brand-page
   surface: web
   scenario: marketing
-  featured: 1
   audience: founders, design studios, OSS maintainers
   tone: editorial, restrained, premium
   scale: viewport-anchored long-form single page
@@ -92,7 +91,7 @@ parameters:
     type: enum
     values: [fal, azure]
     default: fal
-    description: Provider for `image_strategy: generate`. fal.ai is faster.
+    description: "Provider for `image_strategy: generate`. fal.ai is faster."
 outputs:
   - path: <out>/index.html
     when: output_format in [standalone-html, both]

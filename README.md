@@ -1,7 +1,7 @@
 ﻿# AgentFrame: Marketing
 
 <p align="center">
-  <img src="assets/readme/banner.png" alt="AgentFrame: Marketing — a full-stack marketing workspace inside your AI coding agent" width="100%" />
+  <img src=".github/readme-assets/banner.png" alt="AgentFrame: Marketing — a full-stack marketing workspace inside your AI coding agent" width="100%" />
 </p>
 
 > **A full-stack marketing workspace inside your AI coding agent.** File-native. Built for solo operators. Evolves with your workflow. Two `AGENTS.md` modes carry the work — **CMO** ships campaigns, **Builder** evolves the system. Plan a campaign and publish your first post in an hour, without leaving your IDE.
@@ -102,31 +102,31 @@ A solo-flow walkthrough using the example campaign at `workspace/campaigns/examp
 <table>
 <tr>
 <td width="50%" valign="top">
-<img src="assets/readme/walkthrough-01-cmo-kickoff.png" alt="01 · CMO kickoff" /><br/>
+<img src=".github/readme-assets/walkthrough-01-cmo-kickoff.png" alt="01 · CMO kickoff" /><br/>
 <sub><b>01 · CMO kickoff</b> — Tell your coding agent <code>start a new campaign</code>. CMO reads your operator profile, scaffolds the campaign folder, and calls Composio to pull workplace context — recent emails, meeting notes, doc activity — so the campaign starts from what you actually care about that week, not a cold prompt.</sub>
 </td>
 <td width="50%" valign="top">
-<img src="assets/readme/walkthrough-02-research.png" alt="02 · Gemini Deep Research" /><br/>
+<img src=".github/readme-assets/walkthrough-02-research.png" alt="02 · Gemini Deep Research" /><br/>
 <sub><b>02 · Gemini Deep Research</b> — Deep Research runs against your chosen direction and lands a structured artifact at <code>phase-1-research/research-artifact-v{N}.md</code>.</sub>
 </td>
 </tr>
 <tr>
 <td width="50%" valign="top">
-<img src="assets/readme/walkthrough-03-post-copy.png" alt="03 · Post copy versioning" /><br/>
+<img src=".github/readme-assets/walkthrough-03-post-copy.png" alt="03 · Post copy versioning" /><br/>
 <sub><b>03 · Post copy in your voice</b> — Drafts inherit your locked voice rules from <code>library/context/operator/voice.md</code>, then run through the humanizer skill before lock to strip AI tells. Every revision snapshots into <code>version_history</code> so you can roll back, compare, or read why the copy changed.</sub>
 </td>
 <td width="50%" valign="top">
-<img src="assets/readme/walkthrough-04-image-production.png" alt="04 · Open Design handoff" /><br/>
+<img src=".github/readme-assets/walkthrough-04-image-production.png" alt="04 · Open Design handoff" /><br/>
 <sub><b>04 · Media creation, your pick</b> — Pick the path that fits the deliverable: HTML render in your coding agent for slide-shaped visuals, Gemini Nano Banana 2/Pro for raster image variants, Open Design for higher-fidelity decks and carousels, or HyperFrames for HTML-to-video. For Open Design specifically, AgentFrame stages the project for you — design language, selected mode, and first prompt already loaded. Just open it and press send. (I usually take the OD export into Figma to clean it up. Optional — most people finish inside OD and ship.)</sub>
 </td>
 </tr>
 <tr>
 <td width="50%" valign="top">
-<img src="assets/readme/walkthrough-05-published.png" alt="05 · Published via Composio" /><br/>
+<img src=".github/readme-assets/walkthrough-05-published.png" alt="05 · Published via Composio" /><br/>
 <sub><b>05 · Published via Composio</b> — Composio's connector to LinkedIn (or X, Instagram, TikTok) sends or schedules the post. Live URL and shipped frontmatter land back in the post folder.</sub>
 </td>
 <td width="50%" valign="top">
-<img src="assets/readme/walkthrough-06-retro.png" alt="06 · Retro" /><br/>
+<img src=".github/readme-assets/walkthrough-06-retro.png" alt="06 · Retro" /><br/>
 <sub><b>06 · Retro</b> — The agent suggests patches to voice rules, templates, processes, and skill behavior based on what actually happened during the run. You approve or reject each one. AgentFrame tracks the small details throughout the campaign so you don't have to remember them.</sub>
 </td>
 </tr>

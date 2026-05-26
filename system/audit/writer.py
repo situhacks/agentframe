@@ -21,6 +21,16 @@ SCHEMA_PATH = PROJECT_ROOT / "system" / "audit" / "schema.sql"
 
 ACTOR_VALUES = {"agent", "user", "system"}
 
+# Mode-swap atomicity: when change_type == "mode_swap", the writer copies
+# AGENTS.{mode}.md to AGENTS.md at the project root before writing the audit
+# row. This prevents the audit-row-without-file-copy desync that BB-2026-05-26-01
+# captures. The supported modes map to the persona files at the repo root.
+MODE_SWAP_PERSONA_FILES = {
+    "builder": "AGENTS.builder.md",
+    "cmo": "AGENTS.cmo.md",
+    "career-ops": "AGENTS.career-ops.md",
+}
+
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
@@ -49,6 +59,46 @@ def _validate_actor(actor: str) -> None:
     if actor not in ACTOR_VALUES:
         allowed = ", ".join(sorted(ACTOR_VALUES))
         raise ValueError(f"actor must be one of: {allowed}")
+
+
+def _perform_mode_swap_side_effect(
+    *,
+    mode: str | None,
+    project_root: Path = PROJECT_ROOT,
+) -> tuple[Path, Path]:
+    """Copy the named mode's persona file over the root AGENTS.md.
+
+    Runs before the mode_swap audit row is written so the file state and the
+    audit row can never desync. Returns (source_path, destination_path) for
+    logging and tests.
+
+    Raises ValueError if `mode` is missing or unknown, or if the source persona
+    file does not exist on disk.
+    """
+    if not mode or not mode.strip():
+        allowed = ", ".join(sorted(MODE_SWAP_PERSONA_FILES))
+        raise ValueError(
+            f"mode is required for mode_swap (allowed: {allowed})"
+        )
+
+    normalised_mode = mode.strip().lower()
+    if normalised_mode not in MODE_SWAP_PERSONA_FILES:
+        allowed = ", ".join(sorted(MODE_SWAP_PERSONA_FILES))
+        raise ValueError(
+            f"unknown mode for mode_swap: {mode!r} (allowed: {allowed})"
+        )
+
+    source = project_root / MODE_SWAP_PERSONA_FILES[normalised_mode]
+    destination = project_root / "AGENTS.md"
+
+    if not source.exists():
+        raise ValueError(
+            f"mode_swap source persona file not found at {source}; "
+            "the swap would leave AGENTS.md in an inconsistent state"
+        )
+
+    destination.write_bytes(source.read_bytes())
+    return source, destination
 
 
 def _normalize_payload(payload: dict[str, Any] | None) -> str:
@@ -104,12 +154,19 @@ def append_system_change(
     payload: dict[str, Any] | None = None,
     created_at: str | None = None,
     source: str = "live",
+    project_root: Path = PROJECT_ROOT,
 ) -> int:
     if not change_type.strip():
         raise ValueError("change_type is required")
     if not ((reason and reason.strip()) or (summary and summary.strip())):
         raise ValueError("system_changes rows require a reason or summary")
     _validate_actor(actor)
+
+    # Mode-swap atomicity: the file copy happens BEFORE the audit row insert.
+    # If the copy raises, no row is written and the writer surfaces the failure.
+    # See BB-2026-05-26-01 for the desync incident that motivated this.
+    if change_type == "mode_swap":
+        _perform_mode_swap_side_effect(mode=mode, project_root=project_root)
 
     ensure_db(db_path)
     row_created_at = created_at or _utc_now()

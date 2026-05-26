@@ -92,12 +92,12 @@ Load only what the task needs. If a file is historical, read it only when resear
 | **CMO** | `workspace/campaigns/`, deliverable drafting/review/lock/publish, campaign state, campaign retros | System architecture, schema, hooks, persona edits, runtime machinery |
 | **Career-Ops** | `career/` | Marketing and system files |
 
-Mode swap commands:
+Mode swap is a single atomic command. The audit writer performs the persona-file copy AND writes the audit row in one call; do not run a separate `Copy-Item` step.
 
-- Builder -> CMO: `Copy-Item AGENTS.cmo.md AGENTS.md -Force`
-- CMO -> Builder: `Copy-Item AGENTS.builder.md AGENTS.md -Force`
+- Builder -> CMO: `python system/audit/writer.py system-change --change-type mode_swap --actor agent --mode cmo --reason "<why>"`
+- CMO -> Builder: `python system/audit/writer.py system-change --change-type mode_swap --actor agent --mode builder --reason "<why>"`
 
-After a swap, append a `mode_swap` row through [`system/audit/writer.py`](system/audit/writer.py). Treat mode swaps as thinking-mode changes, not write-permission changes: design the work in the mode that owns it.
+After the command returns, re-read the root `AGENTS.md` before any further work — the rule set has changed. Treat mode swaps as thinking-mode changes, not write-permission changes: design the work in the mode that owns it.
 
 ---
 

@@ -1,4 +1,4 @@
-﻿# AgentFrame Marketing - CMO Mode
+# AgentFrame Marketing - CMO Mode
 
 > **PRODUCT:** AgentFrame Marketing
 
@@ -38,7 +38,7 @@ Keep each file to its job. Do not move deliverable content into `campaign.md`. D
 | Situation | Load First | Also Load If Needed | Do Not Load |
 |---|---|---|---|
 | State or continuity request | Campaign frontmatter only | Specific campaign body only if the operator asks for depth | Full deliverables, completed campaigns |
-| New campaign | [campaign flow registry](library/process/campaign-flows/README.md), selected flow from `campaign.md` `campaign_flow`, [positioning](library/context/operator/positioning.md), [voice](library/context/operator/voice.md) | Topic research archives or operator profile only when needed | Completed campaigns unless referenced |
+| New campaign (no campaign folder yet) OR loading an existing campaign | [research procedure](library/process/research-and-signals.md), [campaign flow registry](library/process/campaign-flows/README.md), selected flow from `campaign.md` `campaign_flow`, [positioning](library/context/operator/positioning.md), [voice](library/context/operator/voice.md) | Topic research archives or operator profile only when needed | Completed campaigns unless referenced, brainstorming skill or ad-hoc web-research subagents |
 | Deliverable drafting or iteration | Relevant `library/deliverables/{type}/template.md`, [`library/process/deliverable-versioning.md`](library/process/deliverable-versioning.md), campaign tracker, upstream dependency files named by the template | [voice](library/context/operator/voice.md) for voiced output; [positioning](library/context/operator/positioning.md) for strategic/user-voiced work | Unrelated deliverables |
 | Post copy | [post-copy template](library/deliverables/post-copy/template.md), campaign messaging architecture, [voice](library/context/operator/voice.md), [positioning](library/context/operator/positioning.md) | Visual/video spec if the post has media | Historical snapshots unless comparing versions |
 | Carousel or visual post | Relevant visual deliverable template, [voice](library/context/operator/voice.md) if prose appears, campaign messaging architecture | [preview server process](library/process/preview-server.md) for preview offering and hub hygiene | Full campaign history |
@@ -100,12 +100,12 @@ When the campaign moves past an expected deliverable without producing it, stub 
 | **Builder** | `system/`, `library/` structure, templates/process architecture, `AGENTS.*.md`, audit/schema/hooks | Campaign execution |
 | **Career-Ops** | `career/` | Marketing and system files |
 
-Mode swap commands:
+Mode swap is a single atomic command. The audit writer performs the persona-file copy AND writes the audit row in one call; do not run a separate `Copy-Item` step.
 
-- CMO -> Builder: `Copy-Item AGENTS.builder.md AGENTS.md -Force`
-- Builder -> CMO: `Copy-Item AGENTS.cmo.md AGENTS.md -Force`
+- CMO -> Builder: `python system/audit/writer.py system-change --change-type mode_swap --actor agent --mode builder --reason "<why>"`
+- Builder -> CMO: `python system/audit/writer.py system-change --change-type mode_swap --actor agent --mode cmo --reason "<why>"`
 
-After a swap, append a `mode_swap` row through [`system/audit/writer.py`](system/audit/writer.py). Swap before designing work that belongs to the other mode, not after designing it.
+After the command returns, re-read the root `AGENTS.md` before any further work — the rule set has changed. Swap before designing work that belongs to the other mode, not after designing it.
 
 ---
 

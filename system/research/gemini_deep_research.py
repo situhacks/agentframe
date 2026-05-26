@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import argparse
 import base64
+import http.client
 import json
 import os
+import socket
 import time
 import urllib.error
 import urllib.request
@@ -85,12 +87,20 @@ def _request_json(
         method=method,
         headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
     )
-    try:
-        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as error:
-        body = error.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"Gemini Interactions API HTTP {error.code}: {body}") from error
+    max_retries = 5
+    backoff = 2
+    for attempt in range(max_retries + 1):
+        try:
+            with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as error:
+            body = error.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"Gemini Interactions API HTTP {error.code}: {body}") from error
+        except (urllib.error.URLError, http.client.RemoteDisconnected, socket.timeout) as error:
+            if attempt == max_retries:
+                raise RuntimeError(f"Gemini Interactions API transient error after {max_retries} retries") from error
+            time.sleep(min(backoff, 30))
+            backoff *= 2
 
 
 def start_interaction(
@@ -315,7 +325,7 @@ def _interaction_id(response: Mapping[str, Any]) -> str:
 
 def run_deep_research(
     *,
-    prompt: str,
+    prompt: str | None = None,
     research_dir: Path,
     title: str,
     previous_interaction_id: str | None,
@@ -325,16 +335,31 @@ def run_deep_research(
     metadata_filename: str,
     agent: str = "deep-research-preview-04-2026",
     project_root: Path = PROJECT_ROOT,
+    resume_from_id: str | None = None,
 ) -> ArtifactWriteResult:
     api_key = load_gemini_api_key(project_root)
-    created = start_interaction(
-        api_key=api_key,
-        prompt=prompt,
-        previous_interaction_id=previous_interaction_id,
-        collaborative_planning=collaborative_planning,
-        agent=agent,
-    )
-    interaction = poll_interaction(api_key=api_key, interaction_id=_interaction_id(created))
+    source_dir = research_dir / "source-material"
+    source_dir.mkdir(parents=True, exist_ok=True)
+    id_sidecar_path = source_dir / "gemini-deep-research-interaction-id.txt"
+
+    if resume_from_id:
+        interaction_id = resume_from_id
+        print(f"Resuming interaction: {interaction_id}", flush=True)
+    else:
+        if prompt is None:
+            raise ValueError("prompt is required when not resuming")
+        created = start_interaction(
+            api_key=api_key,
+            prompt=prompt,
+            previous_interaction_id=previous_interaction_id,
+            collaborative_planning=collaborative_planning,
+            agent=agent,
+        )
+        interaction_id = _interaction_id(created)
+        print(f"Started interaction: {interaction_id}", flush=True)
+        id_sidecar_path.write_text(interaction_id, encoding="utf-8")
+
+    interaction = poll_interaction(api_key=api_key, interaction_id=interaction_id)
     if interaction.get("status") != "completed":
         source_dir = research_dir / "source-material"
         source_dir.mkdir(parents=True, exist_ok=True)
@@ -358,7 +383,6 @@ def run_deep_research(
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run Gemini Deep Research for Phase 1.")
     parser.add_argument("--research-dir", required=True)
-    parser.add_argument("--prompt-file", required=True)
     parser.add_argument("--title", required=True)
     parser.add_argument("--previous-interaction-id")
     parser.add_argument("--agent", default="deep-research-preview-04-2026")
@@ -371,13 +395,18 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--artifact-filename", default="research-artifact-v1.md")
     parser.add_argument("--raw-filename", default="gemini-deep-research-response.json")
     parser.add_argument("--metadata-filename", default="gemini-deep-research-metadata.json")
+    
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--prompt-file")
+    group.add_argument("--resume-from-id")
     return parser
 
 
 def main() -> int:
     args = _build_parser().parse_args()
+    prompt = Path(args.prompt_file).read_text(encoding="utf-8") if args.prompt_file else None
     result = run_deep_research(
-        prompt=Path(args.prompt_file).read_text(encoding="utf-8"),
+        prompt=prompt,
         research_dir=Path(args.research_dir),
         title=args.title,
         previous_interaction_id=args.previous_interaction_id,
@@ -386,6 +415,7 @@ def main() -> int:
         raw_filename=args.raw_filename,
         metadata_filename=args.metadata_filename,
         agent=args.agent,
+        resume_from_id=args.resume_from_id,
     )
     print(
         json.dumps(

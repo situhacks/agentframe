@@ -2,6 +2,7 @@ import base64
 import json
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from system.research import gemini_deep_research as gdr
@@ -138,6 +139,88 @@ class GeminiDeepResearchTests(unittest.TestCase):
             self.assertEqual(metadata["usage"]["total_tokens"], 100)
             self.assertEqual(metadata["generated_images"], ["source-material/gemini-deep-research-output-1.png"])
             self.assertEqual(metadata["report_chars"], len("# Report"))
+
+
+    @mock.patch("urllib.request.urlopen")
+    @mock.patch("time.sleep", return_value=None)
+    def test_request_json_retries_transient_errors(self, mock_sleep, mock_urlopen) -> None:
+        import http.client
+        mock_response = mock.MagicMock()
+        mock_response.read.return_value = b'{"success": true}'
+        mock_response.__enter__.return_value = mock_response
+        mock_urlopen.side_effect = [
+            http.client.RemoteDisconnected("disconnected"),
+            http.client.RemoteDisconnected("disconnected"),
+            mock_response,
+        ]
+        
+        result = gdr._request_json(method="GET", url="http://fake", api_key="test")
+        self.assertEqual(result, {"success": True})
+        self.assertEqual(mock_urlopen.call_count, 3)
+
+    @mock.patch("urllib.request.urlopen")
+    @mock.patch("time.sleep", return_value=None)
+    def test_request_json_does_not_retry_http_error(self, mock_sleep, mock_urlopen) -> None:
+        import urllib.error
+        from io import BytesIO
+        mock_error = urllib.error.HTTPError("http://fake", 400, "Bad Request", {}, BytesIO(b"error"))
+        mock_urlopen.side_effect = mock_error
+        
+        with self.assertRaisesRegex(RuntimeError, "HTTP 400"):
+            gdr._request_json(method="GET", url="http://fake", api_key="test")
+        self.assertEqual(mock_urlopen.call_count, 1)
+
+    @mock.patch("system.research.gemini_deep_research.load_gemini_api_key", return_value="fake-key")
+    @mock.patch("system.research.gemini_deep_research.start_interaction")
+    @mock.patch("system.research.gemini_deep_research.poll_interaction")
+    def test_run_deep_research_writes_interaction_id_sidecar(self, mock_poll, mock_start, mock_api_key) -> None:
+        mock_start.return_value = {"id": "test-interaction-123"}
+        mock_poll.return_value = {
+            "id": "test-interaction-123",
+            "status": "completed",
+            "outputs": [{"type": "text", "text": "report"}],
+        }
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            research_dir = Path(tmpdir) / "phase-1"
+            gdr.run_deep_research(
+                prompt="test",
+                research_dir=research_dir,
+                title="Test",
+                previous_interaction_id=None,
+                collaborative_planning=False,
+                artifact_filename="artifact.md",
+                raw_filename="raw.json",
+                metadata_filename="meta.json",
+            )
+            sidecar = research_dir / "source-material" / "gemini-deep-research-interaction-id.txt"
+            self.assertTrue(sidecar.exists())
+            self.assertEqual(sidecar.read_text(encoding="utf-8"), "test-interaction-123")
+
+    @mock.patch("system.research.gemini_deep_research.load_gemini_api_key", return_value="fake-key")
+    @mock.patch("system.research.gemini_deep_research.start_interaction")
+    @mock.patch("system.research.gemini_deep_research.poll_interaction")
+    def test_run_deep_research_resume_from_id(self, mock_poll, mock_start, mock_api_key) -> None:
+        mock_poll.return_value = {
+            "id": "resumed-interaction-123",
+            "status": "completed",
+            "outputs": [{"type": "text", "text": "resumed report"}],
+        }
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            research_dir = Path(tmpdir) / "phase-1"
+            gdr.run_deep_research(
+                research_dir=research_dir,
+                title="Test",
+                previous_interaction_id=None,
+                collaborative_planning=False,
+                artifact_filename="artifact.md",
+                raw_filename="raw.json",
+                metadata_filename="meta.json",
+                resume_from_id="resumed-interaction-123"
+            )
+            mock_start.assert_not_called()
+            mock_poll.assert_called_once_with(api_key="fake-key", interaction_id="resumed-interaction-123")
 
 
 if __name__ == "__main__":

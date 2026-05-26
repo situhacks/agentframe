@@ -1,4 +1,4 @@
-﻿# Research And Signals
+# Research And Signals
 
 Shared kickoff procedure for any campaign flow's research phase. Owns workspace-context definition, the live Composio/Rube MCP scan, and the research-method offer. Loaded from each flow's Phase 1 (`solo-flow.md` Phase `1-setup-research`, `standard-flow.md` Phase 1 - Research). Deliverable shape and lock criteria belong to the calling flow and to [`library/deliverables/research-artifact/template.md`](../deliverables/research-artifact/template.md).
 
@@ -20,7 +20,7 @@ When the operator starts a new campaign:
 
 After a direction is selected, offer the operator a choice:
 
-- **Gemini Deep Research API** via `system/research/gemini_deep_research.py`. Label the option so it notes that it can hit Gemini API costs; if the operator explicitly selects this option, treat the selection as cost acknowledgement. The helper preserves Gemini's native interaction JSON under `source-material/` and extracts the Markdown handoff deterministically. If Gemini changes response shape, preserve the raw JSON and surface the extraction failure instead of guessing.
+- **Gemini Deep Research API** via `system/research/gemini_deep_research.py`. Label the option so it notes that it can hit Gemini API costs; if the operator explicitly selects this option, treat the selection as cost acknowledgement. The helper preserves Gemini's native interaction JSON under `source-material/` and extracts the Markdown handoff deterministically. If Gemini changes response shape, preserve the raw JSON and surface the extraction failure instead of guessing. If polling fails mid-run, the interaction ID is preserved at `phase-1-research/source-material/gemini-deep-research-interaction-id.txt`; resume with `python system/research/gemini_deep_research.py --resume-from-id <id> [other flags]`.
 - **Gemini web handoff prompt.** Produce a paste-ready prompt for the operator to run in a Gemini web session, then ingest the returned material.
 - **Manual sources.** Operator-provided files, transcripts, or pasted text when neither Gemini path applies.
 

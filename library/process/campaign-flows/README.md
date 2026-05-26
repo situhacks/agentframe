@@ -1,4 +1,4 @@
-﻿# Campaign Flows
+# Campaign Flows
 
 Campaign flows are the first-class campaign process definitions for AgentFrame Marketing. A flow owns phase sequence, required deliverables by phase, tracker transitions, flow-specific skips, and completion criteria.
 
@@ -10,11 +10,12 @@ Each campaign instance records its selected flow in `campaign.md` frontmatter as
 
 ## Available Flows
 
-| Flow | Use When | Status |
+| Flow | Status | Use Case |
 |---|---|---|
-| `solo-flow.md` | Solo marketer, lightweight campaign, no external stakeholder review expected. | Authored default flow. |
-| `standard-flow.md` | Fuller multi-post campaign and stakeholder-capable process. | Current full flow. |
-| `enterprise-flow.md` | Future enterprise/stakeholder-heavy process. | Reserved; not authored yet. |
+| `solo-flow.md` | Default | Solo marketer, no stakeholder review, lean phase sequence. |
+| `standard-flow.md` | Optional | Fuller campaign with business/stakeholder review cycles. |
+| `open-flow.md` | Optional | Dynamic, build-as-you-go flow anchored on deliverables rather than fixed phases. |
+| `enterprise-flow.md` | RESERVED | Not yet authored. |
 
 ## Ownership
 

@@ -37,7 +37,7 @@ Pointers (success criteria source, etc.) live inside the relevant blocks rather 
 |---|---|---|---|---|
 | `status` | enum | `active`, `complete`, `cancelled` | `active` | Lifecycle state. The marketing PROCESS dictates campaign completion (post-campaign retros are the last process steps); the folder location is a side-effect of the status transition, not its own status value. `active` covers any in-progress phase. `complete` set by Campaign Retro lock when the campaign finished naturally. `cancelled` set when the operator (or external reviewer) decides to kill the campaign mid-flight. Both terminal. |
 | `current_phase` | enum | flow-defined phase ids | first phase in selected flow | Where the campaign is right now. Updated when the agent finishes a phase's last deliverable or the user explicitly transitions. End-of-phase transition rules live in the selected `campaign_flow` file. |
-| `campaign_flow` | enum | flow ids in [`campaign-flows/README.md`](campaign-flows/README.md) | `solo-flow` | Canonical flow selector for this campaign instance. Read this before loading phase rules; then lazy-load `library/process/campaign-flows/{campaign_flow}.md`. |
+| `campaign_flow` | enum | flow ids in [`campaign-flows/README.md`](campaign-flows/README.md) | `solo-flow` | Canonical flow selector for this campaign instance. Valid values: `solo-flow`, `standard-flow`, `open-flow`. (See `library/process/campaign-flows/` for definitions). |
 | `last_activity` | ISO 8601 datetime | e.g. `2026-04-23T03:00:00+00:00` | scaffold time | Touched whenever any deliverable in this campaign is edited / locked / shipped. Used to compute stale-campaign nudges (>7d). |
 | `shipped_at` | ISO 8601 date or `null` | — | `null` | When the first post in the campaign published. (Sourced from per-post `copy-v{N}.md` frontmatter `published.posted_at` — see post-copy/template-v{N}.md "Shipped frontmatter" section.) |
 | `completed_at` | ISO 8601 date or `null` | — | `null` | When the campaign retro ran (the formal close — `LIFECYCLE.status` transitions `active → complete` in the same turn). |
@@ -139,9 +139,9 @@ deliverables:
     file: phase-2-strategy/campaign-brief/draft-v1.md
     last_updated: 2026-04-19
     review: not_required
-  messaging-architecture:
+  campaign-architecture:
     status: locked
-    file: phase-3-planning/messaging-architecture/draft-v3.md
+    file: phase-3-planning/campaign-architecture/draft-v3.md
     last_updated: 2026-04-20
     review: not_required
   design-language:
@@ -193,7 +193,7 @@ The agent does not auto-fix drift. It surfaces and asks. Drift fixes are user-ap
 
 - **`phase_override`** — operator skipped or jumped a sequence step the selected flow expected.
   ```
-  2026-05-12 — phase_override: skipped messaging-architecture; drafted post-1 copy directly. Reason: "trying a quick test, will back-fill if it works."
+  2026-05-12 — phase_override: skipped campaign-architecture; drafted post-1 copy directly. Reason: "trying a quick test, will back-fill if it works."
   ```
 - **`post_published`** — a post canonical `-v{N}.md` reconciled to `status: shipped` after the operator confirmed the live URL.
   ```

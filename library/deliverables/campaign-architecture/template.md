@@ -1,4 +1,4 @@
-﻿# Template: Messaging Architecture
+# Template: Campaign Architecture
 
 ## Purpose
 
@@ -6,8 +6,8 @@ The full execution plan, post by post. Lives where the rubber meets the road: ev
 
 ## Depends On
 
-- Campaign Brief locked
-- Research Artifact locked (`phase-1-research/research-artifact-v{N}.md`)
+- **Standard Flow:** Campaign Brief locked + Research Artifact locked
+- **Solo Flow:** Concurrent Research Artifact (`phase-1-research/research-artifact-v{N}.md`)
 - `positioning.md` loaded (POV anchoring)
 - `voice.md` Writing Style Examples NOT loaded yet (this is structure, not output copy)
 
@@ -37,7 +37,7 @@ The full execution plan, post by post. Lives where the rubber meets the road: ev
 - Every post has a "job in the arc" stated
 - CTAs are context-appropriate (no "follow me!" on a problem-statement post)
 - Callbacks reference specific prior posts when claimed
-- Hook angle for each post is locked, with 1-line rationale (why this angle, not the alternate from Campaign Brief)
+- Hook angle for each post is locked, with 1-line rationale (why this angle, not an alternate)
 - No two posts have the same job (no two "hooks," no two "payoffs")
 - Risks per post are not empty
 - Audience extraction language tells and objections are grounded in `research-artifact-v{N}.md` citations or quoted source material, not LLM-prior assumptions.
@@ -47,7 +47,9 @@ The full execution plan, post by post. Lives where the rubber meets the road: ev
 
 ## Draft Frontmatter Convention
 
-Standard deliverable frontmatter per `library/process/campaign-frontmatter.md`. Canonical file is `phase-3-planning/messaging-architecture/draft-v{N}.md`.
+Standard deliverable frontmatter per `library/process/campaign-frontmatter.md`. Canonical file path depends on the selected flow:
+- Standard Flow: `phase-3-planning/campaign-architecture/draft-v{N}.md`
+- Solo Flow: `phase-1-research/campaign-architecture/draft-v{N}.md`
 
 ## Lock Criteria
 

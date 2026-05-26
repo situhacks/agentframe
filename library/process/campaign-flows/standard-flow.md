@@ -1,4 +1,4 @@
-﻿# AgentFrame Marketing — Standard Campaign Flow
+# AgentFrame Marketing — Standard Campaign Flow
 
 This is the fuller multi-post, stakeholder-capable campaign flow. Solo campaigns should start from `solo-flow.md`.
 
@@ -70,7 +70,7 @@ Three deliverables. Internal — not stakeholder-facing. Outputs prep for produc
 
 | Step | Deliverable | Produces | Depends on |
 |---|---|---|---|
-| 3.1 | Messaging Architecture | `phase-3-planning/messaging-architecture/draft-v{N}.md` | 2.2 locked |
+| 3.1 | Campaign Architecture | `phase-3-planning/campaign-architecture/draft-v{N}.md` | 2.2 locked |
 | 3.2 | Design Language ([template](../../deliverables/design-language/template.md)) | `phase-3-planning/design-language/design-language-v{N}.md` (+ `tokens.yaml`, `tokens.css`, `preview/`) | 2.2 locked |
 
 3.1 and 3.2 can run in parallel after 2.2 locks.
@@ -79,9 +79,9 @@ Hard rule for multi-post campaigns: ALL post skeletons (3.2) must exist BEFORE P
 
 **Tracker update at end of Phase 3:** `current_phase: 4-production`. Add (or update) in `deliverables`:
 ```yaml
-messaging-architecture:
+campaign-architecture:
   status: locked
-  file: phase-3-planning/messaging-architecture/draft-v{N}.md
+  file: phase-3-planning/campaign-architecture/draft-v{N}.md
   last_updated: {date locked}
 design-language:
   status: locked
@@ -152,4 +152,4 @@ The user can override sequence at any time. When they do:
 2. If user insists on skipping, agent appends a `phase_override` entry to `workspace/campaigns/{slug}/activity.md` using the canonical shape in [`campaign-frontmatter.md`](../campaign-frontmatter.md) "Activity event line shapes."
 3. Agent proceeds. No moralizing.
 
-Pattern of overrides surfaces at quarterly self-review or when an override repeats: "The operator overrode messaging-architecture in 4 of 5 last campaigns — is that step worth less than we think, or are they leaving money on the table?"
+Pattern of overrides surfaces at quarterly self-review or when an override repeats: "The operator overrode campaign-architecture in 4 of 5 last campaigns — is that step worth less than we think, or are they leaving money on the table?"

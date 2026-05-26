@@ -6,8 +6,8 @@ The actual post text the user publishes. Hook, body, CTA, alt text. Highlight re
 
 ## Inputs
 
-- **Messaging Architecture** locked (post role, hook angle, callbacks)
-- **Messaging Architecture audience extraction** locked (language tells, top objections, disconfirmation)
+- **Campaign Architecture** locked (post role, hook angle, callbacks)
+- **Campaign Architecture audience extraction** locked (language tells, top objections, disconfirmation)
 - **Voice Loading**: Mandatory full load. `voice.md` IS loaded including the Writing Style Examples section. `positioning.md` IS loaded. This is the most voice-heavy deliverable in the system.
 - **Research Artifact** (for citation-backed claims)
 - **Visual/Video Spec**: Carousel Spec or Video Spec at least drafted when the post has a visual/video component (so copy doesn't duplicate what the visual/video already carries) — soft dependency, can iterate in parallel.
@@ -18,7 +18,7 @@ Per post:
 
 - **Hook** (2-3 lines max) — first thing the reader sees. Specific claim or specific observation, never a platitude. Earns the rest.
 - **Body** — flowing prose, no bullets. The hand-off from hook to payoff. Highlights what makes this campaign matter; does not narrate the carousel. For framework/explainer posts, include at least one concrete working example from the campaign or system.
-- **CTA** — context-appropriate. Match the post's role from Messaging Architecture (tease / prove / ask / callback).
+- **CTA** — context-appropriate. Match the post's role from Campaign Architecture (tease / prove / ask / callback).
 - **Alt text** — for the cover slide and any image. Says WHY the image matters, not "image of...".
 - **Hook variants** (2-3) — included in the draft so the user picks. Not a separate file. The recommended pick is named.
 
@@ -31,7 +31,7 @@ Per post:
 - Copy does NOT duplicate carousel/image content — copy + visuals divide labour
 - Keep the artifact lean: write the post, do not restate upstream campaign direction, goals, audience, or strategy that already live in Phase 1/2/3 deliverables.
 - The head copy file (`copy-v{N}.md`, highest `N`) owns the full LinkedIn caption, recommended hook, body, and CTA when a separate copy file exists. For carousel-first posts, the operator may choose a combined carousel-and-caption package where the head `carousel-spec-v{N}.md` owns the caption and publish record.
-- CTA matches post's role per Messaging Architecture
+- CTA matches post's role per Campaign Architecture
 - Reads as user's voice (per `voice.md` Writing Style Examples)
 - Canadian English where applicable
 - Ties back to a content pillar (one identifiable from `positioning.md`)
@@ -85,6 +85,6 @@ shipped_media:
 
 ## Exceptions / Branches
 
-- **Trending hook opportunity mid-campaign**: Copywriting can propose an out-of-arc post, but flag back to Messaging Architecture for arc integrity. Do not write it without the brief catching up.
-- **Messaging Architecture has no hook angle for this post**: Stop. Route upstream to resolve the gap. Do not make it up here.
+- **Trending hook opportunity mid-campaign**: Copywriting can propose an out-of-arc post, but flag back to Campaign Architecture for arc integrity. Do not write it without the brief catching up.
+- **Campaign Architecture has no hook angle for this post**: Stop. Route upstream to resolve the gap. Do not make it up here.
 - **User picks the weakest variant**: Push back ONCE with reasoning, then honor the pick (Anti-sycophancy heuristic 5).

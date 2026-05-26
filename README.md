@@ -153,6 +153,7 @@ Add or edit any flow under `library/process/campaign-flows/` to match how you ac
 | Flow | Purpose |
 | --- | --- |
 | `solo-flow` (default) | Lightweight campaign workflow for one operator moving fast |
+| `open-flow` | Flexible build-as-you-go workflow where the operator sets the deliverables and tempo interactively |
 | `standard-flow` | Heavier flow with broader deliverable coverage and more review gates — closer to an enterprise-style campaign |
 
 

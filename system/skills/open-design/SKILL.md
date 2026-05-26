@@ -86,7 +86,7 @@ Goal: a non-blank Open Design session with campaign design language staged, the 
    <calling deliverable body or slide-by-slide brief>
 
    Copy/context to preserve:
-   <short excerpt from post copy, messaging architecture, or deck outline>
+   <short excerpt from post copy, campaign architecture, or deck outline>
 
    Constraints:
    - Honor the campaign design system.

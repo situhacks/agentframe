@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Where the Business Brief framed the opportunity, the Campaign Brief frames the campaign that delivers on it. At a level the marketing team can react to and steer. NOT the full execution plan — that lives in Messaging Architecture. The sweet spot here is "here's the story we'd tell, here are 2 angle options per post, react before we go build." Stakeholder-facing when a stakeholder exists; exports to Word + PPT in that case. Otherwise drafts to lock without review.
+Where the Business Brief framed the opportunity, the Campaign Brief frames the campaign that delivers on it. At a level the marketing team can react to and steer. NOT the full execution plan — that lives in Campaign Architecture. The sweet spot here is "here's the story we'd tell, here are 2 angle options per post, react before we go build." Stakeholder-facing when a stakeholder exists; exports to Word + PPT in that case. Otherwise drafts to lock without review.
 
 ## Depends On
 
@@ -27,7 +27,7 @@ Author: a marketer drafting this for review. Reader: the same stakeholder who ap
 
 ## Hard Constraints
 
-- Stakeholder-facing. Story-led. Treat the reader as someone who'll react with "I'd lean toward angle B for post 3" — give them something to react to, not a plan to approve. Keep it tight; if it's longer than 2 pages of Word, you've drifted into Messaging Architecture territory.
+- Stakeholder-facing. Story-led. Treat the reader as someone who'll react with "I'd lean toward angle B for post 3" — give them something to react to, not a plan to approve. Keep it tight; if it's longer than 2 pages of Word, you've drifted into Campaign Architecture territory.
 - Theme stated in one sentence
 - Channel hypothesis names specific channels with reasoning
 - Design direction lists 2-3 light hypotheses, not locked picks — room for Phase 3 to develop
@@ -82,4 +82,4 @@ Full architecture is defined by the deliverable template, `system/skills/{docx,p
 
 ## Exceptions / Branches
 
-- **Stakeholder steers the post list significantly**: revise here, do not let Messaging Architecture absorb the change silently. The brief is the artifact of record.
+- **Stakeholder steers the post list significantly**: revise here, do not let Campaign Architecture absorb the change silently. The brief is the artifact of record.

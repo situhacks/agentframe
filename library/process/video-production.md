@@ -1,4 +1,4 @@
-﻿# Video Production
+# Video Production
 
 Use this when a campaign post is video-shaped: raw talking-head footage, an authored product/feature video, a HyperFrames launch-style montage, generated motion assets, or any hybrid of those.
 
@@ -18,7 +18,7 @@ When video work starts, load:
 
 1. This file.
 2. The campaign `campaign.md` frontmatter and the current post row.
-3. The campaign messaging architecture if it exists.
+3. The campaign architecture if it exists.
 4. The design language artifacts if visual style is relevant: `design-language-v{N}.md`, `tokens.yaml`, and existing previews.
 5. `library/deliverables/video-spec/template.md`.
 6. The capability references only as needed:

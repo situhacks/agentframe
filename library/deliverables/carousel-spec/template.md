@@ -1,4 +1,4 @@
-﻿# Template: Carousel Spec
+# Template: Carousel Spec
 
 ## Purpose
 
@@ -6,7 +6,7 @@ The per-post carousel production spec. It tells the human and the rendering agen
 
 ## Inputs
 
-- **Messaging Architecture**: Locked (post role, arc, hook hypotheses, callbacks).
+- **Campaign Architecture**: Locked (post role, arc, hook hypotheses, callbacks).
 - **Design Language**: Locked (`design-language-v{N}.md` + `tokens.yaml`) when the carousel will be rendered. Do not restate them here.
 - **Image Production Menu**: `library/process/image-production.md` when slide planning needs generated-image path selection.
 - **Post Copy**: At least drafted when cover hook / CTA alignment matters.

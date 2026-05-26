@@ -1,4 +1,4 @@
-﻿# AgentFrame: Marketing
+# AgentFrame: Marketing
 
 <p align="center">
   <img src=".github/readme-assets/banner.png" alt="AgentFrame: Marketing — a full-stack marketing workspace inside your AI coding agent" width="100%" />
@@ -53,7 +53,7 @@ https://github.com/user-attachments/assets/73c6ce7f-cfd8-4457-8cf0-e1a979094e6e
 
 2. **Open the folder in your coding agent** — Claude Code, Codex, Cursor, VS Code, Antigravity, anything that respects `AGENTS.md`.
 
-3. **Onboard.** Tell the agent **"Help me onboard"**. It walks the [onboarding checklist](onboarding-checklist.md): import your operator context (voice, profile, positioning), drop in optional connector keys for Gemini and Composio (both have generous free tiers and are optional — the system still runs without them, you just lose Deep Research and direct publishing), and optionally install the Open Design runtime.
+3. **Setup.** Copy `.env.example` to `.env` and drop in optional connector keys for Gemini and Composio (both have generous free tiers and are optional — the system still runs without them, you just lose Deep Research and direct publishing). If you plan to use Open Design locally, run `corepack pnpm install` inside `system/skills/open-design/source/`.
 
 4. **Start your first campaign.** Tell the agent **"Start a new campaign"** and run it end-to-end.
 

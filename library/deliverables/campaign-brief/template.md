@@ -1,4 +1,4 @@
-﻿# Template: Campaign Brief
+# Template: Campaign Brief
 
 ## Purpose
 
@@ -45,9 +45,6 @@ The `phase-2-strategy/campaign-brief/draft-v{N}.md` file carries this YAML front
 ---
 status: <drafting | locked | deferred>
 last_updated: <ISO-8601 timestamp>
-current_version: <integer; incremented on every Write-tool replacement>
-version_history:
-  - {v: <int>, date: <YYYY-MM-DD>, note: "<one-line reason for this version bump>"}
 exports:
   - {path: <relative path to exported file>, generated_at: <ISO-8601 timestamp>}
 ---

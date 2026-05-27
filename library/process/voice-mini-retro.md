@@ -14,7 +14,7 @@ A fast-cadence, voice-only mini-retro that fires automatically on every delivera
 
 Same shape as the Lock-Event Trigger — fire on either:
 
-1. **Frontmatter state (canonical):** any deliverable file `{name}-v{N}.md` transitions `status: drafting` → `status: locked` — OR is being set to `locked` by the operator in the current turn.
+1. **Frontmatter state (canonical):** any deliverable file `{name}-v{N}.md` transitions `status: drafting` → any terminal state (`status: locked`, `status: shipped`, or `status: published`) — OR is being set to one of those by the operator in the current turn. The retro must fire whichever terminal state the deliverable lands in; reaching `shipped`/`published` without passing `locked` does not exempt it.
 2. **Phrase trigger:** operator says "lock this" / "ship it" / "we're done with [this deliverable]" / "finalize" (or close variants) on a deliverable that has both a `{name}-v1.md` snapshot and a `{name}-v{N}.md` working file.
 
 The voice mini-retro fires AFTER the Lock-Event Trigger procedure completes (state update + tracker update + exports). The lock event is the gating dependency — voice mini-retro reads the locked file.

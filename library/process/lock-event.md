@@ -8,7 +8,7 @@ Generic lock mechanics for deliverables. Load on demand when a deliverable is be
 
 Fire when either is true:
 
-1. A deliverable `*-v{N}.md` frontmatter is set to `status: locked` (or being set in the current turn).
+1. A deliverable `*-v{N}.md` frontmatter is set to any terminal state — `status: locked`, `status: shipped`, or `status: published` — (or being set in the current turn). A deliverable reaching a terminal state by any route must pass through this procedure; `shipped` and `published` are not a way around the lock gate.
 2. The operator clearly signals lock intent ("lock this", "finalize this", "ship this deliverable", or close variants).
 
 ---

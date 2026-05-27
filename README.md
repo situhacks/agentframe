@@ -72,7 +72,7 @@ You don't run shell commands by hand. Just tell the agent `swap to Builder` or `
 
 ## Why this exists
 
-I used to run my marketing campaigns out of Claude Code. For a while I tried doing it all in chat sessions: write the post here, paste the voice rules there, ask for a rewrite, lose the thread, start over tomorrow. It works for something small, but for multi-post campaigns, things get lost and context starts to degrade. The voice rules I'd "saved" were forgotten by next session. State lived in scrollback. I spent more time retyping my instructions than I wanted.
+I used to run my marketing campaigns out of Claude Chat. For a while I tried doing it all in chat sessions: write the post here, paste the voice rules there, ask for a rewrite, lose the thread, start over tomorrow. It works for something small, but for multi-post campaigns, things get lost and context starts to degrade. The voice rules I'd "saved" were forgotten by next session. State lived in scrollback. I spent more time retyping my instructions than I wanted.
 
 I looked around for alternatives. What I found was prompt wrappers sitting on top of the same models I'm already paying for, and marketing repos with horrible token efficiency — one of them burned through my whole session before the first post was even done.
 

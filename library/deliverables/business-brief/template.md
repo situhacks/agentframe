@@ -8,7 +8,7 @@ Frame the business case for THIS opportunity. Sets the bar for everything that f
 
 - Locked Research Artifact at `phase-1-research/research-artifact-v{N}.md`
 - `positioning.md` (for POV anchoring)
-- **Note:** Do not load `voice.md` Writing Style Examples (would push tone too casual for stakeholders).
+- **Note:** Do not load the `voice/pairs/` examples (would push tone too casual for stakeholders).
 
 ## Output Shape
 

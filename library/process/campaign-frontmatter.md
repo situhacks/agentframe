@@ -189,23 +189,27 @@ The agent does not auto-fix drift. It surfaces and asks. Drift fixes are user-ap
 
 ## Activity event line shapes
 
-`workspace/campaigns/{slug}/activity.md` is the canonical material-event log. Each entry is a single line. Canonical shapes:
+`workspace/campaigns/{slug}/activity.md` is the canonical material-event log. Each entry is a single line.
+
+**Timestamp:** prefix each line with `YYYY-MM-DD HH:MM` (local 24-hour time). 
+
+Canonical shapes:
 
 - **`phase_override`** — operator skipped or jumped a sequence step the selected flow expected.
   ```
-  2026-05-12 — phase_override: skipped campaign-architecture; drafted post-1 copy directly. Reason: "trying a quick test, will back-fill if it works."
+  2026-05-12 14:05 — phase_override: skipped campaign-architecture; drafted post-1 copy directly. Reason: "trying a quick test, will back-fill if it works."
   ```
 - **`post_published`** — a post canonical `-v{N}.md` reconciled to `status: shipped` after the operator confirmed the live URL.
   ```
-  2026-05-12 — post_published: post-1 → https://www.linkedin.com/posts/{activity-id}
+  2026-05-12 09:30 — post_published: post-1 → https://www.linkedin.com/posts/{activity-id}
   ```
 - **`cancellation`** — campaign moved to `LIFECYCLE.status: cancelled`.
   ```
-  2026-05-12 — cancellation: reason "{one-line cancellation reason}"
+  2026-05-12 16:20 — cancellation: reason "{one-line cancellation reason}"
   ```
 - **`frontmatter_manual_edit`** — operator-approved drift fix from the schema-drift check above.
   ```
-  2026-05-12 — frontmatter_manual_edit: corrected current_phase from 4-production to 5-launch-and-learn (drift fix).
+  2026-05-12 11:48 — frontmatter_manual_edit: corrected current_phase from 4-production to 5-launch-and-learn (drift fix).
   ```
 
 When a flow file mentions appending an event (`post_published`, `phase_override`, `cancellation`, etc.), use these shapes. Skipping a required retro is logged as a `phase_override`; pattern of overrides surfaces at quarterly self-review.

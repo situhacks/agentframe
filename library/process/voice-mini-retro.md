@@ -1,69 +1,63 @@
-﻿# Voice Mini-Retro (per-deliverable lock event)
+# Voice Mini-Retro
 
-## What this is
+Called by [`lock-event.md`](lock-event.md) step 6 at every deliverable lock. This file owns the eligibility check and the procedure. It does not self-trigger — it runs only when lock-event delegates to it.
 
-A fast-cadence, voice-only mini-retro that fires automatically on every deliverable lock event, using the same defense-in-depth trigger shape as the [Lock-Event Trigger](../../AGENTS.builder.md).
+Harvests the voice corrections made across a deliverable's version trail into the voice system — primarily as new annotated contrastive pairs in `library/context/operator/voice/pairs/` (the generative core), secondarily as rule patches. Voice-only; structure/content/strategy route to the System Retro.
 
-## Why this exists
+## Eligibility (skip-when)
 
-`voice.md` evolution can't wait for the campaign-end System Retro. If the operator rewrites the AI's voice in deliverable #1 to soften ranges, that fix must influence deliverable #2's first AI draft — not deliverable #2's *locked* draft after the operator rewrites the same softening pass again. Without this loop, the same voice stray repeats across every deliverable in the campaign, the operator absorbs the rewrite cost N times, and the System Retro at campaign end sees N instances of the same friction it could have prevented after instance 1.
+- **No `{name}-v1.md` snapshot** (back-fills, hand-written one-offs) → non-applicable; skip silently, log nothing.
+- **Re-lock with no new versions** (unlock-revise-relock) → already ran; do not re-fire.
+- **Otherwise** → run the procedure.
 
-**Scope is voice-only by design.** Profile / process / persona / template patches stay slow-loop (campaign-end System Retro). Mixing them into the per-lock cadence would make every lock a full retro, defeat the purpose, and surface premature patches before the campaign has enough cycles to cross the 3+ pattern threshold for non-voice patches.
+## Procedure — reconstruct from disk, no memory
 
-## Trigger (defense in depth)
+Reads only files on disk (the version chain). Never relies on the agent remembering what it did while drafting. Works in a fresh session, after compaction, any time.
 
-Same shape as the Lock-Event Trigger — fire on either:
+1. **List the version chain.** All `{name}-v1.md … {name}-vF.md`.
+2. **Walk consecutive diffs** (`v1→v2 … v(n)→vF`). Skip diffs with no prose change (frontmatter, structure, table reorders). Deep-read only prose-changed diffs.
+3. **Classify each prose change by reasoning over the text:**
+   - **Voice** — cadence, word choice, staccato→flowing, fancy→plain, tone, hedge, a banned pattern removed, an operator rewrite into their voice. KEEP.
+   - **Non-voice** — content, facts, structure, hook/CTA swap, typo. DISCARD.
+4. **Cluster.** Collapse the same move repeated across versions into ONE candidate (19 staccato fixes → one).
+5. **Per distinct move:**
+   - **Generalizable move** (test: *would this teaching note help write a DIFFERENT post better?*) → candidate PAIR: BASE = AI version, BRANDON = corrected version, MOVE = what changed + why, register tag. One-offs → discard.
+   - **A pattern that already has a rule, recurred anyway** → the rule didn't fire; flag for rule diagnosis (Rules below).
+   - **Nothing earned** → silent pass.
+6. **Propose to operator:** "This trail's corrections teach [move(s)]. Add as pair(s)? [if over cap: replaces weakest — name it]." Only approved candidates get written to `pairs/`.
 
-1. **Frontmatter state (canonical):** any deliverable file `{name}-v{N}.md` transitions `status: drafting` → any terminal state (`status: locked`, `status: shipped`, or `status: published`) — OR is being set to one of those by the operator in the current turn. The retro must fire whichever terminal state the deliverable lands in; reaching `shipped`/`published` without passing `locked` does not exempt it.
-2. **Phrase trigger:** operator says "lock this" / "ship it" / "we're done with [this deliverable]" / "finalize" (or close variants) on a deliverable that has both a `{name}-v1.md` snapshot and a `{name}-v{N}.md` working file.
+## Pairs hygiene (prevent bloat)
 
-The voice mini-retro fires AFTER the Lock-Event Trigger procedure completes (state update + tracker update + exports). The lock event is the gating dependency — voice mini-retro reads the locked file.
+- **Cap ~20–30, grouped by register.** Over cap → new pair REPLACES the weakest/most-redundant; the library swaps, never just grows.
+- **Dedup by move.** One pair per move; a new example replaces the old or is skipped.
+- **Recency-weighted.** Newest approved work wins; authentic Brandon writing outranks aspirational seeds over time.
+- **Earn test gates every add:** generalizable, reusable move only.
 
-## Procedure
+## Rules (secondary path)
 
-When the trigger fires:
+A correction becomes a rule only when it's a hard ban or an existing rule failed:
+- **Rule existed, pattern recurred** → surface: "rule on [X] didn't constrain — diagnose now (system-improvement skill, target the relevant `voice/` file) or carry to System Retro?"
+- **3+ new hard-ban instances in one deliverable** → surface: "patch `voice/anti-patterns.md` now or carry forward?"
 
-1. **Load the diff inputs.** Read the deliverable's `{name}-v1.md` (first AI draft) and `{name}-v{N}.md` (locked operator-approved version) end-to-end.
+Patch-now delegates to [`system/skills/system-improvement/SKILL.md`](../../system/skills/system-improvement/SKILL.md) targeting the specific file in `library/context/operator/voice/` (anti-patterns.md / identity.md / voice-profile.md — there is no monolithic voice.md). Earning citation = the version-chain diff.
 
-2. **Earning filter (voice scope only).** Compute the diff. Filter for changes that match voice patterns:
-   - Banned-word recurrence (the operator removed a word listed in `voice.md` banned words — the AI used it anyway).
-   - Mechanical tic recurrence (em-dash chains, parallelism stacks, hedge phrases — anything `voice.md` mechanical-rules section names).
-   - Writing-style example mismatch (the operator's rewrite is in a clearly different voice than the AI's draft, in a way that doesn't match the writing-style examples in `voice.md`).
-   
-   Filter out everything else (structural changes, content additions/removals, factual corrections, hook variant swaps, CTA wording — those are template-shape or strategy-shape, not voice-shape, and route to System Retro).
-   
-   **If filtered diff is empty:** silent pass. Do NOT surface to operator and do NOT append a dedicated audit row — the silence IS the signal that voice held.
+## Durable record
 
-3. **Pattern strength check.** For each voice-pattern stray surfaced in step 2:
-   - **Single clear recurrence of a pattern that already has a `voice.md` rule** (e.g. `voice.md` bans em-dash chains; the AI used em-dash chains; the operator removed them in vF) → the rule existed and did not constrain. Surface to operator: "voice rule on em-dash chains existed and did not fire. Want to diagnose the shape failure now (load the system-improvement skill, run prior-patch shape-failure check) or carry forward to System Retro for batch diagnosis?"
-   - **Single recurrence of a NEW voice-pattern stray** (no existing rule) → carry forward. Keep the diff snippet in the current campaign context and surface it at System Retro; if 3+ deliverables in the same campaign surface the same candidate, the System Retro promotes it to a patch proposal.
-   - **3+ instances of the same voice-pattern stray within this single deliverable's diff** → cross the 3+ threshold inside one lock. Surface to operator: "this deliverable's vF removed [pattern] in 3+ places. Patch `voice.md` now (load the system-improvement skill targeting voice.md only) or carry forward to System Retro?"
+- Pair added / rule patched → `system_changes` row (`validation_pending: true`).
+- Candidate deferred → keep the diff snippet in campaign context for the System Retro.
+- Silent pass → nothing.
 
-4. **If operator chose patch-now in step 3:** delegate to [`system/skills/system-improvement/SKILL.md`](../../system/skills/system-improvement/SKILL.md) with target `library/context/operator/voice.md`. The skill handles the full earn → read → diff → propose → defer-validation → apply → log loop. The earning citation is the deliverable's v1→head diff (named explicitly per Step 2 of the skill — the v1→head diff is one of the three citation classes).
+## Publish/back-fill fallback (post-copy)
 
-5. **Durable record policy.**
-
-- If the outcome is `patched-now`, the delegated `system-improvement` skill writes the canonical `system_changes` row for the `voice.md` patch, including `validation_pending: true`.
-- If the outcome is `candidate` or `carry-to-system-retro`, keep the signal in the current campaign context (deliverable diff + retro narrative). Do not append a dedicated markdown log row just for the mini-retro.
-- If the outcome is `pass`, stay silent.
-
-## Publish/back-fill fallback
-
-This fallback is for post-copy only, after `copy-v{N}.md` has been reconciled to the copy that actually shipped.
-
-1. **If a prior in-repo copy exists:** compare the immediately prior `copy-v{N}.md` body to the shipped/reconciled body. Run the same voice-only earning filter above, but treat content/strategy changes as out of scope.
-2. **If no prior AI draft exists:** do not claim a mini-retro pass. The shipped copy is calibration input only; surface a voice-learning candidate only when the operator asks or when the same shipped-copy pattern appears across 3+ posts.
-3. **If shipped copy matches the prior in-repo copy:** skip silently. No voice signal changed at publish time.
+After `copy-v{N}.md` is reconciled to what shipped:
+1. **Prior in-repo copy exists** → diff the chain, voice-only.
+2. **No prior AI draft** → shipped copy is calibration only; harvest a pair only if the operator asks or the pattern repeats across 3+ posts. No "pass" claim (nothing to prove the voice held against).
+3. **Shipped matches prior** → skip silently.
 
 ## Anti-patterns
 
-- **Expanding scope beyond voice.** If you're tempted to surface a template-shape stray (e.g. "the hook structure was wrong") inside the mini-retro, stop — that routes to System Retro. Mini-retro stays voice-only by design (see "Why this exists").
-- **Surfacing every silent pass.** Silent pass = no surface to operator. Logging happens; surfacing does not. Surface only when the operator must decide (existing rule did not constrain, 3+ within-deliverable threshold, or new-pattern candidate that the operator might want to flag preemptively).
-- **Skipping when v1 doesn't exist.** Some deliverables (back-fills, hand-written one-offs) won't have a `{name}-v1.md` snapshot — there's no AI draft to diff against. In that case the mini-retro is non-applicable; skip silently and do NOT log a `pass` event (a pass implies the diff was checked).
-- **Calling back-fill calibration a pass.** A no-prior shipped post can teach the voice file, but it cannot prove the AI held voice because there was no AI draft to compare.
-- **Running the mini-retro twice on the same lock.** The mini-retro fires once per `drafting → locked` transition. Re-locking after a brief unlock-revise-relock cycle does NOT re-fire (no new v1 was generated; the diff is unchanged). The Lock-Event Trigger's audit-event append is the dedup signal.
-
-## Defense in depth — state-load checks
-
-When state-loading a campaign or answering a state question, scan the campaign's deliverables block in `campaign.md`:
-- For each `deliverables.{slug}` row at `status: locked`, confirm the deliverable still has both a `{name}-v1.md` snapshot and a `{name}-v{N}.md` working file. If both exist and the operator asks whether the voice loop ran, rerun the mini-retro from the diff directly; there is no separate live markdown log to consult anymore.
+- **Relying on memory** instead of the on-disk version chain. If it's not on disk, it doesn't count.
+- **Dumping every version** instead of clustering deduped candidates.
+- **Adding pairs past the cap or without the earn test.**
+- **Patching a monolithic voice.md** — gone; target the specific `voice/` file.
+- **Expanding beyond voice** — structure/content route to System Retro.

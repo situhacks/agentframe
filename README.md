@@ -113,7 +113,7 @@ A solo-flow walkthrough using the example campaign at `workspace/campaigns/examp
 <tr>
 <td width="50%" valign="top">
 <img src=".github/readme-assets/walkthrough-03-post-copy.png" alt="03 · Post copy versioning" /><br/>
-<sub><b>03 · Post copy in your voice</b> — Drafts inherit your locked voice rules from <code>library/context/operator/voice.md</code>, then run through the humanizer skill before lock to strip AI tells. Every revision snapshots into <code>version_history</code> so you can roll back, compare, or read why the copy changed.</sub>
+<sub><b>03 · Post copy in your voice</b> — Drafts inherit your voice system from <code>library/context/operator/voice/</code> (identity, anti-patterns, a profile, and annotated example pairs), then run through the humanizer skill before lock to strip AI tells. Every revision snapshots into <code>version_history</code> so you can roll back, compare, or read why the copy changed.</sub>
 </td>
 <td width="50%" valign="top">
 <img src=".github/readme-assets/walkthrough-04-image-production.png" alt="04 · Open Design handoff" /><br/>

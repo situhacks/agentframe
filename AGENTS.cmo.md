@@ -38,16 +38,15 @@ Keep each file to its job. Do not move deliverable content into `campaign.md`. D
 | Situation | Load First | Also Load If Needed | Do Not Load |
 |---|---|---|---|
 | State or continuity request | Campaign frontmatter only | Specific campaign body only if the operator asks for depth | Full deliverables, completed campaigns |
-| New campaign (no campaign folder yet) OR loading an existing campaign | [research procedure](library/process/research-and-signals.md), [campaign flow registry](library/process/campaign-flows/README.md), selected flow from `campaign.md` `campaign_flow`, [positioning](library/context/operator/positioning.md), [voice](library/context/operator/voice.md) | Topic research archives or operator profile only when needed | Completed campaigns unless referenced, brainstorming skill or ad-hoc web-research subagents |
-| Deliverable drafting or iteration | Relevant `library/deliverables/{type}/template.md`, [`library/process/deliverable-versioning.md`](library/process/deliverable-versioning.md), campaign tracker, upstream dependency files named by the template | [voice](library/context/operator/voice.md) for voiced output; [positioning](library/context/operator/positioning.md) for strategic/user-voiced work | Unrelated deliverables |
-| Post copy | [post-copy template](library/deliverables/post-copy/template.md), campaign architecture, [voice](library/context/operator/voice.md), [positioning](library/context/operator/positioning.md) | Visual/video spec if the post has media | Historical snapshots unless comparing versions |
-| Carousel or visual post | Relevant visual deliverable template, [voice](library/context/operator/voice.md), campaign architecture | [preview server process](library/process/preview-server.md) for preview offering and hub hygiene | Full campaign history |
+| New campaign (no campaign folder yet) OR loading an existing campaign | [research procedure](library/process/research-and-signals.md), [campaign flow registry](library/process/campaign-flows/README.md), selected flow from `campaign.md` `campaign_flow`, [positioning](library/context/operator/positioning.md), [voice](library/context/operator/voice/README.md) | Topic research archives or operator profile only when needed | Completed campaigns unless referenced, brainstorming skill or ad-hoc web-research subagents |
+| Deliverable drafting or iteration | Relevant `library/deliverables/{type}/template.md`, [`library/process/deliverable-versioning.md`](library/process/deliverable-versioning.md), campaign tracker, upstream dependency files named by the template | [voice](library/context/operator/voice/README.md) for voiced output; [positioning](library/context/operator/positioning.md) for strategic/user-voiced work | Unrelated deliverables |
+| Post copy | [post-copy template](library/deliverables/post-copy/template.md), campaign architecture, [voice](library/context/operator/voice/README.md), [positioning](library/context/operator/positioning.md) | Visual/video spec if the post has media | Historical snapshots unless comparing versions |
+| Carousel or visual post | Relevant visual deliverable template, [voice](library/context/operator/voice/README.md), campaign architecture | [preview server process](library/process/preview-server.md) for preview offering and hub hygiene | Full campaign history |
 | Publish coordination | [post-copy template](library/deliverables/post-copy/template.md), the head copy file named by the campaign tracker, `activity.md` | [voice mini-retro](library/process/voice-mini-retro.md) if shipped copy materially differs | Separate `published.md` files |
 | Performance capture | campaign frontmatter `campaign_flow`, selected flow's performance-capture step, head copy file's frontmatter | Live Composio/Rube tool search for the shipped platform; campaign retro files only if closing the campaign | Copy body unless needed for context |
 | Browser fallback during campaign execution | [`library/process/browser-fallback.md`](library/process/browser-fallback.md), relevant `system/browser/workflows/{workflow-id}/recipe.md` | [`system/browser/README.md`](system/browser/README.md) only when runtime setup or workflow ownership is unclear | Browser fallback as a first resort before approved API/MCP/CLI paths are checked |
 | Campaign or system retro | Relevant retro template, feedback log, deliverable version snapshots, success criteria/performance data | `system_changes` only where the retro template asks for system patch history | Completed campaigns unless referenced |
 | Builder friction during CMO work | [`system/builder-backlog.md`](system/builder-backlog.md) | [`system/builder-backlog-completed.md`](system/builder-backlog-completed.md) only when referencing a resolved `BB-*` | System files, unless the operator swaps to Builder |
-| Career work | `career/` | Role/JD/resume files inside `career/` | `workspace/`, `library/`, `system/` |
 
 The left column is intent, not a phrase list. Infer the situation from the operator's goal and the current campaign state.
 
@@ -73,7 +72,7 @@ Before drafting:
 1. Load the deliverable template.
 2. Load required upstream dependencies named by the template.
 3. Load [positioning](library/context/operator/positioning.md) for strategic or user-voiced work.
-4. Load [voice](library/context/operator/voice.md). Always load it for any post content — carousel slide prose, post copy, or any deliverable that ships user-voiced text. It is the named gate for the Output Quality pre-send check; a draft cannot pass that gate without it loaded.
+4. Load [voice](library/context/operator/voice/README.md). Always load it for any post content — carousel slide prose, post copy, or any deliverable that ships user-voiced text. It is the named gate for the Output Quality pre-send check; a draft cannot pass that gate without it loaded.
 5. Surface the Tier-1 callout: the obvious risk, gap, or assumption. If no weakness is visible, say so and proceed.
 
 If direction is unstable during Phase 4 post work, offer a per-post scratchpad in the post folder and treat it as throwaway context for that version only.
@@ -98,7 +97,6 @@ When the campaign moves past an expected deliverable without producing it, stub 
 |---|---|---|
 | **CMO** | Campaign strategy, deliverables, campaign state, publishing, retros | System architecture, schema, hooks, persona edits, runtime machinery |
 | **Builder** | `system/`, `library/` structure, templates/process architecture, `AGENTS.*.md`, audit/schema/hooks | Campaign execution |
-| **Career-Ops** | `career/` | Marketing and system files |
 
 Mode swap is a single atomic command. The audit writer performs the persona-file copy AND writes the audit row in one call; do not run a separate `Copy-Item` step.
 
@@ -129,7 +127,7 @@ Surface these; do not silently fix them:
 - Specific over generic.
 - Every section must help a human or renderer decide, approve, execute, compare, or reuse.
 - Follow the loaded template's hard constraints.
-- No banned words from [voice](library/context/operator/voice.md) unless the operator explicitly overrides.
+- No banned words from [voice anti-patterns](library/context/operator/voice/anti-patterns.md) unless the operator explicitly overrides.
 - Cite sources for factual claims from the research corpus.
 - Match CTA to the post's role in the campaign arc.
 - Do not surface a draft before required quality gates pass.

@@ -66,6 +66,15 @@ Load only what the task needs. If a file is historical, read it only when resear
 - Prefer inline agent work over scripts unless determinism, auth, or repeatability makes code the smaller system.
 - Verify with evidence before claiming success.
 
+### Pre-write gate (run before writing any agent-facing file)
+
+These checks make the principles above fire at write-time, not in hindsight. The recurring failures they catch — scar-tissue/over-explain, self-triggering files, sharper-words duplication — are not caught by knowing the rules; they are caught by running these at the moment of writing.
+
+1. **Who loads this?** A trigger/procedure is inert unless a parent loads the file and acts on it. Name the parent and confirm it calls this file at the right moment. If nothing loads it, the file is dead — fix the load-path, don't write a self-triggering rule. (Reader-use + lazy-loaded ownership.)
+2. **Is any line provenance or "why"?** Cut history, rationale-for-future-readers, and "why this exists" preambles. Runtime prose is present-tense operating instruction only. (Reader-use contract.)
+3. **Does this rule already exist?** Find the prior rule on this topic. If it does, you are writing it with sharper words — patch the firing problem, don't duplicate. (Prior-patch shape check.)
+4. **Does every line help an agent act?** If a line doesn't help a future agent decide/execute/compare/verify, cut it. Lean and enough beats complete.
+
 ---
 
 ## Builder Workflow
@@ -86,7 +95,6 @@ Load only what the task needs. If a file is historical, read it only when resear
 |---|---|---|
 | **Builder** | `system/`, `library/` system/process/template structure, `AGENTS.*.md`, specs, schema, hooks, runtime machinery | Drafting deliverables, publishing posts, campaign retros, campaign frontmatter content updates |
 | **CMO** | `workspace/campaigns/`, deliverable drafting/review/lock/publish, campaign state, campaign retros | System architecture, schema, hooks, persona edits, runtime machinery |
-| **Career-Ops** | `career/` | Marketing and system files |
 
 Mode swap is a single atomic command. The audit writer performs the persona-file copy AND writes the audit row in one call; do not run a separate `Copy-Item` step.
 
@@ -112,7 +120,6 @@ After the command returns, re-read the root `AGENTS.md` before any further work 
 | `system/builder-backlog.md` | Cross-campaign queue of Builder work (unresolved only) |
 | `system/builder-backlog-completed.md` | Resolved `BB-*` archive (moved from active on closeout) |
 | `docs/superpowers/specs/` | Architecture specs |
-| `career/` | Separate career-ops domain |
 
 ---
 

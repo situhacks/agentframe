@@ -8,7 +8,7 @@ The actual post text the user publishes. Hook, body, CTA, alt text. Highlight re
 
 - **Campaign Architecture** locked (post role, hook angle, callbacks)
 - **Campaign Architecture audience extraction** locked (language tells, top objections, disconfirmation)
-- **Voice Loading**: Mandatory full load. `voice.md` IS loaded including the Writing Style Examples section. `positioning.md` IS loaded. This is the most voice-heavy deliverable in the system.
+- **Voice Loading**: Mandatory. Load the voice system at `library/context/operator/voice/` (always-load `identity.md`, `anti-patterns.md`, `voice-profile.md`; retrieve the matching `pairs/` by register). `positioning.md` IS loaded. This is the most voice-heavy deliverable in the system.
 - **Research Artifact** (for citation-backed claims)
 - **Visual/Video Spec**: Carousel Spec or Video Spec at least drafted when the post has a visual/video component (so copy doesn't duplicate what the visual/video already carries) — soft dependency, can iterate in parallel.
 
@@ -24,7 +24,7 @@ Per post:
 
 ## Hard Constraints
 
-- No banned words from `voice.md` (or banned word flagged + user explicitly overrode)
+- No banned words from `voice/anti-patterns.md` (or banned word flagged + user explicitly overrode)
 - Hook makes a specific claim or observation (not a platitude)
 - Hook-first — first 2 lines earn the rest
 - No bullets in prose (flowing sentences)
@@ -32,7 +32,7 @@ Per post:
 - Keep the artifact lean: write the post, do not restate upstream campaign direction, goals, audience, or strategy that already live in Phase 1/2/3 deliverables.
 - The head copy file (`copy-v{N}.md`, highest `N`) owns the full LinkedIn caption, recommended hook, body, and CTA when a separate copy file exists. For carousel-first posts, the operator may choose a combined carousel-and-caption package where the head `carousel-spec-v{N}.md` owns the caption and publish record.
 - CTA matches post's role per Campaign Architecture
-- Reads as user's voice (per `voice.md` Writing Style Examples)
+- Reads as user's voice (per `voice/voice-profile.md` and `voice/pairs/`)
 - Canadian English where applicable
 - Ties back to a content pillar (one identifiable from `positioning.md`)
 - Claims that cite external facts have a source in the campaign's Research Artifact

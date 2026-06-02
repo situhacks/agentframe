@@ -86,7 +86,6 @@ Load only what the task needs. If a file is historical, read it only when resear
 |---|---|---|
 | **Builder** | `system/`, `library/` system/process/template structure, `AGENTS.*.md`, specs, schema, hooks, runtime machinery | Drafting deliverables, publishing posts, campaign retros, campaign frontmatter content updates |
 | **CMO** | `workspace/campaigns/`, deliverable drafting/review/lock/publish, campaign state, campaign retros | System architecture, schema, hooks, persona edits, runtime machinery |
-| **Career-Ops** | `career/` | Marketing and system files |
 
 Mode swap is a single atomic command. The audit writer performs the persona-file copy AND writes the audit row in one call; do not run a separate `Copy-Item` step.
 
@@ -112,7 +111,6 @@ After the command returns, re-read the root `AGENTS.md` before any further work 
 | `system/builder-backlog.md` | Cross-campaign queue of Builder work (unresolved only) |
 | `system/builder-backlog-completed.md` | Resolved `BB-*` archive (moved from active on closeout) |
 | `docs/superpowers/specs/` | Architecture specs |
-| `career/` | Separate career-ops domain |
 
 ---
 

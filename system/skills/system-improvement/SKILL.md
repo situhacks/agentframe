@@ -35,7 +35,7 @@ Load when you are about to patch any of these target file classes:
 | Target class | Examples | Owner mode |
 |---|---|---|
 | Deliverable template | `library/deliverables/{type}/template.md` | CMO (System Retro) or Builder |
-| Voice rules | `library/context/operator/voice.md` | CMO |
+| Voice system | `library/context/operator/voice/` (target the specific file: `anti-patterns.md` for rules, `voice-profile.md` for the prior, `pairs/` for examples) | CMO |
 | Profile (operator-self) | `library/context/operator/profile.md` | CMO (rare; usually Second Brain sync, not pattern-scan) |
 | Positioning (outward-stance) | `library/context/operator/positioning.md` | CMO |
 | Process file | `library/process/campaign-frontmatter.md`, `library/process/campaign-flows/{flow}.md`, other `library/process/*.md` | Builder |

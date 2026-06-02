@@ -1,18 +1,16 @@
-## Humanizer Skill Vendor Record
+## Humanizer Skill — Vendor Record
 
-- Upstream source: `https://agentskill.sh/@blader/humanizer`
-- Upstream project: `https://github.com/blader/humanizer`
-- Snapshot date (UTC): `2026-04-19`
-- Source location in AgentFrame: `system/skills/humanizer/`
+- Upstream: `https://github.com/blader/humanizer`
+- Version: `2.7.0` · contentSha `a2ace14` · vendored `2026-06-01` · MIT
+- Files (upstream, unmodified): `SKILL.md`, `README.md`, `AGENTS.md`, `LICENSE`
 
-### Purpose
+**Vendored whole, never edited.** AgentFrame additions live in `library/process/humanizer-integration.md` and `library/context/operator/voice/`, never in the skill body. The only AgentFrame change to `SKILL.md` is the vendor header above its frontmatter.
 
-Track the upstream source and refresh procedure for the vendored humanizer skill.
+**Voice-calibration hook:** SKILL.md "Voice Calibration (Optional)" accepts a writing sample inline or by file path. The voice system passes a Brandon sample / points at `voice/pairs/` to calibrate rewrites.
 
-### Refresh Procedure
+### Re-vendor
 
-1. Fetch the latest `blader/humanizer` skill payload from agentskill.sh (or re-vendor from the upstream repository if the skill feed changes).
-2. Remove `system/skills/humanizer/` from this repo.
-3. Copy the refreshed skill payload into `system/skills/humanizer/`.
-4. Reapply AgentFrame-specific overlays (if any) and verify this file still exists.
-5. Verify behavior with a small prose humanization smoke test.
+1. `git clone --depth 1 https://github.com/blader/humanizer.git` (temp).
+2. Copy `SKILL.md`, `README.md`, `AGENTS.md`, `LICENSE` in (overwrite).
+3. Re-prepend the vendor header to `SKILL.md`; update version/sha/date here.
+4. Smoke-test a prose pass.

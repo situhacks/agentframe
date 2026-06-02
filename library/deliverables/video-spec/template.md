@@ -10,7 +10,7 @@ Planning and production tracker for a campaign video post. It gives the agent en
 - Campaign Architecture if one exists for the campaign.
 - Design Language if the video needs campaign-specific visual continuity.
 - `library/process/video-production.md`.
-- Operator Voice (load `voice.md` if the video includes user-voiced narration, captions meant to sound like the operator, or LinkedIn-facing script copy; do not load for purely technical render/planning work).
+- Operator Voice (load the voice system (`library/context/operator/voice/`) if the video includes user-voiced narration, captions meant to sound like the operator, or LinkedIn-facing script copy; do not load for purely technical render/planning work).
 - Video capability references as needed:
   - `system/skills/hyperframes/SKILL.md`, `system/skills/hyperframes-cli/SKILL.md`, and `system/skills/gsap/SKILL.md` for authored composition and rendering.
   - `system/skills/hyperframes/references/launch-video/` for optional launch-video reference artifacts (load only when needed).

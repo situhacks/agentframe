@@ -9,7 +9,7 @@ The full execution plan, post by post. Lives where the rubber meets the road: ev
 - **Standard Flow:** Campaign Brief locked + Research Artifact locked
 - **Solo Flow:** Concurrent Research Artifact (`phase-1-research/research-artifact-v{N}.md`)
 - `positioning.md` loaded (POV anchoring)
-- `voice.md` Writing Style Examples NOT loaded yet (this is structure, not output copy)
+- the `voice/pairs/` examples NOT loaded yet (this is structure, not output copy)
 
 ## Sections
 

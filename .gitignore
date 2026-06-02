@@ -85,5 +85,4 @@ __pycache__/
 # Personal hook scripts and local settings (e.g. git-push-guard) stay on the
 # operator's machine. If a settings.json file ever ships as a repo default,
 # un-ignore it explicitly.
-.claude/settings.local.json
-.claude/hooks/
+.claude/

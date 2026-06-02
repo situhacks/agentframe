@@ -10,7 +10,7 @@ The per-post carousel production spec. It tells the human and the rendering agen
 - **Design Language**: Locked (`design-language-v{N}.md` + `tokens.yaml`) when the carousel will be rendered. Do not restate them here.
 - **Image Production Menu**: `library/process/image-production.md` when slide planning needs generated-image path selection.
 - **Post Copy**: At least drafted when cover hook / CTA alignment matters.
-- **Voice Rules**: Load `voice.md` when the carousel spec includes user-facing prose (Recommended LinkedIn Copy, post-copy opening hooks, Slide 1 title options, slide titles, captions, body copy, CTA slide text). For pure visual structure, tokens, HTML, and layout notes, voice rules do not apply.
+- **Voice Rules**: Load the voice system (`library/context/operator/voice/`) when the carousel spec includes user-facing prose (Recommended LinkedIn Copy, post-copy opening hooks, Slide 1 title options, slide titles, captions, body copy, CTA slide text). For pure visual structure, tokens, HTML, and layout notes, voice rules do not apply.
 
 ## Output Shape
 

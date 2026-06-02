@@ -78,7 +78,7 @@ I looked around for alternatives. What I found was prompt wrappers sitting on to
 
 I didn't like what I saw. So I built my ideal system myself.
 
-**AgentFrame Marketing** is a file-native marketing workspace that sits inside the coding agent I already use. Two `AGENTS.md` modes carry the work — **CMO** ships campaigns, **Builder** evolves the system. Campaign state lives in markdown files under `workspace/campaigns/`. Voice rules, templates, and processes live in `library/`. Skills and connectors are swappable; when something sharper ships, I replace the skill and the system keeps working. See the [walkthrough below](#a-real-campaign-step-by-step) for what an end-to-end campaign actually looks like.
+**AgentFrame Marketing** is a file-native marketing workspace that sits inside the coding agent I already use. Two `AGENTS.md` modes carry the work — **CMO** ships campaigns, **Builder** evolves the system. Campaign state lives in markdown files under `workspace/campaigns/`. Your voice, templates, and processes live in `library/`. Skills and connectors are swappable; when something sharper ships, I replace the skill and the system keeps working. See the [walkthrough below](#a-real-campaign-step-by-step) for what an end-to-end campaign actually looks like.
 
 I've been dogfooding AgentFrame for a while and it's gone through multiple major revisions. The repo evolves with my workflow, not on a release schedule. It's free to fork — take what's useful.
 
@@ -127,7 +127,7 @@ A solo-flow walkthrough using the example campaign at `workspace/campaigns/examp
 </td>
 <td width="50%" valign="top">
 <img src=".github/readme-assets/walkthrough-06-retro.png" alt="06 · Retro" /><br/>
-<sub><b>06 · Retro</b> — The agent suggests patches to voice rules, templates, processes, and skill behavior based on what actually happened during the run. You approve or reject each one. AgentFrame tracks the small details throughout the campaign so you don't have to remember them.</sub>
+<sub><b>06 · Retro</b> — The agent suggests patches to your voice, templates, processes, and skill behavior based on what actually happened during the run. You approve or reject each one. AgentFrame tracks the small details throughout the campaign so you don't have to remember them.</sub>
 </td>
 </tr>
 </table>
@@ -142,7 +142,7 @@ A solo-flow walkthrough using the example campaign at `workspace/campaigns/examp
 
 
 
-In the box: **11 deliverable templates**, **13 process files**, **11 skill bundles**, **2 campaign flows**, a two-mode persona model, a local preview server, and a two-layer audit trail (`activity.md` + SQLite DB).
+In the box: **11 deliverable templates**, **14 process files**, **11 skill bundles**, **3 campaign flows**, a two-mode persona model, a local preview server, and a two-layer audit trail (`activity.md` + SQLite DB).
 
 
 
@@ -198,7 +198,8 @@ Process files load on demand — only when the workflow they describe is in play
 | `campaign-frontmatter` | Frontmatter schema and state handling |
 | `browser-fallback` | Browser automation fallback strategy |
 | `composio-notes` | Connector usage notes and caveats |
-| `voice-mini-retro` | Lightweight voice quality feedback loop |
+| `voice-setup` | Build your voice system from your own writing (samples → interview → compiled profile + example pairs) |
+| `voice-mini-retro` | Voice feedback loop — harvests your edits into the voice system at lock |
 | `deliverable-versioning` | Surgical-vs-replacement rule and version-bump procedure for `*-v{N}.md` deliverables |
 | `research-and-signals` | Shared kickoff for campaign research: workspace-context definition, live MCP scan, research-method offer |
 

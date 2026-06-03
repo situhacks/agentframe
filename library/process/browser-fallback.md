@@ -8,7 +8,7 @@ Cursor is the brain. Local browser-use/browser-harness is the browser hand.
 
 Browser fallback is not an app-specific automation stack. The agent reads the workflow recipe, observes the controlled Edge Work Browser through browser-harness, executes one bounded browser action, observes again, and updates workflow memory only when something durable changes.
 
-Do not introduce new browser scripts by default. Improve the workflow recipe and `browser-use/notes.md` first.
+Do not introduce new browser scripts by default. Improve the workflow recipe first.
 
 ## When To Use
 
@@ -19,15 +19,14 @@ Use browser fallback for visible web-app work the operator can already do manual
 ## Execution Loop
 
 1. Read the workflow `recipe.md`.
-2. Read `workflows/<workflow-id>/browser-use/notes.md` only when browser-harness-specific quirks are needed.
-3. Ensure Work Browser Mode is running for the workflow's `app_url`. If setup is unclear, load `system/browser/README.md` and run `npm run work-browser` from `system/browser`.
-4. If the target app is not authenticated, stop at the human-secret boundary and ask the operator to complete sign-in in the controlled browser.
-5. Observe the page.
-6. Decide the next browser primitive from the workflow file plus live observation.
-7. Execute one primitive: observe, click, fill, press, insertText, or screenshot.
-8. Observe again before deciding the next primitive.
-9. Stop at the workflow's human gate unless the operator explicitly authorized autonomous completion for this run.
-10. Update `recipe.md` only when the workflow shape or routing changes. Put durable browser-harness quirks in `browser-use/notes.md`.
+2. Ensure Work Browser Mode is running for the workflow's `app_url`. If setup is unclear, load `system/browser/README.md` and run `npm run work-browser` from `system/browser`.
+3. If the target app is not authenticated, stop at the human-secret boundary and ask the operator to complete sign-in in the controlled browser.
+4. Observe the page.
+5. Decide the next browser primitive from the workflow file plus live observation.
+6. Execute one primitive: observe, click, fill, press, insertText, or screenshot.
+7. Observe again before deciding the next primitive.
+8. Stop at the workflow's human gate unless the operator explicitly authorized autonomous completion for this run.
+9. Patch `recipe.md` when the workflow shape, routing, auth, export, selector, or durable browser-harness repair pattern changes.
 
 For text fields that may already contain user-owned content, signatures, templates, or disclosures, prefer insertion over replacement. In practice: focus the field, move to the insertion point, then `insertText`. Do not use `fill()` unless replacing the entire field is the intended behavior.
 
@@ -41,9 +40,9 @@ Stop at password, one-time code, authenticator approval, security question, devi
 
 Do not harden upfront. Cursor-driven browser-harness execution is the default while the workflow is fluid.
 
-Promote only when the same workflow succeeds repeatedly and the cost of Cursor reasoning is the bottleneck. Promotion means improving the workflow recipe or browser-harness notes, not adding a new Outlook/email/calendar script and not adding run history inside `recipe.md`.
+Promote only when the same workflow succeeds repeatedly and the cost of Cursor reasoning is the bottleneck. Promotion means improving the workflow recipe, not adding a new Outlook/email/calendar script and not adding run history inside `recipe.md`.
 
-If a hardened note fails, fall back to Cursor-driven execution from the workflow file and live observations. Do not add a second deterministic verifier stack.
+If a hardened recipe path fails, fall back to Cursor-driven execution from the workflow file and live observations. Do not add a second deterministic verifier stack.
 
 ## Anti-Patterns
 

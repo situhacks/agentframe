@@ -38,13 +38,7 @@ Click Allow when the per-attach popup appears (Chrome 144+):
 
 See [agent-workspace/domain-skills/](agent-workspace/domain-skills/) for example tasks.
 
-## Free Browser Use Cloud browsers
-
-Stealth, sub-agents, or headless deployment.<br>
-**Browser Use Cloud free tier: 3 concurrent browsers, proxies, captcha solving, and more. No card required.**
-
-- Grab a key at [cloud.browser-use.com/new-api-key](https://cloud.browser-use.com/new-api-key)
-- Or let the agent sign up itself via [docs.browser-use.com/llms.txt](https://docs.browser-use.com/llms.txt) (setup flow + challenge context included).
+Remote and cloud browser attachment are documented in `install.md` when needed; AgentFrame local work uses the controlled Edge Work Browser in `system/browser/`.
 
 ## Architecture (~1k lines across 4 core files)
 

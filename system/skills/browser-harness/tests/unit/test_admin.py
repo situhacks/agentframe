@@ -50,8 +50,8 @@ def test_stale_websocket_does_not_open_chrome_inspect():
 
 def test_daemon_endpoint_names_discovers_valid_socket_names(tmp_path, monkeypatch):
     monkeypatch.setattr(admin.ipc, "IS_WINDOWS", False)
-    monkeypatch.setattr(admin.ipc, "BH_TMP_DIR", None)  # shared-tmpdir mode
-    monkeypatch.setattr(admin.ipc, "_TMP", tmp_path)
+    monkeypatch.setattr(admin.ipc, "BH_RUNTIME_DIR", None)  # shared-tmpdir mode
+    monkeypatch.setattr(admin.ipc, "_RUNTIME", tmp_path)
     (tmp_path / "bu-default.sock").touch()
     (tmp_path / "bu-remote_1.sock").touch()
     (tmp_path / "bu-invalid.name.sock").touch()
@@ -60,20 +60,20 @@ def test_daemon_endpoint_names_discovers_valid_socket_names(tmp_path, monkeypatc
     assert admin._daemon_endpoint_names() == ["default", "remote_1"]
 
 
-def test_daemon_endpoint_names_with_bh_tmp_dir_returns_local_name_when_sock_exists(tmp_path, monkeypatch):
+def test_daemon_endpoint_names_with_bh_runtime_dir_returns_local_name_when_sock_exists(tmp_path, monkeypatch):
     monkeypatch.setattr(admin.ipc, "IS_WINDOWS", False)
-    monkeypatch.setattr(admin.ipc, "BH_TMP_DIR", str(tmp_path))
-    monkeypatch.setattr(admin.ipc, "_TMP", tmp_path)
+    monkeypatch.setattr(admin.ipc, "BH_RUNTIME_DIR", str(tmp_path))
+    monkeypatch.setattr(admin.ipc, "_RUNTIME", tmp_path)
     monkeypatch.setattr(admin, "NAME", "session-xyz")
     (tmp_path / "bu.sock").touch()
 
     assert admin._daemon_endpoint_names() == ["session-xyz"]
 
 
-def test_daemon_endpoint_names_with_bh_tmp_dir_returns_empty_when_sock_missing(tmp_path, monkeypatch):
+def test_daemon_endpoint_names_with_bh_runtime_dir_returns_empty_when_sock_missing(tmp_path, monkeypatch):
     monkeypatch.setattr(admin.ipc, "IS_WINDOWS", False)
-    monkeypatch.setattr(admin.ipc, "BH_TMP_DIR", str(tmp_path))
-    monkeypatch.setattr(admin.ipc, "_TMP", tmp_path)
+    monkeypatch.setattr(admin.ipc, "BH_RUNTIME_DIR", str(tmp_path))
+    monkeypatch.setattr(admin.ipc, "_RUNTIME", tmp_path)
     monkeypatch.setattr(admin, "NAME", "session-xyz")
 
     assert admin._daemon_endpoint_names() == []
@@ -121,6 +121,120 @@ def test_browser_connections_returns_attached_page(monkeypatch):
             "page": {"title": "Cat - Wikipedia", "url": "https://en.wikipedia.org/wiki/Cat"},
         }
     ]
+
+
+def test_chrome_running_detects_helium_on_linux(monkeypatch):
+    monkeypatch.setattr("platform.system", lambda: "Linux")
+    monkeypatch.setattr(
+        "subprocess.check_output",
+        lambda *args, **kwargs: "systemd\nhelium\nxdg-desktop-portal\n",
+    )
+
+    assert admin._chrome_running()
+
+
+@pytest.mark.parametrize(
+    "path, expected",
+    [
+        ("/snap/chromium/1234/usr/lib/chromium-browser/chromium-browser", True),
+        ("/SNAP/foo", True),
+        ("/usr/bin/google-chrome-stable", False),
+        ("", False),
+    ],
+)
+def test_is_snap_browser(path, expected):
+    assert admin._is_snap_browser(path) == expected
+
+
+def test_doctor_probe_preserves_snap_bin_env_symlink(monkeypatch, tmp_path):
+    target = tmp_path / "usr" / "bin" / "snap"
+    target.parent.mkdir(parents=True)
+    target.write_text("#!/bin/sh\n")
+    snap_bin = tmp_path / "snap" / "bin"
+    snap_bin.mkdir(parents=True)
+    chromium = snap_bin / "chromium"
+    chromium.symlink_to(target)
+
+    monkeypatch.setenv("BH_CHROME_PATH", str(chromium))
+    monkeypatch.delenv("CHROME_PATH", raising=False)
+
+    name, path = admin._doctor_probe_chrome_binary_for_snap()
+
+    assert name == "chromium"
+    assert path == str(chromium)
+    assert admin._is_snap_browser(path)
+
+
+def test_doctor_probe_preserves_snap_bin_path_symlink(monkeypatch, tmp_path):
+    target = tmp_path / "usr" / "bin" / "snap"
+    target.parent.mkdir(parents=True)
+    target.write_text("#!/bin/sh\n")
+    snap_bin = tmp_path / "snap" / "bin"
+    snap_bin.mkdir(parents=True)
+    chromium = snap_bin / "chromium"
+    chromium.symlink_to(target)
+
+    monkeypatch.delenv("BH_CHROME_PATH", raising=False)
+    monkeypatch.delenv("CHROME_PATH", raising=False)
+
+    def fake_which(cmd):
+        return str(chromium) if cmd == "chromium" else None
+
+    monkeypatch.setattr("shutil.which", fake_which)
+
+    name, path = admin._doctor_probe_chrome_binary_for_snap()
+
+    assert name == "chromium"
+    assert path == str(chromium)
+    assert admin._is_snap_browser(path)
+
+
+def test_run_doctor_prints_snap_detect_on_linux_when_probe_is_snap(monkeypatch, capsys):
+    monkeypatch.setattr(admin, "_version", lambda: "0.1.0")
+    monkeypatch.setattr(admin, "_install_mode", lambda: "git")
+    monkeypatch.setattr(admin, "_chrome_running", lambda: False)
+    monkeypatch.setattr(admin, "daemon_alive", lambda: False)
+    monkeypatch.setattr(admin, "browser_connections", lambda: [])
+    monkeypatch.setattr(admin, "_latest_release_tag", lambda: "0.1.0")
+    monkeypatch.setattr(admin, "_doctor_probe_chrome_binary_for_snap", lambda: ("chromium", "/snap/chromium/1/usr/bin/chromium"))
+    monkeypatch.setattr("platform.system", lambda: "Linux")
+    monkeypatch.setattr("shutil.which", lambda _cmd: None)
+    monkeypatch.delenv("BROWSER_USE_API_KEY", raising=False)
+
+    assert admin.run_doctor() == 1
+
+    out = capsys.readouterr().out
+    assert "[snap-detect]" in out
+    assert "Browser: chromium (snap)" in out
+    assert "Snap confinement prevents CDP binding" in out
+    assert "docs/snap-linux-headless.md" in out
+
+
+def test_run_doctor_skips_snap_detect_on_non_linux(monkeypatch, capsys):
+    monkeypatch.setattr(admin, "_version", lambda: "0.1.0")
+    monkeypatch.setattr(admin, "_install_mode", lambda: "git")
+    monkeypatch.setattr(admin, "_chrome_running", lambda: True)
+    monkeypatch.setattr(admin, "daemon_alive", lambda: True)
+    monkeypatch.setattr(admin, "browser_connections", lambda: [])
+    monkeypatch.setattr(admin, "_latest_release_tag", lambda: "0.1.0")
+    monkeypatch.setattr(admin, "_doctor_probe_chrome_binary_for_snap", lambda: ("chromium", "/snap/chromium/1/usr/bin/chromium"))
+    monkeypatch.setattr("platform.system", lambda: "Darwin")
+    monkeypatch.setattr("shutil.which", lambda _cmd: None)
+    monkeypatch.delenv("BROWSER_USE_API_KEY", raising=False)
+
+    assert admin.run_doctor() == 0
+
+    out = capsys.readouterr().out
+    assert "[snap-detect]" not in out
+
+
+def test_run_doctor_fix_snap_prints_steps(capsys):
+    assert admin.run_doctor_fix_snap() == 0
+    out = capsys.readouterr().out
+    assert "browser-harness doctor --fix-snap" in out
+    assert "BH_CHROME_PATH" in out
+    assert "google-chrome-stable_current_amd64.deb" in out
+    assert "browser-harness --doctor" in out
 
 
 def test_run_doctor_prints_active_browser_connections_and_active_pages(monkeypatch, capsys):

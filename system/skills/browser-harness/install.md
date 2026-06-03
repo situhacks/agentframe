@@ -7,10 +7,6 @@ description: Install browser-harness into the current agent and connect it to a 
 
 Use this file only for browser-harness install, browser connection setup, and connection troubleshooting. For day-to-day browser work, read `SKILL.md`. Task-specific edits belong in `agent-workspace/agent_helpers.py` and `agent-workspace/domain-skills/`.
 
-## AgentFrame boundary
-
-In AgentFrame, local browser fallback normally starts the controlled Microsoft Edge Work Browser from `system/browser` with `npm run work-browser`. Use the upstream Chrome/profile setup below only outside AgentFrame, for remote Browser Use sessions, or when the workflow and operator explicitly ask to attach to another browser profile.
-
 ## Recommended `browser-harness` setup
 
 Clone the repo once into a durable location, then install it as an editable tool so `browser-harness` works from any directory:
@@ -97,7 +93,9 @@ If the user hasn't said which connection method to use, default to Way 1 if Chro
 1. Try the harness:
 
    ```bash
-   browser-harness -c 'print(page_info())'
+   browser-harness <<'PY'
+   print(page_info())
+   PY
    ```
 
    If it prints page info, you're done.
@@ -124,7 +122,9 @@ If the user hasn't said which connection method to use, default to Way 1 if Chro
    - **chrome ok, daemon ok, but step 1 still failed** → stale daemon. Restart it:
 
      ```bash
-     browser-harness -c 'restart_daemon()'
+     browser-harness <<'PY'
+     restart_daemon()
+     PY
      ```
 
      If that hangs, escalate: kill all Chrome and daemon processes, then reopen Chrome and retry. On macOS/Linux, also remove `/tmp/bu-default.sock` and `/tmp/bu-default.pid` if they linger.
@@ -133,5 +133,4 @@ If the user hasn't said which connection method to use, default to Way 1 if Chro
 
 If Way 1 fails repeatedly or the user's task is unattended, move to Way 2 or a cloud browser per the Browser connection reference (these have no popups).
 
-If you are testing browser connection for the first time, run this demo: open `https://github.com/browser-use/browser-harness` in a new tab and activate it (`switch_tab`) so the user sees the harness has attached. If they are logged into GitHub, ask whether to star the repo for them — only click if they say yes. If they are not logged in, navigate to `https://browser-use.com` instead. Then ask what they want to do next.
-
+If you are testing browser connection for the first time, run this demo: open `https://github.com/browser-use/browser-harness` in a new tab and activate it (`switch_tab`) so the user sees the harness has attached. Then ask what they want to do next.

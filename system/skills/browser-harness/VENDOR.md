@@ -1,8 +1,9 @@
 ## Browser Harness Vendor Record
 
 - Upstream repository: `https://github.com/browser-use/browser-harness`
-- Vendored commit: `560ce7a6f508ba2eca915e6863bd075c249fda71`
-- Snapshot date (UTC): `2026-05-12`
+- Vendored commit: `6d20866664ea3d9691b27bbf64f42ae097437dc3`
+- Snapshot date (UTC): `2026-05-27`
+- Prior vendored commit: `560ce7a6f508ba2eca915e6863bd075c249fda71` (2026-05-12)
 - Source location in AgentFrame: `system/skills/browser-harness/`
 - License: MIT (preserved at `system/skills/browser-harness/LICENSE`)
 
@@ -38,3 +39,11 @@ AgentFrame applies a small public-share cleanup on top of the upstream snapshot:
 5. Re-apply the AgentFrame sanitization notes above.
 6. Restore this `VENDOR.md` with the new commit hash and snapshot date.
 7. Verify `LICENSE` remains present in the vendored subtree.
+
+### Notable upstream delta (560ce7a → 6d20866)
+
+- **Breaking:** `-c '...'` removed; pass Python via stdin/heredoc only (`browser-harness <<'PY'` on bash; PowerShell: `"print(page_info())" | browser-harness`).
+- `SKILL.md` documents heredoc as the preferred multi-line form.
+- Domain-skill preload rule when `BH_DOMAIN_SKILLS=1`.
+- Additional domain skills and interaction-skills from upstream (QBO report export, etc.).
+- Windows stdout UTF-8 fix in `run.py` (upstream issue #124).

@@ -6,7 +6,7 @@ license: Proprietary. LICENSE.txt has complete terms
 
 # PPTX Skill
 
-If you want Open Design's deck workflow before final `.pptx` export/import into a campaign post folder, use `system/skills/open-design/SKILL.md`; otherwise continue with this PPTX-native workflow.
+Path selection for deck work lives in `library/process/deck-production.md` (this skill, PPT Master for from-scratch designed decks, or Open Design's deck workflow). Continue here for the PPTX-native read/edit/create workflow.
 
 ## Quick Reference
 

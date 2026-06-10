@@ -8,14 +8,19 @@ supersedes: null
 
 # LIFECYCLE
 status: complete
-current_phase: 6-learn-close
-campaign_flow: solo-flow
+current_phase: 5-launch-and-learn
+campaign_flow: standard-flow
 last_activity: 2026-05-11T19:08:00-07:00
 shipped_at: 2026-05-11
 completed_at: 2026-05-11
 cancelled_at: null
 cancelled_reason: null
 quarterly_goals_advanced: ["Q2-distribution", "Q2-narrative-consistency"]
+
+# MANIFEST
+post_manifest:
+  ingredients: [body-copy, image-prompts]
+  notes: "single-image post — hero asset produced outside the generators (operator Figma pass over an HTML render)"
 
 # DELIVERABLES
 deliverables:
@@ -45,14 +50,9 @@ deliverables:
     last_updated: 2026-05-11
   post-1:
     status: shipped
-    file: phase-4-production/posts/post-1/copy-v3.md
+    file: phase-4-production/posts/post-1/post-FINAL.md
     last_updated: 2026-05-11
     job: thought-leadership-pov
-  post-1-image:
-    status: locked
-    file: phase-4-production/posts/post-1/image-prompt-v1.md
-    last_updated: 2026-05-11
-    method: external_operator_asset
   performance-data:
     status: locked
     file: phase-5-launch-and-learn/performance-data.csv
@@ -86,6 +86,7 @@ Complete. This example campaign moved from idea selection to locked post, visual
 
 ## Notes
 
-- Default flow: `solo-flow`.
+- Flow: `standard-flow`, run compact — campaign-brief and campaign-architecture were absorbed into a single messaging-architecture deliverable for this one-post campaign.
+- Post manifest: `body-copy` + `image-prompts`, assembled into `post-FINAL.md`.
 - The final public-facing post was a LinkedIn POV with a single hero image.
 - Total working time represented in this example: about 1 hour and 8 minutes.

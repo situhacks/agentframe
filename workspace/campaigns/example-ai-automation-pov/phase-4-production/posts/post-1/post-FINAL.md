@@ -1,11 +1,6 @@
-﻿---
+---
 status: shipped
-last_updated: 2026-05-11T19:04:00-07:00
-platform: linkedin
-post_id: post-1
-source_material:
-  - {path: ../../../phase-3-planning/messaging-architecture/draft-v2.md, kind: strategy}
-  - {path: ../../../phase-3-planning/design-language/design-language-v1.md, kind: visual_direction}
+last_updated: 2026-05-11
 shipped_at: 2026-05-11
 published:
   platform: linkedin
@@ -15,15 +10,11 @@ shipped_media:
   - visuals/source/post-1-Figma-cleaned.png
 ---
 
-# Post 1 Copy: The Agent Boundary Problem
+# Post 1 — FINAL: The Agent Boundary Problem
 
-## Recommended Hook
+Assembled from the post's locked ingredients per the campaign manifest (`body-copy`, `image-prompts`).
 
-I do not want an AI agent that can do everything.
-
-I want one that knows exactly when to leave me alone and when to speak up.
-
-## LinkedIn Copy
+## Body Copy (locked from body-copy-v3.md)
 
 I do not want an AI agent that can do everything.
 
@@ -43,14 +34,10 @@ My POV: the next serious agent capability is not more autonomy. It is restraint.
 
 Where would you draw the line between useful automation and too much autonomy?
 
-## Hook Variants
-
-**Recommended:** I do not want an AI agent that can do everything. I want one that knows exactly when to leave me alone and when to speak up.
-
-**Alternate 1:** The first time you connect an AI agent to real tools, the problem stops being intelligence and starts being permission.
-
-**Alternate 2:** Most agent demos skip the only question that matters: what is this thing actually allowed to touch?
-
-## Alt Text
+### Alt Text
 
 Visual showing an AI agent inside a clear permission boundary with read, draft, and ask actions allowed, while write access sits outside the boundary. The image reinforces the post's point that useful agents need scope before autonomy.
+
+## Image (locked from image-prompts-v1.md)
+
+Hero asset: `visuals/source/post-1-Figma-cleaned.png` (operator-produced from `visuals/source/post-1-hero.html`; method `external_operator_asset` — the prompt record carries the full visual direction).

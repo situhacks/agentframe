@@ -97,7 +97,7 @@ I've been dogfooding AgentFrame for a while and it's gone through multiple major
 
 ## A real campaign, step by step
 
-A solo-flow walkthrough using the example campaign at `workspace/campaigns/example-ai-automation-pov/`. One operator, six moves, no team handoffs.
+A compact walkthrough using the example campaign at `workspace/campaigns/example-ai-automation-pov/`. One operator, six moves, no team handoffs.
 
 <table>
 <tr>
@@ -142,7 +142,7 @@ A solo-flow walkthrough using the example campaign at `workspace/campaigns/examp
 
 
 
-In the box: **12 deliverable templates**, **14 process files**, **11 skill bundles**, **3 campaign flows**, a two-mode persona model, a local preview server, and a two-layer audit trail (`activity.md` + SQLite DB).
+In the box: **12 deliverable templates**, **14 process files**, **13 skill bundles**, **3 campaign flows**, a two-mode persona model, a local preview server, and a two-layer audit trail (`activity.md` + SQLite DB).
 
 
 
@@ -200,7 +200,7 @@ Process files load on demand — only when the workflow they describe is in play
 | `browser-fallback` | Browser automation fallback strategy |
 | `composio-notes` | Connector usage notes and caveats |
 | `voice-setup` | Build your voice system from your own writing (samples → interview → compiled profile + example pairs) |
-| `voice-mini-retro` | Voice feedback loop — harvests your edits into the voice system at lock |
+| `voice-mini-retro` | Lock-time eligibility gate that routes your edit-diffs to the voice-harvest skill |
 | `deliverable-versioning` | Surgical-vs-replacement rule and version-bump procedure for `*-v{N}.md` deliverables |
 | `research-and-signals` | Shared kickoff for campaign research: workspace-context definition, live MCP scan, research-method offer |
 
@@ -217,6 +217,8 @@ My current production stack. Swap any of them for a sharper tool without touchin
 | `agentframe-structure` | Project skill |
 | `deliverable-scaffolding` | Project skill |
 | `system-improvement` | Project skill |
+| `voice-harvest` | Project skill — mines finished work and operator edit-diffs into annotated voice example pairs |
+| `deliverable-harvest` | Project skill — same sources, structure lens: routes template/process patch candidates out of finished campaigns |
 | `docx` | Project skill |
 | `pptx` | Project skill |
 | `humanizer` | Vendored from [blader/humanizer](https://github.com/blader/humanizer) |
@@ -510,7 +512,7 @@ Open Design is a concrete example of the swap pattern. AgentFrame owns campaign 
 
 - [ ] Preview server v2: improved search, nested live reload, stronger video UX
 
-- [ ] Additional campaign flows beyond solo/standard (newsletter, short-form video series, podcast launch)
+- [ ] Additional campaign flows beyond solo/standard/open (newsletter, short-form video series, podcast launch)
 
 
 

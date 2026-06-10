@@ -103,7 +103,7 @@ The retro templates use the `not_required` vs `waived` distinction: `not_require
 | `system_retro_completed` | ISO 8601 date or `null` | `null` | Filled when `phase-5-launch-and-learn/system-retro-v{N}.md` lands at `status: locked`. |
 | `campaign_retro_completed` | ISO 8601 date or `null` | `null` | Filled when `phase-5-launch-and-learn/campaign-retro-v{N}.md` lands at `status: locked`. |
 
-Template retro batches are tracked as deliverable rows, not top-level counters: use slugs like `template-retro-copy-carousel` with `file: phase-5-launch-and-learn/template-retro-copy-carousel-v{N}.md`.
+
 
 ## Example block (v2)
 

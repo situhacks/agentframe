@@ -175,7 +175,6 @@ Edit, duplicate, or add new deliverable types under `library/deliverables/`.
 | `carousel-spec` | Slide-by-slide carousel plan |
 | `video-spec` | Video concept, scenes, and production plan |
 | `campaign-retro` | Campaign-level learnings and improvements |
-| `template-retro` | Template quality review and updates |
 | `system-retro` | System-level process and architecture improvements |
 
 

@@ -22,7 +22,7 @@ Read only the smallest set needed to classify Builder-owned system behavior:
 - Current system/process/persona files only when a recommended change needs target-file proof before execution.
 - Do not load voice profile; this is an analytical/operational doc.
 
-Do not run v1 to vF deliverable diff analysis here. That belongs in `library/deliverables/template-retro/template.md`.
+The v1 to vF deliverable diff analysis arrives via `system/skills/deliverable-harvest/SKILL.md` (the deliverable lens of the harvest pass that feeds this retro); do not re-derive it manually here.
 
 ## Output Shape
 

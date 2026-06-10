@@ -4,20 +4,21 @@
 
 The Campaign Retro is the Phase 5 outcome closeout. It answers: did this campaign hit the Business Brief success criteria, and what should the operator conclude from the evidence?
 
-It is not a Builder patch queue and it does not run performance capture. System behavior learning belongs to `system-retro-v{N}.md`; template learning belongs to `template-retro-v{N}.md`; performance seeking/capture belongs to Phase 5.3.
+It is not a Builder patch queue and it does not run performance capture. System and template learning belong to the harvest retro (`system-retro-v{N}.md`). Performance capture is this step's first move and this doc's input, not its content.
 
 ## Inputs
 
 - **Read only:**
   - `phase-2-strategy/business-brief/draft-v{N}.md` for the canonical success criteria.
   - `campaign.md` frontmatter for shipped count, lifecycle state, and deliverable pointers.
-  - `phase-5-launch-and-learn/performance-data.csv` as the Phase 5.3 output.
+  - `phase-5-launch-and-learn/performance-data.csv` (captured first, same step).
   - `activity.md` only for ship dates, scope changes, back-fill/override evidence, and completion events.
   - Public comment/reply evidence or operator-provided qualitative notes when needed to score a Business Brief criterion.
+  - `feedback-log.md` for campaign-scoped observations that bear on the Worked / Did Not Work notes.
 - **Dependencies:**
   - Final active post shipped, cancelled, or removed from scope.
-  - `system-retro-v{N}.md` and `template-retro-v{N}.md` are complete or intentionally deferred.
-  - Phase 5.3 Performance Capture has either produced `performance-data.csv` or the operator chose to close with partial data.
+  - `system-retro-v{N}.md` is complete or intentionally deferred.
+  - Performance capture (same step, runs first) has either produced `performance-data.csv` or the operator chose to close with partial data.
 - **Context Loading:**
   - Do not load voice context; this is an analytical closeout doc.
 
@@ -71,7 +72,7 @@ State one of:
 
 ## Hard Constraints
 
-- **Boundary Rules:** Do not patch system, template, voice, positioning, or process files from Campaign Retro. If market-outcome evidence suggests future Builder work, mention it only as an outcome note. Route actual changes through System Retro or Template Retro later. Do not restate campaign history. Use only facts needed to score the Business Brief and close the campaign.
+- **Boundary Rules:** Do not patch system, template, voice, positioning, or process files from Campaign Retro. If market-outcome evidence suggests future Builder work, mention it only as an outcome note. Route actual changes through the harvest retro / `system-improvement` later. Do not restate campaign history. Use only facts needed to score the Business Brief and close the campaign.
 - **Criterion Honesty:** Attach compact caveats to the relevant scorecard item when the Business Brief was back-filled after the work was underway, the campaign scope changed after criteria were set, evidence is operator-reported rather than externally observable, or the metric is unavailable through Phase 5.3 capture. External review `not_required` is not a caveat by itself for solo work.
 - **Analytics Collection:** Campaign Retro does not run connector discovery, Composio/Rube tools, exports, or manual analytics collection. See `library/process/composio-notes.md`. Treat missing metrics as `unknown`, not `0`. For operator-only qualitative criteria, ask only for the criterion evidence needed to score the Business Brief item. Do not turn this into an analytics collection step.
 

@@ -123,24 +123,19 @@ When post copy is locked and publish media exists or has been selected, follow t
 
 ## Phase 5 — Post-Launch Learning
 
-Four steps. The two Builder-owned retros run back to back after the active arc ends: system behavior first, then template evolution. Performance capture is window-driven CSV data entry. Campaign retro runs with the final analytics pass unless the operator explicitly closes early.
+Two steps, run in order after the active arc ends.
 
 | Step | Output |
 |---|---|
-| 5.1 System behavior retro | `phase-5-launch-and-learn/system-retro-v{N}.md` after final active post completion; operator may delay to pair with campaign retro. |
-| 5.2 Template evolution retro | `phase-5-launch-and-learn/template-retro-v{N}.md` for scoped v1 to vF template analysis; split large campaigns across multiple sessions only when needed. |
-| 5.3 Performance capture | `phase-5-launch-and-learn/performance-data.csv` with one row per post/window. |
-| 5.4 Campaign retro + completion | `phase-5-launch-and-learn/campaign-retro-v{N}.md` about 14 days after the final active post ships, then campaign completion/archive when approved. |
+| 5.1 Harvest retro | Run [`system/skills/deliverable-harvest/SKILL.md`](../../../system/skills/deliverable-harvest/SKILL.md) + [`system/skills/voice-harvest/SKILL.md`](../../../system/skills/voice-harvest/SKILL.md) over the campaign (shared source-read). Findings route on approval: template patches → `system-improvement`, voice pairs → `voice/pairs/`, recurrences → builder-backlog, campaign-specific notes → `feedback-log.md`. Summary lands in `phase-5-launch-and-learn/system-retro-v{N}.md`. |
+| 5.2 Performance + campaign retro + completion | One closeout motion: capture `phase-5-launch-and-learn/performance-data.csv` per [`composio-notes.md`](../composio-notes.md) (connector-first MCP scan, manual gap-fill; metrics are meaningful ~14 days after each post's `published.posted_at`), then score the campaign in `phase-5-launch-and-learn/campaign-retro-v{N}.md`, then completion/archive when approved. |
 
 **Tracker update during Phase 5:**
-- System retro lands: add `system-retro` row to `deliverables` at `status: locked` + set top-level `system_retro_completed: {date}`.
-- Template retro lands: add `template-retro` row to `deliverables` at `status: locked`. Do not set a top-level counter.
+- Harvest retro lands: add `system-retro` row to `deliverables` at `status: locked` + set top-level `system_retro_completed: {date}`.
 - Campaign retro lands: add `campaign-retro` row at `status: locked` + set `campaign_retro_completed: {date}` + LIFECYCLE `status: complete` + `completed_at: {date}`.
 - Move folder to `workspace/campaigns/completed/{slug}/` (folder location is a side-effect of `LIFECYCLE.status: complete | cancelled`, not its own status value).
 
-**Performance capture** follows [`composio-notes.md`](../composio-notes.md): connector-first live MCP scan per platform, then manual gap-fill against the canonical CSV columns. Nudge around 14 days after each post's `published.posted_at`; for multi-post campaigns, capture can happen for early shipped posts while later posts are still in Phase 4, before system retro, or between system retro and campaign retro.
-
-For retro shape and decision logic, use the relevant template (`system-retro`, `template-retro`, `campaign-retro`).
+Retro shapes: harvest retro = the two harvest skills + `system-retro` template for the summary; campaign retro = the `campaign-retro` template (performance capture is its input — capture first, then score).
 
 All retros run before the campaign moves to `workspace/campaigns/completed/{slug}/`. Skipping a required retro is logged to the campaign's `activity.md` as a `phase_override`; pattern of skipping surfaces in the quarterly meta-retro via `activity.md` + `system/audit/agentframe.db`.
 

@@ -26,10 +26,8 @@ Run a lightweight campaign for one accountable operator with no assumed stakehol
 | `2-design-language` | Design Language | `phase-2-design/design-language-v{N}.md` | [`design-language`](../../deliverables/design-language/template.md) |
 | `3-produce-ship` | Post Copy | `phase-3-production/posts/post-{n}/copy-v{N}.md` | [`post-copy`](../../deliverables/post-copy/template.md) |
 | `3-produce-ship` | Media deliverable, when needed | `phase-3-production/posts/post-{n}/{media}-v{N}.md` | [`carousel-spec`](../../deliverables/carousel-spec/template.md), [`image-production`](../image-production.md), or [`video-spec`](../../deliverables/video-spec/template.md) |
-| `4-learn-close` | System Behavior Retro | `phase-4-close/system-retro-v{N}.md` | [`system-retro`](../../deliverables/system-retro/template.md) |
-| `4-learn-close` | Template Evolution Retro | `phase-4-close/template-retro-v{N}.md` | [`template-retro`](../../deliverables/template-retro/template.md) |
-| `4-learn-close` | Performance Data | `phase-4-close/performance-data.csv` | shipped post frontmatter + [`composio-notes`](../composio-notes.md) |
-| `4-learn-close` | Campaign Retro | `phase-4-close/campaign-retro-v{N}.md` | [`campaign-retro`](../../deliverables/campaign-retro/template.md) |
+| `4-learn-close` | Harvest Retro (system + deliverable + voice lenses) | `phase-4-close/system-retro-v{N}.md` | [`voice-harvest`](../../../system/skills/voice-harvest/SKILL.md) + [`deliverable-harvest`](../../../system/skills/deliverable-harvest/SKILL.md), summary per [`system-retro`](../../deliverables/system-retro/template.md) |
+| `4-learn-close` | Performance + Campaign Retro (capture first, then score) | `phase-4-close/performance-data.csv` + `phase-4-close/campaign-retro-v{N}.md` | [`composio-notes`](../composio-notes.md) + [`campaign-retro`](../../deliverables/campaign-retro/template.md) |
 
 **Idea-bank shape (keep tight):** a candidate list plus the selected pick, nothing more. Per candidate: title, 1-3 sentence thesis, and one provenance line. Name the selected pick in one line. Do not add per-candidate Risk, Research Questions, Workspace Signal Summary, or Next Research Step sections.
 
@@ -71,7 +69,7 @@ An override is a state-changing departure from the expected solo path. Record th
 - Design Language can be deferred for text-only work. The deferred design artifact owns the reason; production may proceed without visual assets.
 - A planned post can be removed from scope before shipping. Update `post_count`, the affected `post-{n}` row, and `activity.md`.
 - Performance capture can be partial. Unsupported metrics stay unknown, not zero; Campaign Retro carries the partial-data caveat.
-- System Behavior Retro, Template Evolution Retro, or Campaign Retro can be explicitly deferred, but the campaign cannot move to `complete` until Campaign Retro is locked or the operator records a closeout override.
+- The Harvest Retro or Campaign Retro can be explicitly deferred, but the campaign cannot move to `complete` until Campaign Retro is locked or the operator records a closeout override.
 - Cancellation can happen from any phase. Set `LIFECYCLE.status: cancelled`, `cancelled_at`, `cancelled_reason`, and append the cancellation event to `activity.md`.
 
 ## Completion Criteria
@@ -79,7 +77,7 @@ An override is a state-changing departure from the expected solo path. Record th
 A solo campaign is complete when:
 
 - every active production deliverable is shipped, cancelled, or removed from scope;
-- System Behavior Retro and Template Evolution Retro are locked or explicitly deferred;
+- The Harvest Retro is locked or explicitly deferred;
 - Performance Data exists or the operator chose to close with partial/unknown data;
 - Campaign Retro is locked and has applied the closeout decision;
 - `campaign.md` has `status: complete`, `completed_at`, and `campaign_retro_completed` set.

@@ -142,7 +142,7 @@ A compact walkthrough using the example campaign at `workspace/campaigns/example
 
 
 
-In the box: **12 deliverable templates**, **15 process files**, **14 skill bundles**, **3 campaign flows**, a two-mode persona model, a local preview server, and a two-layer audit trail (`activity.md` + SQLite DB).
+In the box: **12 deliverable templates**, **15 process files**, **15 skill bundles**, **3 campaign flows**, a two-mode persona model, a local preview server, and a two-layer audit trail (`activity.md` + SQLite DB).
 
 
 
@@ -227,6 +227,7 @@ My current production stack. Swap any of them for a sharper tool without touchin
 | `hyperframes-cli` | Vendored from [heygen-com/hyperframes](https://github.com/heygen-com/hyperframes) |
 | `gsap` | Vendored animation skill for HyperFrames workflows |
 | `ppt-master` | Vendored from [hugohe3/ppt-master](https://github.com/hugohe3/ppt-master) — generates designed, native-editable decks from source material via its SVG→PPTX pipeline; AgentFrame boundary notes in `system/skills/ppt-master/AGENTS.md` |
+| `extract-design` | Thin skill over [Manavarya09/design-extract](https://github.com/Manavarya09/design-extract)'s `npx designlang` CLI — measures design tokens off a live reference site as design-language source material; distillation rules in `system/skills/extract-design/AGENTS.md` |
 | `open-design` | Vendored local-first runtime from [nexu-io/open-design](https://github.com/nexu-io/open-design) for image/deck/template-style visual production, with AgentFrame setup, staging, and lock-time import rules in `system/skills/open-design/SKILL.md` |
 | `browser-harness` | Vendored from [browser-use/browser-harness](https://github.com/browser-use/browser-harness) for CDP-driven browser workflows; routed through Edge with AgentFrame boundary notes in `system/skills/browser-harness/AGENTS.md` |
 
@@ -545,6 +546,8 @@ The full loop runs today — kickoff, research, drafting, image/video production
 - [nexu-io/open-design](https://github.com/nexu-io/open-design) (Apache-2.0, vendored under `system/skills/open-design/source/`)
 
 - [hugohe3/ppt-master](https://github.com/hugohe3/ppt-master) (MIT, vendored under `system/skills/ppt-master/`)
+
+- [Manavarya09/design-extract](https://github.com/Manavarya09/design-extract) (MIT, thin skill vendored under `system/skills/extract-design/`; CLI runs via `npx designlang`)
 
 - [GreenSock GSAP](https://greensock.com/gsap/)
 

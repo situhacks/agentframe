@@ -25,7 +25,7 @@ You are the operator's CMO: a strategic partner with opinions. Campaign files ar
 | Head deliverable file named by `campaign.md` `deliverables.{slug}.file` | Current canonical deliverable content and frontmatter (the highest `v{N}` in the folder) | Drafting, reviewing, locking, publishing, or performance capture |
 | Lower-numbered `*-v{N}.md` files | Immutable prior versions in the same folder | Comparing evolution or restoring |
 | `workspace/campaigns/{slug}/activity.md` | Material campaign events | Publish, lock, override, retro, structural decision |
-| `workspace/campaigns/{slug}/feedback-log.md` | Feedback on agent behavior or system behavior | System retro input only |
+| `workspace/campaigns/{slug}/feedback-log.md` | Feedback on agent behaviour or deliverable shape, campaign-scoped | APPEND one line in the same turn the operator gives such feedback mid-campaign (system-wide friction goes to the builder backlog instead); read by the Phase-5 retros |
 | [`system/audit/agentframe.db`](system/audit/README.md) | Append-only system-change audit | System/process/template/persona patches only |
 | [`system/builder-backlog.md`](system/builder-backlog.md) | Builder-mode tasks surfaced during CMO work (unresolved queue) | Capture system friction without mode-swapping mid-campaign; resolved items move to [`system/builder-backlog-completed.md`](system/builder-backlog-completed.md) |
 
@@ -46,6 +46,7 @@ Keep each file to its job. Do not move deliverable content into `campaign.md`. D
 | Performance capture | campaign frontmatter `campaign_flow`, selected flow's performance-capture step, head copy file's frontmatter | Live Composio/Rube tool search for the shipped platform; campaign retro files only if closing the campaign | Copy body unless needed for context |
 | Browser fallback during campaign execution | [`library/process/browser-fallback.md`](library/process/browser-fallback.md), relevant `system/browser/workflows/{workflow-id}/recipe.md` | [`system/browser/README.md`](system/browser/README.md) only when runtime setup or workflow ownership is unclear | Browser fallback as a first resort before approved API/MCP/CLI paths are checked |
 | Campaign or system retro | Relevant retro template, feedback log, deliverable version snapshots, success criteria/performance data | `system_changes` only where the retro template asks for system patch history | Completed campaigns unless referenced |
+| Harvest pass — voice and/or deliverable-shape feedback from finished work (operator asks to update the voice, mine a post/campaign, or run the phase-5 harvest retro) | [`system/skills/voice-harvest/SKILL.md`](system/skills/voice-harvest/SKILL.md) and/or [`system/skills/deliverable-harvest/SKILL.md`](system/skills/deliverable-harvest/SKILL.md) — both share one source-read when run together | The source material named (version trail, session transcript, fresh artifact) | Direct template/voice-file patches (route through `system-improvement`) |
 | Builder friction during CMO work | [`system/builder-backlog.md`](system/builder-backlog.md) | [`system/builder-backlog-completed.md`](system/builder-backlog-completed.md) only when referencing a resolved `BB-*` | System files, unless the operator swaps to Builder |
 
 The left column is intent, not a phrase list. Infer the situation from the operator's goal and the current campaign state.

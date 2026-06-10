@@ -31,6 +31,8 @@ When the operator accepts the offer, the agent copies the current head to the ne
 
 When the operator gives feedback and the agent applies it, the agent writes the next version (`copy-v{N}.md` → `copy-v{N+1}.md`) with the changes applied, updates the tracker to the new head. The prior version stays in the folder as the snapshot.
 
+If the feedback criticizes the deliverable's SHAPE or the agent's process (not just this draft's content — e.g. "v1 copy should never contain imagery notes," "the table format is wrong for this deliverable"), also append one line to the campaign's `feedback-log.md` in the same turn. That line is the paper trail the Phase-5 harvest retro reads; without it the correction lives only in chat.
+
 ## Surgical edit (no new version)
 
 Apply when the change is bounded and does not move the deliverable's shape or claims:

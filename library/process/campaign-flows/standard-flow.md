@@ -75,7 +75,7 @@ Three deliverables. Internal — not stakeholder-facing. Outputs prep for produc
 
 3.1 and 3.2 can run in parallel after 2.2 locks.
 
-Hard rule for multi-post campaigns: ALL post skeletons (3.2) must exist BEFORE Phase 4 begins. Posts in a series talk to each other; copywriter can't honor cross-post callbacks if it can't see them.
+Hard rule for multi-post campaigns: the per-post breakdown in Campaign Architecture (3.1) must cover ALL posts BEFORE Phase 4 begins. Posts in a series talk to each other; copywriter can't honor cross-post callbacks if it can't see them.
 
 **Tracker update at end of Phase 3:** `current_phase: 4-production`. Add (or update) in `deliverables`:
 ```yaml
@@ -88,7 +88,7 @@ design-language:
   file: phase-3-planning/design-language/design-language-v{N}.md
   last_updated: {date locked}
 ```
-Also add one row per planned post (`post-1`, `post-2`, …) at `status: not_started` with a folder pointer. The Phase 4 work fills the per-post `vF` files in.
+Record `post_manifest` (ingredients + generation preferences from the locked Campaign Architecture) in `campaign.md` in the same turn — schema in [`campaign-frontmatter.md`](../campaign-frontmatter.md). Also add one row per planned post (`post-1`, `post-2`, …) at `status: not_started` with a folder pointer. The Phase 4 work fills the per-post ingredient files in.
 
 ## Phase 4 — Production and Launch
 
@@ -100,23 +100,22 @@ When a production deliverable has many unresolved directions, multi-session scop
 
 | Step | Deliverable | Produces | Depends on |
 |---|---|---|---|
-| 4.1 | Post Copy (per post) | `phase-4-production/posts/post-{n}/copy-v{N}.md` | 3.1 locked, 3.2 locked |
-| 4.2a | Carousel Spec → HTML render (per post, when applicable) | `phase-4-production/posts/post-{n}/carousel-spec-v{N}.md` | 3.1 locked, 3.2 locked, 3.2-tokens locked |
-| 4.2b | Video Spec → video project/render (per post, when applicable) | `phase-4-production/posts/post-{n}/video-spec-v{N}.md` + `video/` and/or `edit/` | 3.1 locked, 3.2 locked when visual continuity matters |
-| 4.3 | Image Prompt + Gemini Nano Banana variants (per post, when applicable) | `phase-4-production/posts/post-{n}/image-prompt-v{N}.md` + `images/` | 4.2a carousel for slide context OR 4.2b video for stills/backgrounds/transitions |
-| 4.4 | Publish coordination + media reconciliation (per post) | shipped frontmatter in the post's canonical `-v{N}.md` + `activity.md` `post_published` entry | copy/media locked and operator confirms the live URL |
+| 4.1 | Post ingredients (per post) — each ingredient named by `campaign.md` `post_manifest` (e.g. slide-copy, body-copy, image-prompts, video-spec), each with its own version trail and lock | `phase-4-production/posts/post-{n}/{ingredient}-v{N}.md` | 3.1 locked, 3.2 locked |
+| 4.2 | Post assembly — `post-FINAL.md` accumulates each ingredient as it locks, per [`post-final/template.md`](../../deliverables/post-final/template.md) | `phase-4-production/posts/post-{n}/post-FINAL.md` | created when the post's first ingredient starts drafting |
+| 4.3 | Publish coordination + media reconciliation (per post) | publish block in `post-FINAL.md` frontmatter + `activity.md` `post_published` entry | all manifest ingredients locked and operator confirms the live URL |
+
+Ingredient order within a post: slide copy locks before body copy drafts (the body diverges from the deck, so the deck has to exist first); image prompts consume the design language's treatment block and the locked slide text.
 
 External review (only when the post goes to a leadership stakeholder before publish — same default rule as Phase 2): agent offers to coordinate. Per-post.
 
-When both per-post copy and visuals are ready, run the coherence cross-check defined in [`carousel-spec/template.md`](../../deliverables/carousel-spec/template.md) or [`video-spec/template.md`](../../deliverables/video-spec/template.md).
+The cross-ingredient coherence check (body doesn't retell the slides, cover aligns with the hook, CTA placement) runs at `post-FINAL.md` lock per [`post-final/template.md`](../../deliverables/post-final/template.md); video posts also run the cross-check in [`video-spec/template.md`](../../deliverables/video-spec/template.md).
 
-When post copy is locked and publish media exists or has been selected, follow the publish-prep procedure in [`composio-notes.md`](../composio-notes.md).
+When all ingredients are locked and publish media exists or has been selected, follow the publish-prep procedure in [`composio-notes.md`](../composio-notes.md).
 
 **Tracker update during Phase 4** (per post, in the same turn as the file edit):
-- Post starts drafting: `deliverables.post-{n}.status: drafting` + `file: phase-4-production/posts/post-{n}/copy-v{N}.md` + `last_updated`.
-- Video spec starts before copy exists: add/update `deliverables.post-{n}-video.status: drafting` + `file: phase-4-production/posts/post-{n}/video-spec-v{N}.md` + `last_updated`. Keep `deliverables.post-{n}` tied to the post-copy/publish state owner.
-- Post copy locks: `status: locked`.
-- Post publishes (Phase 4.4): `status: shipped`. The shipping record (platform, URL, posted_at, shipped_media[]) lives in the post's canonical `-v{N}.md` frontmatter — see [`library/deliverables/post-copy/template.md`](../../deliverables/post-copy/template.md) "Shipped frontmatter" section for the standard copy-owned shape. **Increment `posts_published`** and update LIFECYCLE `shipped_at` if this is the first published post.
+- Post starts drafting: `deliverables.post-{n}.status: drafting` + `file: phase-4-production/posts/post-{n}/post-FINAL.md` + `last_updated`, creating the `post-FINAL.md` stub in the same turn.
+- An ingredient locks: its content lands in `post-FINAL.md` per [`lock-event.md`](../lock-event.md). The post row stays `drafting` until every manifest ingredient is in, then flips `locked`.
+- Post publishes (Phase 4.3): `status: shipped`. The shipping record (platform, URL, posted_at, shipped_media[]) lives in `post-FINAL.md` frontmatter — see [`post-final/template.md`](../../deliverables/post-final/template.md) "Publish / Export Mechanics". **Increment `posts_published`** and update LIFECYCLE `shipped_at` if this is the first published post.
 - Arc changes mid-campaign (post added, post dropped, post renumbered): update `post_count` AND the affected `post-{n}` rows in the same turn. Optional: add `framing_note` if the post's job in the arc shifted.
 
 **Tracker update at end of Phase 4:** `current_phase: 5-launch-and-learn`. Set when every active post is `shipped`, `cancelled`, or explicitly removed from active campaign scope. Do not advance the whole campaign to Phase 5 on first ship; multi-post campaigns can publish early posts while later posts remain in production.

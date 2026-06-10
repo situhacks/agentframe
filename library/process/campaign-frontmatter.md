@@ -12,6 +12,7 @@ A v2 `campaign.md` frontmatter has four blocks. Each block has one job:
 ---
 # IDENTITY        — who/what this campaign is. Set once at scaffold; rarely changes.
 # LIFECYCLE       — what state this campaign is in. Touched on phase transitions / ship / complete.
+# MANIFEST        — which ingredient deliverables this campaign's posts assemble from. Set when campaign-architecture locks.
 # DELIVERABLES    — per-deliverable tracker. The PRIMARY state-discovery surface for state-load reads.
 # COUNTERS        — rollup counts derived from deliverables[]. Cheap state-summary.
 ---
@@ -39,7 +40,7 @@ Pointers (success criteria source, etc.) live inside the relevant blocks rather 
 | `current_phase` | enum | flow-defined phase ids | first phase in selected flow | Where the campaign is right now. Updated when the agent finishes a phase's last deliverable or the user explicitly transitions. End-of-phase transition rules live in the selected `campaign_flow` file. |
 | `campaign_flow` | enum | flow ids in [`campaign-flows/README.md`](campaign-flows/README.md) | `solo-flow` | Canonical flow selector for this campaign instance. Valid values: `solo-flow`, `standard-flow`, `open-flow`. (See `library/process/campaign-flows/` for definitions). |
 | `last_activity` | ISO 8601 datetime | e.g. `2026-04-23T03:00:00+00:00` | scaffold time | Touched whenever any deliverable in this campaign is edited / locked / shipped. Used to compute stale-campaign nudges (>7d). |
-| `shipped_at` | ISO 8601 date or `null` | — | `null` | When the first post in the campaign published. (Sourced from per-post `copy-v{N}.md` frontmatter `published.posted_at` — see post-copy/template-v{N}.md "Shipped frontmatter" section.) |
+| `shipped_at` | ISO 8601 date or `null` | — | `null` | When the first post in the campaign published. (Sourced from the post's `post-FINAL.md` frontmatter `published.posted_at` — see [`post-final/template.md`](../deliverables/post-final/template.md) "Publish / Export Mechanics".) |
 | `completed_at` | ISO 8601 date or `null` | — | `null` | When the campaign retro ran (the formal close — `LIFECYCLE.status` transitions `active → complete` in the same turn). |
 | `cancelled_at` | ISO 8601 date or `null` | — | `null` | When `LIFECYCLE.status` was set to `cancelled`. Mutually exclusive with `completed_at`. |
 | `cancelled_reason` | string or `null` | free text, single line | `null` | One-line reason for cancellation. |
@@ -54,6 +55,18 @@ When the operator or reviewer kills the campaign:
 3. Append a `cancellation` event in `workspace/campaigns/{slug}/activity.md`.
 4. Offer to move the folder to `workspace/campaigns/completed/{slug}/`.
 5. Cancelled campaigns still run system retro; campaign retro is skipped (no shipped performance to score).
+
+### MANIFEST (set when campaign-architecture locks)
+
+Each post in the campaign is assembled from ingredient deliverables, each with its own version trail and lock, accumulating into the post's `post-FINAL.md` (see [`library/deliverables/post-final/template.md`](../deliverables/post-final/template.md)). The manifest names which ingredients this campaign's posts use, plus campaign-wide generation preferences:
+
+```yaml
+post_manifest:
+  ingredients: [slide-copy, body-copy, image-prompts]   # per-post ingredient deliverables for this series
+  notes: "prompts only — operator renders in Gemini"     # optional: campaign-wide generation/tooling preference
+```
+
+A single post can deviate (e.g. one video post in a carousel series): add `ingredients: [...]` to that post's tracker row. The manifest is the default, not a cage.
 
 ### DELIVERABLES (per-deliverable tracker — the primary state-discovery surface)
 
@@ -78,7 +91,7 @@ deliverables:
 | `not_started` | The deliverable has not yet been opened. The `file` may point at a folder rather than a file. **This value lives only in the campaign-tracker mirror** — per-deliverable file frontmatter never carries `not_started` (the file doesn't exist yet to carry frontmatter). | Default for new deliverables that the selected campaign flow says are expected at this phase. |
 | `drafting` | Active work in progress. The `vF.md` file exists with content. **`drafting` includes the in-flight-with-reviewer case** — the orthogonal `review` field carries the external-coordination state; the deliverable itself is still drafting until reviewer feedback is applied (or waived) and the operator locks. | Any state between `not_started` and `locked` / `shipped`. |
 | `locked` | The deliverable is locked — no more substantive edits without an explicit "unlock" event. Downstream work depends on this state. Reached either directly from `drafting` (no reviewer) or via `drafting + review: complete` (reviewer feedback applied). | After lock-event skill fires for the deliverable. |
-| `shipped` | Used for production deliverables once the post has actually been published. The shipped-state record lives in the deliverable's own `{name}-v{N}.md` frontmatter (`published.{platform,url,posted_at}` + `shipped_media[]`); performance metrics live in `phase-5-launch-and-learn/performance-data.csv`. There is no separate `published.md` file. | After Phase 4.4 publish coordination updates the per-post canonical `-v{N}.md` frontmatter. |
+| `shipped` | Used for post rows once the post has actually been published. The shipped-state record lives in the post's `post-FINAL.md` frontmatter (`published.{platform,url,posted_at}` + `shipped_media[]`); performance metrics live in `phase-5-launch-and-learn/performance-data.csv`. There is no separate `published.md` file. | After publish coordination updates the post's `post-FINAL.md` frontmatter. |
 | `deferred` | The deliverable was intentionally skipped or postponed. The reason lives in the deliverable's own `vF.md` frontmatter (NOT here — this row just notes the state). | When the selected campaign flow expected the deliverable but operator + agent agreed to defer or skip with back-fill obligation. |
 
 **Per-deliverable `review` enum** (only for deliverables whose template declares `Review path: external`):
@@ -127,6 +140,11 @@ cancelled_at: null
 cancelled_reason: null
 quarterly_goals_advanced: ["Q2-distribution", "Q2-narrative-consistency"]
 
+# MANIFEST
+post_manifest:
+  ingredients: [slide-copy, body-copy, image-prompts]
+  notes: "prompts only — operator renders in Gemini"
+
 # DELIVERABLES (the primary state-discovery surface)
 deliverables:
   business-brief:
@@ -150,18 +168,18 @@ deliverables:
     last_updated: 2026-04-19
   post-1:
     status: shipped
-    file: phase-4-production/posts/post-1/copy-v4.md
+    file: phase-4-production/posts/post-1/post-FINAL.md
     last_updated: 2026-04-20
     job: attention
   post-2:
     status: shipped
-    file: phase-4-production/posts/post-2/copy-v3.md
+    file: phase-4-production/posts/post-2/post-FINAL.md
     last_updated: 2026-04-20
     job: thought-leadership-soft-CTA
     framing_note: "shifted 2026-04-20 from week-six diagnosis to self-evolving framing"
   post-3:
     status: drafting
-    file: phase-4-production/posts/post-3-middle-ground/copy-v2.md
+    file: phase-4-production/posts/post-3-middle-ground/post-FINAL.md
     last_updated: 2026-04-21
     job: thought-leadership-middle-ground
 

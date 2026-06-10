@@ -4,11 +4,13 @@ Owns the iteration shape for every deliverable instance under `workspace/campaig
 
 ## Naming
 
-Versioned files use `{name}-v{N}.md`: `copy-v1.md`, `copy-v2.md`, `draft-v1.md`, `carousel-spec-v1.md`. The highest `N` in the folder is the head version. The campaign tracker's `deliverables.{slug}.file` pointer names the head directly so a state-load reads the head without scanning the folder.
+Versioned files use `{name}-v{N}.md`: `slide-copy-v1.md`, `body-copy-v2.md`, `draft-v1.md`. The highest `N` in the folder is the head version. The campaign tracker's `deliverables.{slug}.file` pointer names the head directly so a state-load reads the head without scanning the folder.
+
+One exception per post folder: `post-FINAL.md` is unversioned. It is the post's assembly record — locked ingredient content accumulates there per [`post-final/template.md`](../deliverables/post-final/template.md) — and the ingredient files around it carry the version trails. Post rows in the tracker point at it rather than at an ingredient head.
 
 ## Frontmatter
 
-Versioned files carry the deliverable type's existing frontmatter shape (depends_on, voice_loading, shipped_at, published, shipped_media, etc.) plus:
+Versioned files carry the deliverable type's existing frontmatter shape plus:
 
 ```yaml
 status: drafting | locked | shipped | deferred
@@ -19,17 +21,17 @@ No `current_version` field. No `version_history` array. The filename carries the
 
 ## First draft (v1)
 
-The agent writes `copy-v1.md` (or `{name}-v1.md` for non-post deliverables) with `status: drafting`. The campaign tracker `deliverables.{slug}.file` is set to that path in the same turn.
+The agent writes `{name}-v1.md` with `status: drafting`. The campaign tracker `deliverables.{slug}.file` is set to that path in the same turn (post-ingredient drafts don't move the post row — it points at `post-FINAL.md`, created with the first ingredient).
 
 At the end of the drafting turn, the agent offers: *"Want an editable copy you can revise yourself before the next iteration?"* The offer is opt-in to avoid token cost and surprise files when the operator just wants to read the draft first.
 
 ## Editable copy (operator opt-in)
 
-When the operator accepts the offer, the agent copies the current head to the next version (`copy-v1.md` → `copy-v2.md`), updates the tracker to point at the new head, and tells the operator the file is ready to edit. The operator edits the new head directly. The prior version stays in the folder, untouched, as the snapshot for that point.
+When the operator accepts the offer, the agent copies the current head to the next version (`slide-copy-v1.md` → `slide-copy-v2.md`), updates the tracker to point at the new head, and tells the operator the file is ready to edit. The operator edits the new head directly. The prior version stays in the folder, untouched, as the snapshot for that point.
 
 ## Iteration (agent applies operator feedback)
 
-When the operator gives feedback and the agent applies it, the agent writes the next version (`copy-v{N}.md` → `copy-v{N+1}.md`) with the changes applied, updates the tracker to the new head. The prior version stays in the folder as the snapshot.
+When the operator gives feedback and the agent applies it, the agent writes the next version (`{name}-v{N}.md` → `{name}-v{N+1}.md`) with the changes applied, updates the tracker to the new head. The prior version stays in the folder as the snapshot.
 
 If the feedback criticizes the deliverable's SHAPE or the agent's process (not just this draft's content — e.g. "v1 copy should never contain imagery notes," "the table format is wrong for this deliverable"), also append one line to the campaign's `feedback-log.md` in the same turn. That line is the paper trail the Phase-5 harvest retro reads; without it the correction lives only in chat.
 
@@ -60,7 +62,7 @@ The agent writes the new content to `{name}-v{N+1}.md`, updates the tracker poin
 
 ## Lock and ship
 
-When the operator approves the current head, the agent flips that file's `status` to `locked` per [`lock-event.md`](lock-event.md). On publish, the same head file's `status` flips to `shipped` with the publish-record fields filled in, per the publish coordination procedure in [`post-copy/template.md`](../deliverables/post-copy/template.md).
+When the operator approves the current head, the agent flips that file's `status` to `locked` per [`lock-event.md`](lock-event.md) — which also lands post-ingredient content in the post's `post-FINAL.md`. Publish state lives on `post-FINAL.md`, per the publish procedure in [`post-final/template.md`](../deliverables/post-final/template.md).
 
 ## Edge cases
 

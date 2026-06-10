@@ -11,7 +11,7 @@ Usage:
 If `--out` is omitted, the CSS is written next to `tokens.yaml` at
 `./preview/assets/tokens.css` (relative to the yaml file).
 
-Schema mapping (from `library/deliverables/carousel-spec/template.md`):
+Schema mapping (from `library/deliverables/design-language/template.md` companion `tokens.yaml`):
 
 - palette.{key}            -> --{key}                e.g. --bg, --accent_primary
 - typography.{role}.family -> --font-{role}          e.g. --font-headline

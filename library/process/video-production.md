@@ -111,7 +111,7 @@ Within `video/`, keep `renders/` for rendered video outputs (`.mp4`/`.webm`) onl
     - HyperFrames: `npx hyperframes doctor`, `npx hyperframes lint`, `npx hyperframes validate`, `npx hyperframes inspect`, preview as needed, then draft/final render.
     - video-use: transcript cache present, EDL exists, preview render exists, self-eval notes recorded.
 11. **Lock.** `video-spec-v{N}.md` can lock only when the user has reviewed the draft render or explicitly waived review, final render paths are recorded, and open production issues are either fixed or named.
-12. **Publish reconciliation.** When the post ships, `copy-v{N}.md` remains the shipped state owner. Add final video files to `shipped_media[]`, update publish fields, mirror `campaign.md`, and append the campaign activity entry.
+12. **Publish reconciliation.** When the post ships, the post's `post-FINAL.md` is the shipped state owner. Add final video files to `shipped_media[]`, update publish fields, mirror `campaign.md`, and append the campaign activity entry.
 
 ---
 
@@ -142,7 +142,7 @@ A video post is ready to lock when:
 - HyperFrames/video-use verification appropriate to the project has run or any skipped check is named with reason.
 - CTA and ending frame align with the post's role in the campaign arc.
 - Any generated assets have provenance recorded.
-- `copy-v{N}.md` and the video agree on CTA, visual promise, and shipped media.
+- The post's body copy and the video agree on CTA, visual promise, and shipped media.
 
 ---
 

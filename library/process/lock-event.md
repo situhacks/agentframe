@@ -18,10 +18,11 @@ Fire when either is true:
 1. **Verify template lock criteria.** Read the deliverable template and confirm criteria pass; surface gaps before locking.
 2. **Run declared pre-lock quality gates.** If the template includes `## Humanizer Pass` (or another explicit gate), run it using the referenced process.
 3. **Update deliverable frontmatter.** Set `status: locked` and `last_updated` in the canonical `-v{N}.md`.
-4. **Update campaign tracker in the same turn.** Sync `campaign.md` `deliverables.{slug}` state and any phase/counter implications from the active flow.
-5. **Append activity event.** Record the lock in `workspace/campaigns/{slug}/activity.md`.
-6. **Run voice mini-retro when applicable.** Follow [`library/process/voice-mini-retro.md`](voice-mini-retro.md) trigger/eligibility rules.
-7. **Surface result to operator.** Confirm lock state, plus any remaining follow-ups (review, export, publish).
+4. **Assemble post ingredients.** When the locked deliverable is a post ingredient (named by the campaign's `post_manifest`), copy the locked content into the post's `post-FINAL.md` in the same turn, per [`library/deliverables/post-final/template.md`](../deliverables/post-final/template.md).
+5. **Update campaign tracker in the same turn.** Sync `campaign.md` `deliverables.{slug}` state and any phase/counter implications from the active flow.
+6. **Append activity event.** Record the lock in `workspace/campaigns/{slug}/activity.md`.
+7. **Run voice mini-retro when applicable.** Follow [`library/process/voice-mini-retro.md`](voice-mini-retro.md) trigger/eligibility rules.
+8. **Surface result to operator.** Confirm lock state, plus any remaining follow-ups (review, export, publish).
 
 ---
 

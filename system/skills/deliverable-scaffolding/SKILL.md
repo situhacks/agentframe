@@ -75,7 +75,7 @@ Pick a stable reference template from existing types — one that matches the ne
 Recommended baselines:
 
 - **Stakeholder-facing analytical doc** (briefs, strategies): `library/deliverables/business-brief/template.md`.
-- **User-voiced creative output** (social posts, scripts): `library/deliverables/post-copy/template.md`.
+- **User-voiced creative output** (social posts, scripts): `library/deliverables/body-copy/template.md`.
 - **Internal operational doc** (retros, reviews): `library/deliverables/system-retro/template.md`.
 
 Read the chosen reference end-to-end. The new template will use its section order and conventions; the user fills in content.

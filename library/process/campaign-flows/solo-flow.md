@@ -24,8 +24,8 @@ Run a lightweight campaign for one accountable operator with no assumed stakehol
 | `1-research-and-architecture` | Research Artifact | `phase-1-research/research-artifact-v{N}.md` | [`research-artifact`](../../deliverables/research-artifact/template.md) |
 | `1-research-and-architecture` | Campaign Architecture | `phase-1-research/campaign-architecture/draft-v{N}.md` | [`campaign-architecture`](../../deliverables/campaign-architecture/template.md) |
 | `2-design-language` | Design Language | `phase-2-design/design-language-v{N}.md` | [`design-language`](../../deliverables/design-language/template.md) |
-| `3-produce-ship` | Post Copy | `phase-3-production/posts/post-{n}/copy-v{N}.md` | [`post-copy`](../../deliverables/post-copy/template.md) |
-| `3-produce-ship` | Media deliverable, when needed | `phase-3-production/posts/post-{n}/{media}-v{N}.md` | [`carousel-spec`](../../deliverables/carousel-spec/template.md), [`image-production`](../image-production.md), or [`video-spec`](../../deliverables/video-spec/template.md) |
+| `3-produce-ship` | Post ingredients (per `campaign.md` `post_manifest`) | `phase-3-production/posts/post-{n}/{ingredient}-v{N}.md` | [`slide-copy`](../../deliverables/slide-copy/template.md), [`body-copy`](../../deliverables/body-copy/template.md), [`video-spec`](../../deliverables/video-spec/template.md), generation paths per [`image-production`](../image-production.md) |
+| `3-produce-ship` | Post assembly — accumulates each ingredient as it locks | `phase-3-production/posts/post-{n}/post-FINAL.md` | [`post-final`](../../deliverables/post-final/template.md) |
 | `4-learn-close` | Harvest Retro (system + deliverable + voice lenses) | `phase-4-close/system-retro-v{N}.md` | [`voice-harvest`](../../../system/skills/voice-harvest/SKILL.md) + [`deliverable-harvest`](../../../system/skills/deliverable-harvest/SKILL.md), summary per [`system-retro`](../../deliverables/system-retro/template.md) |
 | `4-learn-close` | Performance + Campaign Retro (capture first, then score) | `phase-4-close/performance-data.csv` + `phase-4-close/campaign-retro-v{N}.md` | [`composio-notes`](../composio-notes.md) + [`campaign-retro`](../../deliverables/campaign-retro/template.md) |
 
@@ -43,8 +43,8 @@ Load-on-demand procedures by phase. Solo flow is the same shape as standard flow
 |---|---|---|
 | `1-research-and-architecture` | Operator starts a new campaign | Offer menu: Workspace Scan (loads [`research-and-signals.md`](../research-and-signals.md)), Brainstorm Idea Bank, or Direct Input. |
 | `2-design-language` | Operator ready for visual direction | Run as an interactive coworking session in chat to align on mood before drafting. |
-| `3-produce-ship` | Both per-post copy and visuals drafted | Coherence cross-check defined in [`carousel-spec/template.md`](../../deliverables/carousel-spec/template.md) or [`video-spec/template.md`](../../deliverables/video-spec/template.md). |
-| `3-produce-ship` | Post copy locked and publish media selected | [`composio-notes.md`](../composio-notes.md) "Publish Prep" for the connected-tools draft offer; PDF/document carousels stay manual. |
+| `3-produce-ship` | All manifest ingredients locked for a post | Cross-ingredient coherence check at `post-FINAL.md` lock per [`post-final/template.md`](../../deliverables/post-final/template.md); video posts also run the cross-check in [`video-spec/template.md`](../../deliverables/video-spec/template.md). |
+| `3-produce-ship` | Ingredients locked and publish media selected | [`composio-notes.md`](../composio-notes.md) "Publish Prep" for the connected-tools draft offer; PDF/document carousels stay manual. |
 | `4-learn-close` | ~14 days after each post's `posted_at` | [`composio-notes.md`](../composio-notes.md) "Performance Capture" for the per-platform live MCP scan, canonical CSV columns, and partial-data rule. |
 | Any phase | Operator overrides sequence | Activity event line shape in [`campaign-frontmatter.md`](../campaign-frontmatter.md) "Activity event line shapes." |
 
@@ -55,9 +55,9 @@ Use [`campaign-frontmatter.md`](../campaign-frontmatter.md) for schema, allowed 
 - New solo campaigns start with `current_phase: 1-research-and-architecture`, `campaign_flow: solo-flow`, `deliverables: {}`, `post_count: 0`, and `posts_published: 0`.
 - Phase 1 idea selected: add/update `idea-bank` at `status: locked` (or bypass if direct input).
 - Phase 1 concurrent work: add/update `research-artifact` and `campaign-architecture` at `status: drafting`.
-- Phase 1 locked: `campaign-architecture` locks, add planned `post-{n}` rows as `not_started`, update `post_count`, then set `current_phase: 2-design-language`.
+- Phase 1 locked: `campaign-architecture` locks, record `post_manifest` in `campaign.md`, add planned `post-{n}` rows as `not_started`, update `post_count`, then set `current_phase: 2-design-language`.
 - Phase 2 locked or deferred: add/update `design-language`, then set `current_phase: 3-produce-ship`.
-- Phase 3 production starts: each active post moves through `not_started -> drafting -> locked -> shipped` in the same turn as its canonical file changes.
+- Phase 3 production starts: each post row points at its `post-FINAL.md` (created when the first ingredient starts drafting) and moves `not_started -> drafting -> locked -> shipped` in the same turn as its files change; ingredient locks land in `post-FINAL.md` per [`lock-event.md`](../lock-event.md).
 - Phase 3 complete: when every active post is `shipped`, `cancelled`, or removed from scope, set `current_phase: 4-learn-close`.
 - Phase 4 lands system/template retros, performance data, and campaign retro as deliverable rows. Campaign Retro lock sets `campaign_retro_completed`, `LIFECYCLE.status: complete`, and `completed_at`.
 

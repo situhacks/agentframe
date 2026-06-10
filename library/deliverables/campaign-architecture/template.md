@@ -13,7 +13,7 @@ The full execution plan, post by post. Lives where the rubber meets the road: ev
 
 ## Sections
 
-**Author/Reader Stance:** Internal execution doc. Author is a marketer drafting this for the team's own use. Reader is future-you or whoever's writing the post copy / carousel specs next. Treat the copywriter as smart — give them the steer, not the script.
+**Author/Reader Stance:** Internal execution doc. Author is a marketer drafting this for the team's own use. Reader is future-you or whoever's drafting the post ingredients (slide copy, body copy, prompts) next. Treat the copywriter as smart — give them the steer, not the script.
 
 - **Story arc** — the spine across the campaign. 3-5 sentences max. Beginning/middle/end.
 - **Audience extraction** (required mini-section, grounded in the research artifact):
@@ -30,6 +30,7 @@ The full execution plan, post by post. Lives where the rubber meets the road: ev
   - **CTA** — one line; matches the post's role.
   - **Callbacks** — 1-2 lines naming prior post(s) and how.
   - **Risks** — 1-3 bullets specific to this post.
+- **Post manifest** — which ingredient deliverables this series' posts assemble from (e.g. `slide-copy`, `body-copy`, `image-prompts`, `video-spec`), plus any campaign-wide generation preference. One or two lines; recorded into `campaign.md` `post_manifest` when this deliverable locks (schema in [`campaign-frontmatter.md`](../../process/campaign-frontmatter.md)). Name per-post deviations here when a post needs a different ingredient set.
 
 ## Hard Constraints
 
@@ -41,7 +42,7 @@ The full execution plan, post by post. Lives where the rubber meets the road: ev
 - No two posts have the same job (no two "hooks," no two "payoffs")
 - Risks per post are not empty
 - Audience extraction language tells and objections are grounded in `research-artifact-v{N}.md` citations or quoted source material, not LLM-prior assumptions.
-- Per-post sections stay tight: no numbered story-shape narratives, no hero-image notes, no thesis paragraphs, and no slide-by-slide content (those belong in post-copy, image-prompt artifact, or carousel-spec).
+- Per-post sections stay tight: no numbered story-shape narratives, no hero-image notes, no thesis paragraphs, and no slide-by-slide content (those belong in the post's ingredient deliverables — slide-copy, body-copy, image-prompts).
 - Anchored in `positioning.md` POV stances
 - Tone is tight; skip qualifiers
 
@@ -54,5 +55,6 @@ Standard deliverable frontmatter per `library/process/campaign-frontmatter.md`. 
 ## Lock Criteria
 
 - User-approved
+- `post_manifest` recorded into `campaign.md` in the lock turn
 - Lock event mechanics per `library/process/lock-event.md`
 

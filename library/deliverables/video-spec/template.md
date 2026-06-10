@@ -29,7 +29,7 @@ Planning and production tracker for a campaign video post. It gives the agent en
 ## Hard Constraints
 
 - **Manual Flow assets**: Record prompt/provenance/path. Do not call APIs from AgentFrame Marketing until that integration is explicitly built.
-- **Coherence cross-check.** When both post copy and the video are drafted, verify: post-copy hook phrase matches the opening frame; post-copy body does not repeat what the video beats already say; CTA in copy matches the video's ending CTA. If any of these misalign, surface which artifact is the easier fix and patch the smaller one.
+- **Coherence cross-check.** When both body copy and the video are drafted, verify: the body-copy hook matches the opening frame; the body does not repeat what the video beats already say; CTA in copy matches the video's ending CTA. If any of these misalign, surface which artifact is the easier fix and patch the smaller one.
 
 ## Draft Frontmatter Convention
 
@@ -57,7 +57,7 @@ Generated media files, `video/renders/scenes/`, `video/renders/final/`, `edit/pr
   - HyperFrames: `doctor`, `lint`, `validate`, `inspect`, render.
   - video-use: transcript/EDL artifacts present, preview/final render present, self-eval notes recorded.
 - Known issues are fixed or explicitly accepted by the operator.
-- `copy-v{N}.md` lock/publish flow knows which video file will ship.
+- The post's `post-FINAL.md` publish flow knows which video file will ship.
 
 ## Review Path
 
@@ -75,4 +75,4 @@ When needed, follow `library/process/humanizer-integration.md`.
 
 ## Exceptions / Branches
 
-- **Final polish outside AgentFrame Marketing**: allowed. Record the actually shipped file in `copy-v{N}.md` `shipped_media[]` during publish reconciliation.
+- **Final polish outside AgentFrame Marketing**: allowed. Record the actually shipped file in the post's `post-FINAL.md` `shipped_media[]` during publish reconciliation.

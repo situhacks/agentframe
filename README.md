@@ -113,7 +113,7 @@ A solo-flow walkthrough using the example campaign at `workspace/campaigns/examp
 <tr>
 <td width="50%" valign="top">
 <img src=".github/readme-assets/walkthrough-03-post-copy.png" alt="03 · Post copy versioning" /><br/>
-<sub><b>03 · Post copy in your voice</b> — Drafts inherit your voice system from <code>library/context/operator/voice/</code> (identity, anti-patterns, a profile, and annotated example pairs), then run through the humanizer skill before lock to strip AI tells. Every revision snapshots into <code>version_history</code> so you can roll back, compare, or read why the copy changed.</sub>
+<sub><b>03 · Post copy in your voice</b> — Drafts inherit your voice system from <code>library/context/operator/voice/</code> (identity, anti-patterns, a profile, and annotated example pairs), then run through the humanizer skill before lock to strip AI tells. Every revision snapshots as its own <code>-v{N}.md</code> file so you can roll back, compare, or read why the copy changed.</sub>
 </td>
 <td width="50%" valign="top">
 <img src=".github/readme-assets/walkthrough-04-image-production.png" alt="04 · Open Design handoff" /><br/>
@@ -168,11 +168,12 @@ Edit, duplicate, or add new deliverable types under `library/deliverables/`.
 | --- | --- |
 | `business-brief` | Business context and objective framing |
 | `research-artifact` | Research synthesis with sources and implications |
-| `messaging-architecture` | Core message map and audience framing |
-| `design-language` | Visual and style direction |
 | `campaign-brief` | Campaign-level strategy and constraints |
-| `post-copy` | Platform-ready post copy |
-| `carousel-spec` | Slide-by-slide carousel plan |
+| `campaign-architecture` | Post-by-post execution plan + the campaign's post manifest |
+| `design-language` | Visual and style direction |
+| `slide-copy` | Carousel slide-by-slide copy |
+| `body-copy` | Platform caption that ships with the post |
+| `post-final` | Per-post assembly record — locked ingredients + publish block |
 | `video-spec` | Video concept, scenes, and production plan |
 | `campaign-retro` | Campaign-level learnings and improvements |
 | `system-retro` | System-level process and architecture improvements |

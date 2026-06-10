@@ -48,7 +48,7 @@ Before staging, load:
 
 - Locked campaign `design-language-v{N}.md` + `tokens.yaml` / `tokens.css` when present.
 - [`library/deliverables/design-language/transfer-to-open-design.md`](../../../library/deliverables/design-language/transfer-to-open-design.md) for the DL → OD `DESIGN.md` mapping table.
-- Calling deliverable body (e.g., `image-prompt-v{N}.md` for a single image, locked `slide-copy-v{N}.md` for a carousel).
+- Calling deliverable body (e.g., `image-prompts-v{N}.md` for a single image, locked `slide-copy-v{N}.md` for a carousel).
 - Operator constraints stated in the turn (platform, dimensions, export format, deadline).
 
 Do not load full campaign history unless the deliverable template requires it.

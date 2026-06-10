@@ -85,7 +85,7 @@ Output:
 - `_image_meta.json` sidecar with original prompt, composed prompt, negative prompt, model, aspect, refusal text (if any), file paths, and archive path when prior variants were moved
 - Existing variants are moved to `visuals/history/` with a UTC timestamp before being overwritten
 
-The agent is responsible for writing the human-readable `image-prompt.md` and `alt-text.md` alongside the variants.
+The agent is responsible for keeping the post's `image-prompts-v{N}.md` and `alt-text.md` current alongside the variants.
 
 ## 6. Troubleshooting
 

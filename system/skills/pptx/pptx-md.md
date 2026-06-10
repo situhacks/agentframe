@@ -193,7 +193,7 @@ The format is intentionally small. Six layouts, no animations, no embedded media
 ## Out of scope (POC)
 
 - Animations / transitions
-- Embedded images per slide (covered by post-production image-prompt flow, not exports)
+- Embedded images per slide (covered by the post's image-prompts flow, not exports)
 - Charts / data viz (would need a separate `chart` layout - defer until needed)
 - Custom per-slide colors (use brand palette from frontmatter; per-slide override would invite chaos)
 - Multi-deck merging

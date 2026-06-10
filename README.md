@@ -142,7 +142,7 @@ A solo-flow walkthrough using the example campaign at `workspace/campaigns/examp
 
 
 
-In the box: **11 deliverable templates**, **14 process files**, **11 skill bundles**, **3 campaign flows**, a two-mode persona model, a local preview server, and a two-layer audit trail (`activity.md` + SQLite DB).
+In the box: **12 deliverable templates**, **14 process files**, **11 skill bundles**, **3 campaign flows**, a two-mode persona model, a local preview server, and a two-layer audit trail (`activity.md` + SQLite DB).
 
 
 
@@ -174,6 +174,7 @@ Edit, duplicate, or add new deliverable types under `library/deliverables/`.
 | `slide-copy` | Carousel slide-by-slide copy |
 | `body-copy` | Platform caption that ships with the post |
 | `post-final` | Per-post assembly record — locked ingredients + publish block |
+| `image-prompts` | Per-post generation prompts — treatment block + per-slide deltas |
 | `video-spec` | Video concept, scenes, and production plan |
 | `campaign-retro` | Campaign-level learnings and improvements |
 | `system-retro` | System-level process and architecture improvements |
@@ -296,7 +297,7 @@ External services AgentFrame integrates with. Recommended for the full loop, but
 
 - Fast A/B/C variants for standard illustrations (Nano Banana 2: `gemini-3.1-flash-image-preview`).
 - High-fidelity hero and text-in-image visuals (Nano Banana Pro: `gemini-3-pro-image-preview`).
-- Routed through `system/server/lib/image_generate.py`; per-post records save as `image-prompt-v{N}.md`.
+- Routed through `system/server/lib/image_generate.py`; per-post prompt records save as `image-prompts-v{N}.md`.
 - Shares the same `GEMINI_API_KEY` as Deep Research.
 
 ### Composio

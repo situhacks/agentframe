@@ -62,10 +62,6 @@ deliverables:
     status: locked
     file: phase-5-launch-and-learn/system-retro-v1.md
     last_updated: 2026-05-11
-  template-retro:
-    status: locked
-    file: phase-5-launch-and-learn/template-retro-v1.md
-    last_updated: 2026-05-11
   campaign-retro:
     status: locked
     file: phase-5-launch-and-learn/campaign-retro-v1.md

@@ -7,5 +7,5 @@
 2026-05-11 19:02 — lock: post-1 image locked; artifact=phase-4-production/posts/post-1/image-prompt-v1.md; locked_asset=phase-4-production/posts/post-1/visuals/source/post-1-Figma-cleaned.png.
 2026-05-11 19:04 — post_published: post-1 example publish record captured.
 2026-05-11 19:05 — performance_capture: post-1 example metrics captured in phase-5-launch-and-learn/performance-data.csv.
-2026-05-11 19:07 — lock: system-retro and template-retro locked with no-action disposition.
+2026-05-11 19:07 — lock: system-retro locked with no-action disposition.
 2026-05-11 19:08 — lock: campaign-retro locked; campaign marked complete in place.

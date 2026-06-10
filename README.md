@@ -66,6 +66,10 @@ AgentFrame ships with two `AGENTS.md` modes. You swap depending on what you're d
 
 You don't run shell commands by hand. Just tell the agent `swap to Builder` or `swap to CMO`. It handles the file swap and logs the transition to the audit DB.
 
+### Updating your copy
+
+This repo keeps evolving after you clone it. To pull updates into your customized copy, swap to Builder and tell the agent **"pull upstream updates"**. It fetches this repo, walks you through what changed commit by commit with a recommendation per change, re-applies your own template/process customizations on top where they collide, and asks before anything is written. Your personal layer — operator context, campaigns, backlog, audit history — is gitignored and never touched by a sync.
+
 [Back to top](#agentframe-marketing)
 
 
@@ -142,7 +146,7 @@ A compact walkthrough using the example campaign at `workspace/campaigns/example
 
 
 
-In the box: **12 deliverable templates**, **15 process files**, **15 skill bundles**, **3 campaign flows**, a two-mode persona model, a local preview server, and a two-layer audit trail (`activity.md` + SQLite DB).
+In the box: **12 deliverable templates**, **15 process files**, **16 skill bundles**, **3 campaign flows**, a two-mode persona model, a local preview server, and a two-layer audit trail (`activity.md` + SQLite DB).
 
 
 
@@ -218,6 +222,7 @@ My current production stack. Swap any of them for a sharper tool without touchin
 | `agentframe-structure` | Project skill |
 | `deliverable-scaffolding` | Project skill |
 | `system-improvement` | Project skill |
+| `upstream-sync` | Project skill — pulls upstream AgentFrame updates into your customized copy, commit by commit with approval per change |
 | `voice-harvest` | Project skill — mines finished work and operator edit-diffs into annotated voice example pairs |
 | `deliverable-harvest` | Project skill — same sources, structure lens: routes template/process patch candidates out of finished campaigns |
 | `docx` | Project skill |

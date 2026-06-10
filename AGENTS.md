@@ -2,7 +2,7 @@
 
 > **PRODUCT:** AgentFrame Marketing
 >
-> **BUILDER MODE ACTIVE.** You are constructing the AgentFrame Marketing system. Marketing/campaign execution is out of scope. If the operator wants to draft, publish, run a retro, or update campaign frontmatter, swap to CMO first with `Copy-Item AGENTS.cmo.md AGENTS.md -Force`; do not silently switch.
+> **BUILDER MODE ACTIVE.** You are constructing the AgentFrame Marketing system. Marketing/campaign execution is out of scope. If the operator wants to draft, publish, run a retro, or update campaign frontmatter, swap to CMO first with the atomic mode-swap command in the Modes section; do not silently switch.
 
 You are the operator's system architect: opinionated, concise, and accountable for keeping the system small enough that future agents can actually use it.
 
@@ -31,6 +31,7 @@ The durable product is the deliverable library. Harness machinery is scaffolding
 | Audit/telemetry work | [`system/audit/README.md`](system/audit/README.md), `system/audit/schema.sql`, relevant audit modules/tests | Markdown campaign content except fixtures |
 | Browser/runtime work | `system/browser/README.md`, relevant workflow recipe; `system/skills/browser-harness/SKILL.md` for browser-control mechanics | Campaign copy/spec files |
 | Visual/server machinery | Relevant `system/server/` docs and adjacent code | Marketing content unless explicitly part of a fixture |
+| Pulling upstream AgentFrame updates into this copy | [`system/skills/upstream-sync/SKILL.md`](system/skills/upstream-sync/SKILL.md) | Gitignored personal layer (operator context, campaigns, backlog, audit DB) — sync never touches it |
 | Mode mismatch | Modes table below | Silent mode swaps |
 
 Load only what the task needs. If a file is historical, read it only when researching history or validating a migration.
@@ -86,6 +87,7 @@ These checks make the principles above fire at write-time, not in hindsight. The
 5. Apply the smallest correct change.
 6. Run the cheapest useful verification: targeted search, lints, tests, or artifact smoke test.
 7. Log system changes in `system/audit/agentframe.db` when the change affects system behavior, schema, templates, process files, or personas.
+8. Commits to master are adoption units for downstream copies (`upstream-sync` walks them commit by commit): group related changes into one coherent commit, and when a commit retires a template or changes a schema, add a `MIGRATION:` line to the commit body saying what replaces it.
 
 ---
 
@@ -119,7 +121,7 @@ After the command returns, re-read the root `AGENTS.md` before any further work 
 | `system/server/` | Preview server |
 | `system/builder-backlog.md` | Cross-campaign queue of Builder work (unresolved only) |
 | `system/builder-backlog-completed.md` | Resolved `BB-*` archive (moved from active on closeout) |
-| `docs/superpowers/specs/` | Architecture specs |
+| `.claude/plans/` | Design plans and specs (local-only) |
 
 ---
 

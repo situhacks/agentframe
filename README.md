@@ -16,7 +16,7 @@ https://github.com/user-attachments/assets/73c6ce7f-cfd8-4457-8cf0-e1a979094e6e
 
 
 
-**Jump to:** [Quick start](#quick-start) · [Why](#why-this-exists) · [Walkthrough](#a-real-campaign-step-by-step) · [Architecture](#architecture) · [Roadmap](#roadmap)
+**Jump to:** [Quick start](#quick-start) · [Why](#why-this-exists) · [Walkthrough](#a-real-campaign-step-by-step) · [Harness](#what-makes-it-a-harness) · [Architecture](#architecture) · [Roadmap](#roadmap)
 
 
 
@@ -25,12 +25,12 @@ https://github.com/user-attachments/assets/73c6ce7f-cfd8-4457-8cf0-e1a979094e6e
 - [Quick start](#quick-start)
 - [Why this exists](#why-this-exists)
 - [A real campaign, step by step](#a-real-campaign-step-by-step)
+- [What makes it a harness](#what-makes-it-a-harness)
 - [At a glance](#at-a-glance)
-- [Six architectural principles](#six-architectural-principles)
+- [Five architectural principles](#five-architectural-principles)
 - [Recommended connectors](#recommended-connectors)
 - [Architecture](#architecture)
 - [Repository structure](#repository-structure)
-- [Customizability](#customizability)
 - [Preview server](#preview-server)
 - [Auditability and state](#auditability-and-state)
 - [Roadmap](#roadmap)
@@ -86,14 +86,7 @@ I didn't like what I saw. So I built my ideal system myself.
 
 I've been dogfooding AgentFrame for a while and it's gone through multiple major revisions. The repo evolves with my workflow, not on a release schedule. It's free to fork — take what's useful.
 
-**Stands on the shoulders of:**
-
-- **[Composio](https://composio.dev/)** — all-in-one MCP hub. One connection exposes 100+ workplace and publishing tools (Gmail, Calendar, Drive, LinkedIn, X, Instagram, TikTok, etc.) instead of installing a separate MCP server for each.
-- **[Gemini Deep Research](https://gemini.google/us/overview/deep-research/?hl=en)** — detailed research artifacts at campaign start. Runs through the Gemini API so it doesn't burn coding-agent session credits.
-- **[Gemini image generation](https://ai.google.dev/gemini-api/docs/image-generation)** (Nano Banana 2 / Pro) — raster image generation, fast variants and high-fidelity hero visuals.
-- **[nexu-io/open-design](https://github.com/nexu-io/open-design)** — local-first runtime for images, decks, and template-style visual work. AgentFrame stages the handoff by setting up the project, first prompt and design language; OD owns the generation UI and exports.
-- **[heygen-com/hyperframes](https://github.com/heygen-com/hyperframes)** — HTML-to-video composition for motion deliverables.
-- **[blader/humanizer](https://github.com/blader/humanizer)** — copy humanization pass before lock.
+It stands on excellent shoulders — Composio, Gemini Deep Research and image generation, Open Design, HyperFrames, the humanizer — wired up under [Recommended connectors](#recommended-connectors) and credited in [References and lineage](#references-and-lineage).
 
 [Back to top](#agentframe-marketing)
 
@@ -142,11 +135,33 @@ A compact walkthrough using the example campaign at `workspace/campaigns/example
 
 
 
+## What makes it a harness
+
+Three systems separate AgentFrame from a folder of prompt files.
+
+### The deterministic spine
+
+Models are strong writers and weak clerks — benchmarks have frontier models failing exact bookkeeping constraints 30–90% of the time, and my own agent skipped its lock procedure three times in one night. So campaign state transitions don't rely on the model remembering procedure: they run through `system/af.py`. Five buttons — `lock`, `publish`, `version`, `new-campaign`, `doctor` — each does its bookkeeping atomically (frontmatter, tracker, post assembly, activity trail) and prints back the judgment checklist the agent still owns: humanizer pass, voice check, reconciliation. `doctor` audits the books and never auto-fixes. It's plain stdlib Python, so the spine works identically in Claude Code, Cursor, Codex, or Antigravity; agent-native hooks stay optional seatbelts, never the foundation.
+
+### A voice system that generates, not corrects
+
+Most "brand voice" setups are a rules file the agent forgets by the third draft. AgentFrame compiles your actual writing into annotated contrastive pairs — generic version, your version, and the move that separates them — grouped by register. Drafting starts *from* the pairs: extract three or four concrete markers first, write the content pass, then a separate style pass with those markers mandated. Anti-patterns are weighted preferences with per-piece budgets (one contrastive negation per post, not zero) rather than flat bans that flatten the writing. A humanizer pass runs last, before anything locks.
+
+### A learning loop with teeth
+
+Every campaign closes with a harvest. Two skills read the version trails and your edit-diffs: one mines new voice pairs from what you actually changed, the other mines template and process patch candidates from how the work actually ran. You approve each patch, the library evolves, and the builder backlog plus audit DB keep the receipts. This isn't aspirational — every major feature in v1 traces back to a logged failure from a real campaign.
+
+[Back to top](#agentframe-marketing)
+
+
+
 ## At a glance
 
 
 
 In the box: **12 deliverable templates**, **15 process files**, **16 skill bundles**, **3 campaign flows**, a two-mode persona model, a deterministic state-transition CLI, a local preview server, and a two-layer audit trail (`activity.md` + SQLite DB).
+
+Everything in the library and skills layer is meant to be edited. Set voice and positioning once in `library/context/operator/` (copy from `operator.example/` on first run) and reuse them everywhere.
 
 
 
@@ -231,10 +246,10 @@ My current production stack. Swap any of them for a sharper tool without touchin
 | `hyperframes` | Vendored from [heygen-com/hyperframes](https://github.com/heygen-com/hyperframes) |
 | `hyperframes-cli` | Vendored from [heygen-com/hyperframes](https://github.com/heygen-com/hyperframes) |
 | `gsap` | Vendored animation skill for HyperFrames workflows |
-| `ppt-master` | Vendored from [hugohe3/ppt-master](https://github.com/hugohe3/ppt-master) — generates designed, native-editable decks from source material via its SVG→PPTX pipeline; AgentFrame boundary notes in `system/skills/ppt-master/AGENTS.md` |
-| `extract-design` | Thin skill over [Manavarya09/design-extract](https://github.com/Manavarya09/design-extract)'s `npx designlang` CLI — measures design tokens off a live reference site as design-language source material; distillation rules in `system/skills/extract-design/AGENTS.md` |
-| `open-design` | Vendored local-first runtime from [nexu-io/open-design](https://github.com/nexu-io/open-design) for image/deck/template-style visual production, with AgentFrame setup, staging, and lock-time import rules in `system/skills/open-design/SKILL.md` |
-| `browser-harness` | Vendored from [browser-use/browser-harness](https://github.com/browser-use/browser-harness) for CDP-driven browser workflows; routed through Edge with AgentFrame boundary notes in `system/skills/browser-harness/AGENTS.md` |
+| `ppt-master` | Vendored from [hugohe3/ppt-master](https://github.com/hugohe3/ppt-master) — designed, native-editable deck generation via SVG→PPTX; boundary notes in the skill's `AGENTS.md` |
+| `extract-design` | Thin skill over [Manavarya09/design-extract](https://github.com/Manavarya09/design-extract)'s `npx designlang` — measures design tokens off a live reference site; distillation rules in the skill's `AGENTS.md` |
+| `open-design` | Vendored local-first runtime from [nexu-io/open-design](https://github.com/nexu-io/open-design) for image/deck visual production; staging and import rules in the skill's `SKILL.md` |
+| `browser-harness` | Vendored from [browser-use/browser-harness](https://github.com/browser-use/browser-harness) for CDP-driven browser workflows via Edge; boundary notes in the skill's `AGENTS.md` |
 
 
 
@@ -253,7 +268,7 @@ My current production stack. Swap any of them for a sharper tool without touchin
 
 
 
-## Six architectural principles
+## Five architectural principles
 
 
 
@@ -263,28 +278,19 @@ Campaign state lives in markdown files: frontmatter, deliverables, `activity.md`
 
 ### P2 — Token efficiency at its core
 
-I designed AgentFrame so context loads only when it's needed, not all at once. `AGENTS.md` is the only always-on router. Flows, processes, templates, and skills are pulled in on demand based on the task — most of the time you're working with a small, focused context. That means longer sessions before hitting limits, fewer tokens burned per campaign, and less of the "agent forgets what we were doing" drift you get when the whole library is loaded upfront.
+`AGENTS.md` is the only always-on router; flows, processes, templates, and skills load on demand. Small focused context means longer sessions, fewer tokens per campaign, and less "agent forgets what we were doing" drift.
 
 ### P3 — The library is the product
 
-Templates, processes, campaign flows, and personas are the durable layer — they capture how you actually run campaigns and they improve over time. Skills and connectors (Composio, Gemini, Open Design, HyperFrames) are swappable. Replace a skill when something sharper ships; the campaign system is untouched.
+Templates, processes, flows, and personas are the durable layer that improves over time. Skills and connectors are swappable — replace one when something sharper ships; the campaign system is untouched.
 
 ### P4 — Two modes, one operator
 
 CMO ships campaigns. Builder evolves the system. The split means CMO can't accidentally edit `library/` mid-campaign, and Builder can't accidentally touch a locked deliverable mid-refactor.
 
-### P5 — Retros patch the system
+### P5 — Buttons own mechanics, prose owns judgment
 
-Every campaign ends with a retro. The agent surfaces specific patches to templates, processes, and skill behavior based on what actually happened, and you approve them. The library evolves campaign by campaign.
-
-### P6 — Auditable and traceable
-
-Two layers capture history:
-
-- `activity.md` per campaign for the human-readable timeline.
-- Append-only SQLite audit DB at `system/audit/agentframe.db` for system events (`mode_swap`, `system_changes`, retro outcomes).
-
-Useful when you want to reconstruct what happened, time how long a phase took, or trace why a template changed.
+State changes run through the deterministic spine and write their own paper trail (`activity.md` per campaign, append-only SQLite for system events). The model never hand-edits campaign state; you can always reconstruct what happened and why.
 
 
 
@@ -462,25 +468,6 @@ agentframe-marketing/
     └── campaigns/
         └── example-ai-automation-pov/
 ```
-
-
-
-[Back to top](#agentframe-marketing)
-
-
-
-## Customizability
-
-
-
-Everything in the library and skills layer is meant to be edited:
-
-- Add or evolve templates under `library/deliverables/`
-- Add or evolve processes under `library/process/`
-- Swap skill bundles under `system/skills/`
-- Set voice and positioning once in `library/context/operator/` (copy from `operator.example/` on first run), reuse everywhere
-
-Open Design is a concrete example of the swap pattern. AgentFrame owns campaign state, templates, and the staged handoff. Open Design owns generation, revisions, and exports. Locked OD assets return to the calling deliverable's `visuals/imports/` folder.
 
 
 

@@ -146,7 +146,7 @@ A compact walkthrough using the example campaign at `workspace/campaigns/example
 
 
 
-In the box: **12 deliverable templates**, **15 process files**, **16 skill bundles**, **3 campaign flows**, a two-mode persona model, a local preview server, and a two-layer audit trail (`activity.md` + SQLite DB).
+In the box: **12 deliverable templates**, **15 process files**, **16 skill bundles**, **3 campaign flows**, a two-mode persona model, a deterministic state-transition CLI, a local preview server, and a two-layer audit trail (`activity.md` + SQLite DB).
 
 
 
@@ -199,14 +199,14 @@ Process files load on demand — only when the workflow they describe is in play
 | `image-production` | Image generation workflow |
 | `deck-production` | Deck/presentation path selection (PPTX skill, PPT Master, Open Design) |
 | `preview-server` | When and how to use the local preview hub |
-| `lock-event` | Lock-state transitions and quality gates |
+| `lock-event` | Lock trigger and judgment gates — mechanics run through the `af` CLI |
 | `humanizer-integration` | Humanization pass integration |
 | `campaign-frontmatter` | Frontmatter schema and state handling |
 | `browser-fallback` | Browser automation fallback strategy |
 | `composio-notes` | Connector usage notes and caveats |
 | `voice-setup` | Build your voice system from your own writing (samples → interview → compiled profile + example pairs) |
 | `voice-mini-retro` | Lock-time eligibility gate that routes your edit-diffs to the voice-harvest skill |
-| `deliverable-versioning` | Surgical-vs-replacement rule and version-bump procedure for `*-v{N}.md` deliverables |
+| `deliverable-versioning` | Surgical-vs-replacement judgment for `*-v{N}.md` deliverables — bumps run through `af version` |
 | `research-and-signals` | Shared kickoff for campaign research: workspace-context definition, live MCP scan, research-method offer |
 
 
@@ -427,6 +427,8 @@ Architecture summary:
 
 - Campaign state and outputs live in files; system events are append-only in SQLite.
 
+- State transitions (lock, publish, version, scaffold) run through `system/af.py` — deterministic mechanics and an automatic paper trail; the model never hand-edits campaign state.
+
 
 
 [Back to top](#agentframe-marketing)
@@ -503,9 +505,10 @@ Open Design is a concrete example of the swap pattern. AgentFrame owns campaign 
 <details>
 <summary>Show auditability details</summary>
 
-- Campaign layer: `activity.md` in each campaign for the human-readable timeline.
+- Campaign layer: `activity.md` in each campaign for the human-readable timeline — state transitions through `system/af.py` write it automatically.
 - System layer: append-only SQLite audit DB at `system/audit/agentframe.db`.
 - Writer: `system/audit/writer.py`.
+- Books check: `python system/af.py doctor <campaign>` verifies schema, head pointers, and counters; it surfaces drift and never auto-fixes.
 - Useful for reconstructing what happened, timing a phase, or tracing why a template changed.
 
 </details>

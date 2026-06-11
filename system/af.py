@@ -83,9 +83,13 @@ def set_scalar(fm, key, value, path="frontmatter"):
     return pat.sub(rf"\g<1> {value}", fm, count=1)
 
 
+def clean_value(v):
+    return re.sub(r"\s+#.*$", "", v).strip().strip('"')
+
+
 def get_scalar(fm, key):
     m = re.search(rf"^\s*{re.escape(key)}:[ \t]*(.*?)\s*$", fm, re.M)
-    return m.group(1).strip('"') if m else None
+    return clean_value(m.group(1)) if m else None
 
 
 def row_span(fm, slug):
@@ -119,7 +123,7 @@ def row_get(fm, slug, key):
     if not span:
         return None
     m = re.search(rf"^    {re.escape(key)}:[ \t]*(.*?)\s*$", fm[span[0]:span[1]], re.M)
-    return m.group(1).strip('"') if m else None
+    return clean_value(m.group(1)) if m else None
 
 
 def all_rows(fm):
@@ -132,14 +136,23 @@ def all_rows(fm):
     return re.findall(r"^  ([A-Za-z0-9_-]+):\s*$", block, re.M)
 
 
+def versions_in(folder, name):
+    """All strictly-versioned {name}-v{N}.md numbers in a folder (ignores -v12-FINAL.md style names)."""
+    out = []
+    for p in glob.glob(os.path.join(folder, f"{name}-v*.md")):
+        m = re.fullmatch(rf"{re.escape(name)}-v(\d+)\.md", os.path.basename(p))
+        if m:
+            out.append(int(m.group(1)))
+    return out
+
+
 def head_of(path):
     """Verify a versioned file is the highest v{N} in its folder; return (name, N)."""
-    m = re.match(r"(.+)-v(\d+)\.md$", os.path.basename(path))
+    m = re.fullmatch(r"(.+)-v(\d+)\.md", os.path.basename(path))
     if not m:
         return None
     name, n = m.group(1), int(m.group(2))
-    pattern = os.path.join(os.path.dirname(path), f"{name}-v*.md")
-    highest = max(int(re.search(r"-v(\d+)\.md$", p).group(1)) for p in glob.glob(pattern))
+    highest = max(versions_in(os.path.dirname(path), name))
     if n != highest:
         die(f"{os.path.basename(path)} is not the head ({name}-v{highest}.md exists) — point at the head or run doctor")
     return name, n
@@ -199,10 +212,10 @@ def assemble_post_final(post_dir, locked_path, ingredient):
 
 def post_complete(post_dir, ingredients):
     for ing in ingredients:
-        heads = glob.glob(os.path.join(post_dir, f"{ing}-v*.md"))
-        if not heads:
+        ns = versions_in(post_dir, ing)
+        if not ns:
             return False
-        best = max(heads, key=lambda p: int(re.search(r"-v(\d+)\.md$", p).group(1)))
+        best = os.path.join(post_dir, f"{ing}-v{max(ns)}.md")
         if get_scalar(split_fm(read(best), best)[0], "status") != "locked":
             return False
     return True
@@ -434,10 +447,9 @@ def check_campaign(cdir):
         elif not os.path.isfile(p):
             issues.append(f"{rel}: row '{slug}' file missing: {f}")
         else:
-            m = re.match(r"(.+)-v(\d+)\.md$", os.path.basename(p))
+            m = re.fullmatch(r"(.+)-v(\d+)\.md", os.path.basename(p))
             if m:
-                pattern = os.path.join(os.path.dirname(p), f"{m.group(1)}-v*.md")
-                highest = max(int(re.search(r"-v(\d+)\.md$", q).group(1)) for q in glob.glob(pattern))
+                highest = max(versions_in(os.path.dirname(p), m.group(1)))
                 if int(m.group(2)) != highest:
                     issues.append(f"{rel}: row '{slug}' points at v{m.group(2)} but head is v{highest}")
         if re.match(r"post-\d+$", slug) and st == "shipped":

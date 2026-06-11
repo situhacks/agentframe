@@ -157,7 +157,7 @@ Add or edit any flow under `library/process/campaign-flows/` to match how you ac
 | Flow | Purpose |
 | --- | --- |
 | `solo-flow` (default) | Lightweight campaign workflow for one operator moving fast |
-| `open-flow` | Flexible build-as-you-go workflow where the operator sets the deliverables and tempo interactively |
+| `open-flow` | Build-as-you-go — the agent proposes a plan scaled to the objective (phases, deliverables, runway); the operator narrows and sets the tempo |
 | `standard-flow` | Heavier flow with broader deliverable coverage and more review gates — closer to an enterprise-style campaign |
 
 

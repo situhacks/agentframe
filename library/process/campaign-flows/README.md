@@ -14,7 +14,7 @@ Each campaign instance records its selected flow in `campaign.md` frontmatter as
 |---|---|---|
 | `solo-flow.md` | Default | Solo marketer, no stakeholder review, lean phase sequence. |
 | `standard-flow.md` | Optional | Fuller campaign with business/stakeholder review cycles. |
-| `open-flow.md` | Optional | Dynamic, build-as-you-go flow anchored on deliverables rather than fixed phases. |
+| `open-flow.md` | Optional | Build-as-you-go: the agent proposes a plan (phases + deliverables) scaled to the objective; the operator narrows and the plan rolls forward. |
 | `enterprise-flow.md` | RESERVED | Not yet authored. |
 
 ## Ownership

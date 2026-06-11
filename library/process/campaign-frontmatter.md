@@ -37,7 +37,7 @@ Pointers (success criteria source, etc.) live inside the relevant blocks rather 
 | Field | Type | Allowed values | Default | Notes |
 |---|---|---|---|---|
 | `status` | enum | `active`, `complete`, `cancelled` | `active` | Lifecycle state. The marketing PROCESS dictates campaign completion (post-campaign retros are the last process steps); the folder location is a side-effect of the status transition, not its own status value. `active` covers any in-progress phase. `complete` set by Campaign Retro lock when the campaign finished naturally. `cancelled` set when the operator (or external reviewer) decides to kill the campaign mid-flight. Both terminal. |
-| `current_phase` | enum | flow-defined phase ids | first phase in selected flow | Where the campaign is right now. Updated when the agent finishes a phase's last deliverable or the user explicitly transitions. End-of-phase transition rules live in the selected `campaign_flow` file. |
+| `current_phase` | enum | flow-defined phase ids; for `open-flow`, the campaign-defined ids declared in the `campaign.md` plan section | first phase in selected flow | Where the campaign is right now. Updated when the agent finishes a phase's last deliverable or the user explicitly transitions. End-of-phase transition rules live in the selected `campaign_flow` file. |
 | `campaign_flow` | enum | flow ids in [`campaign-flows/README.md`](campaign-flows/README.md) | `solo-flow` | Canonical flow selector for this campaign instance. Valid values: `solo-flow`, `standard-flow`, `open-flow`. (See `library/process/campaign-flows/` for definitions). |
 | `last_activity` | ISO 8601 datetime | e.g. `2026-04-23T03:00:00+00:00` | scaffold time | Touched whenever any deliverable in this campaign is edited / locked / shipped. Used to compute stale-campaign nudges (>7d). |
 | `shipped_at` | ISO 8601 date or `null` | — | `null` | When the first post in the campaign published. (Sourced from the post's `post-FINAL.md` frontmatter `published.posted_at` — see [`post-final/template.md`](../deliverables/post-final/template.md) "Publish / Export Mechanics".) |
@@ -197,7 +197,7 @@ campaign_retro_completed: null
 
 1. Verify IDENTITY (`name`, `slug`, `schema_version`, `created_at`) and LIFECYCLE (`status`, `current_phase`, `last_activity`) required fields exist with valid types.
 2. Verify `status` is one of `active | complete | cancelled`.
-3. Verify `current_phase` is one of the allowed flow phase IDs.
+3. Verify `current_phase` is one of the allowed flow phase IDs (for `open-flow`: the ids declared in the campaign's plan section).
 4. Verify `deliverables` has at least one entry when `current_phase` is past `1-research`.
 5. For each `deliverables` row, verify `status` is valid and `file` exists (or is a folder pointer when `status: not_started`). For each row whose `file` is a versioned file (`{name}-v{N}.md`), verify the named file is the highest `v{N}` in its folder — that's the tracker's head pointer.
 6. For each row at `status: locked`, optionally peek at the deliverable frontmatter for `back_filled: true` and surface it inline.
@@ -228,6 +228,10 @@ Canonical shapes:
 - **`frontmatter_manual_edit`** — operator-approved drift fix from the schema-drift check above.
   ```
   2026-05-12 11:48 — frontmatter_manual_edit: corrected current_phase from 4-production to 5-launch-and-learn (drift fix).
+  ```
+- **`plan_revised`** — an open-flow campaign's plan changed (phase added/merged/dropped, deliverable added to or removed from scope).
+  ```
+  2026-06-12 10:20 — plan_revised: added phase-3-followup; parked the video teaser. Reason: "workshop feedback lands first."
   ```
 
 When a flow file mentions appending an event (`post_published`, `phase_override`, `cancellation`, etc.), use these shapes. Skipping a required retro is logged as a `phase_override`; pattern of overrides surfaces at quarterly self-review.

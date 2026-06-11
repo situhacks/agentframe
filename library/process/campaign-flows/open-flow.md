@@ -1,45 +1,49 @@
 # AgentFrame Marketing — Open Campaign Flow
 
-A dynamic, "build-as-you-go" flow for campaigns that do not fit a clean sequential phase structure. This file is a process router, teaching the agent how to navigate a fluid campaign using the deliverable library and frontmatter state.
+Freeform flow for campaigns that don't fit a fixed phase ladder. Open flow is composition freedom, not absence of structure: the agent proposes a plan scaled to the objective, the operator narrows it, and every artifact still rides the system's spine so the work is reviewable from disk afterwards.
 
-## Purpose
+## Read Once
 
-Run campaigns where the exact scope and sequence of deliverables cannot be known upfront. The operator and agent sketch the anticipated deliverables initially, but continuously recalibrate after each step.
+- Every artifact is a versioned deliverable instance per [`deliverable-versioning.md`](../deliverable-versioning.md): `{name}-v{N}.md`, head named by the tracker. Revisions bump the head — they never spawn a new differently-named v1. Only scratchpads are throwaway, and they carry `scratchpad` in the filename.
+- Lock mechanics: [`lock-event.md`](../lock-event.md) runs on every lock.
+- Tracker schema and drift checks: [`campaign-frontmatter.md`](../campaign-frontmatter.md). Apply file edits and `campaign.md` updates in the same turn.
 
-## Phase Sequence
+## Kickoff — propose the plan
 
-There is only one phase: `active`. There are no numbered phase transitions until the campaign is closed.
+The objective is usually known by the time an open-flow campaign starts. The agent's first move is a proposed plan, scaled to the job — then the operator narrows:
 
-| Phase ID | Phase | Gate To Advance |
-|---|---|---|
-| `active` | Active Production | Campaign completed or cancelled. |
+1. **Phases** — as many as the objective needs: none for a single ad-hoc deliverable, several named phases for a longer project. Phase ids are campaign-defined (kebab-case, ordered).
+2. **Deliverables** — composed from the library first. Reuse existing templates; borrow structured-flow fragments by name ("solo-flow phases 1 and 3, skip the briefs"); name any ad-hoc artifact that matches no template. Selection menus apply ([`image-production.md`](../image-production.md), [`deck-production.md`](../deck-production.md)).
+3. **Manifest moment** — when posts are in the plan, record `post_manifest` in `campaign.md` now.
 
-## Deliverables By Phase
+The agreed plan lands in the `campaign.md` body; tracker rows are added at `not_started`.
 
-Because there are no strict phases, any deliverable from `library/deliverables/` can be created at any time during the `active` phase.
+## The plan section (campaign.md body)
 
-When creating a deliverable:
-- The path is simply `{deliverable-type}/{filename}.md` (no phase-prefix folders are required).
-- The deliverable follows its own canonical template for structure and lock criteria.
+Short and current:
 
-## Flow Mechanics
+- **Objective** — one line.
+- **Phases** — each with its deliverables ("single-phase" for ad-hoc jobs).
+- **Runway** — the next 1–2 steps, pre-staged: what each produces and what it needs.
+- **Parked** — ideas not in play.
 
-This flow operates as a continuous routing loop:
+## The Loop
 
-1. **Kickoff:** When the operator starts a new Open Flow campaign, ask: *"What deliverables do you anticipate needing, and what is your desired cadence?"* Do not lock a rigid plan; just get a sketch.
-2. **The Loop:** Ask *"What do you want to tackle first?"* Use the relevant deliverable template (`library/deliverables/{type}/template.md`) to draft and lock the request.
-3. **State Tracking:** Every time a deliverable is created or updated, update the `deliverables` block in `workspace/campaigns/{slug}/campaign.md`. This is the campaign's working memory.
-4. **Recalibration:** Immediately after a deliverable locks, read the `campaign.md` frontmatter and ask the operator: *"That's locked. Looking at our sketch, do we still want to do [Next Item] next, or are we pivoting?"*
-5. **Completion:** The campaign is complete when the operator explicitly decides it is done.
+1. Work the runway's first item using its deliverable template (or the ad-hoc artifact's agreed shape).
+2. On lock: run lock-event, sync the tracker, refresh the plan section, and PROPOSE the next 1–2 runway steps — don't make the operator plan from scratch each turn.
+3. Recalibrate when scope moves: phases can be added, merged, or dropped. Log plan changes to `activity.md` as `plan_revised` events — the decision trail lives on disk, not in the context window.
+
+## Files
+
+- With phases: `phase-{n}-{name}/` folders, versioned artifacts inside (same shape as the structured flows).
+- Zero-ladder: versioned artifacts in one folder per deliverable at the campaign root.
 
 ## Tracker Updates
 
-Use [`campaign-frontmatter.md`](../campaign-frontmatter.md) for schema, allowed values, and drift checks.
+- New open campaigns start with `campaign_flow: open-flow`, `deliverables: {}`, and `current_phase` set to the plan's first phase id (`active` when single-phase).
+- `current_phase` values come from the plan section; the schema-drift check validates against that list.
+- Deliverables move `not_started -> drafting -> locked -> shipped` in the same turn as their files change; posts follow the post-FINAL assembly per [`post-final/template.md`](../../deliverables/post-final/template.md).
 
-- New open campaigns start with `current_phase: active`, `campaign_flow: open-flow`, and `deliverables: {}`.
-- As deliverables are created, add them to the `deliverables` dictionary.
-- When the operator declares the campaign complete, set `LIFECYCLE.status: complete` and `completed_at: {timestamp}`.
+## Closeout
 
-## Overrides And Skips
-
-Because there is no rigid sequence, there are no "skips" or "phase overrides." The operator simply builds what they need. If they change their mind about a planned deliverable, remove it from scope or mark it cancelled.
+Same two-step learning close as the structured flows: harvest retro (`system-retro-v{N}.md`, both harvest skills with a shared source-read) → performance capture + campaign retro + completion. `LIFECYCLE.status: complete` only after the campaign retro locks or the operator records a closeout override in `activity.md`.

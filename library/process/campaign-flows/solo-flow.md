@@ -50,9 +50,9 @@ Load-on-demand procedures by phase. Solo flow is the same shape as standard flow
 
 ## Tracker Updates
 
-Use [`campaign-frontmatter.md`](../campaign-frontmatter.md) for schema, allowed values, and drift checks.
+Use [`campaign-frontmatter.md`](../campaign-frontmatter.md) for schema and allowed values. State transitions are button-owned: `python system/af.py` (`lock`, `publish`, `version`, `doctor`) — never hand-edit a terminal `status:`.
 
-- New solo campaigns start with `current_phase: 1-research-and-architecture`, `campaign_flow: solo-flow`, `deliverables: {}`, `post_count: 0`, and `posts_published: 0`.
+- New solo campaigns scaffold via `python system/af.py new-campaign <slug> --flow solo-flow`.
 - Phase 1 idea selected: add/update `idea-bank` at `status: locked` (or bypass if direct input).
 - Phase 1 concurrent work: add/update `research-artifact` and `campaign-architecture` at `status: drafting`.
 - Phase 1 locked: `campaign-architecture` locks, record `post_manifest` in `campaign.md`, add planned `post-{n}` rows as `not_started`, update `post_count`, then set `current_phase: 2-design-language`.

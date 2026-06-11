@@ -4,9 +4,9 @@ Freeform flow for campaigns that don't fit a fixed phase ladder. Open flow is co
 
 ## Read Once
 
-- Every artifact is a versioned deliverable instance per [`deliverable-versioning.md`](../deliverable-versioning.md): `{name}-v{N}.md`, head named by the tracker. Revisions bump the head — they never spawn a new differently-named v1. Only scratchpads are throwaway, and they carry `scratchpad` in the filename.
-- Lock mechanics: [`lock-event.md`](../lock-event.md) runs on every lock.
-- Tracker schema and drift checks: [`campaign-frontmatter.md`](../campaign-frontmatter.md). Apply file edits and `campaign.md` updates in the same turn.
+- Every artifact is a versioned deliverable instance per [`deliverable-versioning.md`](../deliverable-versioning.md): `{name}-v{N}.md`, head named by the tracker. Revisions bump the head (`python system/af.py version`) — they never spawn a new differently-named v1. Only scratchpads are throwaway, and they carry `scratchpad` in the filename.
+- State transitions are button-owned: `python system/af.py` (`lock`, `publish`, `version`, `new-campaign`, `doctor`); lock triggers per [`lock-event.md`](../lock-event.md). Never hand-edit a terminal `status:`.
+- Tracker schema: [`campaign-frontmatter.md`](../campaign-frontmatter.md). Apply file edits and `campaign.md` updates in the same turn.
 
 ## Kickoff — propose the plan
 
@@ -40,7 +40,7 @@ Short and current:
 
 ## Tracker Updates
 
-- New open campaigns start with `campaign_flow: open-flow`, `deliverables: {}`, and `current_phase` set to the plan's first phase id (`active` when single-phase).
+- New open campaigns scaffold via `python system/af.py new-campaign <slug> --flow open-flow`; set `current_phase` to the plan's first phase id once the plan locks (`active` when single-phase).
 - `current_phase` values come from the plan section; the schema-drift check validates against that list.
 - Deliverables move `not_started -> drafting -> locked -> shipped` in the same turn as their files change; posts follow the post-FINAL assembly per [`post-final/template.md`](../../deliverables/post-final/template.md).
 

@@ -6,7 +6,8 @@ Each deliverable's full template lives in `library/deliverables/{type}/template.
 
 ## Read Once
 
-- Versioning and snapshot mechanics are owned by each deliverable template: `library/deliverables/{type}/template.md`.
+- State transitions are button-owned: `python system/af.py` (`lock`, `publish`, `version`, `new-campaign`, `doctor`) does the mechanics atomically and prints the judgment checklist. Never hand-edit a terminal `status:`.
+- Versioning conventions and the surgical-vs-replacement judgment are owned by [`deliverable-versioning.md`](../deliverable-versioning.md); lock triggers by [`lock-event.md`](../lock-event.md).
 - Campaign tracker schema and review-state enums are owned by [`library/process/campaign-frontmatter.md`](../campaign-frontmatter.md).
 - In every phase, apply file edits and `campaign.md` tracker updates in the same turn.
 
@@ -25,7 +26,7 @@ Load [`library/process/research-and-signals.md`](../research-and-signals.md) for
 
 Idea-bank shape (keep tight): a candidate list plus the selected pick, nothing more. Per candidate: title, 1-3 sentence thesis, and one provenance line. Name the selected pick in one line. Do not add per-candidate Risk, Research Questions, Workspace Signal Summary, or Next Research Step sections.
 
-Save research output as `phase-1-research/research-artifact-v{N}.md` at `status: drafting`; only operator acceptance locks it. Create the campaign folder at `workspace/campaigns/{your-slug}/` with `campaign.md` populated from the v2 frontmatter schema in [`library/process/campaign-frontmatter.md`](../campaign-frontmatter.md). Set `campaign_flow: standard-flow` and `current_phase: 1-research`.
+Save research output as `phase-1-research/research-artifact-v{N}.md` at `status: drafting`; only operator acceptance locks it. Scaffold the campaign folder with `python system/af.py new-campaign <slug> --flow standard-flow` (schema-true `campaign.md`, `activity.md`, `feedback-log.md`).
 
 **Tracker update at end of Phase 1:** `current_phase: 2-strategy`. Add to `deliverables`:
 ```yaml
@@ -115,7 +116,7 @@ When all ingredients are locked and publish media exists or has been selected, f
 **Tracker update during Phase 4** (per post, in the same turn as the file edit):
 - Post starts drafting: `deliverables.post-{n}.status: drafting` + `file: phase-4-production/posts/post-{n}/post-FINAL.md` + `last_updated`, creating the `post-FINAL.md` stub in the same turn.
 - An ingredient locks: its content lands in `post-FINAL.md` per [`lock-event.md`](../lock-event.md). The post row stays `drafting` until every manifest ingredient is in, then flips `locked`.
-- Post publishes (Phase 4.3): `status: shipped`. The shipping record (platform, URL, posted_at, shipped_media[]) lives in `post-FINAL.md` frontmatter — see [`post-final/template.md`](../../deliverables/post-final/template.md) "Publish / Export Mechanics". **Increment `posts_published`** and update LIFECYCLE `shipped_at` if this is the first published post.
+- Post publishes (Phase 4.3): `af publish` owns the shipped state — publish block in `post-FINAL.md`, tracker, `posts_published`, lifecycle `shipped_at` — per [`post-final/template.md`](../../deliverables/post-final/template.md) "Publish / Export Mechanics".
 - Arc changes mid-campaign (post added, post dropped, post renumbered): update `post_count` AND the affected `post-{n}` rows in the same turn. Optional: add `framing_note` if the post's job in the arc shifted.
 
 **Tracker update at end of Phase 4:** `current_phase: 5-launch-and-learn`. Set when every active post is `shipped`, `cancelled`, or explicitly removed from active campaign scope. Do not advance the whole campaign to Phase 5 on first ship; multi-post campaigns can publish early posts while later posts remain in production.

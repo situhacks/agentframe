@@ -27,23 +27,10 @@ last_updated: <ISO-8601 date>
 
 ## Publish / Export Mechanics
 
-When the operator confirms the live URL ("posted post-1, here's the link"), update this file in one turn:
+When the operator confirms the live URL ("posted post-1, here's the link"):
 
-1. **Reconcile shipped copy.** If what shipped differs materially from the locked ingredient, write the next ingredient version with the as-shipped text, re-lock it, and refresh its section here. If verbatim, no change.
-2. **Voice fallback.** If copy materially differed, run the publish/back-fill fallback per [`library/process/voice-mini-retro.md`](../../process/voice-mini-retro.md).
-3. **Record the publish block** in this file's frontmatter:
-
-```yaml
-shipped_at: <ISO-8601 date>
-published:
-  platform: <linkedin | x | substack | ...>
-  url: <full permalink>
-  posted_at: <ISO-8601 datetime with timezone>
-shipped_media:
-  - visuals/post-1-cover-final.png
-```
-
-4. **Tracker and activity updates.** Set the tracker row to `status: shipped`, bump `posts_published`, set lifecycle `shipped_at` if this is the campaign's first publish, and append a `post_published` event to `activity.md` — all in the same turn.
+1. **Run the button.** `python system/af.py publish <campaign> <post> --url <url> [--posted-at <iso>] [--media <path> ...]` — it owns the mechanics atomically: publish block in this file's frontmatter (`shipped_at`, `published.{platform,url,posted_at}`, `shipped_media[]`), tracker row to `shipped`, `posts_published` recount, lifecycle `shipped_at` on first publish, `post_published` activity event.
+2. **Reconcile shipped copy** (judgment, from the button's checklist). If what shipped differs materially from the locked ingredient, `af version` the ingredient with the as-shipped text, re-lock it (refreshing its section here), and run the publish/back-fill fallback per [`library/process/voice-mini-retro.md`](../../process/voice-mini-retro.md).
 
 ## Lock Criteria
 

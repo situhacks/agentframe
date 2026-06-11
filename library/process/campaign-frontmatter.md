@@ -193,17 +193,9 @@ campaign_retro_completed: null
 
 ## Schema-drift check (the always-on guarantee)
 
-**Every campaign-frontmatter load runs this check first** — this is a Behavioral Principle (`AGENTS.cmo.md` § C.3 Schema-Drift-Check Discipline), not an opt-in lookup. The check is cheap (frontmatter-only, no body load) and catches drift before downstream reasoning amplifies it.
+**Every campaign-frontmatter load runs this check first** — not an opt-in lookup. Run `python system/af.py doctor <campaign-slug>` — it verifies required fields, enums, tracker-row validity, head pointers, and counters as code, and surfaces issues without ever auto-fixing.
 
-1. Verify IDENTITY (`name`, `slug`, `schema_version`, `created_at`) and LIFECYCLE (`status`, `current_phase`, `last_activity`) required fields exist with valid types.
-2. Verify `status` is one of `active | complete | cancelled`.
-3. Verify `current_phase` is one of the allowed flow phase IDs (for `open-flow`: the ids declared in the campaign's plan section).
-4. Verify `deliverables` has at least one entry when `current_phase` is past `1-research`.
-5. For each `deliverables` row, verify `status` is valid and `file` exists (or is a folder pointer when `status: not_started`). For each row whose `file` is a versioned file (`{name}-v{N}.md`), verify the named file is the highest `v{N}` in its folder — that's the tracker's head pointer.
-6. For each row at `status: locked`, optionally peek at the deliverable frontmatter for `back_filled: true` and surface it inline.
-7. If any check fails, surface drift inline with last-activity age and ask before fixing.
-
-The agent does not auto-fix drift. It surfaces and asks. Drift fixes are user-approved frontmatter edits logged to the campaign's `activity.md` as `frontmatter_manual_edit`.
+Judgment that stays with the agent: peek locked rows for `back_filled: true` and surface inline; for `open-flow`, sanity-check `current_phase` against the plan section's declared phases; report drift with last-activity age and ask before fixing. Drift fixes are user-approved frontmatter edits logged to the campaign's `activity.md` as `frontmatter_manual_edit`.
 
 ## Activity event line shapes
 

@@ -27,11 +27,11 @@ At the end of the drafting turn, the agent offers: *"Want an editable copy you c
 
 ## Editable copy (operator opt-in)
 
-When the operator accepts the offer, the agent copies the current head to the next version (`slide-copy-v1.md` → `slide-copy-v2.md`), updates the tracker to point at the new head, and tells the operator the file is ready to edit. The operator edits the new head directly. The prior version stays in the folder, untouched, as the snapshot for that point.
+When the operator accepts the offer, run `python system/af.py version <campaign> <deliverable>` — it copies the head to the next version and moves the tracker pointer atomically — then tell the operator the new head is ready to edit. The prior version stays in the folder, untouched, as the snapshot for that point.
 
 ## Iteration (agent applies operator feedback)
 
-When the operator gives feedback and the agent applies it, the agent writes the next version (`{name}-v{N}.md` → `{name}-v{N+1}.md`) with the changes applied, updates the tracker to the new head. The prior version stays in the folder as the snapshot.
+When the feedback is replacement-shaped (see below), run `af version` first, then write the changes into the new head. The prior version stays in the folder as the snapshot.
 
 If the feedback criticizes the deliverable's SHAPE or the agent's process (not just this draft's content — e.g. "v1 copy should never contain imagery notes," "the table format is wrong for this deliverable"), also append one line to the campaign's `feedback-log.md` in the same turn. That line is the paper trail the Phase-5 harvest retro reads; without it the correction lives only in chat.
 
@@ -58,28 +58,18 @@ Apply when the change is structural or substantive:
 - Operator pushback that requires a fresh copy rather than an in-place edit.
 - Operator request to archive the current head and start a new working copy ("make a copy", "save this and start a new version").
 
-The agent writes the new content to `{name}-v{N+1}.md`, updates the tracker pointer, and leaves the prior version in the folder.
+Run `af version`, then write the new content into the new head. The prior version stays in the folder.
 
 ## Lock and ship
 
-When the operator approves the current head, the agent flips that file's `status` to `locked` per [`lock-event.md`](lock-event.md) — which also lands post-ingredient content in the post's `post-FINAL.md`. Publish state lives on `post-FINAL.md`, per the publish procedure in [`post-final/template.md`](../deliverables/post-final/template.md).
+When the operator approves the current head, follow [`lock-event.md`](lock-event.md) — `python system/af.py lock` owns the mechanics, including landing post-ingredient content in `post-FINAL.md`. Publish state lives on `post-FINAL.md` via `af publish`, per [`post-final/template.md`](../deliverables/post-final/template.md).
 
 ## Edge cases
 
-- **Multiple iterations in one session:** each replacement writes its own `v{N+1}`. No batching.
+- **Multiple iterations in one session:** each replacement gets its own `af version` call. No batching.
 - **Operator says "just edit in place" on a substantive change:** honor the request. Note the override in `activity.md` if downstream work depends on the prior shape.
-- **Locked deliverable that needs a substantive change:** unlock first (operator decision), then apply the replacement procedure. The unlock event lives in `activity.md`.
-
-## Self-check
-
-Before writing a new version, the agent confirms:
-
-- The current head file exists and the tracker `file:` pointer names it.
-- The new filename increments by exactly one (no gaps).
-- The tracker `file:` pointer is updated to the new head in the same turn.
-
-If any check fails, surface the gap to the operator before writing.
+- **Locked deliverable that needs a substantive change:** unlock first (operator decision), then `af version`. The unlock event lives in `activity.md`.
 
 ## Interaction with lock-event
 
-Lock-event mechanics live in [`lock-event.md`](lock-event.md) and run after this rule. If a lock turn includes replacement-shaped changes, write the new version first, then flip its status to `locked`. The two procedures compose: this file owns version creation; lock-event owns the status flip and tracker sync.
+If a lock turn includes replacement-shaped changes, run `af version` and write the new content first, then lock per [`lock-event.md`](lock-event.md). The two compose: this file owns when a new version is earned; the buttons own the file/tracker mechanics.

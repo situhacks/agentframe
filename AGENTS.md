@@ -32,6 +32,7 @@ The durable product is the deliverable library. Harness machinery is scaffolding
 | Browser/runtime work | `system/browser/README.md`, relevant workflow recipe; `system/skills/browser-harness/SKILL.md` for browser-control mechanics | Campaign copy/spec files |
 | Visual/server machinery | Relevant `system/server/` docs and adjacent code | Marketing content unless explicitly part of a fixture |
 | Pulling upstream AgentFrame updates into this copy | [`system/skills/upstream-sync/SKILL.md`](system/skills/upstream-sync/SKILL.md) | Gitignored personal layer (operator context, campaigns, backlog, audit DB) — sync never touches it |
+| Deliverable drafting, iteration, or review requested | Swap to CMO first (atomic command in Modes) — the CMO routing index loads the versioning and template files that work requires | Drafting campaign deliverables in Builder mode |
 | Mode mismatch | Modes table below | Silent mode swaps |
 
 Load only what the task needs. If a file is historical, read it only when researching history or validating a migration.
@@ -47,6 +48,7 @@ Load only what the task needs. If a file is historical, read it only when resear
 3. **State over phrases.** Triggers should be defined by state and intent, not by quoted user phrases.
 4. **Templates are the product.** Prefer changes that make deliverables clearer, more reliable, or easier to reuse across agent platforms.
 5. **Two-mode routing is real.** Builder owns system architecture; CMO owns campaign execution.
+6. **Buttons own mechanics; prose owns judgment.** Campaign state transitions go through `system/af.py` (schema-bound, flow-agnostic). Scripts never encode flow logic, template knowledge, or creative decisions; the CLI and the frontmatter schema change together in one commit, with a `MIGRATION:` line.
 
 ### Rule-Design Discipline
 
@@ -68,8 +70,6 @@ Load only what the task needs. If a file is historical, read it only when resear
 - Verify with evidence before claiming success.
 
 ### Pre-write gate (run before writing any agent-facing file)
-
-These checks make the principles above fire at write-time, not in hindsight. The recurring failures they catch — scar-tissue/over-explain, self-triggering files, sharper-words duplication — are not caught by knowing the rules; they are caught by running these at the moment of writing.
 
 1. **Who loads this?** A trigger/procedure is inert unless a parent loads the file and acts on it. Name the parent and confirm it calls this file at the right moment. If nothing loads it, the file is dead — fix the load-path, don't write a self-triggering rule. (Reader-use + lazy-loaded ownership.)
 2. **Is any line provenance or "why"?** Cut history, rationale-for-future-readers, and "why this exists" preambles. Runtime prose is present-tense operating instruction only. (Reader-use contract.)
@@ -116,6 +116,7 @@ After the command returns, re-read the root `AGENTS.md` before any further work 
 | `library/deliverables/` | Deliverable templates; main product surface |
 | `library/process/` | On-demand workflow procedures |
 | `library/context/operator/` | Operator positioning, profile, and voice |
+| `system/af.py` | State-transition CLI (lock, publish, version, new-campaign, doctor) |
 | `system/audit/` | SQLite audit/telemetry exception |
 | `system/browser/` | Browser automation runtime |
 | `system/server/` | Preview server |

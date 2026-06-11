@@ -241,6 +241,7 @@ My current production stack. Swap any of them for a sharper tool without touchin
 ### Everything else that ships in the box
 
 - Two-mode routing via `AGENTS.cmo.md` and `AGENTS.builder.md`
+- A deterministic state-transition CLI at `system/af.py` — lock, publish, version, new-campaign, doctor. The buttons do the bookkeeping atomically and write the paper trail; the agent keeps the judgment. Models are strong writers and weak clerks, so the clerking is code.
 - YAML frontmatter and campaign artifacts under `workspace/campaigns/`
 - `activity.md` per campaign for human-readable history, plus an append-only SQLite audit DB at `system/audit/agentframe.db`
 - Local preview server at `system/server/` for HTML, image, video, PDF, PPTX, and DOCX previews
@@ -449,6 +450,7 @@ agentframe-marketing/
 │   │   └── campaign-flows/
 │   └── context/operator.example/
 ├── system/
+│   ├── af.py
 │   ├── skills/
 │   ├── server/
 │   ├── audit/

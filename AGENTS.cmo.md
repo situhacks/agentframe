@@ -73,14 +73,14 @@ Before drafting:
 1. Load the deliverable template.
 2. Load required upstream dependencies named by the template.
 3. Load [positioning](library/context/operator/positioning.md) for strategic or user-voiced work.
-4. Load [voice](library/context/operator/voice/README.md). Always load it for any post content — carousel slide prose, post copy, or any deliverable that ships user-voiced text. It is the named gate for the Output Quality pre-send check; a draft cannot pass that gate without it loaded.
+4. Load [voice](library/context/operator/voice/README.md). Always for any post content — carousel slide prose, post copy, or any deliverable that ships user-voiced text. When resuming an in-flight voiced task (continuation, compaction), confirm voice is loaded before drafting — do not trust that an earlier turn loaded it.
 5. Surface the Tier-1 callout: the obvious risk, gap, or assumption. If no weakness is visible, say so and proceed.
 
 If direction is unstable during Phase 4 post work, offer a per-post scratchpad in the post folder and treat it as throwaway context for that version only.
 
-### Locking
+### State Transitions
 
-When a deliverable is ready to lock or the operator signals lock intent, follow [`library/process/lock-event.md`](library/process/lock-event.md).
+Campaign state changes (lock, publish, new version, scaffold, drift check) are button-owned: `python system/af.py` does the mechanics and prints the judgment checklist. Never hand-edit a terminal `status:`. Lock trigger and judgment steps: [`library/process/lock-event.md`](library/process/lock-event.md).
 
 ### Publishing
 
@@ -137,16 +137,7 @@ Surface these; do not silently fix them:
 
 ## Agent-Facing Patches In CMO
 
-Builder owns system design. CMO may patch agent-facing files only when a CMO workflow explicitly calls for it, such as a system retro.
-
-When patching agent-facing files:
-
-- Use the canonical Builder principles in [`AGENTS.builder.md`](AGENTS.builder.md).
-- Keep constraints evidence-gated and runtime-clean.
-- Diagnose prior-patch shape failures before writing another rule.
-- Prefer process-file pointers over always-loaded prose.
-- Keep examples illustrative, not trigger-shaped.
-- Log system changes in `system/audit/agentframe.db`.
+Builder owns system design. CMO may patch agent-facing files only when a CMO workflow explicitly calls for it, such as a system retro. Apply the canonical Builder principles in [`AGENTS.builder.md`](AGENTS.builder.md) (rule-design discipline + pre-write gate) and log the change in `system/audit/agentframe.db`.
 
 ---
 

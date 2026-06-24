@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """AgentFrame state-transition CLI — the buttons.
 
-Owns the MECHANICS of campaign state changes. Binds to the
-campaign-frontmatter schema only — never to flows, templates, or content.
-Each command performs its bookkeeping atomically, writes the campaign
+Owns the MECHANICS of project state changes. Binds to the
+project-frontmatter schema only — never to flows, templates, or content.
+Each command performs its bookkeeping atomically, writes the project
 paper trail (activity.md) as a side effect, and prints back the JUDGMENT
 checklist the agent must still run. Stdlib only.
 
 Commands:
-  python system/af.py lock <campaign> <deliverable-slug-or-path>
-  python system/af.py publish <campaign> <post-slug> --url URL [--posted-at ISO] [--platform P] [--media PATH ...]
-  python system/af.py version <campaign> <deliverable-slug>
-  python system/af.py new-campaign <slug> --flow {solo-flow,standard-flow,open-flow} [--name NAME]
-  python system/af.py doctor [campaign]
+  python system/af.py lock <project> <deliverable-slug-or-path>
+  python system/af.py publish <project> <post-slug> --url URL [--posted-at ISO] [--platform P] [--media PATH ...]
+  python system/af.py version <project> <deliverable-slug>
+  python system/af.py new-project <slug> --flow {solo-flow,standard-flow,open-flow} [--name NAME]
+  python system/af.py doctor [project]
 """
 
 import argparse
@@ -24,7 +24,7 @@ import shutil
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CAMPAIGNS = os.path.join(ROOT, "workspace", "campaigns")
+PROJECTS = os.path.join(ROOT, "workspace", "projects")
 
 STATUS_ENUM = {"not_started", "drafting", "locked", "shipped", "deferred"}
 LIFECYCLE_ENUM = {"active", "complete", "cancelled"}
@@ -56,12 +56,12 @@ def write(path, text):
         fh.write(text)
 
 
-def campaign_dir(slug):
-    for base in (CAMPAIGNS, os.path.join(CAMPAIGNS, "completed")):
+def project_dir(slug):
+    for base in (PROJECTS, os.path.join(PROJECTS, "completed")):
         d = os.path.join(base, slug)
-        if os.path.isfile(os.path.join(d, "campaign.md")):
+        if os.path.isfile(os.path.join(d, "project.md")):
             return d
-    die(f"campaign '{slug}' not found under workspace/campaigns/")
+    die(f"project '{slug}' not found under workspace/projects/")
 
 
 def split_fm(text, path="file"):
@@ -107,7 +107,7 @@ def row_span(fm, slug):
 def row_set(fm, slug, key, value):
     span = row_span(fm, slug)
     if not span:
-        die(f"campaign.md: tracker row '{slug}' not found in deliverables block")
+        die(f"project.md: tracker row '{slug}' not found in deliverables block")
     s, e = span
     block = fm[s:e]
     pat = re.compile(rf"^(    {re.escape(key)}:)[ \t]*.*$", re.M)
@@ -159,7 +159,7 @@ def head_of(path):
 
 
 def touch_lifecycle(fm):
-    return set_scalar(fm, "last_activity", datetime.datetime.now().astimezone().isoformat(timespec="seconds"), "campaign.md")
+    return set_scalar(fm, "last_activity", datetime.datetime.now().astimezone().isoformat(timespec="seconds"), "project.md")
 
 
 def append_activity(cdir, line):
@@ -186,7 +186,7 @@ last_updated: {date}
 
 # {title} — FINAL
 
-Assembled from the post's locked ingredients per the campaign manifest.
+Assembled from the post's locked ingredients per the project manifest.
 """
 
 
@@ -222,8 +222,8 @@ def post_complete(post_dir, ingredients):
 
 
 def cmd_lock(args):
-    cdir = campaign_dir(args.campaign)
-    cfm, cbody = split_fm(read(os.path.join(cdir, "campaign.md")), "campaign.md")
+    cdir = project_dir(args.project)
+    cfm, cbody = split_fm(read(os.path.join(cdir, "project.md")), "project.md")
 
     slug, rel = args.deliverable, None
     if "/" in slug.replace("\\", "/"):
@@ -264,7 +264,7 @@ def cmd_lock(args):
         cfm = row_set(cfm, slug, "status", "locked")
         cfm = row_set(cfm, slug, "last_updated", today())
     cfm = touch_lifecycle(cfm)
-    write(os.path.join(cdir, "campaign.md"), join_fm(cfm, cbody))
+    write(os.path.join(cdir, "project.md"), join_fm(cfm, cbody))
     append_activity(cdir, f"lock: {slug or os.path.basename(rel)} locked; artifact={rel}"
                     + (f"; {'; '.join(notes)}" if notes else ""))
 
@@ -280,8 +280,8 @@ def cmd_lock(args):
 # ---------------------------------------------------------------- publish
 
 def cmd_publish(args):
-    cdir = campaign_dir(args.campaign)
-    cfm, cbody = split_fm(read(os.path.join(cdir, "campaign.md")), "campaign.md")
+    cdir = project_dir(args.project)
+    cfm, cbody = split_fm(read(os.path.join(cdir, "project.md")), "project.md")
     rel = row_get(cfm, args.post, "file") or die(f"tracker row '{args.post}' not found or has no file")
     if not rel.endswith("post-FINAL.md"):
         die(f"row '{args.post}' points at {rel}, not a post-FINAL.md — publish operates on the assembly record")
@@ -304,11 +304,11 @@ def cmd_publish(args):
     cfm = row_set(cfm, args.post, "last_updated", today())
     shipped = sum(1 for s in all_rows(cfm)
                   if re.match(r"post-\d+$", s) and row_get(cfm, s, "status") == "shipped")
-    cfm = set_scalar(cfm, "posts_published", str(shipped), "campaign.md")
+    cfm = set_scalar(cfm, "posts_published", str(shipped), "project.md")
     if get_scalar(cfm, "shipped_at") in (None, "null", ""):
-        cfm = set_scalar(cfm, "shipped_at", today(), "campaign.md")
+        cfm = set_scalar(cfm, "shipped_at", today(), "project.md")
     cfm = touch_lifecycle(cfm)
-    write(os.path.join(cdir, "campaign.md"), join_fm(cfm, cbody))
+    write(os.path.join(cdir, "project.md"), join_fm(cfm, cbody))
     append_activity(cdir, f"post_published: {args.post} → {args.url}")
 
     print(f"af publish: {args.post} -> shipped ({args.url}); posts_published={shipped}")
@@ -323,9 +323,9 @@ def cmd_publish(args):
 # ---------------------------------------------------------------- version
 
 def cmd_version(args):
-    cdir = campaign_dir(args.campaign)
-    cpath = os.path.join(cdir, "campaign.md")
-    cfm, cbody = split_fm(read(cpath), "campaign.md")
+    cdir = project_dir(args.project)
+    cpath = os.path.join(cdir, "project.md")
+    cfm, cbody = split_fm(read(cpath), "project.md")
     rel = row_get(cfm, args.deliverable, "file") or die(f"tracker row '{args.deliverable}' not found or has no file")
     dpath = os.path.join(cdir, rel)
     os.path.isfile(dpath) or die(f"deliverable file not found: {rel}")
@@ -352,9 +352,9 @@ def cmd_version(args):
     print("  - If the operator feedback criticized SHAPE or process, append one feedback-log.md line this turn.")
 
 
-# ---------------------------------------------------------------- new-campaign
+# ---------------------------------------------------------------- new-project
 
-CAMPAIGN_SKELETON = """---
+PROJECT_SKELETON = """---
 # IDENTITY
 name: "{name}"
 slug: {slug}
@@ -395,21 +395,21 @@ campaign_retro_completed: null
 """
 
 
-def cmd_new_campaign(args):
+def cmd_new_project(args):
     slug = args.slug
     re.match(r"^[a-z0-9][a-z0-9-]*$", slug) or die("slug must be folder-safe lowercase kebab-case")
-    cdir = os.path.join(CAMPAIGNS, slug)
+    cdir = os.path.join(PROJECTS, slug)
     if os.path.exists(cdir):
         die(f"{cdir} already exists")
     os.makedirs(cdir)
     name = args.name or slug.replace("-", " ").title()
-    write(os.path.join(cdir, "campaign.md"), CAMPAIGN_SKELETON.format(
+    write(os.path.join(cdir, "project.md"), PROJECT_SKELETON.format(
         name=name, slug=slug, date=today(), phase=FLOWS[args.flow], flow=args.flow,
         ts=datetime.datetime.now().astimezone().isoformat(timespec="seconds")))
     write(os.path.join(cdir, "feedback-log.md"), "")
-    append_activity(cdir, f"campaign_started: {name} scaffolded ({args.flow})")
+    append_activity(cdir, f"project_started: {name} scaffolded ({args.flow})")
 
-    print(f"af new-campaign: workspace/campaigns/{slug}/ scaffolded ({args.flow}, phase {FLOWS[args.flow]})")
+    print(f"af new-project: workspace/projects/{slug}/ scaffolded ({args.flow}, phase {FLOWS[args.flow]})")
     print("\nJudgment (stays with the agent):")
     print(f"  - Load library/process/campaign-flows/{args.flow}.md and run its kickoff")
     print("    (research offer / plan proposal / manifest moment — flow-owned, not script-owned).")
@@ -417,13 +417,13 @@ def cmd_new_campaign(args):
 
 # ---------------------------------------------------------------- doctor
 
-def check_campaign(cdir):
+def check_project(cdir):
     issues = []
     rel = os.path.relpath(cdir, ROOT).replace("\\", "/")
     try:
-        cfm, _ = split_fm(read(os.path.join(cdir, "campaign.md")), "campaign.md")
+        cfm, _ = split_fm(read(os.path.join(cdir, "project.md")), "project.md")
     except SystemExit:
-        return [f"{rel}: campaign.md missing or has no frontmatter"]
+        return [f"{rel}: project.md missing or has no frontmatter"]
 
     for field in ("name", "slug", "schema_version", "created_at", "status", "current_phase", "campaign_flow", "last_activity"):
         if get_scalar(cfm, field) in (None, ""):
@@ -462,22 +462,22 @@ def check_campaign(cdir):
 
 def cmd_doctor(args):
     dirs = []
-    if args.campaign:
-        dirs = [campaign_dir(args.campaign)]
+    if args.project:
+        dirs = [project_dir(args.project)]
     else:
-        for base in (CAMPAIGNS, os.path.join(CAMPAIGNS, "completed")):
+        for base in (PROJECTS, os.path.join(PROJECTS, "completed")):
             if os.path.isdir(base):
                 dirs += [os.path.join(base, d) for d in sorted(os.listdir(base))
-                         if os.path.isfile(os.path.join(base, d, "campaign.md"))]
+                         if os.path.isfile(os.path.join(base, d, "project.md"))]
     all_issues = []
     for d in dirs:
-        all_issues += check_campaign(d)
+        all_issues += check_project(d)
     if all_issues:
         print(f"af doctor: {len(all_issues)} issue(s) — surfaced, never auto-fixed (operator decides):")
         for i in all_issues:
             print(f"  - {i}")
         sys.exit(1)
-    print(f"af doctor: {len(dirs)} campaign(s) checked, books clean")
+    print(f"af doctor: {len(dirs)} project(s) checked, books clean")
 
 
 # ---------------------------------------------------------------- main
@@ -486,14 +486,14 @@ def main():
     p = argparse.ArgumentParser(prog="af", description="AgentFrame state-transition CLI")
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    s = sub.add_parser("lock");            s.add_argument("campaign"); s.add_argument("deliverable"); s.set_defaults(fn=cmd_lock)
-    s = sub.add_parser("publish");         s.add_argument("campaign"); s.add_argument("post")
+    s = sub.add_parser("lock");            s.add_argument("project"); s.add_argument("deliverable"); s.set_defaults(fn=cmd_lock)
+    s = sub.add_parser("publish");         s.add_argument("project"); s.add_argument("post")
     s.add_argument("--url", required=True); s.add_argument("--posted-at"); s.add_argument("--platform", default="linkedin")
     s.add_argument("--media", nargs="*", default=[]); s.set_defaults(fn=cmd_publish)
-    s = sub.add_parser("version");         s.add_argument("campaign"); s.add_argument("deliverable"); s.set_defaults(fn=cmd_version)
-    s = sub.add_parser("new-campaign");    s.add_argument("slug")
-    s.add_argument("--flow", required=True, choices=sorted(FLOWS)); s.add_argument("--name"); s.set_defaults(fn=cmd_new_campaign)
-    s = sub.add_parser("doctor");          s.add_argument("campaign", nargs="?"); s.set_defaults(fn=cmd_doctor)
+    s = sub.add_parser("version");         s.add_argument("project"); s.add_argument("deliverable"); s.set_defaults(fn=cmd_version)
+    s = sub.add_parser("new-project");     s.add_argument("slug")
+    s.add_argument("--flow", required=True, choices=sorted(FLOWS)); s.add_argument("--name"); s.set_defaults(fn=cmd_new_project)
+    s = sub.add_parser("doctor");          s.add_argument("project", nargs="?"); s.set_defaults(fn=cmd_doctor)
 
     args = p.parse_args()
     args.fn(args)

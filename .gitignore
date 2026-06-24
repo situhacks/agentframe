@@ -10,12 +10,12 @@ library/context/operator/
 # Operator builder backlogs (keeps personal system fixes out of forks)
 system/builder-backlog*.md
 
-# === Operator campaigns ===
-# All campaigns are private by default. The bundled walkthrough campaign
+# === Operator projects ===
+# All projects are private by default. The bundled walkthrough project
 # (example-ai-automation-pov) is the one exception — it ships with the repo
 # so new operators have a real reference to copy from.
-workspace/campaigns/*
-!workspace/campaigns/example-ai-automation-pov/
+workspace/projects/*
+!workspace/projects/example-ai-automation-pov/
 
 # === Operator research ===
 workspace/research/

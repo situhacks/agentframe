@@ -1,6 +1,6 @@
 # Research And Signals
 
-Shared kickoff procedure for any campaign flow's research phase. Owns workspace-context definition, the live Composio/Rube MCP scan, and the research-method offer. Loaded from each flow's Phase 1 (`solo-flow.md` Phase `1-setup-research`, `standard-flow.md` Phase 1 - Research). Deliverable shape and lock criteria belong to the calling flow and to [`library/deliverables/research-artifact/template.md`](../deliverables/research-artifact/template.md).
+Shared kickoff procedure for any campaign flow's research phase. Owns workspace-context definition, the live Composio/Rube MCP scan, and the research-method offer. Loaded from each flow's Phase 1 (`marketing-solo-flow.md` Phase `1-setup-research`, `marketing-standard-flow.md` Phase 1 - Research). Deliverable shape and lock criteria belong to the calling flow and to [`library/deliverables/research-artifact/template.md`](../deliverables/research-artifact/template.md).
 
 ## Workspace-Context Definition
 

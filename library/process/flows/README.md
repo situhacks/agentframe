@@ -1,28 +1,29 @@
-# Campaign Flows
+# Flows
 
-Campaign flows are the first-class campaign process definitions for AgentFrame Marketing. A flow owns phase sequence, required deliverables by phase, tracker transitions, flow-specific skips, and completion criteria.
+Flows are the first-class process definitions for the project harness. A flow owns phase sequence, required deliverables by phase, tracker transitions, flow-specific skips, and completion criteria.
 
 ## Default Flow
 
-`solo-flow.md` is the default for new campaigns. Most operators are solo marketers; the default path should optimize for a single accountable owner without assuming stakeholder review.
+`open-flow.md` is the default for new projects and the standard across every domain. Open flow is build-as-you-go: the agent proposes a plan (phases + deliverables) scaled to the objective, the operator narrows it, and the plan rolls forward. Almost every project is open by nature, so it is the default unless the operator names another flow.
 
-Each campaign instance records its selected flow in `project.md` frontmatter as `campaign_flow`. During campaign work, read `campaign_flow` first, then lazy-load `library/process/flows/{campaign_flow}.md`.
+Each project instance records its selected flow in `project.md` frontmatter as `flow`. During work, read `flow` first, then lazy-load `library/process/flows/{flow}.md`.
 
 ## Available Flows
 
 | Flow | Status | Use Case |
 |---|---|---|
-| `solo-flow.md` | Default | Solo marketer, no stakeholder review, lean phase sequence. |
-| `standard-flow.md` | Optional | Fuller campaign with business/stakeholder review cycles. |
-| `open-flow.md` | Optional | Build-as-you-go: the agent proposes a plan (phases + deliverables) scaled to the objective; the operator narrows and the plan rolls forward. |
-| `enterprise-flow.md` | RESERVED | Not yet authored. |
+| `open-flow.md` | Default (all domains) | Build-as-you-go: the agent proposes a plan scaled to the objective; the operator narrows and the plan rolls forward. |
+| `marketing-solo-flow.md` | Marketing, opt-in | Named deliberately by a marketer: lean fixed phase ladder, single accountable owner, no stakeholder review. |
+| `marketing-standard-flow.md` | Marketing, opt-in | Named deliberately by a marketer: fuller campaign with business/stakeholder review cycles. |
+
+`marketing-solo-flow` and `marketing-standard-flow` are marketing-domain flows (post ladders, manifest moment, post-FINAL assembly). They are named deliberately, never defaults. A non-marketing domain uses `open-flow` until it grows its own ladder.
 
 ## Ownership
 
 - Flow registry and default selection live here.
-- Per-campaign flow selection lives in `workspace/projects/{slug}/project.md` frontmatter.
+- Per-project flow selection lives in `workspace/projects/{slug}/project.md` frontmatter.
 - Flow-specific phase sequencing lives in the flow file.
-- Shared process primitives stay in sibling process files such as `campaign-frontmatter.md`, `lock-event.md`, `voice-mini-retro.md`, and `composio-notes.md`.
+- Shared process primitives stay in sibling process files such as `project-frontmatter.md`, `lock-event.md`, `voice-mini-retro.md`, and `composio-notes.md`.
 - Deliverable details stay in `library/deliverables/{type}/template.md`.
 
 ## Adding Or Changing A Flow

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The post's assembly record. Each post is built from ingredient deliverables (slide copy, body copy, image prompts, video — whatever the campaign manifest names), each with its own version trail and lock. `post-FINAL.md` is where the locked ingredients accumulate: shaped over time, complete when every manifest ingredient has landed, and finally the as-shipped record once the post publishes.
+The post's assembly record. Each post is built from ingredient deliverables (slide copy, body copy, image prompts, video — whatever the campaign manifest names), each with its own version trail and lock. `post-FINAL.md` is where the locked ingredients accumulate: shaped over time, complete when every manifest ingredient has landed, and finally the as-delivered record once the post publishes.
 
 ## Inputs
 
@@ -19,18 +19,18 @@ One file per post: `post-FINAL.md` in the post folder, created in the same turn 
 ## Draft Frontmatter Convention
 
 ```yaml
-status: <drafting | locked | shipped>
+status: <drafting | locked | delivered>
 last_updated: <ISO-8601 date>
 ```
 
-`drafting` while ingredients are still landing; `locked` when every manifest ingredient is in; `shipped` after publish.
+`drafting` while ingredients are still landing; `locked` when every manifest ingredient is in; `delivered` after publish.
 
 ## Publish / Export Mechanics
 
 When the operator confirms the live URL ("posted post-1, here's the link"):
 
-1. **Run the button.** `python system/af.py publish <campaign> <post> --url <url> [--posted-at <iso>] [--media <path> ...]` — it owns the mechanics atomically: publish block in this file's frontmatter (`shipped_at`, `published.{platform,url,posted_at}`, `shipped_media[]`), tracker row to `shipped`, `posts_published` recount, lifecycle `shipped_at` on first publish, `post_published` activity event.
-2. **Reconcile shipped copy** (judgment, from the button's checklist). If what shipped differs materially from the locked ingredient, `af version` the ingredient with the as-shipped text, re-lock it (refreshing its section here), and run the publish/back-fill fallback per [`library/process/voice-mini-retro.md`](../../process/voice-mini-retro.md).
+1. **Run the button.** `python system/af.py publish <campaign> <post> --url <url> [--posted-at <iso>] [--media <path> ...]` — it owns the mechanics atomically: publish block in this file's frontmatter (`shipped_at`, `published.{platform,url,posted_at}`, `shipped_media[]`), tracker row to `delivered`, `posts_published` recount, lifecycle `shipped_at` on first publish, `post_published` activity event.
+2. **Reconcile delivered copy** (judgment, from the button's checklist). If what delivered differs materially from the locked ingredient, `af version` the ingredient with the as-delivered text, re-lock it (refreshing its section here), and run the publish/back-fill fallback per [`library/process/voice-mini-retro.md`](../../process/voice-mini-retro.md).
 
 ## Lock Criteria
 

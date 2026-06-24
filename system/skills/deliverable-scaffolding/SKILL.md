@@ -31,7 +31,7 @@ This skill carries the discipline. Run every step in order. Refuse to proceed pa
 Load when the operator (or forker) wants to add a new deliverable type. Concrete signals:
 
 - "I want to add a [thing] deliverable type" / "let's create a template for [thing]".
-- An audit-history gap: an artifact has shipped 2+ times without a template (each instance was bespoke). The friction earns a template.
+- An audit-history gap: an artifact has delivered 2+ times without a template (each instance was bespoke). The friction earns a template.
 - A forker setting up AgentFrame Marketing for a different marketing process and asking "where do I put my own deliverable definitions?" — this skill is their entry point.
 
 Do NOT load this skill for:
@@ -94,8 +94,8 @@ Identify and surface all upstream files that need updating to wire the new deliv
 |---|---|---|
 | Add letter (i+) to System Retro smart-routing options | If patches to this new deliverable will need their own routing letter (rare — most new deliverable types use existing route (c) "deliverables/{type}/template.md hard constraints") | `system/skills/system-improvement/SKILL.md` (since it's a template patch to `system-retro/template.md`) |
 | Add deliverable to a campaign flow | If this deliverable belongs in one or more named flows | `system/skills/agentframe-structure/SKILL.md` (flow change, then `system-improvement` for the file patch if needed) |
-| Add `current_phase` enum value to `library/process/campaign-frontmatter.md` | Only if this deliverable triggers a brand-new campaign phase (very rare; almost always slots into existing phases) | `system/skills/system-improvement/SKILL.md` |
-| Confirm `status` enum on the new deliverable matches the canonical vocabulary in `library/process/campaign-frontmatter.md` | Always (no-op when scaffold uses the default `drafting | locked | deferred` from Step 3) — surface only if the operator wants a different enum (e.g. adding `shipped` for a deliverable that publishes externally, or proposing a brand-new value) | `system/skills/system-improvement/SKILL.md` (any new value is a `library/process/campaign-frontmatter.md` schema change and must pass the prior-patch shape-failure check when prior history exists) |
+| Add `current_phase` enum value to `library/process/project-frontmatter.md` | Only if this deliverable triggers a brand-new campaign phase (very rare; almost always slots into existing phases) | `system/skills/system-improvement/SKILL.md` |
+| Confirm `status` enum on the new deliverable matches the canonical vocabulary in `library/process/project-frontmatter.md` | Always (no-op when scaffold uses the default `drafting | locked | deferred` from Step 3) — surface only if the operator wants a different enum (e.g. adding `delivered` for a deliverable that publishes externally, or proposing a brand-new value) | `system/skills/system-improvement/SKILL.md` (any new value is a `library/process/project-frontmatter.md` schema change and must pass the prior-patch shape-failure check when prior history exists) |
 | Add campaign-local export template convention at `workspace/projects/{slug}/exports/templates/{new-type}.{docx,pptx}` | If this deliverable exports to Word/PPT | Surface to user; they create optional templates (this skill does not author binary export templates) |
 
 For each wire-up: ask user "do this now, or defer?" Defer is fine — the deliverable can exist without being wired into a campaign flow. Many deliverables are situational and shouldn't be in the default flow.
@@ -139,7 +139,7 @@ payload_json:
 
 After the first real use of this deliverable type, the System Retro for that campaign appends a paired `validation_resolved` `system_changes` row linked to this scaffold (see `system/skills/system-improvement/SKILL.md` Step 6 for the schema).
 
-If the new deliverable was wired into a campaign flow or `campaign-frontmatter.md`, those wire-ups produce their own `process_patch` / `schema_change` `system_changes` rows via `system/skills/agentframe-structure/SKILL.md` and `system/skills/system-improvement/SKILL.md` — link them from this scaffold row's payload.
+If the new deliverable was wired into a campaign flow or `project-frontmatter.md`, those wire-ups produce their own `process_patch` / `schema_change` `system_changes` rows via `system/skills/agentframe-structure/SKILL.md` and `system/skills/system-improvement/SKILL.md` — link them from this scaffold row's payload.
 
 ## What this skill does NOT do
 

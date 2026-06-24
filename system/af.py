@@ -11,7 +11,7 @@ Commands:
   python system/af.py lock <project> <deliverable-slug-or-path>
   python system/af.py publish <project> <post-slug> --url URL [--posted-at ISO] [--platform P] [--media PATH ...]
   python system/af.py version <project> <deliverable-slug>
-  python system/af.py new-project <slug> --flow {solo-flow,standard-flow,open-flow} [--name NAME]
+  python system/af.py new-project <slug> [--domain marketing] [--flow open-flow] [--name NAME]
   python system/af.py doctor [project]
 """
 
@@ -26,10 +26,10 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROJECTS = os.path.join(ROOT, "workspace", "projects")
 
-STATUS_ENUM = {"not_started", "drafting", "locked", "shipped", "deferred"}
+STATUS_ENUM = {"not_started", "drafting", "locked", "delivered", "deferred"}
 LIFECYCLE_ENUM = {"active", "complete", "cancelled"}
-FLOWS = {"solo-flow": "1-research-and-architecture",
-         "standard-flow": "1-research",
+FLOWS = {"marketing-solo-flow": "1-research-and-architecture",
+         "marketing-standard-flow": "1-research",
          "open-flow": "active"}
 
 
@@ -289,7 +289,7 @@ def cmd_publish(args):
     pfm, pbody = split_fm(read(pf), rel)
 
     posted = args.posted_at or datetime.datetime.now().astimezone().isoformat(timespec="seconds")
-    pfm = set_scalar(pfm, "status", "shipped", rel)
+    pfm = set_scalar(pfm, "status", "delivered", rel)
     pfm = set_scalar(pfm, "last_updated", today(), rel)
     pfm = re.sub(r"\n(shipped_at:.*|published:(\n  .*)*|shipped_media:(\n  - .*)*)", "", pfm)
     block = [f"shipped_at: {today()}", "published:", f"  platform: {args.platform}",
@@ -300,18 +300,18 @@ def cmd_publish(args):
     pfm = pfm.rstrip("\n") + "\n" + "\n".join(block)
     write(pf, join_fm(pfm, pbody))
 
-    cfm = row_set(cfm, args.post, "status", "shipped")
+    cfm = row_set(cfm, args.post, "status", "delivered")
     cfm = row_set(cfm, args.post, "last_updated", today())
-    shipped = sum(1 for s in all_rows(cfm)
-                  if re.match(r"post-\d+$", s) and row_get(cfm, s, "status") == "shipped")
-    cfm = set_scalar(cfm, "posts_published", str(shipped), "project.md")
+    delivered = sum(1 for s in all_rows(cfm)
+                    if re.match(r"post-\d+$", s) and row_get(cfm, s, "status") == "delivered")
+    cfm = set_scalar(cfm, "posts_published", str(delivered), "project.md")
     if get_scalar(cfm, "shipped_at") in (None, "null", ""):
         cfm = set_scalar(cfm, "shipped_at", today(), "project.md")
     cfm = touch_lifecycle(cfm)
     write(os.path.join(cdir, "project.md"), join_fm(cfm, cbody))
     append_activity(cdir, f"post_published: {args.post} → {args.url}")
 
-    print(f"af publish: {args.post} -> shipped ({args.url}); posts_published={shipped}")
+    print(f"af publish: {args.post} -> delivered ({args.url}); posts_published={delivered}")
     print("\nJudgment checklist (agent + operator):")
     print("  [ ] Shipped copy reconciled: if the live post differs materially from the locked")
     print("      ingredient, write the next ingredient version with the as-shipped text, re-lock,")
@@ -358,14 +358,16 @@ PROJECT_SKELETON = """---
 # IDENTITY
 name: "{name}"
 slug: {slug}
-schema_version: 2026-04-23
+schema_version: 2026-06-24
 created_at: {date}
 supersedes: null
+domain: {domain}
+parent: null
 
 # LIFECYCLE
 status: active
 current_phase: {phase}
-campaign_flow: {flow}
+flow: {flow}
 last_activity: {ts}
 shipped_at: null
 completed_at: null
@@ -384,7 +386,7 @@ deliverables: {{}}
 post_count: 0
 posts_published: 0
 system_retro_completed: null
-campaign_retro_completed: null
+closeout_retro_completed: null
 ---
 
 # {name}
@@ -404,7 +406,7 @@ def cmd_new_project(args):
     os.makedirs(cdir)
     name = args.name or slug.replace("-", " ").title()
     write(os.path.join(cdir, "project.md"), PROJECT_SKELETON.format(
-        name=name, slug=slug, date=today(), phase=FLOWS[args.flow], flow=args.flow,
+        name=name, slug=slug, date=today(), domain=args.domain, phase=FLOWS[args.flow], flow=args.flow,
         ts=datetime.datetime.now().astimezone().isoformat(timespec="seconds")))
     write(os.path.join(cdir, "feedback-log.md"), "")
     append_activity(cdir, f"project_started: {name} scaffolded ({args.flow})")
@@ -425,7 +427,7 @@ def check_project(cdir):
     except SystemExit:
         return [f"{rel}: project.md missing or has no frontmatter"]
 
-    for field in ("name", "slug", "schema_version", "created_at", "status", "current_phase", "campaign_flow", "last_activity"):
+    for field in ("name", "slug", "schema_version", "created_at", "domain", "status", "current_phase", "flow", "last_activity"):
         if get_scalar(cfm, field) in (None, ""):
             issues.append(f"{rel}: required field '{field}' missing")
     if get_scalar(cfm, "slug") not in (None, os.path.basename(cdir)):
@@ -433,7 +435,7 @@ def check_project(cdir):
     if get_scalar(cfm, "status") not in LIFECYCLE_ENUM:
         issues.append(f"{rel}: lifecycle status '{get_scalar(cfm, 'status')}' not in {sorted(LIFECYCLE_ENUM)}")
 
-    shipped_posts = 0
+    delivered_posts = 0
     for slug in all_rows(cfm):
         st, f = row_get(cfm, slug, "status"), row_get(cfm, slug, "file")
         if st not in STATUS_ENUM:
@@ -452,11 +454,11 @@ def check_project(cdir):
                 highest = max(versions_in(os.path.dirname(p), m.group(1)))
                 if int(m.group(2)) != highest:
                     issues.append(f"{rel}: row '{slug}' points at v{m.group(2)} but head is v{highest}")
-        if re.match(r"post-\d+$", slug) and st == "shipped":
-            shipped_posts += 1
+        if re.match(r"post-\d+$", slug) and st == "delivered":
+            delivered_posts += 1
     declared = get_scalar(cfm, "posts_published")
-    if declared is not None and declared.isdigit() and int(declared) != shipped_posts:
-        issues.append(f"{rel}: posts_published={declared} but {shipped_posts} post rows are shipped")
+    if declared is not None and declared.isdigit() and int(declared) != delivered_posts:
+        issues.append(f"{rel}: posts_published={declared} but {delivered_posts} post rows are delivered")
     return issues
 
 
@@ -492,7 +494,8 @@ def main():
     s.add_argument("--media", nargs="*", default=[]); s.set_defaults(fn=cmd_publish)
     s = sub.add_parser("version");         s.add_argument("project"); s.add_argument("deliverable"); s.set_defaults(fn=cmd_version)
     s = sub.add_parser("new-project");     s.add_argument("slug")
-    s.add_argument("--flow", required=True, choices=sorted(FLOWS)); s.add_argument("--name"); s.set_defaults(fn=cmd_new_project)
+    s.add_argument("--flow", default="open-flow", choices=sorted(FLOWS)); s.add_argument("--domain", default="marketing")
+    s.add_argument("--name"); s.set_defaults(fn=cmd_new_project)
     s = sub.add_parser("doctor");          s.add_argument("project", nargs="?"); s.set_defaults(fn=cmd_doctor)
 
     args = p.parse_args()

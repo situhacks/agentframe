@@ -44,7 +44,7 @@ video_method: <hyperframes | video_use | manual_flow_veo_nano | hybrid>
 ---
 ```
 
-Follow standard deliverable versioning (reference `library/process/campaign-frontmatter.md` for schema).
+Follow standard deliverable versioning (reference `library/process/project-frontmatter.md` for schema).
 Generated media files, `video/renders/scenes/`, `video/renders/final/`, `edit/preview.mp4`, and `edit/final.mp4` are not versioned via v{N}. They are media outputs with their own paths and provenance.
 
 ## Lock Criteria
@@ -75,4 +75,4 @@ When needed, follow `library/process/humanizer-integration.md`.
 
 ## Exceptions / Branches
 
-- **Final polish outside AgentFrame Marketing**: allowed. Record the actually shipped file in the post's `post-FINAL.md` `shipped_media[]` during publish reconciliation.
+- **Final polish outside AgentFrame Marketing**: allowed. Record the actually delivered file in the post's `post-FINAL.md` `shipped_media[]` during publish reconciliation.

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The post's generation prompts — versioned and locked like any deliverable, so the prompts that produced the shipped images live in the campaign record instead of dying in the transcript.
+The post's generation prompts — versioned and locked like any deliverable, so the prompts that produced the delivered images live in the campaign record instead of dying in the transcript.
 
 ## Inputs
 

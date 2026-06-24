@@ -10,13 +10,13 @@ It is not a Builder patch queue and it does not run performance capture. System 
 
 - **Read only:**
   - `phase-2-strategy/business-brief/draft-v{N}.md` for the canonical success criteria.
-  - `project.md` frontmatter for shipped count, lifecycle state, and deliverable pointers.
+  - `project.md` frontmatter for delivered count, lifecycle state, and deliverable pointers.
   - `phase-5-launch-and-learn/performance-data.csv` (captured first, same step).
   - `activity.md` only for ship dates, scope changes, back-fill/override evidence, and completion events.
   - Public comment/reply evidence or operator-provided qualitative notes when needed to score a Business Brief criterion.
   - `feedback-log.md` for campaign-scoped observations that bear on the Worked / Did Not Work notes.
 - **Dependencies:**
-  - Final active post shipped, cancelled, or removed from scope.
+  - Final active post delivered, cancelled, or removed from scope.
   - `system-retro-v{N}.md` is complete or intentionally deferred.
   - Performance capture (same step, runs first) has either produced `performance-data.csv` or the operator chose to close with partial data.
 - **Context Loading:**
@@ -90,7 +90,7 @@ version_history:
 ---
 ```
 
-See `library/process/campaign-frontmatter.md` for schema details.
+See `library/process/project-frontmatter.md` for schema details.
 
 ## Lock Criteria
 

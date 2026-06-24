@@ -8,8 +8,8 @@ The artifact is a mini plan file. It should let the operator approve immediate e
 
 ## Inputs
 
-- Campaign reached Phase 5 per the selected `campaign_flow` in `project.md`.
-- Final active post is shipped, cancelled, or removed from campaign scope.
+- Campaign reached Phase 5 per the selected `flow` in `project.md`.
+- Final active post is delivered, cancelled, or removed from campaign scope.
 - Campaign `feedback-log.md` and `activity.md` exist, even if sparse.
 - Operator has not chosen to skip or defer Builder closeout.
 

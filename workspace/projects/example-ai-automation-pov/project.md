@@ -1,15 +1,17 @@
-﻿---
+---
 # IDENTITY
 name: "AI Automation POV"
 slug: example-ai-automation-pov
-schema_version: 2026-04-23
+schema_version: 2026-06-24
 created_at: 2026-05-11
 supersedes: null
+domain: marketing
+parent: null
 
 # LIFECYCLE
 status: complete
 current_phase: 5-launch-and-learn
-campaign_flow: standard-flow
+flow: marketing-standard-flow
 last_activity: 2026-05-11T19:08:00-07:00
 shipped_at: 2026-05-11
 completed_at: 2026-05-11
@@ -49,7 +51,7 @@ deliverables:
     file: phase-3-planning/design-language/design-language-v1.md
     last_updated: 2026-05-11
   post-1:
-    status: shipped
+    status: delivered
     file: phase-4-production/posts/post-1/post-FINAL.md
     last_updated: 2026-05-11
     job: thought-leadership-pov
@@ -71,7 +73,7 @@ deliverables:
 post_count: 1
 posts_published: 1
 system_retro_completed: 2026-05-11
-campaign_retro_completed: 2026-05-11
+closeout_retro_completed: 2026-05-11
 ---
 
 # AI Automation POV

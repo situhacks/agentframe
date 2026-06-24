@@ -1,5 +1,5 @@
 ---
-status: shipped
+status: delivered
 last_updated: 2026-05-11
 shipped_at: 2026-05-11
 published:

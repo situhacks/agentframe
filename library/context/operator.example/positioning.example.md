@@ -1,6 +1,6 @@
 # Positioning — [Operator name]
 
-> **Placeholder file shipped with the open-source AgentFrame Marketing fork.** Copy `library/context/operator.example/` to `library/context/operator/` (gitignored) and fill in your own content. Sections below mirror the canonical positioning shape; replace bracketed prompts with your own answers.
+> **Placeholder file delivered with the open-source AgentFrame Marketing fork.** Copy `library/context/operator.example/` to `library/context/operator/` (gitignored) and fill in your own content. Sections below mirror the canonical positioning shape; replace bracketed prompts with your own answers.
 
 The outward-facing strategic anchor for any user-voiced or strategic deliverable. Narrative + Content Pillars + Audience + POV Stances + Angles + Current Quarter Goals are the pieces that evolve through system retros and quarterly meta-retros.
 
@@ -51,7 +51,7 @@ These are the contrarian or pointed positions that earn engagement. Refresh quar
 
 ## Current Quarter Goals
 
-Tracks what content is supposed to move the needle on this quarter. Referenced by `library/process/campaign-frontmatter.md` `quarterly_goals_advanced[]`.
+Tracks what content is supposed to move the needle on this quarter. Referenced by `library/process/project-frontmatter.md` `quarterly_goals_advanced[]`.
 
 | Goal | What "moved the needle" looks like |
 |---|---|

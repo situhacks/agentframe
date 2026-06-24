@@ -23,7 +23,7 @@ Optional sections are not headings to copy into every template. Add one only whe
 
 - `Review Path` — reviewer state, approval sequence, or downstream unlock rules that differ from ordinary operator approval. Do not restate the selected campaign flow's normal review cadence.
 - `Humanizer Pass` — only for public-facing deliverables where prose is likely to ship (typically Phase 4 production artifacts). Name the trigger surface and scope. If the deliverable is internal, omit the section.
-- `Publish / Export Mechanics` — non-trivial format generation, shipped-state reconciliation, or publish records owned by this deliverable. Keep simple export formats in `Review Path`; keep reusable mechanics in process or export files.
+- `Publish / Export Mechanics` — non-trivial format generation, delivered-state reconciliation, or publish records owned by this deliverable. Keep simple export formats in `Review Path`; keep reusable mechanics in process or export files.
 - `Exceptions / Branches` — state-changing branches that alter the normal path, such as stop, route upstream, waive, cancel, or defer. Not examples. If the item is always true, make it a hard constraint. If it is source loading, put it in `Inputs`. If it is required before lock, put it in `Lock Criteria`.
 
 Do not create placeholder sections to say a thing does not apply.

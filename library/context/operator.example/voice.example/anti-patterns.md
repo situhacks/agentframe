@@ -14,7 +14,7 @@ Generic-AI patterns (rule-of-three, inflated significance, copula avoidance, AI 
 - **[Punctuation habit]** — [e.g. em-dash: no cap; the tell is replacement of most commas/periods.]
 
 ## Substitution preferences (reach for this, not that)
-[Frame the word list positively — what you reach for instead. e.g. plain mechanical verbs (built, shipped, wired) where marketing copy says leverage/unlock/empower.]
+[Frame the word list positively — what you reach for instead. e.g. plain mechanical verbs (built, delivered, wired) where marketing copy says leverage/unlock/empower.]
 
 ## The real test
 A draft can respect every line above and still sound like generic AI. If any competent assistant could've written it, it hasn't reached the voice — go back to `pairs/` + `voice-profile.md` and regenerate (markers first, per the README), don't add another rule.

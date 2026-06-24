@@ -120,7 +120,7 @@ A compact walkthrough using the example campaign at `workspace/projects/example-
 <tr>
 <td width="50%" valign="top">
 <img src=".github/readme-assets/walkthrough-05-published.png" alt="05 · Published via Composio" /><br/>
-<sub><b>05 · Published via Composio</b> — Composio's connector to LinkedIn (or X, Instagram, TikTok) sends or schedules the post. Live URL and shipped frontmatter land back in the post folder.</sub>
+<sub><b>05 · Published via Composio</b> — Composio's connector to LinkedIn (or X, Instagram, TikTok) sends or schedules the post. Live URL and delivered frontmatter land back in the post folder.</sub>
 </td>
 <td width="50%" valign="top">
 <img src=".github/readme-assets/walkthrough-06-retro.png" alt="06 · Retro" /><br/>
@@ -171,9 +171,9 @@ Add or edit any flow under `library/process/flows/` to match how you actually sh
 
 | Flow | Purpose |
 | --- | --- |
-| `solo-flow` (default) | Lightweight campaign workflow for one operator moving fast |
+| `marketing-solo-flow` (default) | Lightweight campaign workflow for one operator moving fast |
 | `open-flow` | Build-as-you-go — the agent proposes a plan scaled to the objective (phases, deliverables, runway); the operator narrows and sets the tempo |
-| `standard-flow` | Heavier flow with broader deliverable coverage and more review gates — closer to an enterprise-style campaign |
+| `marketing-standard-flow` | Heavier flow with broader deliverable coverage and more review gates — closer to an enterprise-style campaign |
 
 
 
@@ -216,7 +216,7 @@ Process files load on demand — only when the workflow they describe is in play
 | `preview-server` | When and how to use the local preview hub |
 | `lock-event` | Lock trigger and judgment gates — mechanics run through the `af` CLI |
 | `humanizer-integration` | Humanization pass integration |
-| `campaign-frontmatter` | Frontmatter schema and state handling |
+| `project-frontmatter` | Frontmatter schema and state handling |
 | `browser-fallback` | Browser automation fallback strategy |
 | `composio-notes` | Connector usage notes and caveats |
 | `voice-setup` | Build your voice system from your own writing (samples → interview → compiled profile + example pairs) |

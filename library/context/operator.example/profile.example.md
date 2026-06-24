@@ -1,6 +1,6 @@
 # Profile — [Operator name]
 
-> **Placeholder file shipped with the open-source AgentFrame Marketing fork.** Copy `library/context/operator.example/profile.example.md` to `library/context/operator/profile.md` (gitignored) and fill in your own content.
+> **Placeholder file delivered with the open-source AgentFrame Marketing fork.** Copy `library/context/operator.example/profile.example.md` to `library/context/operator/profile.md` (gitignored) and fill in your own content.
 
 The operator-self file. Who you are in real life — biography, role, location, active projects, primary identity sources. Mostly static; updates are rare and almost always sync events from your primary source of truth, not authored content.
 

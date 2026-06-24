@@ -62,7 +62,7 @@ exports:
 
 ## Review Path
 
-- **Path**: external **when a stakeholder exists** (typically the same reviewer as the Business Brief). Otherwise the brief drafts to lock with no review — that is the normal path for solo work, not exception-handling. See the selected `campaign_flow` in `project.md` for flow-specific review defaults.
+- **Path**: external **when a stakeholder exists** (typically the same reviewer as the Business Brief). Otherwise the brief drafts to lock with no review — that is the normal path for solo work, not exception-handling. See the selected `flow` in `project.md` for flow-specific review defaults.
 - **Reviewer**: typically manager or business stakeholder (when external is the path); same reviewer as Business Brief by default.
 - **Coordination**: when external review IS the path, agent offers to draft the email + calendar invite on export. Often combined with Business Brief review in one meeting.
 

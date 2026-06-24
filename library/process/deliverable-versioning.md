@@ -13,7 +13,7 @@ One exception per post folder: `post-FINAL.md` is unversioned. It is the post's 
 Versioned files carry the deliverable type's existing frontmatter shape plus:
 
 ```yaml
-status: drafting | locked | shipped | deferred
+status: drafting | locked | delivered | deferred
 last_updated: <ISO 8601 date>
 ```
 

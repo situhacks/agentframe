@@ -6,14 +6,14 @@ Freeform flow for campaigns that don't fit a fixed phase ladder. Open flow is co
 
 - Every artifact is a versioned deliverable instance per [`deliverable-versioning.md`](../deliverable-versioning.md): `{name}-v{N}.md`, head named by the tracker. Revisions bump the head (`python system/af.py version`) — they never spawn a new differently-named v1. Only scratchpads are throwaway, and they carry `scratchpad` in the filename.
 - State transitions are button-owned: `python system/af.py` (`lock`, `publish`, `version`, `new-campaign`, `doctor`); lock triggers per [`lock-event.md`](../lock-event.md). Never hand-edit a terminal `status:`.
-- Tracker schema: [`campaign-frontmatter.md`](../campaign-frontmatter.md). Apply file edits and `project.md` updates in the same turn.
+- Tracker schema: [`project-frontmatter.md`](../project-frontmatter.md). Apply file edits and `project.md` updates in the same turn.
 
 ## Kickoff — propose the plan
 
 The objective is usually known by the time an open-flow campaign starts. The agent's first move is a proposed plan, scaled to the job — then the operator narrows:
 
 1. **Phases** — as many as the objective needs: none for a single ad-hoc deliverable, several named phases for a longer project. Phase ids are campaign-defined (kebab-case, ordered).
-2. **Deliverables** — composed from the library first. Reuse existing templates; borrow structured-flow fragments by name ("solo-flow phases 1 and 3, skip the briefs"); name any ad-hoc artifact that matches no template. Selection menus apply ([`image-production.md`](../image-production.md), [`deck-production.md`](../deck-production.md)).
+2. **Deliverables** — composed from the library first. Reuse existing templates; borrow structured-flow fragments by name ("marketing-solo-flow phases 1 and 3, skip the briefs"); name any ad-hoc artifact that matches no template. Selection menus apply ([`image-production.md`](../image-production.md), [`deck-production.md`](../deck-production.md)).
 3. **Manifest moment** — when posts are in the plan, record `post_manifest` in `project.md` now.
 
 The agreed plan lands in the `project.md` body; tracker rows are added at `not_started`.
@@ -42,7 +42,7 @@ Short and current:
 
 - New open campaigns scaffold via `python system/af.py new-campaign <slug> --flow open-flow`; set `current_phase` to the plan's first phase id once the plan locks (`active` when single-phase).
 - `current_phase` values come from the plan section; the schema-drift check validates against that list.
-- Deliverables move `not_started -> drafting -> locked -> shipped` in the same turn as their files change; posts follow the post-FINAL assembly per [`post-final/template.md`](../../deliverables/post-final/template.md).
+- Deliverables move `not_started -> drafting -> locked -> delivered` in the same turn as their files change; posts follow the post-FINAL assembly per [`post-final/template.md`](../../deliverables/post-final/template.md).
 
 ## Closeout
 

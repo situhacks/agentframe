@@ -1,6 +1,6 @@
 ﻿# Design Language — Default Deliverable Rendering
 
-> **Placeholder file shipped with the open-source AgentFrame Marketing fork.** Copy `library/context/operator.example/` to `library/context/operator/` (gitignored) and fill in your own visual identity. Sections below mirror the canonical design-language shape; replace bracketed prompts with your own values.
+> **Placeholder file delivered with the open-source AgentFrame Marketing fork.** Copy `library/context/operator.example/` to `library/context/operator/` (gitignored) and fill in your own visual identity. Sections below mirror the canonical design-language shape; replace bracketed prompts with your own values.
 
 The system default for HOW any rendered deliverable looks (.docx, .pptx, future formats). Sibling to `voice.md` (verbal identity) and `positioning.md` (strategic identity).
 

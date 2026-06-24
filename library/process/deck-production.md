@@ -1,6 +1,6 @@
 # Deck Production
 
-Available deck/presentation paths for AgentFrame Marketing. Load this when a deliverable needs a `.pptx` (or deck-shaped) output and a path hasn't been picked. Usage rules, lock criteria, and export records are owned by the deliverable that calls this menu — brief templates own their own export mechanics; campaign posts record deck media like any other shipped asset.
+Available deck/presentation paths for AgentFrame Marketing. Load this when a deliverable needs a `.pptx` (or deck-shaped) output and a path hasn't been picked. Usage rules, lock criteria, and export records are owned by the deliverable that calls this menu — brief templates own their own export mechanics; campaign posts record deck media like any other delivered asset.
 
 | Path | Use when | Skill | Outputs |
 |---|---|---|---|

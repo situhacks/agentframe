@@ -394,7 +394,7 @@ const { execSync } = require('child_process');
 const { Document, Packer, Paragraph, ImageRun, SectionType, /* ... */ } = require('docx');
 
 // Step 1: Read template
-const tmpl = fs.readFileSync(`workspace/campaigns/${slug}/exports/templates/cover.html`, 'utf8');
+const tmpl = fs.readFileSync(`workspace/projects/${slug}/exports/templates/cover.html`, 'utf8');
 
 // Step 2: Read campaign DL light_variant (parse YAML or grep the block)
 //   If light_variant.cover_font_family + cover_font_url + cover_motif_svg all present

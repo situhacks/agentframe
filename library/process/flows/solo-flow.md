@@ -24,7 +24,7 @@ Run a lightweight campaign for one accountable operator with no assumed stakehol
 | `1-research-and-architecture` | Research Artifact | `phase-1-research/research-artifact-v{N}.md` | [`research-artifact`](../../deliverables/research-artifact/template.md) |
 | `1-research-and-architecture` | Campaign Architecture | `phase-1-research/campaign-architecture/draft-v{N}.md` | [`campaign-architecture`](../../deliverables/campaign-architecture/template.md) |
 | `2-design-language` | Design Language | `phase-2-design/design-language-v{N}.md` | [`design-language`](../../deliverables/design-language/template.md) |
-| `3-produce-ship` | Post ingredients (per `campaign.md` `post_manifest`) | `phase-3-production/posts/post-{n}/{ingredient}-v{N}.md` | [`slide-copy`](../../deliverables/slide-copy/template.md), [`body-copy`](../../deliverables/body-copy/template.md), [`video-spec`](../../deliverables/video-spec/template.md), generation paths per [`image-production`](../image-production.md) |
+| `3-produce-ship` | Post ingredients (per `project.md` `post_manifest`) | `phase-3-production/posts/post-{n}/{ingredient}-v{N}.md` | [`slide-copy`](../../deliverables/slide-copy/template.md), [`body-copy`](../../deliverables/body-copy/template.md), [`video-spec`](../../deliverables/video-spec/template.md), generation paths per [`image-production`](../image-production.md) |
 | `3-produce-ship` | Post assembly — accumulates each ingredient as it locks | `phase-3-production/posts/post-{n}/post-FINAL.md` | [`post-final`](../../deliverables/post-final/template.md) |
 | `4-learn-close` | Harvest Retro (system + deliverable + voice lenses) | `phase-4-close/system-retro-v{N}.md` | [`voice-harvest`](../../../system/skills/voice-harvest/SKILL.md) + [`deliverable-harvest`](../../../system/skills/deliverable-harvest/SKILL.md), summary per [`system-retro`](../../deliverables/system-retro/template.md) |
 | `4-learn-close` | Performance + Campaign Retro (capture first, then score) | `phase-4-close/performance-data.csv` + `phase-4-close/campaign-retro-v{N}.md` | [`composio-notes`](../composio-notes.md) + [`campaign-retro`](../../deliverables/campaign-retro/template.md) |
@@ -55,7 +55,7 @@ Use [`campaign-frontmatter.md`](../campaign-frontmatter.md) for schema and allow
 - New solo campaigns scaffold via `python system/af.py new-campaign <slug> --flow solo-flow`.
 - Phase 1 idea selected: add/update `idea-bank` at `status: locked` (or bypass if direct input).
 - Phase 1 concurrent work: add/update `research-artifact` and `campaign-architecture` at `status: drafting`.
-- Phase 1 locked: `campaign-architecture` locks, record `post_manifest` in `campaign.md`, add planned `post-{n}` rows as `not_started`, update `post_count`, then set `current_phase: 2-design-language`.
+- Phase 1 locked: `campaign-architecture` locks, record `post_manifest` in `project.md`, add planned `post-{n}` rows as `not_started`, update `post_count`, then set `current_phase: 2-design-language`.
 - Phase 2 locked or deferred: add/update `design-language`, then set `current_phase: 3-produce-ship`.
 - Phase 3 production starts: each post row points at its `post-FINAL.md` (created when the first ingredient starts drafting) and moves `not_started -> drafting -> locked -> shipped` in the same turn as its files change; ingredient locks land in `post-FINAL.md` per [`lock-event.md`](../lock-event.md).
 - Phase 3 complete: when every active post is `shipped`, `cancelled`, or removed from scope, set `current_phase: 4-learn-close`.
@@ -80,6 +80,6 @@ A solo campaign is complete when:
 - The Harvest Retro is locked or explicitly deferred;
 - Performance Data exists or the operator chose to close with partial/unknown data;
 - Campaign Retro is locked and has applied the closeout decision;
-- `campaign.md` has `status: complete`, `completed_at`, and `campaign_retro_completed` set.
+- `project.md` has `status: complete`, `completed_at`, and `campaign_retro_completed` set.
 
-Folder movement to `workspace/campaigns/completed/{slug}/` is a side effect of terminal lifecycle state, not its own status.
+Folder movement to `workspace/projects/completed/{slug}/` is a side effect of terminal lifecycle state, not its own status.

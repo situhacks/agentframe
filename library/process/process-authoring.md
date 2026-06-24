@@ -25,7 +25,7 @@ Use this order:
 ## Ownership Rules
 
 - Shared procedures live in `library/process/`.
-- Flow-specific phase sequencing lives in `library/process/campaign-flows/`.
+- Flow-specific phase sequencing lives in `library/process/flows/`.
 - Deliverable-specific output requirements live in `library/deliverables/{type}/template.md`.
 - Cross-cutting invariants live in `AGENTS*.md`.
 

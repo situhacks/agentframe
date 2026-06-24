@@ -96,7 +96,7 @@ Load only what the task needs. If a file is historical, read it only when resear
 | Mode | Owns | Does Not Own |
 |---|---|---|
 | **Builder** | `system/`, `library/` system/process/template structure, `AGENTS.*.md`, specs, schema, hooks, runtime machinery | Drafting deliverables, publishing posts, campaign retros, campaign frontmatter content updates |
-| **CMO** | `workspace/campaigns/`, deliverable drafting/review/lock/publish, campaign state, campaign retros | System architecture, schema, hooks, persona edits, runtime machinery |
+| **CMO** | `workspace/projects/`, deliverable drafting/review/lock/publish, campaign state, campaign retros | System architecture, schema, hooks, persona edits, runtime machinery |
 
 Mode swap is a single atomic command. The audit writer performs the persona-file copy AND writes the audit row in one call; do not run a separate `Copy-Item` step.
 
@@ -111,7 +111,7 @@ After the command returns, re-read the root `AGENTS.md` before any further work 
 
 | Area | Job |
 |---|---|
-| `workspace/campaigns/` | Campaign work and state; CMO-owned except schema migrations |
+| `workspace/projects/` | Campaign work and state; CMO-owned except schema migrations |
 | `workspace/research/` | Shared research corpus |
 | `library/deliverables/` | Deliverable templates; main product surface |
 | `library/process/` | On-demand workflow procedures |

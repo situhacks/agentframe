@@ -83,7 +83,7 @@ All fields required unless marked optional.
 
 | Field | Type | Notes |
 |---|---|---|
-| `template` | string (optional) | Filename (not full path) of a campaign-local template in `workspace/campaigns/{slug}/exports/templates/`. |
+| `template` | string (optional) | Filename (not full path) of a campaign-local template in `workspace/projects/{slug}/exports/templates/`. |
 | `deliverable_type` | string | One of: `business-brief`, `campaign-brief`. Used for output-path resolution. |
 | `campaign` | string | Campaign slug. Determines export destination. |
 | `title` | string | Cover slide title. |
@@ -179,7 +179,7 @@ Final slide. Decision needed, CTA, or next steps.
 2. Agent drafts PPT-MD in chat (paste into a code block first - don't write to disk yet).
 3. User reacts: "drop slide 4," "split slide 6 into two," "callout the Anthropic quote."
 4. Agent revises PPT-MD, re-pastes.
-5. Once user approves, agent writes to `workspace/campaigns/{slug}/phase-2-strategy/{type}/exports/{type}-v{N}.pptx-md` (the source of truth, kept alongside the rendered `.pptx`).
+5. Once user approves, agent writes to `workspace/projects/{slug}/phase-2-strategy/{type}/exports/{type}-v{N}.pptx-md` (the source of truth, kept alongside the rendered `.pptx`).
 6. Agent renders `.pptx` from PPT-MD using `system/skills/pptx/` and optional campaign template input.
 
 ---

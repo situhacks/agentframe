@@ -6,7 +6,7 @@ The post's assembly record. Each post is built from ingredient deliverables (sli
 
 ## Inputs
 
-- The campaign's `post_manifest` in `campaign.md` (which ingredients this post is assembled from)
+- The campaign's `post_manifest` in `project.md` (which ingredients this post is assembled from)
 - The locked head version of each ingredient as it locks
 
 ## Artifact Shape

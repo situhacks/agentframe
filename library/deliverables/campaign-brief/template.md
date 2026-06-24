@@ -62,7 +62,7 @@ exports:
 
 ## Review Path
 
-- **Path**: external **when a stakeholder exists** (typically the same reviewer as the Business Brief). Otherwise the brief drafts to lock with no review — that is the normal path for solo work, not exception-handling. See the selected `campaign_flow` in `campaign.md` for flow-specific review defaults.
+- **Path**: external **when a stakeholder exists** (typically the same reviewer as the Business Brief). Otherwise the brief drafts to lock with no review — that is the normal path for solo work, not exception-handling. See the selected `campaign_flow` in `project.md` for flow-specific review defaults.
 - **Reviewer**: typically manager or business stakeholder (when external is the path); same reviewer as Business Brief by default.
 - **Coordination**: when external review IS the path, agent offers to draft the email + calendar invite on export. Often combined with Business Brief review in one meeting.
 
@@ -71,10 +71,10 @@ exports:
 When this deliverable locks, the agent exports it to Word + PowerPoint per the agent-first export pipeline:
 
 - **Supported formats**: `.docx`, `.pptx`
-- **Template source**: campaign-local templates are optional at `workspace/campaigns/{slug}/exports/templates/campaign-brief.{docx,pptx}`
+- **Template source**: campaign-local templates are optional at `workspace/projects/{slug}/exports/templates/campaign-brief.{docx,pptx}`
 - **PPT discovery first**: ask audience, time budget, presenter style, and decision-vs-handoff; propose slide count + section structure + density tier; get approval before drafting slides.
 - **PPT-MD intermediate** (for `.pptx`): `system/skills/pptx/pptx-md.md` — agent drafts PPT-MD in chat, iterates with user, then renders the final `.pptx`.
-- **Output path**: `workspace/campaigns/{slug}/phase-2-strategy/campaign-brief/exports/campaign-brief-v{N}.{ext}`
+- **Output path**: `workspace/projects/{slug}/phase-2-strategy/campaign-brief/exports/campaign-brief-v{N}.{ext}`
 
 Mechanics: agent loads the relevant skill (`system/skills/{docx,pptx}/SKILL.md`), reads the master template + config, writes inline `python-docx` / `python-pptx` code, saves the file, updates `draft-v{N}.md` frontmatter `exports:` array, and appends `lock_event` + `export_generated` events to the campaign's `activity.md`. No standalone export script exists or is needed.
 

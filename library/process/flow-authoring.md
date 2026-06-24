@@ -1,18 +1,18 @@
 # Campaign Flow Authoring
 
-Use this when adding or materially reshaping a campaign flow under `library/process/campaign-flows/`.
+Use this when adding or materially reshaping a campaign flow under `library/process/flows/`.
 
 ## Purpose
 
 Campaign flows define the lightweight map for a campaign type. They name phase order, expected deliverables, tracker transition points, flow-level gates, and campaign-level completion conditions.
 
-Flow files are high-read surfaces during campaign work: agents read `campaign.md` frontmatter for state, then lazy-load the selected flow when phase rules or next steps are needed. Keep flow files as maps, not runbooks.
+Flow files are high-read surfaces during campaign work: agents read `project.md` frontmatter for state, then lazy-load the selected flow when phase rules or next steps are needed. Keep flow files as maps, not runbooks.
 
 ## Load Chain
 
 1. Active `AGENTS.md` routes the situation.
-2. `workspace/campaigns/{slug}/campaign.md` frontmatter owns campaign state, current phase, selected `campaign_flow`, deliverable tracker, and counters.
-3. `library/process/campaign-flows/{campaign_flow}.md` loads when phase rules, next steps, deliverable sequence, or flow-specific gates are needed.
+2. `workspace/projects/{slug}/project.md` frontmatter owns campaign state, current phase, selected `campaign_flow`, deliverable tracker, and counters.
+3. `library/process/flows/{campaign_flow}.md` loads when phase rules, next steps, deliverable sequence, or flow-specific gates are needed.
 4. Deliverable templates load only when drafting, revising, locking, publishing, or analyzing that deliverable.
 5. Process files load only when their specific procedure is needed.
 
@@ -41,15 +41,15 @@ Do not create placeholder sections to say a thing does not apply.
 
 ## Default Selection
 
-`library/process/campaign-flows/README.md` owns the default flow. `campaign.md` frontmatter owns the selected flow for each campaign instance through `campaign_flow`. Individual flow files describe themselves; they do not declare themselves default.
+`library/process/flows/README.md` owns the default flow. `project.md` frontmatter owns the selected flow for each campaign instance through `campaign_flow`. Individual flow files describe themselves; they do not declare themselves default.
 
 ## Ownership Rules
 
 - Flow files own phase order, deliverable inclusion, tracker transition points, and flow-specific skip/override rules.
 - Do not duplicate deliverable template details. Templates own artifact shape, lock gates, publish/export details, and per-deliverable frontmatter.
 - Do not duplicate shared process primitives. Process files own reusable procedures such as lock events, performance capture, Composio notes, frontmatter schema, humanizer, voice mini-retro, and cancellation routines.
-- Do not duplicate flow registry details. `campaign-flows/README.md` owns available flows, default selection, and high-level selection context.
-- Do not duplicate campaign instance state. `campaign.md` frontmatter owns the selected flow for each campaign instance.
+- Do not duplicate flow registry details. `flows/README.md` owns available flows, default selection, and high-level selection context.
+- Do not duplicate campaign instance state. `project.md` frontmatter owns the selected flow for each campaign instance.
 - Do not put campaign-specific content in a flow file.
 
 ## Duplication Check
@@ -63,6 +63,6 @@ Do not create placeholder sections to say a thing does not apply.
 
 1. Compare against existing flows.
 2. If an existing flow covers 70%+ of the job, extend it or document a branch condition.
-3. Update `campaign-flows/README.md` so future agents can discover the flow.
+3. Update `flows/README.md` so future agents can discover the flow.
 4. Keep a compatibility shim if a loaded path is renamed.
 5. Log the structural change in `system_changes`.

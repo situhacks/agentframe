@@ -8,7 +8,7 @@ The post's generation prompts — versioned and locked like any deliverable, so 
 
 - **Design Language** locked — its treatment block is the shared base every prompt builds on
 - **Slide Copy** locked when the images carry slide text (titles, body) inside them
-- The campaign's generator preference from `campaign.md` `post_manifest`
+- The campaign's generator preference from `project.md` `post_manifest`
 
 ## Artifact Shape
 

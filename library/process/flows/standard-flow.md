@@ -9,7 +9,7 @@ Each deliverable's full template lives in `library/deliverables/{type}/template.
 - State transitions are button-owned: `python system/af.py` (`lock`, `publish`, `version`, `new-campaign`, `doctor`) does the mechanics atomically and prints the judgment checklist. Never hand-edit a terminal `status:`.
 - Versioning conventions and the surgical-vs-replacement judgment are owned by [`deliverable-versioning.md`](../deliverable-versioning.md); lock triggers by [`lock-event.md`](../lock-event.md).
 - Campaign tracker schema and review-state enums are owned by [`library/process/campaign-frontmatter.md`](../campaign-frontmatter.md).
-- In every phase, apply file edits and `campaign.md` tracker updates in the same turn.
+- In every phase, apply file edits and `project.md` tracker updates in the same turn.
 
 ## Phase 1 — Research
 
@@ -26,7 +26,7 @@ Load [`library/process/research-and-signals.md`](../research-and-signals.md) for
 
 Idea-bank shape (keep tight): a candidate list plus the selected pick, nothing more. Per candidate: title, 1-3 sentence thesis, and one provenance line. Name the selected pick in one line. Do not add per-candidate Risk, Research Questions, Workspace Signal Summary, or Next Research Step sections.
 
-Save research output as `phase-1-research/research-artifact-v{N}.md` at `status: drafting`; only operator acceptance locks it. Scaffold the campaign folder with `python system/af.py new-campaign <slug> --flow standard-flow` (schema-true `campaign.md`, `activity.md`, `feedback-log.md`).
+Save research output as `phase-1-research/research-artifact-v{N}.md` at `status: drafting`; only operator acceptance locks it. Scaffold the campaign folder with `python system/af.py new-campaign <slug> --flow standard-flow` (schema-true `project.md`, `activity.md`, `feedback-log.md`).
 
 **Tracker update at end of Phase 1:** `current_phase: 2-strategy`. Add to `deliverables`:
 ```yaml
@@ -63,7 +63,7 @@ campaign-brief:
   last_updated: {date locked}
   review: {not_required | complete | waived}
 ```
-Success criteria from the locked Business Brief stay IN the brief (the brief is the canonical source). `campaign.md` does not duplicate them.
+Success criteria from the locked Business Brief stay IN the brief (the brief is the canonical source). `project.md` does not duplicate them.
 
 ## Phase 3 — Planning
 
@@ -89,7 +89,7 @@ design-language:
   file: phase-3-planning/design-language/design-language-v{N}.md
   last_updated: {date locked}
 ```
-Record `post_manifest` (ingredients + generation preferences from the locked Campaign Architecture) in `campaign.md` in the same turn — schema in [`campaign-frontmatter.md`](../campaign-frontmatter.md). Also add one row per planned post (`post-1`, `post-2`, …) at `status: not_started` with a folder pointer. The Phase 4 work fills the per-post ingredient files in.
+Record `post_manifest` (ingredients + generation preferences from the locked Campaign Architecture) in `project.md` in the same turn — schema in [`campaign-frontmatter.md`](../campaign-frontmatter.md). Also add one row per planned post (`post-1`, `post-2`, …) at `status: not_started` with a folder pointer. The Phase 4 work fills the per-post ingredient files in.
 
 ## Phase 4 — Production and Launch
 
@@ -101,7 +101,7 @@ When a production deliverable has many unresolved directions, multi-session scop
 
 | Step | Deliverable | Produces | Depends on |
 |---|---|---|---|
-| 4.1 | Post ingredients (per post) — each ingredient named by `campaign.md` `post_manifest` (e.g. slide-copy, body-copy, image-prompts, video-spec), each with its own version trail and lock | `phase-4-production/posts/post-{n}/{ingredient}-v{N}.md` | 3.1 locked, 3.2 locked |
+| 4.1 | Post ingredients (per post) — each ingredient named by `project.md` `post_manifest` (e.g. slide-copy, body-copy, image-prompts, video-spec), each with its own version trail and lock | `phase-4-production/posts/post-{n}/{ingredient}-v{N}.md` | 3.1 locked, 3.2 locked |
 | 4.2 | Post assembly — `post-FINAL.md` accumulates each ingredient as it locks, per [`post-final/template.md`](../../deliverables/post-final/template.md) | `phase-4-production/posts/post-{n}/post-FINAL.md` | created when the post's first ingredient starts drafting |
 | 4.3 | Publish coordination + media reconciliation (per post) | publish block in `post-FINAL.md` frontmatter + `activity.md` `post_published` entry | all manifest ingredients locked and operator confirms the live URL |
 
@@ -133,18 +133,18 @@ Two steps, run in order after the active arc ends.
 **Tracker update during Phase 5:**
 - Harvest retro lands: add `system-retro` row to `deliverables` at `status: locked` + set top-level `system_retro_completed: {date}`.
 - Campaign retro lands: add `campaign-retro` row at `status: locked` + set `campaign_retro_completed: {date}` + LIFECYCLE `status: complete` + `completed_at: {date}`.
-- Move folder to `workspace/campaigns/completed/{slug}/` (folder location is a side-effect of `LIFECYCLE.status: complete | cancelled`, not its own status value).
+- Move folder to `workspace/projects/completed/{slug}/` (folder location is a side-effect of `LIFECYCLE.status: complete | cancelled`, not its own status value).
 
 Retro shapes: harvest retro = the two harvest skills + `system-retro` template for the summary; campaign retro = the `campaign-retro` template (performance capture is its input — capture first, then score).
 
-All retros run before the campaign moves to `workspace/campaigns/completed/{slug}/`. Skipping a required retro is logged to the campaign's `activity.md` as a `phase_override`; pattern of skipping surfaces in the quarterly meta-retro via `activity.md` + `system/audit/agentframe.db`.
+All retros run before the campaign moves to `workspace/projects/completed/{slug}/`. Skipping a required retro is logged to the campaign's `activity.md` as a `phase_override`; pattern of skipping surfaces in the quarterly meta-retro via `activity.md` + `system/audit/agentframe.db`.
 
 ## Skipping Ahead (Override Path)
 
 The user can override sequence at any time. When they do:
 
 1. Agent flags the missing prereq specifically and offers the cleaner path.
-2. If user insists on skipping, agent appends a `phase_override` entry to `workspace/campaigns/{slug}/activity.md` using the canonical shape in [`campaign-frontmatter.md`](../campaign-frontmatter.md) "Activity event line shapes."
+2. If user insists on skipping, agent appends a `phase_override` entry to `workspace/projects/{slug}/activity.md` using the canonical shape in [`campaign-frontmatter.md`](../campaign-frontmatter.md) "Activity event line shapes."
 3. Agent proceeds. No moralizing.
 
 Pattern of overrides surfaces at quarterly self-review or when an override repeats: "The operator overrode campaign-architecture in 4 of 5 last campaigns — is that step worth less than we think, or are they leaving money on the table?"

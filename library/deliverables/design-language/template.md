@@ -28,7 +28,7 @@ dark_variant:           # optional — populate when a dark variant is in scope
 Divergence-first. When this deliverable opens, offer the starting points — don't assume one:
 
 1. **Offer the on-ramps:** (a) agent ideates directions from campaign context, (b) operator drops inspo references — when a reference is a live-site URL, run the token extraction on it (`system/skills/extract-design/`, rules in its `AGENTS.md`) and distill; images stay the eyeball path, (c) optional Gemini Deep Research style pass — keep the DR prompt agnostic: visual-trend research any campaign could use, not this campaign's narrative baked in.
-2. **Propose 3–5 named taste directions**, each as a STANDALONE FULL PROMPT — copy-paste ready for any generator. Pick the generation path with the operator per [`image-production.md`](../../process/image-production.md); record the campaign-wide preference in `campaign.md` `post_manifest`.
+2. **Propose 3–5 named taste directions**, each as a STANDALONE FULL PROMPT — copy-paste ready for any generator. Pick the generation path with the operator per [`image-production.md`](../../process/image-production.md); record the campaign-wide preference in `project.md` `post_manifest`.
 3. **Render and narrow.** Render the directions on the chosen path (side-by-side `preview/directions-compare.html` for the HTML path — one file, no per-direction subfiles), then keep offering variations until the operator picks. Never one-shot the lock.
 4. **Lock.** The picked direction becomes `design-language-v{N}.md` with its treatment block, plus `tokens.yaml`/`tokens.css` when slides will render as HTML.
 

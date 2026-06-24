@@ -6,7 +6,7 @@ Planning and production tracker for a campaign video post. It gives the agent en
 
 ## Depends On
 
-- Campaign `campaign.md` frontmatter and current post row.
+- Campaign `project.md` frontmatter and current post row.
 - Campaign Architecture if one exists for the campaign.
 - Design Language if the video needs campaign-specific visual continuity.
 - `library/process/video-production.md`.
@@ -45,7 +45,7 @@ video_method: <hyperframes | video_use | manual_flow_veo_nano | hybrid>
 ```
 
 Follow standard deliverable versioning (reference `library/process/campaign-frontmatter.md` for schema).
-Generated media files, `video/renders/scenes/`, `video/renders/final/`, `edit/preview.mp4`, and `edit/final.mp4` are not versioned via vF/vN. They are media outputs with their own paths and provenance.
+Generated media files, `video/renders/scenes/`, `video/renders/final/`, `edit/preview.mp4`, and `edit/final.mp4` are not versioned via v{N}. They are media outputs with their own paths and provenance.
 
 ## Lock Criteria
 

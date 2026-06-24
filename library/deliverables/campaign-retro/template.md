@@ -10,7 +10,7 @@ It is not a Builder patch queue and it does not run performance capture. System 
 
 - **Read only:**
   - `phase-2-strategy/business-brief/draft-v{N}.md` for the canonical success criteria.
-  - `campaign.md` frontmatter for shipped count, lifecycle state, and deliverable pointers.
+  - `project.md` frontmatter for shipped count, lifecycle state, and deliverable pointers.
   - `phase-5-launch-and-learn/performance-data.csv` (captured first, same step).
   - `activity.md` only for ship dates, scope changes, back-fill/override evidence, and completion events.
   - Public comment/reply evidence or operator-provided qualitative notes when needed to score a Business Brief criterion.

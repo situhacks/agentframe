@@ -15,7 +15,7 @@
 | `agentframe.db` | Runtime SQLite database (created on first write; not committed). |
 | `marketingos.db` | Legacy local filename, migrated automatically when the default DB path initializes. |
 
-Retired telemetry modules (`user_interactions`, `daemon_runs`, hooks, reconciler observations, and post timeline reports) are no longer part of the live contract. Campaign progress history belongs in `campaign.md` and `activity.md`.
+Retired telemetry modules (`user_interactions`, `daemon_runs`, hooks, reconciler observations, and post timeline reports) are no longer part of the live contract. Campaign progress history belongs in `project.md` and `activity.md`.
 
 ## Table: `system_changes`
 
@@ -107,5 +107,5 @@ LIMIT 10;
 ## Workflow Guidance
 
 - Write `system_changes` only when the system itself changes: process files, templates, personas, skills, schema, runtime machinery, or Builder-owned docs.
-- Keep campaign-facing markdown (`campaign.md`, `activity.md`, deliverable `*-v{N}.md` / `*-vN.md`) as the human-readable working surface.
+- Keep campaign-facing markdown (`project.md`, `activity.md`, deliverable `*-v{N}.md` / `*-vN.md`) as the human-readable working surface.
 - Do not add DB writes for campaign activity unless the operator explicitly reopens the DB telemetry design.

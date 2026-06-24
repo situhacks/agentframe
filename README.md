@@ -61,7 +61,7 @@ https://github.com/user-attachments/assets/73c6ce7f-cfd8-4457-8cf0-e1a979094e6e
 
 AgentFrame ships with two `AGENTS.md` modes. You swap depending on what you're doing:
 
-- **Swap to CMO when you're running a campaign** — drafting copy, generating images, publishing, doing a retro. CMO is scoped to `workspace/campaigns/` so it can't accidentally edit your templates or processes mid-campaign.
+- **Swap to CMO when you're running a campaign** — drafting copy, generating images, publishing, doing a retro. CMO is scoped to `workspace/projects/` so it can't accidentally edit your templates or processes mid-campaign.
 - **Swap to Builder when you're improving the system itself** — editing a template, adding a process, swapping a skill, applying retro patches. Builder is scoped to `system/` and `library/`.
 
 You don't run shell commands by hand. Just tell the agent `swap to Builder` or `swap to CMO`. It handles the file swap and logs the transition to the audit DB.
@@ -82,7 +82,7 @@ I looked around for alternatives. What I found was prompt wrappers sitting on to
 
 I didn't like what I saw. So I built my ideal system myself.
 
-**AgentFrame Marketing** is a file-native marketing workspace that sits inside the coding agent I already use. Two `AGENTS.md` modes carry the work — **CMO** ships campaigns, **Builder** evolves the system. Campaign state lives in markdown files under `workspace/campaigns/`. Your voice, templates, and processes live in `library/`. Skills and connectors are swappable; when something sharper ships, I replace the skill and the system keeps working. See the [walkthrough below](#a-real-campaign-step-by-step) for what an end-to-end campaign actually looks like.
+**AgentFrame Marketing** is a file-native marketing workspace that sits inside the coding agent I already use. Two `AGENTS.md` modes carry the work — **CMO** ships campaigns, **Builder** evolves the system. Campaign state lives in markdown files under `workspace/projects/`. Your voice, templates, and processes live in `library/`. Skills and connectors are swappable; when something sharper ships, I replace the skill and the system keeps working. See the [walkthrough below](#a-real-campaign-step-by-step) for what an end-to-end campaign actually looks like.
 
 I've been dogfooding AgentFrame for a while and it's gone through multiple major revisions. The repo evolves with my workflow, not on a release schedule. It's free to fork — take what's useful.
 
@@ -94,7 +94,7 @@ It stands on excellent shoulders — Composio, Gemini Deep Research and image ge
 
 ## A real campaign, step by step
 
-A compact walkthrough using the example campaign at `workspace/campaigns/example-ai-automation-pov/`. One operator, six moves, no team handoffs.
+A compact walkthrough using the example campaign at `workspace/projects/example-ai-automation-pov/`. One operator, six moves, no team handoffs.
 
 <table>
 <tr>
@@ -167,7 +167,7 @@ Everything in the library and skills layer is meant to be edited. Set voice and 
 
 ### Campaign flows
 
-Add or edit any flow under `library/process/campaign-flows/` to match how you actually ship.
+Add or edit any flow under `library/process/flows/` to match how you actually ship.
 
 | Flow | Purpose |
 | --- | --- |
@@ -208,7 +208,7 @@ Process files load on demand — only when the workflow they describe is in play
 
 | Process | Purpose |
 | --- | --- |
-| `campaign-flow-authoring` | How to design or evolve campaign flows |
+| `flow-authoring` | How to design or evolve campaign flows |
 | `process-authoring` | How to design or evolve process files |
 | `video-production` | Video workflow from spec to renders |
 | `image-production` | Image generation workflow |
@@ -257,7 +257,7 @@ My current production stack. Swap any of them for a sharper tool without touchin
 
 - Two-mode routing via `AGENTS.cmo.md` and `AGENTS.builder.md`
 - A deterministic state-transition CLI at `system/af.py` — lock, publish, version, new-campaign, doctor. The buttons do the bookkeeping atomically and write the paper trail; the agent keeps the judgment. Models are strong writers and weak clerks, so the clerking is code.
-- YAML frontmatter and campaign artifacts under `workspace/campaigns/`
+- YAML frontmatter and campaign artifacts under `workspace/projects/`
 - `activity.md` per campaign for human-readable history, plus an append-only SQLite audit DB at `system/audit/agentframe.db`
 - Local preview server at `system/server/` for HTML, image, video, PDF, PPTX, and DOCX previews
 - Browser harness at `system/browser/` using browser-use, with documented fallbacks when a workflow needs a hand-driven Chromium session
@@ -359,13 +359,13 @@ Your coding agent provides the LLM. These keys power the non-LLM tools (research
 
 
 ```text
-                                  ┌─── owns ──▶  workspace/campaigns
+                                  ┌─── owns ──▶  workspace/projects
                   ┌──── CMO ─────┤
                   │              └─── reads ─▶  system + library
    Operator ──────┤
                   │              ┌─── owns ──▶  system + library
                   └─── Builder ──┤
-                                 └─── reads ──▶  workspace/campaigns
+                                 └─── reads ──▶  workspace/projects
 
    ── swap AGENTS.md to flip between modes ──
 ```
@@ -380,7 +380,7 @@ Your coding agent provides the LLM. These keys power the non-LLM tools (research
    AGENTS.md
        │
        ▼
-   campaign-flow
+   flow
        │
        ▼
    process file ──────────────┐
@@ -455,7 +455,7 @@ agentframe-marketing/
 ├── library/
 │   ├── deliverables/
 │   ├── process/
-│   │   └── campaign-flows/
+│   │   └── flows/
 │   └── context/operator.example/
 ├── system/
 │   ├── af.py

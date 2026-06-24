@@ -411,7 +411,7 @@ def cmd_new_project(args):
 
     print(f"af new-project: workspace/projects/{slug}/ scaffolded ({args.flow}, phase {FLOWS[args.flow]})")
     print("\nJudgment (stays with the agent):")
-    print(f"  - Load library/process/campaign-flows/{args.flow}.md and run its kickoff")
+    print(f"  - Load library/process/flows/{args.flow}.md and run its kickoff")
     print("    (research offer / plan proposal / manifest moment — flow-owned, not script-owned).")
 
 

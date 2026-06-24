@@ -23,7 +23,7 @@ python system/server/run.py
 Defaults to `http://localhost:8080`. The whole project root is served, so any HTML file resolves naturally:
 
 ```
-http://localhost:8080/workspace/campaigns/marketingos/phase-3-planning/design-language/preview/design-language.html
+http://localhost:8080/workspace/projects/marketingos/phase-3-planning/design-language/preview/design-language.html
 ```
 
 Useful flags:
@@ -40,10 +40,10 @@ Stop with `Ctrl+C`.
 Watch globs come from [`system/server/config.yaml`](config.yaml). Defaults:
 
 ```
-workspace/campaigns/*/phase-3-planning/design-language/**
-workspace/campaigns/*/phase-4-production/posts/**/visuals/**
-workspace/campaigns/*/phase-4-production/posts/**/video/**
-workspace/campaigns/*/phase-4-production/posts/**/edit/**
+workspace/projects/*/phase-3-planning/design-language/**
+workspace/projects/*/phase-4-production/posts/**/visuals/**
+workspace/projects/*/phase-4-production/posts/**/video/**
+workspace/projects/*/phase-4-production/posts/**/edit/**
 ```
 
 Adjust `config.yaml` and restart if you need to widen the scope (e.g. while iterating on a brand new campaign whose folders don't match the glob shape yet).
@@ -53,7 +53,7 @@ Adjust `config.yaml` and restart if you need to widen the scope (e.g. while iter
 Every time `tokens.yaml` changes, regenerate the CSS variables:
 
 ```
-python -m system.server.lib.tokens_to_css workspace/campaigns/marketingos/phase-3-planning/design-language/tokens.yaml
+python -m system.server.lib.tokens_to_css workspace/projects/marketingos/phase-3-planning/design-language/tokens.yaml
 ```
 
 Output goes to `./preview/assets/tokens.css` next to the yaml by default. Override with `--out PATH` if needed. The agent runs this automatically after editing tokens.yaml; the standalone CLI is for ad-hoc fix-ups.
@@ -66,7 +66,7 @@ HTML is the primary visual medium for AgentFrame Marketing — slide HTML + toke
 python -m system.server.lib.image_generate \
     --prompt-file path/to/prompt.txt \
     --negative-prompt "no text, no stock photo lighting" \
-    --out-dir workspace/campaigns/marketingos/phase-4-production/posts/post-2/visuals \
+    --out-dir workspace/projects/marketingos/phase-4-production/posts/post-2/visuals \
     --aspect 4:5 --variants 3
 ```
 
@@ -158,8 +158,8 @@ Zero curation, runs on every page load. The same extension list applies in all t
 
 ```
 # Singles, images, PDFs, and videos (anywhere under phase-*)
-workspace/campaigns/{slug}/phase-*/**/*.{html,png,jpg,jpeg,webp,gif,svg,pdf,mp4,mov,webm}             -> Active
-workspace/campaigns/completed/{slug}/phase-*/**/*.{html,png,jpg,jpeg,webp,gif,svg,pdf,mp4,mov,webm}   -> Completed
+workspace/projects/{slug}/phase-*/**/*.{html,png,jpg,jpeg,webp,gif,svg,pdf,mp4,mov,webm}             -> Active
+workspace/projects/completed/{slug}/phase-*/**/*.{html,png,jpg,jpeg,webp,gif,svg,pdf,mp4,mov,webm}   -> Completed
 system/server/static/demo/**/*.{html,png,jpg,jpeg,webp,gif,svg,pdf,mp4,mov,webm}                       -> Demo
 
 # Groups (post-N convention, applied uniformly to all three)

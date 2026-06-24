@@ -20,7 +20,7 @@ Use this for structural changes to AgentFrame Marketing's operating system. Ordi
 
 Load exactly one reference first:
 
-- Campaign flow added, renamed, retired, or default changed: read `campaign-flow-changes.md`.
+- Campaign flow added, renamed, retired, or default changed: read `flow-changes.md`.
 - Deliverable type added, retired, or materially reshaped: read `deliverable-template-changes.md`.
 - Process file added or materially reshaped: read `process-file-changes.md`.
 
@@ -31,7 +31,7 @@ If the change crosses categories, pick the category that owns the first durable 
 Before editing:
 
 1. **Name the structural object.** Campaign flow, deliverable type, process file, template shape, routing pointer, or persona rule.
-2. **Name the lowest owner.** Flow definitions live in `library/process/campaign-flows/`; deliverable shape lives in `library/deliverables/`; reusable procedures live in `library/process/`; generic change mechanics live in skills; cross-cutting invariants live in `AGENTS*.md`.
+2. **Name the lowest owner.** Flow definitions live in `library/process/flows/`; deliverable shape lives in `library/deliverables/`; reusable procedures live in `library/process/`; generic change mechanics live in skills; cross-cutting invariants live in `AGENTS*.md`.
 3. **Locate before inventing.** Check existing flows/templates/process files before adding another one. If an existing object covers 70%+ of the job, extend or branch it unless the operator explicitly approves a new object.
 4. **Plan compatibility.** Identify aliases, shims, starter scaffolds, flow registries, and docs that must still resolve after the change.
 5. **Verify discoverability.** Prove future agents can find the new shape by search or registry pointer.
@@ -39,7 +39,7 @@ Before editing:
 
 ## Boundaries
 
-- Do not put campaign-flow details in this skill. Flow details live in `library/process/campaign-flows/`.
-- Do not embed long template/process skeletons here. Authoring standards live in `library/deliverables/_meta/template-authoring.md`, `library/process/process-authoring.md`, and `library/process/campaign-flow-authoring.md`.
+- Do not put flow details in this skill. Flow details live in `library/process/flows/`.
+- Do not embed long template/process skeletons here. Authoring standards live in `library/deliverables/_meta/template-authoring.md`, `library/process/process-authoring.md`, and `library/process/flow-authoring.md`.
 - Do not patch `AGENTS*.md` unless the route or cross-cutting invariant is wrong.
 - Do not write campaign deliverables from this skill.

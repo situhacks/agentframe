@@ -30,7 +30,7 @@ The full execution plan, post by post. Lives where the rubber meets the road: ev
   - **CTA** — one line; matches the post's role.
   - **Callbacks** — 1-2 lines naming prior post(s) and how.
   - **Risks** — 1-3 bullets specific to this post.
-- **Post manifest** — which ingredient deliverables this series' posts assemble from (e.g. `slide-copy`, `body-copy`, `image-prompts`, `video-spec`), plus any campaign-wide generation preference. One or two lines; recorded into `campaign.md` `post_manifest` when this deliverable locks (schema in [`campaign-frontmatter.md`](../../process/campaign-frontmatter.md)). Name per-post deviations here when a post needs a different ingredient set.
+- **Post manifest** — which ingredient deliverables this series' posts assemble from (e.g. `slide-copy`, `body-copy`, `image-prompts`, `video-spec`), plus any campaign-wide generation preference. One or two lines; recorded into `project.md` `post_manifest` when this deliverable locks (schema in [`campaign-frontmatter.md`](../../process/campaign-frontmatter.md)). Name per-post deviations here when a post needs a different ingredient set.
 
 ## Hard Constraints
 
@@ -55,6 +55,6 @@ Standard deliverable frontmatter per `library/process/campaign-frontmatter.md`. 
 ## Lock Criteria
 
 - User-approved
-- `post_manifest` recorded into `campaign.md` in the lock turn
+- `post_manifest` recorded into `project.md` in the lock turn
 - Lock event mechanics per `library/process/lock-event.md`
 

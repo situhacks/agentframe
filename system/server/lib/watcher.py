@@ -13,13 +13,13 @@ from typing import Iterable
 import yaml
 
 DEFAULT_GLOBS: tuple[str, ...] = (
-    "workspace/campaigns/*/phase-*/**/*.html",
-    "workspace/campaigns/*/phase-*/**/*.css",
-    "workspace/campaigns/*/phase-3-planning/design-language/**",
-    "workspace/campaigns/*/phase-4-production/posts/**/visuals/**",
-    "workspace/campaigns/*/phase-4-production/posts/**/video/**",
-    "workspace/campaigns/*/phase-4-production/posts/**/edit/**",
-    "workspace/campaigns/*/phase-3-planning/design-language/preview/assets/tokens.css",
+    "workspace/projects/*/phase-*/**/*.html",
+    "workspace/projects/*/phase-*/**/*.css",
+    "workspace/projects/*/phase-3-planning/design-language/**",
+    "workspace/projects/*/phase-4-production/posts/**/visuals/**",
+    "workspace/projects/*/phase-4-production/posts/**/video/**",
+    "workspace/projects/*/phase-4-production/posts/**/edit/**",
+    "workspace/projects/*/phase-3-planning/design-language/preview/assets/tokens.css",
 )
 DEFAULT_EXCLUDE_GLOBS: tuple[str, ...] = ()
 

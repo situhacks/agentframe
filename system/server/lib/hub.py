@@ -402,12 +402,12 @@ def scan_workspace(
         include_intermediates=include_intermediates,
     )
     active = _scan_campaign_group(
-        root / "workspace" / "campaigns",
+        root / "workspace" / "projects",
         root,
         filters=filters,
     )
     completed = _scan_campaign_group(
-        root / "workspace" / "campaigns" / "completed",
+        root / "workspace" / "projects" / "completed",
         root,
         filters=filters,
     )

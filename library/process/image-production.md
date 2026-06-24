@@ -1,6 +1,6 @@
 ﻿# Image Production
 
-Available image-creation paths for AgentFrame Marketing. Load this when a campaign or post needs to pick an image path — typically when the design language locks (the campaign-wide preference lands in `campaign.md` `post_manifest`) or when a post's imagery work starts. Usage rules, lock criteria, and provenance details are owned by the deliverable that calls this menu.
+Available image-creation paths for AgentFrame Marketing. Load this when a campaign or post needs to pick an image path — typically when the design language locks (the campaign-wide preference lands in `project.md` `post_manifest`) or when a post's imagery work starts. Usage rules, lock criteria, and provenance details are owned by the deliverable that calls this menu.
 
 | Path | Use when | Owner deliverable | Outputs |
 |---|---|---|---|

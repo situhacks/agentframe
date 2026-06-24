@@ -68,5 +68,5 @@ Add fields only when the deliverable itself owns them. Publishing fields belong 
 
 1. Compare against existing deliverable families.
 2. If an existing template covers 70%+ of the job, extend it or add a subtype convention instead of creating a new type.
-3. If the new template belongs in a campaign flow, wire the flow separately through `library/process/campaign-flows/`.
+3. If the new template belongs in a campaign flow, wire the flow separately through `library/process/flows/`.
 4. Log the scaffold or material reshape in `system_changes`.

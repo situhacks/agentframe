@@ -22,7 +22,7 @@
 
 ## Per-post conventions (this archive)
 
-- **Source of truth:** the campaign's final copy markdown (`copy-vF.md` / `copy-FINAL.md` / highest locked `copy-vN.md`), NOT the PDF and NOT LinkedIn (LinkedIn API can't read own post history; Composio not authed). Use `status: shipped`/`locked` in frontmatter to pick the real final among versioned drafts.
+- **Source of truth:** the campaign's final copy markdown (highest locked `copy-v{N}.md`), NOT the PDF and NOT LinkedIn (LinkedIn API can't read own post history; Composio not authed). Use `status: shipped`/`locked` in frontmatter to pick the real final among versioned drafts.
 - **Series → subtitle convention:** `"{Series} · Part {N} — {hook}"`.
   - AgentFrame campaign → **"AgentFrame Build With Me"**
   - Enterprise campaign → **"Enterprise AI Adoption POV"**

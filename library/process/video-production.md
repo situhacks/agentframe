@@ -17,7 +17,7 @@ AgentFrame Marketing owns campaign context: arc, audience, design language, CTA,
 When video work starts, load:
 
 1. This file.
-2. The campaign `campaign.md` frontmatter and the current post row.
+2. The campaign `project.md` frontmatter and the current post row.
 3. The campaign architecture if it exists.
 4. The design language artifacts if visual style is relevant: `design-language-v{N}.md`, `tokens.yaml`, and existing previews.
 5. `library/deliverables/video-spec/template.md`.
@@ -111,7 +111,7 @@ Within `video/`, keep `renders/` for rendered video outputs (`.mp4`/`.webm`) onl
     - HyperFrames: `npx hyperframes doctor`, `npx hyperframes lint`, `npx hyperframes validate`, `npx hyperframes inspect`, preview as needed, then draft/final render.
     - video-use: transcript cache present, EDL exists, preview render exists, self-eval notes recorded.
 11. **Lock.** `video-spec-v{N}.md` can lock only when the user has reviewed the draft render or explicitly waived review, final render paths are recorded, and open production issues are either fixed or named.
-12. **Publish reconciliation.** When the post ships, the post's `post-FINAL.md` is the shipped state owner. Add final video files to `shipped_media[]`, update publish fields, mirror `campaign.md`, and append the campaign activity entry.
+12. **Publish reconciliation.** When the post ships, the post's `post-FINAL.md` is the shipped state owner. Add final video files to `shipped_media[]`, update publish fields, mirror `project.md`, and append the campaign activity entry.
 
 ---
 

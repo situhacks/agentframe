@@ -93,10 +93,10 @@ Identify and surface all upstream files that need updating to wire the new deliv
 | Wire-up | When needed | If needed, route through |
 |---|---|---|
 | Add letter (i+) to System Retro smart-routing options | If patches to this new deliverable will need their own routing letter (rare — most new deliverable types use existing route (c) "deliverables/{type}/template.md hard constraints") | `system/skills/system-improvement/SKILL.md` (since it's a template patch to `system-retro/template.md`) |
-| Add deliverable to a campaign flow | If this deliverable belongs in one or more named flows | `system/skills/agentframe-structure/SKILL.md` (campaign-flow change, then `system-improvement` for the file patch if needed) |
+| Add deliverable to a campaign flow | If this deliverable belongs in one or more named flows | `system/skills/agentframe-structure/SKILL.md` (flow change, then `system-improvement` for the file patch if needed) |
 | Add `current_phase` enum value to `library/process/campaign-frontmatter.md` | Only if this deliverable triggers a brand-new campaign phase (very rare; almost always slots into existing phases) | `system/skills/system-improvement/SKILL.md` |
 | Confirm `status` enum on the new deliverable matches the canonical vocabulary in `library/process/campaign-frontmatter.md` | Always (no-op when scaffold uses the default `drafting | locked | deferred` from Step 3) — surface only if the operator wants a different enum (e.g. adding `shipped` for a deliverable that publishes externally, or proposing a brand-new value) | `system/skills/system-improvement/SKILL.md` (any new value is a `library/process/campaign-frontmatter.md` schema change and must pass the prior-patch shape-failure check when prior history exists) |
-| Add campaign-local export template convention at `workspace/campaigns/{slug}/exports/templates/{new-type}.{docx,pptx}` | If this deliverable exports to Word/PPT | Surface to user; they create optional templates (this skill does not author binary export templates) |
+| Add campaign-local export template convention at `workspace/projects/{slug}/exports/templates/{new-type}.{docx,pptx}` | If this deliverable exports to Word/PPT | Surface to user; they create optional templates (this skill does not author binary export templates) |
 
 For each wire-up: ask user "do this now, or defer?" Defer is fine — the deliverable can exist without being wired into a campaign flow. Many deliverables are situational and shouldn't be in the default flow.
 
@@ -118,7 +118,7 @@ Write a one-paragraph **validation expectation**:
 
 **No subagent dispatch.** The Step 6 `system_changes` row carries `validation_pending: true`; the System Retro after the first real use flips it with a paired `validation_resolved` row.
 
-**Optional human-in-the-loop dry-run (rare)**: if the operator wants extra confidence before committing the scaffold to a campaign-flow wire-up, the operator may manually draft a sample deliverable from the template themselves and judge whether it constrained their drafting. Operator-driven, opt-in, not a default gate.
+**Optional human-in-the-loop dry-run (rare)**: if the operator wants extra confidence before committing the scaffold to a flow wire-up, the operator may manually draft a sample deliverable from the template themselves and judge whether it constrained their drafting. Operator-driven, opt-in, not a default gate.
 
 ### Step 6 — Log step
 
@@ -144,14 +144,14 @@ If the new deliverable was wired into a campaign flow or `campaign-frontmatter.m
 ## What this skill does NOT do
 
 - **Does not author the new template's content.** The skill provides the canonical shape (sections in order, conventions, format). The user fills in Purpose, POV specifics, Section descriptions, Hard constraints, Tone notes, Edge cases — that is the domain knowledge that earns the deliverable's place.
-- **Does not author binary export templates.** If the deliverable exports to Word or PPT, the user owns any optional campaign template files at `workspace/campaigns/{slug}/exports/templates/{new-type}.{docx,pptx}`. This skill notes the wire-up; the user owns the visual design.
+- **Does not author binary export templates.** If the deliverable exports to Word or PPT, the user owns any optional campaign template files at `workspace/projects/{slug}/exports/templates/{new-type}.{docx,pptx}`. This skill notes the wire-up; the user owns the visual design.
 - **Does not own routing taxonomy.** Whether the new deliverable needs a new smart-routing letter in the System Retro template is a System Retro template patch — routes through `system/skills/system-improvement/SKILL.md`.
 - **Does not own the deliverable's lifecycle in a campaign.** When the deliverable is drafted, who reviews it, when it locks — that lives in the template the user fills in (Lock criteria section). This skill installs the slot; the user fills the slot.
 - **Does not decommission deliverable types.** Removing a deliverable type is bespoke under Builder; no skill earns its place yet. When the first removal-with-friction surfaces, `system/skills/deliverable-decommission/SKILL.md` lands alongside this one.
 
 ## Edge cases
 
-- **The new deliverable is actually a phase, not a deliverable** (e.g. user says "let's add a discovery phase deliverable"): surface the category confusion. Phases are in named campaign flows under `library/process/campaign-flows/`; deliverables produced within phases are here. If the user wants a new phase, that is a Builder decision routed through `system/skills/agentframe-structure/SKILL.md`.
+- **The new deliverable is actually a phase, not a deliverable** (e.g. user says "let's add a discovery phase deliverable"): surface the category confusion. Phases are in named campaign flows under `library/process/flows/`; deliverables produced within phases are here. If the user wants a new phase, that is a Builder decision routed through `system/skills/agentframe-structure/SKILL.md`.
 - **The new deliverable is a one-off for a single campaign**: refuse to scaffold. Templates earn their place from repeat use. *"This sounds like a one-off artifact for `[campaign-slug]`. Templates earn their place from 2+ uses. Draft this inline in the campaign for now; if it shows up again in a future campaign, scaffold then."*
 - **User wants to scaffold from a template that doesn't exist yet**: ask which existing type is closest. Use that as the reference baseline. The skill cannot bootstrap a deliverable type from nothing — there must always be a reference shape.
 - **Forker is scaffolding a deliverable for a marketing process that has zero overlap with this fork's existing types** (e.g. forker is in B2B SaaS, fork ships consumer-content templates): the locate-before-inventing check will return ~0% overlap on every comparison, which is the correct signal. Proceed; the new template anchors a new family within this fork's `library/deliverables/`. Their next deliverable type compares against the new entry too.

@@ -20,16 +20,16 @@ You are the operator's CMO: a strategic partner with opinions. Campaign files ar
 
 | Surface | Owns | Use When |
 |---|---|---|
-| `workspace/campaigns/{slug}/campaign.md` frontmatter | Campaign identity, lifecycle, selected `campaign_flow`, deliverable tracker, counters | Any campaign state, dependency, or next-step decision |
-| `workspace/campaigns/{slug}/campaign.md` body | Campaign thesis, thin directory, open campaign-level notes | Onboarding into a campaign or explaining the campaign |
-| Head deliverable file named by `campaign.md` `deliverables.{slug}.file` | Current canonical deliverable content and frontmatter (the highest `v{N}` in the folder) | Drafting, reviewing, locking, publishing, or performance capture |
+| `workspace/projects/{slug}/project.md` frontmatter | Campaign identity, lifecycle, selected `campaign_flow`, deliverable tracker, counters | Any campaign state, dependency, or next-step decision |
+| `workspace/projects/{slug}/project.md` body | Campaign thesis, thin directory, open campaign-level notes | Onboarding into a campaign or explaining the campaign |
+| Head deliverable file named by `project.md` `deliverables.{slug}.file` | Current canonical deliverable content and frontmatter (the highest `v{N}` in the folder) | Drafting, reviewing, locking, publishing, or performance capture |
 | Lower-numbered `*-v{N}.md` files | Immutable prior versions in the same folder | Comparing evolution or restoring |
-| `workspace/campaigns/{slug}/activity.md` | Material campaign events | Publish, lock, override, retro, structural decision |
-| `workspace/campaigns/{slug}/feedback-log.md` | Feedback on agent behaviour or deliverable shape, campaign-scoped | APPEND one line in the same turn the operator gives such feedback mid-campaign (system-wide friction goes to the builder backlog instead); read by the Phase-5 retros |
+| `workspace/projects/{slug}/activity.md` | Material campaign events | Publish, lock, override, retro, structural decision |
+| `workspace/projects/{slug}/feedback-log.md` | Feedback on agent behaviour or deliverable shape, campaign-scoped | APPEND one line in the same turn the operator gives such feedback mid-campaign (system-wide friction goes to the builder backlog instead); read by the Phase-5 retros |
 | [`system/audit/agentframe.db`](system/audit/README.md) | Append-only system-change audit | System/process/template/persona patches only |
 | [`system/builder-backlog.md`](system/builder-backlog.md) | Builder-mode tasks surfaced during CMO work (unresolved queue) | Capture system friction without mode-swapping mid-campaign; resolved items move to [`system/builder-backlog-completed.md`](system/builder-backlog-completed.md) |
 
-Keep each file to its job. Do not move deliverable content into `campaign.md`. Do not put defer reasons in `campaign.md`; deferred deliverables own their own reason in frontmatter.
+Keep each file to its job. Do not move deliverable content into `project.md`. Do not put defer reasons in `project.md`; deferred deliverables own their own reason in frontmatter.
 
 ---
 
@@ -38,9 +38,9 @@ Keep each file to its job. Do not move deliverable content into `campaign.md`. D
 | Situation | Load First | Also Load If Needed | Do Not Load |
 |---|---|---|---|
 | State or continuity request | Campaign frontmatter only | Specific campaign body only if the operator asks for depth | Full deliverables, completed campaigns |
-| New campaign (no campaign folder yet) OR loading an existing campaign | [research procedure](library/process/research-and-signals.md), [campaign flow registry](library/process/campaign-flows/README.md), selected flow from `campaign.md` `campaign_flow`, [positioning](library/context/operator/positioning.md), [voice](library/context/operator/voice/README.md) | Topic research archives or operator profile only when needed | Completed campaigns unless referenced, brainstorming skill or ad-hoc web-research subagents |
+| New campaign (no campaign folder yet) OR loading an existing campaign | [research procedure](library/process/research-and-signals.md), [campaign flow registry](library/process/flows/README.md), selected flow from `project.md` `campaign_flow`, [positioning](library/context/operator/positioning.md), [voice](library/context/operator/voice/README.md) | Topic research archives or operator profile only when needed | Completed campaigns unless referenced, brainstorming skill or ad-hoc web-research subagents |
 | Deliverable drafting or iteration | Relevant `library/deliverables/{type}/template.md`, [`library/process/deliverable-versioning.md`](library/process/deliverable-versioning.md), campaign tracker, upstream dependency files named by the template | [voice](library/context/operator/voice/README.md) for voiced output; [positioning](library/context/operator/positioning.md) for strategic/user-voiced work | Unrelated deliverables |
-| Post production (slide copy, body copy, image prompts, video) | The ingredient template named by `campaign.md` `post_manifest` (`library/deliverables/{ingredient}/template.md`), campaign architecture, [voice](library/context/operator/voice/README.md) for voiced ingredients, [positioning](library/context/operator/positioning.md) | [post-final template](library/deliverables/post-final/template.md) when an ingredient locks or the post assembles | Historical snapshots unless comparing versions |
+| Post production (slide copy, body copy, image prompts, video) | The ingredient template named by `project.md` `post_manifest` (`library/deliverables/{ingredient}/template.md`), campaign architecture, [voice](library/context/operator/voice/README.md) for voiced ingredients, [positioning](library/context/operator/positioning.md) | [post-final template](library/deliverables/post-final/template.md) when an ingredient locks or the post assembles | Historical snapshots unless comparing versions |
 | Carousel or visual post | Relevant visual deliverable template, [voice](library/context/operator/voice/README.md), campaign architecture | [preview server process](library/process/preview-server.md) for preview offering and hub hygiene | Full campaign history |
 | Publish coordination | [post-final template](library/deliverables/post-final/template.md), the post's `post-FINAL.md` named by the campaign tracker, `activity.md` | [voice mini-retro](library/process/voice-mini-retro.md) if shipped copy materially differs | Separate `published.md` files |
 | Performance capture | campaign frontmatter `campaign_flow`, selected flow's performance-capture step, each post's `post-FINAL.md` frontmatter | Live Composio/Rube tool search for the shipped platform; campaign retro files only if closing the campaign | Post body unless needed for context |
@@ -51,7 +51,7 @@ Keep each file to its job. Do not move deliverable content into `campaign.md`. D
 
 The left column is intent, not a phrase list. Infer the situation from the operator's goal and the current campaign state.
 
-**Previewable artifacts.** When a turn writes a hub-supported file (HTML, image, PDF, or video) under `workspace/campaigns/*/phase-*/`, load `library/process/preview-server.md` and offer preview options once per turn.
+**Previewable artifacts.** When a turn writes a hub-supported file (HTML, image, PDF, or video) under `workspace/projects/*/phase-*/`, load `library/process/preview-server.md` and offer preview options once per turn.
 
 ---
 
@@ -62,7 +62,7 @@ The left column is intent, not a phrase list. Infer the situation from the opera
 When the operator asks for campaign state, stale work, next steps, or workspace continuity:
 
 1. Read campaign frontmatter, not full bodies.
-2. If phase rules are needed, lazy-load `library/process/campaign-flows/{campaign_flow}.md`.
+2. If phase rules are needed, lazy-load `library/process/flows/{campaign_flow}.md`.
 3. Run the schema-drift check from [campaign frontmatter process](library/process/campaign-frontmatter.md) before using frontmatter values.
 4. Answer with campaign status, last-activity age, next useful action, and any drift.
 
@@ -116,7 +116,7 @@ Surface these; do not silently fix them:
 |---|---|
 | Schema drift | Any campaign frontmatter load |
 | Missing canonical deliverable after phase advancement | Opening downstream work or loading campaign state |
-| Deliverable content living in `campaign.md` | Campaign state/load reveals role overload |
+| Deliverable content living in `project.md` | Campaign state/load reveals role overload |
 | Stale campaign | Campaign is opened or state is requested |
 | Locked brief without exports | Campaign/brief state reveals the gap |
 | Repeated skipped retros | Campaign close-out or state review |

@@ -8,7 +8,7 @@ The artifact is a mini plan file. It should let the operator approve immediate e
 
 ## Inputs
 
-- Campaign reached Phase 5 per the selected `campaign_flow` in `campaign.md`.
+- Campaign reached Phase 5 per the selected `campaign_flow` in `project.md`.
 - Final active post is shipped, cancelled, or removed from campaign scope.
 - Campaign `feedback-log.md` and `activity.md` exist, even if sparse.
 - Operator has not chosen to skip or defer Builder closeout.
@@ -22,7 +22,7 @@ Read only the smallest set needed to classify Builder-owned system behavior:
 - Current system/process/persona files only when a recommended change needs target-file proof before execution.
 - Do not load voice profile; this is an analytical/operational doc.
 
-The v1 to vF deliverable diff analysis arrives via `system/skills/deliverable-harvest/SKILL.md` (the deliverable lens of the harvest pass that feeds this retro); do not re-derive it manually here.
+The v1 to head deliverable diff analysis arrives via `system/skills/deliverable-harvest/SKILL.md` (the deliverable lens of the harvest pass that feeds this retro); do not re-derive it manually here.
 
 ## Output Shape
 

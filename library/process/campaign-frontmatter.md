@@ -1,12 +1,12 @@
 # Campaign Frontmatter Schema (canonical)
 
-The frontmatter on `workspace/campaigns/{slug}/campaign.md` is the canonical state of a campaign. The agent reads frontmatter only (no full-body load) when answering state questions like "what's going on?" / "where am I?" — so it has to be cheap, consistent, and queryable.
+The frontmatter on `workspace/projects/{slug}/project.md` is the canonical state of a campaign. The agent reads frontmatter only (no full-body load) when answering state questions like "what's going on?" / "where am I?" — so it has to be cheap, consistent, and queryable.
 
 **Schema version: 2026-04-23** (v2).
 
 ## Top-level shape
 
-A v2 `campaign.md` frontmatter has four blocks. Each block has one job:
+A v2 `project.md` frontmatter has four blocks. Each block has one job:
 
 ```yaml
 ---
@@ -37,8 +37,8 @@ Pointers (success criteria source, etc.) live inside the relevant blocks rather 
 | Field | Type | Allowed values | Default | Notes |
 |---|---|---|---|---|
 | `status` | enum | `active`, `complete`, `cancelled` | `active` | Lifecycle state. The marketing PROCESS dictates campaign completion (post-campaign retros are the last process steps); the folder location is a side-effect of the status transition, not its own status value. `active` covers any in-progress phase. `complete` set by Campaign Retro lock when the campaign finished naturally. `cancelled` set when the operator (or external reviewer) decides to kill the campaign mid-flight. Both terminal. |
-| `current_phase` | enum | flow-defined phase ids; for `open-flow`, the campaign-defined ids declared in the `campaign.md` plan section | first phase in selected flow | Where the campaign is right now. Updated when the agent finishes a phase's last deliverable or the user explicitly transitions. End-of-phase transition rules live in the selected `campaign_flow` file. |
-| `campaign_flow` | enum | flow ids in [`campaign-flows/README.md`](campaign-flows/README.md) | `solo-flow` | Canonical flow selector for this campaign instance. Valid values: `solo-flow`, `standard-flow`, `open-flow`. (See `library/process/campaign-flows/` for definitions). |
+| `current_phase` | enum | flow-defined phase ids; for `open-flow`, the campaign-defined ids declared in the `project.md` plan section | first phase in selected flow | Where the campaign is right now. Updated when the agent finishes a phase's last deliverable or the user explicitly transitions. End-of-phase transition rules live in the selected `campaign_flow` file. |
+| `campaign_flow` | enum | flow ids in [`flows/README.md`](flows/README.md) | `solo-flow` | Canonical flow selector for this campaign instance. Valid values: `solo-flow`, `standard-flow`, `open-flow`. (See `library/process/flows/` for definitions). |
 | `last_activity` | ISO 8601 datetime | e.g. `2026-04-23T03:00:00+00:00` | scaffold time | Touched whenever any deliverable in this campaign is edited / locked / shipped. Used to compute stale-campaign nudges (>7d). |
 | `shipped_at` | ISO 8601 date or `null` | — | `null` | When the first post in the campaign published. (Sourced from the post's `post-FINAL.md` frontmatter `published.posted_at` — see [`post-final/template.md`](../deliverables/post-final/template.md) "Publish / Export Mechanics".) |
 | `completed_at` | ISO 8601 date or `null` | — | `null` | When the campaign retro ran (the formal close — `LIFECYCLE.status` transitions `active → complete` in the same turn). |
@@ -52,8 +52,8 @@ When the operator or reviewer kills the campaign:
 
 1. Ask for a one-line cancellation reason.
 2. Set `LIFECYCLE.status: cancelled`, `cancelled_at: {today}`, and `cancelled_reason: "{one-line}"`.
-3. Append a `cancellation` event in `workspace/campaigns/{slug}/activity.md`.
-4. Offer to move the folder to `workspace/campaigns/completed/{slug}/`.
+3. Append a `cancellation` event in `workspace/projects/{slug}/activity.md`.
+4. Offer to move the folder to `workspace/projects/completed/{slug}/`.
 5. Cancelled campaigns still run system retro; campaign retro is skipped (no shipped performance to score).
 
 ### MANIFEST (set when campaign-architecture locks)
@@ -89,10 +89,10 @@ deliverables:
 | Value | Meaning | When to use |
 |---|---|---|
 | `not_started` | The deliverable has not yet been opened. The `file` may point at a folder rather than a file. **This value lives only in the campaign-tracker mirror** — per-deliverable file frontmatter never carries `not_started` (the file doesn't exist yet to carry frontmatter). | Default for new deliverables that the selected campaign flow says are expected at this phase. |
-| `drafting` | Active work in progress. The `vF.md` file exists with content. **`drafting` includes the in-flight-with-reviewer case** — the orthogonal `review` field carries the external-coordination state; the deliverable itself is still drafting until reviewer feedback is applied (or waived) and the operator locks. | Any state between `not_started` and `locked` / `shipped`. |
+| `drafting` | Active work in progress. The `-v{N}.md` file exists with content. **`drafting` includes the in-flight-with-reviewer case** — the orthogonal `review` field carries the external-coordination state; the deliverable itself is still drafting until reviewer feedback is applied (or waived) and the operator locks. | Any state between `not_started` and `locked` / `shipped`. |
 | `locked` | The deliverable is locked — no more substantive edits without an explicit "unlock" event. Downstream work depends on this state. Reached either directly from `drafting` (no reviewer) or via `drafting + review: complete` (reviewer feedback applied). | After lock-event skill fires for the deliverable. |
 | `shipped` | Used for post rows once the post has actually been published. The shipped-state record lives in the post's `post-FINAL.md` frontmatter (`published.{platform,url,posted_at}` + `shipped_media[]`); performance metrics live in `phase-5-launch-and-learn/performance-data.csv`. There is no separate `published.md` file. | After publish coordination updates the post's `post-FINAL.md` frontmatter. |
-| `deferred` | The deliverable was intentionally skipped or postponed. The reason lives in the deliverable's own `vF.md` frontmatter (NOT here — this row just notes the state). | When the selected campaign flow expected the deliverable but operator + agent agreed to defer or skip with back-fill obligation. |
+| `deferred` | The deliverable was intentionally skipped or postponed. The reason lives in the deliverable's own `-v{N}.md` frontmatter (NOT here — this row just notes the state). | When the selected campaign flow expected the deliverable but operator + agent agreed to defer or skip with back-fill obligation. |
 
 **Per-deliverable `review` enum** (only for deliverables whose template declares `Review path: external`):
 
@@ -127,7 +127,7 @@ name: "Agent Architecture POV"
 slug: agent-architecture-pov
 schema_version: 2026-04-23
 created_at: 2026-04-19
-supersedes: "workspace/campaigns/marketingos/ (deleted 2026-04-19)"
+supersedes: "workspace/projects/marketingos/ (deleted 2026-04-19)"
 
 # LIFECYCLE
 status: active
@@ -199,7 +199,7 @@ Judgment that stays with the agent: peek locked rows for `back_filled: true` and
 
 ## Activity event line shapes
 
-`workspace/campaigns/{slug}/activity.md` is the canonical material-event log. Each entry is a single line.
+`workspace/projects/{slug}/activity.md` is the canonical material-event log. Each entry is a single line.
 
 **Timestamp:** prefix each line with `YYYY-MM-DD HH:MM` (local 24-hour time). 
 

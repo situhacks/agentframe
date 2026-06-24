@@ -64,7 +64,7 @@ Ask with `AskUserQuestion`: *"How deep should I mine — diffs only (cheap), + t
 
 ### Step 2 — Read the sources
 
-- **Version trail (Tier 1):** list the chain (`{name}-v1 … {name}-vF`). Walk **consecutive** diffs, not just v1→vF — the v(n)→v(n+1) transitions are where individual moves live, and the **operator-edit handoffs** (manual rewrites) + the **final smoothing passes** are the highest-signal. Read the prose-changed diffs; skip pure frontmatter/structure/table-reorder diffs.
+- **Version trail (Tier 1):** list the chain (`{name}-v1 … {name}-v{N}`). Walk **consecutive** diffs, not just v1→v{N} — the v(n)→v(n+1) transitions are where individual moves live, and the **operator-edit handoffs** (manual rewrites) + the **final smoothing passes** are the highest-signal. Read the prose-changed diffs; skip pure frontmatter/structure/table-reorder diffs.
 - **Transcript (Tier 2):** read the session JSONL for the stretch where this work evolved — the operator's dictated direction, the "too fancy / fix it" feedback, the reject→accept exchanges. This captures corrections that never hit a version file (in-chat iteration).
 - **Fresh artifact:** if the input is a net-new piece (an article, a sent email, a post the person wrote), read it as a positive exemplar — extract BRANDON-side lines directly; the BASE is the generic version you reconstruct.
 - Always read the current `pairs/*.md` (all register files) so you know what's already covered and don't duplicate. Read `pairs/README.md` for the format.

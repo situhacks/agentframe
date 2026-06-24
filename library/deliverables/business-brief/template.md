@@ -62,7 +62,7 @@ State transitions: `drafting` → `locked` (or `drafting` → `deferred`). When 
 
 ## Review Path
 
-- **Path**: external **when a stakeholder exists** (manager, team lead, leadership review the brief). Otherwise the brief drafts to lock with no review. See the selected `campaign_flow` in `campaign.md` for flow-specific review defaults.
+- **Path**: external **when a stakeholder exists** (manager, team lead, leadership review the brief). Otherwise the brief drafts to lock with no review. See the selected `campaign_flow` in `project.md` for flow-specific review defaults.
 - **Reviewer**: typically manager or business stakeholder (when external is the path).
 - **Export format**: Word (`.docx`) + PowerPoint (`.pptx`).
 - **Tracker signal**: See [`library/process/campaign-frontmatter.md`](../../process/campaign-frontmatter.md) for the `deliverables.business-brief.review` enum.
@@ -73,8 +73,8 @@ State transitions: `drafting` → `locked` (or `drafting` → `deferred`). When 
 When this deliverable locks, export to Word + PowerPoint:
 
 - **Supported formats**: `.docx`, `.pptx`
-- **Template source**: campaign-local templates are optional at `workspace/campaigns/{slug}/exports/templates/business-brief.{docx,pptx}`
-- **Output path**: `workspace/campaigns/{slug}/phase-2-strategy/business-brief/exports/business-brief-v{N}.{ext}`
+- **Template source**: campaign-local templates are optional at `workspace/projects/{slug}/exports/templates/business-brief.{docx,pptx}`
+- **Output path**: `workspace/projects/{slug}/phase-2-strategy/business-brief/exports/business-brief-v{N}.{ext}`
 
 For `.pptx`, run discovery before slide drafting:
 
@@ -86,5 +86,5 @@ For both formats, load `system/skills/{docx,pptx}/SKILL.md`, render via inline c
 
 ## Exceptions / Branches
 
-- **Deferred-deliverable shape:** if the brief is intentionally skipped, `draft-v{N}.md` is a stub containing only frontmatter (`status: deferred`, `reason: "..."`, `back_fill_at: null`, `back_fill_owner: ...`). The reason lives here, not in `campaign.md`.
+- **Deferred-deliverable shape:** if the brief is intentionally skipped, `draft-v{N}.md` is a stub containing only frontmatter (`status: deferred`, `reason: "..."`, `back_fill_at: null`, `back_fill_owner: ...`). The reason lives here, not in `project.md`.
 - **External review returns "kill it"**: follow the cancellation rule in [`library/process/campaign-frontmatter.md`](../../process/campaign-frontmatter.md).

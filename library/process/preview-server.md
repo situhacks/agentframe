@@ -1,6 +1,6 @@
 # Preview Server Process
 
-Lazy-load this file when a turn writes a hub-supported artifact under `workspace/campaigns/*/phase-*/`.
+Lazy-load this file when a turn writes a hub-supported artifact under `workspace/projects/*/phase-*/`.
 
 ## When To Load
 

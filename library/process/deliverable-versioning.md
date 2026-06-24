@@ -1,6 +1,6 @@
 # Deliverable Versioning
 
-Owns the iteration shape for every deliverable instance under `workspace/campaigns/{slug}/` — from first draft through lock. Lazy-loaded when the agent is drafting or iterating any deliverable instance.
+Owns the iteration shape for every deliverable instance under `workspace/projects/{slug}/` — from first draft through lock. Lazy-loaded when the agent is drafting or iterating any deliverable instance.
 
 ## Naming
 

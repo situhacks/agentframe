@@ -36,4 +36,4 @@ At first-draft and lock gates, surface a one-line note that humanizer ran and wh
 
 ## Logging
 
-Append one `humanizer_pass` event to `workspace/campaigns/{slug}/activity.md` per pass with `deliverable_type`, `artifact`, `gate`, `scope`, and `regions_changed`.
+Append one `humanizer_pass` event to `workspace/projects/{slug}/activity.md` per pass with `deliverable_type`, `artifact`, `gate`, `scope`, and `regions_changed`.

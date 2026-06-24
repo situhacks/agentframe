@@ -38,7 +38,7 @@ Load when you are about to patch any of these target file classes:
 | Voice system | `library/context/operator/voice/` (target the specific file: `anti-patterns.md` for rules, `voice-profile.md` for the prior, `pairs/` for examples) | CMO |
 | Profile (operator-self) | `library/context/operator/profile.md` | CMO (rare; usually Second Brain sync, not pattern-scan) |
 | Positioning (outward-stance) | `library/context/operator/positioning.md` | CMO |
-| Process file | `library/process/campaign-frontmatter.md`, `library/process/campaign-flows/{flow}.md`, other `library/process/*.md` | Builder |
+| Process file | `library/process/campaign-frontmatter.md`, `library/process/flows/{flow}.md`, other `library/process/*.md` | Builder |
 | Always-loaded persona | `AGENTS.cmo.md`, `AGENTS.builder.md` | Builder |
 
 If you are about to edit anything else (a campaign deliverable, a daemon script, infra), this skill is not the right reference — it is scoped to system-level rule content.
@@ -116,7 +116,7 @@ Draft the patch as before/after, with internal branching by target class:
 - **Voice patch**: specify Writing Style Examples vs mechanical rules vs banned-words section.
 - **Positioning patch (outward-stance)**: specify Narrative / Content Pillars / Audience / POV Stances / Angles / Current Quarter Goals. If Narrative or Audience (campaign-spanning structural anchors), surface that the patch reshapes every upcoming user-voiced or strategic deliverable and ask for extra confirmation.
 - **Profile patch (operator-self)**: rare-cadence — Identity / Primary source of truth / Active Projects. Profile patches usually fire from Second Brain sync events or operator-stated identity changes, NOT from campaign pattern-scan. If a pattern-scan surfaces a profile.md candidate, surface explicitly: *"Profile is the slowest-cadence operator file. This patch is firing from pattern-scan rather than a sync event — confirm this is an actual identity change vs an outward-stance refinement (which would route to positioning.md instead)."*
-- **Process file patch**: flag scope — campaign-flow sequencing, shared process procedure, override-handling, schema/frontmatter behavior, or deliverable-existence check. If the patch changes the selected/default flow model, start with `agentframe-structure`.
+- **Process file patch**: flag scope — flow sequencing, shared process procedure, override-handling, schema/frontmatter behavior, or deliverable-existence check. If the patch changes the selected/default flow model, start with `agentframe-structure`.
 - **Always-loaded persona patch (`AGENTS.cmo.md` / `AGENTS.builder.md`)**: flag explicitly that this is paid for in tokens on every turn forever (Architectural Truth #2 / Lazy Loading is the law). Justify why this rule must fire on every turn vs lazy-loading.
 
 Surface the proposal to the user with this exact shape:

@@ -66,7 +66,7 @@ def main() -> int:
 
     if args.campaign and not args.no_open:
         url = (
-            f"http://{host}:{port}/workspace/campaigns/{args.campaign}"
+            f"http://{host}:{port}/workspace/projects/{args.campaign}"
             "/phase-3-planning/design-language/preview/design-language.html"
         )
         try:

@@ -2,23 +2,23 @@
 
 ## Purpose
 
-The System Behavior Retro is the Builder-owned Phase 5 closeout for system behavior, not campaign performance and not deliverable template evolution. It answers one question: what system changes were earned during the campaign and still need a Builder decision?
+The System Behavior Retro is the Builder-owned Phase 5 closeout for system behavior, not project performance and not deliverable template evolution. It answers one question: what system changes were earned during the project and still need a Builder decision?
 
 The artifact is a mini plan file. It should let the operator approve immediate execution, move approved work to Builder backlog, or mark items no-patch.
 
 ## Inputs
 
-- Campaign reached Phase 5 per the selected `flow` in `project.md`.
-- Final active post is delivered, cancelled, or removed from campaign scope.
-- Campaign `feedback-log.md` and `activity.md` exist, even if sparse.
+- Project reached Phase 5 per the selected `flow` in `project.md`.
+- Final active deliverable is delivered, cancelled, or removed from project scope.
+- Project `feedback-log.md` and `activity.md` exist, even if sparse.
 - Operator has not chosen to skip or defer Builder closeout.
 
 Read only the smallest set needed to classify Builder-owned system behavior:
 
-- `system/builder-backlog.md` active unresolved entries; pull in any entries surfaced by this campaign or still blocking this campaign's workflow.
-- Campaign `feedback-log.md`, limited to agent behavior, routing, mode, state, connector, audit, or process failures.
-- Campaign `activity.md`, limited to overrides, deferrals, mode swaps, state repairs, and closeout events.
-- `system/audit/agentframe.db` pending validations from recent `system_changes` rows when they affect this campaign's observed behavior.
+- `system/builder-backlog.md` active unresolved entries; pull in any entries surfaced by this project or still blocking this project's workflow.
+- Project `feedback-log.md`, limited to agent behavior, routing, mode, state, connector, audit, or process failures.
+- Project `activity.md`, limited to overrides, deferrals, mode swaps, state repairs, and closeout events.
+- `system/audit/agentframe.db` pending validations from recent `system_changes` rows when they affect this project's observed behavior.
 - Current system/process/persona files only when a recommended change needs target-file proof before execution.
 - Do not load voice profile; this is an analytical/operational doc.
 
@@ -41,8 +41,8 @@ Use this item shape:
 
 - Start with the patch/backlog action, not a recap.
 - `Current state` must be one of: `needs decision`, `applied`, `backlogged`, or `no patch`.
-- Include existing unresolved `BB-*` items when they are relevant to this campaign.
-- Include newly discovered Builder work when it is earned by campaign evidence and has not already been patched.
+- Include existing unresolved `BB-*` items when they are relevant to this project.
+- Include newly discovered Builder work when it is earned by project evidence and has not already been patched.
 - If the user approves an item and it is practical to patch now, execute it immediately in Builder mode.
 - If the user approves an item but defers execution, attach it to an existing `BB-*` item or append a new active Builder backlog entry before leaving the retro.
 
@@ -50,7 +50,7 @@ Use this item shape:
 
 Use the same item shape. Set `Current state` to `applied` and include validation status there.
 
-- Include system/process/persona/schema/template patches already applied during the campaign when they close a Builder-owned issue.
+- Include system/process/persona/schema/template patches already applied during the project when they close a Builder-owned issue.
 - Include completed backlog-equivalent work even if it did not start as a formal `BB-*` item.
 - Keep validation facts here only when they establish whether the applied patch still needs future evidence.
 
@@ -58,7 +58,7 @@ Use the same item shape. Set `Current state` to `applied` and include validation
 
 Use the same item shape. Set `Current state` to `no patch`.
 
-- Use for campaign-specific friction, rejected recommendations, low-confidence signals, or issues already covered by a stronger existing rule.
+- Use for project-specific friction, rejected recommendations, low-confidence signals, or issues already covered by a stronger existing rule.
 - Do not create backlog entries from this section.
 
 ### Approval Prompt
@@ -69,7 +69,7 @@ End the artifact with this exact prompt:
 
 ## Hard Constraints
 
-- No campaign history recap unless it directly justifies one of the three buckets.
+- No project history recap unless it directly justifies one of the three buckets.
 - No separate sections for process observations, template coherence, or backlog count. If those facts matter, classify them inside one of the three buckets.
 - Builder backlog is an input/source and a disposition target, not its own report section.
 - No inline arrow chains. Every item uses the four-bullet shape.
@@ -90,13 +90,10 @@ Target file: `phase-5-launch-and-learn/system-retro-v{N}.md`
 ---
 status: <drafting | locked>
 last_updated: <ISO-8601 timestamp>
-current_version: <integer>
-version_history:
-  - {v: <int>, date: <YYYY-MM-DD>, note: "<one-line reason>"}
 ---
 ```
 
-Follow standard versioning conventions for snapshots. See `library/process/lock-event.md` for lock mechanics and campaign tracker updates.
+Follow standard versioning conventions for snapshots. See `library/process/lock-event.md` for lock mechanics and project tracker updates.
 
 ## Lock Criteria
 
@@ -106,4 +103,4 @@ Follow standard versioning conventions for snapshots. See `library/process/lock-
 - Approved immediate patches have been applied and logged.
 - Approved deferred patches have an existing or newly appended active Builder backlog entry.
 - `system-retro-v{N}.md` is saved to `phase-5-launch-and-learn/system-retro-v{N}.md` with frontmatter `status: locked`.
-- Campaign tracker updated per `library/process/lock-event.md`.
+- Project tracker updated per `library/process/lock-event.md`.

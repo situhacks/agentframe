@@ -56,13 +56,10 @@ Default deliverable frontmatter:
 ---
 status: <drafting | locked | deferred>
 last_updated: <ISO-8601 timestamp>
-current_version: <integer>
-version_history:
-  - {v: <int>, date: <YYYY-MM-DD>, note: "<one-line reason>"}
 ---
 ```
 
-Add fields only when the deliverable itself owns them. Publishing fields belong on production deliverables. Export fields belong on exportable stakeholder deliverables.
+The filename carries the version number (no `current_version` / `version_history` fields) — see [`deliverable-versioning.md`](../../process/deliverable-versioning.md), the canonical rule. Add fields only when the deliverable itself owns them. Publishing fields belong on production deliverables. Export fields belong on exportable stakeholder deliverables.
 
 ## Checks Before Adding A New Template
 

@@ -6,7 +6,7 @@ Owns the iteration shape for every deliverable instance under `workspace/project
 
 Versioned files use `{name}-v{N}.md`: `slide-copy-v1.md`, `body-copy-v2.md`, `draft-v1.md`. The highest `N` in the folder is the head version. The campaign tracker's `deliverables.{slug}.file` pointer names the head directly so a state-load reads the head without scanning the folder.
 
-One exception per post folder: `post-FINAL.md` is unversioned. It is the post's assembly record — locked ingredient content accumulates there per [`post-final/template.md`](../deliverables/post-final/template.md) — and the ingredient files around it carry the version trails. Post rows in the tracker point at it rather than at an ingredient head.
+One exception per post folder: `post-FINAL.md` is unversioned. It is the post's assembly record — locked ingredient content accumulates there per the active pack's assembly-record deliverable — and the ingredient files around it carry the version trails. Post rows in the tracker point at it rather than at an ingredient head.
 
 ## Frontmatter
 
@@ -62,7 +62,7 @@ Run `af version`, then write the new content into the new head. The prior versio
 
 ## Lock and ship
 
-When the operator approves the current head, follow [`lock-event.md`](lock-event.md) — `python system/af.py lock` owns the mechanics, including landing post-ingredient content in `post-FINAL.md`. Publish state lives on `post-FINAL.md` via `af publish`, per [`post-final/template.md`](../deliverables/post-final/template.md).
+When the operator approves the current head, follow [`lock-event.md`](lock-event.md) — `python system/af.py lock` owns the mechanics, including landing post-ingredient content in `post-FINAL.md`. Publish state lives on `post-FINAL.md` via `af publish`, per the active pack's assembly-record deliverable.
 
 ## Edge cases
 

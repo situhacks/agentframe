@@ -102,21 +102,21 @@ When a production deliverable has many unresolved directions, multi-session scop
 | Step | Deliverable | Produces | Depends on |
 |---|---|---|---|
 | 4.1 | Post ingredients (per post) — each ingredient named by `project.md` `post_manifest` (e.g. slide-copy, body-copy, image-prompts, video-spec), each with its own version trail and lock | `phase-4-production/posts/post-{n}/{ingredient}-v{N}.md` | 3.1 locked, 3.2 locked |
-| 4.2 | Post assembly — `post-FINAL.md` accumulates each ingredient as it locks, per [`post-final/template.md`](../../deliverables/post-final/template.md) | `phase-4-production/posts/post-{n}/post-FINAL.md` | created when the post's first ingredient starts drafting |
+| 4.2 | Post assembly — `post-FINAL.md` accumulates each ingredient as it locks, per [`post-final/template.md`](../../domains/marketing/deliverables/post-final/template.md) | `phase-4-production/posts/post-{n}/post-FINAL.md` | created when the post's first ingredient starts drafting |
 | 4.3 | Publish coordination + media reconciliation (per post) | publish block in `post-FINAL.md` frontmatter + `activity.md` `post_published` entry | all manifest ingredients locked and operator confirms the live URL |
 
 Ingredient order within a post: slide copy locks before body copy drafts (the body diverges from the deck, so the deck has to exist first); image prompts consume the design language's treatment block and the locked slide text.
 
 External review (only when the post goes to a leadership stakeholder before publish — same default rule as Phase 2): agent offers to coordinate. Per-post.
 
-The cross-ingredient coherence check (body doesn't retell the slides, cover aligns with the hook, CTA placement) runs at `post-FINAL.md` lock per [`post-final/template.md`](../../deliverables/post-final/template.md); video posts also run the cross-check in [`video-spec/template.md`](../../deliverables/video-spec/template.md).
+The cross-ingredient coherence check (body doesn't retell the slides, cover aligns with the hook, CTA placement) runs at `post-FINAL.md` lock per [`post-final/template.md`](../../domains/marketing/deliverables/post-final/template.md); video posts also run the cross-check in [`video-spec/template.md`](../../deliverables/video-spec/template.md).
 
 When all ingredients are locked and publish media exists or has been selected, follow the publish-prep procedure in [`composio-notes.md`](../composio-notes.md).
 
 **Tracker update during Phase 4** (per post, in the same turn as the file edit):
 - Post starts drafting: `deliverables.post-{n}.status: drafting` + `file: phase-4-production/posts/post-{n}/post-FINAL.md` + `last_updated`, creating the `post-FINAL.md` stub in the same turn.
 - An ingredient locks: its content lands in `post-FINAL.md` per [`lock-event.md`](../lock-event.md). The post row stays `drafting` until every manifest ingredient is in, then flips `locked`.
-- Post publishes (Phase 4.3): `af publish` owns the delivered state — publish block in `post-FINAL.md`, tracker, `posts_published`, lifecycle `shipped_at` — per [`post-final/template.md`](../../deliverables/post-final/template.md) "Publish / Export Mechanics".
+- Post publishes (Phase 4.3): `af publish` owns the delivered state — publish block in `post-FINAL.md`, tracker, `posts_published`, lifecycle `shipped_at` — per [`post-final/template.md`](../../domains/marketing/deliverables/post-final/template.md) "Publish / Export Mechanics".
 - Arc changes mid-campaign (post added, post dropped, post renumbered): update `post_count` AND the affected `post-{n}` rows in the same turn. Optional: add `framing_note` if the post's job in the arc shifted.
 
 **Tracker update at end of Phase 4:** `current_phase: 5-launch-and-learn`. Set when every active post is `delivered`, `cancelled`, or explicitly removed from active campaign scope. Do not advance the whole campaign to Phase 5 on first ship; multi-post campaigns can publish early posts while later posts remain in production.

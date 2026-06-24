@@ -1,6 +1,6 @@
 # Research And Signals
 
-Shared kickoff procedure for any campaign flow's research phase. Owns workspace-context definition, the live Composio/Rube MCP scan, and the research-method offer. Loaded from each flow's Phase 1 (`marketing-solo-flow.md` Phase `1-setup-research`, `marketing-standard-flow.md` Phase 1 - Research). Deliverable shape and lock criteria belong to the calling flow and to [`library/deliverables/research-artifact/template.md`](../deliverables/research-artifact/template.md).
+Shared kickoff procedure for any campaign flow's research phase. Owns workspace-context definition, the live Composio/Rube MCP scan, and the research-method offer. Loaded from each flow's Phase 1 (`marketing-solo-flow.md` Phase `1-setup-research`, `marketing-standard-flow.md` Phase 1 - Research). Deliverable shape and lock criteria belong to the calling flow and to [`library/deliverables/research-artifact/template.md`](../domains/marketing/deliverables/research-artifact/template.md).
 
 ## Workspace-Context Definition
 
@@ -28,7 +28,7 @@ The selected method is recorded in `research-artifact-v{N}.md` frontmatter as `r
 
 ## Prompt Composition (Gemini DR API and web-handoff)
 
-When composing the Gemini DR prompt for either the API path or the web-handoff path, the agent loads [`library/deliverables/research-artifact/template.md`](../deliverables/research-artifact/template.md) "Output Shape" and injects that section block into the prompt as the required return structure. The deliverable template is the single source of truth for shape; the prompt does not paraphrase, restate, or partially copy the section list. If the template's Output Shape changes, the next prompt automatically reflects the new shape.
+When composing the Gemini DR prompt for either the API path or the web-handoff path, the agent loads [`library/deliverables/research-artifact/template.md`](../domains/marketing/deliverables/research-artifact/template.md) "Output Shape" and injects that section block into the prompt as the required return structure. The deliverable template is the single source of truth for shape; the prompt does not paraphrase, restate, or partially copy the section list. If the template's Output Shape changes, the next prompt automatically reflects the new shape.
 
 Operator research goals and the selected campaign direction go in their own block above the injected return structure. Save the composed prompt at `phase-1-research/source-material/gemini-deep-research-prompt.md` so future runs are traceable.
 

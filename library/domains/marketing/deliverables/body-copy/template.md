@@ -26,10 +26,10 @@ The platform caption that ships with the post — body text, CTA, alt text. It d
 
 ## Draft Frontmatter Convention
 
-`status` + `last_updated` per [`library/process/deliverable-versioning.md`](../../process/deliverable-versioning.md). File: `body-copy-v{N}.md` in the post folder named by the active flow.
+`status` + `last_updated` per [`library/process/deliverable-versioning.md`](../../../../process/deliverable-versioning.md). File: `body-copy-v{N}.md` in the post folder named by the active flow.
 
 ## Lock Criteria
 
 - Operator approves.
-- Humanizer pass per [`library/process/humanizer-integration.md`](../../process/humanizer-integration.md) — this prose goes to the public feed.
-- Lock-event mechanics per [`library/process/lock-event.md`](../../process/lock-event.md); the locked copy lands in the post's `post-FINAL.md` in the lock turn. The publish record lives in `post-FINAL.md`, not here.
+- Humanizer pass per [`library/process/humanizer-integration.md`](../../../../process/humanizer-integration.md) — this prose goes to the public feed.
+- Lock-event mechanics per [`library/process/lock-event.md`](../../../../process/lock-event.md); the locked copy lands in the post's `post-FINAL.md` in the lock turn. The publish record lives in `post-FINAL.md`, not here.

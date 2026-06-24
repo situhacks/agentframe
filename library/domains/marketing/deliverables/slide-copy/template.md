@@ -30,10 +30,10 @@ Options the operator is choosing between stay in the file until narrowed; remove
 
 ## Draft Frontmatter Convention
 
-`status` + `last_updated` per [`library/process/deliverable-versioning.md`](../../process/deliverable-versioning.md). File: `slide-copy-v{N}.md` in the post folder named by the active flow.
+`status` + `last_updated` per [`library/process/deliverable-versioning.md`](../../../../process/deliverable-versioning.md). File: `slide-copy-v{N}.md` in the post folder named by the active flow.
 
 ## Lock Criteria
 
 - Operator approves the full deck read top-to-bottom.
-- Humanizer pass run on slide prose per [`library/process/humanizer-integration.md`](../../process/humanizer-integration.md).
-- Lock-event mechanics per [`library/process/lock-event.md`](../../process/lock-event.md); the locked copy lands in the post's `post-FINAL.md` in the lock turn.
+- Humanizer pass run on slide prose per [`library/process/humanizer-integration.md`](../../../../process/humanizer-integration.md).
+- Lock-event mechanics per [`library/process/lock-event.md`](../../../../process/lock-event.md); the locked copy lands in the post's `post-FINAL.md` in the lock turn.

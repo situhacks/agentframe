@@ -48,7 +48,7 @@ exports:
 ---
 ```
 
-State transitions: `drafting` → `locked` (or `drafting` → `deferred`). When external review is the path, the deliverable stays at `status: drafting` while `review` advances `pending → complete`; the operator locks once `review: complete`. See [`library/process/lock-event.md`](../../process/lock-event.md) for lock-event mechanics.
+State transitions: `drafting` → `locked` (or `drafting` → `deferred`). When external review is the path, the deliverable stays at `status: drafting` while `review` advances `pending → complete`; the operator locks once `review: complete`. See [`library/process/lock-event.md`](../../../../process/lock-event.md) for lock-event mechanics.
 
 ## Lock Criteria
 
@@ -65,7 +65,7 @@ State transitions: `drafting` → `locked` (or `drafting` → `deferred`). When 
 - **Path**: external **when a stakeholder exists** (manager, team lead, leadership review the brief). Otherwise the brief drafts to lock with no review. See the selected `flow` in `project.md` for flow-specific review defaults.
 - **Reviewer**: typically manager or business stakeholder (when external is the path).
 - **Export format**: Word (`.docx`) + PowerPoint (`.pptx`).
-- **Tracker signal**: See [`library/process/project-frontmatter.md`](../../process/project-frontmatter.md) for the `deliverables.business-brief.review` enum.
+- **Tracker signal**: See [`library/process/project-frontmatter.md`](../../../../process/project-frontmatter.md) for the `deliverables.business-brief.review` enum.
 - **Coordination**: when external review IS the path, agent offers to draft the email + calendar invite on export (see `runtime/review-coordination.md`).
 
 ## Publish / Export Mechanics
@@ -87,4 +87,4 @@ For both formats, load `system/skills/{docx,pptx}/SKILL.md`, render via inline c
 ## Exceptions / Branches
 
 - **Deferred-deliverable shape:** if the brief is intentionally skipped, `draft-v{N}.md` is a stub containing only frontmatter (`status: deferred`, `reason: "..."`, `back_fill_at: null`, `back_fill_owner: ...`). The reason lives here, not in `project.md`.
-- **External review returns "kill it"**: follow the cancellation rule in [`library/process/project-frontmatter.md`](../../process/project-frontmatter.md).
+- **External review returns "kill it"**: follow the cancellation rule in [`library/process/project-frontmatter.md`](../../../../process/project-frontmatter.md).

@@ -40,7 +40,7 @@ Pointers (success criteria source, etc.) live inside the relevant blocks rather 
 | `current_phase` | enum | flow-defined phase ids; for `open-flow`, the campaign-defined ids declared in the `project.md` plan section | first phase in selected flow | Where the campaign is right now. Updated when the agent finishes a phase's last deliverable or the user explicitly transitions. End-of-phase transition rules live in the selected `flow` file. |
 | `flow` | enum | flow ids in [`flows/README.md`](flows/README.md) | `open-flow` | Canonical flow selector for this campaign instance. Valid values: `marketing-solo-flow`, `marketing-standard-flow`, `open-flow`. (See `library/process/flows/` for definitions). |
 | `last_activity` | ISO 8601 datetime | e.g. `2026-04-23T03:00:00+00:00` | scaffold time | Touched whenever any deliverable in this campaign is edited / locked / delivered. Used to compute stale-campaign nudges (>7d). |
-| `shipped_at` | ISO 8601 date or `null` | — | `null` | When the first post in the campaign published. (Sourced from the post's `post-FINAL.md` frontmatter `published.posted_at` — see [`post-final/template.md`](../deliverables/post-final/template.md) "Publish / Export Mechanics".) |
+| `shipped_at` | ISO 8601 date or `null` | — | `null` | When the first post in the campaign published. (Sourced from the post's `post-FINAL.md` frontmatter `published.posted_at` — see [`post-final/template.md`](../domains/marketing/deliverables/post-final/template.md) "Publish / Export Mechanics".) |
 | `completed_at` | ISO 8601 date or `null` | — | `null` | When the campaign retro ran (the formal close — `LIFECYCLE.status` transitions `active → complete` in the same turn). |
 | `cancelled_at` | ISO 8601 date or `null` | — | `null` | When `LIFECYCLE.status` was set to `cancelled`. Mutually exclusive with `completed_at`. |
 | `cancelled_reason` | string or `null` | free text, single line | `null` | One-line reason for cancellation. |
@@ -58,7 +58,7 @@ When the operator or reviewer kills the campaign:
 
 ### MANIFEST (set when campaign-architecture locks)
 
-Each post in the campaign is assembled from ingredient deliverables, each with its own version trail and lock, accumulating into the post's `post-FINAL.md` (see [`library/deliverables/post-final/template.md`](../deliverables/post-final/template.md)). The manifest names which ingredients this campaign's posts use, plus campaign-wide generation preferences:
+Each post in the campaign is assembled from ingredient deliverables, each with its own version trail and lock, accumulating into the post's `post-FINAL.md` (see [`library/deliverables/post-final/template.md`](../domains/marketing/deliverables/post-final/template.md)). The manifest names which ingredients this campaign's posts use, plus campaign-wide generation preferences:
 
 ```yaml
 post_manifest:

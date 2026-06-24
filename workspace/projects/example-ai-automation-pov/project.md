@@ -64,9 +64,9 @@ deliverables:
     status: locked
     file: phase-5-launch-and-learn/system-retro-v1.md
     last_updated: 2026-05-11
-  campaign-retro:
+  closeout-retro:
     status: locked
-    file: phase-5-launch-and-learn/campaign-retro-v1.md
+    file: phase-5-launch-and-learn/closeout-retro-v1.md
     last_updated: 2026-05-11
 
 # COUNTERS

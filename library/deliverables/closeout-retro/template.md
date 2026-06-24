@@ -1,8 +1,8 @@
-﻿# Template: Campaign Retro
+﻿# Template: Closeout Retro
 
 ## Purpose
 
-The Campaign Retro is the Phase 5 outcome closeout. It answers: did this campaign hit the Business Brief success criteria, and what should the operator conclude from the evidence?
+The Closeout Retro is the Phase 5 outcome closeout. It answers: did this campaign hit the Business Brief success criteria, and what should the operator conclude from the evidence?
 
 It is not a Builder patch queue and it does not run performance capture. System and template learning belong to the harvest retro (`system-retro-v{N}.md`). Performance capture is this step's first move and this doc's input, not its content.
 
@@ -72,13 +72,13 @@ State one of:
 
 ## Hard Constraints
 
-- **Boundary Rules:** Do not patch system, template, voice, positioning, or process files from Campaign Retro. If market-outcome evidence suggests future Builder work, mention it only as an outcome note. Route actual changes through the harvest retro / `system-improvement` later. Do not restate campaign history. Use only facts needed to score the Business Brief and close the campaign.
+- **Boundary Rules:** Do not patch system, template, voice, positioning, or process files from Closeout Retro. If market-outcome evidence suggests future Builder work, mention it only as an outcome note. Route actual changes through the harvest retro / `system-improvement` later. Do not restate campaign history. Use only facts needed to score the Business Brief and close the campaign.
 - **Criterion Honesty:** Attach compact caveats to the relevant scorecard item when the Business Brief was back-filled after the work was underway, the campaign scope changed after criteria were set, evidence is operator-reported rather than externally observable, or the metric is unavailable through Phase 5.3 capture. External review `not_required` is not a caveat by itself for solo work.
-- **Analytics Collection:** Campaign Retro does not run connector discovery, Composio/Rube tools, exports, or manual analytics collection. See `library/process/composio-notes.md`. Treat missing metrics as `unknown`, not `0`. For operator-only qualitative criteria, ask only for the criterion evidence needed to score the Business Brief item. Do not turn this into an analytics collection step.
+- **Analytics Collection:** Closeout Retro does not run connector discovery, Composio/Rube tools, exports, or manual analytics collection. See `library/process/composio-notes.md`. Treat missing metrics as `unknown`, not `0`. For operator-only qualitative criteria, ask only for the criterion evidence needed to score the Business Brief item. Do not turn this into an analytics collection step.
 
 ## Draft Frontmatter Convention
 
-Canonical file: `phase-5-launch-and-learn/campaign-retro-v{N}.md`. Reference the shared versioning convention for snapshot accumulation.
+Canonical file: `phase-5-launch-and-learn/closeout-retro-v{N}.md`. Reference the shared versioning convention for snapshot accumulation.
 
 ```yaml
 ---
@@ -99,7 +99,7 @@ See `library/process/project-frontmatter.md` for schema details.
 - Unknown evidence is marked `UNKNOWN`, not guessed.
 - Performance data is referenced from `performance-data.csv` or explicitly marked partial/unknown by operator choice.
 - User approved the closeout decision.
-- `campaign-retro-v{N}.md` frontmatter set to `status: locked`.
+- `closeout-retro-v{N}.md` frontmatter set to `status: locked`.
 - Follow `library/process/lock-event.md` and the selected campaign flow for tracker updates, lifecycle completion, and folder moving.
 
 ## Exceptions / Branches

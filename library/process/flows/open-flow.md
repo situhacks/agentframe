@@ -42,7 +42,7 @@ Short and current:
 
 - New open campaigns scaffold via `python system/af.py new-campaign <slug> --flow open-flow`; set `current_phase` to the plan's first phase id once the plan locks (`active` when single-phase).
 - `current_phase` values come from the plan section; the schema-drift check validates against that list.
-- Deliverables move `not_started -> drafting -> locked -> delivered` in the same turn as their files change; posts follow the post-FINAL assembly per [`post-final/template.md`](../../deliverables/post-final/template.md).
+- Deliverables move `not_started -> drafting -> locked -> delivered` in the same turn as their files change; the active pack owns any domain-specific assembly step.
 
 ## Closeout
 

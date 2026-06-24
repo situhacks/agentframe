@@ -4,7 +4,7 @@ version: 0.1.0
 description: |
   Patch a system file (deliverable template, voice.md, profile.md, positioning.md,
   or library/process/*.md) when friction is observed. Use during System Retro,
-  Campaign Retro, or any turn where CMO/Builder is about to apply a patch to
+  Campaign Retro, or any turn where Operator/Builder is about to apply a patch to
   agent-facing rule content. Carries the cross-cutting earning rule, the
   prior-patch shape-failure check, the deferred-validation framing, and the SQLite audit append
   cadence baked in. Refuses to draft a patch that cannot cite a
@@ -34,12 +34,12 @@ Load when you are about to patch any of these target file classes:
 
 | Target class | Examples | Owner mode |
 |---|---|---|
-| Deliverable template | `library/deliverables/{type}/template.md` | CMO (System Retro) or Builder |
-| Voice system | `library/context/operator/voice/` (target the specific file: `anti-patterns.md` for rules, `voice-profile.md` for the prior, `pairs/` for examples) | CMO |
-| Profile (operator-self) | `library/context/operator/profile.md` | CMO (rare; usually Second Brain sync, not pattern-scan) |
-| Positioning (outward-stance) | `library/context/operator/positioning.md` | CMO |
+| Deliverable template | `library/deliverables/{type}/template.md` | Operator (System Retro) or Builder |
+| Voice system | `library/context/operator/voice/` (target the specific file: `anti-patterns.md` for rules, `voice-profile.md` for the prior, `pairs/` for examples) | Operator |
+| Profile (operator-self) | `library/context/operator/profile.md` | Operator (rare; usually Second Brain sync, not pattern-scan) |
+| Positioning (outward-stance) | `library/context/operator/positioning.md` | Operator |
 | Process file | `library/process/project-frontmatter.md`, `library/process/flows/{flow}.md`, other `library/process/*.md` | Builder |
-| Always-loaded persona | `AGENTS.cmo.md`, `AGENTS.builder.md` | Builder |
+| Always-loaded persona | `AGENTS.operator.md`, `AGENTS.builder.md` | Builder |
 
 If you are about to edit anything else (a campaign deliverable, a daemon script, infra), this skill is not the right reference — it is scoped to system-level rule content.
 
@@ -49,8 +49,8 @@ If the change adds, renames, defaults, or retires a campaign flow; adds or retir
 
 This skill operationalizes principles that already exist in the agent personas:
 
-- **Cross-cutting earning rule** (mirrored to `AGENTS.cmo.md` cross-cutting discipline + `AGENTS.builder.md` cross-cutting discipline) — every constraint earns its place from observed strays.
-- **Prior-patch shape check** (`AGENTS.builder.md` + `AGENTS.cmo.md`) — patches on a topic with prior-patch history require an explicit prior-patch shape-failure diagnosis before drafting; validation of the new patch is deferred to real-world stray-recurrence over the next 1-2 campaign cycles.
+- **Cross-cutting earning rule** (mirrored to `AGENTS.operator.md` cross-cutting discipline + `AGENTS.builder.md` cross-cutting discipline) — every constraint earns its place from observed strays.
+- **Prior-patch shape check** (`AGENTS.builder.md` + `AGENTS.operator.md`) — patches on a topic with prior-patch history require an explicit prior-patch shape-failure diagnosis before drafting; validation of the new patch is deferred to real-world stray-recurrence over the next 1-2 campaign cycles.
 - **Constraint shape discipline** — when a rule does not constrain, redesign its shape; do not re-write the same shape with sharper words.
 - **Architectural Truth #1** — skills are generic capabilities; AgentFrame Marketing-specific routing taxonomy lives in `library/deliverables/system-retro/template.md`, NOT in this skill.
 - **SQLite audit log** — every live patch writes a `system_changes` row in `system/audit/agentframe.db`. Historical markdown logs are browse-only backfill sources. This skill's Step 6 carries the write path.
@@ -88,8 +88,8 @@ Load all of the following before drafting:
   - `system_changes` row — read the cited row + any adjacent rows on the same target/topic if the prior-patch shape failure is unclear.
   - For deliverable-template patches: the v1→head diff for the deliverable that surfaced the friction. Read **both** `{name}-v1.md` AND `{name}-v{N}.md`, then read the section that changed. The diff IS the citation — what the operator changed is the literal evidence the template did not produce what the operator wanted.
 - The relevant always-loaded persona section that governs this target class:
-  - For deliverable templates / voice.md / profile.md / positioning.md / process files → `AGENTS.cmo.md` Agent-Design Principles.
-  - For `AGENTS.cmo.md` / `AGENTS.builder.md` itself → `AGENTS.builder.md` Core Design Principles.
+  - For deliverable templates / voice.md / profile.md / positioning.md / process files → `AGENTS.operator.md` Agent-Design Principles.
+  - For `AGENTS.operator.md` / `AGENTS.builder.md` itself → `AGENTS.builder.md` Core Design Principles.
 - Any prior patch to this same target file in the last 30 days (query recent `system_changes` rows for the target). If a prior patch exists, the prior-patch shape-failure check applies.
 
 **Pass criterion**: full content loaded, citation context loaded, prior-patch history surveyed.
@@ -117,7 +117,7 @@ Draft the patch as before/after, with internal branching by target class:
 - **Positioning patch (outward-stance)**: specify Narrative / Content Pillars / Audience / POV Stances / Angles / Current Quarter Goals. If Narrative or Audience (campaign-spanning structural anchors), surface that the patch reshapes every upcoming user-voiced or strategic deliverable and ask for extra confirmation.
 - **Profile patch (operator-self)**: rare-cadence — Identity / Primary source of truth / Active Projects. Profile patches usually fire from Second Brain sync events or operator-stated identity changes, NOT from campaign pattern-scan. If a pattern-scan surfaces a profile.md candidate, surface explicitly: *"Profile is the slowest-cadence operator file. This patch is firing from pattern-scan rather than a sync event — confirm this is an actual identity change vs an outward-stance refinement (which would route to positioning.md instead)."*
 - **Process file patch**: flag scope — flow sequencing, shared process procedure, override-handling, schema/frontmatter behavior, or deliverable-existence check. If the patch changes the selected/default flow model, start with `agentframe-structure`.
-- **Always-loaded persona patch (`AGENTS.cmo.md` / `AGENTS.builder.md`)**: flag explicitly that this is paid for in tokens on every turn forever (Architectural Truth #2 / Lazy Loading is the law). Justify why this rule must fire on every turn vs lazy-loading.
+- **Always-loaded persona patch (`AGENTS.operator.md` / `AGENTS.builder.md`)**: flag explicitly that this is paid for in tokens on every turn forever (Architectural Truth #2 / Lazy Loading is the law). Justify why this rule must fire on every turn vs lazy-loading.
 
 Surface the proposal to the user with this exact shape:
 
@@ -196,7 +196,7 @@ After Step 5's validation expectation is written:
 }
 ```
 
-3. **Mode-sync surfacing.** If the target file is `AGENTS.cmo.md` or `AGENTS.builder.md`, surface the mode-sync question: *"This patches an always-loaded persona. The mirror file (`AGENTS.md`) needs a sync via `Copy-Item {AGENTS.cmo.md | AGENTS.builder.md} AGENTS.md -Force` to take effect. Want me to run that now, or are you mid-mode-execution and want to defer the sync?"* If the sync changes system behavior, append a `system_changes` row via `system/audit/writer.py`.
+3. **Mode-sync surfacing.** If the target file is `AGENTS.operator.md` or `AGENTS.builder.md`, surface the mode-sync question: *"This patches an always-loaded persona. The mirror file (`AGENTS.md`) needs a sync via `Copy-Item {AGENTS.operator.md | AGENTS.builder.md} AGENTS.md -Force` to take effect. Want me to run that now, or are you mid-mode-execution and want to defer the sync?"* If the sync changes system behavior, append a `system_changes` row via `system/audit/writer.py`.
 
 ## What this skill does NOT do
 
@@ -220,7 +220,7 @@ After Step 5's validation expectation is written:
 
 - **From System Retro template** (Section 2 routing): orchestrator says "load `system/skills/system-improvement/SKILL.md` for this patch".
 - **From Campaign Retro template**: same delegation pattern where the retro overlaps system-improvement work (override scrutiny + SQLite audit appends).
-- **Ad-hoc by Builder or CMO**: when an agent turn surfaces a stray and the operator says "patch that" outside a retro window. Same procedure runs.
+- **Ad-hoc by Builder or Operator**: when an agent turn surfaces a stray and the operator says "patch that" outside a retro window. Same procedure runs.
 - **From `system/skills/deliverable-scaffolding/SKILL.md`**: when scaffolding a new deliverable wires up routing in `system-retro/template.md` or adds a `current_phase` enum value, that wire-up is itself a patch and goes through this skill.
 
 ## Forker note

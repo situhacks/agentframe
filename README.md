@@ -4,7 +4,7 @@
   <img src=".github/readme-assets/banner.png" alt="AgentFrame: Marketing — a full-stack marketing workspace inside your AI coding agent" width="100%" />
 </p>
 
-> **A full-stack marketing workspace inside your AI coding agent.** File-native. Built for solo operators. Evolves with your workflow. Two `AGENTS.md` modes carry the work — **CMO** ships campaigns, **Builder** evolves the system. Plan a campaign and publish your first post in an hour, without leaving your IDE.
+> **A full-stack marketing workspace inside your AI coding agent.** File-native. Built for solo operators. Evolves with your workflow. Two `AGENTS.md` modes carry the work — **Operator** ships campaigns, **Builder** evolves the system. Plan a campaign and publish your first post in an hour, without leaving your IDE.
 
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" /></a>
@@ -61,10 +61,10 @@ https://github.com/user-attachments/assets/73c6ce7f-cfd8-4457-8cf0-e1a979094e6e
 
 AgentFrame ships with two `AGENTS.md` modes. You swap depending on what you're doing:
 
-- **Swap to CMO when you're running a campaign** — drafting copy, generating images, publishing, doing a retro. CMO is scoped to `workspace/projects/` so it can't accidentally edit your templates or processes mid-campaign.
+- **Swap to Operator when you're running a campaign** — drafting copy, generating images, publishing, doing a retro. Operator is scoped to `workspace/projects/` so it can't accidentally edit your templates or processes mid-campaign.
 - **Swap to Builder when you're improving the system itself** — editing a template, adding a process, swapping a skill, applying retro patches. Builder is scoped to `system/` and `library/`.
 
-You don't run shell commands by hand. Just tell the agent `swap to Builder` or `swap to CMO`. It handles the file swap and logs the transition to the audit DB.
+You don't run shell commands by hand. Just tell the agent `swap to Builder` or `swap to Operator`. It handles the file swap and logs the transition to the audit DB.
 
 ### Updating your copy
 
@@ -82,7 +82,7 @@ I looked around for alternatives. What I found was prompt wrappers sitting on to
 
 I didn't like what I saw. So I built my ideal system myself.
 
-**AgentFrame Marketing** is a file-native marketing workspace that sits inside the coding agent I already use. Two `AGENTS.md` modes carry the work — **CMO** ships campaigns, **Builder** evolves the system. Campaign state lives in markdown files under `workspace/projects/`. Your voice, templates, and processes live in `library/`. Skills and connectors are swappable; when something sharper ships, I replace the skill and the system keeps working. See the [walkthrough below](#a-real-campaign-step-by-step) for what an end-to-end campaign actually looks like.
+**AgentFrame Marketing** is a file-native marketing workspace that sits inside the coding agent I already use. Two `AGENTS.md` modes carry the work — **Operator** ships campaigns, **Builder** evolves the system. Campaign state lives in markdown files under `workspace/projects/`. Your voice, templates, and processes live in `library/`. Skills and connectors are swappable; when something sharper ships, I replace the skill and the system keeps working. See the [walkthrough below](#a-real-campaign-step-by-step) for what an end-to-end campaign actually looks like.
 
 I've been dogfooding AgentFrame for a while and it's gone through multiple major revisions. The repo evolves with my workflow, not on a release schedule. It's free to fork — take what's useful.
 
@@ -99,8 +99,8 @@ A compact walkthrough using the example campaign at `workspace/projects/example-
 <table>
 <tr>
 <td width="50%" valign="top">
-<img src=".github/readme-assets/walkthrough-01-cmo-kickoff.png" alt="01 · CMO kickoff" /><br/>
-<sub><b>01 · CMO kickoff</b> — Tell your coding agent <code>start a new campaign</code>. CMO reads your operator profile, scaffolds the campaign folder, and calls Composio to pull workplace context — recent emails, meeting notes, doc activity — so the campaign starts from what you actually care about that week, not a cold prompt.</sub>
+<img src=".github/readme-assets/walkthrough-01-operator-kickoff.png" alt="01 · Operator kickoff" /><br/>
+<sub><b>01 · Operator kickoff</b> — Tell your coding agent <code>start a new campaign</code>. Operator reads your operator profile, scaffolds the campaign folder, and calls Composio to pull workplace context — recent emails, meeting notes, doc activity — so the campaign starts from what you actually care about that week, not a cold prompt.</sub>
 </td>
 <td width="50%" valign="top">
 <img src=".github/readme-assets/walkthrough-02-research.png" alt="02 · Gemini Deep Research" /><br/>
@@ -255,7 +255,7 @@ My current production stack. Swap any of them for a sharper tool without touchin
 
 ### Everything else that ships in the box
 
-- Two-mode routing via `AGENTS.cmo.md` and `AGENTS.builder.md`
+- Two-mode routing via `AGENTS.operator.md` and `AGENTS.builder.md`
 - A deterministic state-transition CLI at `system/af.py` — lock, publish, version, new-campaign, doctor. The buttons do the bookkeeping atomically and write the paper trail; the agent keeps the judgment. Models are strong writers and weak clerks, so the clerking is code.
 - YAML frontmatter and campaign artifacts under `workspace/projects/`
 - `activity.md` per campaign for human-readable history, plus an append-only SQLite audit DB at `system/audit/agentframe.db`
@@ -286,7 +286,7 @@ Templates, processes, flows, and personas are the durable layer that improves ov
 
 ### P4 — Two modes, one operator
 
-CMO ships campaigns. Builder evolves the system. The split means CMO can't accidentally edit `library/` mid-campaign, and Builder can't accidentally touch a locked deliverable mid-refactor.
+Operator ships campaigns. Builder evolves the system. The split means Operator can't accidentally edit `library/` mid-campaign, and Builder can't accidentally touch a locked deliverable mid-refactor.
 
 ### P5 — Buttons own mechanics, prose owns judgment
 
@@ -360,7 +360,7 @@ Your coding agent provides the LLM. These keys power the non-LLM tools (research
 
 ```text
                                   ┌─── owns ──▶  workspace/projects
-                  ┌──── CMO ─────┤
+                  ┌──── Operator ─────┤
                   │              └─── reads ─▶  system + library
    Operator ──────┤
                   │              ┌─── owns ──▶  system + library
@@ -409,7 +409,7 @@ Your coding agent provides the LLM. These keys power the non-LLM tools (research
                           │                           │
                           ├──▶ deliverable markdown ──┤
    Operator Input ──▶ Agent                           │
-   (CMO or Builder)       ├──▶ activity.md ───────────┤
+   (Operator or Builder)       ├──▶ activity.md ───────────┤
                           │                           │
                           └──▶ audit writer ──▶ audit DB
                                                       │
@@ -448,7 +448,7 @@ Architecture summary:
 ```text
 agentframe-marketing/
 ├── AGENTS.md
-├── AGENTS.cmo.md
+├── AGENTS.operator.md
 ├── AGENTS.builder.md
 ├── README.md
 ├── .env.example

@@ -43,7 +43,7 @@ Do NOT load this skill for:
 
 ## Architectural anchors (why this skill is shaped this way)
 
-- **Architectural Truth #1** (`AGENTS.builder.md` + `AGENTS.cmo.md`) — agent + tools + constraints, separated. This skill scaffolds the *constraint* layer (template.md = declarative WHAT). It does NOT generate procedural skill code wrapped around the deliverable; the agent reads the template + context and writes the deliverable natively.
+- **Architectural Truth #1** (`AGENTS.builder.md` + `AGENTS.operator.md`) — agent + tools + constraints, separated. This skill scaffolds the *constraint* layer (template.md = declarative WHAT). It does NOT generate procedural skill code wrapped around the deliverable; the agent reads the template + context and writes the deliverable natively.
 - **Architectural Truth #5 (templates are the product)** — the templates this skill creates are the durable artifact. They port to other agent runtimes. Ship them in the canonical shape.
 - **Architectural Truth #6 (resist anticipating future needs)** — this skill itself is a deliberate anticipation exception, justified by the need to keep forked deliverable libraries consistent. The skill therefore enforces strict locate-before-inventing to prevent the anticipation cost from compounding into taxonomic bloat.
 - **Cross-cutting earning rule** — the new deliverable type itself must earn its place, just like a new constraint must. The duplication check in Step 1 is this rule applied to deliverable taxonomy.
@@ -159,7 +159,7 @@ If the new deliverable was wired into a campaign flow or `project-frontmatter.md
 ## How this skill is invoked
 
 - **Operator-initiated**: "Let's add a `[type]` deliverable" → load this skill.
-- **Forker first-touch**: forker reads [`README.md`](../../../README.md) (product orientation) and [`AGENTS.cmo.md`](../../../AGENTS.cmo.md), then comes here to add their own deliverable types matching their marketing process.
+- **Forker first-touch**: forker reads [`README.md`](../../../README.md) (product orientation) and [`AGENTS.operator.md`](../../../AGENTS.operator.md), then comes here to add their own deliverable types matching their marketing process.
 - **From `system/skills/system-improvement/SKILL.md`**: when a System Retro identifies a friction pattern that is "we have no template for this artifact and we keep producing it bespoke", system-improvement may surface "this looks like an earned new deliverable type — load `deliverable-scaffolding`".
 
 ## Forker note

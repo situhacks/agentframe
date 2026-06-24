@@ -182,10 +182,10 @@ class ModeSwapAtomicityTests(unittest.TestCase):
         """Create a minimal repo layout so writer.append_system_change can run."""
         agents_md = root / "AGENTS.md"
         builder_md = root / "AGENTS.builder.md"
-        cmo_md = root / "AGENTS.cmo.md"
-        agents_md.write_text("# starting persona — CMO\n", encoding="utf-8")
+        cmo_md = root / "AGENTS.operator.md"
+        agents_md.write_text("# starting persona — Operator\n", encoding="utf-8")
         builder_md.write_text("# Builder persona\n## rules go here\n", encoding="utf-8")
-        cmo_md.write_text("# CMO persona\n## different rules\n", encoding="utf-8")
+        cmo_md.write_text("# Operator persona\n## different rules\n", encoding="utf-8")
         return {
             "agents_md": agents_md,
             "builder_md": builder_md,
@@ -244,8 +244,8 @@ class ModeSwapAtomicityTests(unittest.TestCase):
                 db_path=db_path,
                 change_type="mode_swap",
                 actor="agent",
-                mode="cmo",
-                reason="Swap back to CMO",
+                mode="operator",
+                reason="Swap back to Operator",
                 project_root=project_root,
             )
             self.assertEqual(

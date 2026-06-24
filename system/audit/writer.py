@@ -27,7 +27,7 @@ ACTOR_VALUES = {"agent", "user", "system"}
 # captures. The supported modes map to the persona files at the repo root.
 MODE_SWAP_PERSONA_FILES = {
     "builder": "AGENTS.builder.md",
-    "cmo": "AGENTS.cmo.md",
+    "operator": "AGENTS.operator.md",
     "career-ops": "AGENTS.career-ops.md",
 }
 

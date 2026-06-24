@@ -1,7 +1,7 @@
 """Preview hub: server-side workspace scan + HTML shell rendering.
 
 The hub is the single page served at `/`. It enumerates every preview
-artifact across the workspace (active campaigns, completed, demo) and
+artifact across the workspace (active projects, completed, demo) and
 renders a self-contained dashboard with a persistent sidebar, a panzoom
 canvas, and a right-rail copy pane.
 
@@ -125,9 +125,9 @@ def _file_to_url(project_root: Path, file_path: Path) -> str:
 
 
 def _campaign_label(file_path: Path, campaign_root: Path) -> str:
-    """Build a sidebar label from the path inside a campaign.
+    """Build a sidebar label from the path inside a project.
 
-    `<campaign>/phase-3-planning/design-language/preview/direction-compare.html`
+    `<project>/phase-3-planning/design-language/preview/direction-compare.html`
         -> `phase-3 / design-language / direction-compare`
 
     HTML files have their .html extension stripped (it's noise — every
@@ -161,7 +161,7 @@ def _detect_post_groups(
 ) -> list[dict[str, Any]]:
     """Find post-N directories with visuals/carousel-slide-*.html.
 
-    Convention (uniform across demo and campaigns):
+    Convention (uniform across demo and projects):
       <scan_root>/.../post-{n}/visuals/carousel-slide-*.html
       <scan_root>/.../post-{n}/copy.md            (optional)
 
@@ -287,7 +287,7 @@ def _scan_campaign(
     *,
     filters: _ScanFilters | None = None,
 ) -> dict[str, Any]:
-    """Build a nested folder tree for one campaign under phase-* dirs.
+    """Build a nested folder tree for one project under phase-* dirs.
 
     "Single" here is a misnomer for back-compat: the scanner emits entries of
     kind `single` (HTML), `image`, or `pdf` — all rendered as one artifact in
@@ -329,21 +329,21 @@ def _scan_campaign_group(
     *,
     filters: _ScanFilters | None = None,
 ) -> list[dict[str, Any]]:
-    """Scan a directory of campaigns. Returns one entry per campaign folder."""
+    """Scan a directory of projects. Returns one entry per project folder."""
     if not group_dir.exists():
         return []
-    campaigns: list[dict[str, Any]] = []
+    projects: list[dict[str, Any]] = []
     for child in sorted(group_dir.iterdir()):
         if not child.is_dir():
             continue
         if child.name == "completed":
             continue
         tree = _scan_campaign(child, project_root, filters=filters)
-        campaigns.append({
+        projects.append({
             "slug": child.name,
             "tree": tree,
         })
-    return campaigns
+    return projects
 
 
 def _scan_demo(
@@ -517,7 +517,7 @@ def _render_demo_block(tree: dict[str, Any]) -> str:
 def render_hub_html(model: dict[str, Any]) -> str:
     """Render the full hub HTML shell (head + sidebar + canvas + rail + JS)."""
     active_html = "\n".join(_render_campaign_block(c) for c in model["active"]) \
-        or '<div class="empty-note">no active campaigns</div>'
+        or '<div class="empty-note">no active projects</div>'
     completed_html = "\n".join(_render_campaign_block(c) for c in model["completed"]) \
         or '<div class="empty-note">none yet</div>'
     demo_html = _render_demo_block(model["demo"])
@@ -537,7 +537,7 @@ def render_hub_html(model: dict[str, Any]) -> str:
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>AgentFrame Marketing Preview Hub</title>
+<title>AgentFrame Preview Hub</title>
 <style>
   * {{ box-sizing: border-box; }}
   html, body {{ margin: 0; padding: 0; height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; color: #e6e6e6; background: #1a1a1a; }}
@@ -595,7 +595,7 @@ def render_hub_html(model: dict[str, Any]) -> str:
 </head>
 <body>
 <aside class="sidebar">
-  <h1 class="brand">AgentFrame Marketing Preview</h1>
+  <h1 class="brand">AgentFrame Preview</h1>
 
   <div class="group">
     <h1>Active</h1>

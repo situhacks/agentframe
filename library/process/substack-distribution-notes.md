@@ -22,10 +22,10 @@
 
 ## Per-post conventions (this archive)
 
-- **Source of truth:** the campaign's final copy markdown (highest locked `copy-v{N}.md`), NOT the PDF and NOT LinkedIn (LinkedIn API can't read own post history; Composio not authed). Use `status: delivered`/`locked` in frontmatter to pick the real final among versioned drafts.
+- **Source of truth:** the project's final copy markdown (highest locked `copy-v{N}.md`), NOT the PDF and NOT LinkedIn (LinkedIn API can't read own post history; Composio not authed). Use `status: delivered`/`locked` in frontmatter to pick the real final among versioned drafts.
 - **Series → subtitle convention:** `"{Series} · Part {N} — {hook}"`.
-  - AgentFrame campaign → **"AgentFrame Build With Me"**
-  - Enterprise campaign → **"Enterprise AI Adoption POV"**
+  - AgentFrame project → **"AgentFrame Build With Me"**
+  - Enterprise project → **"Enterprise AI Adoption POV"**
   - (Third series for future early-career content → **"AI in your early-career"**)
 - **Footer on every post:** `*Originally published on [LinkedIn](permalink) on {Month D, YYYY}.*`
 - **Date trick:** a LinkedIn activity/ugcPost id encodes the publish time — `new Date(Number(BigInt(id) >> 22n))`. Use it to recover exact dates when frontmatter is fuzzy.

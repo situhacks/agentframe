@@ -14,7 +14,7 @@ Each project instance records its selected flow in `project.md` frontmatter as `
 |---|---|---|
 | `open-flow.md` | Default (all domains) | Build-as-you-go: the agent proposes a plan scaled to the objective; the operator narrows and the plan rolls forward. |
 | `marketing-solo-flow.md` | Marketing, opt-in | Named deliberately by a marketer: lean fixed phase ladder, single accountable owner, no stakeholder review. |
-| `marketing-standard-flow.md` | Marketing, opt-in | Named deliberately by a marketer: fuller campaign with business/stakeholder review cycles. |
+| `marketing-standard-flow.md` | Marketing, opt-in | Named deliberately by a marketer: fuller project with business/stakeholder review cycles. |
 
 `marketing-solo-flow` and `marketing-standard-flow` are marketing-domain flows (post ladders, manifest moment, post-FINAL assembly). They are named deliberately, never defaults. A non-marketing domain uses `open-flow` until it grows its own ladder.
 

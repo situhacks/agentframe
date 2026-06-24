@@ -4,7 +4,7 @@ Owns the iteration shape for every deliverable instance under `workspace/project
 
 ## Naming
 
-Versioned files use `{name}-v{N}.md`: `slide-copy-v1.md`, `body-copy-v2.md`, `draft-v1.md`. The highest `N` in the folder is the head version. The campaign tracker's `deliverables.{slug}.file` pointer names the head directly so a state-load reads the head without scanning the folder.
+Versioned files use `{name}-v{N}.md`: `slide-copy-v1.md`, `body-copy-v2.md`, `draft-v1.md`. The highest `N` in the folder is the head version. The project tracker's `deliverables.{slug}.file` pointer names the head directly so a state-load reads the head without scanning the folder.
 
 One exception per post folder: `post-FINAL.md` is unversioned. It is the post's assembly record — locked ingredient content accumulates there per the active pack's assembly-record deliverable — and the ingredient files around it carry the version trails. Post rows in the tracker point at it rather than at an ingredient head.
 
@@ -21,19 +21,19 @@ No `current_version` field. No `version_history` array. The filename carries the
 
 ## First draft (v1)
 
-The agent writes `{name}-v1.md` with `status: drafting`. The campaign tracker `deliverables.{slug}.file` is set to that path in the same turn (post-ingredient drafts don't move the post row — it points at `post-FINAL.md`, created with the first ingredient).
+The agent writes `{name}-v1.md` with `status: drafting`. The project tracker `deliverables.{slug}.file` is set to that path in the same turn (post-ingredient drafts don't move the post row — it points at `post-FINAL.md`, created with the first ingredient).
 
 At the end of the drafting turn, the agent offers: *"Want an editable copy you can revise yourself before the next iteration?"* The offer is opt-in to avoid token cost and surprise files when the operator just wants to read the draft first.
 
 ## Editable copy (operator opt-in)
 
-When the operator accepts the offer, run `python system/af.py version <campaign> <deliverable>` — it copies the head to the next version and moves the tracker pointer atomically — then tell the operator the new head is ready to edit. The prior version stays in the folder, untouched, as the snapshot for that point.
+When the operator accepts the offer, run `python system/af.py version <project> <deliverable>` — it copies the head to the next version and moves the tracker pointer atomically — then tell the operator the new head is ready to edit. The prior version stays in the folder, untouched, as the snapshot for that point.
 
 ## Iteration (agent applies operator feedback)
 
 When the feedback is replacement-shaped (see below), run `af version` first, then write the changes into the new head. The prior version stays in the folder as the snapshot.
 
-If the feedback criticizes the deliverable's SHAPE or the agent's process (not just this draft's content — e.g. "v1 copy should never contain imagery notes," "the table format is wrong for this deliverable"), also append one line to the campaign's `feedback-log.md` in the same turn. That line is the paper trail the Phase-5 harvest retro reads; without it the correction lives only in chat.
+If the feedback criticizes the deliverable's SHAPE or the agent's process (not just this draft's content — e.g. "v1 copy should never contain imagery notes," "the table format is wrong for this deliverable"), also append one line to the project's `feedback-log.md` in the same turn. That line is the paper trail the Phase-5 harvest retro reads; without it the correction lives only in chat.
 
 ## Surgical edit (no new version)
 

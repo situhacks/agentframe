@@ -1,6 +1,6 @@
 ﻿# Image Production
 
-Available image-creation paths for AgentFrame Marketing. Load this when a campaign or post needs to pick an image path — typically when the design language locks (the campaign-wide preference lands in `project.md` `post_manifest`) or when a post's imagery work starts. Usage rules, lock criteria, and provenance details are owned by the deliverable that calls this menu.
+Available image-creation paths for AgentFrame. Load this when a project or post needs to pick an image path — typically when the design language locks (the project-wide preference lands in `project.md` `post_manifest`) or when a post's imagery work starts. Usage rules, lock criteria, and provenance details are owned by the deliverable that calls this menu.
 
 | Path | Use when | Owner deliverable | Outputs |
 |---|---|---|---|
@@ -17,7 +17,7 @@ When the Open Design path is picked, stage the project with these defaults (oper
 | Calling deliverable shape | OD mode | OD skillId | Why |
 |---|---|---|---|
 | `image-prompts` single image (e.g. 1080x1080 LinkedIn hero) | `image` | `canvas-design` | Image-mode skill for posters, illustrations, and static pieces. Custom canvas sizes are first-class. |
-| Square social carousel (locked slide copy + design language) | `image` | `canvas-design` per slide | Best canvas fidelity for LinkedIn/IG square slides. Stage one project per slide, or one project iterated slide-by-slide, so every slide honors the campaign DL. |
+| Square social carousel (locked slide copy + design language) | `image` | `canvas-design` per slide | Best canvas fidelity for LinkedIn/IG square slides. Stage one project per slide, or one project iterated slide-by-slide, so every slide honors the project DL. |
 | Content-heavy carousel, 16:9 acceptable | `deck` | `simple-deck` | Bulk slide generation in one project. Use only when the operator confirms 16:9 is acceptable. |
 | Deck / PPT long-form presentation | `deck` | `magazine-web-ppt` | OD's bundled deck default. PPTX/PDF export is first-class; swap to `pptx` if PPTX editability matters more than visual style. Deck path selection across all tools lives in [`deck-production.md`](deck-production.md). |
 

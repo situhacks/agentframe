@@ -4,7 +4,7 @@ Keeps `run.py` short and lets tests import a configured server without
 actually starting it.
 
 Adds a custom Tornado handler at `/` and `/index.html` that renders the
-preview hub (sidebar of all campaign previews + iframe canvas). Without
+preview hub (sidebar of all project previews + iframe canvas). Without
 this, the project root has no `index.html` and `/` returns 404.
 """
 
@@ -55,7 +55,7 @@ class _HubServer:
     livereload's `get_web_handlers` returns the static-file route as a
     catch-all `/(.*)`. Prepending a more-specific handler for `/` and
     `/index.html` lets us serve the dashboard without disturbing static
-    serving for everything else (campaigns, demo, livereload.js, etc.).
+    serving for everything else (projects, demo, livereload.js, etc.).
     """
 
     def __init__(self, project_root: Path, *, exclude_globs: list[str] | None = None):

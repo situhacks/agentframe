@@ -20,7 +20,7 @@ Use this order:
 
 - Prefer state and intent over quoted phrases.
 - Phrase examples are allowed only as secondary examples.
-- If a trigger depends on campaign phase sequence, the campaign flow file should point here.
+- If a trigger depends on project phase sequence, the project flow file should point here.
 
 ## Ownership Rules
 

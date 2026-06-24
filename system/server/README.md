@@ -1,4 +1,4 @@
-# AgentFrame Marketing Preview Server
+# AgentFrame Preview Server
 
 Localhost preview server for visual deliverables. Renders mood-board direction compares, the design-language one-pager, and per-post carousel slides in your browser. LiveReload pushes refreshes as the agent edits files in Cursor.
 
@@ -30,8 +30,8 @@ Useful flags:
 
 - `--port 8081` if 8080 is taken (see Troubleshooting).
 - `--host 0.0.0.0` to expose on the LAN (rare; default `localhost` is correct for solo work).
-- `--campaign marketingos` opens the browser tab on that campaign's design-language preview.
-- `--no-open` prevents the browser open even when `--campaign` is set.
+- `--project marketingos` opens the browser tab on that project's design-language preview.
+- `--no-open` prevents the browser open even when `--project` is set.
 
 Stop with `Ctrl+C`.
 
@@ -46,7 +46,7 @@ workspace/projects/*/phase-4-production/posts/**/video/**
 workspace/projects/*/phase-4-production/posts/**/edit/**
 ```
 
-Adjust `config.yaml` and restart if you need to widen the scope (e.g. while iterating on a brand new campaign whose folders don't match the glob shape yet).
+Adjust `config.yaml` and restart if you need to widen the scope (e.g. while iterating on a brand new project whose folders don't match the glob shape yet).
 
 ## 4. tokens.css regeneration
 
@@ -60,7 +60,7 @@ Output goes to `./preview/assets/tokens.css` next to the yaml by default. Overri
 
 ## 5. Image generation (Nano Banana)
 
-HTML is the primary visual medium for AgentFrame Marketing — slide HTML + tokens.css covers most of what carousel posts need. This helper exists for the cases where a real image is the right tool: mockups, textured backdrops, hero stills, or anywhere a flat colour block would feel cheap.
+HTML is the primary visual medium for AgentFrame — slide HTML + tokens.css covers most of what carousel posts need. This helper exists for the cases where a real image is the right tool: mockups, textured backdrops, hero stills, or anywhere a flat colour block would feel cheap.
 
 ```
 python -m system.server.lib.image_generate \
@@ -99,17 +99,17 @@ The agent is responsible for keeping the post's `image-prompts-v{N}.md` and `alt
 | Image call fails with auth error | Confirm `GEMINI_API_KEY` is set in root `.env` or exported in your shell. |
 | Image call returns text but no image | Nano Banana sometimes refuses with a text response instead of generating. The CLI logs how many calls refused and the model's text is captured under `refusals` in `_image_meta.json`. Reword the prompt to be more concrete (subject, surface, lighting) and retry. |
 | `--aspect 4:5` produced something more square than expected | Nano Banana takes aspect intent as language, not a hard constraint. If shape matters, restate it in the prompt body (e.g. "a tall vertical poster") in addition to the flag. |
-| Page CSS looks wrong | Check the link order: `preview-chrome.css` BEFORE the campaign's `tokens.css`. The chrome owns the page wrapper; tokens own the campaign visuals. |
+| Page CSS looks wrong | Check the link order: `preview-chrome.css` BEFORE the project's `tokens.css`. The chrome owns the page wrapper; tokens own the project visuals. |
 
 ## 7. Demo set
 
-A self-contained demo lives at `system/server/static/demo/`. It exercises the three preview patterns (direction-compare, design-language one-pager, post-N stack) using stub data, so you can verify the server end-to-end before any real campaign reaches the visual phase.
+A self-contained demo lives at `system/server/static/demo/`. It exercises the three preview patterns (direction-compare, design-language one-pager, post-N stack) using stub data, so you can verify the server end-to-end before any real project reaches the visual phase.
 
 ```
 http://localhost:8080/system/server/static/demo/index.html
 ```
 
-Delete the `demo/` folder once you have a real campaign at sub-artifact 1+.
+Delete the `demo/` folder once you have a real project at sub-artifact 1+.
 
 ## 8. File map
 
@@ -133,7 +133,7 @@ system/server/
 
 ## 9. Hub (`/`)
 
-`http://localhost:8080/` renders an auto-generated dashboard. Three columns: left sidebar renders each campaign as a generic folder tree; middle is a panzoom canvas hosting whichever artifact you click; right rail shows the post's `copy.md` text when a post group is active (collapses to zero width otherwise). Use it as a second-monitor viewer while you iterate in Cursor.
+`http://localhost:8080/` renders an auto-generated dashboard. Three columns: left sidebar renders each project as a generic folder tree; middle is a panzoom canvas hosting whichever artifact you click; right rail shows the post's `copy.md` text when a post group is active (collapses to zero width otherwise). Use it as a second-monitor viewer while you iterate in Cursor.
 
 ### Artifact kinds
 
@@ -142,12 +142,12 @@ Five kinds appear in the sidebar. All five are pan/zoomable in the same canvas w
 - **single** — one HTML file (e.g. `direction-compare`, `carousel-slide-2`). Renders as one iframe in the canvas. URL hash is the file's server path.
 - **image** (`[img]` prefix) — a PNG / JPG / JPEG / WebP / GIF / SVG file. Renders as a native `<img>` at intrinsic size (`naturalWidth`/`naturalHeight`). No conversion, no dependencies.
 - **pdf** (`[pdf]` prefix) — a PDF file. Rendered via [PDF.js v3.11](https://github.com/mozilla/pdf.js) into a horizontal canvas strip — one `<canvas>` per page at `scale: 2` (~retina-sharp). Iframing the PDF would hand control to the browser's PDF viewer and break Fit + pan, so we render it ourselves. PDF.js is loaded lazily from jsDelivr the first time you click a PDF entry; HTML/image-only sessions never download it.
-- **video** (`[video]` prefix) — an MP4 / MOV / WebM file. Renders as a native `<video controls>` element so rendered video outputs can be reviewed beside the campaign artifacts.
+- **video** (`[video]` prefix) — an MP4 / MOV / WebM file. Renders as a native `<video controls>` element so rendered video outputs can be reviewed beside the project artifacts.
 - **group** (\u25a3 prefix) — a post directory containing `visuals/carousel-slide-*.html`. Renders as N slides side-by-side (each at native 1080x1350) in the canvas, plus the directory's `copy.md` text in the right rail. URL hash is `group:<dir-path>`. Group detection is HTML-only for now; image/PDF "carousels" are out of scope.
 
 ### Sidebar grouping
 
-- Campaign root is open by default.
+- Project root is open by default.
 - Every nested folder is collapsed by default.
 - Entries render at the leaf folder level using the same `data-artifact` payload contract as before.
 - The only special-case grouping remains `post-*/visuals/carousel-slide-*.html` -> one `group` entry per post directory.
@@ -167,7 +167,7 @@ system/server/static/demo/**/*.{html,png,jpg,jpeg,webp,gif,svg,pdf,mp4,mov,webm}
 **/post-*/copy.md                                        -> populates the right rail (optional)
 ```
 
-A new campaign with files in those phase folders shows up automatically on the next refresh. New posts following the `post-{n}/visuals/` convention surface as group entries with no extra config. Image, PDF, and video labels keep their extension visible in the sidebar (`post-1-final.png`, `carousel-export.pdf`, `final.mp4`); HTML labels strip it.
+A new project with files in those phase folders shows up automatically on the next refresh. New posts following the `post-{n}/visuals/` convention surface as group entries with no extra config. Image, PDF, and video labels keep their extension visible in the sidebar (`post-1-final.png`, `carousel-export.pdf`, `final.mp4`); HTML labels strip it.
 
 #### Filtering noise
 
@@ -176,7 +176,7 @@ Default discovery now applies two filter layers before entries are shown in the 
 - `exclude_globs` from `system/server/config.yaml` (for repeatable intermediate paths like `history/`, `raw/`, or `video/compositions/`)
 - `.preview-hide` marker file in any folder (hides that folder and all descendants)
 
-This keeps the hub focused on final-facing previews while preserving flexible campaign-specific control.
+This keeps the hub focused on final-facing previews while preserving flexible project-specific control.
 
 ### Controls
 

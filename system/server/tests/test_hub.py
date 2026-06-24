@@ -27,7 +27,7 @@ class HubTests(unittest.TestCase):
                 root
                 / "workspace"
                 / "projects"
-                / "demo-campaign"
+                / "demo-project"
                 / "phase-4-production"
                 / "posts"
                 / "post-1"
@@ -43,7 +43,7 @@ class HubTests(unittest.TestCase):
             model = hub.scan_workspace(root)
             entries = self._flatten_entries(model["active"][0]["tree"])
             by_id = {entry["id"]: entry for entry in entries}
-            base = "/workspace/projects/demo-campaign/phase-4-production/posts/post-1/video"
+            base = "/workspace/projects/demo-project/phase-4-production/posts/post-1/video"
 
             self.assertEqual(by_id[f"{base}/renders/final.mp4"]["kind"], "video")
             self.assertEqual(by_id[f"{base}/renders/source.mov"]["kind"], "video")
@@ -53,7 +53,7 @@ class HubTests(unittest.TestCase):
     def test_scan_workspace_produces_nested_tree(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
-            campaign_root = root / "workspace" / "projects" / "demo-campaign"
+            campaign_root = root / "workspace" / "projects" / "demo-project"
             (campaign_root / "phase-3-planning" / "design-language" / "preview").mkdir(parents=True)
             (campaign_root / "phase-4-production" / "posts" / "post-1" / "video").mkdir(parents=True)
             (campaign_root / "phase-3-planning" / "design-language" / "preview" / "file.html").write_text(
@@ -99,7 +99,7 @@ class HubTests(unittest.TestCase):
                 root
                 / "workspace"
                 / "projects"
-                / "demo-campaign"
+                / "demo-project"
                 / "phase-4-production"
                 / "posts"
                 / "post-1"
@@ -132,7 +132,7 @@ class HubTests(unittest.TestCase):
                 root
                 / "workspace"
                 / "projects"
-                / "demo-campaign"
+                / "demo-project"
                 / "phase-4-production"
                 / "posts"
                 / "post-1"
@@ -146,7 +146,7 @@ class HubTests(unittest.TestCase):
             filtered_ids = {entry["id"] for entry in self._flatten_entries(filtered["active"][0]["tree"])}
             unfiltered_ids = {entry["id"] for entry in self._flatten_entries(unfiltered["active"][0]["tree"])}
 
-            target = "/workspace/projects/demo-campaign/phase-4-production/posts/post-1/history/scratch.png"
+            target = "/workspace/projects/demo-project/phase-4-production/posts/post-1/history/scratch.png"
             self.assertNotIn(target, filtered_ids)
             self.assertIn(target, unfiltered_ids)
 
@@ -157,7 +157,7 @@ class HubTests(unittest.TestCase):
                 root
                 / "workspace"
                 / "projects"
-                / "demo-campaign"
+                / "demo-project"
                 / "phase-4-production"
                 / "posts"
                 / "post-1"
@@ -172,7 +172,7 @@ class HubTests(unittest.TestCase):
             ids = {entry["id"] for entry in self._flatten_entries(model["active"][0]["tree"])}
 
             self.assertNotIn(
-                "/workspace/projects/demo-campaign/phase-4-production/posts/post-1/video/assets/hidden.png",
+                "/workspace/projects/demo-project/phase-4-production/posts/post-1/video/assets/hidden.png",
                 ids,
             )
 
@@ -183,7 +183,7 @@ class HubTests(unittest.TestCase):
                 root
                 / "workspace"
                 / "projects"
-                / "demo-campaign"
+                / "demo-project"
                 / "phase-4-production"
                 / "posts"
                 / "post-1"
@@ -205,15 +205,15 @@ class HubTests(unittest.TestCase):
             }
 
             self.assertIn(
-                "/workspace/projects/demo-campaign/phase-4-production/posts/post-1/final.png",
+                "/workspace/projects/demo-project/phase-4-production/posts/post-1/final.png",
                 filtered_ids,
             )
             self.assertNotIn(
-                "/workspace/projects/demo-campaign/phase-4-production/posts/post-1/history/scratch.png",
+                "/workspace/projects/demo-project/phase-4-production/posts/post-1/history/scratch.png",
                 filtered_ids,
             )
             self.assertIn(
-                "/workspace/projects/demo-campaign/phase-4-production/posts/post-1/history/scratch.png",
+                "/workspace/projects/demo-project/phase-4-production/posts/post-1/history/scratch.png",
                 intermediates_ids,
             )
             self.assertGreaterEqual(len(intermediates_ids), len(filtered_ids))
@@ -221,7 +221,7 @@ class HubTests(unittest.TestCase):
     def test_render_hub_html_renders_nested_details(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
-            campaign_root = root / "workspace" / "projects" / "demo-campaign"
+            campaign_root = root / "workspace" / "projects" / "demo-project"
             (campaign_root / "phase-3-planning" / "design-language" / "preview").mkdir(parents=True)
             (campaign_root / "phase-4-production" / "posts" / "post-1" / "video").mkdir(parents=True)
             visuals = campaign_root / "phase-4-production" / "posts" / "post-1" / "visuals"
@@ -246,9 +246,9 @@ class HubTests(unittest.TestCase):
     def test_render_hub_html_mounts_video_artifacts(self) -> None:
         model = {
             "active": [{
-                "slug": "demo-campaign",
+                "slug": "demo-project",
                 "tree": {
-                    "name": "demo-campaign",
+                    "name": "demo-project",
                     "path": "",
                     "dirs": [],
                     "entries": [{

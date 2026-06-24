@@ -1,4 +1,4 @@
-"""AgentFrame Marketing preview server.
+"""AgentFrame preview server.
 
 Serves the project root over `http://localhost:8080` and pushes browser
 refreshes via LiveReload whenever files in the configured watch globs
@@ -7,7 +7,7 @@ change.
 Usage:
     python system/server/run.py
     python system/server/run.py --port 8081
-    python system/server/run.py --campaign marketingos
+    python system/server/run.py --project marketingos
 """
 
 from __future__ import annotations
@@ -26,18 +26,18 @@ CONFIG_PATH = PROJECT_ROOT / "system" / "server" / "config.yaml"
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="AgentFrame Marketing preview server")
+    parser = argparse.ArgumentParser(description="AgentFrame preview server")
     parser.add_argument("--port", type=int, default=None, help="Port (default 8080 from config)")
     parser.add_argument("--host", default=None, help="Host (default localhost from config)")
     parser.add_argument(
-        "--campaign",
+        "--project",
         default=None,
-        help="Open the browser to this campaign's design-language preview after start",
+        help="Open the browser to this project's design-language preview after start",
     )
     parser.add_argument(
         "--no-open",
         action="store_true",
-        help="Do not open a browser tab even if --campaign is set",
+        help="Do not open a browser tab even if --project is set",
     )
     return parser.parse_args()
 
@@ -64,9 +64,9 @@ def main() -> int:
     globs = watcher.load_globs(CONFIG_PATH)
     exclude_globs = watcher.load_exclude_globs(CONFIG_PATH)
 
-    if args.campaign and not args.no_open:
+    if args.project and not args.no_open:
         url = (
-            f"http://{host}:{port}/workspace/projects/{args.campaign}"
+            f"http://{host}:{port}/workspace/projects/{args.project}"
             "/phase-3-planning/design-language/preview/design-language.html"
         )
         try:

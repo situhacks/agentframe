@@ -1,4 +1,4 @@
-﻿# AgentFrame Marketing — Humanizer Integration
+﻿# AgentFrame — Humanizer Integration
 
 This file owns gate timing, scope, and logging for `## Humanizer Pass` sections in public-facing deliverables. The skill at [`system/skills/humanizer/SKILL.md`](../../system/skills/humanizer/SKILL.md) owns rewrite technique.
 

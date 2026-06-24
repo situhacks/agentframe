@@ -1,1 +1,1 @@
-"""AgentFrame Marketing preview server libraries."""
+"""AgentFrame preview server libraries."""

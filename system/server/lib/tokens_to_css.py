@@ -1,4 +1,4 @@
-﻿"""Convert a campaign `tokens.yaml` into a CSS `:root { ... }` block.
+﻿"""Convert a project `tokens.yaml` into a CSS `:root { ... }` block.
 
 The agent runs this every time `tokens.yaml` is written or updated, so
 the design-language one-pager and per-slide HTML can consume tokens via
@@ -61,10 +61,10 @@ def to_css(tokens: dict) -> str:
     lines: list[str] = []
     lines.append("/* Auto-generated from tokens.yaml by system/server/lib/tokens_to_css.py */")
     lines.append("/* Do not hand-edit. Edit tokens.yaml and re-run. */")
-    campaign = tokens.get("campaign")
+    project = tokens.get("project")
     version = tokens.get("version")
-    if campaign or version:
-        lines.append(f"/* campaign: {campaign}  version: {version} */")
+    if project or version:
+        lines.append(f"/* project: {project}  version: {version} */")
     lines.append("")
     lines.append(":root {")
 

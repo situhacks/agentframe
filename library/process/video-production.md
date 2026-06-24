@@ -1,14 +1,14 @@
 # Video Production
 
-Use this when a campaign post is video-shaped: raw talking-head footage, an authored product/feature video, a HyperFrames launch-style montage, generated motion assets, or any hybrid of those.
+Use this when a project post is video-shaped: raw talking-head footage, an authored product/feature video, a HyperFrames launch-style montage, generated motion assets, or any hybrid of those.
 
-This file owns the **when, what, and how-to-compose** for video production inside AgentFrame Marketing. Vendored skill packs own their generic craft:
+This file owns the **when, what, and how-to-compose** for video production inside AgentFrame. Vendored skill packs own their generic craft:
 
 - HyperFrames teaches HTML video composition, preview, inspection, and rendering.
 - video-use teaches transcript-driven raw-footage editing.
 - Flow / Veo / Nano Banana are manual browser workflows for generated footage, transitions, and image/video assets until an API integration earns its place.
 
-AgentFrame Marketing owns campaign context: arc, audience, design language, CTA, prior posts, state tracking, and publish reconciliation.
+AgentFrame owns project context: arc, audience, design language, CTA, prior posts, state tracking, and publish reconciliation.
 
 ---
 
@@ -17,8 +17,8 @@ AgentFrame Marketing owns campaign context: arc, audience, design language, CTA,
 When video work starts, load:
 
 1. This file.
-2. The campaign `project.md` frontmatter and the current post row.
-3. The campaign architecture if it exists.
+2. The project `project.md` frontmatter and the current post row.
+3. The project architecture if it exists.
 4. The design language artifacts if visual style is relevant: `design-language-v{N}.md`, `tokens.yaml`, and existing previews.
 5. `library/deliverables/video-spec/template.md`.
 6. The capability references only as needed:
@@ -31,7 +31,7 @@ When video work starts, load:
    - `system/skills/hyperframes/references/launch-video/STORYBOARD.md`
    - `C:\Cursor Projects\MarketingOS-video-references\video-use\SKILL.md` when raw footage needs transcript-driven editing.
 
-Treat HyperFrames/GSAP skill folders as vendored snapshots: update intentionally, not ad hoc during campaign drafting.
+Treat HyperFrames/GSAP skill folders as vendored snapshots: update intentionally, not ad hoc during project drafting.
 
 ---
 
@@ -98,7 +98,7 @@ Within `video/`, keep `renders/` for rendered video outputs (`.mp4`/`.webm`) onl
 
 ## Process
 
-1. **Name the video job.** Tie the video to the campaign arc: what it proves, what post it follows, what post it tees up, and what CTA it earns.
+1. **Name the video job.** Tie the video to the project arc: what it proves, what post it follows, what post it tees up, and what CTA it earns.
 2. **Inventory material.** List raw footage, screenshots, product UI captures, existing design-language assets, Flow-generated assets, audio/voiceover needs, and any hard platform requirements.
 3. **Choose capabilities from the palette.** State which tools are useful for this job and why. Do not force a single path.
 4. **Create or update `video-spec-v{N}.md`.** Keep it as the planning/checklist artifact. It should describe the intended structure and asset provenance, not over-script the creative work.
@@ -106,18 +106,18 @@ Within `video/`, keep `renders/` for rendered video outputs (`.mp4`/`.webm`) onl
 6. **For raw footage:** load video-use, produce transcript/EDL artifacts, render a preview, and only show the user after self-eval passes or residual issues are named.
 7. **For authored video:** load HyperFrames skills, use `SCRIPT.md` and `STORYBOARD.md` when the video needs narration or beat-by-beat direction, then build `index.html` and `compositions/`.
 8. **For Flow assets:** the operator generates assets in Flow manually, drops files into the project, and the agent records the prompt, model/tool used, date, and path.
-9. **Preview.** Use HyperFrames Studio for timeline authoring. Use the AgentFrame Marketing preview hub for campaign artifact browsing and rendered video review.
+9. **Preview.** Use HyperFrames Studio for timeline authoring. Use the AgentFrame preview hub for project artifact browsing and rendered video review.
 10. **Verify.** Run the relevant checks before lock:
     - HyperFrames: `npx hyperframes doctor`, `npx hyperframes lint`, `npx hyperframes validate`, `npx hyperframes inspect`, preview as needed, then draft/final render.
     - video-use: transcript cache present, EDL exists, preview render exists, self-eval notes recorded.
 11. **Lock.** `video-spec-v{N}.md` can lock only when the user has reviewed the draft render or explicitly waived review, final render paths are recorded, and open production issues are either fixed or named.
-12. **Publish reconciliation.** When the post ships, the post's `post-FINAL.md` is the delivered state owner. Add final video files to `shipped_media[]`, update publish fields, mirror `project.md`, and append the campaign activity entry.
+12. **Publish reconciliation.** When the post ships, the post's `post-FINAL.md` is the delivered state owner. Add final video files to `shipped_media[]`, update publish fields, mirror `project.md`, and append the project activity entry.
 
 ---
 
 ## Flow / Veo / Nano Banana Provenance
 
-For Post 4 and near-term work, Flow is external. Do not call APIs from AgentFrame Marketing.
+For Post 4 and near-term work, Flow is external. Do not call APIs from AgentFrame.
 
 When the operator provides Flow outputs, record:
 
@@ -140,7 +140,7 @@ A video post is ready to lock when:
 - Final render path exists and is recorded.
 - Draft render has been reviewed by the user or review is explicitly waived.
 - HyperFrames/video-use verification appropriate to the project has run or any skipped check is named with reason.
-- CTA and ending frame align with the post's role in the campaign arc.
+- CTA and ending frame align with the post's role in the project arc.
 - Any generated assets have provenance recorded.
 - The post's body copy and the video agree on CTA, visual promise, and delivered media.
 
@@ -148,9 +148,9 @@ A video post is ready to lock when:
 
 ## Non-Goals
 
-- Do not casually patch vendored HyperFrames/video-use skills during campaign drafting; either use them as-is or run an intentional refresh/update pass.
-- Do not create a custom AgentFrame Marketing video renderer.
+- Do not casually patch vendored HyperFrames/video-use skills during project drafting; either use them as-is or run an intentional refresh/update pass.
+- Do not create a custom AgentFrame video renderer.
 - Do not require `SCRIPT.md` / `STORYBOARD.md` for tiny clips that do not need them.
 - Do not require video-use for authored HyperFrames videos.
 - Do not require HyperFrames for a simple raw-footage cut unless overlays, product scenes, or authored assembly make it useful.
-- Do not hide video state in external folders only. Final state and delivered media still reconcile into AgentFrame Marketing files.
+- Do not hide video state in external folders only. Final state and delivered media still reconcile into AgentFrame files.

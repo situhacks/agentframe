@@ -112,7 +112,6 @@ After the command returns, re-read the root `AGENTS.md` before any further work 
 | Area | Job |
 |---|---|
 | `workspace/projects/` | Project work and state; Operator-owned except schema migrations |
-| `workspace/research/` | Shared research corpus |
 | `library/deliverables/` | Deliverable templates; main product surface |
 | `library/process/` | On-demand workflow procedures |
 | `library/context/operator/` | Operator positioning, profile, and voice |

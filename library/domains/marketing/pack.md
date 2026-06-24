@@ -1,7 +1,7 @@
 ---
 domain: marketing
 prefix: mkt
-extension_fields: [post_manifest, posts_published, post_count, shipped_at]
+extension_fields: []
 verbs: [lock, publish, version, doctor]
 assembly_record: post-FINAL.md
 flows: [open-flow, marketing-solo-flow, marketing-standard-flow]
@@ -17,7 +17,7 @@ This pack is the only artifact that knows marketing. The generic spine (`af.py`)
 
 | Slot | Artifact | What it is |
 |---|---|---|
-| Frontmatter extension | the `extension_fields` above + `prefix` | the fields a marketing project adds to the neutral core (`post_manifest`, the post counters, `shipped_at`/`shipped_media` publish metadata), and the `mkt-` folder prefix. `doctor` validates these for `domain: marketing`; `new-project` reads the prefix. |
+| Frontmatter extension | `extension_fields` (none hard-required) + `prefix` | the post fields a marketing project adds **when it runs a post campaign** (`post_manifest`, `post_count`, `posts_published`, `shipped_at`/`shipped_media`) — optional, since a case study or workshop ships no posts — plus the `mkt-` folder prefix. The skeleton seeds them; `doctor` does not require them. |
 | Scaffold skeleton | [`skeleton.md`](skeleton.md) | the `project.md` body `new-project` writes for this domain (carries the MANIFEST block + counters). |
 | Deliverable templates | [`deliverables/`](deliverables/) | post-final, body-copy, slide-copy, campaign-brief, campaign-architecture, research-artifact, business-brief. |
 | Verb applicability + hooks | `verbs` above + [`rules.py`](rules.py) | `publish` is marketing-only (a domain that omits it from `verbs` has `publish` rejected); `lock` runs the post-FINAL assembly hook; `assembly_record` names the unversioned accumulator. |

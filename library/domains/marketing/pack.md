@@ -1,7 +1,7 @@
 ---
 domain: marketing
 prefix: mkt
-extension_fields: [post_manifest, posts_published, post_count, shipped_at, shipped_media]
+extension_fields: [post_manifest, posts_published, post_count, shipped_at]
 verbs: [lock, publish, version, doctor]
 assembly_record: post-FINAL.md
 flows: [open-flow, marketing-solo-flow, marketing-standard-flow]

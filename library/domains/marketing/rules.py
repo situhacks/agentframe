@@ -14,6 +14,13 @@ import os
 import re
 
 
+def _manifest_ingredients(cfm):
+    m = re.search(r"^\s*ingredients:\s*\[(.*?)\]\s*$", cfm, re.M)
+    if not m:
+        return []
+    return [i.strip() for i in m.group(1).split(",") if i.strip()]
+
+
 POST_FINAL_SKELETON = """---
 status: drafting
 last_updated: {date}
@@ -67,7 +74,7 @@ def on_lock(ctx, cdir, dpath, rel, cfm):
     ing = re.match(r"(.+)-v\d+\.md$", os.path.basename(dpath)).group(1)
     _assemble_post_final(ctx, post_dir, dpath, ing)
     notes.append("post-FINAL.md updated")
-    ings = ctx.manifest_ingredients(cfm)
+    ings = _manifest_ingredients(cfm)
     if ings and _post_complete(ctx, post_dir, ings):
         pf = os.path.join(post_dir, "post-FINAL.md")
         pfm, pbody = ctx.split_fm(ctx.read(pf), "post-FINAL.md")
@@ -105,10 +112,11 @@ def publish(ctx, cdir, args):
     pfm, pbody = ctx.split_fm(ctx.read(pf), rel)
 
     posted = args.posted_at or ctx.now_iso()
+    platform = args.platform or "linkedin"
     pfm = ctx.set_scalar(pfm, "status", "delivered", rel)
     pfm = ctx.set_scalar(pfm, "last_updated", ctx.today(), rel)
     pfm = re.sub(r"\n(shipped_at:.*|published:(\n  .*)*|shipped_media:(\n  - .*)*)", "", pfm)
-    block = [f"shipped_at: {ctx.today()}", "published:", f"  platform: {args.platform}",
+    block = [f"shipped_at: {ctx.today()}", "published:", f"  platform: {platform}",
              f"  url: {args.url}", f"  posted_at: {posted}"]
     if args.media:
         block.append("shipped_media:")

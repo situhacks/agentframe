@@ -3,13 +3,17 @@
 
 Owns the MECHANICS of project state changes. Binds to the
 project-frontmatter schema only — never to flows, templates, or content.
-Each command performs its bookkeeping atomically, writes the project
-paper trail (activity.md) as a side effect, and prints back the JUDGMENT
-checklist the agent must still run. Stdlib only.
+The spine is a generic engine; everything domain-specific lives in a pack
+under library/domains/{domain}/ which this host reads and dispatches to. The
+spine names no domain.
+
+Each command performs its bookkeeping atomically, writes the project paper
+trail (activity.md) as a side effect, and prints back the JUDGMENT checklist
+the agent must still run. Stdlib only.
 
 Commands:
   python system/af.py lock <project> <deliverable-slug-or-path>
-  python system/af.py publish <project> <post-slug> --url URL [--posted-at ISO] [--platform P] [--media PATH ...]
+  python system/af.py publish <project> <target> --url URL [--posted-at ISO] [--platform P] [--media PATH ...]
   python system/af.py version <project> <deliverable-slug>
   python system/af.py new-project <slug> [--domain marketing] [--flow open-flow] [--name NAME]
   python system/af.py doctor [project]
@@ -18,13 +22,16 @@ Commands:
 import argparse
 import datetime
 import glob
+import importlib.util
 import os
 import re
 import shutil
 import sys
+import types
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROJECTS = os.path.join(ROOT, "workspace", "projects")
+DOMAINS = os.path.join(ROOT, "library", "domains")
 
 STATUS_ENUM = {"not_started", "drafting", "locked", "delivered", "deferred"}
 LIFECYCLE_ENUM = {"active", "complete", "cancelled"}
@@ -46,6 +53,10 @@ def stamp():
     return datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 
 
+def now_iso():
+    return datetime.datetime.now().astimezone().isoformat(timespec="seconds")
+
+
 def read(path):
     with open(path, "r", encoding="utf-8-sig") as fh:  # -sig: tolerate BOMs from Windows editors
         return fh.read()
@@ -56,12 +67,20 @@ def write(path, text):
         fh.write(text)
 
 
-def project_dir(slug):
+def project_dir(arg):
+    """Find a project by folder name, else by its `slug` frontmatter field."""
     for base in (PROJECTS, os.path.join(PROJECTS, "completed")):
-        d = os.path.join(base, slug)
+        d = os.path.join(base, arg)
         if os.path.isfile(os.path.join(d, "project.md")):
             return d
-    die(f"project '{slug}' not found under workspace/projects/")
+    for base in (PROJECTS, os.path.join(PROJECTS, "completed")):
+        if not os.path.isdir(base):
+            continue
+        for name in sorted(os.listdir(base)):
+            sp = os.path.join(base, name, "project.md")
+            if os.path.isfile(sp) and get_scalar(split_fm(read(sp), sp)[0], "slug") == arg:
+                return os.path.join(base, name)
+    die(f"project '{arg}' not found under workspace/projects/")
 
 
 def split_fm(text, path="file"):
@@ -90,6 +109,18 @@ def clean_value(v):
 def get_scalar(fm, key):
     m = re.search(rf"^\s*{re.escape(key)}:[ \t]*(.*?)\s*$", fm, re.M)
     return clean_value(m.group(1)) if m else None
+
+
+def has_field(fm, key):
+    return re.search(rf"^\s*{re.escape(key)}:", fm, re.M) is not None
+
+
+def fm_list(fm, key):
+    """Parse a `key: [a, b, c]` inline list from a frontmatter block."""
+    m = re.search(rf"^\s*{re.escape(key)}:\s*\[(.*?)\]\s*$", fm, re.M)
+    if not m:
+        return []
+    return [i.strip() for i in m.group(1).split(",") if i.strip()]
 
 
 def row_span(fm, slug):
@@ -159,7 +190,7 @@ def head_of(path):
 
 
 def touch_lifecycle(fm):
-    return set_scalar(fm, "last_activity", datetime.datetime.now().astimezone().isoformat(timespec="seconds"), "project.md")
+    return set_scalar(fm, "last_activity", now_iso(), "project.md")
 
 
 def append_activity(cdir, line):
@@ -170,56 +201,50 @@ def append_activity(cdir, line):
     write(path, text + f"{stamp()} — {line}\n")
 
 
-def manifest_ingredients(fm):
-    m = re.search(r"^\s*ingredients:\s*\[(.*?)\]\s*$", fm, re.M)
-    if not m:
-        return []
-    return [i.strip() for i in m.group(1).split(",") if i.strip()]
+# ---------------------------------------------------------------- plugin host
+
+def project_domain(cfm):
+    return get_scalar(cfm, "domain")
+
+
+def load_pack(domain):
+    """(descriptor_fm | None, pack_dir | None). The pack is the only artifact that knows a domain."""
+    if not domain:
+        return None, None
+    pack_dir = os.path.join(DOMAINS, domain)
+    desc = os.path.join(pack_dir, "pack.md")
+    if not os.path.isfile(desc):
+        return None, pack_dir
+    fm, _ = split_fm(read(desc), "pack.md")
+    return fm, pack_dir
+
+
+def load_rules(pack_dir):
+    """Import the domain's rules.py if present. Absent = None (normal). Import error = fail loud + isolated."""
+    if not pack_dir:
+        return None
+    rp = os.path.join(pack_dir, "rules.py")
+    if not os.path.isfile(rp):
+        return None
+    spec = importlib.util.spec_from_file_location("af_domain_rules", rp)
+    mod = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(mod)
+    except Exception as e:
+        die(f"domain rules module failed to load ({os.path.relpath(rp, ROOT)}): {e}")
+    return mod
+
+
+def make_ctx():
+    """The host helpers a domain rules module is handed (it never imports af.py)."""
+    return types.SimpleNamespace(
+        ROOT=ROOT, read=read, write=write, split_fm=split_fm, join_fm=join_fm,
+        set_scalar=set_scalar, get_scalar=get_scalar, row_set=row_set, row_get=row_get,
+        row_span=row_span, all_rows=all_rows, versions_in=versions_in, today=today,
+        now_iso=now_iso, append_activity=append_activity, touch_lifecycle=touch_lifecycle, die=die)
 
 
 # ---------------------------------------------------------------- lock
-
-POST_FINAL_SKELETON = """---
-status: drafting
-last_updated: {date}
----
-
-# {title} — FINAL
-
-Assembled from the post's locked ingredients per the project manifest.
-"""
-
-
-def assemble_post_final(post_dir, locked_path, ingredient):
-    pf = os.path.join(post_dir, "post-FINAL.md")
-    title = os.path.basename(post_dir)
-    if not os.path.isfile(pf):
-        write(pf, POST_FINAL_SKELETON.format(date=today(), title=title))
-    fm, body = split_fm(read(pf), "post-FINAL.md")
-    _, src_body = split_fm(read(locked_path), locked_path)
-    fname = os.path.basename(locked_path)
-    heading = f"## {ingredient.replace('-', ' ').title()} (locked from {fname})"
-    section = f"{heading}\n{src_body.strip()}\n"
-    old = re.search(rf"^## .*\(locked from {re.escape(ingredient)}-v\d+\.md\)\n.*?(?=^## |\Z)", body, re.M | re.S)
-    if old:
-        body = body[:old.start()] + section + "\n" + body[old.end():]
-    else:
-        body = body.rstrip("\n") + "\n\n" + section
-    fm = set_scalar(fm, "last_updated", today(), "post-FINAL.md")
-    write(pf, join_fm(fm, body))
-    return pf
-
-
-def post_complete(post_dir, ingredients):
-    for ing in ingredients:
-        ns = versions_in(post_dir, ing)
-        if not ns:
-            return False
-        best = os.path.join(post_dir, f"{ing}-v{max(ns)}.md")
-        if get_scalar(split_fm(read(best), best)[0], "status") != "locked":
-            return False
-    return True
-
 
 def cmd_lock(args):
     cdir = project_dir(args.project)
@@ -241,24 +266,9 @@ def cmd_lock(args):
     write(dpath, join_fm(dfm, dbody))
 
     notes = []
-    norm = rel.replace("\\", "/")
-    if re.search(r"(^|/)posts/", norm):
-        post_dir = os.path.dirname(dpath)
-        ing = re.match(r"(.+)-v\d+\.md$", os.path.basename(dpath)).group(1)
-        assemble_post_final(post_dir, dpath, ing)
-        notes.append("post-FINAL.md updated")
-        ings = manifest_ingredients(cfm)
-        if ings and post_complete(post_dir, ings):
-            pf = os.path.join(post_dir, "post-FINAL.md")
-            pfm, pbody = split_fm(read(pf), "post-FINAL.md")
-            pfm = set_scalar(pfm, "status", "locked", "post-FINAL.md")
-            pfm = set_scalar(pfm, "last_updated", today(), "post-FINAL.md")
-            write(pf, join_fm(pfm, pbody))
-            post_slug = os.path.basename(post_dir)
-            if row_span(cfm, post_slug):
-                cfm = row_set(cfm, post_slug, "status", "locked")
-                cfm = row_set(cfm, post_slug, "last_updated", today())
-            notes.append("all manifest ingredients locked — post-FINAL locked")
+    rules = load_rules(load_pack(project_domain(cfm))[1])
+    if rules and hasattr(rules, "on_lock"):
+        cfm, notes = rules.on_lock(make_ctx(), cdir, dpath, rel, cfm)
 
     if slug:
         cfm = row_set(cfm, slug, "status", "locked")
@@ -270,54 +280,26 @@ def cmd_lock(args):
 
     print(f"af lock: {rel} -> locked" + (f" ({'; '.join(notes)})" if notes else ""))
     print("\nJudgment checklist (agent + operator):")
-    print("  [ ] Template lock criteria verified (library/deliverables/{type}/template.md)")
+    print("  [ ] Template lock criteria verified (the deliverable's template)")
     print("  [ ] Humanizer pass run, when the template declares it (public-facing prose)")
     print("  [ ] Voice was loaded for this deliverable's drafting (confirm if session resumed)")
     print("  [ ] Voice mini-retro eligibility checked (library/process/voice-mini-retro.md)")
-    print("  [ ] Remaining follow-ups surfaced (review, export, publish)")
+    print("  [ ] Remaining follow-ups surfaced (review, export, deliver)")
 
 
 # ---------------------------------------------------------------- publish
 
 def cmd_publish(args):
     cdir = project_dir(args.project)
-    cfm, cbody = split_fm(read(os.path.join(cdir, "project.md")), "project.md")
-    rel = row_get(cfm, args.post, "file") or die(f"tracker row '{args.post}' not found or has no file")
-    if not rel.endswith("post-FINAL.md"):
-        die(f"row '{args.post}' points at {rel}, not a post-FINAL.md — publish operates on the assembly record")
-    pf = os.path.join(cdir, rel)
-    pfm, pbody = split_fm(read(pf), rel)
-
-    posted = args.posted_at or datetime.datetime.now().astimezone().isoformat(timespec="seconds")
-    pfm = set_scalar(pfm, "status", "delivered", rel)
-    pfm = set_scalar(pfm, "last_updated", today(), rel)
-    pfm = re.sub(r"\n(shipped_at:.*|published:(\n  .*)*|shipped_media:(\n  - .*)*)", "", pfm)
-    block = [f"shipped_at: {today()}", "published:", f"  platform: {args.platform}",
-             f"  url: {args.url}", f"  posted_at: {posted}"]
-    if args.media:
-        block.append("shipped_media:")
-        block += [f"  - {m}" for m in args.media]
-    pfm = pfm.rstrip("\n") + "\n" + "\n".join(block)
-    write(pf, join_fm(pfm, pbody))
-
-    cfm = row_set(cfm, args.post, "status", "delivered")
-    cfm = row_set(cfm, args.post, "last_updated", today())
-    delivered = sum(1 for s in all_rows(cfm)
-                    if re.match(r"post-\d+$", s) and row_get(cfm, s, "status") == "delivered")
-    cfm = set_scalar(cfm, "posts_published", str(delivered), "project.md")
-    if get_scalar(cfm, "shipped_at") in (None, "null", ""):
-        cfm = set_scalar(cfm, "shipped_at", today(), "project.md")
-    cfm = touch_lifecycle(cfm)
-    write(os.path.join(cdir, "project.md"), join_fm(cfm, cbody))
-    append_activity(cdir, f"post_published: {args.post} → {args.url}")
-
-    print(f"af publish: {args.post} -> delivered ({args.url}); posts_published={delivered}")
-    print("\nJudgment checklist (agent + operator):")
-    print("  [ ] Shipped copy reconciled: if the live post differs materially from the locked")
-    print("      ingredient, write the next ingredient version with the as-shipped text, re-lock,")
-    print("      refresh its post-FINAL section — and run the voice publish/back-fill fallback")
-    print("  [ ] shipped_media recorded for every asset that actually shipped (--media)")
-    print("  [ ] Performance capture scheduled (~14 days after posted_at, per composio-notes.md)")
+    cfm, _ = split_fm(read(os.path.join(cdir, "project.md")), "project.md")
+    domain = project_domain(cfm)
+    desc, pack_dir = load_pack(domain)
+    if not desc or "publish" not in fm_list(desc, "verbs"):
+        die(f"publish is not a verb the '{domain}' domain declares — see library/domains/{domain}/pack.md")
+    rules = load_rules(pack_dir)
+    if not rules or not hasattr(rules, "publish"):
+        die(f"the '{domain}' domain declares publish but ships no rules.publish")
+    rules.publish(make_ctx(), cdir, args)
 
 
 # ---------------------------------------------------------------- version
@@ -354,67 +336,28 @@ def cmd_version(args):
 
 # ---------------------------------------------------------------- new-project
 
-PROJECT_SKELETON = """---
-# IDENTITY
-name: "{name}"
-slug: {slug}
-schema_version: 2026-06-24
-created_at: {date}
-supersedes: null
-domain: {domain}
-parent: null
-
-# LIFECYCLE
-status: active
-current_phase: {phase}
-flow: {flow}
-last_activity: {ts}
-shipped_at: null
-completed_at: null
-cancelled_at: null
-cancelled_reason: null
-quarterly_goals_advanced: []
-
-# MANIFEST
-post_manifest:
-  ingredients: []
-
-# DELIVERABLES
-deliverables: {{}}
-
-# COUNTERS
-post_count: 0
-posts_published: 0
-system_retro_completed: null
-closeout_retro_completed: null
----
-
-# {name}
-
-## Thesis
-
-(one paragraph once the direction locks)
-"""
-
-
 def cmd_new_project(args):
     slug = args.slug
     re.match(r"^[a-z0-9][a-z0-9-]*$", slug) or die("slug must be folder-safe lowercase kebab-case")
+    desc, pack_dir = load_pack(args.domain)
+    if not desc:
+        die(f"no domain pack at library/domains/{args.domain}/ (pack.md missing) — author the pack first")
+    skel_path = os.path.join(pack_dir, "skeleton.md")
+    os.path.isfile(skel_path) or die(f"domain '{args.domain}' ships no skeleton.md")
     cdir = os.path.join(PROJECTS, slug)
     if os.path.exists(cdir):
         die(f"{cdir} already exists")
     os.makedirs(cdir)
     name = args.name or slug.replace("-", " ").title()
-    write(os.path.join(cdir, "project.md"), PROJECT_SKELETON.format(
-        name=name, slug=slug, date=today(), domain=args.domain, phase=FLOWS[args.flow], flow=args.flow,
-        ts=datetime.datetime.now().astimezone().isoformat(timespec="seconds")))
+    write(os.path.join(cdir, "project.md"), read(skel_path).format(
+        name=name, slug=slug, date=today(), domain=args.domain, phase=FLOWS[args.flow], flow=args.flow, ts=now_iso()))
     write(os.path.join(cdir, "feedback-log.md"), "")
-    append_activity(cdir, f"project_started: {name} scaffolded ({args.flow})")
+    append_activity(cdir, f"project_started: {name} scaffolded ({args.domain}, {args.flow})")
 
-    print(f"af new-project: workspace/projects/{slug}/ scaffolded ({args.flow}, phase {FLOWS[args.flow]})")
+    print(f"af new-project: workspace/projects/{slug}/ scaffolded ({args.domain}, {args.flow}, phase {FLOWS[args.flow]})")
     print("\nJudgment (stays with the agent):")
     print(f"  - Load library/process/flows/{args.flow}.md and run its kickoff")
-    print("    (research offer / plan proposal / manifest moment — flow-owned, not script-owned).")
+    print("    (research offer / plan proposal / pack-owned kickoff steps — flow-owned, not script-owned).")
 
 
 # ---------------------------------------------------------------- doctor
@@ -435,7 +378,16 @@ def check_project(cdir):
     if get_scalar(cfm, "status") not in LIFECYCLE_ENUM:
         issues.append(f"{rel}: lifecycle status '{get_scalar(cfm, 'status')}' not in {sorted(LIFECYCLE_ENUM)}")
 
-    delivered_posts = 0
+    # Domain pack: core checks always; the pack's frontmatter extension + rules apply for its domain.
+    domain = get_scalar(cfm, "domain")
+    desc, pack_dir = load_pack(domain)
+    if domain and not desc:
+        issues.append(f"{rel}: domain '{domain}' has no pack at library/domains/{domain}/")
+    if desc:
+        for f in fm_list(desc, "extension_fields"):
+            if not has_field(cfm, f):
+                issues.append(f"{rel}: domain '{domain}' requires field '{f}' (missing)")
+
     for slug in all_rows(cfm):
         st, f = row_get(cfm, slug, "status"), row_get(cfm, slug, "file")
         if st not in STATUS_ENUM:
@@ -454,11 +406,10 @@ def check_project(cdir):
                 highest = max(versions_in(os.path.dirname(p), m.group(1)))
                 if int(m.group(2)) != highest:
                     issues.append(f"{rel}: row '{slug}' points at v{m.group(2)} but head is v{highest}")
-        if re.match(r"post-\d+$", slug) and st == "delivered":
-            delivered_posts += 1
-    declared = get_scalar(cfm, "posts_published")
-    if declared is not None and declared.isdigit() and int(declared) != delivered_posts:
-        issues.append(f"{rel}: posts_published={declared} but {delivered_posts} post rows are delivered")
+
+    rules = load_rules(pack_dir)
+    if rules and hasattr(rules, "check"):
+        issues += rules.check(make_ctx(), cdir, cfm)
     return issues
 
 
@@ -490,7 +441,7 @@ def main():
 
     s = sub.add_parser("lock");            s.add_argument("project"); s.add_argument("deliverable"); s.set_defaults(fn=cmd_lock)
     s = sub.add_parser("publish");         s.add_argument("project"); s.add_argument("post")
-    s.add_argument("--url", required=True); s.add_argument("--posted-at"); s.add_argument("--platform", default="linkedin")
+    s.add_argument("--url", required=True); s.add_argument("--posted-at"); s.add_argument("--platform")
     s.add_argument("--media", nargs="*", default=[]); s.set_defaults(fn=cmd_publish)
     s = sub.add_parser("version");         s.add_argument("project"); s.add_argument("deliverable"); s.set_defaults(fn=cmd_version)
     s = sub.add_parser("new-project");     s.add_argument("slug")

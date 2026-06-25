@@ -40,7 +40,7 @@ Identify the material (which deliverables, which trails), then ask the operator 
 
 ### Step 2 — Read and extract shape deltas
 
-Walk the sources for **structure changes**: sections added/removed/reordered, format conversions (prose→table, list→prose), weight/length corrections, content-placement rules ("X doesn't belong in this deliverable/version"), sequencing feedback ("lock skeleton before prose"), and any operator statement about what the deliverable SHOULD contain. Discard voice-level deltas (route those to voice-harvest) and one-off content fixes (typos, facts).
+Walk the sources for **structure changes**: sections added/removed/reordered, format conversions (prose→table, list→prose), weight/length corrections, content-placement rules ("X doesn't belong in this deliverable/version"), sequencing feedback ("lock skeleton before prose"), and any operator statement about what the deliverable SHOULD contain. Also scan the project directory for the presence of any `_local/` directories indicating project-local ad-hoc deliverables. Discard voice-level deltas (route those to voice-harvest) and one-off content fixes (typos, facts).
 
 ### Step 3 — Cluster and classify
 
@@ -48,15 +48,18 @@ Collapse repeats into one candidate each. Per distinct finding:
 
 - **Generalizable template gap** (test: *would the next campaign hit this with the current template?*) → **template-patch candidate**, named to its target `library/deliverables/{type}/template.md` section.
 - **Already covered by the template but violated anyway** → **recurrence signal**: the template rule didn't fire. Log/update a `BB-*` watch in `system/builder-backlog.md` (first time = watch; matches a prior watch = confirmed, needs a structural fix, not a sharper-worded template line).
+- **Local deliverable promotion candidate** (test: *is this ad-hoc `_local` deliverable type reusable across other projects in this domain?* and *does it cover less than 70% of any existing template?*) → **promotion candidate**, target path `library/domains/{domain}/deliverables/{type}/template.md` (where `{domain}` is the active project's domain).
 - **Campaign-specific, not generalizable** → one line to the campaign's `feedback-log.md` (paper trail for the campaign retro), nothing else.
 
 ### Step 4 — Propose (FIRST-PASS-THEN-APPROVE)
 
-Surface all candidates grouped by destination: template-patch candidates (with target file + section), backlog watches, feedback-log lines. The operator approves, edits, or drops each. **Approved template patches route to `system/skills/system-improvement/SKILL.md`** — that skill owns the patch discipline (earning citation = the diff you just mined); this skill never edits templates directly.
+Surface all candidates grouped by destination: template-patch candidates (with target file + section), promotion candidates, backlog watches, feedback-log lines. The operator approves, edits, or drops each. 
+- **Approved template patches** route to `system/skills/system-improvement/SKILL.md` (which owns the patch discipline).
+- **Approved local promotions** write directly to the domain's pack directory (`library/domains/{domain}/deliverables/`) and are logged. This operator-driven promotion needs no mode swap but **must** still apply the `agentframe-structure` authoring standard (correct sections, purpose, lock criteria, etc.).
 
 ### Step 5 — Log
 
-Append one `system_changes` row via `system/audit/writer.py`: findings count by destination, sources mined (tier), deliverables covered. Feedback-log lines and backlog entries were written in Step 3–4; the audit row records the harvest ran.
+Append one `system_changes` row via `system/audit/writer.py`: findings count by destination (including promotions), sources mined (tier), deliverables covered. Feedback-log lines and backlog entries were written in Step 3–4; the audit row records the harvest ran.
 
 ## Boundaries
 

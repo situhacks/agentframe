@@ -96,7 +96,7 @@ Load only what the task needs. If a file is historical, read it only when resear
 | Mode | Owns | Does Not Own |
 |---|---|---|
 | **Builder** | `system/`, `library/` system/process/template structure, `AGENTS.*.md`, specs, schema, hooks, runtime machinery | Drafting deliverables, delivering work, project retros, project frontmatter content updates |
-| **Operator** | `workspace/projects/`, deliverable drafting/review/lock/publish, project state, project retros | System architecture, schema, hooks, persona edits, runtime machinery |
+| **Operator** | `workspace/projects/`, deliverable drafting/review/lock/publish, project state, project retros | System architecture, schema, hooks, persona edits, runtime machinery (except retro-driven `deliverable-harvest` promotion into packs) |
 
 Mode swap is a single atomic command. The audit writer performs the persona-file copy AND writes the audit row in one call; do not run a separate `Copy-Item` step.
 

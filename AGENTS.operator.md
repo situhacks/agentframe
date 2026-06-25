@@ -42,8 +42,8 @@ Domain-agnostic. The left column is intent; every domain-specific destination re
 | Situation | Load First | Also Load If Needed | Do Not Load |
 |---|---|---|---|
 | State or continuity request | `project.md` frontmatter only | the project body only if the operator asks for depth | full deliverables, completed projects |
-| New project (no folder yet) OR loading an existing one | [research-and-signals](library/process/research-and-signals.md), the [flow registry](library/process/flows/README.md), the selected `flow` from `project.md`, [positioning](library/context/operator/positioning.md), [voice](library/context/operator/voice/README.md) | topic research archives or operator profile only when needed | completed projects unless referenced; brainstorming skill or ad-hoc web-research subagents |
-| Deliverable drafting or iteration | **the template resolved for this deliverable** — pack `library/domains/{domain}/deliverables/{type}/template.md` ▸ shared `library/deliverables/{type}/template.md` ▸ the generic [`_meta` shape](library/deliverables/_meta/deliverable-shape.md) — plus [deliverable-versioning](library/process/deliverable-versioning.md), the project tracker, upstream deps the template names | [voice](library/context/operator/voice/README.md) when the template marks the deliverable user-voiced; [positioning](library/context/operator/positioning.md) for strategic work | unrelated deliverables |
+| New project (no folder yet) OR loading an existing one | [research-and-signals](library/process/research-and-signals.md), the [flow registry](library/process/flows/README.md), the selected `flow` from `project.md`, [positioning](library/context/operator/positioning.md), [voice](library/context/operator/voice/README.md), and any global channel/person profiles referenced by the project (`library/context/channels/` and `library/context/people/`) | topic research archives or operator profile only when needed | completed projects unless referenced; brainstorming skill or ad-hoc web-research subagents |
+| Deliverable drafting or iteration | **the template resolved for this deliverable** — pack `library/domains/{domain}/deliverables/{type}/template.md` ▸ shared `library/deliverables/{type}/template.md` ▸ local `_local/{type}/` ▸ the generic [`_meta` shape](library/deliverables/_meta/deliverable-shape.md) — plus [deliverable-versioning](library/process/deliverable-versioning.md), the project tracker, upstream deps the template names | [voice](library/context/operator/voice/README.md) when the template marks the deliverable user-voiced; [positioning](library/context/operator/positioning.md) for strategic work | unrelated deliverables |
 | **Domain production / delivery work** (the active deliverable set's own workflow) | **the active pack's `library/domains/{domain}/production.md`** (if the pack declares one) | — | — |
 | Previewable artifact written under `projects/*` | [preview-server](library/process/preview-server.md) | — | full project history |
 | Browser fallback during execution | [`browser-fallback`](library/process/browser-fallback.md), the relevant `system/browser/workflows/{workflow-id}/recipe.md` | [`system/browser/README.md`](system/browser/README.md) only when runtime setup is unclear | browser fallback as a first resort before approved API/MCP/CLI paths are checked |
@@ -75,11 +75,15 @@ When the operator asks for project state, stale work, next steps, or workspace c
 
 Before drafting:
 
-1. Resolve and load the deliverable template (pack ▸ shared ▸ `_meta` shape).
+1. Resolve and load the deliverable template (pack ▸ shared ▸ `_local` ▸ `_meta` shape).
 2. Load required upstream dependencies named by the template.
 3. Load [positioning](library/context/operator/positioning.md) for strategic or user-voiced work.
 4. Load [voice](library/context/operator/voice/README.md) when the template marks the deliverable user-voiced. When resuming an in-flight voiced task (continuation, compaction), confirm voice is loaded before drafting — do not trust that an earlier turn loaded it.
 5. Surface the Tier-1 callout: the obvious risk, gap, or assumption. If no weakness is visible, say so and proceed.
+
+**Tiers of temporary/ad-hoc files:**
+- **Scratchpad:** throwaway notes/planning. Filename contains `scratchpad`, not versioned. Never read prior scratchpads.
+- **Local deliverable (`_local/<slug>/`):** kept, project-scoped deliverable type not found in the library. Created as `_local/<slug>/<slug>-v1.md`, tracked in `project.md` deliverables list, versioned with `af version`, and locked with `af lock`. Promotable to domain pack at retro.
 
 If direction is unstable during production work, offer a per-deliverable scratchpad in the deliverable folder and treat it as throwaway context for that version only.
 

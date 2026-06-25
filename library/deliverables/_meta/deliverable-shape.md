@@ -24,6 +24,7 @@ When drafting deliverable `X` for a project with `domain: D`, the template resol
 
 1. **Domain pack** — `library/domains/{D}/deliverables/X/template.md` (the domain-specific template, if the pack ships one).
 2. **Shared** — `library/deliverables/X/template.md` (a cross-domain deliverable, e.g. design-language, video-spec, image-prompts, closeout-retro, system-retro).
-3. **This generic shape** — no type-specific template exists; author the instance ad-hoc against the shape above.
+3. **Local template** — `_local/X/` (if the operator wants a kept, versioned, project-scoped artifact that doesn't exist in the library; author the instance ad-hoc against the generic shape).
+4. **This generic shape** — no type-specific template exists; author the instance ad-hoc against the shape above.
 
 The pack's template (when present) layers over this shape; the shape itself is never forked per domain. A flow points to "draft the deliverable using its template"; resolution does the lookup — it is not the flow's or the persona's job to hard-code a path.

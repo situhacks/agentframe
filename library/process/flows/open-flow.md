@@ -13,7 +13,7 @@ Freeform flow for projects that don't fit a fixed phase ladder. Open flow is com
 The objective is usually known by the time an open-flow project starts. The agent's first move is a proposed plan, scaled to the job — then the operator narrows:
 
 1. **Phases** — as many as the objective needs: none for a single ad-hoc deliverable, several named phases for a longer project. Phase ids are project-defined (kebab-case, ordered).
-2. **Deliverables** — composed from the library first. Reuse existing templates; borrow structured-flow fragments by name ("marketing-solo-flow phases 1 and 3, skip the briefs"); name any ad-hoc artifact that matches no template. Selection menus apply ([`image-production.md`](../image-production.md), [`deck-production.md`](../deck-production.md)).
+2. **Deliverables** — composed from the library first. Reuse existing templates; borrow structured-flow fragments by name ("marketing-solo-flow phases 1 and 3, skip the briefs"). If you need a kept, versioned, project-scoped artifact that matches no library template, mint it as a **local project-level deliverable** under `_local/<deliverable-slug>/` using the generic shape. Selection menus apply ([`image-production.md`](../image-production.md), [`deck-production.md`](../deck-production.md)).
 3. **Manifest moment** — when posts are in the plan, record `post_manifest` in `project.md` now.
 
 The agreed plan lands in the `project.md` body; tracker rows are added at `not_started`.
@@ -29,8 +29,8 @@ Short and current:
 
 ## The Loop
 
-1. Work the runway's first item using its deliverable template (or the ad-hoc artifact's agreed shape).
-2. On lock: run lock-event, sync the tracker, refresh the plan section, and PROPOSE the next 1–2 runway steps — don't make the operator plan from scratch each turn.
+1. Work the runway's first item using its deliverable template (or for ad-hoc artifacts, create the directory `_local/<slug>/` and the file `_local/<slug>/<slug>-v1.md` following the generic shape).
+2. On lock: run lock-event, sync the tracker, refresh the plan section, and PROPOSE the next 1–2 runway steps — don't make the operator plan from scratch each turn. Note that `_local` deliverables version (`af version`) and lock (`af lock`) identically to library-backed deliverables.
 3. Recalibrate when scope moves: phases can be added, merged, or dropped. Log plan changes to `activity.md` as `plan_revised` events — the decision trail lives on disk, not in the context window.
 
 ## Files

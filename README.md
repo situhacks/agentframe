@@ -47,7 +47,7 @@ This is the system I actually work in. I run real projects through it — paid w
 
 3. **Set up.** Copy `.env.example` to `.env` and drop in optional connector keys for Gemini and Composio. Both have generous free tiers and both are optional — without them the system still runs, you just lose Deep Research and direct publishing. If you plan to use Open Design locally, run `corepack pnpm install` inside `system/skills/open-design/source/`.
 
-4. **Start a project.** Tell the agent **"start a new marketing campaign"** or **"start a new project-management engagement"** and run it end to end. Under the hood that is `af new-project <slug> --domain <marketing|project-mgmt>` — the engine reads the domain's pack and scaffolds the right shape.
+4. **Start a project.** Tell the agent **"start a new marketing campaign"** or **"start a new project-management project"** and run it end to end. Under the hood that is `af new-project <slug> --domain <marketing|project-mgmt>` — the engine reads the domain's pack and scaffolds the right shape.
 
 ### Mode swaps
 
@@ -110,6 +110,46 @@ Adding a domain is a new folder under `library/domains/`: author the pack, never
 
 The same spine runs every domain; what changes is the pack. Here is what an end-to-end run looks like in each of the two domains that ship today — one operator, six moves, no handoffs.
 
+### Project management — a project
+
+The same spine off the PM pack: a charter in, governance docs derived, deliverables produced ad hoc.
+
+<!-- Project-management walkthrough imagery is a placeholder — I'm generating these myself.
+     Planned files: .github/readme-assets/pm-walkthrough-01-kickoff.png … pm-walkthrough-06-retro.png -->
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<img src=".github/readme-assets/pm-walkthrough-01-kickoff.png" alt="01 · Operator kickoff" /><br/>
+<sub><b>01 · Operator kickoff</b> — Tell your agent <code>start a new project-management project</code>. Operator scaffolds the project from the PM pack's skeleton and ingests your charter into the project's <code>sources/</code>.</sub>
+</td>
+<td width="50%" valign="top">
+<img src=".github/readme-assets/pm-walkthrough-02-governance.png" alt="02 · Derive the governance docs" /><br/>
+<sub><b>02 · Derive the governance docs</b> — From the charter, the agent derives the four living documents into <code>knowledge/</code>: a RAID log, a stakeholder map, a decision log, and a workback schedule.</sub>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src=".github/readme-assets/pm-walkthrough-03-living.png" alt="03 · Keep them living" /><br/>
+<sub><b>03 · Keep them living</b> — These are not one-time artifacts. The RAID log moves on a weekly cadence, decisions append as they are made, and the schedule re-plans against its deadlines.</sub>
+</td>
+<td width="50%" valign="top">
+<img src=".github/readme-assets/pm-walkthrough-04-deliverables.png" alt="04 · Ad-hoc deliverables in your voice" /><br/>
+<sub><b>04 · Ad-hoc deliverables in your voice</b> — Findings, recommendations, decks, memos: each an instance of the generic deliverable shape. Drafts inherit your voice system from <code>library/context/operator/voice/</code>, and every revision snapshots as its own <code>-v{N}.md</code>, so you can roll back, compare, or read why the copy changed.</sub>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src=".github/readme-assets/pm-walkthrough-05-deliver.png" alt="05 · Deliver" /><br/>
+<sub><b>05 · Deliver</b> — No posts and no publish here. Deliverables lock and version, then hand off; <code>af publish</code> is correctly rejected for this domain.</sub>
+</td>
+<td width="50%" valign="top">
+<img src=".github/readme-assets/pm-walkthrough-06-retro.png" alt="06 · Retro" /><br/>
+<sub><b>06 · Retro</b> — The agent proposes patches to your voice, templates, processes, and skills based on what actually happened in the project. You approve or reject each one; the library evolves.</sub>
+</td>
+</tr>
+</table>
+
 ### Marketing — a campaign
 
 A compact walkthrough using the example project at `workspace/projects/example-ai-automation-pov/`.
@@ -128,7 +168,7 @@ A compact walkthrough using the example project at `workspace/projects/example-a
 <tr>
 <td width="50%" valign="top">
 <img src=".github/readme-assets/walkthrough-03-post-copy.png" alt="03 · Copy in your voice" /><br/>
-<sub><b>03 · Copy in your voice</b> — Drafts inherit your voice system from <code>library/context/operator/voice/</code>, then run through the humanizer before lock. Every revision snapshots as its own <code>-v{N}.md</code>, so you can roll back, compare, or read why the copy changed.</sub>
+<sub><b>03 · Copy in your voice</b> — Drafts inherit your voice system and run through the humanizer before lock. They are versioned the same way project deliverables are, with snapshots for each revision.</sub>
 </td>
 <td width="50%" valign="top">
 <img src=".github/readme-assets/walkthrough-04-image-production.png" alt="04 · Media, your pick" /><br/>
@@ -142,47 +182,7 @@ A compact walkthrough using the example project at `workspace/projects/example-a
 </td>
 <td width="50%" valign="top">
 <img src=".github/readme-assets/walkthrough-06-retro.png" alt="06 · Retro" /><br/>
-<sub><b>06 · Retro</b> — The agent proposes patches to your voice, templates, processes, and skills based on what actually happened. You approve or reject each one; the library evolves.</sub>
-</td>
-</tr>
-</table>
-
-### Project management — an engagement
-
-The same spine off the PM pack: a charter in, governance docs derived, deliverables produced ad hoc.
-
-<!-- Project-management walkthrough imagery is a placeholder — I'm generating these myself.
-     Planned files: .github/readme-assets/pm-walkthrough-01-kickoff.png … pm-walkthrough-06-retro.png -->
-
-<table>
-<tr>
-<td width="50%" valign="top">
-<img src=".github/readme-assets/pm-walkthrough-01-kickoff.png" alt="01 · Operator kickoff" /><br/>
-<sub><b>01 · Operator kickoff</b> — Tell your agent <code>start a new project-management engagement</code>. Operator scaffolds the engagement from the PM pack's skeleton and ingests your charter / SOW into the project's <code>sources/</code>.</sub>
-</td>
-<td width="50%" valign="top">
-<img src=".github/readme-assets/pm-walkthrough-02-governance.png" alt="02 · Derive the governance docs" /><br/>
-<sub><b>02 · Derive the governance docs</b> — From the charter, the agent derives the four living documents into <code>knowledge/</code>: a RAID log, a stakeholder map, a decision log, and a workback schedule.</sub>
-</td>
-</tr>
-<tr>
-<td width="50%" valign="top">
-<img src=".github/readme-assets/pm-walkthrough-03-living.png" alt="03 · Keep them living" /><br/>
-<sub><b>03 · Keep them living</b> — These are not one-time artifacts. The RAID log moves on a weekly cadence, decisions append as they are made, and the schedule re-plans against its deadlines.</sub>
-</td>
-<td width="50%" valign="top">
-<img src=".github/readme-assets/pm-walkthrough-04-deliverables.png" alt="04 · Ad-hoc deliverables in your voice" /><br/>
-<sub><b>04 · Ad-hoc deliverables in your voice</b> — Findings, recommendations, decks, memos: each an instance of the generic deliverable shape, drafted in your voice and versioned the same way marketing copy is.</sub>
-</td>
-</tr>
-<tr>
-<td width="50%" valign="top">
-<img src=".github/readme-assets/pm-walkthrough-05-deliver.png" alt="05 · Deliver" /><br/>
-<sub><b>05 · Deliver</b> — No posts and no publish here. Deliverables lock and version, then hand off; <code>af publish</code> is correctly rejected for this domain.</sub>
-</td>
-<td width="50%" valign="top">
-<img src=".github/readme-assets/pm-walkthrough-06-retro.png" alt="06 · Retro" /><br/>
-<sub><b>06 · Retro</b> — The same harvest as marketing: the agent proposes improvements to templates, processes, and skills from how the engagement actually ran.</sub>
+<sub><b>06 · Retro</b> — The same harvest as project management: the agent proposes patches based on what actually happened. You approve or reject each one; the library evolves.</sub>
 </td>
 </tr>
 </table>
@@ -191,17 +191,21 @@ The same spine off the PM pack: a charter in, governance docs derived, deliverab
 
 ---
 
-## What makes it a harness
-
-Three systems separate AgentFrame from a folder of prompt files.
-
-### The deterministic spine
+## The deterministic harness
 
 A model will write all day and still forget to update its own records. Benchmarks have frontier models breaking exact bookkeeping rules 30–90% of the time, and my own agent skipped its lock step three times in one night. So project state does not run on the model remembering procedure — it runs through `system/af.py`. The generic buttons (`new-project`, `lock`, `version`, `doctor`) each do their bookkeeping in one atomic step — frontmatter, tracker, activity trail — and print back the judgment checklist the agent still owns. Domain-specific steps, like marketing's post-FINAL assembly and the `publish` verb, dispatch into the active pack, so the spine itself names no domain. `doctor` audits the books and never fixes them for you. It is plain stdlib Python, so it behaves identically in Claude Code, Cursor, Codex, or Antigravity.
+
+## Key features
+
+Three features separate AgentFrame from a folder of prompt files.
 
 ### A voice system built from your own writing
 
 Most brand-voice setups are a rules file the agent has forgotten by the third draft. AgentFrame compiles your actual writing into annotated pairs — a generic version, your version, and the move that separates them — grouped by register. Drafting starts from those pairs: pull three or four concrete markers, write the content pass, then run a separate style pass with the markers required. Anti-patterns are weighted preferences with a per-piece budget, not flat bans. A humanizer pass runs last, before anything locks. One voice, shared across every domain.
+
+### A structured project knowledge substrate
+
+Long-horizon projects quickly bloat active LLM context. AgentFrame separates raw, immutable project inputs (`sources/`) from agent-distilled living truth (`knowledge/`), and runs a periodic, status-based consolidation pass (the "dream" workflow) to archive completed items, keeping working context slim and context window costs low.
 
 ### A learning loop
 
@@ -222,7 +226,8 @@ Everything in the library and skills layer is meant to be edited. Set voice and 
 | Pack | What it ships |
 |---|---|
 | `library/domains/marketing/` | Campaigns that ship posts. Deliverables: research, business brief, campaign brief, campaign architecture, slide-copy, body-copy, post-final. The `publish` verb and the post-FINAL assembly live here. |
-| `library/domains/project-mgmt/` | Consulting / PM engagements. A charter / SOW goes in, then four living governance docs are derived from it: RAID log, stakeholder map, decision log, workback schedule. No posts, no publish. |
+| `library/domains/project-mgmt/` | Consulting / PM projects. A charter goes in, then four living governance docs are derived from it: RAID log, stakeholder map, decision log, workback schedule. No posts, no publish. |
+| `library/domains/TBD/` | The harness is domain-neutral. Add your own domain packs here to support any kind of workflow. |
 
 ### Flows
 
@@ -259,6 +264,7 @@ Process files load on demand — only when the workflow they describe is in play
 | `deliverable-versioning` | Surgical-vs-replacement judgment for `*-v{N}.md`; bumps run through `af version` |
 | `lock-event` | Lock trigger and judgment gates; mechanics run through the `af` CLI |
 | `project-frontmatter` | Frontmatter schema and state handling |
+| `knowledge-base` | Project knowledge substrate schema, storage principles, and ingest workflow |
 | `voice-setup` | Build your voice system from your own writing |
 | `voice-mini-retro` | Lock-time gate that routes your edit-diffs to the voice-harvest skill |
 | `humanizer-integration` | The humanization pass |
@@ -276,14 +282,15 @@ My current production stack — swap any one for a sharper tool without touching
 
 | Skill | Source |
 |---|---|
-| `agentframe-structure` | Project skill |
-| `deliverable-scaffolding` | Project skill |
-| `system-improvement` | Project skill |
+| `agentframe-structure` | Project skill — navigates and understands the overall project architecture and state |
+| `deliverable-scaffolding` | Project skill — scaffolds new deliverables from templates with correct frontmatter |
+| `system-improvement` | Project skill — applies patches and improvements to the system itself |
 | `upstream-sync` | Project skill — pulls upstream updates into your copy, commit by commit with approval |
 | `voice-harvest` | Project skill — mines finished work and edit-diffs into voice example pairs |
 | `deliverable-harvest` | Project skill — mines template and process patches from finished projects |
-| `docx` | Project skill |
-| `pptx` | Project skill |
+| `project-consolidate` | Project skill — consolidates and prunes project knowledge and history (dream workflow) |
+| `docx` | Project skill — generates Word documents from markdown deliverables |
+| `pptx` | Project skill — generates PowerPoint presentations from markdown deliverables |
 | `humanizer` | Vendored from [blader/humanizer](https://github.com/blader/humanizer) |
 | `hyperframes` | Vendored from [heygen-com/hyperframes](https://github.com/heygen-com/hyperframes) |
 | `hyperframes-cli` | Vendored from [heygen-com/hyperframes](https://github.com/heygen-com/hyperframes) |
@@ -419,7 +426,9 @@ agentframe/
 │   ├── deliverables/         # shared cross-domain deliverables + _meta shape
 │   ├── process/
 │   │   └── flows/
-│   └── context/operator.example/
+│   └── context/
+│       ├── _meta/            # channel and person profile schemas
+│       └── operator.example/ # default operator voice and positioning context
 ├── system/
 │   ├── af.py                 # the generic plugin-host spine
 │   ├── skills/
@@ -469,8 +478,8 @@ Small, demand-driven additions. Nothing here is a rewrite.
 - [ ] Embedded / RAG indexing over the markdown corpus, so retrieval scales as the library grows past what fits in context.
 - [ ] Scheduled runs — cron-triggered jobs for recurring work, like a weekly research pull or a digest.
 - [ ] Agent-to-agent communication over an API, so projects and agents can hand work to each other.
-- [ ] Per-project knowledge substrate (`sources/` immutable + agent-owned `knowledge/`) with a user-triggered consolidation pass.
-- [ ] Cross-project context entities (channels, people) referenced by slug.
+- [x] Per-project knowledge substrate (`sources/` immutable + agent-owned `knowledge/`) with a user-triggered consolidation pass.
+- [x] Cross-project context entities (channels, people) referenced by slug.
 - [ ] More domain packs as the work demands them.
 - [ ] Preview server v2: better search, nested live reload, stronger video UX.
 

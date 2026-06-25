@@ -5,7 +5,7 @@ description: "Bundled Open Design runtime. Use after selecting the Open Design p
 
 # Open Design (Bundled)
 
-Vendored source is in [`source/`](source/); vendoring provenance and cuts are tracked in [`VENDOR.md`](VENDOR.md). This file owns everything AgentFrame-side: runtime setup, project staging, and lock-time import. Load it when CMO has picked the Open Design path for a deliverable.
+Vendored source is in [`source/`](source/); vendoring provenance and cuts are tracked in [`VENDOR.md`](VENDOR.md). This file owns everything AgentFrame-side: runtime setup, project staging, and lock-time import. Load it when Operator has picked the Open Design path for a deliverable.
 
 OD's `source/` tree carries its own `AGENTS.md` and `CLAUDE.md` hierarchy. Keep campaign/system agent work at the AgentFrame repo root and only enter `system/skills/open-design/source` for runtime control commands (`tools-dev start/status/stop`) to avoid loading OD-local agent instructions into broader AgentFrame tasks.
 

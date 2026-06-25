@@ -23,7 +23,7 @@ last_updated: 2026-05-11T19:07:00-07:00
 
 ### Already Applied
 
-#### Campaign Stayed In CMO Scope
+#### Campaign Stayed In Operator Scope
 
 - **Action:** Keep the final package campaign-owned.
 - **Why:** All durable edits live inside the example campaign folder. No system process or persona files were patched as part of this public walkthrough cleanup.

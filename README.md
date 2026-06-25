@@ -1,6 +1,6 @@
 # AgentFrame
 
-> **A domain-neutral project harness inside your AI coding agent.** File-native. Built for solo operators. One spine runs marketing campaigns, project-management engagements, and whatever domain you add next — **adding a domain is adding a pack, not rebuilding the system.** Two `AGENTS.md` modes carry the work: **Operator** runs the project, **Builder** evolves the system.
+> **A domain-neutral project harness inside your AI coding agent.** File-native. Built for solo operators. Currently supports marketing campaigns and project-management work, and flexible for any other domain in the future — a domain is a pack, not a rebuild. Two `AGENTS.md` modes: **Operator** runs the work, **Builder** evolves the system.
 
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" /></a>
@@ -54,7 +54,7 @@
 
 AgentFrame ships with two `AGENTS.md` modes. You swap depending on what you're doing:
 
-- **Swap to Operator when you're running a project** — drafting, producing media, delivering, doing a retro. Operator is scoped to `workspace/projects/` so it can't accidentally edit your templates or processes mid-project. Operator runs **any** domain, parameterized by the project's `domain` ("CMO" is the label it wears when `domain: marketing`).
+- **Swap to Operator when you're running a project** — drafting, producing media, delivering, doing a retro. Operator is scoped to `workspace/projects/` so it can't accidentally edit your templates or processes mid-project. Operator runs **any** domain, parameterized by the project's `domain`.
 - **Swap to Builder when you're improving the system itself** — editing a template, adding a process, authoring a domain pack, swapping a skill, applying retro patches. Builder is scoped to `system/` and `library/`.
 
 You don't run shell commands by hand. Just tell the agent `swap to Builder` or `swap to Operator`. It handles the file swap and logs the transition to the audit DB.
@@ -69,15 +69,13 @@ This repo keeps evolving after you clone it. To pull updates into your customize
 
 ## Why this exists
 
-I started by running my marketing campaigns out of Claude Chat. Write the post here, paste the voice rules there, ask for a rewrite, lose the thread, start over tomorrow. It works for something small, but for multi-post campaigns things get lost and context degrades. The voice rules I'd "saved" were forgotten by next session. State lived in scrollback.
+I built this for my marketing work first — running campaigns out of a coding agent instead of losing the thread in chat sessions. Then I started using it for project-management work too, since the two go hand in hand for how I operate.
 
-So I built a file-native marketing workspace inside the coding agent I already use — and dogfooded it through many revisions. Then a pattern showed up: the bones weren't marketing-specific. The deterministic spine was flow-agnostic, state was just files, the persona was a generic router. Only a handful of templates and a few hard-coded assumptions actually knew the word "marketing." I was already running non-marketing project work through it, jerry-rigged as "campaigns."
+So I generalized it. The shape I'm borrowing is where the industry is heading — Claude for Finance, Claude for small business: a base model plus domain skill packs. That's what AgentFrame is. Marketing and project management are the first two packs; adding another domain is adding a pack, not rebuilding the system.
 
-So I generalized it. **AgentFrame** is the result: marketing is now one **domain pack**, project-management is another, and adding a domain means authoring a pack — the engine never changes. It's not a marketing tool with a project-management bolt-on; it's a domain-neutral harness where marketing happens to be the first pack. It's how I actually work across domains today.
+It stands on Composio, Gemini Deep Research and image generation, Open Design, HyperFrames, PPT Master, and the humanizer — wired up under [Recommended connectors](#recommended-connectors) and credited in [References and lineage](#references-and-lineage).
 
-It stands on excellent shoulders — Composio, Gemini Deep Research and image generation, Open Design, HyperFrames, the humanizer — wired up under [Recommended connectors](#recommended-connectors) and credited in [References and lineage](#references-and-lineage).
-
-> **The marketing-only predecessor** lives on as a frozen, complete artifact at [agentframe-marketing](https://github.com/situhacks/agentframe-marketing) (v1). AgentFrame is its multi-domain successor.
+> **The marketing-only predecessor** lives on as a frozen v1 at [agentframe-marketing](https://github.com/situhacks/agentframe-marketing). AgentFrame is its multi-domain successor.
 
 [Back to top](#agentframe)
 
@@ -352,7 +350,7 @@ agentframe/
 
 - [ ] Per-project knowledge substrate (`sources/` immutable + agent-owned `knowledge/`) with a user-triggered consolidation pass
 - [ ] Cross-project context entities (channels, people) referenced by slug
-- [ ] More domain packs as the work demands them (job search is the likely next)
+- [ ] More domain packs as the work demands them
 - [ ] Preview server v2: improved search, nested live reload, stronger video UX
 
 ## Status

@@ -9,7 +9,7 @@ flows: [open-flow, marketing-solo-flow, marketing-standard-flow]
 
 # Marketing domain pack
 
-The "CMO" domain: campaigns that ship posts. A marketing project is a campaign — `domain: marketing`.
+The marketing domain: campaigns that ship posts. A marketing project is a campaign — `domain: marketing`.
 
 This pack is the only artifact that knows marketing. The generic spine (`af.py`) and the generic router (`AGENTS.md`) read what is declared here; they name no domain.
 

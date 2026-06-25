@@ -1,8 +1,8 @@
 ## PPT Master Skill Vendor Record
 
 - Upstream repository: `https://github.com/hugohe3/ppt-master`
-- Upstream version: v2.9.0
-- Snapshot date (UTC): `2026-06-10`
+- Upstream version: v2.11.0
+- Snapshot date (UTC): `2026-06-25`
 - Source location in AgentFrame: `system/skills/ppt-master/` (upstream `skills/ppt-master/` only — the repo's `projects/`, `examples/`, and docs workspace are not vendored)
 - Excluded from the snapshot: `references/ai-image-comparison/` (~43 MB of model-comparison sample PNGs; two "see also" pointers in `references/strategist.md` reference it, nothing in the pipeline consumes it)
 - License: MIT — see `LICENSE.txt`

@@ -3,9 +3,11 @@
 .env.local
 
 # === Operator content (PII / private to the operator running this fork) ===
-# library/context/operator/ holds positioning, voice, design-language, profile.
-# Forkers seed it from library/context/operator.example/ (committed) — see README.
-library/context/operator/
+# All operator context is private by default, except the shared metadata shapes
+# and operator examples.
+library/context/*
+!library/context/_meta/
+!library/context/operator.example/
 
 # Operator builder backlogs (keeps personal system fixes out of forks)
 system/builder-backlog*.md

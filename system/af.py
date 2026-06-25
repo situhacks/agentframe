@@ -407,6 +407,22 @@ def check_project(cdir):
                 if int(m.group(2)) != highest:
                     issues.append(f"{rel}: row '{slug}' points at v{m.group(2)} but head is v{highest}")
 
+    # Channels and stakeholders validation
+    channels = fm_list(cfm, "channels")
+    for c_slug in channels:
+        c_file = os.path.join(ROOT, "library", "context", "channels", c_slug, "profile.md")
+        if not os.path.isfile(c_file):
+            issues.append(f"{rel}: channel '{c_slug}' referenced in frontmatter but library/context/channels/{c_slug}/profile.md does not exist")
+
+    stakeholders = fm_list(cfm, "stakeholders")
+    for s_slug in stakeholders:
+        s_file = os.path.join(ROOT, "library", "context", "people", s_slug, "profile.md")
+        if not os.path.isfile(s_file):
+            issues.append(f"{rel}: stakeholder '{s_slug}' referenced in frontmatter but library/context/people/{s_slug}/profile.md does not exist")
+        overlay_path = os.path.join(cdir, "knowledge", "people", f"{s_slug}.md")
+        if not os.path.isfile(overlay_path):
+            issues.append(f"{rel}: stakeholder '{s_slug}' per-project overlay missing at knowledge/people/{s_slug}.md")
+
     rules = load_rules(pack_dir)
     if rules and hasattr(rules, "check"):
         issues += rules.check(make_ctx(), cdir, cfm)

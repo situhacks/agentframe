@@ -31,6 +31,10 @@ Pointers (success criteria source, etc.) live inside the relevant blocks rather 
 | `schema_version` | ISO date | e.g. `2026-04-23` | current schema version | Frozen at scaffold time. |
 | `created_at` | ISO 8601 date | e.g. `2026-04-19` | scaffold date | When the project folder was created. |
 | `supersedes` | string or `null` | optional, free text | `null` | If this project replaces a prior one (deleted or archived), name the prior. |
+| `domain` | enum | `marketing`, `project-mgmt` | — | The active pack domain for this project. |
+| `parent` | string or `null` | optional, project slug | `null` | Link to parent project (for composition). |
+| `channels` | array of strings | optional, channel slugs | `[]` | Slugs of global channels used by this project. References profiles in `library/context/channels/`. |
+| `stakeholders` | array of strings | optional, person slugs | `[]` | Slugs of global stakeholders involved. References profiles in `library/context/people/`. |
 
 ### LIFECYCLE (touched on phase transitions, ship, complete)
 

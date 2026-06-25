@@ -1,6 +1,6 @@
 # AgentFrame
 
-> **A domain-neutral project harness inside your AI coding agent.** File-native. Built for solo operators. Currently supports marketing campaigns and project-management work, and flexible for any other domain in the future — a domain is a pack, not a rebuild. Two `AGENTS.md` modes: **Operator** runs the work, **Builder** evolves the system.
+> **A file-native project harness that runs inside your AI coding agent.** The harness is domain-neutral; everything it knows about a kind of work — marketing campaigns and project-management engagements today, anything else later — lives in a domain pack you add or swap. Two `AGENTS.md` modes carry the work: **Operator** runs projects, **Builder** evolves the system.
 
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" /></a>
@@ -8,7 +8,7 @@
   <img alt="Status" src="https://img.shields.io/badge/status-actively%20used-orange?style=flat-square" />
 </p>
 
-**Jump to:** [Quick start](#quick-start) · [Why](#why-this-exists) · [Domains are packs](#domains-are-packs) · [Walkthrough](#a-real-project-step-by-step) · [Harness](#what-makes-it-a-harness) · [Architecture](#architecture) · [Roadmap](#roadmap)
+This is the system I actually work in. I run real projects through it — paid work and personal projects both — and it changes as my workflow changes, not on a release schedule. It started as a marketing workspace; I kept using it for work that wasn't marketing, so I rebuilt it to handle any kind of project. It's free to fork. Take what's useful.
 
 ---
 
@@ -20,14 +20,13 @@
 - [A real project, step by step](#a-real-project-step-by-step)
 - [What makes it a harness](#what-makes-it-a-harness)
 - [At a glance](#at-a-glance)
-- [Architectural principles](#architectural-principles)
+- [Design principles](#design-principles)
 - [Recommended connectors](#recommended-connectors)
 - [Architecture](#architecture)
 - [Repository structure](#repository-structure)
 - [Preview server](#preview-server)
 - [Auditability and state](#auditability-and-state)
 - [Roadmap](#roadmap)
-- [Status](#status)
 - [Contributing](#contributing)
 - [References and lineage](#references-and-lineage)
 - [License](#license)
@@ -44,24 +43,24 @@
    cd agentframe
    ```
 
-2. **Open the folder in your coding agent** — Claude Code, Codex, Cursor, VS Code, Antigravity, anything that respects `AGENTS.md`. (Claude Code reads `CLAUDE.md`, which imports `AGENTS.md` — so the active persona pins and survives compaction.)
+2. **Open the folder in your coding agent** — Claude Code, Codex, Cursor, VS Code, Antigravity, anything that respects `AGENTS.md`. (Claude Code reads `CLAUDE.md`, which imports `AGENTS.md`, so the active persona pins itself and survives compaction.)
 
-3. **Setup.** Copy `.env.example` to `.env` and drop in optional connector keys for Gemini and Composio (both have generous free tiers and are optional — the system still runs without them, you just lose Deep Research and direct publishing). If you plan to use Open Design locally, run `corepack pnpm install` inside `system/skills/open-design/source/`.
+3. **Set up.** Copy `.env.example` to `.env` and drop in optional connector keys for Gemini and Composio. Both have generous free tiers and both are optional — without them the system still runs, you just lose Deep Research and direct publishing. If you plan to use Open Design locally, run `corepack pnpm install` inside `system/skills/open-design/source/`.
 
-4. **Start a project.** Tell the agent **"Start a new marketing project"** or **"Start a new project-management engagement"** and run it end-to-end. Under the hood that's `af new-project <slug> --domain <marketing|project-mgmt>` — the engine reads the domain's pack and scaffolds the right shape.
+4. **Start a project.** Tell the agent **"start a new marketing campaign"** or **"start a new project-management engagement"** and run it end to end. Under the hood that is `af new-project <slug> --domain <marketing|project-mgmt>` — the engine reads the domain's pack and scaffolds the right shape.
 
 ### Mode swaps
 
-AgentFrame ships with two `AGENTS.md` modes. You swap depending on what you're doing:
+AgentFrame ships with two `AGENTS.md` modes. You swap depending on what you are doing:
 
-- **Swap to Operator when you're running a project** — drafting, producing media, delivering, doing a retro. Operator is scoped to `workspace/projects/` so it can't accidentally edit your templates or processes mid-project. Operator runs **any** domain, parameterized by the project's `domain`.
-- **Swap to Builder when you're improving the system itself** — editing a template, adding a process, authoring a domain pack, swapping a skill, applying retro patches. Builder is scoped to `system/` and `library/`.
+- **Operator runs a project** — drafting, producing media, delivering, doing a retro. Operator is scoped to `workspace/projects/`, so it cannot accidentally edit your templates or processes mid-project. It runs any domain, parameterized by the project's `domain`.
+- **Builder improves the system** — editing a template, adding a process, authoring a domain pack, swapping a skill, applying retro patches. Builder is scoped to `system/` and `library/`.
 
-You don't run shell commands by hand. Just tell the agent `swap to Builder` or `swap to Operator`. It handles the file swap and logs the transition to the audit DB.
+You do not run shell commands by hand. Tell the agent `swap to Builder` or `swap to Operator`; it handles the file swap and logs the transition to the audit DB.
 
 ### Updating your copy
 
-This repo keeps evolving after you clone it. To pull updates into your customized copy, swap to Builder and tell the agent **"pull upstream updates"**. It fetches this repo, walks you through what changed commit by commit with a recommendation per change, re-applies your own customizations on top where they collide, and asks before anything is written. Your personal layer — operator context, live projects, backlog, audit history — is gitignored and never touched by a sync.
+This repo keeps evolving after you clone it. To pull updates into your customized copy, swap to Builder and tell the agent **"pull upstream updates"**. It fetches this repo, walks you through what changed commit by commit with a recommendation for each, re-applies your own customizations on top where they collide, and asks before anything is written. Your personal layer — operator context, live projects, backlog, audit history — is gitignored and never touched by a sync.
 
 [Back to top](#agentframe)
 
@@ -69,13 +68,15 @@ This repo keeps evolving after you clone it. To pull updates into your customize
 
 ## Why this exists
 
-I built this for my marketing work first — running campaigns out of a coding agent instead of losing the thread in chat sessions. Then I started using it for project-management work too, since the two go hand in hand for how I operate.
+I built the first version of this for marketing — running campaigns out of a coding agent instead of losing the thread across chat sessions. It worked, so I kept reaching for it. Project-management work went in first, then other things that weren't marketing at all. For a while I forced that work into a marketing-shaped system and patched around the edges.
 
-So I generalized it. The shape I'm borrowing is where the industry is heading — Claude for Finance, Claude for small business: a base model plus domain skill packs. That's what AgentFrame is. Marketing and project management are the first two packs; adding another domain is adding a pack, not rebuilding the system.
+At some point the patching was the problem. The system needed to stop assuming marketing. So I rebuilt it: the harness went domain-neutral, and everything that knew about a specific kind of work moved into a domain pack the engine reads. Now adding a new kind of work means adding a pack, not rebuilding the system.
+
+The shape isn't novel — it's where the industry is going. Claude for Financial Services, Claude for small business: one base, domain packs on top. AgentFrame is that pattern for how I work. Marketing and project management are the first two packs.
+
+The marketing-only original lives on, frozen, at [agentframe-marketing](https://github.com/situhacks/agentframe-marketing). This is its multi-domain successor.
 
 It stands on Composio, Gemini Deep Research and image generation, Open Design, HyperFrames, PPT Master, and the humanizer — wired up under [Recommended connectors](#recommended-connectors) and credited in [References and lineage](#references-and-lineage).
-
-> **The marketing-only predecessor** lives on as a frozen v1 at [agentframe-marketing](https://github.com/situhacks/agentframe-marketing). AgentFrame is its multi-domain successor.
 
 [Back to top](#agentframe)
 
@@ -85,24 +86,21 @@ It stands on Composio, Gemini Deep Research and image generation, Open Design, H
 
 This is the idea the whole system hangs on.
 
-The spine (`system/af.py`) and the router (`AGENTS.md`) carry **zero domain knowledge**. Everything that knows "marketing" or "project-management" lives in `library/domains/{domain}/` as a **pack** the generic engine reads. A `grep` of `af.py` for `post_manifest`, `post-FINAL`, `linkedin`, or any domain word comes back empty — the engine is a host, the pack is the plugin.
+The spine (`system/af.py`) and the router (`AGENTS.md`) carry zero domain knowledge. Everything that knows "marketing" or "project-management" lives in `library/domains/{domain}/` as a pack the generic engine reads. Grep `af.py` for `post_manifest`, `linkedin`, or any domain word and nothing comes back.
+
+These are not skill bundles in the Claude-for-Finance sense. An AgentFrame pack is mostly deliverables — the templates and rules for the artifacts a domain produces — plus a small descriptor. The generic skills (research, voice, media, harvest) sit outside the packs, and any pack can tap them.
 
 A pack declares what its domain adds:
 
 | The pack ships | What it is |
 |---|---|
 | **Deliverable templates** (`deliverables/`) | the domain's artifact types |
-| **A descriptor** (`pack.md`) | the frontmatter fields the domain adds, which verbs apply, the folder prefix — parsed by the spine's existing stdlib helpers (no new config language) |
+| **A descriptor** (`pack.md`) | the frontmatter fields the domain adds, which verbs apply, the folder prefix — parsed by the spine's existing stdlib helpers, with no new config language |
 | **A scaffold skeleton** (`skeleton.md`) | the `project.md` shape `new-project` writes for this domain |
-| **An optional rules module** (`rules.py`) | genuine domain logic (e.g. marketing's post-FINAL assembly and post-counting) — imported by the spine if present, fail-loud and isolated if it errors |
+| **An optional rules module** (`rules.py`) | genuine domain logic, imported by the spine if present — marketing's post-FINAL assembly and post-counting live here, fail-loud and isolated if they error |
 | **An optional routing fragment** (`production.md`) | the domain-specific production workflow the Operator lazy-loads |
 
-**Two domains ship today:**
-
-- **`marketing`** — campaigns that ship posts. Deliverables: research, business brief, campaign brief, campaign architecture, slide/body copy, image prompts, post-final. The `publish` verb and the post-FINAL assembly are marketing-only, living entirely in the pack.
-- **`project-mgmt`** — consulting / PM engagements. Starts from a **charter / SOW** and derives the living governance docs from it: **RAID log**, **stakeholder map**, **decision log**, **workback schedule**. No posts, no publish — `publish` is correctly rejected for this domain.
-
-**Shared across every domain:** the deterministic spine, the one global voice system, the flows, the cross-domain deliverables (design language, video spec, image prompts, closeout/system retros), the preview server, and the audit trail. Adding a new domain — job search, content, ops, whatever — is a new folder under `library/domains/`. The acceptance test for the whole design: *a third domain touches only its pack folder, and `af.py` zero times.*
+Adding a domain is a new folder under `library/domains/`: author the pack, never touch the engine. The acceptance test for the whole design is simple — a third domain touches only its own pack folder, and `af.py` zero times.
 
 [Back to top](#agentframe)
 
@@ -110,14 +108,84 @@ A pack declares what its domain adds:
 
 ## A real project, step by step
 
-A compact marketing-domain walkthrough using the example project at `workspace/projects/example-ai-automation-pov/`. One operator, six moves, no team handoffs. (A project-management engagement runs the same spine off the PM pack — charter in, governance docs derived, deliverables produced ad-hoc.)
+The same spine runs every domain; what changes is the pack. Here is what an end-to-end run looks like in each of the two domains that ship today — one operator, six moves, no handoffs.
 
-1. **Operator kickoff** — Tell your coding agent `start a new marketing project`. Operator reads your operator profile, scaffolds the project folder from the marketing pack's skeleton, and calls Composio to pull workplace context — recent emails, meeting notes, doc activity — so the work starts from what you actually care about that week, not a cold prompt.
-2. **Gemini Deep Research** — Deep Research runs against your chosen direction and lands a structured artifact at `phase-1-research/research-artifact-v{N}.md`.
-3. **Copy in your voice** — Drafts inherit your voice system from `library/context/operator/voice/` (identity, anti-patterns, a profile, and annotated example pairs), then run through the humanizer skill before lock to strip AI tells. Every revision snapshots as its own `-v{N}.md` so you can roll back, compare, or read why the copy changed.
-4. **Media, your pick** — HTML render in your coding agent for slide-shaped visuals, Gemini Nano Banana for raster variants, Open Design for higher-fidelity decks and carousels, or HyperFrames for HTML-to-video. For Open Design, AgentFrame stages the project for you — design language, mode, and first prompt already loaded.
-5. **Delivered via Composio** — Composio's connector to LinkedIn (or X, Instagram, TikTok) sends or schedules the post; `af publish` records the delivered state and live URL back into the post folder.
-6. **Retro** — The agent proposes patches to your voice, templates, processes, and skill behavior based on what actually happened. You approve or reject each one; the library evolves.
+### Marketing — a campaign
+
+A compact walkthrough using the example project at `workspace/projects/example-ai-automation-pov/`.
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<img src=".github/readme-assets/walkthrough-01-cmo-kickoff.png" alt="01 · Operator kickoff" /><br/>
+<sub><b>01 · Operator kickoff</b> — Tell your agent <code>start a new marketing campaign</code>. Operator reads your profile, scaffolds the campaign from the marketing pack's skeleton, and calls Composio for workplace context — recent emails, meeting notes, doc activity — so the work starts from what you care about this week, not a cold prompt.</sub>
+</td>
+<td width="50%" valign="top">
+<img src=".github/readme-assets/walkthrough-02-research.png" alt="02 · Gemini Deep Research" /><br/>
+<sub><b>02 · Gemini Deep Research</b> — Deep Research runs against your direction and lands a structured artifact at <code>phase-1-research/research-artifact-v{N}.md</code>.</sub>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src=".github/readme-assets/walkthrough-03-post-copy.png" alt="03 · Copy in your voice" /><br/>
+<sub><b>03 · Copy in your voice</b> — Drafts inherit your voice system from <code>library/context/operator/voice/</code>, then run through the humanizer before lock. Every revision snapshots as its own <code>-v{N}.md</code>, so you can roll back, compare, or read why the copy changed.</sub>
+</td>
+<td width="50%" valign="top">
+<img src=".github/readme-assets/walkthrough-04-image-production.png" alt="04 · Media, your pick" /><br/>
+<sub><b>04 · Media, your pick</b> — HTML render in your agent for slide-shaped visuals, Gemini Nano Banana for raster variants, Open Design for higher-fidelity decks and carousels, or HyperFrames for HTML-to-video. For Open Design, AgentFrame stages the project for you — design language, mode, and first prompt already loaded.</sub>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src=".github/readme-assets/walkthrough-05-published.png" alt="05 · Publish via Composio" /><br/>
+<sub><b>05 · Publish via Composio</b> — Composio's connector to LinkedIn (or X, Instagram, TikTok) sends or schedules the post; <code>af publish</code> records the delivered state and live URL back into the post folder.</sub>
+</td>
+<td width="50%" valign="top">
+<img src=".github/readme-assets/walkthrough-06-retro.png" alt="06 · Retro" /><br/>
+<sub><b>06 · Retro</b> — The agent proposes patches to your voice, templates, processes, and skills based on what actually happened. You approve or reject each one; the library evolves.</sub>
+</td>
+</tr>
+</table>
+
+### Project management — an engagement
+
+The same spine off the PM pack: a charter in, governance docs derived, deliverables produced ad hoc.
+
+<!-- Project-management walkthrough imagery is a placeholder — I'm generating these myself.
+     Planned files: .github/readme-assets/pm-walkthrough-01-kickoff.png … pm-walkthrough-06-retro.png -->
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<img src=".github/readme-assets/pm-walkthrough-01-kickoff.png" alt="01 · Operator kickoff" /><br/>
+<sub><b>01 · Operator kickoff</b> — Tell your agent <code>start a new project-management engagement</code>. Operator scaffolds the engagement from the PM pack's skeleton and ingests your charter / SOW into the project's <code>sources/</code>.</sub>
+</td>
+<td width="50%" valign="top">
+<img src=".github/readme-assets/pm-walkthrough-02-governance.png" alt="02 · Derive the governance docs" /><br/>
+<sub><b>02 · Derive the governance docs</b> — From the charter, the agent derives the four living documents into <code>knowledge/</code>: a RAID log, a stakeholder map, a decision log, and a workback schedule.</sub>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src=".github/readme-assets/pm-walkthrough-03-living.png" alt="03 · Keep them living" /><br/>
+<sub><b>03 · Keep them living</b> — These are not one-time artifacts. The RAID log moves on a weekly cadence, decisions append as they are made, and the schedule re-plans against its deadlines.</sub>
+</td>
+<td width="50%" valign="top">
+<img src=".github/readme-assets/pm-walkthrough-04-deliverables.png" alt="04 · Ad-hoc deliverables in your voice" /><br/>
+<sub><b>04 · Ad-hoc deliverables in your voice</b> — Findings, recommendations, decks, memos: each an instance of the generic deliverable shape, drafted in your voice and versioned the same way marketing copy is.</sub>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src=".github/readme-assets/pm-walkthrough-05-deliver.png" alt="05 · Deliver" /><br/>
+<sub><b>05 · Deliver</b> — No posts and no publish here. Deliverables lock and version, then hand off; <code>af publish</code> is correctly rejected for this domain.</sub>
+</td>
+<td width="50%" valign="top">
+<img src=".github/readme-assets/pm-walkthrough-06-retro.png" alt="06 · Retro" /><br/>
+<sub><b>06 · Retro</b> — The same harvest as marketing: the agent proposes improvements to templates, processes, and skills from how the engagement actually ran.</sub>
+</td>
+</tr>
+</table>
 
 [Back to top](#agentframe)
 
@@ -129,15 +197,15 @@ Three systems separate AgentFrame from a folder of prompt files.
 
 ### The deterministic spine
 
-Models are strong writers and weak clerks — benchmarks have frontier models failing exact bookkeeping constraints 30–90% of the time, and my own agent skipped its lock procedure three times in one night. So project state transitions don't rely on the model remembering procedure: they run through `system/af.py`. The generic buttons — `lock`, `version`, `new-project`, `doctor` — each do their bookkeeping atomically (frontmatter, tracker, activity trail) and print back the judgment checklist the agent still owns. Domain-specific steps (marketing's post-FINAL assembly, the `publish` verb) are dispatched into the active pack's `rules.py`, so the spine itself names no domain. `doctor` audits the books and never auto-fixes. It's plain stdlib Python, so the spine works identically in Claude Code, Cursor, Codex, or Antigravity.
+A model will write all day and still forget to update its own records. Benchmarks have frontier models breaking exact bookkeeping rules 30–90% of the time, and my own agent skipped its lock step three times in one night. So project state does not run on the model remembering procedure — it runs through `system/af.py`. The generic buttons (`new-project`, `lock`, `version`, `doctor`) each do their bookkeeping in one atomic step — frontmatter, tracker, activity trail — and print back the judgment checklist the agent still owns. Domain-specific steps, like marketing's post-FINAL assembly and the `publish` verb, dispatch into the active pack, so the spine itself names no domain. `doctor` audits the books and never fixes them for you. It is plain stdlib Python, so it behaves identically in Claude Code, Cursor, Codex, or Antigravity.
 
-### A voice system that generates, not corrects
+### A voice system built from your own writing
 
-Most "brand voice" setups are a rules file the agent forgets by the third draft. AgentFrame compiles your actual writing into annotated contrastive pairs — generic version, your version, and the move that separates them — grouped by register. Drafting starts *from* the pairs: extract three or four concrete markers, write the content pass, then a separate style pass with those markers mandated. Anti-patterns are weighted preferences with per-piece budgets, not flat bans. A humanizer pass runs last, before anything locks. One voice, global across every domain.
+Most brand-voice setups are a rules file the agent has forgotten by the third draft. AgentFrame compiles your actual writing into annotated pairs — a generic version, your version, and the move that separates them — grouped by register. Drafting starts from those pairs: pull three or four concrete markers, write the content pass, then run a separate style pass with the markers required. Anti-patterns are weighted preferences with a per-piece budget, not flat bans. A humanizer pass runs last, before anything locks. One voice, shared across every domain.
 
-### A learning loop with teeth
+### A learning loop
 
-Every project closes with a harvest. Two skills read the version trails and your edit-diffs: one mines new voice pairs from what you actually changed, the other mines template and process patch candidates from how the work actually ran. You approve each patch, the library evolves, and the builder backlog plus audit DB keep the receipts. Every major feature traces back to a logged failure from a real run.
+Every project closes with a harvest. Two skills read the version trails and your edits: one mines new voice pairs from what you changed, the other mines template and process improvements from how the work actually ran. You approve each patch, and the library gets a little better. The builder backlog and audit DB keep the receipts — every major feature traces back to a real failure from a real run.
 
 [Back to top](#agentframe)
 
@@ -145,64 +213,112 @@ Every project closes with a harvest. Two skills read the version trails and your
 
 ## At a glance
 
-A two-mode persona model, a deterministic state-transition CLI, a local preview server, a two-layer audit trail (`activity.md` + SQLite DB), one global voice system, and a domain-pack architecture with two domains shipped.
+Two domain packs, 5 shared deliverables, 16 process files, 16 skill bundles, 3 flows, a two-mode persona model, a deterministic state-transition CLI, a local preview server, and a two-layer audit trail (`activity.md` + SQLite DB).
 
 Everything in the library and skills layer is meant to be edited. Set voice and positioning once in `library/context/operator/` (copy from `operator.example/` on first run) and reuse them everywhere.
 
 ### Domain packs
 
-| Pack | Ships |
+| Pack | What it ships |
 |---|---|
-| `library/domains/marketing/` | the post deliverables (post-final, slide/body copy, campaign brief/architecture, research, business brief), the `publish` verb + post-FINAL assembly (`rules.py`), and the production routing |
-| `library/domains/project-mgmt/` | charter/SOW + the four living governance docs (RAID, stakeholder map, decision log, workback schedule); no posts, no publish |
+| `library/domains/marketing/` | Campaigns that ship posts. Deliverables: research, business brief, campaign brief, campaign architecture, slide-copy, body-copy, post-final. The `publish` verb and the post-FINAL assembly live here. |
+| `library/domains/project-mgmt/` | Consulting / PM engagements. A charter / SOW goes in, then four living governance docs are derived from it: RAID log, stakeholder map, decision log, workback schedule. No posts, no publish. |
 
 ### Flows
 
 `open-flow` is the default across every domain. Add or edit any flow under `library/process/flows/`.
 
 | Flow | Purpose |
-| --- | --- |
-| `open-flow` (default) | Build-as-you-go — the agent proposes a plan scaled to the objective; the operator narrows and sets the tempo. The standard for every domain. |
-| `marketing-solo-flow` | Marketing, opt-in: lean fixed phase ladder, one accountable owner |
-| `marketing-standard-flow` | Marketing, opt-in: fuller campaign with stakeholder review gates |
+|---|---|
+| `open-flow` (default) | Build-as-you-go. The agent proposes a plan scaled to the objective; you narrow it and set the tempo. The default for every domain. |
+| `marketing-solo-flow` | Marketing, opt-in: a lean fixed phase ladder with one accountable owner. |
+| `marketing-standard-flow` | Marketing, opt-in: a fuller campaign with stakeholder review gates. |
 
 ### Shared deliverables
 
-Cross-domain, under `library/deliverables/`: `design-language`, `video-spec`, `image-prompts`, `closeout-retro`, `system-retro`, plus the generic deliverable shape in `_meta/`.
+Cross-domain templates under `library/deliverables/`.
+
+| Template | Output |
+|---|---|
+| `design-language` | Visual and style direction |
+| `image-prompts` | Per-asset generation prompts — treatment block + per-asset deltas |
+| `video-spec` | Video concept, scenes, and production plan |
+| `closeout-retro` | Project-level learnings and improvements |
+| `system-retro` | System-level process and architecture improvements |
+| `_meta` | The generic deliverable shape every template inherits |
+
+### Process files
+
+Process files load on demand — only when the workflow they describe is in play.
+
+| Process | Purpose |
+|---|---|
+| `flow-authoring` | Designing or evolving flows |
+| `process-authoring` | Designing or evolving process files |
+| `research-and-signals` | Shared kickoff research: workspace context, live MCP scan, research-method offer |
+| `deliverable-versioning` | Surgical-vs-replacement judgment for `*-v{N}.md`; bumps run through `af version` |
+| `lock-event` | Lock trigger and judgment gates; mechanics run through the `af` CLI |
+| `project-frontmatter` | Frontmatter schema and state handling |
+| `voice-setup` | Build your voice system from your own writing |
+| `voice-mini-retro` | Lock-time gate that routes your edit-diffs to the voice-harvest skill |
+| `humanizer-integration` | The humanization pass |
+| `image-production` | Image-generation workflow |
+| `video-production` | Video workflow from spec to renders |
+| `deck-production` | Deck path selection (PPTX skill, PPT Master, Open Design) |
+| `preview-server` | When and how to use the local preview hub |
+| `composio-notes` | Connector usage notes and caveats |
+| `browser-fallback` | Browser-automation fallback strategy |
+| `substack-distribution-notes` | Substack publishing conventions |
 
 ### Skills
 
-My current production stack — swap any for a sharper tool without touching templates or processes: `agentframe-structure`, `deliverable-scaffolding`, `system-improvement`, `upstream-sync`, `voice-harvest`, `deliverable-harvest`, `docx`, `pptx`, plus vendored `humanizer`, `hyperframes`, `gsap`, `ppt-master`, `extract-design`, `open-design`, `browser-harness`. See [References and lineage](#references-and-lineage) for sources.
+My current production stack — swap any one for a sharper tool without touching templates or processes.
+
+| Skill | Source |
+|---|---|
+| `agentframe-structure` | Project skill |
+| `deliverable-scaffolding` | Project skill |
+| `system-improvement` | Project skill |
+| `upstream-sync` | Project skill — pulls upstream updates into your copy, commit by commit with approval |
+| `voice-harvest` | Project skill — mines finished work and edit-diffs into voice example pairs |
+| `deliverable-harvest` | Project skill — mines template and process patches from finished projects |
+| `docx` | Project skill |
+| `pptx` | Project skill |
+| `humanizer` | Vendored from [blader/humanizer](https://github.com/blader/humanizer) |
+| `hyperframes` | Vendored from [heygen-com/hyperframes](https://github.com/heygen-com/hyperframes) |
+| `hyperframes-cli` | Vendored from [heygen-com/hyperframes](https://github.com/heygen-com/hyperframes) |
+| `gsap` | Vendored animation skill for HyperFrames workflows |
+| `ppt-master` | Vendored from [hugohe3/ppt-master](https://github.com/hugohe3/ppt-master) — native-editable deck generation via SVG→PPTX |
+| `extract-design` | Thin skill over [Manavarya09/design-extract](https://github.com/Manavarya09/design-extract); CLI runs via `npx designlang` |
+| `open-design` | Vendored local-first runtime from [nexu-io/open-design](https://github.com/nexu-io/open-design) for image/deck production |
+| `browser-harness` | Vendored CDP-driven browser workflows via Edge |
+
+### Everything else in the box
+
+- Two-mode routing via `AGENTS.operator.md` and `AGENTS.builder.md`.
+- The deterministic CLI at `system/af.py` — `new-project`, `lock`, `version`, `doctor`, plus the domain-dispatched `publish`. The buttons do the bookkeeping atomically and write the paper trail; the agent keeps the judgment.
+- Project state and outputs as markdown under `workspace/projects/`.
+- A two-layer audit trail: `activity.md` per project plus an append-only SQLite DB at `system/audit/agentframe.db`.
+- A local preview server at `system/server/` for HTML, image, video, PDF, PPTX, and DOCX.
+- A browser harness at `system/browser/` for CDP-driven sessions, with documented fallbacks when a workflow needs a hand.
 
 [Back to top](#agentframe)
 
 ---
 
-## Architectural principles
+## Design principles
 
-### P1 — Add a domain = add a pack
+### File-native state
 
-The spine and the router are domain-agnostic. A domain's knowledge lives in `library/domains/{domain}/` as data the generic engine reads. Adding a domain authors a pack; it never edits the engine. This is the load-bearing one — everything else serves it.
+Project state lives in markdown — frontmatter, deliverables, `activity.md` — not in a chat window. Change models, change machines, come back next week, and the project picks up where it left off.
 
-### P2 — File-native state
+### Token efficiency by default
 
-Project state lives in markdown: frontmatter, deliverables, `activity.md`. Not in a chat window. Change models, change machines, come back next week — the project picks up where it left off.
+`AGENTS.md` is the only always-on router; flows, processes, templates, packs, and skills load on demand. A small, focused context means longer sessions and less drift.
 
-### P3 — Token efficiency at its core
+### A durable library, swappable tools
 
-`AGENTS.md` is the only always-on router; flows, processes, templates, packs, and skills load on demand. Small focused context means longer sessions and less drift.
-
-### P4 — The library is the product
-
-Templates, processes, flows, packs, and personas are the durable layer that improves over time. Skills and connectors are swappable — replace one when something sharper ships; the system is untouched.
-
-### P5 — Two modes, one operator
-
-Operator runs the project (any domain). Builder evolves the system. Operator can't accidentally edit `library/` mid-project, and Builder can't accidentally touch a locked deliverable mid-refactor.
-
-### P6 — Buttons own mechanics, prose owns judgment
-
-State changes run through the deterministic spine and write their own paper trail. The model never hand-edits project state; you can always reconstruct what happened and why.
+Templates, processes, flows, packs, and personas are the layer that improves over time and the part worth keeping. Skills and connectors are swappable — replace one when something sharper ships and the system is untouched.
 
 [Back to top](#agentframe)
 
@@ -219,12 +335,12 @@ External services AgentFrame integrates with. Recommended for the full loop, but
 
 ### Gemini image generation (Nano Banana 2 / Pro)
 
-- Fast A/B/C variants (Nano Banana 2: `gemini-3.1-flash-image-preview`) and high-fidelity hero/text-in-image visuals (Pro: `gemini-3-pro-image-preview`).
+- Fast A/B/C variants (Nano Banana 2: `gemini-3.1-flash-image-preview`) and high-fidelity hero or text-in-image visuals (Pro: `gemini-3-pro-image-preview`).
 - Routed through `system/server/lib/image_generate.py`. Shares the `GEMINI_API_KEY`.
 
 ### Composio
 
-- All-in-one MCP hub. One connection exposes 100+ tools (Gmail, Calendar, Drive, LinkedIn, X, Instagram, TikTok, etc.).
+- All-in-one MCP hub. One connection exposes 100+ tools (Gmail, Calendar, Drive, LinkedIn, X, Instagram, TikTok, and more).
 - Workplace signal collection feeds research and retros; publishing schedules or sends directly; analytics pull back into retros.
 - Get started at [composio.dev](https://composio.dev).
 
@@ -241,7 +357,7 @@ COMPOSIO_API_KEY=
 COMPOSIO_MCP_URL=https://connect.composio.dev/mcp
 ```
 
-Your coding agent provides the LLM. These keys power the non-LLM tools (research, image generation, publishing).
+Your coding agent provides the LLM. These keys power the non-LLM tools — research, image generation, and publishing.
 
 [Back to top](#agentframe)
 
@@ -280,7 +396,7 @@ Your coding agent provides the LLM. These keys power the non-LLM tools (research
    draft X → pack's template ▸ shared template ▸ generic _meta shape
 ```
 
-`af.py` reads `project.md` → `domain` → loads the pack and dispatches. The persona, the flows, and the shared processes name no domain — `{domain}` is the single parameterization point.
+`af.py` reads `project.md` → `domain` → loads the pack and dispatches. The persona, the flows, and the shared processes name no domain; `{domain}` is the single point where the work is parameterized.
 
 [Back to top](#agentframe)
 
@@ -324,10 +440,10 @@ agentframe/
 <details>
 <summary>Show preview server details</summary>
 
-- Local preview hub at `system/server/`
-- Previews HTML, images, video, PDF, PPTX, and DOCX
-- Folder-tree navigation with hide rules to keep noise down
-- Run with `py -3 system/server/run.py`
+- Local preview hub at `system/server/`.
+- Previews HTML, images, video, PDF, PPTX, and DOCX.
+- Folder-tree navigation with hide rules to keep noise down.
+- Run with `py -3 system/server/run.py`.
 
 </details>
 
@@ -348,14 +464,19 @@ agentframe/
 
 ## Roadmap
 
-- [ ] Per-project knowledge substrate (`sources/` immutable + agent-owned `knowledge/`) with a user-triggered consolidation pass
-- [ ] Cross-project context entities (channels, people) referenced by slug
-- [ ] More domain packs as the work demands them
-- [ ] Preview server v2: improved search, nested live reload, stronger video UX
+Small, demand-driven additions. Nothing here is a rewrite.
 
-## Status
+- [ ] Embedded / RAG indexing over the markdown corpus, so retrieval scales as the library grows past what fits in context.
+- [ ] Scheduled runs — cron-triggered jobs for recurring work, like a weekly research pull or a digest.
+- [ ] Agent-to-agent communication over an API, so projects and agents can hand work to each other.
+- [ ] Per-project knowledge substrate (`sources/` immutable + agent-owned `knowledge/`) with a user-triggered consolidation pass.
+- [ ] Cross-project context entities (channels, people) referenced by slug.
+- [ ] More domain packs as the work demands them.
+- [ ] Preview server v2: better search, nested live reload, stronger video UX.
 
-The full loop runs today across two domains — a marketing project (kickoff → research → drafting → media → publish → retro) and a project-management engagement (charter → governance docs → ad-hoc deliverables) both run end-to-end on the same spine. I run real work through it.
+[Back to top](#agentframe)
+
+---
 
 ## Contributing
 
@@ -364,6 +485,7 @@ The full loop runs today across two domains — a marketing project (kickoff →
 
 ## References and lineage
 
+- [agentframe-marketing](https://github.com/situhacks/agentframe-marketing) — the frozen marketing-only predecessor this grew out of
 - [Composio](https://composio.dev)
 - [heygen-com/hyperframes](https://github.com/heygen-com/hyperframes)
 - [nexu-io/open-design](https://github.com/nexu-io/open-design) (Apache-2.0, vendored under `system/skills/open-design/source/`)

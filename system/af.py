@@ -348,6 +348,14 @@ def cmd_new_project(args):
     if os.path.exists(cdir):
         die(f"{cdir} already exists")
     os.makedirs(cdir)
+    os.makedirs(os.path.join(cdir, "sources"))
+    os.makedirs(os.path.join(cdir, "knowledge"))
+    os.makedirs(os.path.join(cdir, "knowledge", "people"))
+    os.makedirs(os.path.join(cdir, "knowledge", "meetings"))
+    os.makedirs(os.path.join(cdir, "knowledge", "_archive"))
+
+    write(os.path.join(cdir, "sources", "INDEX.md"), "# Source Index\n\n| ID | File | Date | Description |\n|---|---|---|---|\n")
+
     name = args.name or slug.replace("-", " ").title()
     write(os.path.join(cdir, "project.md"), read(skel_path).format(
         name=name, slug=slug, date=today(), domain=args.domain, phase=FLOWS[args.flow], flow=args.flow, ts=now_iso()))

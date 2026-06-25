@@ -1,6 +1,6 @@
 # AgentFrame
 
-> **A file-native project harness that runs inside your AI coding agent.** The harness is domain-neutral; everything it knows about a kind of work — marketing campaigns and project-management engagements today, anything else later — lives in a domain pack you add or swap. Two `AGENTS.md` modes carry the work: **Operator** runs projects, **Builder** evolves the system.
+AgentFrame is a file-native workspace harness designed to run inside AI coding agents like Claude Code, Cursor, VS Code, or Antigravity. The harness itself is completely domain-neutral. Currently, it supports marketing campaigns and project-management projects, utilizing modular domain packs that can be expanded in the future. The workflow runs through two `AGENTS.md` modes: **Operator** handles project execution, and **Builder** manages system architecture and templates.
 
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" /></a>
@@ -8,7 +8,7 @@
   <img alt="Status" src="https://img.shields.io/badge/status-actively%20used-orange?style=flat-square" />
 </p>
 
-This is the system I actually work in. I run real projects through it — paid work and personal projects both — and it changes as my workflow changes, not on a release schedule. It started as a marketing workspace; I kept using it for work that wasn't marketing, so I rebuilt it to handle any kind of project. It's free to fork. Take what's useful.
+This is my workspace where I build and run my projects—longer-term projects, campaigns, and tools. Evolving this codebase is a direct reflection of the type of work that I do day-to-day. Evolving this workspace helps keep the agent focused, fast, and organized. It is free to fork, so feel free to take whatever is useful for your own setups.
 
 ---
 
@@ -18,10 +18,11 @@ This is the system I actually work in. I run real projects through it — paid w
 - [Why this exists](#why-this-exists)
 - [Domains are packs](#domains-are-packs)
 - [A real project, step by step](#a-real-project-step-by-step)
-- [What makes it a harness](#what-makes-it-a-harness)
+- [The deterministic harness](#the-deterministic-harness)
+- [Key features](#key-features)
 - [At a glance](#at-a-glance)
 - [Design principles](#design-principles)
-- [Recommended connectors](#recommended-connectors)
+- [Connectors](#connectors)
 - [Architecture](#architecture)
 - [Repository structure](#repository-structure)
 - [Preview server](#preview-server)
@@ -36,31 +37,31 @@ This is the system I actually work in. I run real projects through it — paid w
 
 ## Quick start
 
-1. **Clone the repo:**
+1. **Clone the repository:**
 
    ```bash
    git clone https://github.com/situhacks/agentframe.git
    cd agentframe
    ```
 
-2. **Open the folder in your coding agent** — Claude Code, Codex, Cursor, VS Code, Antigravity, anything that respects `AGENTS.md`. (Claude Code reads `CLAUDE.md`, which imports `AGENTS.md`, so the active persona pins itself and survives compaction.)
+2. **Open the folder in your coding agent** of choice (Claude Code, Codex, Cursor, VS Code, or Antigravity). If you are using Claude Code, it automatically loads `CLAUDE.md` which imports the active `AGENTS.md` persona, pinning the agent's behavior so it survives memory compaction.
 
-3. **Set up.** Copy `.env.example` to `.env` and drop in optional connector keys for Gemini and Composio. Both have generous free tiers and both are optional — without them the system still runs, you just lose Deep Research and direct publishing. If you plan to use Open Design locally, run `corepack pnpm install` inside `system/skills/open-design/source/`.
+3. **Configure environment variables.** Copy `.env.example` to `.env` and add optional keys for Gemini (used for Deep Research and image generation) and Composio (used for platform publishing). Both are optional; the system will run locally without them, but you will lose external API connections. If you intend to use Open Design for local visual rendering, run `corepack pnpm install` inside `system/skills/open-design/source/`.
 
-4. **Start a project.** Tell the agent **"start a new marketing campaign"** or **"start a new project-management project"** and run it end to end. Under the hood that is `af new-project <slug> --domain <marketing|project-mgmt>` — the engine reads the domain's pack and scaffolds the right shape.
+4. **Scaffold a new project.** Instruct the agent to **"start a new marketing campaign"** or **"start a new project-management project"**. Under the hood, the agent runs `af new-project <slug> --domain <marketing|project-mgmt>` to read the domain pack and scaffold the directory structure.
 
 ### Mode swaps
 
-AgentFrame ships with two `AGENTS.md` modes. You swap depending on what you are doing:
+AgentFrame uses two distinct `AGENTS.md` personas to establish clean boundaries:
 
-- **Operator runs a project** — drafting, producing media, delivering, doing a retro. Operator is scoped to `workspace/projects/`, so it cannot accidentally edit your templates or processes mid-project. It runs any domain, parameterized by the project's `domain`.
-- **Builder improves the system** — editing a template, adding a process, authoring a domain pack, swapping a skill, applying retro patches. Builder is scoped to `system/` and `library/`.
+- **Operator mode** runs active projects. It is locked to `workspace/projects/` so the agent cannot edit templates, rules, or core processes while executing a project.
+- **Builder mode** modifies the system. It has write access to `system/` and `library/` for editing templates, adding process files, or authoring domain packs.
 
-You do not run shell commands by hand. Tell the agent `swap to Builder` or `swap to Operator`; it handles the file swap and logs the transition to the audit DB.
+You can swap modes by telling the agent `swap to Builder` or `swap to Operator`. The agent will handle the file copy and log the transition to the local audit database automatically.
 
-### Updating your copy
+### Syncing upstream changes
 
-This repo keeps evolving after you clone it. To pull updates into your customized copy, swap to Builder and tell the agent **"pull upstream updates"**. It fetches this repo, walks you through what changed commit by commit with a recommendation for each, re-applies your own customizations on top where they collide, and asks before anything is written. Your personal layer — operator context, live projects, backlog, audit history — is gitignored and never touched by a sync.
+This system evolves as I run more projects. To pull the latest system updates without losing your local changes, swap to Builder and tell the agent to **"pull upstream updates"**. The sync skill fetches this repository, walks you through changes commit-by-commit, prompts you for how to resolve local customization conflicts, and applies the updates safely. All personal layers—including project workspaces, local logs, and audit databases—are gitignored and remain untouched.
 
 [Back to top](#agentframe)
 
@@ -68,15 +69,15 @@ This repo keeps evolving after you clone it. To pull updates into your customize
 
 ## Why this exists
 
-I built the first version of this for marketing — running campaigns out of a coding agent instead of losing the thread across chat sessions. It worked, so I kept reaching for it. Project-management work went in first, then other things that weren't marketing at all. For a while I forced that work into a marketing-shaped system and patched around the edges.
+I built the original AgentFrame system to run marketing campaigns because I realized that working on copy and strategy in raw chat windows meant losing context and having files drift over a long campaign. Keeping everything structured and anchored as files in a local workspace makes it much easier to coordinate work over long horizons.
 
-At some point the patching was the problem. The system needed to stop assuming marketing. So I rebuilt it: the harness went domain-neutral, and everything that knew about a specific kind of work moved into a domain pack the engine reads. Now adding a new kind of work means adding a pack, not rebuilding the system.
+Over time, I wanted to use this workspace and its skills for other tasks: making slide decks, writing emails, and archiving or tracking project details—all related to project management. At first, I jerry-rigged these skills and processes into the `open-flow` style to make it work. It worked fine for short-term tasks, but it wasn't scalable for long-term projects.
 
-The shape isn't novel — it's where the industry is going. Claude for Financial Services, Claude for small business: one base, domain packs on top. AgentFrame is that pattern for how I work. Marketing and project management are the first two packs.
+To solve this, I rebuilt AgentFrame to support structured projects and long-horizon work. The new architecture introduces context components—like global profiles for people and channels—along with a dedicated memory and consolidation system.
 
-The marketing-only original lives on, frozen, at [agentframe-marketing](https://github.com/situhacks/agentframe-marketing). This is its multi-domain successor.
+This design aligns with where the industry is moving, where specialized domain packs (like Claude for Financial Services or Claude for Small Business) are added on top of a core platform. AgentFrame applies that same modular pattern to local workspaces, but adds a robust context and memory layer to keep the workspace lightweight and cost-effective as it evolves over time.
 
-It stands on Composio, Gemini Deep Research and image generation, Open Design, HyperFrames, PPT Master, and the humanizer — wired up under [Recommended connectors](#recommended-connectors) and credited in [References and lineage](#references-and-lineage).
+The original marketing-only project is frozen at [agentframe-marketing](https://github.com/situhacks/agentframe-marketing). This repository is its multi-domain successor.
 
 [Back to top](#agentframe)
 
@@ -84,23 +85,21 @@ It stands on Composio, Gemini Deep Research and image generation, Open Design, H
 
 ## Domains are packs
 
-This is the idea the whole system hangs on.
+Everything in AgentFrame is built around domain separation. 
 
-The spine (`system/af.py`) and the router (`AGENTS.md`) carry zero domain knowledge. Everything that knows "marketing" or "project-management" lives in `library/domains/{domain}/` as a pack the generic engine reads. Grep `af.py` for `post_manifest`, `linkedin`, or any domain word and nothing comes back.
+The core runner (`system/af.py`) and the routing files (`AGENTS.md`) carry no domain-specific code. If you search the python scripts for marketing terms or publishing platforms, you will find nothing; the engine is completely blind to what the project is actually about. All domain logic is declared in `library/domains/{domain}/`.
 
-These are not skill bundles in the Claude-for-Finance sense. An AgentFrame pack is mostly deliverables — the templates and rules for the artifacts a domain produces — plus a small descriptor. The generic skills (research, voice, media, harvest) sit outside the packs, and any pack can tap them.
+These are not code-heavy plugins. A domain pack is primarily a collection of deliverable templates—markdown shapes and rules for the files the project produces—along with a small metadata descriptor. All generic skills like research, voice harvesting, and document generation live outside the pack, allowing any domain to use them.
 
-A pack declares what its domain adds:
+A pack defines its scope through a few key files:
 
-| The pack ships | What it is |
-|---|---|
-| **Deliverable templates** (`deliverables/`) | the domain's artifact types |
-| **A descriptor** (`pack.md`) | the frontmatter fields the domain adds, which verbs apply, the folder prefix — parsed by the spine's existing stdlib helpers, with no new config language |
-| **A scaffold skeleton** (`skeleton.md`) | the `project.md` shape `new-project` writes for this domain |
-| **An optional rules module** (`rules.py`) | genuine domain logic, imported by the spine if present — marketing's post-FINAL assembly and post-counting live here, fail-loud and isolated if they error |
-| **An optional routing fragment** (`production.md`) | the domain-specific production workflow the Operator lazy-loads |
+- **Deliverable templates** (`deliverables/`): The templates for the artifacts this domain generates.
+- **A pack descriptor** (`pack.md`): Declares custom frontmatter fields, valid CLI verbs, and folder structures. The python runner parses this directly using standard library helpers.
+- **A scaffold skeleton** (`skeleton.md`): Defines the initial structure of `project.md` when the project is created.
+- **An optional rules module** (`rules.py`): Python validation rules loaded dynamically by `af doctor` (for example, verifying character limits or document groupings).
+- **An optional routing fragment** (`production.md`): Domain-specific step instructions that the Operator mode loads on demand during execution.
 
-Adding a domain is a new folder under `library/domains/`: author the pack, never touch the engine. The acceptance test for the whole design is simple — a third domain touches only its own pack folder, and `af.py` zero times.
+Adding support for a new workflow only requires adding a folder under `library/domains/`; the Accept-Test for the design is that a new domain requires zero modifications to the core engine.
 
 [Back to top](#agentframe)
 
@@ -108,51 +107,48 @@ Adding a domain is a new folder under `library/domains/`: author the pack, never
 
 ## A real project, step by step
 
-The same spine runs every domain; what changes is the pack. Here is what an end-to-end run looks like in each of the two domains that ship today — one operator, six moves, no handoffs.
+Here is what an end-to-end run looks like in each of the two domains that ship today—one operator, six steps, no handoffs.
 
 ### Project management — a project
 
-The same spine off the PM pack: a charter in, governance docs derived, deliverables produced ad hoc.
-
-<!-- Project-management walkthrough imagery is a placeholder — I'm generating these myself.
-     Planned files: .github/readme-assets/pm-walkthrough-01-kickoff.png … pm-walkthrough-06-retro.png -->
+The PM pack takes a charter, derives living project context files, and tracks deliverables ad-hoc.
 
 <table>
 <tr>
 <td width="50%" valign="top">
 <img src=".github/readme-assets/pm-walkthrough-01-kickoff.png" alt="01 · Operator kickoff" /><br/>
-<sub><b>01 · Operator kickoff</b> — Tell your agent <code>start a new project-management project</code>. Operator scaffolds the project from the PM pack's skeleton and ingests your charter into the project's <code>sources/</code>.</sub>
+<sub><b>01 · Operator kickoff</b> — Tell your agent <code>start a new project-management project</code>. The Operator scaffolds the workspace from the PM pack's skeleton, setting up folders for your inputs and outputs, and imports your project charter into the project's <code>sources/</code> directory.</sub>
 </td>
 <td width="50%" valign="top">
 <img src=".github/readme-assets/pm-walkthrough-02-governance.png" alt="02 · Derive the governance docs" /><br/>
-<sub><b>02 · Derive the governance docs</b> — From the charter, the agent derives the four living documents into <code>knowledge/</code>: a RAID log, a stakeholder map, a decision log, and a workback schedule.</sub>
+<sub><b>02 · Derive project context files</b> — From the charter, the agent parses the requirements and derives four living project context files under <code>knowledge/</code>: a RAID log (Risks, Assumptions, Issues, Dependencies), a stakeholder map, a decision log, and a workback schedule.</sub>
 </td>
 </tr>
 <tr>
 <td width="50%" valign="top">
 <img src=".github/readme-assets/pm-walkthrough-03-living.png" alt="03 · Keep them living" /><br/>
-<sub><b>03 · Keep them living</b> — These are not one-time artifacts. The RAID log moves on a weekly cadence, decisions append as they are made, and the schedule re-plans against its deadlines.</sub>
+<sub><b>03 · Maintain context & consolidate</b> — These are not static files. The RAID log moves on a weekly cadence, decisions append as they are made, and the schedule re-plans against deadlines. For long-horizon projects, you can trigger a consolidation pass (the "dream" workflow) to archive resolved items and prune active files, keeping them lean while retaining a complete history of facts and decisions.</sub>
 </td>
 <td width="50%" valign="top">
 <img src=".github/readme-assets/pm-walkthrough-04-deliverables.png" alt="04 · Ad-hoc deliverables in your voice" /><br/>
-<sub><b>04 · Ad-hoc deliverables in your voice</b> — Findings, recommendations, decks, memos: each an instance of the generic deliverable shape. Drafts inherit your voice system from <code>library/context/operator/voice/</code>, and every revision snapshots as its own <code>-v{N}.md</code>, so you can roll back, compare, or read why the copy changed.</sub>
+<sub><b>04 · Ad-hoc deliverables in your voice</b> — Findings, recommendations, decks, and memos are generated from the generic deliverable shape. Drafts inherit your voice parameters from <code>library/context/operator/voice/</code>, and every revision is saved as a versioned snapshot (<code>-v{N}.md</code>) so you can track what changed and rollback if needed.</sub>
 </td>
 </tr>
 <tr>
 <td width="50%" valign="top">
 <img src=".github/readme-assets/pm-walkthrough-05-deliver.png" alt="05 · Deliver" /><br/>
-<sub><b>05 · Deliver</b> — No posts and no publish here. Deliverables lock and version, then hand off; <code>af publish</code> is correctly rejected for this domain.</sub>
+<sub><b>05 · Deliver</b> — Deliverables are checked against lock criteria, versioned, and delivered. The PM pack rejects publishing verbs, ensuring files remain local to your workspace.</sub>
 </td>
 <td width="50%" valign="top">
 <img src=".github/readme-assets/pm-walkthrough-06-retro.png" alt="06 · Retro" /><br/>
-<sub><b>06 · Retro</b> — The agent proposes patches to your voice, templates, processes, and skills based on what actually happened in the project. You approve or reject each one; the library evolves.</sub>
+<sub><b>06 · Retro</b> — The project closes with a harvest pass. The agent reviews all your manual edits and template overrides, then proposes updates to your core library templates and voice example pairs so the system gets smarter with every run.</sub>
 </td>
 </tr>
 </table>
 
 ### Marketing — a campaign
 
-A compact walkthrough using the example project at `workspace/projects/example-ai-automation-pov/`.
+The marketing pack coordinates research, copy creation, image generation, and direct publishing.
 
 <table>
 <tr>
@@ -162,13 +158,13 @@ A compact walkthrough using the example project at `workspace/projects/example-a
 </td>
 <td width="50%" valign="top">
 <img src=".github/readme-assets/walkthrough-02-research.png" alt="02 · Gemini Deep Research" /><br/>
-<sub><b>02 · Gemini Deep Research</b> — Deep Research runs against your direction and lands a structured artifact at <code>phase-1-research/research-artifact-v{N}.md</code>.</sub>
+<sub><b>02 · Gemini Deep Research</b> — Deep Research runs against your direction and lands a structured brief and competitor analysis artifact at <code>phase-1-research/research-artifact-v{N}.md</code>.</sub>
 </td>
 </tr>
 <tr>
 <td width="50%" valign="top">
 <img src=".github/readme-assets/walkthrough-03-post-copy.png" alt="03 · Copy in your voice" /><br/>
-<sub><b>03 · Copy in your voice</b> — Drafts inherit your voice system and run through the humanizer before lock. They are versioned the same way project deliverables are, with snapshots for each revision.</sub>
+<sub><b>03 · Copy in your voice</b> — Drafts inherit your voice system from <code>library/context/operator/voice/</code>, then run through the humanizer before lock. Every revision snapshots as its own <code>-v{N}.md</code>, so you can roll back, compare, or read why the copy changed.</sub>
 </td>
 <td width="50%" valign="top">
 <img src=".github/readme-assets/walkthrough-04-image-production.png" alt="04 · Media, your pick" /><br/>
@@ -182,7 +178,7 @@ A compact walkthrough using the example project at `workspace/projects/example-a
 </td>
 <td width="50%" valign="top">
 <img src=".github/readme-assets/walkthrough-06-retro.png" alt="06 · Retro" /><br/>
-<sub><b>06 · Retro</b> — The same harvest as project management: the agent proposes patches based on what actually happened. You approve or reject each one; the library evolves.</sub>
+<sub><b>06 · Retro</b> — The agent proposes patches to your voice, templates, processes, and skills based on what actually happened. You approve or reject each one; the library evolves.</sub>
 </td>
 </tr>
 </table>
@@ -193,23 +189,29 @@ A compact walkthrough using the example project at `workspace/projects/example-a
 
 ## The deterministic harness
 
-A model will write all day and still forget to update its own records. Benchmarks have frontier models breaking exact bookkeeping rules 30–90% of the time, and my own agent skipped its lock step three times in one night. So project state does not run on the model remembering procedure — it runs through `system/af.py`. The generic buttons (`new-project`, `lock`, `version`, `doctor`) each do their bookkeeping in one atomic step — frontmatter, tracker, activity trail — and print back the judgment checklist the agent still owns. Domain-specific steps, like marketing's post-FINAL assembly and the `publish` verb, dispatch into the active pack, so the spine itself names no domain. `doctor` audits the books and never fixes them for you. It is plain stdlib Python, so it behaves identically in Claude Code, Cursor, Codex, or Antigravity.
+A project harness is more than just a folder of files; it requires a way to maintain state, validate structure, and enforce boundaries. AgentFrame is a lightweight, pragmatically built harness. It does not solve every agent coordination problem, but it addresses a very real issue: LLMs are great at drafting but notoriously bad at state tracking and bookkeeping. In my experience, even the best frontier models fail at exact procedure following a significant percentage of the time—mine skipped its versioning and lock steps three times in a single evening (likely because it got distracted).
+
+Because of this, AgentFrame does not ask the model to remember state transitions. Instead, the workflow is guided by a deterministic Python CLI (`system/af.py`). Commands like `new-project`, `version`, `lock`, and `doctor` run the exact file modifications, frontmatter updates, and audit logs atomically. They print back the check-lists and guidelines that the agent actually needs to follow. The agent owns the creative judgment; the CLI owns the bookkeeping. Since the CLI is written in standard library Python, it runs identically across Claude Code, Cursor, VS Code, or Antigravity.
+
+---
 
 ## Key features
 
-Three features separate AgentFrame from a folder of prompt files.
-
 ### A voice system built from your own writing
 
-Most brand-voice setups are a rules file the agent has forgotten by the third draft. AgentFrame compiles your actual writing into annotated pairs — a generic version, your version, and the move that separates them — grouped by register. Drafting starts from those pairs: pull three or four concrete markers, write the content pass, then run a separate style pass with the markers required. Anti-patterns are weighted preferences with a per-piece budget, not flat bans. A humanizer pass runs last, before anything locks. One voice, shared across every domain.
+Most brand-voice setups rely on a long list of negative rules ("don't use the word leverage") that the agent forgets by the second revision anyway. AgentFrame compiles your actual writing into annotated example pairs—showing a generic version, your rewritten version, and the specific move that separates them. 
+
+When the agent drafts, it loads these pairs directly into its context to act as stylistic anchors. Instead of checking off a list of banned words, the agent drafts the substance first, then runs a dedicated style pass applying the exact cadences and markers found in the pairs. This keeps the writing authentic to how you actually talk, without relying on crude system prompts.
 
 ### A structured project knowledge substrate
 
-Long-horizon projects quickly bloat active LLM context. AgentFrame separates raw, immutable project inputs (`sources/`) from agent-distilled living truth (`knowledge/`), and runs a periodic, status-based consolidation pass (the "dream" workflow) to archive completed items, keeping working context slim and context window costs low.
+Long-horizon projects quickly bloat the agent's active context window with historical chat logs and outdated files. AgentFrame prevents this by separating raw, immutable inputs (transcripts, briefings, and raw docs in `sources/`) from agent-distilled living files (logs and plans in `knowledge/`).
+
+As the project moves forward, you can trigger a consolidation pass (the "dream" workflow) that archives resolved risks, closed decisions, and completed milestones into compressed monthly archives. This strips the bloat from the active workspace files, keeping the agent's context window slim, fast, and cost-effective.
 
 ### A learning loop
 
-Every project closes with a harvest. Two skills read the version trails and your edits: one mines new voice pairs from what you changed, the other mines template and process improvements from how the work actually ran. You approve each patch, and the library gets a little better. The builder backlog and audit DB keep the receipts — every major feature traces back to a real failure from a real run.
+Every project closes with an automated harvest pass. Two system skills analyze the project's version history and your manual edits. One skill extracts new voice example pairs from how you polished the agent's drafts, while the other identifies template and process gaps based on how the workflow actually ran. The agent proposes these updates as git-patch suggestions; you review and approve them, allowing the system to naturally evolve with every project you run.
 
 [Back to top](#agentframe)
 
@@ -217,9 +219,9 @@ Every project closes with a harvest. Two skills read the version trails and your
 
 ## At a glance
 
-Two domain packs, 5 shared deliverables, 16 process files, 16 skill bundles, 3 flows, a two-mode persona model, a deterministic state-transition CLI, a local preview server, and a two-layer audit trail (`activity.md` + SQLite DB).
+The system is composed of a few simple layers: 2 domain packs, 5 shared deliverables, 16 process files, 16 skill bundles, 3 flows, a two-mode persona configuration, a deterministic CLI, a local preview server, and a two-layer audit trail.
 
-Everything in the library and skills layer is meant to be edited. Set voice and positioning once in `library/context/operator/` (copy from `operator.example/` on first run) and reuse them everywhere.
+Everything in `library/` and `system/skills/` is plain text or standard Python, meant to be modified. You set your voice and positioning once under `library/context/operator/` (seeded from `operator.example/` on first startup) and they are reused automatically across all projects.
 
 ### Domain packs
 
@@ -227,7 +229,7 @@ Everything in the library and skills layer is meant to be edited. Set voice and 
 |---|---|
 | `library/domains/marketing/` | Campaigns that ship posts. Deliverables: research, business brief, campaign brief, campaign architecture, slide-copy, body-copy, post-final. The `publish` verb and the post-FINAL assembly live here. |
 | `library/domains/project-mgmt/` | Consulting / PM projects. A charter goes in, then four living governance docs are derived from it: RAID log, stakeholder map, decision log, workback schedule. No posts, no publish. |
-| `library/domains/TBD/` | The harness is domain-neutral. Add your own domain packs here to support any kind of workflow. |
+| `library/domains/TBD/` | The harness is domain-neutral. More domain packs can be added at any time to support any kind of workflow. |
 
 ### Flows
 
@@ -317,44 +319,44 @@ My current production stack — swap any one for a sharper tool without touching
 
 ### File-native state
 
-Project state lives in markdown — frontmatter, deliverables, `activity.md` — not in a chat window. Change models, change machines, come back next week, and the project picks up where it left off.
+All project state lives directly in markdown files—including frontmatter, deliverables, and `activity.md` log files. The active state is never locked in a transient chat session. If you change LLM providers, switch machines, or return to a project after months away, the agent can read the directory and resume the work immediately.
 
-### Token efficiency by default
+### Token efficiency by design
 
-`AGENTS.md` is the only always-on router; flows, processes, templates, packs, and skills load on demand. A small, focused context means longer sessions and less drift.
+`AGENTS.md` is the only file loaded into the agent's context by default. All domain packs, flows, processes, and skills are lazy-loaded only when the current step requires them. Keeping the active context small prevents LLM drift, keeps response times fast, and lowers token costs.
 
-### A durable library, swappable tools
+### A durable library with swappable tools
 
-Templates, processes, flows, packs, and personas are the layer that improves over time and the part worth keeping. Skills and connectors are swappable — replace one when something sharper ships and the system is untouched.
+Your templates, processes, domain packs, and voice rules are the long-term assets of this workspace—the parts that accumulate value as you run more projects. The actual skills and API connectors are kept decoupled. You can swap an image generator, doc converter, or browser library for a newer tool without altering your underlying workflow.
 
 [Back to top](#agentframe)
 
 ---
 
-## Recommended connectors
+## Connectors
 
-External services AgentFrame integrates with. Recommended for the full loop, but all optional — both Gemini and Composio have generous free tiers, and the system still runs without them.
+AgentFrame integrates with external services to support research, media generation, and publishing. All integrations are optional, and the system runs locally without them.
 
 ### Gemini Deep Research
 
-- Deep research artifacts at project start — sources, implications, signals — saved as structured markdown under `phase-1-research/`.
-- Free credits from [Google AI Studio](https://aistudio.google.com) cover solo-operator usage. Key: `GEMINI_API_KEY`.
+- Generates detailed research briefs, competitor analysis, and signal maps at project kickoff.
+- Outputs are saved directly to `phase-1-research/` as structured markdown.
+- Uses `GEMINI_API_KEY` (which can be obtained through a standard Google AI Studio developer account).
 
-### Gemini image generation (Nano Banana 2 / Pro)
+### Gemini Image Generation (Nano & Pro)
 
-- Fast A/B/C variants (Nano Banana 2: `gemini-3.1-flash-image-preview`) and high-fidelity hero or text-in-image visuals (Pro: `gemini-3-pro-image-preview`).
-- Routed through `system/server/lib/image_generate.py`. Shares the `GEMINI_API_KEY`.
+- Used to generate quick layout variants or high-fidelity images with inline text.
+- Integrated through the local preview hub and runs using your shared `GEMINI_API_KEY`.
 
 ### Composio
 
-- All-in-one MCP hub. One connection exposes 100+ tools (Gmail, Calendar, Drive, LinkedIn, X, Instagram, TikTok, and more).
-- Workplace signal collection feeds research and retros; publishing schedules or sends directly; analytics pull back into retros.
-- Get started at [composio.dev](https://composio.dev).
+- Acts as a unified MCP gateway to connect your agent to tools like Google Workspace, Slack, LinkedIn, or YouTube.
+- Collects live context signals for project kickoff research and publishes final content directly to social channels.
 
 ### Open Design
 
-- Bundled local-first visual runtime at `system/skills/open-design/source/` for higher-fidelity images, carousels, and decks.
-- Fresh clones may need runtime setup (`corepack`, `pnpm install`, Node 24). Uses a local code-agent CLI on `PATH`, or BYOK provider keys as a fallback.
+- A bundled local-first design runtime at `system/skills/open-design/source/` used to compile SVGs, slides, and carousels.
+- Requires Node 24 and local dependencies (`corepack pnpm install`).
 
 ### `.env` shape
 

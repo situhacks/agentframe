@@ -14,7 +14,7 @@ allowed-tools:
 
 # AgentFrame Structure Changes
 
-Use this for structural changes to AgentFrame Marketing's operating system. Ordinary one-file patches still use `system-improvement`; structure changes start here because they affect taxonomy, routing, defaults, or ownership boundaries.
+Use this for structural changes to AgentFrame's operating system. Ordinary one-file patches still use `system-improvement`; structure changes start here because they affect taxonomy, routing, defaults, or ownership boundaries.
 
 ## First Decision
 

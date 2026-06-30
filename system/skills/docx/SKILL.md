@@ -377,7 +377,7 @@ sections: [{
 
 ### Cover Rendering — HTML to PNG to ImageRun
 
-For AgentFrame Marketing docx exports, the cover (page 1) is rendered as HTML at print resolution, screenshotted via local Chrome headless, and embedded as a full-page `ImageRun`. This unlocks per-campaign display fonts (via Google Fonts CDN) and inline SVG motifs that docx-js cannot natively draw. Body content (pages 2+) uses native docx-js so text remains selectable and TOC stays functional.
+For AgentFrame docx exports, the cover (page 1) is rendered as HTML at print resolution, screenshotted via local Chrome headless, and embedded as a full-page `ImageRun`. This unlocks per-campaign display fonts (via Google Fonts CDN) and inline SVG motifs that docx-js cannot natively draw. Body content (pages 2+) uses native docx-js so text remains selectable and TOC stays functional.
 
 See [`library/context/operator/design-language.md#cover-html--png-pipeline`](../../../../library/context/operator/design-language.md) for the design contract and use a campaign-local `cover.html` template when you need branded cover rendering.
 

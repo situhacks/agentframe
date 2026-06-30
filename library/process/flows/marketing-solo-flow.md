@@ -1,4 +1,4 @@
-# AgentFrame Marketing — Solo Campaign Flow
+# AgentFrame — Marketing Solo Campaign Flow
 
 Default campaign flow for solo marketers. This file is a map, not a runbook: it names phase order, expected deliverables, tracker transitions, flow-level gates, and campaign-level completion.
 

@@ -6,13 +6,13 @@ All AgentFrame skills live here. Some are AgentFrame-owned, some are vendored sn
 
 | Skill | Purpose | Provenance |
 |---|---|---|
-| [`agentframe-structure/`](agentframe-structure/) | Structural changes to flows, deliverable types, and ownership boundaries. | Owned by AgentFrame Marketing |
-| [`deliverable-scaffolding/`](deliverable-scaffolding/) | Scaffold new deliverable folders/files using system conventions. | Owned by AgentFrame Marketing |
-| [`system-improvement/`](system-improvement/) | Small and medium system-level improvements with verification discipline. | Owned by AgentFrame Marketing |
-| [`deliverable-harvest/`](deliverable-harvest/) | Mine deliverable-SHAPE feedback from project source material; routes findings to template-patch candidates, the feedback-log, and backlog recurrence watches. Never patches templates directly. | Owned by AgentFrame Marketing |
-| [`voice-harvest/`](voice-harvest/) | Extract a person's voice signal from source material into annotated contrastive pairs (ACPs) in the voice system. | Owned by AgentFrame Marketing |
-| [`upstream-sync/`](upstream-sync/) | Pull updates from the upstream AgentFrame repo into this customized copy — commit-by-commit adoption or squashed bulk migration. | Owned by AgentFrame Marketing |
-| [`project-consolidate/`](project-consolidate/) | Consolidate, compact, and archive stale project knowledge / governance docs to keep active context files lean. | Owned by AgentFrame Marketing |
+| [`agentframe-structure/`](agentframe-structure/) | Structural changes to flows, deliverable types, and ownership boundaries. | Owned by AgentFrame |
+| [`deliverable-scaffolding/`](deliverable-scaffolding/) | Scaffold new deliverable folders/files using system conventions. | Owned by AgentFrame |
+| [`system-improvement/`](system-improvement/) | Small and medium system-level improvements with verification discipline. | Owned by AgentFrame |
+| [`deliverable-harvest/`](deliverable-harvest/) | Mine deliverable-SHAPE feedback from project source material; routes findings to template-patch candidates, the feedback-log, and backlog recurrence watches. Never patches templates directly. | Owned by AgentFrame |
+| [`voice-harvest/`](voice-harvest/) | Extract a person's voice signal from source material into annotated contrastive pairs (ACPs) in the voice system. | Owned by AgentFrame |
+| [`upstream-sync/`](upstream-sync/) | Pull updates from the upstream AgentFrame repo into this customized copy — commit-by-commit adoption or squashed bulk migration. | Owned by AgentFrame |
+| [`project-consolidate/`](project-consolidate/) | Consolidate, compact, and archive stale project knowledge / governance docs to keep active context files lean. | Owned by AgentFrame |
 | [`humanizer/`](humanizer/) | Remove AI-writing patterns from prose. | Vendored (see [`humanizer/VENDOR.md`](humanizer/VENDOR.md)) |
 | [`docx/`](docx/) | Generic `.docx` creation/editing capability. | Vendored (see [`docx/VENDOR.md`](docx/VENDOR.md)) |
 | [`pptx/`](pptx/) | Generic `.pptx` creation/editing capability. | Vendored (see [`pptx/VENDOR.md`](pptx/VENDOR.md)) |

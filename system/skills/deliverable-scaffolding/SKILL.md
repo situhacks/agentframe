@@ -3,7 +3,7 @@ name: deliverable-scaffolding
 version: 0.1.0
 description: |
   Add a new deliverable type to the system. Use when an operator (or a forker
-  adapting AgentFrame Marketing to a different marketing process) wants to introduce a
+  adapting AgentFrame to a different marketing process) wants to introduce a
   deliverable type that does not exist in library/deliverables/ yet. Carries
   the canonical deliverable-template authoring standard, the
   locate-before-inventing duplication check, a
@@ -32,7 +32,7 @@ Load when the operator (or forker) wants to add a new deliverable type. Concrete
 
 - "I want to add a [thing] deliverable type" / "let's create a template for [thing]".
 - An audit-history gap: an artifact has delivered 2+ times without a template (each instance was bespoke). The friction earns a template.
-- A forker setting up AgentFrame Marketing for a different marketing process and asking "where do I put my own deliverable definitions?" — this skill is their entry point.
+- A forker setting up AgentFrame for a different marketing process and asking "where do I put my own deliverable definitions?" — this skill is their entry point.
 
 Do NOT load this skill for:
 

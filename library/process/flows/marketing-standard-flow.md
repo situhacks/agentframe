@@ -1,4 +1,4 @@
-# AgentFrame Marketing — Standard Campaign Flow
+# AgentFrame — Marketing Standard Campaign Flow
 
 This is the fuller multi-post, stakeholder-capable campaign flow. Solo campaigns should start from `marketing-solo-flow.md`.
 

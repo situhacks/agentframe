@@ -52,7 +52,7 @@ This skill operationalizes principles that already exist in the agent personas:
 - **Cross-cutting earning rule** (mirrored to `AGENTS.operator.md` cross-cutting discipline + `AGENTS.builder.md` cross-cutting discipline) — every constraint earns its place from observed strays.
 - **Prior-patch shape check** (`AGENTS.builder.md` + `AGENTS.operator.md`) — patches on a topic with prior-patch history require an explicit prior-patch shape-failure diagnosis before drafting; validation of the new patch is deferred to real-world stray-recurrence over the next 1-2 campaign cycles.
 - **Constraint shape discipline** — when a rule does not constrain, redesign its shape; do not re-write the same shape with sharper words.
-- **Architectural Truth #1** — skills are generic capabilities; AgentFrame Marketing-specific routing taxonomy lives in `library/deliverables/system-retro/template.md`, NOT in this skill.
+- **Architectural Truth #1** — skills are generic capabilities; AgentFrame-specific routing taxonomy lives in `library/deliverables/system-retro/template.md`, NOT in this skill.
 - **SQLite audit log** — every live patch writes a `system_changes` row in `system/audit/agentframe.db`. Historical markdown logs are browse-only backfill sources. This skill's Step 6 carries the write path.
 
 This skill does not own routing taxonomy, pattern-strength threshold, override scrutiny, or decisions about whether a given target file class should accept patches at all. Those live in the orchestrating template (System Retro / Campaign Retro) or in the agent persona. This skill is the patch-loop procedure only.
@@ -200,8 +200,8 @@ After Step 5's validation expectation is written:
 
 ## What this skill does NOT do
 
-- **Does not own routing taxonomy.** Smart-routing options (a/b/c/d/e/f/g/h) are AgentFrame Marketing product taxonomy and live in `library/deliverables/system-retro/template.md`. The orchestrating template decides where a patch routes; this skill executes the patch.
-- **Does not own pattern-strength threshold.** "3+ instances = pattern" is AgentFrame Marketing cadence and lives in System Retro template Section 1. This skill assumes the orchestrator already cleared the pattern bar.
+- **Does not own routing taxonomy.** Smart-routing options (a/b/c/d/e/f/g/h) are AgentFrame product taxonomy and live in `library/deliverables/system-retro/template.md`. The orchestrating template decides where a patch routes; this skill executes the patch.
+- **Does not own pattern-strength threshold.** "3+ instances = pattern" is AgentFrame cadence and lives in System Retro template Section 1. This skill assumes the orchestrator already cleared the pattern bar.
 - **Does not own override scrutiny.** Section 0 of the System Retro template runs first; this skill is invoked per-patch after that scrutiny has run.
 - **Does not own deliverable creation or removal.** Adding a new deliverable type is `system/skills/deliverable-scaffolding/SKILL.md`. Removing one is currently bespoke under Builder (no skill earned its place yet).
 - **Does not own structural flow edits.** Editing a named campaign flow is in scope only as a process_patch after `agentframe-structure` has established the structural owner. The deeper question "should this flow/phase exist at all" is Builder judgment carried by `agentframe-structure`, not this patch-loop procedure.
@@ -225,4 +225,4 @@ After Step 5's validation expectation is written:
 
 ## Forker note
 
-If you are reading this as a fork operator: this skill's discipline is the meaningful part. The AgentFrame Marketing-specific bits (which files are templates, which routing letters exist, what `feedback-log.md` looks like) live in the orchestrating templates, not here. Swap your own deliverable types and your own retro template; the earn → read → diff → propose → defer-validation → apply → log loop ports unchanged.
+If you are reading this as a fork operator: this skill's discipline is the meaningful part. The AgentFrame-specific bits (which files are templates, which routing letters exist, what `feedback-log.md` looks like) live in the orchestrating templates, not here. Swap your own deliverable types and your own retro template; the earn → read → diff → propose → defer-validation → apply → log loop ports unchanged.

@@ -33,6 +33,7 @@ The durable product is the deliverable library. Harness machinery is scaffolding
 | Visual/server machinery | Relevant `system/server/` docs and adjacent code | Project content unless explicitly part of a fixture |
 | Pulling upstream AgentFrame updates into this copy | [`system/skills/upstream-sync/SKILL.md`](system/skills/upstream-sync/SKILL.md) | Gitignored personal layer (operator context, projects, backlog, audit DB) — sync never touches it |
 | Deliverable drafting, iteration, or review requested | Swap to Operator first (atomic command in Modes) — the Operator routing index loads the versioning and template files that work requires | Drafting project deliverables in Builder mode |
+| Need a capability/skill and unsure one exists | [`system/skills/README.md`](system/skills/README.md) — the skill catalog (what each does + when to load), then the named `SKILL.md` | Reinventing a capability a skill already provides |
 | Mode mismatch | Modes table below | Silent mode swaps |
 
 Load only what the task needs. If a file is historical, read it only when researching history or validating a migration.
@@ -111,13 +112,16 @@ After the command returns, re-read the root `AGENTS.md` before any further work 
 
 | Area | Job |
 |---|---|
-| `workspace/projects/` | Project work and state; Operator-owned except schema migrations |
+| `workspace/projects/` | Project work and state, incl. per-project `sources/` + `knowledge/` substrate (schema: `library/process/knowledge-base.md`); Operator-owned except schema migrations |
 | `library/deliverables/` | Deliverable templates; main product surface |
-| `library/process/` | On-demand workflow procedures |
-| `library/context/operator/` | Operator positioning, profile, and voice |
+| `library/process/` | On-demand workflow procedures (incl. `flows/`) |
+| `library/domains/` | Domain packs (`marketing`, `project-mgmt`): per-domain `skeleton.md`, `pack.md`, `deliverables/`, optional `production.md` |
+| `library/context/` | Operator positioning/profile/voice (`operator/`), plus shared `channels/`, `people/`, `_meta/` |
 | `system/af.py` | State-transition CLI (lock, publish, version, new-project, doctor) |
+| `system/skills/` | Builder + Operator skills; catalog of what each does + when to load at `system/skills/README.md` |
 | `system/audit/` | SQLite audit/telemetry exception |
 | `system/browser/` | Browser automation runtime |
+| `system/research/` | Deep-research runtime (`gemini_deep_research`) |
 | `system/server/` | Preview server |
 | `system/builder-backlog.md` | Cross-project queue of Builder work (unresolved only) |
 | `system/builder-backlog-completed.md` | Resolved `BB-*` archive (moved from active on closeout) |

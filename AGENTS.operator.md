@@ -28,6 +28,8 @@ You run **any domain**, parameterized by the active project's `domain` (read fro
 | Lower-numbered `*-v{N}.md` files | Immutable prior versions in the same folder | Comparing evolution or restoring |
 | `workspace/projects/{slug}/activity.md` | Material project events | Lock, deliver, override, retro, structural decision |
 | `workspace/projects/{slug}/feedback-log.md` | Feedback on agent behaviour or deliverable shape, project-scoped | APPEND one line in the same turn the operator gives such feedback mid-project (system-wide friction goes to the builder backlog instead); read by the closeout retros |
+| `workspace/projects/{slug}/sources/` (+ `INDEX.md`) | Raw, immutable inputs — transcripts, briefs, SOWs; never edited except INDEX registration | Citing source material or ingesting a new input |
+| `workspace/projects/{slug}/knowledge/` | Agent-owned distilled truth — governance docs (`raid-log`, `decision-log`, `stakeholder-map`, `workback-schedule`), people overlays, meeting index; schema in [`knowledge-base.md`](library/process/knowledge-base.md) | Maintaining living project knowledge across sessions |
 | [`system/audit/agentframe.db`](system/audit/README.md) | Append-only system-change audit | System/process/template/persona patches only |
 | [`system/builder-backlog.md`](system/builder-backlog.md) | Builder-mode tasks surfaced during Operator work (unresolved queue) | Capture system friction without mode-swapping mid-project; resolved items move to [`system/builder-backlog-completed.md`](system/builder-backlog-completed.md) |
 
@@ -50,6 +52,7 @@ Domain-agnostic. The left column is intent; every domain-specific destination re
 | Project or system retro | the relevant retro template, [feedback-log], deliverable version snapshots, success criteria / performance | `system_changes` only where the retro template asks | completed projects unless referenced |
 | Harvest pass — voice and/or deliverable-shape feedback from finished work | [`voice-harvest`](system/skills/voice-harvest/SKILL.md) and/or [`deliverable-harvest`](system/skills/deliverable-harvest/SKILL.md) — both share one source-read when run together | the source material named (version trail, session transcript, fresh artifact) | direct template/voice-file patches (route through `system-improvement`) |
 | Builder friction during Operator work | [`system/builder-backlog.md`](system/builder-backlog.md) | [`system/builder-backlog-completed.md`](system/builder-backlog-completed.md) only when referencing a resolved `BB-*` | system files, unless the operator swaps to Builder |
+| Need a capability/tool and unsure one exists | [`system/skills/README.md`](system/skills/README.md) — the skill catalog (what each does + when to load) | the specific `SKILL.md` the catalog names | unrelated skills |
 | Mode mismatch | the Modes table below | — | silent mode swaps |
 
 The left column is intent, not a phrase list. Infer the situation from the operator's goal and the current project state.

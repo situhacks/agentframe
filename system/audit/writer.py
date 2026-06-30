@@ -1,4 +1,4 @@
-"""Deterministic SQLite writer for AgentFrame Marketing system changes.
+"""Deterministic SQLite writer for AgentFrame system changes.
 
 Markdown remains canonical for campaign state and activity. The audit database is
 only the narrow, append-only record of system/process/template/persona changes.
@@ -16,7 +16,6 @@ from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DB_PATH = PROJECT_ROOT / "system" / "audit" / "agentframe.db"
-LEGACY_DB_PATH = PROJECT_ROOT / "system" / "audit" / "marketingos.db"
 SCHEMA_PATH = PROJECT_ROOT / "system" / "audit" / "schema.sql"
 
 ACTOR_VALUES = {"agent", "user", "system"}
@@ -28,7 +27,6 @@ ACTOR_VALUES = {"agent", "user", "system"}
 MODE_SWAP_PERSONA_FILES = {
     "builder": "AGENTS.builder.md",
     "operator": "AGENTS.operator.md",
-    "career-ops": "AGENTS.career-ops.md",
 }
 
 
@@ -36,23 +34,8 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
-def _migrate_legacy_default_db(path: Path) -> None:
-    if path != DEFAULT_DB_PATH or path.exists() or not LEGACY_DB_PATH.exists():
-        return
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    LEGACY_DB_PATH.replace(path)
-    for suffix in ("-wal", "-shm"):
-        legacy_sidecar = Path(f"{LEGACY_DB_PATH}{suffix}")
-        new_sidecar = Path(f"{path}{suffix}")
-        if legacy_sidecar.exists() and not new_sidecar.exists():
-            legacy_sidecar.replace(new_sidecar)
-
-
 def _normalize_db_path(db_path: str | Path | None) -> Path:
-    path = Path(db_path) if db_path is not None else DEFAULT_DB_PATH
-    _migrate_legacy_default_db(path)
-    return path
+    return Path(db_path) if db_path is not None else DEFAULT_DB_PATH
 
 
 def _validate_actor(actor: str) -> None:
@@ -251,7 +234,7 @@ def query_recent_system_changes(
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="AgentFrame Marketing system-change audit writer")
+    parser = argparse.ArgumentParser(description="AgentFrame system-change audit writer")
     parser.add_argument(
         "--db-path",
         default=str(DEFAULT_DB_PATH),

@@ -1,10 +1,10 @@
-# AgentFrame Marketing System Change Audit
+# AgentFrame System Change Audit
 
-`system/audit/` is the narrow SQLite exception in AgentFrame Marketing.
+`system/audit/` is the narrow SQLite exception in AgentFrame.
 
 - Markdown remains canonical for campaign state, campaign activity, content, and operator-facing work.
 - SQLite is canonical only for append-only `system_changes` audit rows.
-- The live database file is `system/audit/agentframe.db` and should stay untracked. If a local `system/audit/marketingos.db` exists, `writer.py` migrates it to the new filename on the next default-path initialization.
+- The live database file is `system/audit/agentframe.db` and should stay untracked.
 
 ## Files
 
@@ -13,7 +13,6 @@
 | `schema.sql` | Canonical `system_changes` table and indexes. |
 | `writer.py` | Deterministic writer utility and CLI for system-change rows. |
 | `agentframe.db` | Runtime SQLite database (created on first write; not committed). |
-| `marketingos.db` | Legacy local filename, migrated automatically when the default DB path initializes. |
 
 Retired telemetry modules (`user_interactions`, `daemon_runs`, hooks, reconciler observations, and post timeline reports) are no longer part of the live contract. Campaign progress history belongs in `project.md` and `activity.md`.
 

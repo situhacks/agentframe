@@ -1,1 +1,1 @@
-"""AgentFrame Marketing audit package."""
+"""AgentFrame audit package."""

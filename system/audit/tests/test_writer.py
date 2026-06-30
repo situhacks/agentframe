@@ -23,39 +23,6 @@ class AuditWriterTests(unittest.TestCase):
             table_names = {row[0] for row in rows}
             self.assertEqual(table_names, {"system_changes", "sqlite_sequence"})
 
-    def test_default_db_path_migrates_legacy_marketingos_db(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tmp_path = Path(tmpdir)
-            legacy_path = tmp_path / "marketingos.db"
-            new_path = tmp_path / "agentframe.db"
-
-            writer.ensure_db(legacy_path)
-            writer.append_system_change(
-                db_path=legacy_path,
-                change_type="process_patch",
-                actor="agent",
-                reason="Legacy path smoke test",
-            )
-
-            original_default = writer.DEFAULT_DB_PATH
-            original_legacy = writer.LEGACY_DB_PATH
-            try:
-                writer.DEFAULT_DB_PATH = new_path
-                writer.LEGACY_DB_PATH = legacy_path
-
-                writer.ensure_db()
-
-                self.assertTrue(new_path.exists())
-                self.assertFalse(legacy_path.exists())
-                with closing(sqlite3.connect(new_path)) as conn:
-                    count = conn.execute(
-                        "SELECT COUNT(*) FROM system_changes"
-                    ).fetchone()[0]
-                self.assertEqual(count, 1)
-            finally:
-                writer.DEFAULT_DB_PATH = original_default
-                writer.LEGACY_DB_PATH = original_legacy
-
     def test_append_system_change_round_trips_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "agentframe.db"

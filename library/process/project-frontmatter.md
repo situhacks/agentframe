@@ -131,7 +131,7 @@ name: "Agent Architecture POV"
 slug: agent-architecture-pov
 schema_version: 2026-04-23
 created_at: 2026-04-19
-supersedes: "workspace/projects/marketingos/ (deleted 2026-04-19)"
+supersedes: "workspace/projects/prior-project/ (deleted 2026-04-19)"
 
 # LIFECYCLE
 status: active

@@ -39,6 +39,11 @@ When the operator pastes a new transcript, brief, or document:
 
 ## Living Governance Docs
 
+**When these exist — instantiation is flow-driven, not automatic:**
+
+- Under **`project-mgmt-open-flow`** they are derived at kickoff from the charter (see [`project-mgmt-open-flow.md`](flows/project-mgmt-open-flow.md)).
+- Under **`open-flow`** (the default, including PM one-offs) none are created at kickoff; a doc is born only when the ingest workflow above has real evidence for it — a decision creates `decision-log.md`, a risk creates `raid-log.md`. A pure one-off creates none.
+
 1. **`knowledge/raid-log.md`:** Holds open risks, assumptions, issues, and dependencies. Every entry has exactly one named owner. Stale entries are flagged during weekly reviews. Replaces separate risk registries.
 2. **`knowledge/decision-log.md`:** Dated append-only log: `Decision` · `Rationale` · `Owner`.
 3. **`knowledge/stakeholder-map.md`:** Cross-references global person profiles and links roles to their per-project stakeholder overlay pages at `knowledge/people/{person-slug}.md`.

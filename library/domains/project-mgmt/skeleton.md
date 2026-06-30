@@ -28,6 +28,4 @@ closeout_retro_completed: null
 
 # {name}
 
-## Charter
-
-(scope, objectives, stakeholders, success criteria — derived from the ingested SOW)
+(Plan section is added at kickoff by the selected flow. `project-mgmt-open-flow` also seeds the governance substrate in `knowledge/`; plain `open-flow` stays lean.)

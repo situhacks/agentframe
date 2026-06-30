@@ -15,8 +15,9 @@ Each project instance records its selected flow in `project.md` frontmatter as `
 | `open-flow.md` | Default (all domains) | Build-as-you-go: the agent proposes a plan scaled to the objective; the operator narrows and the plan rolls forward. |
 | `marketing-solo-flow.md` | Marketing, opt-in | Named deliberately by a marketer: lean fixed phase ladder, single accountable owner, no stakeholder review. |
 | `marketing-standard-flow.md` | Marketing, opt-in | Named deliberately by a marketer: fuller project with business/stakeholder review cycles. |
+| `project-mgmt-open-flow.md` | Project-mgmt, opt-in | Open flow + a governance kickoff. Pick when a PM engagement is long-horizon enough to need a charter and living governance docs; a one-off PM deliverable stays on `open-flow`. |
 
-`marketing-solo-flow` and `marketing-standard-flow` are marketing-domain flows (post ladders, manifest moment, post-FINAL assembly). They are named deliberately, never defaults. A non-marketing domain uses `open-flow` until it grows its own ladder.
+`marketing-solo-flow` and `marketing-standard-flow` are marketing-domain flows (post ladders, manifest moment, post-FINAL assembly). They are named deliberately, never defaults. `project-mgmt-open-flow` is the project-mgmt analogue — `open-flow` semantics plus a governance kickoff, also opt-in and never a default. A domain uses `open-flow` until it grows its own named flow.
 
 ## Ownership
 

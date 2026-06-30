@@ -37,7 +37,8 @@ STATUS_ENUM = {"not_started", "drafting", "locked", "delivered", "deferred"}
 LIFECYCLE_ENUM = {"active", "complete", "cancelled"}
 FLOWS = {"marketing-solo-flow": "1-research-and-architecture",
          "marketing-standard-flow": "1-research",
-         "open-flow": "active"}
+         "open-flow": "active",
+         "project-mgmt-open-flow": "active"}
 
 
 def die(msg):

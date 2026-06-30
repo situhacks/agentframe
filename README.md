@@ -221,7 +221,7 @@ Every project closes with an automated harvest pass. Two system skills analyze t
 
 The system is composed of a few simple layers: 2 domain packs, 5 shared deliverables, 16 process files, 16 skill bundles, 3 flows, a two-mode persona configuration, a deterministic CLI, a local preview server, and a two-layer audit trail.
 
-Everything in `library/` and `system/skills/` is plain text or standard Python, meant to be modified. You set your voice and positioning once under `library/context/operator/` (seeded from `operator.example/` on first startup) and they are reused automatically across all projects.
+Everything in `library/` and `system/skills/` is plain text or standard Python, meant to be modified. You set your voice and positioning once under `library/context/operator/` (generated on first run from the canonical shapes in `library/context/operator-schema/`) and they are reused automatically across all projects.
 
 ### Domain packs
 
@@ -430,7 +430,7 @@ agentframe/
 │   │   └── flows/
 │   └── context/
 │       ├── _meta/            # channel and person profile schemas
-│       └── operator.example/ # default operator voice and positioning context
+│       └── operator-schema/  # canonical shapes; setup generates operator/ context from these
 ├── system/
 │   ├── af.py                 # the generic plugin-host spine
 │   ├── skills/

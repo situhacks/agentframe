@@ -1,6 +1,6 @@
-# Your Voice — example scaffold
+# Voice — canonical shape
 
-> Delivered with the open-source AgentFrame Marketing fork. Copy `library/context/operator.example/voice.example/` → `library/context/operator/voice/` (gitignored) and fill it in. This folder mirrors the canonical voice-system shape.
+> **Canonical shape of the voice system.** The voice build ([`voice-setup.md`](../../../process/voice-setup.md)) generates the operator's `library/context/operator/voice/` from this shape; it is not copied by hand. The operator's voice folder is gitignored (private).
 
 > **NOT SET UP YET?** If these files still hold bracketed placeholders, the voice system isn't built. Don't draft against placeholders — run [`library/process/voice-setup.md`](../../../process/voice-setup.md) to build it (gather samples → mine corpus → taste interview → compile).
 

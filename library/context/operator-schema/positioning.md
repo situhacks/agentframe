@@ -1,10 +1,10 @@
-# Positioning — [Operator name]
+# Positioning — canonical shape
 
-> **Placeholder file delivered with the open-source AgentFrame Marketing fork.** Copy `library/context/operator.example/` to `library/context/operator/` (gitignored) and fill in your own content. Sections below mirror the canonical positioning shape; replace bracketed prompts with your own answers.
+> **Canonical shape for `library/context/operator/positioning.md`.** The setup process ([`operator-context-setup.md`](../../process/operator-context-setup.md)) generates the operator's filled-in file from this shape; the bracketed prompts are the generation questions. The operator's file is gitignored (private).
 
 The outward-facing strategic anchor for any user-voiced or strategic deliverable. Narrative + Content Pillars + Audience + POV Stances + Angles + Current Quarter Goals are the pieces that evolve through system retros and quarterly meta-retros.
 
-This file is the "what am I saying outward?" surface; [`profile.example.md`](profile.example.md) is the "who am I?" surface (biography, role, active projects). Keep them apart — they have different cadences (positioning: per-campaign-retro; profile: rare).
+This file is the "what am I saying outward?" surface; [`profile.md`](profile.md) is the "who am I?" surface (biography, role, active projects). Keep them apart — they have different cadences (positioning: per-campaign-retro; profile: rare).
 
 ---
 

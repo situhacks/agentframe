@@ -7,7 +7,7 @@
 # and operator examples.
 library/context/*
 !library/context/_meta/
-!library/context/operator.example/
+!library/context/operator-schema/
 
 # Operator builder backlogs (keeps personal system fixes out of forks)
 system/builder-backlog*.md

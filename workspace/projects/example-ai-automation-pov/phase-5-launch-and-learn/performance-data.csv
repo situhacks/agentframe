@@ -1,2 +1,0 @@
-post_id,platform,post_url,content_type,posted_at,captured_at,window,primary_exposure,likes,comments,shares,saves,clicks,avg_watch_time_seconds,total_watch_time_seconds,source,notes
-post-1,linkedin,example-linkedin-post,image,2026-05-11T19:04:00-07:00,2026-05-11T19:05:00-07:00,example,6200,94,8,5,,,,"example_capture","Shortened example metrics for public campaign walkthrough."

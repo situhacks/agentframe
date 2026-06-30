@@ -13,11 +13,8 @@ library/context/*
 system/builder-backlog*.md
 
 # === Operator projects ===
-# All projects are private by default. The bundled walkthrough project
-# (example-ai-automation-pov) is the one exception — it ships with the repo
-# so new operators have a real reference to copy from.
+# All projects are private by default.
 workspace/projects/*
-!workspace/projects/example-ai-automation-pov/
 
 # === Operator research ===
 workspace/research/

@@ -438,8 +438,7 @@ agentframe/
 │   ├── audit/
 │   └── builder-backlog.md
 └── workspace/
-    └── projects/
-        └── example-ai-automation-pov/
+    └── projects/           # your projects live here (gitignored)
 ```
 
 [Back to top](#agentframe)

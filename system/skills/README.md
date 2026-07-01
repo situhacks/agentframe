@@ -22,7 +22,7 @@ All AgentFrame skills live here. Some are AgentFrame-owned, some are vendored sn
 | [`browser-harness/`](browser-harness/) | Local browser control harness used by AgentFrame browser fallback workflows. | Vendored (see [`browser-harness/VENDOR.md`](browser-harness/VENDOR.md)) |
 | [`open-design/`](open-design/) | Bundled Open Design runtime for advanced image/deck generation workflows. | Vendored (see [`open-design/VENDOR.md`](open-design/VENDOR.md)) |
 | [`extract-design/`](extract-design/) | Extract a website's full design language (colors, type, tokens, Tailwind/React/shadcn themes, WCAG score) via the `designlang` CLI. | Vendored thin overlay (see [`extract-design/VENDOR.md`](extract-design/VENDOR.md)) |
-| [`ppt-master/`](ppt-master/) | Convert source documents (PDF/DOCX/URL/Markdown) into SVG pages and export to PPTX via a multi-role pipeline. | Vendored (see [`ppt-master/VENDOR.md`](ppt-master/VENDOR.md)) |
+| [`ppt-master/`](ppt-master/) | Convert source documents (PDF/DOCX/URL/Markdown) into SVG pages and export to PPTX via a multi-role pipeline. Read [`ppt-master/AGENTS.md`](ppt-master/AGENTS.md) boundary notes before running. | Vendored (see [`ppt-master/VENDOR.md`](ppt-master/VENDOR.md)) |
 
 ## Asset References
 

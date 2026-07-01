@@ -117,6 +117,7 @@ After the command returns, re-read the root `AGENTS.md` before any further work 
 | `library/process/` | On-demand workflow procedures (incl. `flows/`) |
 | `library/domains/` | Domain packs (`marketing`, `project-mgmt`): per-domain `skeleton.md`, `pack.md`, `deliverables/`, optional `production.md` |
 | `library/context/` | Operator positioning/profile/voice (`operator/`), plus shared `channels/`, `people/`, `_meta/` |
+| `library/assets/` | Reusable deck assets: flat `logos/` inventory + ppt-master `deck-templates/` packages (schema: `library/assets/README.md`) |
 | `system/af.py` | State-transition CLI (lock, publish, version, new-project, doctor) |
 | `system/skills/` | Builder + Operator skills; catalog of what each does + when to load at `system/skills/README.md` |
 | `system/audit/` | SQLite audit/telemetry exception |

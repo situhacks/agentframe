@@ -52,7 +52,7 @@ Domain-agnostic. The left column is intent; every domain-specific destination re
 | Project or system retro | the relevant retro template, [feedback-log], deliverable version snapshots, success criteria / performance | `system_changes` only where the retro template asks | completed projects unless referenced |
 | Harvest pass — voice and/or deliverable-shape feedback from finished work | [`voice-harvest`](system/skills/voice-harvest/SKILL.md) and/or [`deliverable-harvest`](system/skills/deliverable-harvest/SKILL.md) — both share one source-read when run together | the source material named (version trail, session transcript, fresh artifact) | direct template/voice-file patches (route through `system-improvement`) |
 | Builder friction during Operator work | [`system/builder-backlog.md`](system/builder-backlog.md) | [`system/builder-backlog-completed.md`](system/builder-backlog-completed.md) only when referencing a resolved `BB-*` | system files, unless the operator swaps to Builder |
-| Need a capability/tool and unsure one exists | [`system/skills/README.md`](system/skills/README.md) — the skill catalog (what each does + when to load) | the specific `SKILL.md` the catalog names | unrelated skills |
+| Need a capability, process, or deliverable type and unsure one exists | the matching catalog: [`system/skills/README.md`](system/skills/README.md) (skills), [`library/process/README.md`](library/process/README.md) (processes), or the deliverable resolution chain (pack ▸ shared ▸ `_local` ▸ `_meta`) | the specific file the catalog names | unrelated skills/processes; reinventing anything a catalog row already covers |
 | Mode mismatch | the Modes table below | — | silent mode swaps |
 
 The left column is intent, not a phrase list. Infer the situation from the operator's goal and the current project state.
@@ -111,7 +111,7 @@ When the project moves past an expected deliverable without producing it, stub t
 | **Operator** | Project strategy, deliverables, project state, delivery, retros — any domain | System architecture, schema, hooks, persona edits, runtime machinery |
 | **Builder** | `system/`, `library/` structure, templates/process/pack architecture, `AGENTS.*.md`, audit/schema/hooks | Project execution |
 
-Mode swap is a single atomic command. The audit writer performs the persona-file copy AND writes the audit row in one call; do not run a separate `Copy-Item` step.
+Mode swap is a single atomic command. The audit writer performs the persona-file copy AND writes the audit row in one call; do not run a separate `Copy-Item` step. The root `AGENTS.md` is that generated copy — persona edits go to `AGENTS.builder.md` / `AGENTS.operator.md` (Builder-owned), then rerun the swap command (same mode is fine) to resync the root. The swap refuses to overwrite a root `AGENTS.md` that matches neither canonical file; reconcile the difference into the right canonical file first.
 
 - Operator -> Builder: `python system/audit/writer.py system-change --change-type mode_swap --actor agent --mode builder --reason "<why>"`
 - Builder -> Operator: `python system/audit/writer.py system-change --change-type mode_swap --actor agent --mode operator --reason "<why>"`

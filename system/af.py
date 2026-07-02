@@ -460,6 +460,30 @@ def cmd_doctor(args):
 
 # ---------------------------------------------------------------- main
 
+# Verbs that mutate project state are Operator actions. `doctor` is read-only
+# and allowed in any mode.
+OPERATOR_VERBS = {"lock", "publish", "version", "new-project"}
+
+
+def check_mode_gate(cmd):
+    """Refuse Operator verbs while the Builder persona is active.
+
+    Reads the first heading of the root AGENTS.md (the active persona copy).
+    Blocks only on an explicit Builder heading; a missing or unrecognized
+    persona does not block, so customized copies keep working.
+    """
+    if cmd not in OPERATOR_VERBS:
+        return
+    agents_md = os.path.join(ROOT, "AGENTS.md")
+    if not os.path.isfile(agents_md):
+        return
+    first_line = read(agents_md).lstrip().splitlines()[0].strip().lower()
+    if first_line.startswith("#") and "builder mode" in first_line:
+        die(f"'af {cmd}' is an Operator action but the Builder persona is active. "
+            "Swap modes first: python system/audit/writer.py system-change "
+            "--change-type mode_swap --actor agent --mode operator --reason \"<why>\"")
+
+
 def main():
     p = argparse.ArgumentParser(prog="af", description="AgentFrame state-transition CLI")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -475,6 +499,7 @@ def main():
     s = sub.add_parser("doctor");          s.add_argument("project", nargs="?"); s.set_defaults(fn=cmd_doctor)
 
     args = p.parse_args()
+    check_mode_gate(args.cmd)
     args.fn(args)
 
 

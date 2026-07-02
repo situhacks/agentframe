@@ -33,7 +33,7 @@ The durable product is the deliverable library. Harness machinery is scaffolding
 | Visual/server machinery | Relevant `system/server/` docs and adjacent code | Project content unless explicitly part of a fixture |
 | Pulling upstream AgentFrame updates into this copy | [`system/skills/upstream-sync/SKILL.md`](system/skills/upstream-sync/SKILL.md) | Gitignored personal layer (operator context, projects, backlog, audit DB) — sync never touches it |
 | Deliverable drafting, iteration, or review requested | Swap to Operator first (atomic command in Modes) — the Operator routing index loads the versioning and template files that work requires | Drafting project deliverables in Builder mode |
-| Need a capability/skill and unsure one exists | [`system/skills/README.md`](system/skills/README.md) — the skill catalog (what each does + when to load), then the named `SKILL.md` | Reinventing a capability a skill already provides |
+| Need a capability, process, or deliverable type and unsure one exists | The matching catalog: [`system/skills/README.md`](system/skills/README.md) (skills), [`library/process/README.md`](library/process/README.md) (processes), `library/deliverables/` + domain packs (templates) — then the named file | Reinventing a capability, process, or template a catalog row already provides |
 | Mode mismatch | Modes table below | Silent mode swaps |
 
 Load only what the task needs. If a file is historical, read it only when researching history or validating a migration.
@@ -99,7 +99,7 @@ Load only what the task needs. If a file is historical, read it only when resear
 | **Builder** | `system/`, `library/` system/process/template structure, `AGENTS.*.md`, specs, schema, hooks, runtime machinery | Drafting deliverables, delivering work, project retros, project frontmatter content updates |
 | **Operator** | `workspace/projects/`, deliverable drafting/review/lock/publish, project state, project retros | System architecture, schema, hooks, persona edits, runtime machinery (except retro-driven `deliverable-harvest` promotion into packs) |
 
-Mode swap is a single atomic command. The audit writer performs the persona-file copy AND writes the audit row in one call; do not run a separate `Copy-Item` step.
+Mode swap is a single atomic command. The audit writer performs the persona-file copy AND writes the audit row in one call; do not run a separate `Copy-Item` step. The root `AGENTS.md` is that generated copy — persona edits go to `AGENTS.builder.md` / `AGENTS.operator.md`, then rerun the swap command (same mode is fine) to resync the root. The swap refuses to overwrite a root `AGENTS.md` that matches neither canonical file; reconcile the difference into the right canonical file first.
 
 - Builder -> Operator: `python system/audit/writer.py system-change --change-type mode_swap --actor agent --mode operator --reason "<why>"`
 - Operator -> Builder: `python system/audit/writer.py system-change --change-type mode_swap --actor agent --mode builder --reason "<why>"`
@@ -114,9 +114,10 @@ After the command returns, re-read the root `AGENTS.md` before any further work 
 |---|---|
 | `workspace/projects/` | Project work and state, incl. per-project `sources/` + `knowledge/` substrate (schema: `library/process/knowledge-base.md`); Operator-owned except schema migrations |
 | `library/deliverables/` | Deliverable templates; main product surface |
-| `library/process/` | On-demand workflow procedures (incl. `flows/`) |
+| `library/process/` | On-demand workflow procedures (incl. `flows/`); catalog of what each does + when to load at `library/process/README.md` |
 | `library/domains/` | Domain packs (`marketing`, `project-mgmt`): per-domain `skeleton.md`, `pack.md`, `deliverables/`, optional `production.md` |
 | `library/context/` | Operator positioning/profile/voice (`operator/`), plus shared `channels/`, `people/`, `_meta/` |
+| `library/assets/` | Reusable deck assets: flat `logos/` inventory + ppt-master `deck-templates/` packages (schema: `library/assets/README.md`) |
 | `system/af.py` | State-transition CLI (lock, publish, version, new-project, doctor) |
 | `system/skills/` | Builder + Operator skills; catalog of what each does + when to load at `system/skills/README.md` |
 | `system/audit/` | SQLite audit/telemetry exception |

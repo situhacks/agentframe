@@ -150,9 +150,11 @@ class ModeSwapAtomicityTests(unittest.TestCase):
         agents_md = root / "AGENTS.md"
         builder_md = root / "AGENTS.builder.md"
         cmo_md = root / "AGENTS.operator.md"
-        agents_md.write_text("# starting persona — Operator\n", encoding="utf-8")
         builder_md.write_text("# Builder persona\n## rules go here\n", encoding="utf-8")
         cmo_md.write_text("# Operator persona\n## different rules\n", encoding="utf-8")
+        # Root starts as a faithful copy of one canonical persona (Operator),
+        # the only state the drift guard allows a swap to overwrite.
+        agents_md.write_text(cmo_md.read_text(encoding="utf-8"), encoding="utf-8")
         return {
             "agents_md": agents_md,
             "builder_md": builder_md,
@@ -301,6 +303,81 @@ class ModeSwapAtomicityTests(unittest.TestCase):
             self.assertEqual(
                 files["agents_md"].read_text(encoding="utf-8"),
                 original_content,
+            )
+
+    def test_mode_swap_blocked_when_root_matches_neither_canonical(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            project_root = Path(tmpdir)
+            files = self._scaffold_project_root(project_root)
+            # Simulate the drift failure: someone edited the root copy directly
+            drifted = files["cmo_md"].read_text(encoding="utf-8") + "\n## edited in the copy\n"
+            files["agents_md"].write_text(drifted, encoding="utf-8")
+            db_path = project_root / "system" / "audit" / "agentframe.db"
+
+            with self.assertRaises(ValueError) as ctx:
+                writer.append_system_change(
+                    db_path=db_path,
+                    change_type="mode_swap",
+                    actor="agent",
+                    mode="builder",
+                    reason="Should block: root copy has unreconciled edits",
+                    project_root=project_root,
+                )
+            self.assertIn("matches neither", str(ctx.exception))
+
+            # Drifted edits preserved, no row written
+            self.assertEqual(
+                files["agents_md"].read_text(encoding="utf-8"), drifted
+            )
+            if db_path.exists():
+                with closing(sqlite3.connect(db_path)) as conn:
+                    count = conn.execute(
+                        "SELECT COUNT(*) FROM system_changes"
+                    ).fetchone()[0]
+                self.assertEqual(count, 0)
+
+    def test_mode_swap_allows_missing_root_agents_md(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            project_root = Path(tmpdir)
+            files = self._scaffold_project_root(project_root)
+            files["agents_md"].unlink()
+            db_path = project_root / "system" / "audit" / "agentframe.db"
+
+            writer.append_system_change(
+                db_path=db_path,
+                change_type="mode_swap",
+                actor="agent",
+                mode="builder",
+                reason="Fresh copy with no root file yet",
+                project_root=project_root,
+            )
+            self.assertEqual(
+                files["agents_md"].read_text(encoding="utf-8"),
+                files["builder_md"].read_text(encoding="utf-8"),
+            )
+
+    def test_mode_swap_same_mode_resync_passes_guard(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            project_root = Path(tmpdir)
+            files = self._scaffold_project_root(project_root)
+            # Root matches the operator canonical; editing AGENTS.builder.md and
+            # resyncing must pass the guard, since root still matches A canonical.
+            files["builder_md"].write_text(
+                "# Builder persona\n## rules go here\n## new row\n", encoding="utf-8"
+            )
+            db_path = project_root / "system" / "audit" / "agentframe.db"
+
+            writer.append_system_change(
+                db_path=db_path,
+                change_type="mode_swap",
+                actor="agent",
+                mode="builder",
+                reason="Resync root after canonical edit",
+                project_root=project_root,
+            )
+            self.assertEqual(
+                files["agents_md"].read_text(encoding="utf-8"),
+                files["builder_md"].read_text(encoding="utf-8"),
             )
 
     def test_non_mode_swap_change_does_not_touch_agents_md(self) -> None:

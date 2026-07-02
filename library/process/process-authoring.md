@@ -22,6 +22,10 @@ Use this order:
 - Phrase examples are allowed only as secondary examples.
 - If a trigger depends on project phase sequence, the project flow file should point here.
 
+## Catalog Row
+
+Every process file has a row in [`README.md`](README.md) (what it owns + when to load). Add or update that row in the same change that creates or reshapes the file; remove the row when a file retires. A process file without a catalog row is unfindable outside its routing chain.
+
 ## Ownership Rules
 
 - Shared procedures live in `library/process/`.

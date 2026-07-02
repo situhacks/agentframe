@@ -80,6 +80,27 @@ def _perform_mode_swap_side_effect(
             "the swap would leave AGENTS.md in an inconsistent state"
         )
 
+    # Drift guard: the root AGENTS.md is a generated copy. If it matches
+    # neither canonical persona file, someone edited the copy directly and
+    # overwriting it would silently destroy those edits. Refuse; the agent
+    # decides which file should carry the difference and reconciles first.
+    if destination.exists():
+        destination_bytes = destination.read_bytes()
+        canonical_bytes = [
+            (project_root / name).read_bytes()
+            for name in MODE_SWAP_PERSONA_FILES.values()
+            if (project_root / name).exists()
+        ]
+        if all(destination_bytes != canonical for canonical in canonical_bytes):
+            names = " / ".join(MODE_SWAP_PERSONA_FILES.values())
+            raise ValueError(
+                f"mode_swap blocked: {destination.name} matches neither canonical "
+                f"persona file ({names}), so overwriting it would lose edits. "
+                "Diff the root file against the canonical files, decide which one "
+                "should carry the difference, reconcile, then rerun the swap. "
+                "No audit row was written."
+            )
+
     destination.write_bytes(source.read_bytes())
     return source, destination
 

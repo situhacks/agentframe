@@ -22,7 +22,8 @@ After a direction is selected, offer the operator a choice:
 
 - **Gemini Deep Research API** via `system/research/gemini_deep_research.py`. Label the option so it notes that it can hit Gemini API costs; if the operator explicitly selects this option, treat the selection as cost acknowledgement. The helper preserves Gemini's native interaction JSON under `source-material/` and extracts the Markdown handoff deterministically. If Gemini changes response shape, preserve the raw JSON and surface the extraction failure instead of guessing. If polling fails mid-run, the interaction ID is preserved at `phase-1-research/source-material/gemini-deep-research-interaction-id.txt`; resume with `python system/research/gemini_deep_research.py --resume-from-id <id> [other flags]`.
 - **Gemini web handoff prompt.** Produce a paste-ready prompt for the operator to run in a Gemini web session, then ingest the returned material.
-- **Manual sources.** Operator-provided files, transcripts, or pasted text when neither Gemini path applies.
+- **Native deep research** via [`system/skills/deep-research/SKILL.md`](../../system/skills/deep-research/SKILL.md). Runs on the agent's own tools — no research API cost, but heavy token usage (a specialist wave of searches and fetches that counts against session/subscription limits). The skill states execution mode, tier, and specialist model for acknowledgement before launching; it injects the research deliverable template's Output Shape per its Output contract.
+- **Manual sources.** Operator-provided files, transcripts, or pasted text when no external research path applies.
 
 The selected method is recorded in `research-artifact-v{N}.md` frontmatter as `research_method`.
 

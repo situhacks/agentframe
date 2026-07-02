@@ -18,10 +18,8 @@ This is my workspace where I build and run my projects—longer-term projects, c
 - [Why this exists](#why-this-exists)
 - [Domains are packs](#domains-are-packs)
 - [A real project, step by step](#a-real-project-step-by-step)
-- [The deterministic harness](#the-deterministic-harness)
 - [Key features](#key-features)
 - [At a glance](#at-a-glance)
-- [Design principles](#design-principles)
 - [Connectors](#connectors)
 - [Architecture](#architecture)
 - [Repository structure](#repository-structure)
@@ -187,45 +185,45 @@ The marketing pack coordinates research, copy creation, image generation, and di
 
 ---
 
-## The deterministic harness
+## Key features
 
-A project harness is more than just a folder of files; it requires a way to maintain state, validate structure, and enforce boundaries. AgentFrame is a lightweight, pragmatically built harness. It does not solve every agent coordination problem, but it addresses a very real issue: LLMs are great at drafting but notoriously bad at state tracking and bookkeeping. In my experience, even the best frontier models fail at exact procedure following a significant percentage of the time—mine skipped its versioning and lock steps three times in a single evening (likely because it got distracted).
+### A deterministic harness
 
-Because of this, AgentFrame does not ask the model to remember state transitions. Instead, the workflow is guided by a deterministic Python CLI (`system/af.py`). Commands like `new-project`, `version`, `lock`, and `doctor` run the exact file modifications, frontmatter updates, and audit logs atomically. They print back the check-lists and guidelines that the agent actually needs to follow. The agent owns the creative judgment; the CLI owns the bookkeeping. Since the CLI is written in standard library Python, it runs identically across Claude Code, Cursor, VS Code, or Antigravity.
+**The agent owns creative judgment; a Python CLI owns state tracking and bookkeeping.**
+
+LLMs are reliable at drafting and unreliable at exact procedure following — mine skipped its versioning and lock steps three times in a single evening. AgentFrame therefore does not ask the model to remember state transitions. Commands in `system/af.py` (`new-project`, `version`, `lock`, `doctor`) run the file modifications, frontmatter updates, and audit logs atomically, then print the checklists the agent needs to follow next. All resulting state lives in markdown files rather than a chat session, so the agent can read the project directory and resume work after a provider switch or months away.
 
 ---
 
-## Key features
-
 ### A voice system built from your own writing
 
-Most brand-voice setups rely on a long list of negative rules ("don't use the word leverage") that the agent forgets by the second revision anyway. AgentFrame compiles your actual writing into annotated example pairs—showing a generic version, your rewritten version, and the specific move that separates them. 
+**Voice is defined by annotated example pairs from your own writing, not lists of banned words.**
 
-When the agent drafts, it loads these pairs directly into its context to act as stylistic anchors. Instead of checking off a list of banned words, the agent drafts the substance first, then runs a dedicated style pass applying the exact cadences and markers found in the pairs. This keeps the writing authentic to how you actually talk, without relying on crude system prompts.
+AgentFrame compiles your actual writing into example pairs: a generic version, your rewritten version, and an annotation naming the difference. When the agent drafts, it loads these pairs into context as stylistic anchors — substance first, then a dedicated style pass that applies the cadences and markers found in the pairs. Negative rule lists ("don't use the word leverage") are avoided because agents stop following them within a few revisions.
+
+---
 
 ### A structured project knowledge substrate
 
-Long-horizon projects quickly bloat the agent's active context window with historical chat logs and outdated files. AgentFrame prevents this by separating raw, immutable inputs (transcripts, briefings, and raw docs in `sources/`) from agent-distilled living files (logs and plans in `knowledge/`).
+**Raw inputs and distilled working files are kept separate, and the working set is periodically consolidated.**
 
-As the project moves forward, you can trigger a consolidation pass (the "dream" workflow) that archives resolved risks, closed decisions, and completed milestones into compressed monthly archives. This strips the bloat from the active workspace files, keeping the agent's context window slim, fast, and cost-effective.
+Immutable inputs (transcripts, briefings, raw docs) live in `sources/`; agent-distilled living files (logs and plans) live in `knowledge/`. A user-triggered consolidation pass (the "dream" workflow) archives resolved risks, closed decisions, and completed milestones into compressed monthly archives, keeping the active files small. The same rule applies to the system itself: `AGENTS.md` is the only file loaded by default, and domain packs, flows, processes, and skills load only when the current step requires them.
+
+---
 
 ### Deep research built on an open benchmark
 
-Research is a first-class phase in every project, and at kickoff the agent offers you a method: Gemini Deep Research over the API, or a native `deep-research` skill that runs entirely on the agent's own tools — web search, page fetch, file I/O. The native path needs no research API and no per-run billing beyond the session's own token usage, so it works on any harness out of the box.
+**Two research methods: Gemini Deep Research over the API, or a native `deep-research` skill that runs on the agent's own tools.**
 
-The native skill follows the same rule as every other skill in this repo: vendor proven work instead of reinventing it. Rather than drafting my own research loop, I started from [DeepResearch Bench](https://huggingface.co/spaces/muset-ai/DeepResearch-Bench-Leaderboard) — an open benchmark for deep-research agents — and lifted the loop from its top open-source performers:
+The native method uses web search, page fetch, and file I/O only, so it has no research-API dependency and no per-run cost beyond session tokens. Its research loop is adopted from the top open-source entries on [DeepResearch Bench](https://huggingface.co/spaces/muset-ai/DeepResearch-Bench-Leaderboard): the specialist-role architecture from [LunonAI/lunon-deep-research](https://github.com/LunonAI/lunon-deep-research) (an adaptation of NVIDIA's AI-Q blueprint, the benchmark's top entry), the synthesis-gate checklist from [deer-flow](https://github.com/bytedance/deer-flow), and the compression pattern from [open_deep_research](https://github.com/langchain-ai/open_deep_research). Each adopted element is pinned to an upstream commit SHA in [`PROVENANCE.md`](system/skills/deep-research/PROVENANCE.md) so the skill can be updated by diffing against the pin. Benchmark-judge tuning and multi-model ensembles were not adopted, and query budgets are reduced to three operator-sized tiers (`quick` / `standard` / `deep`).
 
-- The **role-specialized architecture** (an architect plans typed queries, then five specialist roles — evidence gatherer, mechanism explorer, comparator, critic, horizon scanner — extract cited finding atoms) comes from NVIDIA's AI-Q blueprint, the benchmark's #1 entry, as adapted by [LunonAI/lunon-deep-research](https://github.com/LunonAI/lunon-deep-research) (MIT).
-- The **synthesis-gate checklist** that decides whether findings are strong enough to write from comes from ByteDance's [deer-flow](https://github.com/bytedance/deer-flow) (MIT).
-- The **compression-at-boundary pattern** (only structured finding atoms cross into the writer's context; raw page text never persists) comes from LangChain's [open_deep_research](https://github.com/langchain-ai/open_deep_research) (MIT).
-
-Every lifted element is pinned to an upstream commit SHA in [`PROVENANCE.md`](system/skills/deep-research/PROVENANCE.md), with a refresh procedure: diff upstream against the pin, adopt what changes the research loop, ignore the rest. Same discipline as the fully vendored skills, applied at the prompt level.
-
-Just as deliberate is what was *not* lifted: the benchmark-judge tuning (readability rewriters, footnote normalizers) and the multi-model API ensembles. Those optimize leaderboard score, not research quality — and the point of the native skill is running on whatever model your session already has. Benchmark-scale budgets (48–64 queries per run) were cut down to operator-sized tiers (`quick` / `standard` / `deep`), and the skill states its cost — execution mode, tier, search count, specialist model — before launching the expensive wave.
+---
 
 ### A learning loop
 
-Every project closes with an automated harvest pass. Two system skills analyze the project's version history and your manual edits. One skill extracts new voice example pairs from how you polished the agent's drafts, while the other identifies template and process gaps based on how the workflow actually ran. The agent proposes these updates as git-patch suggestions; you review and approve them, allowing the system to naturally evolve with every project you run.
+**Every project closeout proposes reviewed updates to templates, processes, and voice.**
+
+At closeout, two system skills analyze the project's version history and your manual edits: one extracts new voice example pairs from your edits to the agent's drafts, the other identifies template and process gaps from how the workflow actually ran. Both propose their updates as git-patch suggestions for you to approve or reject.
 
 [Back to top](#agentframe)
 
@@ -328,24 +326,6 @@ My current production stack — swap any one for a sharper tool without touching
 - A two-layer audit trail: `activity.md` per project plus an append-only SQLite DB at `system/audit/agentframe.db`.
 - A local preview server at `system/server/` for HTML, image, video, PDF, PPTX, and DOCX.
 - A browser harness at `system/browser/` for CDP-driven sessions, with documented fallbacks when a workflow needs a hand.
-
-[Back to top](#agentframe)
-
----
-
-## Design principles
-
-### File-native state
-
-All project state lives directly in markdown files—including frontmatter, deliverables, and `activity.md` log files. The active state is never locked in a transient chat session. If you change LLM providers, switch machines, or return to a project after months away, the agent can read the directory and resume the work immediately.
-
-### Token efficiency by design
-
-`AGENTS.md` is the only file loaded into the agent's context by default. All domain packs, flows, processes, and skills are lazy-loaded only when the current step requires them. Keeping the active context small prevents LLM drift, keeps response times fast, and lowers token costs.
-
-### A durable library with swappable tools
-
-Your templates, processes, domain packs, and voice rules are the long-term assets of this workspace—the parts that accumulate value as you run more projects. The actual skills and API connectors are kept decoupled. You can swap an image generator, doc converter, or browser library for a newer tool without altering your underlying workflow.
 
 [Back to top](#agentframe)
 

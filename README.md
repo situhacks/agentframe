@@ -57,7 +57,7 @@ AgentFrame uses two distinct `AGENTS.md` personas to establish clean boundaries:
 - **Operator mode** runs active projects. It is locked to `workspace/projects/` so the agent cannot edit templates, rules, or core processes while executing a project.
 - **Builder mode** modifies the system. It has write access to `system/` and `library/` for editing templates, adding process files, or authoring domain packs.
 
-You can swap modes by telling the agent `swap to Builder` or `swap to Operator`. The agent will handle the file copy and log the transition to the local audit database automatically.
+You can swap modes by telling the agent `swap to Builder` or `swap to Operator`. The agent will handle the file copy and log the transition to the local audit database automatically. The boundary is enforced, not just described: the swap refuses to overwrite a drifted `AGENTS.md`, and the CLI's operator verbs (`lock`, `publish`, `version`, `new-project`) refuse to run while the Builder persona is active.
 
 ### Syncing upstream changes
 
@@ -158,7 +158,7 @@ The marketing pack coordinates research, copy creation, image generation, and di
 </td>
 <td width="50%" valign="top">
 <img src=".github/readme-assets/walkthrough-02-research.png" alt="02 · Gemini Deep Research" /><br/>
-<sub><b>02 · Gemini Deep Research</b> — Deep Research runs against your direction and lands a structured brief and competitor analysis artifact at <code>phase-1-research/research-artifact-v{N}.md</code>.</sub>
+<sub><b>02 · Deep research, your method</b> — Pick Gemini Deep Research over the API, or the native benchmark-lifted <code>deep-research</code> skill on the agent's own search and fetch tools. Either way, a structured brief and competitor analysis artifact lands at <code>phase-1-research/research-artifact-v{N}.md</code>.</sub>
 </td>
 </tr>
 <tr>
@@ -209,6 +209,20 @@ Long-horizon projects quickly bloat the agent's active context window with histo
 
 As the project moves forward, you can trigger a consolidation pass (the "dream" workflow) that archives resolved risks, closed decisions, and completed milestones into compressed monthly archives. This strips the bloat from the active workspace files, keeping the agent's context window slim, fast, and cost-effective.
 
+### Deep research built on an open benchmark
+
+Research is a first-class phase in every project, and at kickoff the agent offers you a method: Gemini Deep Research over the API, or a native `deep-research` skill that runs entirely on the agent's own tools — web search, page fetch, file I/O. The native path needs no research API and no per-run billing beyond the session's own token usage, so it works on any harness out of the box.
+
+The native skill follows the same rule as every other skill in this repo: vendor proven work instead of reinventing it. Rather than drafting my own research loop, I started from [DeepResearch Bench](https://huggingface.co/spaces/muset-ai/DeepResearch-Bench-Leaderboard) — an open benchmark for deep-research agents — and lifted the loop from its top open-source performers:
+
+- The **role-specialized architecture** (an architect plans typed queries, then five specialist roles — evidence gatherer, mechanism explorer, comparator, critic, horizon scanner — extract cited finding atoms) comes from NVIDIA's AI-Q blueprint, the benchmark's #1 entry, as adapted by [LunonAI/lunon-deep-research](https://github.com/LunonAI/lunon-deep-research) (MIT).
+- The **synthesis-gate checklist** that decides whether findings are strong enough to write from comes from ByteDance's [deer-flow](https://github.com/bytedance/deer-flow) (MIT).
+- The **compression-at-boundary pattern** (only structured finding atoms cross into the writer's context; raw page text never persists) comes from LangChain's [open_deep_research](https://github.com/langchain-ai/open_deep_research) (MIT).
+
+Every lifted element is pinned to an upstream commit SHA in [`PROVENANCE.md`](system/skills/deep-research/PROVENANCE.md), with a refresh procedure: diff upstream against the pin, adopt what changes the research loop, ignore the rest. Same discipline as the fully vendored skills, applied at the prompt level.
+
+Just as deliberate is what was *not* lifted: the benchmark-judge tuning (readability rewriters, footnote normalizers) and the multi-model API ensembles. Those optimize leaderboard score, not research quality — and the point of the native skill is running on whatever model your session already has. Benchmark-scale budgets (48–64 queries per run) were cut down to operator-sized tiers (`quick` / `standard` / `deep`), and the skill states its cost — execution mode, tier, search count, specialist model — before launching the expensive wave.
+
 ### A learning loop
 
 Every project closes with an automated harvest pass. Two system skills analyze the project's version history and your manual edits. One skill extracts new voice example pairs from how you polished the agent's drafts, while the other identifies template and process gaps based on how the workflow actually ran. The agent proposes these updates as git-patch suggestions; you review and approve them, allowing the system to naturally evolve with every project you run.
@@ -219,7 +233,7 @@ Every project closes with an automated harvest pass. Two system skills analyze t
 
 ## At a glance
 
-The system is composed of a few simple layers: 2 domain packs, 5 shared deliverables, 16 process files, 16 skill bundles, 3 flows, a two-mode persona configuration, a deterministic CLI, a local preview server, and a two-layer audit trail.
+The system is composed of a few simple layers: 2 domain packs, 5 shared deliverables, 18 process files, 18 skill bundles, 4 flows, a reusable asset library, a two-mode persona configuration, a deterministic CLI, a local preview server, and a two-layer audit trail.
 
 Everything in `library/` and `system/skills/` is plain text or standard Python, meant to be modified. You set your voice and positioning once under `library/context/operator/` (generated on first run from the canonical shapes in `library/context/operator-schema/`) and they are reused automatically across all projects.
 
@@ -228,7 +242,7 @@ Everything in `library/` and `system/skills/` is plain text or standard Python, 
 | Pack | What it ships |
 |---|---|
 | `library/domains/marketing/` | Campaigns that ship posts. Deliverables: research, business brief, campaign brief, campaign architecture, slide-copy, body-copy, post-final. The `publish` verb and the post-FINAL assembly live here. |
-| `library/domains/project-mgmt/` | Consulting / PM projects. A charter goes in, then four living governance docs are derived from it: RAID log, stakeholder map, decision log, workback schedule. No posts, no publish. |
+| `library/domains/project-mgmt/` | Consulting / PM projects. Opt into `project-mgmt-open-flow` and a charter goes in, then four living governance docs are derived from it: RAID log, stakeholder map, decision log, workback schedule. One-off PM deliverables run on plain `open-flow` with no governance overhead. No posts, no publish. |
 | `library/domains/TBD/` | The harness is domain-neutral. More domain packs can be added at any time to support any kind of workflow. |
 
 ### Flows
@@ -240,6 +254,7 @@ Everything in `library/` and `system/skills/` is plain text or standard Python, 
 | `open-flow` (default) | Build-as-you-go. The agent proposes a plan scaled to the objective; you narrow it and set the tempo. The default for every domain. |
 | `marketing-solo-flow` | Marketing, opt-in: a lean fixed phase ladder with one accountable owner. |
 | `marketing-standard-flow` | Marketing, opt-in: a fuller campaign with stakeholder review gates. |
+| `project-mgmt-open-flow` | Project-mgmt, opt-in: open-flow plus a governance kickoff that derives the charter-driven governance docs. One-off PM deliverables stay on plain `open-flow`. |
 
 ### Shared deliverables
 
@@ -267,6 +282,7 @@ Process files load on demand — only when the workflow they describe is in play
 | `lock-event` | Lock trigger and judgment gates; mechanics run through the `af` CLI |
 | `project-frontmatter` | Frontmatter schema and state handling |
 | `knowledge-base` | Project knowledge substrate schema, storage principles, and ingest workflow |
+| `operator-context-setup` | First-run generation of your operator context from the canonical schemas |
 | `voice-setup` | Build your voice system from your own writing |
 | `voice-mini-retro` | Lock-time gate that routes your edit-diffs to the voice-harvest skill |
 | `humanizer-integration` | The humanization pass |
@@ -291,6 +307,7 @@ My current production stack — swap any one for a sharper tool without touching
 | `voice-harvest` | Project skill — mines finished work and edit-diffs into voice example pairs |
 | `deliverable-harvest` | Project skill — mines template and process patches from finished projects |
 | `project-consolidate` | Project skill — consolidates and prunes project knowledge and history (dream workflow) |
+| `deep-research` | Project skill — native multi-role deep research on the agent's own tools; loop lifted from [DeepResearch Bench](https://huggingface.co/spaces/muset-ai/DeepResearch-Bench-Leaderboard) leaders, provenance pinned in [`PROVENANCE.md`](system/skills/deep-research/PROVENANCE.md) |
 | `docx` | Project skill — generates Word documents from markdown deliverables |
 | `pptx` | Project skill — generates PowerPoint presentations from markdown deliverables |
 | `humanizer` | Vendored from [blader/humanizer](https://github.com/blader/humanizer) |
@@ -307,6 +324,7 @@ My current production stack — swap any one for a sharper tool without touching
 - Two-mode routing via `AGENTS.operator.md` and `AGENTS.builder.md`.
 - The deterministic CLI at `system/af.py` — `new-project`, `lock`, `version`, `doctor`, plus the domain-dispatched `publish`. The buttons do the bookkeeping atomically and write the paper trail; the agent keeps the judgment.
 - Project state and outputs as markdown under `workspace/projects/`.
+- A reusable asset library at `library/assets/` — a flat logo inventory plus ppt-master deck-template packages, shared across every deck the projects produce.
 - A two-layer audit trail: `activity.md` per project plus an append-only SQLite DB at `system/audit/agentframe.db`.
 - A local preview server at `system/server/` for HTML, image, video, PDF, PPTX, and DOCX.
 - A browser harness at `system/browser/` for CDP-driven sessions, with documented fallbacks when a workflow needs a hand.
@@ -342,6 +360,7 @@ AgentFrame integrates with external services to support research, media generati
 - Generates detailed research briefs, competitor analysis, and signal maps at project kickoff.
 - Outputs are saved directly to `phase-1-research/` as structured markdown.
 - Uses `GEMINI_API_KEY` (which can be obtained through a standard Google AI Studio developer account).
+- No key? The native `deep-research` skill covers the same phase on the agent's own tools — see [Deep research built on an open benchmark](#deep-research-built-on-an-open-benchmark).
 
 ### Gemini Image Generation (Nano & Pro)
 
@@ -428,14 +447,19 @@ agentframe/
 │   ├── deliverables/         # shared cross-domain deliverables + _meta shape
 │   ├── process/
 │   │   └── flows/
-│   └── context/
-│       ├── _meta/            # channel and person profile schemas
-│       └── operator-schema/  # canonical shapes; setup generates operator/ context from these
+│   ├── context/
+│   │   ├── _meta/            # channel and person profile schemas
+│   │   └── operator-schema/  # canonical shapes; setup generates operator/ context from these
+│   └── assets/
+│       ├── logos/            # flat brand-mark inventory (filename is the index)
+│       └── deck-templates/   # reusable ppt-master template packages
 ├── system/
 │   ├── af.py                 # the generic plugin-host spine
 │   ├── skills/
 │   ├── server/
 │   ├── audit/
+│   ├── browser/              # CDP-driven browser runtime
+│   ├── research/             # Gemini deep-research runtime
 │   └── builder-backlog.md
 └── workspace/
     └── projects/           # your projects live here (gitignored)
@@ -504,6 +528,10 @@ Small, demand-driven additions. Nothing here is a rewrite.
 - [GreenSock GSAP](https://greensock.com/gsap/)
 - [Google AI Studio / Gemini](https://aistudio.google.com)
 - [blader/humanizer](https://github.com/blader/humanizer)
+- [DeepResearch Bench leaderboard](https://huggingface.co/spaces/muset-ai/DeepResearch-Bench-Leaderboard) — the open benchmark the native `deep-research` skill's architecture was selected from
+- [LunonAI/lunon-deep-research](https://github.com/LunonAI/lunon-deep-research) (MIT, role prompts and architect pattern lifted into `system/skills/deep-research/`; lineage: NVIDIA's AI-Q blueprint, the benchmark #1)
+- [bytedance/deer-flow](https://github.com/bytedance/deer-flow) (MIT, synthesis-gate checklist)
+- [langchain-ai/open_deep_research](https://github.com/langchain-ai/open_deep_research) (MIT, compression-at-boundary pattern)
 
 ## License
 

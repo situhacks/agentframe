@@ -13,7 +13,7 @@ Called by [`lock-event.md`](lock-event.md) step 6 at every deliverable lock. The
 Load and run [`system/skills/voice-harvest/SKILL.md`](../../system/skills/voice-harvest/SKILL.md) on the deliverable that just locked.
 
 - **Source tier:** this is a lock-event invocation, possibly in a fresh/compacted session. Default to **Tier 1 (disk diffs only)** — do not rely on chat memory that may be gone. The skill offers deeper tiers (transcript / chat) only when the operator has budget and the session holds the drafting context.
-- **Outputs:** the skill proposes pairs (operator approves), writes approved ones to `pairs/`, and logs a backlog recurrence-watch if a voice issue recurred despite an existing pair. It logs its own `system_changes` row.
+- **Outputs:** the skill proposes pairs (operator approves), writes approved ones to `pairs/`, proposes corpus promotion when the locked/published final is user-voiced (full piece → `voice/corpus/{register}/`), and logs a backlog recurrence-watch if a voice issue recurred despite an existing pair. It logs its own `system_changes` row.
 
 ## Notes
 

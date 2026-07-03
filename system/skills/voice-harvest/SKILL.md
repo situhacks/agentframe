@@ -12,10 +12,12 @@ description: |
   delegates a harvest. Asks the operator how deep to mine (diffs-only vs.
   transcript vs. full) up front, because transcript deep-dives are token-heavy.
   Proposes pairs (first-pass-then-approve), writes approved ones to
-  library/context/operator/voice/pairs/, and logs a recurrence-watch entry to
-  the builder backlog when a voice issue recurs despite an existing rule/pair.
-  Scope is harvest→pairs+backlog-watch ONLY; anti-patterns/profile/identity
-  edits route to system-improvement.
+  library/context/operator/voice/pairs/, promotes published/locked user-voiced
+  finals into library/context/operator/voice/corpus/ (full-piece exemplars),
+  and logs a recurrence-watch entry to the builder backlog when a voice issue
+  recurs despite an existing rule/pair. Scope is harvest→pairs+corpus+backlog-
+  watch ONLY; anti-patterns/profile/identity/register edits route to
+  system-improvement.
 allowed-tools:
   - Read
   - Write
@@ -28,7 +30,7 @@ allowed-tools:
 
 # Voice Harvest: Extract Voice Signal Into the Pairs Library
 
-The voice system generates from **annotated contrastive pairs** (ACPs): a generic BASE → the person's REWRITE → a MOVE note on what changed. The pairs only stay good if they keep absorbing real corrections. This skill is the harvester: read source material, find the deltas that teach voice, and fold the generalizable ones into `pairs/`.
+The voice system generates by imitating **full-piece exemplars** (`corpus/`) and steering with **annotated contrastive pairs** (ACPs): a generic BASE → the person's REWRITE → a MOVE note on what changed. Both layers only stay good if they keep absorbing real work. This skill is the harvester: read source material, find the deltas that teach voice, fold the generalizable ones into `pairs/`, and promote finished user-voiced finals into `corpus/`.
 
 The richest signal is **what the human changed** — the operator's manual edits to an AI draft, and the late fine-tuning passes — not the AI's own drafts. Weight toward those. But the early big-rewrite diffs (where the operator gave AI structural direction) also carry voice. Read both.
 
@@ -42,9 +44,9 @@ Out of scope: patching `anti-patterns.md` / `voice-profile.md` / `identity.md` (
 
 | In scope | Routes elsewhere |
 |---|---|
-| Read sources → extract voice deltas → propose/write **pairs** | Patching anti-patterns / profile / identity → `system-improvement` |
-| Log a **recurrence-watch** to `builder-backlog.md` | Structure/content/strategy learnings → System Retro / Campaign Retro |
-| | The pairs-format spec itself → `pairs/README.md` (read it, don't redefine it) |
+| Read sources → extract voice deltas → propose/write **pairs** | Patching anti-patterns / profile / identity / registers → `system-improvement` |
+| Propose/write **corpus promotion** of published/locked finals | Structure/content/strategy learnings → System Retro / Campaign Retro |
+| Log a **recurrence-watch** to `builder-backlog.md` | The pairs-format spec → `pairs/README.md`; the corpus rules → `corpus/README.md` (read them, don't redefine them) |
 
 ## The procedure
 
@@ -81,7 +83,7 @@ For each prose change, classify:
 ### Step 4 — Per distinct move, decide its destination
 
 - **Generalizable, net-new move** (test: *would this MOVE note help write a DIFFERENT future piece better?*) → candidate **PAIR**. One-offs → discard.
-- **A move that already has a pair/rule, but recurred anyway** → the existing pair didn't constrain. This is a **recurrence signal**, not a new pair. Go to Step 6 (backlog-watch).
+- **A move that already has a pair/rule, but recurred anyway** → the existing pair didn't constrain. This is a **recurrence signal**, not a new pair. Go to Step 7 (backlog-watch).
 - **Nothing earned** → silent pass; say so.
 
 ### Step 5 — Propose pairs (FIRST-PASS-THEN-APPROVE)
@@ -98,7 +100,17 @@ register: builder-pov | market-signal | slide | cover
 
 **Pairs hygiene** (from `pairs/README.md` / voice-mini-retro): cap ~30 total grouped by register; over cap → a new pair REPLACES the weakest/most-redundant (name it); dedup by move; recency-weighted (newest approved work wins). Surface candidates; write only approved ones to the matching `pairs/{register}.md`.
 
-### Step 6 — Recurrence-watch (the cross-retro memory)
+### Step 6 — Corpus promotion (full-piece exemplars)
+
+When the harvested source includes a **published or operator-locked user-voiced final** (an essay that went live, a locked LinkedIn body + carousel copy), propose promoting it into the register's corpus:
+
+1. Read `library/context/operator/voice/corpus/README.md` (the rules: 3–5 per register, topical diversity, verbatim finals only, one provenance line, recency-weighted pruning) and the target register folder.
+2. Propose: the piece verbatim (reader-facing prose only — strip production notes, char targets, changelogs) + one provenance line (source path/URL + lock/publish date). If the register is at cap, name the piece it replaces and why (oldest / most topic-redundant).
+3. Operator approves → write to `corpus/{register}/`. Declined → note it in the harvest log; don't re-propose the same piece next run.
+
+Agent drafts and cleaned intermediates never promote — only text the operator wrote or explicitly locked as final.
+
+### Step 7 — Recurrence-watch (the cross-retro memory)
 
 The builder backlog doubles as the voice system's "is this a real pattern?" tracker. Two cases:
 
@@ -107,9 +119,9 @@ The builder backlog doubles as the voice system's "is this a real pattern?" trac
 
 Before logging, grep `builder-backlog.md` for a prior matching watch entry. Backlog format lives in `system/builder-backlog.md`.
 
-### Step 7 — Log the harvest
+### Step 8 — Log the harvest
 
-Append a `system_changes` row via `system/audit/writer.py` recording: pairs added (count + tags), pairs replaced (if over cap), backlog-watch entries logged/confirmed, sources mined (tier), and the deliverable/artifact harvested. One row per harvest run.
+Append a `system_changes` row via `system/audit/writer.py` recording: pairs added (count + tags), pairs replaced (if over cap), corpus promotions (piece + register + any replacement), backlog-watch entries logged/confirmed, sources mined (tier), and the deliverable/artifact harvested. One row per harvest run.
 
 ## What this skill does NOT do
 
@@ -124,7 +136,7 @@ Append a `system_changes` row via `system/audit/writer.py` recording: pairs adde
 - **Operator is low on tokens:** stay Tier 1 (diffs only). Surface that a deeper transcript mine is available later if the diff pass looks thin.
 - **Fresh session, lock-event invocation:** Tier 1 disk-only is the default; do not claim chat-derived pairs you can't reconstruct from disk.
 - **Over the pairs cap with several strong candidates:** propose the swaps (new replaces weakest, named) rather than growing past ~30. If the operator wants them all, that's a signal the cap should move — surface it, don't silently exceed.
-- **The same move shows up as both a new-pair candidate AND a recurrence:** it recurred → treat as recurrence (Step 6), not a fresh pair. A duplicate pair is the wrong fix.
+- **The same move shows up as both a new-pair candidate AND a recurrence:** it recurred → treat as recurrence (Step 7), not a fresh pair. A duplicate pair is the wrong fix.
 
 ## Forker note
 

@@ -14,10 +14,10 @@ Audience: [who you're writing for, and what earns their attention — evidence, 
 
 ## Registers
 
-[The distinct registers you write in, so the agent picks the right one before drafting:]
-- **[Default register]** — [e.g. first-person build-log. When it applies.]
-- **[Formal register]** — [when, how it differs.]
-- **[Headline / short-form]** — [not sentences; different rules.]
-- **[Casual ceiling]** — [how casual is too casual for published work vs. how you talk privately.]
+[The distinct channel registers you write in. Identify the register FIRST — it decides what loads (this is step zero of the drafting sequence in the README). Each register maps a deliverable type to one overlay file and one gold-corpus folder:]
+- **[`{register-name}`]** (`registers/{register-name}.md` + `corpus/{register-name}/`) — [which deliverable types route here; the temperature relative to your other registers.]
+- **[`{second-register}`]** (`registers/{...}.md` + `corpus/{...}/`) — [same.]
 
-Identify the register before drafting. The pairs in `pairs/` are tagged by register.
+[Sub-registers inside a channel, if any — e.g. slide/cover lines: not sentences, punchy allowed, length rules don't apply. And the casual ceiling: how casual is too casual for published work vs. how you talk privately.]
+
+The pairs in `pairs/` are tagged by register.

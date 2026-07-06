@@ -56,17 +56,18 @@ Identify what material exists for this harvest, then **ask the operator how deep
 
 | Tier | Sources read | Cost | When |
 |---|---|---|---|
-| **1 — Diffs only** | The deliverable's version trail: consecutive `v{n}→v{n+1}` diffs, **weighted to operator-edit transitions** (`*-operator-edits.md`, `edited_by: operator`) and the big early rewrites | Cheap | Default / low budget |
+| **1 — Diffs only** | The deliverable's version trail: consecutive `v{n}→v{n+1}` diffs, **weighted to operator-edit transitions** (hand-edit copies, `edited_by: operator` markers) and the big early rewrites | Cheap | Default / low budget |
 | **2 — + Transcript** | Tier 1 + the session transcript(s) where this work was discussed (`~/.claude/projects/<project>/<session>.jsonl`) — the discussion, feedback, and evolution, which is often richer than the diffs | Heavy | Operator has budget + wants depth |
 | **3 — + Live chat** | Tier 2 + the current session's in-chat corrections (only valid in the live session that did the work) | Variable | Harvesting work just done this session |
 
-Ask with `AskUserQuestion`: *"How deep should I mine — diffs only (cheap), + transcript (rich, token-heavy), or full (chat too)?"* Default to Tier 1 if the operator doesn't care.
+Ask with `AskUserQuestion`: *"How deep should I mine — diffs only (cheap), + transcript (rich, token-heavy), or full (chat too)?"* Default to Tier 1 if the operator doesn't care. **If the invocation already scopes sources and depth** ("do the diffs, in depth"), skip the ask and run at that scope — re-asking blocks the session for nothing.
 
 **Mode note (fidelity guard):** if invoked by lock-event / voice-mini-retro in a possibly-fresh session, **Tier 1 (disk diffs) is the safe default** — do not rely on chat memory that may be gone after compaction. The "use memory/chat" tiers are opt-in and only valid when the session actually holds the drafting context. Reconstruct from disk when in doubt.
 
 ### Step 2 — Read the sources
 
 - **Version trail (Tier 1):** list the chain (`{name}-v1 … {name}-v{N}`). Walk **consecutive** diffs, not just v1→v{N} — the v(n)→v(n+1) transitions are where individual moves live, and the **operator-edit handoffs** (manual rewrites) + the **final smoothing passes** are the highest-signal. Read the prose-changed diffs; skip pure frontmatter/structure/table-reorder diffs.
+- **The hand-edit-copy convention (how to isolate operator keystrokes):** operator-edit versions are created as a verbatim copy ("Operator hand-edit copy — edit directly here") and edited in place, so `diff v(N-1)→v(N)` on that copy isolates the operator's changes exactly. Typos in these diffs mark authentic operator text — signal, not noise. The operator may also edit *other* versions in place; those edits only surface inside the next agent-cleanup diff, mixed with agent changes — use the version notes ("cleanup of the operator's vN edits") to attribute. A line-level change you can't attribute from disk gets reported as unattributed, never assumed.
 - **Transcript (Tier 2):** read the session JSONL for the stretch where this work evolved — the operator's dictated direction, the "too fancy / fix it" feedback, the reject→accept exchanges. This captures corrections that never hit a version file (in-chat iteration).
 - **Fresh artifact:** if the input is a net-new piece (an article, a sent email, a post the person wrote), read it as a positive exemplar — extract BRANDON-side lines directly; the BASE is the generic version you reconstruct.
 - Always read the current `pairs/*.md` (all register files) so you know what's already covered and don't duplicate. Read `pairs/README.md` for the format.
@@ -75,7 +76,7 @@ Ask with `AskUserQuestion`: *"How deep should I mine — diffs only (cheap), + t
 
 For each prose change, classify:
 
-- **Voice** — cadence (staccato↔flowing), word choice (fancy↔plain), tone, hedge, a banned pattern removed, an operator rewrite into their own voice. KEEP.
+- **Voice** — cadence (staccato↔flowing), word choice (fancy↔plain), tone, hedge, **stance** (the writer's relationship to the reader: pundit↔peer, swagger↔confession, observation↔direct address), a banned pattern removed, an operator rewrite into their own voice. KEEP.
 - **Non-voice** — content, facts, structure, hook/CTA swap, typo. DISCARD (route structural learnings to the relevant retro, not here).
 
 **Cluster:** collapse the same move repeated across many versions into ONE candidate (nineteen staccato fixes → one pair).
@@ -85,6 +86,7 @@ For each prose change, classify:
 - **Generalizable, net-new move** (test: *would this MOVE note help write a DIFFERENT future piece better?*) → candidate **PAIR**. One-offs → discard.
 - **A move that already has a pair/rule, but recurred anyway** → the existing pair didn't constrain. This is a **recurrence signal**, not a new pair. Go to Step 7 (backlog-watch).
 - **Nothing earned** → silent pass; say so.
+- **Most clusters land at profile/register level** (stance, header shape, a licensed move) rather than sentence level → the harvest's main output is ONE system-improvement payload, not a pile of pairs. Bundle those findings and route them together; write pairs only for the sentence-level moves that anchor them.
 
 ### Step 5 — Propose pairs (FIRST-PASS-THEN-APPROVE)
 

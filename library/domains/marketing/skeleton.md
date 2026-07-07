@@ -13,6 +13,7 @@ status: active
 current_phase: {phase}
 flow: {flow}
 last_activity: {ts}
+last_consolidated: null
 shipped_at: null
 completed_at: null
 cancelled_at: null

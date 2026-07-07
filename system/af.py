@@ -371,6 +371,63 @@ def cmd_new_project(args):
 
 # ---------------------------------------------------------------- doctor
 
+# Dream-pass nudge thresholds. Doctor owns WHEN to nudge (deterministic
+# mechanics); the project-consolidate skill owns what a dream pass does.
+DREAM_AGE_DAYS = 30            # active project this long past last_consolidated → nudge
+DREAM_ACTIVE_WINDOW_DAYS = 14  # ...but only if it saw activity this recently
+DREAM_LINE_CAPS = (("knowledge/decision-log.md", 300),
+                   ("knowledge/raid-log.md", 300),
+                   ("activity.md", 500))
+
+
+def parse_iso_date(value):
+    if not value or value == "null":
+        return None
+    try:
+        return datetime.date.fromisoformat(value[:10])
+    except ValueError:
+        return None
+
+
+def dream_note(cdir):
+    """One informational line when a project looks due for a dream pass.
+
+    Never an issue and never affects the exit code: bloated-but-valid books
+    are still valid. Fires on an active project when an append-only file
+    exceeds its cap, or when consolidation is >DREAM_AGE_DAYS old and the
+    project is still being worked (last_activity within the window).
+    """
+    rel = os.path.relpath(cdir, ROOT).replace("\\", "/")
+    try:
+        cfm, _ = split_fm(read(os.path.join(cdir, "project.md")), "project.md")
+    except SystemExit:
+        return None
+    if get_scalar(cfm, "status") != "active":
+        return None
+
+    today_d = datetime.date.today()
+    signals = []
+    for relpath, cap in DREAM_LINE_CAPS:
+        p = os.path.join(cdir, relpath)
+        if os.path.isfile(p):
+            lines = read(p).count("\n") + 1
+            if lines > cap:
+                signals.append(f"{relpath} {lines} lines (cap {cap})")
+
+    # last_consolidated is stamped by the dream pass; projects that predate the
+    # field (or have never dreamed) fall back to created_at.
+    base = parse_iso_date(get_scalar(cfm, "last_consolidated")) or parse_iso_date(get_scalar(cfm, "created_at"))
+    age = (today_d - base).days if base else None
+    last_act = parse_iso_date(get_scalar(cfm, "last_activity"))
+    steadily_worked = last_act is not None and (today_d - last_act).days <= DREAM_ACTIVE_WINDOW_DAYS
+    if age is not None and age >= DREAM_AGE_DAYS and steadily_worked:
+        signals.insert(0, f"{age}d since last consolidation")
+
+    if not signals:
+        return None
+    return f"{rel}: dream pass recommended — " + "; ".join(signals) + " (offer system/skills/project-consolidate)"
+
+
 def check_project(cdir):
     issues = []
     rel = os.path.relpath(cdir, ROOT).replace("\\", "/")
@@ -447,9 +504,14 @@ def cmd_doctor(args):
             if os.path.isdir(base):
                 dirs += [os.path.join(base, d) for d in sorted(os.listdir(base))
                          if os.path.isfile(os.path.join(base, d, "project.md"))]
-    all_issues = []
+    all_issues, notes = [], []
     for d in dirs:
         all_issues += check_project(d)
+        note = dream_note(d)
+        if note:
+            notes.append(note)
+    for n in notes:
+        print(f"af doctor: note — {n}")
     if all_issues:
         print(f"af doctor: {len(all_issues)} issue(s) — surfaced, never auto-fixed (operator decides):")
         for i in all_issues:

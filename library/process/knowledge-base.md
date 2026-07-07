@@ -37,6 +37,8 @@ When the operator pastes a new transcript, brief, or document:
    - `description`: 1-sentence summary
 3. Extract new decisions, risks, stakeholders, or milestones and update the corresponding `knowledge/` files. Reference the source ID for all extractions (e.g., `[src-2026-06-25-01]`).
 
+**Person facts route project-first, always.** New facts about a person land in this project's `knowledge/people/{person-slug}.md` overlay — never directly in `library/context/people/`. Promotion to the global layer is a judgment call that happens only inside the dream pass ([`project-consolidate`](../../system/skills/project-consolidate/SKILL.md)), where cross-project evidence is visible.
+
 ## Living Governance Docs
 
 **When these exist — instantiation is flow-driven, not automatic:**

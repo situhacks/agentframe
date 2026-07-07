@@ -44,6 +44,7 @@ Pointers (success criteria source, etc.) live inside the relevant blocks rather 
 | `current_phase` | enum | flow-defined phase ids; for `open-flow`, the project-defined ids declared in the `project.md` plan section | first phase in selected flow | Where the project is right now. Updated when the agent finishes a phase's last deliverable or the user explicitly transitions. End-of-phase transition rules live in the selected `flow` file. |
 | `flow` | enum | flow ids in [`flows/README.md`](flows/README.md) | `open-flow` | Canonical flow selector for this project instance. Valid values: `marketing-solo-flow`, `marketing-standard-flow`, `open-flow`. (See `library/process/flows/` for definitions). |
 | `last_activity` | ISO 8601 datetime | e.g. `2026-04-23T03:00:00+00:00` | scaffold time | Touched whenever any deliverable in this project is edited / locked / delivered. Used to compute stale-project nudges (>7d). |
+| `last_consolidated` | ISO 8601 date or `null` | — | `null` | Stamped by the dream pass ([`project-consolidate`](../../system/skills/project-consolidate/SKILL.md)). `af doctor` prints a `dream pass recommended` note when this is >30d old on a recently-active project, or when an append-only log exceeds its line cap. Add the field on first dream if the project predates it. |
 | `shipped_at` | ISO 8601 date or `null` | — | `null` | When the first post in the project published. (Sourced from the post's `post-FINAL.md` frontmatter `published.posted_at` — see [`post-final/template.md`](../domains/marketing/deliverables/post-final/template.md) "Publish / Export Mechanics".) |
 | `completed_at` | ISO 8601 date or `null` | — | `null` | When the project retro ran (the formal close — `LIFECYCLE.status` transitions `active → complete` in the same turn). |
 | `cancelled_at` | ISO 8601 date or `null` | — | `null` | When `LIFECYCLE.status` was set to `cancelled`. Mutually exclusive with `completed_at`. |
@@ -138,6 +139,7 @@ status: active
 current_phase: 4-production
 flow: marketing-standard-flow
 last_activity: 2026-04-23T03:00:00+00:00
+last_consolidated: null
 shipped_at: 2026-04-20
 completed_at: null
 cancelled_at: null
@@ -228,6 +230,10 @@ Canonical shapes:
 - **`plan_revised`** — an open-flow project's plan changed (phase added/merged/dropped, deliverable added to or removed from scope).
   ```
   2026-06-12 10:20 — plan_revised: added phase-3-followup; parked the video teaser. Reason: "workshop feedback lands first."
+  ```
+- **`knowledge_consolidation`** — a dream pass ran ([`project-consolidate`](../../system/skills/project-consolidate/SKILL.md)); `last_consolidated` was stamped in the same change.
+  ```
+  2026-07-06 15:30 — knowledge_consolidation: dream pass; archived raid/decision entries to knowledge/_archive/; pruned 240 lines; promoted jane-doe to global.
   ```
 
 When a flow file mentions appending an event (`post_published`, `phase_override`, `cancellation`, etc.), use these shapes. Skipping a required retro is logged as a `phase_override`; pattern of overrides surfaces at quarterly self-review.

@@ -5,7 +5,7 @@ Use this when a project post is video-shaped: raw talking-head footage, an autho
 This file owns the **when, what, and how-to-compose** for video production inside AgentFrame. Vendored skill packs own their generic craft:
 
 - HyperFrames teaches HTML video composition, preview, inspection, and rendering.
-- video-use teaches transcript-driven raw-footage editing.
+- video-use-compatible editing captures transcript-driven raw-footage decisions when that capability is available.
 - Flow / Veo / Nano Banana are manual browser workflows for generated footage, transitions, and image/video assets until an API integration earns its place.
 
 AgentFrame owns project context: arc, audience, design language, CTA, prior posts, state tracking, and publish reconciliation.
@@ -29,7 +29,7 @@ When video work starts, load:
    - `system/skills/hyperframes/references/launch-video/HANDOFF.md`
    - `system/skills/hyperframes/references/launch-video/SCRIPT.md`
    - `system/skills/hyperframes/references/launch-video/STORYBOARD.md`
-   - `C:\Cursor Projects\MarketingOS-video-references\video-use\SKILL.md` when raw footage needs transcript-driven editing.
+   - a locally available video-use skill when raw footage needs transcript-driven editing.
 
 Treat HyperFrames/GSAP skill folders as vendored snapshots: update intentionally, not ad hoc during project drafting.
 
@@ -103,7 +103,7 @@ Within `video/`, keep `renders/` for rendered video outputs (`.mp4`/`.webm`) onl
 3. **Choose capabilities from the palette.** State which tools are useful for this job and why. Do not force a single path.
 4. **Create or update `video-spec-v{N}.md`.** Keep it as the planning/checklist artifact. It should describe the intended structure and asset provenance, not over-script the creative work.
 5. **Build the working folders.** Use `video/`, `edit/`, or both.
-6. **For raw footage:** load video-use, produce transcript/EDL artifacts, render a preview, and only show the user after self-eval passes or residual issues are named.
+6. **For raw footage:** load video-use when it is available; otherwise create the transcript/EDL artifacts directly, render a preview, and only show the user after self-eval passes or residual issues are named.
 7. **For authored video:** load HyperFrames skills, use `SCRIPT.md` and `STORYBOARD.md` when the video needs narration or beat-by-beat direction, then build `index.html` and `compositions/`.
 8. **For Flow assets:** the operator generates assets in Flow manually, drops files into the project, and the agent records the prompt, model/tool used, date, and path.
 9. **Preview.** Use HyperFrames Studio for timeline authoring. Use the AgentFrame preview hub for project artifact browsing and rendered video review.

@@ -1,6 +1,6 @@
 # AgentFrame — Marketing Standard Campaign Flow
 
-This is the fuller multi-post, stakeholder-capable campaign flow. Solo campaigns should start from `marketing-solo-flow.md`.
+Fuller multi-post, stakeholder-capable campaign flow. Solo campaigns start from `marketing-solo-flow.md`.
 
 Each deliverable's full template lives in `library/deliverables/{type}/template.md`. This file is the map; templates are the territory.
 
@@ -20,9 +20,9 @@ Owned by the agent in-session when the operator starts a detailed campaign.
 | 1.1 Campaign idea bank | `phase-1-research/idea-bank.md` | Agent + user |
 | 1.2 Research artifact | `phase-1-research/research-artifact-v{N}.md` | Agent + user |
 
-Detailed campaigns start from an operator-launched research pass. Connected workspace context can inform candidate ideas when available, but it is optional.
+Detailed campaigns start from an operator-launched research pass; connected workspace context is optional.
 
-Load [`library/process/research-and-signals.md`](../research-and-signals.md) for the workspace-context definition, the live Composio/Rube MCP scan procedure, the Gemini Deep Research API vs web-handoff offer, and the fallback rule.
+Load [`library/process/research-and-signals.md`](../research-and-signals.md) for workspace context, MCP scan, research-method offer, and fallback rules.
 
 Idea-bank shape (keep tight): a candidate list plus the selected pick, nothing more. Per candidate: title, 1-3 sentence thesis, and one provenance line. Name the selected pick in one line. Do not add per-candidate Risk, Research Questions, Workspace Signal Summary, or Next Research Step sections.
 
@@ -46,7 +46,7 @@ Two deliverables. Both can be reviewed externally OR drafted-through-to-lock —
 | 2.1 | Business Brief | `phase-2-strategy/business-brief/draft-v{N}.md` | External when a stakeholder exists; otherwise drafting → lock | 2.2 cannot start until 2.1 is locked (with or without review) |
 | 2.2 | Campaign Brief | `phase-2-strategy/campaign-brief/draft-v{N}.md` | External when a stakeholder exists; otherwise drafting → lock | Phase 3 cannot start until 2.2 is locked (with or without review) |
 
-When external review IS the path: agent offers to draft the Gmail + Calendar invite when the deliverable hits export (see `runtime/review-coordination.md`). `review: pending` while the brief is in flight with the reviewer, and `expected_feedback_by` should be recorded when the user has a real expectation date. User sends; reviewer responds; user pastes feedback into chat; agent applies revisions; agent flips `review: complete`. Operator then locks. If the reviewer returns "kill it", follow the cancellation rule in [`library/process/project-frontmatter.md`](../project-frontmatter.md).
+When external review is the path: agent offers Gmail + Calendar coordination at export; `review: pending` while in flight; record `expected_feedback_by` when known. User sends, pastes feedback, agent applies revisions, then flips `review: complete`; operator locks. If the reviewer kills it, follow [`project-frontmatter.md`](../project-frontmatter.md) cancellation.
 
 When external review is NOT the path: brief drafts, gets locked, downstream unblocks. No `phase_override` log — review never being expected is not an override.
 
@@ -95,9 +95,7 @@ Record `post_manifest` (ingredients + generation preferences from the locked Cam
 
 Per-post deliverables. Run in parallel after Phase 3 completes. Phase 4 owns launch execution for each post; Phase 5 is for post-launch learning after the active production arc closes.
 
-When a production deliverable has many unresolved directions, multi-session scope, or risky edits across canonical artifacts, offer a scratchpad in the post folder.
-
-**Scratchpads (recommended for first-version posts and major version bumps):** write `phase-4-production/posts/post-{n}/scratchpad-v{N}.md`, where `N` matches the version it informed. Scratchpads are throwaway planning notes: never read a prior-version scratchpad when working on a later version.
+When a production deliverable has unresolved directions, multi-session scope, or risky canonical edits, offer `phase-4-production/posts/post-{n}/scratchpad-v{N}.md`. Scratchpads are throwaway planning notes; never read a prior-version scratchpad for a later version.
 
 | Step | Deliverable | Produces | Depends on |
 |---|---|---|---|

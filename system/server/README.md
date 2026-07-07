@@ -1,8 +1,8 @@
 # AgentFrame Preview Server
 
-Localhost preview server for visual deliverables. Renders mood-board direction compares, the design-language one-pager, and per-post carousel slides in your browser. LiveReload pushes refreshes as the agent edits files in Cursor.
+Localhost preview server for visual deliverables. Renders mood-board direction compares, the design-language one-pager, and per-post carousel slides in your browser. LiveReload pushes refreshes as the agent edits files.
 
-Spec: [`docs/superpowers/specs/2026-04-16-marketing-os-v3/runtime/preview-server.md`](../../docs/superpowers/specs/2026-04-16-marketing-os-v3/runtime/preview-server.md). Visual flow it serves: [`runtime/in-app-generation.md`](../../docs/superpowers/specs/2026-04-16-marketing-os-v3/runtime/in-app-generation.md).
+Operator-facing process: [`library/process/preview-server.md`](../../library/process/preview-server.md).
 
 ## 1. Install
 
@@ -23,14 +23,14 @@ python system/server/run.py
 Defaults to `http://localhost:8080`. The whole project root is served, so any HTML file resolves naturally:
 
 ```
-http://localhost:8080/workspace/projects/marketingos/phase-3-planning/design-language/preview/design-language.html
+http://localhost:8080/workspace/projects/<project-slug>/phase-3-planning/design-language/preview/design-language.html
 ```
 
 Useful flags:
 
 - `--port 8081` if 8080 is taken (see Troubleshooting).
 - `--host 0.0.0.0` to expose on the LAN (rare; default `localhost` is correct for solo work).
-- `--project marketingos` opens the browser tab on that project's design-language preview.
+- `--project <project-slug>` opens the browser tab on that project's design-language preview.
 - `--no-open` prevents the browser open even when `--project` is set.
 
 Stop with `Ctrl+C`.
@@ -53,7 +53,7 @@ Adjust `config.yaml` and restart if you need to widen the scope (e.g. while iter
 Every time `tokens.yaml` changes, regenerate the CSS variables:
 
 ```
-python -m system.server.lib.tokens_to_css workspace/projects/marketingos/phase-3-planning/design-language/tokens.yaml
+python -m system.server.lib.tokens_to_css workspace/projects/<project-slug>/phase-3-planning/design-language/tokens.yaml
 ```
 
 Output goes to `./preview/assets/tokens.css` next to the yaml by default. Override with `--out PATH` if needed. The agent runs this automatically after editing tokens.yaml; the standalone CLI is for ad-hoc fix-ups.
@@ -66,7 +66,7 @@ HTML is the primary visual medium for AgentFrame — slide HTML + tokens.css cov
 python -m system.server.lib.image_generate \
     --prompt-file path/to/prompt.txt \
     --negative-prompt "no text, no stock photo lighting" \
-    --out-dir workspace/projects/marketingos/phase-4-production/posts/post-2/visuals \
+    --out-dir workspace/projects/<project-slug>/phase-4-production/posts/post-2/visuals \
     --aspect 4:5 --variants 3
 ```
 

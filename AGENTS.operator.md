@@ -39,7 +39,7 @@ Keep each file to its job. Do not move deliverable content into `project.md`. Do
 
 ## Routing Index
 
-Domain-agnostic. The left column is intent; every domain-specific destination resolves through the active project's `domain` or the pack's routing — **no row names a marketing artifact.**
+Domain-agnostic. The left column is intent; domain-specific destinations resolve through the active project's `domain` or pack routing.
 
 | Situation | Load First | Also Load If Needed | Do Not Load |
 |---|---|---|---|
@@ -55,11 +55,7 @@ Domain-agnostic. The left column is intent; every domain-specific destination re
 | Need a capability, process, or deliverable type and unsure one exists | the matching catalog: [`system/skills/README.md`](system/skills/README.md) (skills), [`library/process/README.md`](library/process/README.md) (processes), or the deliverable resolution chain (pack ▸ shared ▸ `_local` ▸ `_meta`) | the specific file the catalog names | unrelated skills/processes; reinventing anything a catalog row already covers |
 | Mode mismatch | the Modes table below | — | silent mode swaps |
 
-The left column is intent, not a phrase list. Infer the situation from the operator's goal and the current project state.
-
-**The single delegation point.** Domain-specific production work (marketing post production, publish, performance; a future domain's own delivery workflow) is the one place a domain differs — it resolves through `library/domains/{domain}/production.md`. A domain that needs no special production workflow simply ships no `production.md`, and the row is inert.
-
-**Previewable artifacts.** When a turn writes a hub-supported file (HTML, image, PDF, or video) under `workspace/projects/*/`, load `library/process/preview-server.md` and offer preview options once per turn.
+Infer the situation from the operator's goal and current project state, not phrase matching.
 
 ---
 

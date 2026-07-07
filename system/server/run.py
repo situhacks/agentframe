@@ -7,7 +7,7 @@ change.
 Usage:
     python system/server/run.py
     python system/server/run.py --port 8081
-    python system/server/run.py --project marketingos
+    python system/server/run.py --project <project-slug>
 """
 
 from __future__ import annotations

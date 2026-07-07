@@ -1,6 +1,6 @@
 # What [you] don't write — weighted, not walls
 
-Preferences with calibration, not prohibitions. Hard bans make the model write defensively and regress to generic; keep this file small and tiered, and put the generative effort into `pairs/` + `voice-profile.md`.
+Preferences with calibration, not prohibitions. Hard bans make the model write defensively and regress to generic; keep this file small and tiered, and put the generative effort into `pairs/` + `voice-profile.md`. Use this to notice drift, not to write scared.
 
 Generic-AI patterns (rule-of-three, inflated significance, copula avoidance, AI vocab, signposting, etc.) are the vendored humanizer's job: `system/skills/humanizer/SKILL.md` — run it with a writing sample for calibration. This file covers only YOUR specific preferences.
 

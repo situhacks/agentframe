@@ -45,17 +45,11 @@ If you are about to edit anything else (a campaign deliverable, a daemon script,
 
 If the change adds, renames, defaults, or retires a campaign flow; adds or retires a deliverable type; or moves ownership between flows/templates/process files/personas, start with `system/skills/agentframe-structure/SKILL.md`. Return here only for the ordinary file patch once the structural owner is clear.
 
-## Architectural anchors (why this skill is shaped this way)
+## Boundaries
 
-This skill operationalizes principles that already exist in the agent personas:
+This skill owns the patch loop only: earn, read, diff, propose, validate, apply, log. It does not decide routing taxonomy, pattern-strength thresholds, override scrutiny, or whether a target class should accept patches; the orchestrating retro/template or active persona owns those decisions.
 
-- **Cross-cutting earning rule** (mirrored to `AGENTS.operator.md` cross-cutting discipline + `AGENTS.builder.md` cross-cutting discipline) — every constraint earns its place from observed strays.
-- **Prior-patch shape check** (`AGENTS.builder.md` + `AGENTS.operator.md`) — patches on a topic with prior-patch history require an explicit prior-patch shape-failure diagnosis before drafting; validation of the new patch is deferred to real-world stray-recurrence over the next 1-2 campaign cycles.
-- **Constraint shape discipline** — when a rule does not constrain, redesign its shape; do not re-write the same shape with sharper words.
-- **Architectural Truth #1** — skills are generic capabilities; AgentFrame-specific routing taxonomy lives in `library/deliverables/system-retro/template.md`, NOT in this skill.
-- **SQLite audit log** — every live patch writes a `system_changes` row in `system/audit/agentframe.db`. Historical markdown logs are browse-only backfill sources. This skill's Step 6 carries the write path.
-
-This skill does not own routing taxonomy, pattern-strength threshold, override scrutiny, or decisions about whether a given target file class should accept patches at all. Those live in the orchestrating template (System Retro / Campaign Retro) or in the agent persona. This skill is the patch-loop procedure only.
+Every live patch writes a `system_changes` row in `system/audit/agentframe.db`. Historical markdown logs are browse-only evidence sources.
 
 ## The procedure
 
@@ -152,7 +146,7 @@ Write a one-paragraph **validation expectation** in this shape:
 - Move from agent persona → deliverable template (rule needs to load only when the deliverable is being drafted).
 - Replace prose enumeration with a structural change (state-anchored trigger instead of phrase-list).
 
-**No subagent dispatch.** The `system_changes` row in Step 6 carries `validation_pending: true`; a future System Retro flips it via a paired `validation_resolved` `system_changes` row.
+**No subagent dispatch.** The `system_changes` row in Step 6 carries `validation_pending: true`; a future System Retro flips it via a paired `errata` row with `payload_json.validation_resolved`.
 
 **Optional human-in-the-loop dry-run (rare)**: for patches the operator subjectively flags as high-stakes (e.g. always-loaded persona changes that ship to all forkers, or rules where a wrong shape would be expensive to roll back), the operator may request a real-conversation dry-run — *operator opens chat, runs the original stray scenario manually against the agent loaded with the patched file, observes whether the constraint fires*. This is the artifact-smoke-test version of validation: human runs, human observes, human judges. Optional, opt-in, and operator-driven; not a default gate.
 
@@ -162,8 +156,8 @@ After Step 5's validation expectation is written:
 
 1. **Apply** the patch to the target file using Edit tool (preserve all whitespace and formatting).
 2. **Append** a `system_changes` row via [`system/audit/writer.py`](../../audit/writer.py) (the live canonical patch log). Use:
-   - `change_type`: the patch class (`template_patch`, `context_edit`, `principle_refinement`, `process_patch`, `schema_change`, `skill_patch`, `validation_resolved`)
-   - `target_kind`: the target class (`deliverable_template`, `operator_context`, `process_file`, `persona_file`, `skill_file`)
+   - `change_type`: a canonical value from [`system/audit/README.md`](../../audit/README.md) (`persona_patch`, `template_patch`, `process_patch`, `skill_patch`, `schema_change`, `runtime_patch`, `structural_change`, `vendor_update`, `errata`, or a deliberately-added new class)
+   - `target_kind`: a canonical value from [`system/audit/README.md`](../../audit/README.md) (`system`, `library`, `process_file`, `persona_file`, `deliverable_template`, `skill_bundle`)
    - `target_path`: repo-relative path to the patched file
    - `reason` / `summary`: the human-readable why
    - `payload_json`: the structured fields below
@@ -185,7 +179,7 @@ After Step 5's validation expectation is written:
 }
 ```
 
-   Later, when a System Retro re-encounters the stray family named in `validation_expectation`, append a paired `system_changes` row with `change_type: validation_resolved` and a payload linking back to the original patch row:
+   Later, when a System Retro re-encounters the stray family named in `validation_expectation`, append a paired `system_changes` `errata` row with `payload_json.validation_resolved` linking back to the original patch row:
 
 ```
 {
@@ -196,7 +190,7 @@ After Step 5's validation expectation is written:
 }
 ```
 
-3. **Mode-sync surfacing.** If the target file is `AGENTS.operator.md` or `AGENTS.builder.md`, surface the mode-sync question: *"This patches an always-loaded persona. The mirror file (`AGENTS.md`) needs a sync via `Copy-Item {AGENTS.operator.md | AGENTS.builder.md} AGENTS.md -Force` to take effect. Want me to run that now, or are you mid-mode-execution and want to defer the sync?"* If the sync changes system behavior, append a `system_changes` row via `system/audit/writer.py`.
+3. **Mode-sync surfacing.** If the target file is `AGENTS.operator.md` or `AGENTS.builder.md`, surface the mode-sync question: *"This patches an always-loaded persona. The root `AGENTS.md` is generated by the atomic mode-swap command in the persona's Modes section. Want me to rerun the same-mode swap now, or defer because the active mode should not change context mid-task?"* The audit writer performs the copy and audit row together.
 
 ## What this skill does NOT do
 
@@ -214,7 +208,7 @@ After Step 5's validation expectation is written:
 - **Multiple patches proposed in the same turn** (System Retro produces 3+ patterns): run the procedure per patch, sequentially. The deferred-validation framing means each patch ships with its own validation expectation — multiple patches on the same target file in the same turn share a validation window (next 1-2 cycles) but are tracked individually.
 - **User wants to skip the prior-patch shape-failure check** ("just apply it, I know the prior one"): the topic has prior-patch history, the procedural check fires. Surface: *"If you can name the shape failure of the prior patch in one sentence, that's the check passing — paste it into the `system_changes.payload_json.prior_patch_shape_failure` field and I'll continue. The check is not a delay; it's the claim that the new patch comes from a different shape family."*
 - **Citation source is gitignored** (e.g. `feedback-log.md` in a private campaign): cite the path + line number anyway in the `system_changes` row. Future operators reading the audit history will see "citation lives in [private path]" — that is the correct behavior.
-- **Validation cycle never recurs the stray** (3+ campaigns pass without the stray family appearing in any retro): this is informational, not failure. Either the patched constraint is firing silently (pass) or the stray family was situational and won't recur (no signal). Surface in the System Retro that names the milestone: *"Patch {system_changes link or id} has been live for {N} campaigns without re-encountering the stray family. Marking `validation_resolved: pass-by-absence` with a note that the signal is silence, not observed firing."*
+- **Validation cycle never recurs the stray** (3+ campaigns pass without the stray family appearing in any retro): this is informational, not failure. Either the patched constraint is firing silently (pass) or the stray family was situational and won't recur (no signal). Surface in the System Retro that names the milestone: *"Patch {system_changes link or id} has been live for {N} campaigns without re-encountering the stray family. Marking payload `validation_resolved: pass-by-absence` with a note that the signal is silence, not observed firing."*
 
 ## How this skill is invoked
 

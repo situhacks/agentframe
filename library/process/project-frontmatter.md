@@ -1,241 +1,137 @@
-# Project Frontmatter Schema (canonical)
+# Project Frontmatter Schema
 
-The frontmatter on `workspace/projects/{slug}/project.md` is the canonical state of a project. The agent reads frontmatter only (no full-body load) when answering state questions like "what's going on?" / "where am I?" — so it has to be cheap, consistent, and queryable.
+The frontmatter on `workspace/projects/{slug}/project.md` is the canonical state of a project. State-loads read frontmatter first, so it must stay cheap, consistent, and queryable.
 
-**Schema version: 2026-04-23** (v2).
+**Schema version:** `2026-04-23` (v2).
 
-## Top-level shape
+## Blocks
 
-A v2 `project.md` frontmatter has four blocks. Each block has one job:
+Each v2 frontmatter block has one job:
 
-```yaml
----
-# IDENTITY        — who/what this project is. Set once at scaffold; rarely changes.
-# LIFECYCLE       — what state this project is in. Touched on phase transitions / ship / complete.
-# MANIFEST        — which ingredient deliverables this project's posts assemble from. Set when campaign-architecture locks.
-# DELIVERABLES    — per-deliverable tracker. The PRIMARY state-discovery surface for state-load reads.
-# COUNTERS        — rollup counts derived from deliverables[]. Cheap state-summary.
----
-```
+| Block | Owns |
+|---|---|
+| `IDENTITY` | Project identity set at scaffold. |
+| `LIFECYCLE` | Project state, active phase, activity timestamps, terminal state. |
+| `MANIFEST` | Which post ingredients this project uses by default. |
+| `DELIVERABLES` | Per-deliverable tracker; the primary state-discovery surface. |
+| `COUNTERS` | Cheap rollups derived from deliverable rows. |
 
-Pointers (success criteria source, etc.) live inside the relevant blocks rather than as a top-level catch-all.
+Pointers live inside the relevant block, not in a catch-all section. Do not move deliverable content into `project.md`.
 
-## Required fields by block
+## Required Fields
 
-### IDENTITY (set at scaffold)
+### Identity
 
-| Field | Type | Allowed values | Default | Notes |
-|---|---|---|---|---|
-| `name` | string | free text | — | Human-readable project name. Title-cased. Distinct from the slug folder name. |
-| `slug` | string | folder-safe lowercase | — | The folder name. Required because frontmatter dumps are read without their paths. |
-| `schema_version` | ISO date | e.g. `2026-04-23` | current schema version | Frozen at scaffold time. |
-| `created_at` | ISO 8601 date | e.g. `2026-04-19` | scaffold date | When the project folder was created. |
-| `supersedes` | string or `null` | optional, free text | `null` | If this project replaces a prior one (deleted or archived), name the prior. |
-| `domain` | enum | `marketing`, `project-mgmt` | — | The active pack domain for this project. |
-| `parent` | string or `null` | optional, project slug | `null` | Link to parent project (for composition). |
-| `channels` | array of strings | optional, channel slugs | `[]` | Slugs of global channels used by this project. References profiles in `library/context/channels/`. |
-| `stakeholders` | array of strings | optional, person slugs | `[]` | Slugs of global stakeholders involved. References profiles in `library/context/people/`. |
+| Field | Type / values | Notes |
+|---|---|---|
+| `name` | string | Human-readable project name. |
+| `slug` | folder-safe slug | Must match the folder name. |
+| `schema_version` | ISO date | Frozen at scaffold time. |
+| `created_at` | ISO date | Scaffold date. |
+| `supersedes` | string or `null` | Prior project this replaces, if any. |
+| `domain` | `marketing`, `project-mgmt` | Active domain pack. |
+| `parent` | project slug or `null` | Optional parent project. |
+| `channels` | list of channel slugs | Must resolve under `library/context/channels/`. |
+| `stakeholders` | list of person slugs | Must resolve under `library/context/people/`; project overlays live in `knowledge/people/`. |
 
-### LIFECYCLE (touched on phase transitions, ship, complete)
+Domain packs may require extra fields through `pack.md` `extension_fields`; `af doctor` validates them.
 
-| Field | Type | Allowed values | Default | Notes |
-|---|---|---|---|---|
-| `status` | enum | `active`, `complete`, `cancelled` | `active` | Lifecycle state. The marketing PROCESS dictates project completion (post-project retros are the last process steps); the folder location is a side-effect of the status transition, not its own status value. `active` covers any in-progress phase. `complete` set by closeout retro lock when the project finished naturally. `cancelled` set when the operator (or external reviewer) decides to kill the project mid-flight. Both terminal. |
-| `current_phase` | enum | flow-defined phase ids; for `open-flow`, the project-defined ids declared in the `project.md` plan section | first phase in selected flow | Where the project is right now. Updated when the agent finishes a phase's last deliverable or the user explicitly transitions. End-of-phase transition rules live in the selected `flow` file. |
-| `flow` | enum | flow ids in [`flows/README.md`](flows/README.md) | `open-flow` | Canonical flow selector for this project instance. Valid values: `marketing-solo-flow`, `marketing-standard-flow`, `open-flow`. (See `library/process/flows/` for definitions). |
-| `last_activity` | ISO 8601 datetime | e.g. `2026-04-23T03:00:00+00:00` | scaffold time | Touched whenever any deliverable in this project is edited / locked / delivered. Used to compute stale-project nudges (>7d). |
-| `last_consolidated` | ISO 8601 date or `null` | — | `null` | Stamped by the dream pass ([`project-consolidate`](../../system/skills/project-consolidate/SKILL.md)). `af doctor` prints a `dream pass recommended` note when this is >30d old on a recently-active project, or when an append-only log exceeds its line cap. Add the field on first dream if the project predates it. |
-| `shipped_at` | ISO 8601 date or `null` | — | `null` | When the first post in the project published. (Sourced from the post's `post-FINAL.md` frontmatter `published.posted_at` — see [`post-final/template.md`](../domains/marketing/deliverables/post-final/template.md) "Publish / Export Mechanics".) |
-| `completed_at` | ISO 8601 date or `null` | — | `null` | When the project retro ran (the formal close — `LIFECYCLE.status` transitions `active → complete` in the same turn). |
-| `cancelled_at` | ISO 8601 date or `null` | — | `null` | When `LIFECYCLE.status` was set to `cancelled`. Mutually exclusive with `completed_at`. |
-| `cancelled_reason` | string or `null` | free text, single line | `null` | One-line reason for cancellation. |
-| `quarterly_goals_advanced` | array of strings | references operator's quarterly goals | `[]` | Which quarterly goals this project serves. References goals declared in `library/context/operator/positioning.md` → "Current Quarter Goals". |
+### Lifecycle
 
-#### Cancellation (operator or external-review kill)
+| Field | Type / values | Notes |
+|---|---|---|
+| `status` | `active`, `complete`, `cancelled` | Folder location is a side effect, not a status value. |
+| `current_phase` | selected-flow phase id | `open-flow` may use project-defined phase ids from the body plan. |
+| `flow` | `marketing-solo-flow`, `marketing-standard-flow`, `open-flow`, `project-mgmt-open-flow` | Flow selector; definitions live in `library/process/flows/`. |
+| `last_activity` | ISO datetime | Touched whenever a deliverable changes state or content. |
+| `last_consolidated` | ISO date or `null` | Stamped by [`project-consolidate`](../../system/skills/project-consolidate/SKILL.md); `af doctor` nudges when stale or logs bloat. |
+| `shipped_at` | ISO date or `null` | First publish date, sourced from the delivered post. |
+| `completed_at` | ISO date or `null` | Set when closeout completes. |
+| `cancelled_at` | ISO date or `null` | Mutually exclusive with `completed_at`. |
+| `cancelled_reason` | string or `null` | One-line reason. |
+| `quarterly_goals_advanced` | list | References goals in `library/context/operator/positioning.md`. |
 
-When the operator or reviewer kills the project:
+Cancellation sets `status: cancelled`, `cancelled_at`, `cancelled_reason`, appends a `cancellation` activity event, and offers to move the folder under `workspace/projects/completed/`. Cancelled projects still run system retro; project retro is skipped.
 
-1. Ask for a one-line cancellation reason.
-2. Set `LIFECYCLE.status: cancelled`, `cancelled_at: {today}`, and `cancelled_reason: "{one-line}"`.
-3. Append a `cancellation` event in `workspace/projects/{slug}/activity.md`.
-4. Offer to move the folder to `workspace/projects/completed/{slug}/`.
-5. Cancelled projects still run system retro; project retro is skipped (no delivered performance to score).
+### Manifest
 
-### MANIFEST (set when campaign-architecture locks)
-
-Each post in the project is assembled from ingredient deliverables, each with its own version trail and lock, accumulating into the post's `post-FINAL.md` (see [`library/deliverables/post-final/template.md`](../domains/marketing/deliverables/post-final/template.md)). The manifest names which ingredients this project's posts use, plus project-wide generation preferences:
+`post_manifest` is set when a project reaches a manifest moment: campaign architecture lock in structured marketing flows, or the open-flow plan revision that puts posts in scope.
 
 ```yaml
 post_manifest:
-  ingredients: [slide-copy, body-copy, image-prompts]   # per-post ingredient deliverables for this series
-  notes: "prompts only — operator renders in Gemini"     # optional: project-wide generation/tooling preference
+  ingredients: [slide-copy, body-copy, image-prompts]
+  notes: "prompts only - operator renders in Gemini"
 ```
 
-A single post can deviate (e.g. one video post in a carousel series): add `ingredients: [...]` to that post's tracker row. The manifest is the default, not a cage.
+A post can override the default with `ingredients: [...]` on its tracker row.
 
-### DELIVERABLES (per-deliverable tracker — the primary state-discovery surface)
+### Deliverables
 
-The `deliverables` block is a YAML map keyed by deliverable slug. Each row is one deliverable. The state-load reads this block first to answer "what exists, what state is it in, where do I look for the canonical content."
+Each row is one deliverable:
 
 ```yaml
 deliverables:
   {deliverable-slug}:
-    status: {enum}                    # required
-    file: {path-from-project-root}   # required (can be a folder path if status: not_started)
-    last_updated: {ISO 8601 date}     # required when status != not_started
-    review: {enum}                    # required for deliverables whose template declares Review path: external
-    expected_feedback_by: {ISO date or null}   # optional — only when review: pending
-    job: {short-string}               # optional — useful for posts so the index reads at a glance
-    framing_note: {free text}         # optional — short note when something material shifted (e.g. an angle reframe mid-project)
+    status: {enum}
+    file: {path-from-project-root}
+    last_updated: {ISO date}
+    review: {enum}
+    expected_feedback_by: {ISO date or null}
+    job: {short-string}
+    framing_note: {short-string}
 ```
 
-**Per-deliverable `status` enum** (use the same enum across all deliverable types):
+`status` is required. `file` is required and may point at a folder only while `status: not_started`. `last_updated` is required once work begins.
 
-| Value | Meaning | When to use |
-|---|---|---|
-| `not_started` | The deliverable has not yet been opened. The `file` may point at a folder rather than a file. **This value lives only in the project-tracker mirror** — per-deliverable file frontmatter never carries `not_started` (the file doesn't exist yet to carry frontmatter). | Default for new deliverables that the selected project flow says are expected at this phase. |
-| `drafting` | Active work in progress. The `-v{N}.md` file exists with content. **`drafting` includes the in-flight-with-reviewer case** — the orthogonal `review` field carries the external-coordination state; the deliverable itself is still drafting until reviewer feedback is applied (or waived) and the operator locks. | Any state between `not_started` and `locked` / `delivered`. |
-| `locked` | The deliverable is locked — no more substantive edits without an explicit "unlock" event. Downstream work depends on this state. Reached either directly from `drafting` (no reviewer) or via `drafting + review: complete` (reviewer feedback applied). | After lock-event skill fires for the deliverable. |
-| `delivered` | Used for post rows once the post has actually been published. The delivered-state record lives in the post's `post-FINAL.md` frontmatter (`published.{platform,url,posted_at}` + `shipped_media[]`); performance metrics live in `phase-5-launch-and-learn/performance-data.csv`. There is no separate `published.md` file. | After publish coordination updates the post's `post-FINAL.md` frontmatter. |
-| `deferred` | The deliverable was intentionally skipped or postponed. The reason lives in the deliverable's own `-v{N}.md` frontmatter (NOT here — this row just notes the state). | When the selected project flow expected the deliverable but operator + agent agreed to defer or skip with back-fill obligation. |
-
-**Per-deliverable `review` enum** (only for deliverables whose template declares `Review path: external`):
-
-| Value | Meaning |
+| `status` | Meaning |
 |---|---|
-| `not_required` | No review was ever expected (solo operator OR template doesn't have an external review path). **No override log.** This is the normal path, not exception-handling. |
-| `pending` | Review was expected — covers BOTH "preparing to send" AND "in flight with reviewer." Stays `pending` until the reviewer finishes and feedback is applied (or waived). One value covers the whole window because the operationally-distinguishing event from the agent's perspective is "feedback received and applied" — anything before that is the same state. When `pending`, the deliverable row can also carry `expected_feedback_by` so PM reasons from the project's actual expectation rather than from a generic elapsed-time rule. |
-| `complete` | Review cycle is done — reviewer feedback applied (or "looks good, no changes" returned). Deliverable is now eligible for `status: locked`. |
-| `waived` | Review WAS expected (template + context said yes) but the operator chose to skip. **This still earns a `phase_override` log** because something expected was intentionally skipped. |
+| `not_started` | Tracker-only placeholder; no deliverable file exists yet. |
+| `drafting` | Work exists and is not locked; includes in-flight external review. |
+| `locked` | Substantive edits require an explicit unlock/version event. |
+| `delivered` | Post is published; publish data lives in `post-FINAL.md`. |
+| `deferred` | Intentionally skipped or postponed; reason lives in the deliverable frontmatter. |
 
-The retro templates use the `not_required` vs `waived` distinction: `not_required` is informational only; `waived` triggers criterion-honesty footnotes in the project retro. Review path defaults live in the selected project flow, with shared schema here.
+`review` is orthogonal to `status` and is required only when a template declares external review:
 
-**Row archiving (dream pass).** The tracker is the *working set*, not the all-time record. The dream pass ([`project-consolidate`](../../system/skills/project-consolidate/SKILL.md)) may move rows with `status: delivered` and `last_updated` >30 days old to `knowledge/_archive/deliverables-archive.md` — a rolling file whose frontmatter is a top-level `deliverables:` map holding the rows verbatim. `af doctor` and `af publish` count delivered post rows in tracker + archive, so COUNTERS remain all-time rollups. `locked` and `deferred` rows never archive (canonical-content pointers; back-fill obligations). Retros that walk delivered posts must read the archive file too.
+| `review` | Meaning |
+|---|---|
+| `not_required` | No external review was expected; no override log. |
+| `pending` | Review is expected or in flight; use `expected_feedback_by` when known. |
+| `complete` | Reviewer feedback applied or explicitly returned clean. |
+| `waived` | Expected review was skipped; log a `phase_override`. |
 
-**Orthogonality.** `status` and `review` are two independent axes — `status` is the operator's working state (am I drafting, locked, delivered?), `review` is the external-coordination state (is a reviewer involved, and where in the loop are we?). A deliverable at `status: drafting` + `review: pending` is a perfectly valid combination (working version exists, sent for review, waiting for feedback). Do not add a separate `status: in_review`; that would conflate the two axes.
+Do not add `status: in_review`; use `status: drafting` + `review: pending`.
 
-### COUNTERS (rollup — derived from deliverables[])
+**Row archiving.** The tracker is the working set. [`project-consolidate`](../../system/skills/project-consolidate/SKILL.md) may move delivered rows older than 30 days to `knowledge/_archive/deliverables-archive.md`, whose frontmatter is a top-level `deliverables:` map holding the rows verbatim. `af doctor` and `af publish` count tracker + archive. `locked` and `deferred` rows never archive.
 
-| Field | Type | Default | Notes |
-|---|---|---|---|
-| `post_count` | integer | derived (count of `post-*` deliverables) | Total planned posts. Update when the arc adds or drops a post. |
-| `posts_published` | integer | derived (count of `post-*` deliverables with `status: delivered`, tracker + `knowledge/_archive/deliverables-archive.md`) | Cheap all-time rollup so a state-load can answer "how many delivered?" without walking deliverables[]. Never decremented by row archiving. |
-| `system_retro_completed` | ISO 8601 date or `null` | `null` | Filled when `phase-5-launch-and-learn/system-retro-v{N}.md` lands at `status: locked`. |
-| `closeout_retro_completed` | ISO 8601 date or `null` | `null` | Filled when `phase-5-launch-and-learn/project-retro-v{N}.md` lands at `status: locked`. |
+### Counters
 
+| Field | Notes |
+|---|---|
+| `post_count` | Planned post rows. |
+| `posts_published` | Delivered post rows across tracker + archive. |
+| `system_retro_completed` | Date the harvest/system retro locked, or `null`. |
+| `closeout_retro_completed` | Date the campaign/project retro locked, or `null`. |
 
+Counters are derived. Update them in the same turn as the source deliverable rows.
 
-## Example block (v2)
+## Schema Drift Check
 
-```yaml
----
-# IDENTITY
-name: "Agent Architecture POV"
-slug: agent-architecture-pov
-schema_version: 2026-04-23
-created_at: 2026-04-19
-supersedes: "workspace/projects/prior-project/ (deleted 2026-04-19)"
+Every project-frontmatter load runs `python system/af.py doctor <project-slug>` first. It verifies required fields, enums, tracker rows, head pointers, counters, channels, stakeholders, and domain-pack extensions. It surfaces issues and never auto-fixes.
 
-# LIFECYCLE
-status: active
-current_phase: 4-production
-flow: marketing-standard-flow
-last_activity: 2026-04-23T03:00:00+00:00
-last_consolidated: null
-shipped_at: 2026-04-20
-completed_at: null
-cancelled_at: null
-cancelled_reason: null
-quarterly_goals_advanced: ["Q2-distribution", "Q2-narrative-consistency"]
+Judgment that stays with the agent: peek locked rows for `back_filled: true`; for `open-flow`, sanity-check `current_phase` against the body plan; report drift with last-activity age and ask before fixing. Approved frontmatter fixes append `frontmatter_manual_edit` to `activity.md`.
 
-# MANIFEST
-post_manifest:
-  ingredients: [slide-copy, body-copy, image-prompts]
-  notes: "prompts only — operator renders in Gemini"
+## Activity Events
 
-# DELIVERABLES (the primary state-discovery surface)
-deliverables:
-  business-brief:
-    status: locked
-    file: phase-2-strategy/business-brief/draft-v2.md
-    last_updated: 2026-04-19
-    review: not_required
-  campaign-brief:
-    status: locked
-    file: phase-2-strategy/campaign-brief/draft-v1.md
-    last_updated: 2026-04-19
-    review: not_required
-  campaign-architecture:
-    status: locked
-    file: phase-3-planning/campaign-architecture/draft-v3.md
-    last_updated: 2026-04-20
-    review: not_required
-  design-language:
-    status: locked
-    file: phase-3-planning/design-language/design-language-v1.md
-    last_updated: 2026-04-19
-  post-1:
-    status: delivered
-    file: phase-4-production/posts/post-1/post-FINAL.md
-    last_updated: 2026-04-20
-    job: attention
-  post-2:
-    status: delivered
-    file: phase-4-production/posts/post-2/post-FINAL.md
-    last_updated: 2026-04-20
-    job: thought-leadership-soft-CTA
-    framing_note: "shifted 2026-04-20 from week-six diagnosis to self-evolving framing"
-  post-3:
-    status: drafting
-    file: phase-4-production/posts/post-3-middle-ground/post-FINAL.md
-    last_updated: 2026-04-21
-    job: thought-leadership-middle-ground
+`activity.md` is the material-event log. Each entry is one line prefixed with local `YYYY-MM-DD HH:MM`.
 
-# COUNTERS
-post_count: 5
-posts_published: 2
-system_retro_completed: null
-closeout_retro_completed: null
----
-```
+Canonical event shapes:
 
-## Schema-drift check (the always-on guarantee)
+- `phase_override: skipped {deliverable}; {what happened}. Reason: "{reason}"`
+- `post_published: post-{n} -> {url}`
+- `cancellation: reason "{one-line cancellation reason}"`
+- `frontmatter_manual_edit: corrected {field} from {old} to {new} ({reason}).`
+- `plan_revised: {what changed}. Reason: "{reason}"`
+- `knowledge_consolidation: dream pass; {what changed}.`
 
-**Every project-frontmatter load runs this check first** — not an opt-in lookup. Run `python system/af.py doctor <project-slug>` — it verifies required fields, enums, tracker-row validity, head pointers, and counters as code, and surfaces issues without ever auto-fixing.
-
-Judgment that stays with the agent: peek locked rows for `back_filled: true` and surface inline; for `open-flow`, sanity-check `current_phase` against the plan section's declared phases; report drift with last-activity age and ask before fixing. Drift fixes are user-approved frontmatter edits logged to the project's `activity.md` as `frontmatter_manual_edit`.
-
-## Activity event line shapes
-
-`workspace/projects/{slug}/activity.md` is the canonical material-event log. Each entry is a single line.
-
-**Timestamp:** prefix each line with `YYYY-MM-DD HH:MM` (local 24-hour time). 
-
-Canonical shapes:
-
-- **`phase_override`** — operator skipped or jumped a sequence step the selected flow expected.
-  ```
-  2026-05-12 14:05 — phase_override: skipped campaign-architecture; drafted post-1 copy directly. Reason: "trying a quick test, will back-fill if it works."
-  ```
-- **`post_published`** — a post canonical `-v{N}.md` reconciled to `status: delivered` after the operator confirmed the live URL.
-  ```
-  2026-05-12 09:30 — post_published: post-1 → https://www.linkedin.com/posts/{activity-id}
-  ```
-- **`cancellation`** — project moved to `LIFECYCLE.status: cancelled`.
-  ```
-  2026-05-12 16:20 — cancellation: reason "{one-line cancellation reason}"
-  ```
-- **`frontmatter_manual_edit`** — operator-approved drift fix from the schema-drift check above.
-  ```
-  2026-05-12 11:48 — frontmatter_manual_edit: corrected current_phase from 4-production to 5-launch-and-learn (drift fix).
-  ```
-- **`plan_revised`** — an open-flow project's plan changed (phase added/merged/dropped, deliverable added to or removed from scope).
-  ```
-  2026-06-12 10:20 — plan_revised: added phase-3-followup; parked the video teaser. Reason: "workshop feedback lands first."
-  ```
-- **`knowledge_consolidation`** — a dream pass ran ([`project-consolidate`](../../system/skills/project-consolidate/SKILL.md)); `last_consolidated` was stamped in the same change.
-  ```
-  2026-07-06 15:30 — knowledge_consolidation: dream pass; archived raid/decision entries to knowledge/_archive/; pruned 240 lines; promoted jane-doe to global.
-  ```
-
-When a flow file mentions appending an event (`post_published`, `phase_override`, `cancellation`, etc.), use these shapes. Skipping a required retro is logged as a `phase_override`; pattern of overrides surfaces at quarterly self-review.
+When a flow file says to append an event, use these shapes. Skipping a required retro is a `phase_override`; repeated overrides surface in quarterly self-review.

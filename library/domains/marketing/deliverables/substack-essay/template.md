@@ -29,15 +29,15 @@ A full-length essay for the operator's Substack publication — the long-form ho
 
 ## Draft Frontmatter Convention
 
-`status` + `last_updated` per [`library/process/deliverable-versioning.md`](../../../process/deliverable-versioning.md). File: `substack-essay-v{N}.md` in the folder named by the active flow. After publishing, record `published_url` in the locked file's frontmatter.
+`status` + `last_updated` per [`library/process/deliverable-versioning.md`](../../../../process/deliverable-versioning.md). File: `substack-essay-v{N}.md` in the folder named by the active flow. After publishing, record `published_url` in the locked file's frontmatter.
 
 ## Humanizer Pass
 
-Required before lock — this prose ships to the public feed. Per [`library/process/humanizer-integration.md`](../../../process/humanizer-integration.md), run with a Brandon sample, as the separate clean pass of the voice sequence (never in the same context as the corpus exemplars).
+Required before lock — this prose ships to the public feed. Per [`library/process/humanizer-integration.md`](../../../../process/humanizer-integration.md), run with a Brandon sample, as the separate clean pass of the voice sequence (never in the same context as the corpus exemplars).
 
 ## Lock Criteria
 
 - All `[FILL]` / `[POV]` / `[NERD-NOD]` slots resolved or deliberately removed by the operator — no placeholder ships.
 - Operator approves after his voice pass.
 - Humanizer pass complete.
-- Lock-event mechanics per [`library/process/lock-event.md`](../../../process/lock-event.md) — the voice mini-retro at lock harvests this essay (pairs + corpus promotion once published).
+- Lock-event mechanics per [`library/process/lock-event.md`](../../../../process/lock-event.md) — the voice mini-retro at lock harvests this essay (pairs + corpus promotion once published).

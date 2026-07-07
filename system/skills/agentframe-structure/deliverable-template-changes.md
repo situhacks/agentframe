@@ -17,7 +17,7 @@ Use this when adding, retiring, or materially reshaping a deliverable type.
    - New deliverable type: run `deliverable-scaffolding`.
    - Existing deliverable patch: run `system-improvement`.
    - Retiring a deliverable type: handle as a bespoke Builder decision and log the migration plan.
-4. **Keep ownership clean:** templates own artifact shape and hard constraints; campaign flows own phase sequence; process files own reusable procedures.
+4. **Keep ownership clean:** templates own artifact shape and hard constraints; campaign flows own phase sequence; process files own reusable procedures. Size budget: 900 words (`af doctor` flags overages) — over budget, cut before adding.
 5. **Verify:** confirm the template can be discovered by registry, flow, or deliverable pointer.
 6. **Log:** append `system_changes` rows for scaffold, patch, retirement, or wire-up.
 

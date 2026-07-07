@@ -379,7 +379,7 @@ sections: [{
 
 For AgentFrame docx exports, the cover (page 1) is rendered as HTML at print resolution, screenshotted via local Chrome headless, and embedded as a full-page `ImageRun`. This unlocks per-campaign display fonts (via Google Fonts CDN) and inline SVG motifs that docx-js cannot natively draw. Body content (pages 2+) uses native docx-js so text remains selectable and TOC stays functional.
 
-See [`library/context/operator/design-language.md#cover-html--png-pipeline`](../../../../library/context/operator/design-language.md) for the design contract and use a campaign-local `cover.html` template when you need branded cover rendering.
+See [`library/context/operator/design-language.md#cover-html--png-pipeline`](../../../library/context/operator/design-language.md) for the design contract and use a campaign-local `cover.html` template when you need branded cover rendering.
 
 **Architecture:** the docx has TWO sections —
 1. **Cover section** with zero margins, `titlePage: true`, and a single `Paragraph` containing the cover `ImageRun` sized to full page (8.5" × 11" = 12240 × 15840 DXA = 7200 × 9600 pixels at 600dpi or 2550 × 3300 pixels at 300dpi).

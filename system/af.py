@@ -496,6 +496,106 @@ def check_project(cdir):
     return issues
 
 
+# System-surface checks (full doctor runs only). Same contract as dream notes:
+# issues are broken invariants (dead links), notes are drift alarms the
+# operator judges (size budgets, voice mirror staleness) — never auto-fixed.
+PERSONA_WORD_BUDGET = 1700    # AGENTS.builder.md / AGENTS.operator.md
+PROCESS_WORD_BUDGET = 1500    # library/process/**/*.md
+TEMPLATE_WORD_BUDGET = 900    # */deliverables/*/template.md
+
+VOICE_LIVE = os.path.join(ROOT, "library", "context", "operator", "voice")
+VOICE_SCHEMA = os.path.join(ROOT, "library", "context", "operator-schema", "voice")
+
+LINK_SCAN_GLOBS = ("AGENTS.md", "AGENTS.builder.md", "AGENTS.operator.md",
+                   "library/process/**/*.md", "library/deliverables/**/*.md",
+                   "library/domains/**/*.md", "library/assets/README.md",
+                   "system/audit/README.md", "system/skills/README.md",
+                   "system/skills/*/SKILL.md")
+
+LINK_PATTERN = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
+
+
+def link_scan_files():
+    seen = []
+    for pat in LINK_SCAN_GLOBS:
+        for p in sorted(glob.glob(os.path.join(ROOT, pat), recursive=True)):
+            if os.path.isfile(p) and p not in seen:
+                seen.append(p)
+    return seen
+
+
+def dead_link_issues():
+    issues = []
+    for path in link_scan_files():
+        rel = os.path.relpath(path, ROOT).replace("\\", "/")
+        # Code spans and fenced blocks hold template strings, not navigable links.
+        text = re.sub(r"```.*?```", "", read(path), flags=re.S)
+        text = re.sub(r"`[^`\n]*`", "", text)
+        for target in LINK_PATTERN.findall(text):
+            if target.startswith(("http://", "https://", "mailto:", "#", "data:")) or "{" in target:
+                continue
+            bare = target.split("#")[0]
+            if not bare:
+                continue
+            local = os.path.normpath(os.path.join(os.path.dirname(path), bare))
+            rooted = os.path.normpath(os.path.join(ROOT, bare))
+            if not (os.path.exists(local) or os.path.exists(rooted)):
+                issues.append(f"{rel}: dead link -> {target}")
+    return issues
+
+
+def budget_notes():
+    notes = []
+    targets = [(os.path.join(ROOT, f), PERSONA_WORD_BUDGET, "persona")
+               for f in ("AGENTS.builder.md", "AGENTS.operator.md")]
+    targets += [(p, PROCESS_WORD_BUDGET, "process file")
+                for p in sorted(glob.glob(os.path.join(ROOT, "library", "process", "**", "*.md"), recursive=True))]
+    targets += [(p, TEMPLATE_WORD_BUDGET, "template")
+                for p in sorted(glob.glob(os.path.join(ROOT, "library", "deliverables", "*", "template.md")))
+                + sorted(glob.glob(os.path.join(ROOT, "library", "domains", "*", "deliverables", "*", "template.md")))]
+    for path, cap, label in targets:
+        if not os.path.isfile(path):
+            continue
+        words = len(read(path).split())
+        if words > cap:
+            rel = os.path.relpath(path, ROOT).replace("\\", "/")
+            notes.append(f"size budget: {rel} {words} words (cap {cap}, {label}) — diet before adding")
+    return notes
+
+
+def voice_mirror_notes():
+    """Staleness alarm for the agnostic voice method surface.
+
+    Method surface = root-level *.md plus any */README.md under the live
+    voice tree; deeper files are personal content and never mirrored. A live
+    file newer than its schema mirror means an unmirrored method change OR a
+    personal-only edit — mirroring or touching the schema file clears it.
+    """
+    notes = []
+    if not (os.path.isdir(VOICE_LIVE) and os.path.isdir(VOICE_SCHEMA)):
+        return notes
+    method = sorted(os.path.basename(p) for p in glob.glob(os.path.join(VOICE_LIVE, "*.md")))
+    method += sorted(os.path.relpath(p, VOICE_LIVE).replace("\\", "/")
+                     for p in glob.glob(os.path.join(VOICE_LIVE, "*", "README.md")))
+    shared = sorted(os.path.relpath(p, VOICE_LIVE).replace("\\", "/")
+                    for p in glob.glob(os.path.join(VOICE_LIVE, "**", "*.md"), recursive=True)
+                    if os.path.isfile(os.path.join(VOICE_SCHEMA, os.path.relpath(p, VOICE_LIVE))))
+    for rel in method:
+        if not os.path.isfile(os.path.join(VOICE_SCHEMA, rel)):
+            notes.append(f"voice mirror: {rel} has no mirror under library/context/operator-schema/voice/ "
+                         "— mirror the agnostic method surface or move personal content out of the method slot")
+    for rel in shared:
+        live, schema = os.path.join(VOICE_LIVE, rel), os.path.join(VOICE_SCHEMA, rel)
+        if os.path.getmtime(live) > os.path.getmtime(schema):
+            notes.append(f"voice mirror: {rel} modified after its schema mirror — mirror the agnostic "
+                         "change or touch the schema file to confirm personal-only")
+    return notes
+
+
+def check_system():
+    return dead_link_issues(), budget_notes() + voice_mirror_notes()
+
+
 def cmd_doctor(args):
     dirs = []
     if args.project:
@@ -511,6 +611,12 @@ def cmd_doctor(args):
         note = dream_note(d)
         if note:
             notes.append(note)
+    system_scope = ""
+    if not args.project:
+        sys_issues, sys_notes = check_system()
+        all_issues += sys_issues
+        notes += sys_notes
+        system_scope = " + system surfaces"
     for n in notes:
         print(f"af doctor: note — {n}")
     if all_issues:
@@ -518,7 +624,7 @@ def cmd_doctor(args):
         for i in all_issues:
             print(f"  - {i}")
         sys.exit(1)
-    print(f"af doctor: {len(dirs)} project(s) checked, books clean")
+    print(f"af doctor: {len(dirs)} project(s){system_scope} checked, books clean")
 
 
 # ---------------------------------------------------------------- main

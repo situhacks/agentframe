@@ -50,16 +50,17 @@ Load only what the task needs. If a file is historical, read it only when resear
 4. **Templates are the product.** Prefer changes that make deliverables clearer, more reliable, or easier to reuse across agent platforms.
 5. **Two-mode routing is real.** Builder owns system architecture; Operator owns project execution.
 6. **Buttons own mechanics; prose owns judgment.** Project state transitions go through `system/af.py` (schema-bound, flow-agnostic). Scripts never encode flow logic, template knowledge, or creative decisions; the CLI and the frontmatter schema change together in one commit, with a `MIGRATION:` line.
+7. **Prose requests; mechanisms guarantee.** A gate that must never be skipped is unfinished until something deterministic enforces it — a hook, an `af doctor` check, or a lint that blocks the step. When you catch yourself sharpening the wording of a mandatory step instead of building its check, build the check.
 
-### Rule-Design Discipline
+### Rule-Design Discipline — the pre-write gate
 
-**Evidence-gated, runtime-clean constraints.** Before adding or changing an always-loaded rule, identify the observed failure it addresses and record that evidence in the patch proposal, `system_changes` row, feedback log, or retro artifact. If current examples already show the desired behavior, treat that as evidence against adding a new runtime constraint; remove stale or conflicting instructions before adding guidance. Do not put root-cause history, dates, cluster IDs, or audit archaeology in the runtime rule body. Runtime prose carries present-tense operating instructions: situation, counter, self-check.
+Run these checks, in order, before writing any agent-facing file:
 
-**Prior-patch shape check.** Before patching a topic with prior history, find the prior patch and name why that shape failed. If you cannot name the shape failure, you are probably writing the same rule with sharper words.
-
-**Reader-use contract.** Every section in an agent-facing artifact must help a future agent decide, execute, compare, or verify. If the content is provenance, move it out of band. Do not add or preserve changelog sections such as "Process changes" in runtime process, template, persona, or rule files; record patch history in `system/audit/agentframe.db`, a dedicated history file, or the relevant retro/backlog artifact. If content is inferable from the files already loaded for the task, link it or cut it.
-
-**Lazy-loaded workflow ownership.** `AGENTS*.md` files route, guard, and set cross-cutting invariants. Workflow steps belong in the lazy-loaded owner: `library/process/*` for procedures and `library/deliverables/*/template.md` for deliverable rules. Before adding workflow-specific prose to an always-loaded agent file, name the lowest-level file already loaded for that situation; if one exists, patch that file instead. Edit `AGENTS*.md` only when the route or cross-cutting invariant itself is wrong.
+1. **Who loads this?** A trigger or procedure is inert unless a parent loads the file and acts on it. Name the parent and confirm it calls this file at the right moment. If nothing loads it, the file is dead — fix the load-path, don't write a self-triggering rule.
+2. **Is it earned?** Name the observed failure the rule addresses and record the evidence in the patch proposal, `system_changes` row, feedback log, or retro artifact. If current artifacts already behave correctly, that is evidence against adding the rule; remove stale or conflicting instructions before adding guidance.
+3. **Does it already exist?** Find the prior rule on this topic. If the topic has patch history, name why the prior shape failed — otherwise you are rewriting the same rule with sharper words. If the rule lives in another loaded file, patch the firing problem there; never duplicate.
+4. **Is it runtime-clean?** Cut provenance: history, dates, cluster IDs, rationale-for-future-readers, changelog sections. Runtime prose is present-tense operating instruction — situation, counter, self-check. Patch history belongs in `system/audit/agentframe.db`, a dedicated history file, or the retro/backlog artifact.
+5. **Does every line earn its tokens?** Each line must help a future agent decide, execute, compare, or verify; if it is inferable from files already loaded for the task, link or cut. Workflow steps belong to the lazy-loaded owner (`library/process/*` for procedures, `library/deliverables/*/template.md` for deliverable rules); edit `AGENTS*.md` only when the route or a cross-cutting invariant is wrong. Check the file against its class size budget in the authoring standards — over budget, cut before adding. Lean and enough beats complete.
 
 ### Behavioral Defaults
 
@@ -70,13 +71,6 @@ Load only what the task needs. If a file is historical, read it only when resear
 - Prefer inline agent work over scripts unless determinism, auth, or repeatability makes code the smaller system.
 - Verify with evidence before claiming success.
 
-### Pre-write gate (run before writing any agent-facing file)
-
-1. **Who loads this?** A trigger/procedure is inert unless a parent loads the file and acts on it. Name the parent and confirm it calls this file at the right moment. If nothing loads it, the file is dead — fix the load-path, don't write a self-triggering rule. (Reader-use + lazy-loaded ownership.)
-2. **Is any line provenance or "why"?** Cut history, rationale-for-future-readers, and "why this exists" preambles. Runtime prose is present-tense operating instruction only. (Reader-use contract.)
-3. **Does this rule already exist?** Find the prior rule on this topic. If it does, you are writing it with sharper words — patch the firing problem, don't duplicate. (Prior-patch shape check.)
-4. **Does every line help an agent act?** If a line doesn't help a future agent decide/execute/compare/verify, cut it. Lean and enough beats complete.
-
 ---
 
 ## Builder Workflow
@@ -86,9 +80,10 @@ Load only what the task needs. If a file is historical, read it only when resear
 3. For meaningful design changes, state the obvious weakness or trade-off before proposing edits.
 4. Keep plans in "step -> verify" shape.
 5. Apply the smallest correct change.
-6. Run the cheapest useful verification: targeted search, lints, tests, or artifact smoke test.
-7. Log system changes in `system/audit/agentframe.db` when the change affects system behavior, schema, templates, process files, or personas.
-8. Commits to master are adoption units for downstream copies (`upstream-sync` walks them commit by commit): group related changes into one coherent commit, and when a commit retires a template or changes a schema, add a `MIGRATION:` line to the commit body saying what replaces it.
+6. When the change retires, renames, or moves a concept, sweep the repo for stale references in the same commit; a deliberately deferred pocket gets a `BB-*` row, not silence.
+7. Run the cheapest useful verification: targeted search, lints, tests, or artifact smoke test.
+8. Log system changes in `system/audit/agentframe.db` when the change affects system behavior, schema, templates, process files, or personas, using a `change_type` from the canonical list in `system/audit/README.md`; extend that list deliberately, not per-row.
+9. Commits to master are adoption units for downstream copies (`upstream-sync` walks them commit by commit): group related changes into one coherent commit, and when a commit retires a template or changes a schema, add a `MIGRATION:` line to the commit body saying what replaces it.
 
 ---
 

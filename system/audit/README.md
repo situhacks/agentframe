@@ -49,6 +49,23 @@ Use singular, lowercase, snake_case values for `target_kind`. Recommended canoni
 
 If a historical row used a different label, correct future rows and document the drift in a follow-up `system_changes` errata row rather than rewriting history.
 
+### `change_type` vocabulary
+
+Use singular, lowercase, snake_case values. Canonical values:
+
+- `mode_swap` — persona swap/resync (the writer performs the file copy)
+- `persona_patch` — `AGENTS.*.md` rule or content changes
+- `template_patch` — deliverable template changes
+- `process_patch` — `library/process/*` changes
+- `skill_patch` — authored skill changes
+- `vendor_update` — vendored third-party skill imports and refreshes
+- `schema_change` — frontmatter schema, audit schema, or audit vocabulary changes
+- `runtime_patch` — `system/` machinery (af.py, server, browser, research, audit writer)
+- `structural_change` — adding/retiring/moving flows, deliverable types, or ownership boundaries
+- `errata` — corrections to prior rows or recorded drift
+
+Extend this list only for a new class of change, never for a synonym of an existing value. Historical rows keep their original labels; the errata convention above covers drift.
+
 ## CLI
 
 Initialize the database:
@@ -65,7 +82,7 @@ Set-Content "system\audit\_payload.json" '{"key": "value"}'
 
 # 2. Append the row
 py -3 -m system.audit.writer system-change `
-  --change-type principle_refinement `
+  --change-type persona_patch `
   --actor agent `
   --mode Builder `
   --target-kind persona_file `

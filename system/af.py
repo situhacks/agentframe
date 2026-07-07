@@ -377,7 +377,8 @@ DREAM_AGE_DAYS = 30            # active project this long past last_consolidated
 DREAM_ACTIVE_WINDOW_DAYS = 14  # ...but only if it saw activity this recently
 DREAM_LINE_CAPS = (("knowledge/decision-log.md", 300),
                    ("knowledge/raid-log.md", 300),
-                   ("activity.md", 500))
+                   ("activity.md", 500),
+                   ("project.md", 250))
 
 
 def parse_iso_date(value):

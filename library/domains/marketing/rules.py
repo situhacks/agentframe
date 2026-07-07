@@ -21,6 +21,25 @@ def _manifest_ingredients(cfm):
     return [i.strip() for i in m.group(1).split(",") if i.strip()]
 
 
+# Tracker rows the dream pass moved out of project.md. Same row shape as the
+# DELIVERABLES block; delivered post rows there still count toward
+# posts_published (counters are all-time, the tracker is the working set).
+ARCHIVE_REL = os.path.join("knowledge", "_archive", "deliverables-archive.md")
+
+
+def _delivered_posts(ctx, fm):
+    return sum(1 for s in ctx.all_rows(fm)
+               if re.match(r"post-\d+$", s) and ctx.row_get(fm, s, "status") == "delivered")
+
+
+def _archived_delivered_posts(ctx, cdir):
+    p = os.path.join(cdir, ARCHIVE_REL)
+    if not os.path.isfile(p):
+        return 0
+    afm, _ = ctx.split_fm(ctx.read(p), "deliverables-archive.md")
+    return _delivered_posts(ctx, afm)
+
+
 POST_FINAL_SKELETON = """---
 status: drafting
 last_updated: {date}
@@ -93,11 +112,10 @@ def check(ctx, cdir, cfm):
     """Domain doctor checks: posts_published reconciliation."""
     issues = []
     rel = os.path.relpath(cdir, ctx.ROOT).replace("\\", "/")
-    delivered_posts = sum(1 for s in ctx.all_rows(cfm)
-                          if re.match(r"post-\d+$", s) and ctx.row_get(cfm, s, "status") == "delivered")
+    delivered_posts = _delivered_posts(ctx, cfm) + _archived_delivered_posts(ctx, cdir)
     declared = ctx.get_scalar(cfm, "posts_published")
     if declared is not None and declared.isdigit() and int(declared) != delivered_posts:
-        issues.append(f"{rel}: posts_published={declared} but {delivered_posts} post rows are delivered")
+        issues.append(f"{rel}: posts_published={declared} but {delivered_posts} post rows are delivered (tracker + archive)")
     return issues
 
 
@@ -126,8 +144,7 @@ def publish(ctx, cdir, args):
 
     cfm = ctx.row_set(cfm, args.post, "status", "delivered")
     cfm = ctx.row_set(cfm, args.post, "last_updated", ctx.today())
-    delivered = sum(1 for s in ctx.all_rows(cfm)
-                    if re.match(r"post-\d+$", s) and ctx.row_get(cfm, s, "status") == "delivered")
+    delivered = _delivered_posts(ctx, cfm) + _archived_delivered_posts(ctx, cdir)
     cfm = ctx.set_scalar(cfm, "posts_published", str(delivered), "project.md")
     if ctx.get_scalar(cfm, "shipped_at") in (None, "null", ""):
         cfm = ctx.set_scalar(cfm, "shipped_at", ctx.today(), "project.md")

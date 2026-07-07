@@ -110,6 +110,8 @@ deliverables:
 
 The retro templates use the `not_required` vs `waived` distinction: `not_required` is informational only; `waived` triggers criterion-honesty footnotes in the project retro. Review path defaults live in the selected project flow, with shared schema here.
 
+**Row archiving (dream pass).** The tracker is the *working set*, not the all-time record. The dream pass ([`project-consolidate`](../../system/skills/project-consolidate/SKILL.md)) may move rows with `status: delivered` and `last_updated` >30 days old to `knowledge/_archive/deliverables-archive.md` — a rolling file whose frontmatter is a top-level `deliverables:` map holding the rows verbatim. `af doctor` and `af publish` count delivered post rows in tracker + archive, so COUNTERS remain all-time rollups. `locked` and `deferred` rows never archive (canonical-content pointers; back-fill obligations). Retros that walk delivered posts must read the archive file too.
+
 **Orthogonality.** `status` and `review` are two independent axes — `status` is the operator's working state (am I drafting, locked, delivered?), `review` is the external-coordination state (is a reviewer involved, and where in the loop are we?). A deliverable at `status: drafting` + `review: pending` is a perfectly valid combination (working version exists, sent for review, waiting for feedback). Do not add a separate `status: in_review`; that would conflate the two axes.
 
 ### COUNTERS (rollup — derived from deliverables[])
@@ -117,7 +119,7 @@ The retro templates use the `not_required` vs `waived` distinction: `not_require
 | Field | Type | Default | Notes |
 |---|---|---|---|
 | `post_count` | integer | derived (count of `post-*` deliverables) | Total planned posts. Update when the arc adds or drops a post. |
-| `posts_published` | integer | derived (count of `post-*` deliverables with `status: delivered`) | Cheap rollup so a state-load can answer "how many delivered?" without walking deliverables[]. |
+| `posts_published` | integer | derived (count of `post-*` deliverables with `status: delivered`, tracker + `knowledge/_archive/deliverables-archive.md`) | Cheap all-time rollup so a state-load can answer "how many delivered?" without walking deliverables[]. Never decremented by row archiving. |
 | `system_retro_completed` | ISO 8601 date or `null` | `null` | Filled when `phase-5-launch-and-learn/system-retro-v{N}.md` lands at `status: locked`. |
 | `closeout_retro_completed` | ISO 8601 date or `null` | `null` | Filled when `phase-5-launch-and-learn/project-retro-v{N}.md` lands at `status: locked`. |
 

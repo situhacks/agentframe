@@ -9,7 +9,7 @@ Catalog of reusable process files: what each owns and when to load it. Check her
 | [`flows/`](flows/README.md) | Project flow registry (phase structures per domain) | Selecting or executing a project flow; see the flow registry's own README |
 | [`browser-fallback.md`](browser-fallback.md) | Browser-workflow fallback principle and routing to `system/browser/` recipes | An approved API/MCP/CLI path is unavailable and browser automation is the fallback |
 | [`composio-notes.md`](composio-notes.md) | Publish-prep and performance-capture procedures via Composio/Rube MCP, plus platform quirks | A flow phase coordinates with connected tools (publish, metrics) |
-| [`deck-production.md`](deck-production.md) | Deck/PPTX path selection menu + follow-up-pass versioning and round-trip rules | A deliverable needs deck-shaped output and no path is picked, or a delivered deck gets a revision pass |
+| [`deck-production.md`](deck-production.md) | Central Deck/PPTX route, PPT Master default, and follow-up-pass versioning/round-trip rules | A deliverable needs deck-shaped output, or a delivered deck gets a revision pass |
 | [`deliverable-versioning.md`](deliverable-versioning.md) | Naming, head-file, and iteration shape for every versioned deliverable instance | Drafting or iterating any deliverable under `workspace/projects/` |
 | [`flow-authoring.md`](flow-authoring.md) | Authoring standard for project flows | Adding or materially reshaping a flow under `flows/` (Builder) |
 | [`humanizer-integration.md`](humanizer-integration.md) | Gate timing, scope, and logging for `## Humanizer Pass` sections | A loaded template declares a Humanizer Pass with non-empty guidance |

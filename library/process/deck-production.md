@@ -1,14 +1,16 @@
 # Deck Production
 
-Available deck/presentation paths for AgentFrame. Load this when a deliverable needs a `.pptx` (or deck-shaped) output and a path hasn't been picked, **and** whenever a follow-up pass is requested on an already-delivered deck (redo a slide, add slides, restructure, reword) — the versioning and round-trip rules below govern those passes. Usage rules, lock criteria, and export records are owned by the deliverable that calls this menu — brief templates own their own export mechanics; project posts record deck media like any other delivered asset.
+Available deck/presentation paths for AgentFrame. Load this whenever a deliverable needs a `.pptx` (or deck-shaped) output, **and** whenever a follow-up pass is requested on an already-delivered deck (redo a slide, add slides, restructure, reword) — the versioning and round-trip rules below govern those passes. Deliverable templates call this file instead of naming individual deck tools directly. Usage rules, lock criteria, and export records are owned by the deliverable that calls this menu — project posts record deck media like any other delivered asset.
+
+Default: use **PPT Master** for new PowerPoint creation and exports. Use another path only when the input state below requires it or the operator explicitly asks for it.
 
 | Path | Use when | Skill | Outputs |
 |---|---|---|---|
-| PPTX skill (vendored Anthropic) | Editing, filling, or validating an existing `.pptx`; brief exports from a known template; quick decks where design polish matters less than turnaround. The default for anything that starts FROM a `.pptx`. | `system/skills/pptx/SKILL.md` | Edited/created `.pptx` via OOXML or pptxgenjs |
-| PPT Master | Generating a designed, native-editable deck from source material (docs, research, storyboard, project artifacts) — best visual quality, charts, optional speaker notes/narration. Heavy: runs as its own dedicated session. Pick the specific workflow from the table below. | `system/skills/ppt-master/SKILL.md`; read the overlay `system/skills/ppt-master/AGENTS.md` first | Native `.pptx` from its SVG pipeline, promoted into the calling deliverable's folder |
+| PPT Master | Default for new `.pptx` creation/export, from source material, storyboard, markdown deliverable, research, or existing deck-as-source. Best visual quality, native-editable output, charts, optional speaker notes/narration. Heavy: runs as its own dedicated session. Pick the specific workflow from the table below. | `system/skills/ppt-master/SKILL.md`; read the overlay `system/skills/ppt-master/AGENTS.md` first | Native `.pptx` from its SVG pipeline, promoted into the calling deliverable's folder |
+| PPTX skill (vendored Anthropic) | Native `.pptx` inspection, validation, small edits, extraction-diff, or slide splicing after a PPT Master round-trip. Use only when this file routes there. | `system/skills/pptx/SKILL.md` | Edited `.pptx` via OOXML or pptxgenjs |
 | Open Design (bundled) | Deck work that benefits from OD's interactive revise-in-UI loop, or when the project is already running other visuals through OD. | `system/skills/open-design/SKILL.md` (mode/skill defaults in [`image-production.md`](image-production.md)) | Exported `.pptx` / PDF / PNG to the calling post's `visuals/imports/` |
 
-Offer the options and let the operator narrow; record a project-wide preference in `project.md` `post_manifest` notes when decks recur in a project. Mixing paths is normal — generate with PPT Master or OD, then edit/fill the result with the PPTX skill.
+Recommend the default route first and name the exception only when it applies. Record a project-wide preference in `project.md` notes when decks recur in a project. Mixing paths is normal after the initial route — generate with PPT Master or OD, then edit/splice the result with the PPTX skill.
 
 ## PPT Master workflow selection
 

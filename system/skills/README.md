@@ -16,7 +16,7 @@ All AgentFrame skills live here. Some are AgentFrame-owned, some are vendored sn
 | [`deep-research/`](deep-research/) | Native deep research on the agent's own tools: architect brief → role-specialized specialist wave → synthesis gate → grounded cited report. Harness-agnostic (parallel subagents or sequential passes); no research API. | Owned by AgentFrame; prompts lifted from upstream (see [`deep-research/PROVENANCE.md`](deep-research/PROVENANCE.md)) |
 | [`humanizer/`](humanizer/) | Remove AI-writing patterns from prose. | Vendored (see [`humanizer/VENDOR.md`](humanizer/VENDOR.md)) |
 | [`docx/`](docx/) | Generic `.docx` creation/editing capability. | Vendored (see [`docx/VENDOR.md`](docx/VENDOR.md)) |
-| [`pptx/`](pptx/) | Generic `.pptx` creation/editing capability. | Vendored (see [`pptx/VENDOR.md`](pptx/VENDOR.md)) |
+| [`pptx/`](pptx/) | Native `.pptx` inspection/editing capability; deck creation routes through `library/process/deck-production.md`. | Vendored (see [`pptx/VENDOR.md`](pptx/VENDOR.md)) |
 | [`hyperframes/`](hyperframes/) | HyperFrames composition authoring for HTML-based video production. | Vendored (see [`hyperframes/VENDOR.md`](hyperframes/VENDOR.md)) |
 | [`hyperframes-cli/`](hyperframes-cli/) | HyperFrames CLI workflow (`init`, `lint`, `inspect`, `preview`, `render`). | Vendored (see [`hyperframes-cli/VENDOR.md`](hyperframes-cli/VENDOR.md)) |
 | [`gsap/`](gsap/) | GSAP animation reference used by HyperFrames compositions. | Vendored (see [`gsap/VENDOR.md`](gsap/VENDOR.md)) |

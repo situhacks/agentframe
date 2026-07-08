@@ -286,7 +286,7 @@ Process files load on demand — only when the workflow they describe is in play
 | `humanizer-integration` | The humanization pass |
 | `image-production` | Image-generation workflow |
 | `video-production` | Video workflow from spec to renders |
-| `deck-production` | Deck path selection (PPTX skill, PPT Master, Open Design) |
+| `deck-production` | Central PowerPoint/deck route; PPT Master is the default for new `.pptx` creation |
 | `preview-server` | When and how to use the local preview hub |
 | `composio-notes` | Connector usage notes and caveats |
 | `browser-fallback` | Browser-automation fallback strategy |
@@ -307,7 +307,7 @@ My current production stack — swap any one for a sharper tool without touching
 | `project-consolidate` | Project skill — consolidates and prunes project knowledge and history (dream workflow) |
 | `deep-research` | Project skill — native multi-role deep research on the agent's own tools; loop lifted from [DeepResearch Bench](https://huggingface.co/spaces/muset-ai/DeepResearch-Bench-Leaderboard) leaders, provenance pinned in [`PROVENANCE.md`](system/skills/deep-research/PROVENANCE.md) |
 | `docx` | Project skill — generates Word documents from markdown deliverables |
-| `pptx` | Project skill — generates PowerPoint presentations from markdown deliverables |
+| `pptx` | Project skill - native `.pptx` inspection, validation, extraction, and small edits after `deck-production` routes there |
 | `humanizer` | Vendored from [blader/humanizer](https://github.com/blader/humanizer) |
 | `hyperframes` | Vendored from [heygen-com/hyperframes](https://github.com/heygen-com/hyperframes) |
 | `hyperframes-cli` | Vendored from [heygen-com/hyperframes](https://github.com/heygen-com/hyperframes) |

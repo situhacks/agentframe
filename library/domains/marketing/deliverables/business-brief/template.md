@@ -76,13 +76,9 @@ When this deliverable locks, export to Word + PowerPoint:
 - **Template source**: campaign-local templates are optional at `workspace/projects/{slug}/exports/templates/business-brief.{docx,pptx}`
 - **Output path**: `workspace/projects/{slug}/phase-2-strategy/business-brief/exports/business-brief-v{N}.{ext}`
 
-For `.pptx`, run discovery before slide drafting:
+For `.docx`, load `system/skills/docx/SKILL.md`, render the Word export, update `draft-v{N}.md` `exports:` entries, and append export activity events.
 
-1. Ask audience, time budget, presenter style, and decision-vs-handoff in one turn.
-2. Propose slide count + section structure + density tier and get approval.
-3. Draft PPT-MD in chat, iterate, then render final `.pptx`.
-
-For both formats, load `system/skills/{docx,pptx}/SKILL.md`, render via inline code, update `draft-v{N}.md` `exports:` entries, and append export activity events.
+For `.pptx`, load `library/process/deck-production.md` and follow the central deck route. This template does not name individual deck tools directly; future PowerPoint routing changes happen in the deck-production process file.
 
 ## Exceptions / Branches
 

@@ -15,6 +15,10 @@ system/builder-backlog*.md
 # === Operator projects ===
 # All projects are private by default.
 workspace/projects/*
+!workspace/projects/.gitkeep
+!workspace/projects/completed/
+workspace/projects/completed/*
+!workspace/projects/completed/.gitkeep
 
 # === Operator research ===
 workspace/research/

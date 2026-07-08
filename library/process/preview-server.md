@@ -1,30 +1,36 @@
-# Preview Server Process
+# Local Surface Process
 
-Lazy-load this file when a turn writes a hub-supported artifact under `workspace/projects/*/phase-*/`.
+Lazy-load this file when a turn writes a previewable artifact under `workspace/projects/`, or when the operator asks for the dashboard, a preview, or a look at any deliverable/version/export without opening desktop apps.
 
-## When To Load
+## Previewable Types
 
-Load this process when the turn writes or revises any previewable file type that the hub can render:
+Markdown, HTML, images (`.png`, `.jpg`, `.jpeg`, `.webp`, `.gif`, `.svg`), PDF, video (`.mp4`, `.mov`, `.webm`), and Office files (`.pptx`, `.docx` — converted server-side; requires LibreOffice installed).
 
-- HTML (`.html`)
-- Image (`.png`, `.jpg`, `.jpeg`, `.webp`, `.gif`, `.svg`)
-- PDF (`.pdf`)
-- Video (`.mp4`, `.mov`, `.webm`)
+## Start Or Open — One Command, No Ceremony
+
+```
+python system/server/run.py --daemon
+```
+
+Idempotent start-or-open: reuses an already-running healthy surface (lock file + health check), otherwise starts one detached on a free port, then opens the browser and prints the URL. Run it yourself when the environment allows instead of telling the operator to run something — the operator should never need a second manual step after asking for a preview.
 
 ## Offer Trigger
 
-After the first previewable artifact write in a turn, offer preview options once for that turn:
+After the first previewable artifact write in a turn, run the start-or-open command (or, if you cannot execute commands, give the URLs) once for that turn:
 
-1. Direct artifact URL: `http://localhost:8080/<relative-path>`
-2. Hub URL: `http://localhost:8080/`
-3. Start command (if not already running): `python system/server/run.py`
+1. Deep link with the artifact loaded: `http://localhost:8080/#/preview?project={slug}&file={path-from-project-root}`
+2. Dashboard: `http://localhost:8080/`
 
-Do not repeat this offer after every file edit in the same turn.
+Do not repeat the offer after every file edit in the same turn. Add `--no-open` to suppress the browser tab when only the URL is wanted.
+
+## Surface Map
+
+- **Dashboard tab** — Attention items (from each active project's `activity.md` `## Attention` block; convention in [`project-frontmatter.md`](project-frontmatter.md)), active-project table, recent activity. Deterministic file reads only; no LLM.
+- **Preview tab** — media-first artifact index built from `project.md` tracker rows (+ archived rows), manifest media, exports, and untracked previewable files. The rail defaults to `media`; `text` shows `.md`/`.txt`; `all` restores grouped deliverables with current file, previous versions, manifest media, and exports behind the expand control. IDE-style tabs and splits support side-by-side version comparison.
+- Legacy file-tree hub remains at `http://localhost:8080/hub`.
 
 ## Hide Noise
 
-When the hub gets noisy with intermediate artifacts:
-
-- Add exclusion patterns in `system/server/config.yaml` under `exclude_globs:`.
-- Drop a zero-byte `.preview-hide` file in any folder to hide that folder and descendants from default hub discovery.
-- Use `http://localhost:8080/?intermediates=1` to temporarily show excluded/intermediate artifacts.
+- `sources/`, `knowledge/`, `references/`, `archive/`, `backup/`, `history/`, `raw/`, `stills/`, `node_modules/` never appear in the untracked list.
+- Drop a zero-byte `.preview-hide` file in any folder to hide it and its descendants (the Preview rail context menu can write it after confirmation).
+- `exclude_globs:` in `system/server/config.yaml` additionally filters the legacy hub.

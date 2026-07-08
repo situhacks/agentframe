@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AgentFrame Local</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dockview-core@4.13.1/dist/styles/dockview.css">
+<link rel="stylesheet" href="/system/server/static/surface/styles.css">
+</head>
+<body>
+  <header id="topbar">
+    <div class="lockup">
+      <span class="af-mark">AF</span>
+      <span class="wordmark">AgentFrame<em>Local</em></span>
+    </div>
+    <nav class="top-tabs">
+      <button id="tab-dashboard" data-route="dashboard">Dashboard</button>
+      <button id="tab-preview" data-route="preview">Preview</button>
+    </nav>
+    <div class="top-status">
+      <div id="freshness" class="freshness">
+        <span class="dot"></span>
+        <span id="freshness-text">connecting&hellip;</span>
+      </div>
+      <button id="refresh-snapshot" class="top-refresh" title="Refresh dashboard" aria-label="Refresh dashboard">&#8635;</button>
+    </div>
+  </header>
+
+  <main id="view-dashboard" class="view">
+    <div class="dash-header">
+      <h1>Dashboard</h1>
+      <div class="dash-zoom" id="dash-zoom" aria-label="Dashboard zoom">
+        <button id="dash-zoom-out" title="Zoom out">-</button>
+        <label>
+          <input id="dash-zoom-input" type="number" min="60" max="125" step="5" value="90" aria-label="Dashboard zoom percent">
+          <span>%</span>
+        </label>
+        <button id="dash-zoom-in" title="Zoom in">+</button>
+        <button id="dash-zoom-fit" title="Fit dashboard columns">fit</button>
+      </div>
+      <span class="meta" id="dash-meta"></span>
+    </div>
+    <section class="region" id="region-attention">
+      <header><span class="title">Attention</span><span class="count" id="attention-count"></span></header>
+      <div class="scroll" id="attention-body"></div>
+    </section>
+    <section class="region" id="region-projects">
+      <header><span class="title">All Active Projects</span></header>
+      <div class="scroll" id="projects-body"></div>
+    </section>
+    <section class="region" id="region-activity">
+      <header><span class="title">Recent Activity</span><span class="count" id="activity-count"></span></header>
+      <div class="scroll" id="activity-body"></div>
+    </section>
+  </main>
+
+  <main id="view-preview" class="view" hidden>
+    <aside id="rail">
+      <div class="rail-head">Projects</div>
+      <div class="scroll" id="rail-projects"></div>
+      <div class="rail-head">Artifacts<span class="count" id="rail-artifacts-count"></span></div>
+      <div class="rail-filters" id="artifact-class-filters">
+        <button data-class="all">all</button>
+        <button data-class="text">text</button>
+        <button data-class="media" class="active">media</button>
+      </div>
+      <div class="rail-filters quiet" id="artifact-type-filters" hidden>
+        <button data-type="image">image</button>
+        <button data-type="pdf">pdf</button>
+        <button data-type="video">video</button>
+        <button data-type="html">html</button>
+        <button data-type="office">office</button>
+      </div>
+      <div class="scroll" id="rail-artifacts"><div class="rail-section-note">select a project</div></div>
+    </aside>
+    <div id="editor-area"></div>
+  </main>
+
+  <script type="module" src="/system/server/static/surface/app.js"></script>
+</body>
+</html>

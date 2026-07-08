@@ -39,6 +39,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Do not open a browser tab even if --project is set",
     )
+    parser.add_argument(
+        "--daemon",
+        action="store_true",
+        help="Start-or-open: reuse a healthy running surface, else start one detached and open it",
+    )
     return parser.parse_args()
 
 
@@ -58,6 +63,14 @@ def main() -> int:
     host = args.host or str(cfg.get("host", "localhost"))
     delay = float(cfg.get("debounce_delay_seconds", 0.5))
 
+    if args.daemon:
+        from system.server.lib.surface import daemon
+
+        result = daemon.start_or_open(preferred_port=port, open_browser=not args.no_open)
+        verb = "started" if result["started"] else "already running — opened"
+        print(f"[surface] {verb}: {result['url']}")
+        return 0
+
     from system.server.lib import server as server_lib
     from system.server.lib import watcher
 
@@ -74,8 +87,12 @@ def main() -> int:
         except Exception:
             pass
 
+    from system.server.lib.surface import daemon as surface_daemon
+
+    surface_daemon.write_lock(port=port, root=str(PROJECT_ROOT))
+
     print(f"[preview] Serving {PROJECT_ROOT} at http://{host}:{port}")
-    print(f"[preview] Hub:      http://{host}:{port}/")
+    print(f"[preview] Surface:  http://{host}:{port}/   (legacy hub: /hub)")
     print(f"[preview] Watching {len(globs)} glob(s):")
     for g in globs:
         print(f"  - {g}")

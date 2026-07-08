@@ -85,3 +85,8 @@ __pycache__/
 # operator's machine. If a settings.json file ever ships as a repo default,
 # un-ignore it explicitly.
 .claude/
+
+# === Local surface runtime state (per-machine) ===
+system/server/.surface.lock
+system/server/.surface.log
+system/server/.cache/

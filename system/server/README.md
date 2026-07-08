@@ -1,6 +1,9 @@
-# AgentFrame Preview Server
+# AgentFrame Local Surface (preview server)
 
-Localhost preview server for visual deliverables. Renders mood-board direction compares, the design-language one-pager, and per-post carousel slides in your browser. LiveReload pushes refreshes as the agent edits files.
+Localhost server with two jobs:
+
+1. **Local surface at `/`** — the AgentFrame dashboard (attention items, active projects, recent activity) plus an IDE-style Preview tab (media-first artifact index from `project.md` tracker rows, manifest media, exports, and untracked files; tabs/splits via Dockview; viewers for markdown/text/HTML/image/PDF/video, and PPTX/DOCX via LibreOffice conversion). Backend modules live in `lib/surface/`, frontend in `static/surface/`. Deterministic file reads only — no LLM, no API keys.
+2. **Static + LiveReload serving** of the whole repo root, which the Preview viewers and the legacy hub (`/hub`) build on.
 
 Operator-facing process: [`library/process/preview-server.md`](../../library/process/preview-server.md).
 
@@ -17,8 +20,10 @@ This installs `livereload`, `watchdog`, `PyYAML`, and `google-genai` (the last i
 ## 2. Run
 
 ```
-python system/server/run.py
+python system/server/run.py --daemon
 ```
+
+Start-or-open: reuses an already-running healthy surface (lock file `.surface.lock` + `/api/health` check), otherwise starts one detached on a free port, then opens the browser. This is the command agents run when the operator asks for a preview — no second manual step. Plain `python system/server/run.py` still runs in the foreground (Ctrl+C to stop).
 
 Defaults to `http://localhost:8080`. The whole project root is served, so any HTML file resolves naturally:
 

@@ -379,6 +379,9 @@ DREAM_LINE_CAPS = (("knowledge/decision-log.md", 300),
                    ("knowledge/raid-log.md", 300),
                    ("activity.md", 500),
                    ("project.md", 250))
+MEDIA_MANIFEST_FIELDS = ("shipped_media", "exports")
+MEDIA_PREVIEW_EXTS = {".html", ".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg",
+                      ".pdf", ".mp4", ".mov", ".webm", ".pptx", ".docx"}
 
 
 def parse_iso_date(value):
@@ -388,6 +391,139 @@ def parse_iso_date(value):
         return datetime.date.fromisoformat(value[:10])
     except ValueError:
         return None
+
+
+def fm_list_values(fm, key):
+    """Parse inline or block-list frontmatter values for a key."""
+    inline = fm_list(fm, key)
+    if inline:
+        return inline
+    m = re.search(rf"^\s*{re.escape(key)}:\s*$", fm, re.M)
+    if not m:
+        return []
+    rest = fm[m.end():]
+    nxt = re.search(r"^\S", rest, re.M)
+    block = rest[: nxt.start() if nxt else len(rest)]
+    values = []
+    for line in block.splitlines():
+        item = re.match(r"^\s*-\s*(.*?)\s*$", line)
+        if item:
+            values.append(clean_value(item.group(1)))
+    return [v for v in values if v]
+
+
+def list_from_value(value):
+    value = clean_value(value or "")
+    if not value:
+        return []
+    if value.startswith("[") and value.endswith("]"):
+        return [clean_value(i) for i in value[1:-1].split(",") if clean_value(i)]
+    return [value]
+
+
+def manifest_path_status(cdir, owner_rel, raw):
+    """None when valid/skipped; otherwise a short error label."""
+    value = clean_value(raw)
+    if not value or value.startswith(("http://", "https://")):
+        return None
+    croot = os.path.abspath(cdir)
+
+    def inside(path):
+        candidate = os.path.abspath(path)
+        try:
+            if os.path.commonpath([croot, candidate]) != croot:
+                return None
+        except ValueError:
+            return None
+        return candidate
+
+    if os.path.isabs(value):
+        candidates = [inside(value)]
+        outside = candidates[0] is None
+    else:
+        owner_dir = os.path.dirname(owner_rel)
+        candidates = [inside(os.path.join(cdir, value)),
+                      inside(os.path.join(cdir, owner_dir, value))]
+        outside = not any(candidates)
+    candidates = [c for c in candidates if c]
+    if outside:
+        return "resolves outside project"
+    if not any(os.path.isfile(c) for c in candidates):
+        return "missing"
+    return None
+
+
+def media_manifest_issues_for_fm(cdir, cfm, source_label="project.md"):
+    issues = []
+    rel = os.path.relpath(cdir, ROOT).replace("\\", "/")
+    for slug in all_rows(cfm):
+        st, f = row_get(cfm, slug, "status"), row_get(cfm, slug, "file")
+        if st not in ("locked", "delivered") or not f or not os.path.isfile(os.path.join(cdir, f)):
+            continue
+        dfm, _ = split_fm(read(os.path.join(cdir, f)), f)
+        for field in MEDIA_MANIFEST_FIELDS:
+            for value in fm_list_values(dfm, field):
+                status = manifest_path_status(cdir, f, value)
+                if status:
+                    issues.append(f"{rel}: {source_label} row '{slug}' {field} path {status}: {value}")
+    return issues
+
+
+def media_manifest_issues(cdir, cfm):
+    issues = media_manifest_issues_for_fm(cdir, cfm)
+    archive = os.path.join(cdir, "knowledge", "_archive", "deliverables-archive.md")
+    if os.path.isfile(archive):
+        afm, _ = split_fm(read(archive), "deliverables-archive.md")
+        issues += media_manifest_issues_for_fm(cdir, afm, "deliverables-archive.md")
+    return issues
+
+
+def project_manifest_ingredients(cfm):
+    m = re.search(r"^\s*ingredients:\s*\[(.*?)\]\s*$", cfm, re.M)
+    if not m:
+        return []
+    return [clean_value(i) for i in m.group(1).split(",") if clean_value(i)]
+
+
+def has_previewable_file(folder):
+    if not os.path.isdir(folder):
+        return False
+    for _, dirnames, filenames in os.walk(folder):
+        dirnames[:] = [d for d in dirnames if not d.startswith(".") and d not in ("history", "raw")]
+        for name in filenames:
+            if os.path.splitext(name)[1].lower() in MEDIA_PREVIEW_EXTS:
+                return True
+    return False
+
+
+def media_manifest_notes(cdir):
+    notes = []
+    rel = os.path.relpath(cdir, ROOT).replace("\\", "/")
+    try:
+        cfm, _ = split_fm(read(os.path.join(cdir, "project.md")), "project.md")
+    except SystemExit:
+        return notes
+    project_ingredients = project_manifest_ingredients(cfm)
+    for slug in all_rows(cfm):
+        if not re.match(r"post-\d+$", slug) or row_get(cfm, slug, "status") != "delivered":
+            continue
+        f = row_get(cfm, slug, "file")
+        if not f or not os.path.isfile(os.path.join(cdir, f)):
+            continue
+        dfm, _ = split_fm(read(os.path.join(cdir, f)), f)
+        if fm_list_values(dfm, "shipped_media"):
+            continue
+        row_ingredients = list_from_value(row_get(cfm, slug, "ingredients"))
+        ingredients = row_ingredients or project_ingredients
+        post_dir = os.path.dirname(os.path.join(cdir, f))
+        image_bearing = (
+            "image-prompts" in ingredients
+            or has_previewable_file(os.path.join(post_dir, "visuals"))
+            or has_previewable_file(os.path.join(post_dir, "media"))
+        )
+        if image_bearing:
+            notes.append(f"{rel}: delivered {slug} has imagery signals but empty shipped_media[] - land shipped media in the post folder and record it on post-FINAL.md")
+    return notes
 
 
 def dream_note(cdir):
@@ -493,6 +629,7 @@ def check_project(cdir):
     rules = load_rules(pack_dir)
     if rules and hasattr(rules, "check"):
         issues += rules.check(make_ctx(), cdir, cfm)
+    issues += media_manifest_issues(cdir, cfm)
     return issues
 
 
@@ -611,6 +748,7 @@ def cmd_doctor(args):
         note = dream_note(d)
         if note:
             notes.append(note)
+        notes += media_manifest_notes(d)
     system_scope = ""
     if not args.project:
         sys_issues, sys_notes = check_system()

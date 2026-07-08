@@ -49,13 +49,38 @@ def _make_hub_handler(project_root: Path, *, exclude_globs: list[str] | None = N
     return HubHandler
 
 
+def _make_surface_handler(project_root: Path):
+    """Serve the local-surface SPA shell (dashboard + preview) at `/`.
+
+    Reads `static/surface/index.html` per request so agent edits show up on
+    refresh without a server restart.
+    """
+    from tornado import web
+
+    index_path = Path(__file__).resolve().parents[1] / "static" / "surface" / "index.html"
+
+    class SurfaceHandler(web.RequestHandler):
+        def get(self):
+            self.set_header("Content-Type", "text/html; charset=utf-8")
+            self.set_header("Cache-Control", "no-store")
+            if index_path.is_file():
+                self.write(index_path.read_text(encoding="utf-8"))
+            else:
+                self.write(
+                    "<h1>AgentFrame Local</h1><p>Surface UI not built yet. "
+                    'Legacy hub: <a href="/hub">/hub</a>. API: <a href="/api/health">/api/health</a></p>'
+                )
+
+    return SurfaceHandler
+
+
 class _HubServer:
-    """Wrap `livereload.Server` so we can inject a hub handler at `/`.
+    """Wrap `livereload.Server` so we can inject app handlers ahead of statics.
 
     livereload's `get_web_handlers` returns the static-file route as a
-    catch-all `/(.*)`. Prepending a more-specific handler for `/` and
-    `/index.html` lets us serve the dashboard without disturbing static
-    serving for everything else (projects, demo, livereload.js, etc.).
+    catch-all `/(.*)`. Prepending more-specific handlers serves the surface
+    SPA at `/`, the legacy hub at `/hub`, and the JSON API at `/api/*` without
+    disturbing static serving for everything else (projects, livereload.js).
     """
 
     def __init__(self, project_root: Path, *, exclude_globs: list[str] | None = None):
@@ -68,13 +93,19 @@ class _HubServer:
     def _patch_handlers(self, *, exclude_globs: list[str] | None = None) -> None:
         original_get = self._inner.get_web_handlers
         hub_handler = _make_hub_handler(self._project_root, exclude_globs=exclude_globs)
+        surface_handler = _make_surface_handler(self._project_root)
+
+        from .surface import api as surface_api
+
+        api_routes = surface_api.make_handlers(self._project_root)
 
         def patched(script):
             base = list(original_get(script))
             return [
-                (r"/", hub_handler),
-                (r"/index\.html", hub_handler),
-            ] + base
+                (r"/", surface_handler),
+                (r"/index\.html", surface_handler),
+                (r"/hub", hub_handler),
+            ] + api_routes + base
 
         self._inner.get_web_handlers = patched  # type: ignore[method-assign]
 

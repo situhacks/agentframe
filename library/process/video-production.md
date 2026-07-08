@@ -106,7 +106,7 @@ Within `video/`, keep `renders/` for rendered video outputs (`.mp4`/`.webm`) onl
 6. **For raw footage:** load video-use when it is available; otherwise create the transcript/EDL artifacts directly, render a preview, and only show the user after self-eval passes or residual issues are named.
 7. **For authored video:** load HyperFrames skills, use `SCRIPT.md` and `STORYBOARD.md` when the video needs narration or beat-by-beat direction, then build `index.html` and `compositions/`.
 8. **For Flow assets:** the operator generates assets in Flow manually, drops files into the project, and the agent records the prompt, model/tool used, date, and path.
-9. **Preview.** Use HyperFrames Studio for timeline authoring. Use the AgentFrame preview hub for project artifact browsing and rendered video review.
+9. **Preview.** Use HyperFrames Studio for timeline authoring. Use the AgentFrame local surface (Preview tab) for project artifact browsing and rendered video review.
 10. **Verify.** Run the relevant checks before lock:
     - HyperFrames: `npx hyperframes doctor`, `npx hyperframes lint`, `npx hyperframes validate`, `npx hyperframes inspect`, preview as needed, then draft/final render.
     - video-use: transcript cache present, EDL exists, preview render exists, self-eval notes recorded.

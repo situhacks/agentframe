@@ -125,6 +125,19 @@ Judgment that stays with the agent: peek locked rows for `back_filled: true`; fo
 
 `activity.md` is the material-event log. Each entry is one line prefixed with local `YYYY-MM-DD HH:MM`.
 
+### Attention Block
+
+`activity.md` may open with an `## Attention` block directly under the title — the dashboard-facing shortlist the local surface reads. One checkbox bullet per open item:
+
+```md
+## Attention
+
+- [ ] 2026-07-15 | due | Finish workshop preread
+- [ ] 2026-07-18 | waiting | Client reply on [deck](phase-4-demo/demo-deck-v1.md)
+```
+
+`kind` is one of `due`, `waiting`, `meeting`, `decision`, `review`. The dashboard shows unchecked items only; check an item off when it resolves and log the resolution as a normal activity line. Governed projects keep the full record in `knowledge/raid-log.md` / `decision-log.md` / `workback-schedule.md` — Attention is only the shortlist.
+
 Canonical event shapes:
 
 - `phase_override: skipped {deliverable}; {what happened}. Reason: "{reason}"`

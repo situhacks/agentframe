@@ -1,0 +1,133 @@
+// AgentFrame Local: shell, hash router, snapshot poller, freshness light.
+// Dashboard has no CDN dependencies; the Preview module (Dockview) loads
+// lazily the first time the Preview tab opens.
+
+import { getJSON, postJSON } from './api.js';
+import { renderDashboard, applyActivityUpdate, setupDashboardDensity } from './dashboard.js';
+
+const POLL_MS = 12000;
+
+const state = {
+  etag: null,
+  snapshot: null,
+  failures: 0,
+  route: 'dashboard',
+  preview: null,
+};
+
+// ---------- freshness ----------
+
+const freshnessEl = document.getElementById('freshness');
+const freshnessText = document.getElementById('freshness-text');
+
+function setFreshness(mode, text) {
+  freshnessEl.className = `freshness ${mode}`;
+  freshnessText.textContent = text;
+}
+
+function timeNow() {
+  return new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+}
+
+// ---------- snapshot polling ----------
+
+async function poll({ force = false } = {}) {
+  try {
+    const query = state.etag && !force ? `?etag=${encodeURIComponent(state.etag)}` : '';
+    const snap = await getJSON(`/api/snapshot${query}`);
+    state.failures = 0;
+    if (snap.unchanged) {
+      setFreshness('', `last updated ${timeNow()}`);
+      return;
+    }
+    state.etag = snap.etag;
+    state.snapshot = snap;
+    renderDashboard(snap);
+    applyActivityUpdate(snap);
+    const dashMeta = document.getElementById('dash-meta');
+    dashMeta.textContent = `${snap.projects.length} active projects`;
+    dashMeta.title = snap.workspace_root;
+    const lockup = document.querySelector('.lockup');
+    if (lockup) lockup.title = snap.workspace_root;
+    setFreshness('', `last updated ${timeNow()}`);
+  } catch (err) {
+    state.failures += 1;
+    if (state.failures >= 2) {
+      const retry = document.createElement('button');
+      retry.textContent = 'refresh';
+      retry.addEventListener('click', () => poll({ force: true }));
+      freshnessEl.className = 'freshness stale';
+      freshnessText.textContent = 'stale - server unreachable, ';
+      freshnessText.append(retry);
+    } else {
+      setFreshness('manual', 'manual refresh - retrying');
+    }
+  }
+}
+
+// ---------- router ----------
+
+export function parseHash() {
+  const hash = location.hash.replace(/^#\/?/, '');
+  const [path, query = ''] = hash.split('?');
+  const params = new URLSearchParams(query);
+  return { path: path || 'dashboard', params };
+}
+
+export function navigate(path, params = null) {
+  let hash = `#/${path}`;
+  if (params) {
+    const qs = new URLSearchParams(params).toString();
+    if (qs) hash += `?${qs}`;
+  }
+  if (location.hash !== hash) history.replaceState(null, '', hash);
+  applyRoute();
+}
+
+async function applyRoute() {
+  const { path, params } = parseHash();
+  const route = path.startsWith('preview') ? 'preview' : 'dashboard';
+  state.route = route;
+
+  document.getElementById('view-dashboard').hidden = route !== 'dashboard';
+  document.getElementById('view-preview').hidden = route !== 'preview';
+  document.getElementById('tab-dashboard').classList.toggle('active', route === 'dashboard');
+  document.getElementById('tab-preview').classList.toggle('active', route === 'preview');
+
+  if (route === 'preview') {
+    if (!state.preview) {
+      try {
+        state.preview = await import('./preview.js');
+        await state.preview.mountPreview();
+      } catch (err) {
+        state.preview = null;
+        document.getElementById('editor-area').innerHTML =
+          `<div class="viewer-note"><b>Preview failed to load.</b><br>` +
+          `The tab layout library loads from cdn.jsdelivr.net - check the network connection and refresh.<br>` +
+          `<span class="warn">${String(err.message || err)}</span></div>`;
+        return;
+      }
+    }
+    const project = params.get('project');
+    const file = params.get('file');
+    if (project) state.preview.focus(project, file);
+  }
+}
+
+// ---------- boot ----------
+
+for (const btn of document.querySelectorAll('.top-tabs button')) {
+  btn.addEventListener('click', () => navigate(btn.dataset.route));
+}
+document.getElementById('refresh-snapshot').addEventListener('click', () => poll({ force: true }));
+document.querySelector('.lockup')?.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  postJSON('/api/reveal-root', {}).catch(() => {});
+});
+window.addEventListener('hashchange', applyRoute);
+window.addEventListener('focus', () => poll());
+
+setupDashboardDensity();
+setFreshness('manual', 'connecting...');
+poll().then(applyRoute);
+setInterval(poll, POLL_MS);

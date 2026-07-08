@@ -31,7 +31,7 @@ Short and current:
 
 1. Work the runway's first item using its deliverable template (or for ad-hoc artifacts, create the directory `_local/<slug>/` and the file `_local/<slug>/<slug>-v1.md` following the generic shape).
 2. On lock: run lock-event, sync the tracker, refresh the plan section, and PROPOSE the next 1–2 runway steps — don't make the operator plan from scratch each turn. Note that `_local` deliverables version (`af version`) and lock (`af lock`) identically to library-backed deliverables.
-3. Recalibrate when scope moves: phases can be added, merged, or dropped. Log plan changes to `activity.md` as `plan_revised` events — the decision trail lives on disk, not in the context window.
+3. Recalibrate when scope moves: phases can be added, merged, or dropped. Log plan changes to `activity.md` as `plan_revised` events using one event per material state change; the first clause names the result, then only the useful consequence/reason.
 
 ## Files
 

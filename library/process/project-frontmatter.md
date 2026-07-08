@@ -124,6 +124,7 @@ Judgment that stays with the agent: peek locked rows for `back_filled: true`; fo
 ## Activity Events
 
 `activity.md` is the material-event log. Each entry is one line prefixed with local `YYYY-MM-DD HH:MM`.
+One line means one material event, not one chat turn. The first clause after the event type is a short result lead; the rest of the line carries only resume-useful consequence, file path, state change, or reason. Split unrelated state changes into separate lines; do not split just to polish prose.
 
 ### Attention Block
 
@@ -140,11 +141,11 @@ Judgment that stays with the agent: peek locked rows for `back_filled: true`; fo
 
 Canonical event shapes:
 
-- `phase_override: skipped {deliverable}; {what happened}. Reason: "{reason}"`
-- `post_published: post-{n} -> {url}`
-- `cancellation: reason "{one-line cancellation reason}"`
-- `frontmatter_manual_edit: corrected {field} from {old} to {new} ({reason}).`
-- `plan_revised: {what changed}. Reason: "{reason}"`
-- `knowledge_consolidation: dream pass; {what changed}.`
+- `phase_override: {deliverable} skipped; {what happened}. Reason: "{reason}"`
+- `post_published: post-{n} shipped; {url}`
+- `cancellation: project cancelled; reason "{one-line cancellation reason}"`
+- `frontmatter_manual_edit: {field} corrected from {old} to {new}; {reason}.`
+- `plan_revised: {short result lead}; {minimum useful consequence}. Reason: "{reason}"`
+- `knowledge_consolidation: dream pass completed; {what changed}.`
 
 When a flow file says to append an event, use these shapes. Skipping a required retro is a `phase_override`; repeated overrides surface in quarterly self-review.

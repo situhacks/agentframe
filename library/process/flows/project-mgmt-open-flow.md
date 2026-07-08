@@ -58,13 +58,15 @@ Two layers, kept separate:
 ## Overrides And Skips
 
 - **Governance can be deferred.** If an engagement turns out lighter than expected, a
-  governance doc may stay empty or be skipped — record the call in `activity.md`. The
+  governance doc may stay empty or be skipped — record the call in `activity.md` with a
+  short result lead. The
   honest downgrade is switching the project to plain `open-flow`; log the `flow` change
-  as a `plan_revised` event.
+  as a `plan_revised` event using the result-lead shape.
 - **Charter without a SOW.** Co-author it into `project.md` body rather than blocking on
   a missing input.
 - **Plan recalibration** carries over from open flow: phases can be added, merged, or
-  dropped; log `plan_revised` to `activity.md`.
+  dropped; log `plan_revised` to `activity.md` as one material state change, not a full
+  session summary.
 
 ## Completion Criteria
 

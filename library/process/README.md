@@ -22,6 +22,7 @@ Catalog of reusable process files: what each owns and when to load it. Check her
 | [`project-frontmatter.md`](project-frontmatter.md) | Canonical project frontmatter schema + drift check + `phase_override` shape | Reading or writing `project.md` frontmatter for state decisions |
 | [`research-and-signals.md`](research-and-signals.md) | Shared kickoff research procedure (workspace scan, MCP scan, research-method offer) | Any flow's research phase, or new-project kickoff |
 | [`substack-distribution-notes.md`](substack-distribution-notes.md) | Substack MCP setup + republish conventions (working notes; hardening tracked at `BB-2026-06-16-01`) | Publishing or back-publishing to Substack |
+| [`technical-build.md`](technical-build.md) | Technical-build lifecycle: external repo + umbilical stub, derived status, BDRs, graduation compile | `project.md` has `build_repo` set and the build is not graduated (a phase turns into a code POC/app) |
 | [`video-production.md`](video-production.md) | Video path selection and composition (talking-head, HyperFrames, generated assets, hybrids) | A post or deliverable is video-shaped |
 | [`voice-mini-retro.md`](voice-mini-retro.md) | Lock-event eligibility gate for voice harvesting | Called by `lock-event.md`; also after shipped copy materially differs from locked copy |
 | [`voice-setup.md`](voice-setup.md) | First-time build of the operator voice system (samples → corpus mine → taste interview → compile) | Loading `library/context/operator/voice/` finds it missing or unbuilt |

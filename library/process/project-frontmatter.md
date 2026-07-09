@@ -50,8 +50,12 @@ Domain packs may require extra fields through `pack.md` `extension_fields`; `af 
 | `cancelled_at` | ISO date or `null` | Mutually exclusive with `completed_at`. |
 | `cancelled_reason` | string or `null` | One-line reason. |
 | `quarterly_goals_advanced` | list | References goals in `library/context/operator/positioning.md`. |
+| `build_repo` | absolute path or `null` | Set when a phase turns technical and code lives in a separate external repo. Its presence routes to [`technical-build.md`](technical-build.md). Optional; absent on non-technical projects. |
+| `build_graduated_at` | ISO date or `null` | Stamped when the external repo graduates to self-sufficiency and AgentFrame stops orchestrating it. `null` while the build is active. Optional. |
 
 Cancellation sets `status: cancelled`, `cancelled_at`, `cancelled_reason`, appends a `cancellation` activity event, and offers to move the folder under `workspace/projects/completed/`. Cancelled projects still run system retro; project retro is skipped.
+
+`build_repo` / `build_graduated_at` are optional and only appear on projects with a technical-build phase; `af doctor` tolerates their absence. Lifecycle and mechanics live in [`technical-build.md`](technical-build.md).
 
 ### Manifest
 
@@ -147,5 +151,7 @@ Canonical event shapes:
 - `frontmatter_manual_edit: {field} corrected from {old} to {new}; {reason}.`
 - `plan_revised: {short result lead}; {minimum useful consequence}. Reason: "{reason}"`
 - `knowledge_consolidation: dream pass completed; {what changed}.`
+- `build_started: {repo path}; stub written, build-log created.`
+- `build_graduated: {repo path}; context compiled into repo; {one-line what shipped}.`
 
 When a flow file says to append an event, use these shapes. Skipping a required retro is a `phase_override`; repeated overrides surface in quarterly self-review.

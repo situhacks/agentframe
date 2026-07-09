@@ -116,6 +116,7 @@ After the command returns, re-read the root `AGENTS.md` before any further work 
 | `system/af.py` | State-transition CLI (lock, publish, version, new-project, doctor) |
 | `system/skills/` | Builder + Operator skills; catalog of what each does + when to load at `system/skills/README.md` |
 | `system/audit/` | SQLite audit/telemetry exception |
+| `system/hooks/` | Deterministic guard hooks (ppt-master staging / paragraph lint / export promotion), wired via the tracked `.claude/settings.json` |
 | `system/browser/` | Browser automation runtime |
 | `system/research/` | Deep-research runtime (`gemini_deep_research`) |
 | `system/server/` | Preview server |

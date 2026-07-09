@@ -86,9 +86,12 @@ __pycache__/
 
 # === Claude Code operator-local config ===
 # Personal hook scripts and local settings (e.g. git-push-guard) stay on the
-# operator's machine. If a settings.json file ever ships as a repo default,
-# un-ignore it explicitly.
-.claude/
+# operator's machine. Repo-default hooks ship via the tracked
+# .claude/settings.json (scripts live in system/hooks/); everything else
+# under .claude/ stays local. `.claude/*` (not `.claude/`) because git
+# cannot re-include a file whose parent directory is excluded.
+.claude/*
+!.claude/settings.json
 
 # === Local surface runtime state (per-machine) ===
 system/server/.surface.lock

@@ -729,8 +729,31 @@ def voice_mirror_notes():
     return notes
 
 
+def ppt_master_stray_issues(base=None):
+    """Deck artifacts inside the vendored ppt-master tree are strays: the
+    vendor refresh procedure wipes the tree and .gitignore hides them.
+    system/hooks/ppt_master_guard.py blocks creating them; this is the
+    backstop for anything that slipped past the hooks."""
+    root = base or ROOT
+    skill = os.path.join(root, "system", "skills", "ppt-master")
+    issues = []
+    if not os.path.isdir(skill):
+        return issues
+    for dirpath, dirnames, filenames in os.walk(skill):
+        rel = os.path.relpath(dirpath, root).replace("\\", "/")
+        if "projects" in dirnames:
+            issues.append(f"{rel}/projects: deck project staged inside the vendored skill tree — "
+                          "move it under the calling campaign (see system/skills/ppt-master/AGENTS.md)")
+            dirnames.remove("projects")
+        for f in sorted(filenames):
+            if f.lower().endswith(".pptx"):
+                issues.append(f"{rel}/{f}: exported deck inside the vendored skill tree — "
+                              "promote it to the calling deliverable folder, then clear the stray")
+    return issues
+
+
 def check_system():
-    return dead_link_issues(), budget_notes() + voice_mirror_notes()
+    return dead_link_issues() + ppt_master_stray_issues(), budget_notes() + voice_mirror_notes()
 
 
 def cmd_doctor(args):

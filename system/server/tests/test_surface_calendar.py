@@ -128,6 +128,50 @@ class SurfaceCalendarTests(unittest.TestCase):
             # deliverable stamped 2026-06-10 + activity on 06-10 and 06-12
             self.assertEqual(worked, ["2026-06-10", "2026-06-12"])
 
+    def test_work_blocks_cluster_and_pad(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            project = self._project(
+                root, "sprint", status="active",
+                created_at="2026-06-01", last_activity="2026-06-10T22:00:00-07:00",
+            )
+            (project / "activity.md").write_text(
+                "# Activity\n\n"
+                "2026-06-10 12:00 — plan_revised: a\n"
+                "2026-06-10 13:10 — export: b\n"       # 70 min gap -> same block
+                "2026-06-10 21:00 — lock: c\n"          # 470 min gap -> new block
+                "2026-06-11 09:00 — export: d\n",       # different day -> new block
+                encoding="utf-8",
+            )
+            timeline = snapshot.build_snapshot(root)["timeline_projects"]
+            blocks = timeline[0]["work_blocks"]
+            self.assertEqual(len(blocks), 3)
+            b0 = blocks[0]
+            self.assertEqual(b0["date"], "2026-06-10")
+            self.assertEqual(b0["start"], 12 * 60 - 30)   # 11:30
+            self.assertEqual(b0["end"], 13 * 60 + 10 + 30) # 13:40
+            self.assertEqual([e["label"] for e in b0["events"]], ["plan_revised", "export"])
+            self.assertEqual(blocks[1]["date"], "2026-06-10")
+            self.assertEqual(blocks[2]["date"], "2026-06-11")
+
+    def test_work_blocks_ignore_untimed_and_clamp(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            project = self._project(
+                root, "edge", status="active",
+                created_at="2026-06-01", last_activity="2026-06-10T00:00:00-07:00",
+            )
+            (project / "activity.md").write_text(
+                "# Activity\n\n"
+                "2026-06-10 00:00 — frontmatter_manual_edit: midnight artifact\n"
+                "a raw line with no timestamp\n",
+                encoding="utf-8",
+            )
+            blocks = snapshot.build_snapshot(root)["timeline_projects"][0]["work_blocks"]
+            self.assertEqual(len(blocks), 1)
+            self.assertEqual(blocks[0]["start"], 0)          # clamped, not -30
+            self.assertEqual(blocks[0]["end"], 30)
+
     def test_snapshot_calendar_includes_milestones_events_and_future_attention(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

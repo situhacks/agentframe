@@ -143,6 +143,54 @@ def _timeline_deliverables(project: dict) -> list[dict]:
     return payload
 
 
+_BLOCK_GAP_MIN = 90
+_BLOCK_PAD_MIN = 30
+
+
+def _minutes(timestamp: str) -> int | None:
+    """Minutes-into-day for a 'YYYY-MM-DD HH:MM' timestamp, else None."""
+    try:
+        hh, mm = timestamp[11:13], timestamp[14:16]
+        return int(hh) * 60 + int(mm)
+    except (ValueError, IndexError):
+        return None
+
+
+def _finish_block(date: str, events: list[dict]) -> dict:
+    start = max(0, events[0]["time"] - _BLOCK_PAD_MIN)
+    end = min(1439, events[-1]["time"] + _BLOCK_PAD_MIN)
+    return {"date": date, "start": start, "end": end, "events": events}
+
+
+def _work_blocks(activity: list[dict]) -> list[dict]:
+    """Cluster timed activity into padded per-day work blocks (see spec)."""
+    by_day: dict[str, list[dict]] = {}
+    for entry in activity:
+        ts = entry.get("timestamp")
+        if not ts:
+            continue
+        minute = _minutes(str(ts))
+        if minute is None:
+            continue
+        by_day.setdefault(str(ts)[:10], []).append(
+            {"time": minute, "label": entry.get("event") or entry.get("text") or "activity",
+             "file": entry.get("file")}
+        )
+    blocks: list[dict] = []
+    for date, events in by_day.items():
+        events.sort(key=lambda e: e["time"])
+        current: list[dict] = []
+        for ev in events:
+            if current and ev["time"] - current[-1]["time"] > _BLOCK_GAP_MIN:
+                blocks.append(_finish_block(date, current))
+                current = []
+            current.append(ev)
+        if current:
+            blocks.append(_finish_block(date, current))
+    blocks.sort(key=lambda b: (b["date"], b["start"]))
+    return blocks
+
+
 def _worked_days(deliverables: list[dict], activity: list[dict]) -> list[str]:
     """Sorted unique YYYY-MM-DD strings for days with any logged event."""
     days = set()
@@ -191,6 +239,7 @@ def _timeline_project(project: dict, activity_text: str) -> dict:
         "activity": activity,
         "attention": attention,
         "worked_days": _worked_days(deliverables, activity),
+        "work_blocks": _work_blocks(activity),
     }
 
 

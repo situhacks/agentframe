@@ -12,4 +12,6 @@ Per role:
 
 Every number carries its proof-point ID (`[pp-XXX]`). Superseded bullets get marked, not deleted.
 
+A role may carry **lens-tagged alternate bullets** alongside its canonical ones (`[pm-coded]`, `[consultant-coded]`, `[ai-builder-coded]`, `[banking-coded]`, ...): same fact, framed per JD signal. Tailoring picks the variant whose lens matches the jd-map; default to canonical when no lens is signalled.
+
 Beyond roles: `## Projects`, `## Education`, `## Skills / Extras` blocks, mirroring the section order in the resume template (`library/domains/careers/deliverables/resume/template.md`).

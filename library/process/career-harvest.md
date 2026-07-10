@@ -14,6 +14,7 @@ Move real wins into the career bank while the evidence is fresh. The bank (`libr
    - `proof-points.md` — the verified number/link, with source and date. Numbers live only here; the other layers cite the proof-point ID.
    - `master-cv.md` — a resume-ready CDO bullet (context → decision/trade-off → quantified outcome) under the right role, citing the proof-point.
    - `stories/{slug}.md` — only when the win carries a narrative arc (conflict, decision, result, reflection). Line 1 is the ROSTER line: `ROSTER: <competencies> | <one-line hook>`.
+   - `employers/{slug}.md` - when the win changes standing against the current rubric, or the source states a new expectation, append a dated timeline line (the evidence itself still lands in the layers above).
 3. **Link origin.** Every entry carries `origin:` (project slug or external source) so a future resume bullet traces back to the work that produced it.
 4. **Prune while there.** Mark superseded bullets/stories rather than deleting; the bank is append-heavy and occasionally curated.
 

@@ -247,6 +247,27 @@ class TestLockGates(PipeBase):
         with self.assertRaises(SystemExit):
             quiet(af.cmd_lock, SimpleNamespace(project=slug, deliverable="deck", allow_missing_exports=False))
 
+    def test_deck_lock_needs_verification_but_skips_ats_lint(self):
+        slug, adir = self._prep_application(verification=False)
+        write(os.path.join(adir, "deck", "deck-v1.md"),
+              "---\nstatus: drafting\nlast_updated: 2026-07-10\nexports: [media/deck-v1.pptx]\n---\n"
+              "# Deck — narrative arc\n- slide 1 — the hook\n")
+        write(os.path.join(adir, "deck", "media", "deck-v1.pptx"), "pptx")
+        ap = os.path.join(adir, "application.md")
+        afm, abody = af.split_fm(af.read(ap), "application.md")
+        afm = af.set_scalar(afm, "materials", "[deck]")
+        afm = afm.replace("deliverables:", "deliverables:\n  deck:\n    file: deck/deck-v1.md\n    status: drafting")
+        af.write(ap, af.join_fm(afm, abody))
+        with self.assertRaises(SystemExit):
+            quiet(af.cmd_lock, SimpleNamespace(project=slug, deliverable="deck", allow_missing_exports=False))
+        deck_fm, _ = af.split_fm(af.read(os.path.join(adir, "deck", "deck-v1.md")), "deck-v1.md")
+        self.assertEqual(af.get_scalar(deck_fm, "status"), "drafting")
+        jm = os.path.join(adir, "jd-map.md")
+        af.write(jm, af.read(jm) + "## Verification\n- criteria mapped; deck reviewed\n")
+        quiet(af.cmd_lock, SimpleNamespace(project=slug, deliverable="deck", allow_missing_exports=False))
+        afm2, _ = af.split_fm(af.read(ap), "application.md")
+        self.assertEqual(af.row_get(afm2, "deck", "status"), "locked")
+
     def test_lock_succeeds_and_applied_records_shipped(self):
         slug, adir = self._prep_application()
         quiet(af.cmd_lock, SimpleNamespace(project=slug, deliverable="resume", allow_missing_exports=False))

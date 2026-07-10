@@ -333,7 +333,6 @@ def cmd_lock(args):
         override_note = f"LOCKED WITHOUT EXPORTS (override): {'; '.join(gate)}"
     dfm = set_scalar(dfm, "status", "locked", rel)
     dfm = set_scalar(dfm, "last_updated", today(), rel)
-    write(dpath, join_fm(dfm, dbody))
 
     notes = []
     rules = load_rules(load_pack(project_domain(cfm))[1])
@@ -342,6 +341,7 @@ def cmd_lock(args):
     if override_note:
         notes.append(override_note)
 
+    write(dpath, join_fm(dfm, dbody))
     if slug:
         cfm = row_set(cfm, slug, "status", "locked")
         cfm = row_set(cfm, slug, "last_updated", today())

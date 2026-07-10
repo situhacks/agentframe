@@ -30,7 +30,9 @@ RESUME_HEADINGS = {"work experience", "experience", "projects", "education", "sk
 AI_TELLS = ("spearheaded", "delve", "delving", "testament to", "synergies",
             "proven track record", "unique blend", "beacon of", "catalyst for")
 
-MATERIAL_ROWS = ("resume", "cover-letter")
+# Text materials are ATS-parsed and get the hazard lint; every material
+# (frontmatter `materials`) gets the jd-map verification gate.
+TEXT_MATERIALS = ("resume", "cover-letter")
 
 
 def _body(ctx, path, rel):
@@ -65,7 +67,7 @@ def check_application(ctx, adir, afm):
     """Doctor pass over the application's material deliverables."""
     issues, notes = [], []
     rel_dir = os.path.relpath(adir, ctx.ROOT).replace("\\", "/")
-    for slug in MATERIAL_ROWS:
+    for slug in TEXT_MATERIALS:
         st, frel = ctx.row_get(afm, slug, "status"), ctx.row_get(afm, slug, "file")
         if not frel or st in (None, "not_started"):
             continue
@@ -89,16 +91,20 @@ def _verification_filled(ctx, cdir):
 
 
 def on_lock(ctx, cdir, dpath, rel, cfm):
-    """Lock gate for resume/cover-letter: verification recorded, hazards clean."""
-    name = re.fullmatch(r"(.+)-v\d+\.md", os.path.basename(dpath))
-    if not name or name.group(1) not in MATERIAL_ROWS:
+    """Lock gate for submission materials: verification recorded; text materials also hazard-clean."""
+    m = re.fullmatch(r"(.+)-v\d+\.md", os.path.basename(dpath))
+    if not m:
+        return cfm, []
+    name = m.group(1)
+    materials = set(ctx.fm_list(cfm, "materials") or ["resume"]) | set(TEXT_MATERIALS)
+    if name not in materials:
         return cfm, []
     if not _verification_filled(ctx, cdir):
         ctx.die(f"{rel}: lock refused — jd-map.md '## Verification' is missing or empty. "
-                "Run the verification pass (hard requirements mirrored, hazards clean, AI-tell scan, "
-                "honeypot echo check) and record it, then rerun.")
-    body = _body(ctx, dpath, rel)
-    hazards = _lint(rel, body, is_resume=(name.group(1) == "resume"))
-    if hazards:
-        ctx.die(f"{rel}: lock refused — parse hazards present: {'; '.join(hazards)}")
+                "Run the verification pass (criteria/requirements mapped, materials reviewed) "
+                "and record it, then rerun.")
+    if name in TEXT_MATERIALS:
+        hazards = _lint(rel, _body(ctx, dpath, rel), is_resume=(name == "resume"))
+        if hazards:
+            ctx.die(f"{rel}: lock refused — parse hazards present: {'; '.join(hazards)}")
     return cfm, ["verification gate passed"]

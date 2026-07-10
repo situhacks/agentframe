@@ -11,14 +11,22 @@ Operator-mode routing for `domain: careers` work. The board (`workspace/pipeline
 | 2 Start | `af pipe start <slug>` — scaffolds `applications/{slug}/`, moves the cached JD in as `jd.md`, stage → `preparing` | spine |
 | 3 Research | `company-brief.md` per its template; depth matches stakes | template |
 | 4 Map | `jd-map.md`: honeypot scan → 3-tier requirements → experience map → **gap stop** → operator coverage choice | template |
-| 5 Tailor | `resume/resume-v1.md` (plus `cover-letter/` only when required or asked) from the map; humanizer pass | templates |
-| 6 Verify | fill jd-map `## Verification`; fix findings before export | template |
+| 5 Tailor | Draft the materials the application declares: `resume/resume-v1.md` (+ `cover-letter/` only if required) via their templates; `deck/` or `demo/` per the material routes below; humanizer pass on all user-voiced prose | templates |
+| 6 Verify | fill jd-map `## Verification`; fix findings before export or lock | template |
 | 7 Export | `doc-export` skill → format by ATS (table below), file under the deliverable's `media/`, record in `exports[]` | `system/skills/doc-export/` |
 | 8 Lock | `af lock <slug> resume` (and `cover-letter`) — refuses without verification + filed exports | spine |
 | 9 Submit | **The human submits** in a normal browser, on the company career site (never a bot; never Easy Apply when direct apply exists) → `af pipe stage <slug> applied` stamps the date, sets the nudge, records `shipped` | operator |
 | 10 Track | `af doctor` surfaces nudges (7-day silence) and stale rows; interview notes accrete in `application.md` body | spine |
 
-## Export format by ATS
+**Material rule:** Steps 5-8 apply to every `materials:` row; this extends the resume/cover-letter examples in the sprint table. Use the route below, file finals only for pack-declared exportables, and lock each submission material before the human submits.
+
+## Material routes and export formats
+
+| Material | Drafting route | Export / filing |
+|---|---|---|
+| resume, cover-letter | pack templates + `doc-export` skill | PDF/DOCX per ATS table below, filed in `media/` + `exports[]` |
+| deck | [`deck-production`](../../process/deck-production.md) (PPT Master default); content doc versioned as `deck/deck-v{N}.md` | `.pptx` filed in `deck/media/` + `exports[]` (pack-declared exportable) |
+| demo | [`technical-build`](../../process/technical-build.md) conventions, thinned: repo lives outside AgentFrame; `demo/demo-v{N}.md` is the umbilical stub (repo path, scope, what it proves, run steps) | no exports gate; the repo link in the stub is the deliverable |
 
 | Board `ats` | Submit | Why |
 |---|---|---|
@@ -29,6 +37,14 @@ Operator-mode routing for `domain: careers` work. The board (`workspace/pipeline
 ## Screen traits worth evidencing
 
 When the watchlist names the screen: Workday Illuminate / Phenom — outcomes in context beat keyword density, and applying via the company career site feeds engagement ranking. Eightfold-style screens — evidence learnability and adjacent-skill progression. Voice-agent screens (Ezra, Talent Llama) — expect a structured verbal screen at `interviewing`; prep from the jd-map, not the resume.
+
+## Career sessions (internal, ongoing)
+
+Career work between cases is a session, not a project and never always-on. On career-management intent (coach prep, KPI inventory, promotion planning), load the career bank (`library/context/operator/career/`), employer page (`career/employers/{slug}.md` - rubric, KPIs, cycle calendar), and relevant coach/manager people pages (`library/context/people/`). Work the session; before closing, harvest durable output to its home: win -> career-harvest; stated expectation or rubric change -> employer-page timeline; relationship fact -> the person's page. Nothing persists in chat and no session folder exists.
+
+## Internal cases (promotion, level moves)
+
+Run them as pipe rows (see pack.md): rubric in as `jd.md`, jd-map as rubric-map with the gap stop months ahead of the deadline ("no evidence for criterion X" -> plan the work that produces it, then bank it), materials usually `[deck]`, committee dates on the board's `deadline`/`next_nudge`. Promotion-deck and rubric-map templates remain unbuilt until the first real cycle supplies a real leveling rubric.
 
 ## Bank maintenance
 

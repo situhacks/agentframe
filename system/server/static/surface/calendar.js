@@ -206,7 +206,125 @@ function projectEvents(project) {
       extendedProps: { project: project.slug, color, kind: 'block', events: block.events },
     });
   }
+  const delByDay = {};
+  for (const item of project.deliverables || []) {
+    const day = String(item.last_updated || '').slice(0, 10);
+    if (day.length === 10) (delByDay[day] = delByDay[day] || []).push(item);
+  }
+  for (const [day, items] of Object.entries(delByDay)) {
+    events.push({
+      start: day, allDay: true, title: '',
+      classNames: ['af-deliverable'],
+      extendedProps: { project: project.slug, color, kind: 'deliverable', items },
+    });
+  }
+  if (calendarState.showFuture) {
+    for (const item of project.attention || []) {
+      const day = String(item.date || '').slice(0, 10);
+      if (day.length === 10 && day > today) {
+        events.push({
+          start: day, allDay: true, title: '',
+          classNames: ['af-future'],
+          extendedProps: { project: project.slug, color, kind: 'future', item },
+        });
+      }
+    }
+  }
   return events;
+}
+
+function minutesLabel(minutes) {
+  const h = Math.floor(minutes / 60), m = String(minutes % 60).padStart(2, '0');
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12 = ((h + 11) % 12) + 1;
+  return `${h12}:${m} ${ampm}`;
+}
+
+function popoverEl(title, lines) {
+  const pop = el('span', { class: 'calendar-popover' }, el('strong', { text: title }));
+  for (const line of lines) {
+    const row = el('span', { class: 'pop-line', text: line.text });
+    if (line.onClick) { row.classList.add('pop-link'); row.addEventListener('click', line.onClick); }
+    pop.append(row);
+  }
+  return pop;
+}
+
+function toPreview(project, file) {
+  if (file) navigate('preview', { project, file });
+}
+
+function eventContent(arg) {
+  const p = arg.event.extendedProps;
+  if (p.kind === 'block') {
+    const wrap = el('div', { class: 'af-block-inner' },
+      el('div', { class: 'af-block-title', text: `${arg.event.title} · ${p.events.length}` }));
+    const col = el('div', { class: 'af-block-dots' });
+    for (const ev of p.events) {
+      const dot = el('span', { class: 'af-bdot' },
+        popoverEl(plainLabel(ev.label), [{ text: minutesLabel(ev.time), onClick: ev.file ? () => toPreview(p.project, ev.file) : null }]));
+      col.append(dot);
+    }
+    wrap.append(col);
+    return { domNodes: [wrap] };
+  }
+  if (p.kind === 'deliverable') {
+    if (calendarState.expandLabels) {
+      const chips = el('div', { class: 'af-chips' });
+      for (const item of p.items) {
+        const chip = el('span', { class: 'af-chip', style: `--pc:${p.color}`, text: plainLabel(item.slug) });
+        if (item.file) { chip.classList.add('linked'); chip.addEventListener('click', () => toPreview(p.project, item.file)); }
+        chips.append(chip);
+      }
+      return { domNodes: [chips] };
+    }
+    const dot = el('span', { class: 'af-dot', style: `border-color:${p.color}`, text: p.items.length > 1 ? String(p.items.length) : '' });
+    dot.append(popoverEl(p.items.length > 1 ? `${p.items.length} deliverables` : plainLabel(p.items[0].slug),
+      p.items.map((item) => ({ text: `● ${plainLabel(item.slug)}`, onClick: item.file ? () => toPreview(p.project, item.file) : null }))));
+    return { domNodes: [dot] };
+  }
+  if (p.kind === 'future') {
+    const sq = el('span', { class: 'af-future-marker' },
+      popoverEl(plainLabel(p.item.kind || 'future commitment'), [{ text: String(p.item.text || '') }]));
+    return { domNodes: [sq] };
+  }
+  return true;
+}
+
+function paintWorkedSegments(elm, event, worked) {
+  const color = elm.style.getPropertyValue('--pc') || 'currentColor';
+  if (!calendarState.ghost) {
+    // solid fill across the whole span
+    elm.style.background = color;
+    return;
+  }
+  // ghost mode: faint base band, solid segments on days with logged work
+  const startMs = event.start.getTime();
+  const endMs = event.end.getTime();
+  const span = Math.max(1, endMs - startMs);
+  const stops = [];
+  for (const day of worked || []) {
+    const d0 = new Date(`${day}T00:00:00Z`).getTime();
+    if (d0 < startMs || d0 >= endMs) continue;
+    const from = ((d0 - startMs) / span) * 100;
+    const to = ((d0 + DAY_MS - startMs) / span) * 100;
+    stops.push(`${color} ${from}%`, `${color} ${to}%`, `transparent ${to}%`);
+  }
+  // transparent gradient (solid worked segments) over a faint tint base
+  elm.style.background = stops.length
+    ? `linear-gradient(90deg, ${['transparent 0%', ...stops].join(', ')})`
+    : 'transparent';
+  elm.classList.add('ghost-band');
+}
+
+function eventDidMount(info) {
+  const p = info.event.extendedProps;
+  if (p.kind === 'span') {
+    info.el.style.setProperty('--pc', p.color);
+    paintWorkedSegments(info.el, info.event, p.worked);
+  } else if (p.kind === 'block') {
+    info.el.style.setProperty('--pc', p.color);
+  }
 }
 
 async function renderFullCalendar(projects) {
@@ -229,6 +347,8 @@ async function renderFullCalendar(projects) {
       allDaySlot: true,
       nowIndicator: true,
       height: 'auto',
+      eventContent,
+      eventDidMount,
       datesSet: (info) => {
         calendarState.focusDate = info.startStr.slice(0, 10);
         writeCalendarHash();

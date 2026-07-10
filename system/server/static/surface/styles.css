@@ -1076,15 +1076,36 @@ tr.expanded .activity-md.excerpt {
 .calendar-legend .legend-square { background: transparent; border: 2px solid var(--ink-soft); }
 
 /* ---- Calendar v2: FullCalendar spans + blocks ---- */
-.af-span.ghost { opacity: 0.16; }
-.af-span.solid { opacity: 0.9; }
 .calendar-fc .fc-event { cursor: default; }
 .calendar-fc .fc-timegrid-event { min-height: 30px; }
 .calendar-fc .fc .fc-toolbar-title { font-size: 15px; }
 .calendar-fc .fc-timegrid-event .fc-event-main { padding: 1px 2px; }
 
 /* span bars live in the all-day lane as thin ribbons (gradient painted in JS) */
-.calendar-fc .fc-daygrid-event.af-span { border: none; padding: 0; margin: 1px 0; min-height: 16px; font-size: 10.5px; font-weight: 600; }
-.calendar-fc .fc-daygrid-event.af-span .fc-event-title { padding: 1px 6px; color: #fff; }
-.calendar-fc .fc-daygrid-event.af-span.ghost { opacity: 1; }
-.calendar-fc .fc-daygrid-day-events { margin-bottom: 1px; }
+.calendar-fc .fc-daygrid-event.af-span { border: none; padding: 0; margin: 1px 0; min-height: 15px; font-size: 10px; font-weight: 700; border-radius: 3px; }
+.calendar-fc .fc-daygrid-event.af-span .fc-event-title {
+  padding: 1px 6px; color: var(--ink);
+  position: sticky; left: 0; width: fit-content;
+  text-shadow: 0 0 3px var(--base-white), 0 0 3px var(--base-white), 0 0 3px var(--base-white);
+}
+/* ghost base tint sits under the JS-painted solid worked segments */
+.calendar-fc .fc-daygrid-event.af-span.ghost-band { background-color: color-mix(in srgb, var(--pc) 12%, transparent); }
+
+/* ---- Calendar v2: block latent dots, deliverable dots, popovers ---- */
+.af-block-inner { position: relative; padding: 2px 4px 2px 6px; height: 100%; }
+.af-block-title { font-size: 10.5px; font-weight: 650; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.af-block-dots { position: absolute; left: 6px; top: 16px; display: flex; flex-direction: column; gap: 3px; }
+.af-bdot { width: 7px; height: 7px; border-radius: 50%; background: #fff; opacity: .45; cursor: pointer; position: relative; }
+.calendar-fc .fc-event:hover .af-bdot { opacity: 1; }
+.af-dot { display: inline-flex; align-items: center; justify-content: center; min-width: 14px; height: 14px; padding: 0 3px; border: 2px solid; border-radius: 8px; background: var(--base-white); font-size: 9px; font-weight: 700; position: relative; cursor: pointer; }
+.af-chips { display: flex; flex-wrap: wrap; gap: 2px; }
+.af-chip { display: inline-block; padding: 1px 5px; font-size: 10.5px; border-left: 3px solid var(--pc); background: var(--base-white); color: var(--ink); border-radius: 3px; }
+.af-chip.linked { cursor: pointer; }
+.af-future-marker { display: inline-block; width: 10px; height: 10px; border: 2px solid var(--ink-soft); position: relative; cursor: pointer; }
+.calendar-popover { display: none; position: absolute; z-index: 40; top: 16px; left: 0; min-width: 140px; max-width: 240px; background: var(--base-white); border: 1px solid var(--grid-line); border-radius: 6px; box-shadow: 0 4px 14px rgba(0,0,0,.16); padding: 8px 10px; font-size: 11.5px; font-weight: 400; text-align: left; white-space: normal; color: var(--ink); }
+.af-dot:hover .calendar-popover, .af-bdot:hover .calendar-popover, .af-future-marker:hover .calendar-popover { display: block; }
+.calendar-popover strong { display: block; margin-bottom: 3px; }
+.pop-line { display: block; padding: 1px 0; }
+.pop-link { cursor: pointer; border-bottom: 1px dotted var(--ink-soft); }
+.calendar-fc .fc-daygrid-event.af-deliverable,
+.calendar-fc .fc-daygrid-event.af-future { background: transparent; border: none; }

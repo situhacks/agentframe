@@ -5,7 +5,7 @@ Copy to `library/context/operator/career/master-cv.md`. The presentation layer: 
 Per role:
 
 ```markdown
-## {Company} — {Title} | {Month YYYY – Month YYYY} | origin: {project-slug | external}
+## {Company} - {Title} | {Month YYYY - Month YYYY} | origin: {project-slug | external}
 - {CDO bullet: context → decision/trade-off → quantified outcome} [pp-XXX]
 - ...as many bullets as the role's real substance supports — a governed program may carry a dozen, a mini-project two
 ```

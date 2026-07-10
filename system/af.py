@@ -16,7 +16,18 @@ Commands:
   python system/af.py publish <project> <target> --url URL [--posted-at ISO] [--platform P] [--media PATH ...]
   python system/af.py version <project> <deliverable-slug>
   python system/af.py new-project <slug> [--domain marketing] [--flow open-flow] [--name NAME]
-  python system/af.py doctor [project]
+  python system/af.py doctor [project|pipeline]
+  python system/af.py pipe save --company C --role R --url U [--ats A] [--source S] [--posted D] [--deadline D] [--salary S] [--slug K]
+  python system/af.py pipe start <slug>
+  python system/af.py pipe stage <slug> <stage>
+  python system/af.py pipe board
+
+`pipe` verbs drive the pipeline-topology surface (workspace/pipeline/): a
+stage-based funnel whose board (pipeline.md `applications:` rows) is the single
+owner of stage state. Application folders reuse the generic deliverable
+machinery — lock/version/doctor work on application.md exactly as on
+project.md. The spine still names no domain; a pack opts into the pipeline
+topology by declaring `topology: pipeline`.
 """
 
 import argparse
@@ -32,10 +43,24 @@ import types
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROJECTS = os.path.join(ROOT, "workspace", "projects")
 DOMAINS = os.path.join(ROOT, "library", "domains")
+PIPELINE = os.path.join(ROOT, "workspace", "pipeline")
 
 STATUS_ENUM = {"not_started", "drafting", "locked", "delivered", "deferred"}
 LIFECYCLE_ENUM = {"active", "complete", "cancelled"}
-EXPORTABLE_INGREDIENTS = ("image-prompts",)  # deliverables whose finals must be filed in exports[] before lock
+EXPORTABLE_INGREDIENTS = ("image-prompts", "resume", "cover-letter")  # deliverables whose finals must be filed in exports[] before lock
+
+# Pipeline stage machine (pipeline-topology packs; board = pipeline.md).
+PIPE_STAGES = ("saved", "preparing", "applied", "interviewing", "offer", "rejected", "ghosted", "dropped")
+PIPE_TRANSITIONS = {
+    "saved": {"preparing", "dropped"},
+    "preparing": {"applied", "dropped"},
+    "applied": {"interviewing", "rejected", "ghosted", "dropped"},
+    "interviewing": {"offer", "rejected", "ghosted", "dropped"},
+    "ghosted": {"interviewing", "rejected", "dropped"},  # late replies happen
+    "offer": set(), "rejected": set(), "dropped": set(),
+}
+PIPE_NUDGE_DAYS = 7        # applied/interviewing rows silent this long → follow-up note
+PIPE_STALE_SAVED_DAYS = 30 # saved rows older than this → drop-or-start note
 FLOWS = {"marketing-solo-flow": "1-research-and-architecture",
          "marketing-standard-flow": "1-research",
          "open-flow": "active",
@@ -70,11 +95,16 @@ def write(path, text):
 
 
 def project_dir(arg):
-    """Find a project by folder name, else by its `slug` frontmatter field."""
+    """Find a project by folder name, else by its `slug` frontmatter field.
+    Pipeline application folders (application.md) resolve here too, so
+    lock/version/doctor work on them unchanged."""
     for base in (PROJECTS, os.path.join(PROJECTS, "completed")):
         d = os.path.join(base, arg)
         if os.path.isfile(os.path.join(d, "project.md")):
             return d
+    d = os.path.join(PIPELINE, "applications", arg)
+    if os.path.isfile(os.path.join(d, "application.md")):
+        return d
     for base in (PROJECTS, os.path.join(PROJECTS, "completed")):
         if not os.path.isdir(base):
             continue
@@ -82,7 +112,12 @@ def project_dir(arg):
             sp = os.path.join(base, name, "project.md")
             if os.path.isfile(sp) and get_scalar(split_fm(read(sp), sp)[0], "slug") == arg:
                 return os.path.join(base, name)
-    die(f"project '{arg}' not found under workspace/projects/")
+    die(f"project '{arg}' not found under workspace/projects/ or workspace/pipeline/applications/")
+
+
+def state_doc(cdir):
+    """The state file for a work folder: application.md on the pipeline surface, else project.md."""
+    return "application.md" if os.path.isfile(os.path.join(cdir, "application.md")) else "project.md"
 
 
 def split_fm(text, path="file"):
@@ -266,7 +301,8 @@ def export_gate_issues(cdir, rel, dfm):
 
 def cmd_lock(args):
     cdir = project_dir(args.project)
-    cfm, cbody = split_fm(read(os.path.join(cdir, "project.md")), "project.md")
+    sdoc = state_doc(cdir)
+    cfm, cbody = split_fm(read(os.path.join(cdir, sdoc)), sdoc)
 
     slug, rel = args.deliverable, None
     if "/" in slug.replace("\\", "/"):
@@ -304,7 +340,7 @@ def cmd_lock(args):
         cfm = row_set(cfm, slug, "status", "locked")
         cfm = row_set(cfm, slug, "last_updated", today())
     cfm = touch_lifecycle(cfm)
-    write(os.path.join(cdir, "project.md"), join_fm(cfm, cbody))
+    write(os.path.join(cdir, sdoc), join_fm(cfm, cbody))
     append_activity(cdir, f"lock: {slug or os.path.basename(rel)} locked; artifact={rel}"
                     + (f"; {'; '.join(notes)}" if notes else ""))
 
@@ -336,8 +372,9 @@ def cmd_publish(args):
 
 def cmd_version(args):
     cdir = project_dir(args.project)
-    cpath = os.path.join(cdir, "project.md")
-    cfm, cbody = split_fm(read(cpath), "project.md")
+    sdoc = state_doc(cdir)
+    cpath = os.path.join(cdir, sdoc)
+    cfm, cbody = split_fm(read(cpath), sdoc)
     rel = row_get(cfm, args.deliverable, "file") or die(f"tracker row '{args.deliverable}' not found or has no file")
     dpath = os.path.join(cdir, rel)
     os.path.isfile(dpath) or die(f"deliverable file not found: {rel}")
@@ -372,6 +409,9 @@ def cmd_new_project(args):
     desc, pack_dir = load_pack(args.domain)
     if not desc:
         die(f"no domain pack at library/domains/{args.domain}/ (pack.md missing) — author the pack first")
+    if get_scalar(desc, "topology") == "pipeline":
+        die(f"domain '{args.domain}' is pipeline-topology — its work lives under workspace/pipeline/ "
+            f"(use 'af pipe save' / 'af pipe start'), not workspace/projects/")
     skel_path = os.path.join(pack_dir, "skeleton.md")
     os.path.isfile(skel_path) or die(f"domain '{args.domain}' ships no skeleton.md")
     cdir = os.path.join(PROJECTS, slug)
@@ -396,6 +436,279 @@ def cmd_new_project(args):
     print("\nJudgment (stays with the agent):")
     print(f"  - Load library/process/flows/{args.flow}.md and run its kickoff")
     print("    (research offer / plan proposal / pack-owned kickoff steps — flow-owned, not script-owned).")
+
+
+# ---------------------------------------------------------------- pipe (pipeline topology)
+
+def pipe_pack():
+    """The single pack declaring `topology: pipeline` → (domain, desc_fm, pack_dir)."""
+    if not os.path.isdir(DOMAINS):
+        die("library/domains/ missing")
+    hits = []
+    for name in sorted(os.listdir(DOMAINS)):
+        desc, pack_dir = load_pack(name)
+        if desc and get_scalar(desc, "topology") == "pipeline":
+            hits.append((name, desc, pack_dir))
+    if not hits:
+        die("no domain pack declares topology: pipeline — author one before using 'af pipe'")
+    if len(hits) > 1:
+        die(f"multiple pipeline-topology packs ({', '.join(h[0] for h in hits)}) — the singleton board can serve only one")
+    return hits[0]
+
+
+def board_path():
+    return os.path.join(PIPELINE, "pipeline.md")
+
+
+def ensure_board(pack_dir):
+    if os.path.isfile(board_path()):
+        return
+    skel = os.path.join(pack_dir, "pipeline-skeleton.md")
+    os.path.isfile(skel) or die(f"{os.path.relpath(pack_dir, ROOT)} ships no pipeline-skeleton.md")
+    os.makedirs(PIPELINE, exist_ok=True)
+    write(board_path(), read(skel).format(date=today(), ts=now_iso()))
+
+
+def load_board():
+    os.path.isfile(board_path()) or die("no board at workspace/pipeline/pipeline.md — 'af pipe save' creates it")
+    return split_fm(read(board_path()), "pipeline.md")
+
+
+def write_board(fm, body):
+    fm = set_scalar(fm, "last_activity", now_iso(), "pipeline.md")
+    write(board_path(), join_fm(fm, body))
+
+
+def pipe_rows(fm):
+    """Row slugs in the board's `applications:` block."""
+    m = re.search(r"^applications:\s*(\{\})?\s*$", fm, re.M)
+    if not m:
+        return []
+    rest = fm[m.end():]
+    nxt = re.search(r"^\S", rest, re.M)
+    block = rest[: nxt.start() if nxt else len(rest)]
+    return re.findall(r"^  ([A-Za-z0-9_-]+):\s*$", block, re.M)
+
+
+def pipe_row_add(fm, slug, fields):
+    fm = re.sub(r"^applications:\s*\{\}\s*$", "applications:", fm, count=1, flags=re.M)
+    m = re.search(r"^applications:\s*$", fm, re.M)
+    if not m:
+        die("pipeline.md has no applications block")
+    rest = fm[m.end():]
+    nxt = re.search(r"^\S", rest, re.M)
+    end = m.end() + (nxt.start() if nxt else len(rest))
+    row = f"  {slug}:\n" + "".join(f"    {k}: {v}\n" for k, v in fields.items() if v not in (None, ""))
+    head = fm[:end]
+    if not head.endswith("\n"):
+        head += "\n"
+    return head + row + fm[end:]
+
+
+def yaml_str(v):
+    return f'"{v}"' if v else None
+
+
+def app_dir(slug):
+    return os.path.join(PIPELINE, "applications", slug)
+
+
+def jd_cache_path(slug):
+    return os.path.join(PIPELINE, "scout", "jd-cache", f"{slug}.jd.md")
+
+
+def cmd_pipe_save(args):
+    domain, desc, pack_dir = pipe_pack()
+    ensure_board(pack_dir)
+    slug = args.slug or re.sub(r"[^a-z0-9]+", "-", f"{args.company}-{args.role}".lower()).strip("-")
+    re.match(r"^[a-z0-9][a-z0-9-]*$", slug) or die(f"derived slug '{slug}' is not folder-safe — pass --slug")
+    fm, body = load_board()
+    if row_span(fm, slug):
+        die(f"board row '{slug}' already exists")
+    fm = pipe_row_add(fm, slug, {
+        "stage": "saved", "company": yaml_str(args.company), "role": yaml_str(args.role),
+        "url": args.url, "ats": args.ats, "source": args.source, "posted": args.posted,
+        "deadline": args.deadline, "salary": yaml_str(args.salary), "saved": today()})
+    write_board(fm, body)
+    print(f"af pipe save: {slug} -> saved (board row; no folder until start)")
+    print("\nJudgment (stays with the agent):")
+    print(f"  - Cache the verbatim JD at workspace/pipeline/scout/jd-cache/{slug}.jd.md now — postings vanish.")
+    print(f"  - Committing to it? 'af pipe start {slug}' scaffolds the sprint folder.")
+
+
+def cmd_pipe_start(args):
+    domain, desc, pack_dir = pipe_pack()
+    fm, body = load_board()
+    slug = args.slug
+    row_span(fm, slug) or die(f"no board row '{slug}' — 'af pipe save' it first")
+    cur = row_get(fm, slug, "stage")
+    if cur != "saved":
+        die(f"'{slug}' is at stage '{cur}' — start applies to 'saved' rows only")
+    adir = app_dir(slug)
+    if os.path.exists(adir):
+        die(f"{adir} already exists")
+    skel = os.path.join(pack_dir, "skeleton.md")
+    os.path.isfile(skel) or die(f"domain '{domain}' ships no skeleton.md")
+
+    company = row_get(fm, slug, "company") or "?"
+    role = row_get(fm, slug, "role") or "?"
+    name = f"{company} - {role}"
+    os.makedirs(adir)
+    write(os.path.join(adir, "application.md"), read(skel).format(
+        name=name, slug=slug, date=today(), ts=now_iso(), company=company, role=role,
+        url=row_get(fm, slug, "url") or "null", source=row_get(fm, slug, "source") or "manual",
+        ats=row_get(fm, slug, "ats") or "unknown", posted=row_get(fm, slug, "posted") or "null",
+        salary=row_get(fm, slug, "salary") or ""))
+
+    jd_note = "no cached JD found — capture jd.md verbatim before mapping"
+    if os.path.isfile(jd_cache_path(slug)):
+        shutil.move(jd_cache_path(slug), os.path.join(adir, "jd.md"))
+        jd_note = "cached JD moved in as jd.md"
+    fm = row_set(fm, slug, "stage", "preparing")
+    write_board(fm, body)
+    append_activity(adir, f"application_started: {name} scaffolded ({domain}); {jd_note}")
+
+    print(f"af pipe start: workspace/pipeline/applications/{slug}/ scaffolded ({jd_note})")
+    print("\nJudgment (stays with the agent):")
+    print(f"  - Load the runbook: library/domains/{domain}/production.md (brief -> map -> tailor -> verify -> export).")
+    print("  - The jd-map's gap stop and coverage choice are operator conversations, not drafting problems.")
+
+
+def cmd_pipe_stage(args):
+    fm, body = load_board()
+    slug, new = args.slug, args.stage
+    row_span(fm, slug) or die(f"no board row '{slug}'")
+    new in PIPE_STAGES or die(f"unknown stage '{new}' (stages: {', '.join(PIPE_STAGES)})")
+    cur = row_get(fm, slug, "stage")
+    legal = PIPE_TRANSITIONS.get(cur, set())
+    if new not in legal:
+        die(f"illegal transition {cur} -> {new}" + (f" (legal from {cur}: {', '.join(sorted(legal))})" if legal else f" ({cur} is terminal)"))
+
+    notes = []
+    fm = row_set(fm, slug, "stage", new)
+    if new == "applied":
+        fm = row_set(fm, slug, "applied", today())
+        fm = row_set(fm, slug, "next_nudge", (datetime.date.today() + datetime.timedelta(days=PIPE_NUDGE_DAYS)).isoformat())
+        adir = app_dir(slug)
+        ap = os.path.join(adir, "application.md")
+        if os.path.isfile(ap):
+            afm, _ = split_fm(read(ap), "application.md")
+            rel, st = row_get(afm, "resume", "file"), row_get(afm, "resume", "status")
+            m = re.search(r"-v(\d+)\.md$", rel or "")
+            if m and st in ("locked", "delivered"):
+                fm = row_set(fm, slug, "shipped", f"v{m.group(1)}")
+            else:
+                notes.append(f"resume row is '{st}' — shipped left unset (lock + export before submitting next time)")
+    elif new == "interviewing":
+        fm = row_set(fm, slug, "next_nudge", (datetime.date.today() + datetime.timedelta(days=PIPE_NUDGE_DAYS)).isoformat())
+    else:
+        fm = row_set(fm, slug, "next_nudge", "null")
+    write_board(fm, body)
+    if os.path.isdir(app_dir(slug)):
+        append_activity(app_dir(slug), f"stage: {cur} -> {new}" + (f"; {'; '.join(notes)}" if notes else ""))
+
+    print(f"af pipe stage: {slug} {cur} -> {new}" + (f" ({'; '.join(notes)})" if notes else ""))
+    print("\nJudgment (stays with the agent):")
+    if new == "applied":
+        print("  - Note the submission channel in application.md (direct career site beats boards for ranking).")
+    if new in ("offer", "rejected"):
+        print("  - Anything worth banking? Run career-harvest while the evidence is fresh (library/process/career-harvest.md).")
+    if new == "interviewing":
+        print("  - Prep from the jd-map + stories, not the resume; refresh company-brief '## Now' if it is >30 days old.")
+
+
+def cmd_pipe_board(args):
+    if not os.path.isfile(board_path()):
+        print("af pipe board: no pipeline yet — 'af pipe save' opens the first row")
+        return
+    fm, _ = load_board()
+    rows = pipe_rows(fm)
+    if not rows:
+        print("af pipe board: board is empty")
+        return
+    order = {s: i for i, s in enumerate(PIPE_STAGES)}
+    cols = ("stage", "company", "role", "deadline", "applied", "next_nudge", "shipped")
+    table = [[s] + [row_get(fm, s, c) or "-" for c in cols] for s in sorted(rows, key=lambda r: (order.get(row_get(fm, r, "stage"), 99), r))]
+    widths = [max(len(r[i]) for r in table + [["slug"] + list(cols)]) for i in range(len(cols) + 1)]
+    header = ["slug"] + list(cols)
+    print("  ".join(h.ljust(w) for h, w in zip(header, widths)))
+    for r in table:
+        print("  ".join(v.ljust(w) for v, w in zip(r, widths)))
+
+
+def check_pipeline():
+    """Board/application invariants (issues) + follow-up/staleness alarms (notes)."""
+    issues, notes = [], []
+    if not os.path.isfile(board_path()):
+        return issues, notes
+    fm, _ = split_fm(read(board_path()), "pipeline.md")
+    today_d = datetime.date.today()
+    rows = pipe_rows(fm)
+
+    apps_root = os.path.join(PIPELINE, "applications")
+    folders = sorted(d for d in (os.listdir(apps_root) if os.path.isdir(apps_root) else [])
+                     if os.path.isfile(os.path.join(apps_root, d, "application.md")))
+    for d in folders:
+        if d not in rows:
+            issues.append(f"workspace/pipeline/applications/{d}: folder has no board row")
+
+    rules = None
+    if os.path.isdir(DOMAINS):
+        for name in sorted(os.listdir(DOMAINS)):
+            desc, pack_dir = load_pack(name)
+            if desc and get_scalar(desc, "topology") == "pipeline":
+                rules = load_rules(pack_dir)
+                break
+
+    for slug in rows:
+        stage = row_get(fm, slug, "stage")
+        if stage not in PIPE_STAGES:
+            issues.append(f"pipeline.md: row '{slug}' stage '{stage}' invalid")
+            continue
+        adir = app_dir(slug)
+        started = os.path.isfile(os.path.join(adir, "application.md"))
+        if stage not in ("saved", "dropped") and not started:
+            issues.append(f"pipeline.md: row '{slug}' is '{stage}' but has no application folder")
+        if stage == "saved":
+            saved = parse_iso_date(row_get(fm, slug, "saved"))
+            if saved and (today_d - saved).days > PIPE_STALE_SAVED_DAYS:
+                notes.append(f"pipeline.md: '{slug}' saved {(today_d - saved).days}d ago — start it or drop it (ghost-job window passed)")
+        if stage in ("applied", "interviewing"):
+            nudge = parse_iso_date(row_get(fm, slug, "next_nudge"))
+            if nudge and nudge <= today_d:
+                notes.append(f"pipeline.md: '{slug}' follow-up due since {nudge.isoformat()} ({stage})")
+        if not started:
+            continue
+
+        rel = f"workspace/pipeline/applications/{slug}"
+        afm, _ = split_fm(read(os.path.join(adir, "application.md")), "application.md")
+        for field in ("name", "slug", "schema_version", "created_at", "domain", "company", "role", "job_url", "last_activity"):
+            if get_scalar(afm, field) in (None, ""):
+                issues.append(f"{rel}: required field '{field}' missing")
+        if get_scalar(afm, "slug") != slug:
+            issues.append(f"{rel}: slug '{get_scalar(afm, 'slug')}' != folder name")
+        if stage != "saved" and not os.path.isfile(os.path.join(adir, "jd.md")):
+            issues.append(f"{rel}: jd.md missing — tailoring without the verbatim posting is guesswork")
+        for dslug in all_rows(afm):
+            st, f = row_get(afm, dslug, "status"), row_get(afm, dslug, "file")
+            if st not in STATUS_ENUM:
+                issues.append(f"{rel}: row '{dslug}' status '{st}' invalid")
+            if not f:
+                issues.append(f"{rel}: row '{dslug}' has no file pointer")
+                continue
+            p = os.path.join(adir, f)
+            if st != "not_started" and not os.path.isfile(p):
+                issues.append(f"{rel}: row '{dslug}' file missing: {f}")
+            elif os.path.isfile(p):
+                m = re.fullmatch(r"(.+)-v(\d+)\.md", os.path.basename(p))
+                if m and int(m.group(2)) != max(versions_in(os.path.dirname(p), m.group(1))):
+                    issues.append(f"{rel}: row '{dslug}' points at v{m.group(2)} but head is v{max(versions_in(os.path.dirname(p), m.group(1)))}")
+        issues += media_manifest_issues_for_fm(adir, afm, "application.md")
+        if rules and hasattr(rules, "check_application"):
+            r_issues, r_notes = rules.check_application(make_ctx(), adir, afm)
+            issues += r_issues
+            notes += r_notes
+    return issues, notes
 
 
 # ---------------------------------------------------------------- doctor
@@ -829,8 +1142,10 @@ def check_system():
 
 
 def cmd_doctor(args):
-    dirs = []
-    if args.project:
+    dirs, pipeline_scope = [], ""
+    if args.project == "pipeline":
+        pass  # pipeline checks only
+    elif args.project:
         dirs = [project_dir(args.project)]
     else:
         for base in (PROJECTS, os.path.join(PROJECTS, "completed")):
@@ -845,12 +1160,19 @@ def cmd_doctor(args):
             notes.append(note)
         notes += media_manifest_notes(d)
         notes += activity_notes(d)
+    if args.project in (None, "pipeline"):
+        pipe_issues, pipe_notes = check_pipeline()
+        all_issues += pipe_issues
+        notes += pipe_notes
+        if os.path.isfile(board_path()):
+            pipeline_scope = " + pipeline"
     system_scope = ""
     if not args.project:
         sys_issues, sys_notes = check_system()
         all_issues += sys_issues
         notes += sys_notes
         system_scope = " + system surfaces"
+    system_scope += pipeline_scope
     for n in notes:
         print(f"af doctor: note — {n}")
     if all_issues:
@@ -864,18 +1186,22 @@ def cmd_doctor(args):
 # ---------------------------------------------------------------- main
 
 # Verbs that mutate project state are Operator actions. `doctor` is read-only
-# and allowed in any mode.
+# and allowed in any mode; so is `pipe board`.
 OPERATOR_VERBS = {"lock", "publish", "version", "new-project"}
+OPERATOR_PIPE_VERBS = {"save", "start", "stage"}
 
 
-def check_mode_gate(cmd):
+def check_mode_gate(cmd, args=None):
     """Refuse Operator verbs while the Builder persona is active.
 
     Reads the first heading of the root AGENTS.md (the active persona copy).
     Blocks only on an explicit Builder heading; a missing or unrecognized
     persona does not block, so customized copies keep working.
     """
-    if cmd not in OPERATOR_VERBS:
+    if cmd == "pipe":
+        if getattr(args, "pipe_cmd", None) not in OPERATOR_PIPE_VERBS:
+            return
+    elif cmd not in OPERATOR_VERBS:
         return
     agents_md = os.path.join(ROOT, "AGENTS.md")
     if not os.path.isfile(agents_md):
@@ -902,8 +1228,20 @@ def main():
     s.add_argument("--name"); s.set_defaults(fn=cmd_new_project)
     s = sub.add_parser("doctor");          s.add_argument("project", nargs="?"); s.set_defaults(fn=cmd_doctor)
 
+    s = sub.add_parser("pipe")
+    psub = s.add_subparsers(dest="pipe_cmd", required=True)
+    ps = psub.add_parser("save")
+    ps.add_argument("--company", required=True); ps.add_argument("--role", required=True)
+    ps.add_argument("--url", required=True); ps.add_argument("--ats", default="unknown")
+    ps.add_argument("--source", default="manual"); ps.add_argument("--posted")
+    ps.add_argument("--deadline"); ps.add_argument("--salary"); ps.add_argument("--slug")
+    ps.set_defaults(fn=cmd_pipe_save)
+    ps = psub.add_parser("start");  ps.add_argument("slug"); ps.set_defaults(fn=cmd_pipe_start)
+    ps = psub.add_parser("stage");  ps.add_argument("slug"); ps.add_argument("stage"); ps.set_defaults(fn=cmd_pipe_stage)
+    ps = psub.add_parser("board");  ps.set_defaults(fn=cmd_pipe_board)
+
     args = p.parse_args()
-    check_mode_gate(args.cmd)
+    check_mode_gate(args.cmd, args)
     args.fn(args)
 
 

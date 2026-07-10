@@ -23,7 +23,7 @@ Section order is the operator's real format: contact header → **Work Experienc
 
 - Single column. No tables, text boxes, icons, images, or skill bars.
 - Canonical headings only: "Work Experience", "Projects", "Education", "Skills".
-- Dates `Month YYYY – Month YYYY` — explicit months; year-only ranges zero out tenure calculators. Standard hyphens in prose; **no em-dashes anywhere**; round bullets only.
+- Dates `Month YYYY - Month YYYY` (plain hyphen) — explicit months; year-only ranges zero out tenure calculators. **No em- or en-dashes anywhere in the artifact**; round bullets only.
 - Never invent experience, metrics, or tools. Every number traces to `proof-points.md`.
 - Length: 1 page US default; up to 2 pages for senior Canadian-enterprise roles with real tenure — never padded.
 - AI-tell blacklist is a hard gate (spearheaded, delve, orchestrated, synergies, "proven track record", uniform verb openings across roles).

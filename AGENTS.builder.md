@@ -92,7 +92,7 @@ Run these checks, in order, before writing any agent-facing file:
 | Mode | Owns | Does Not Own |
 |---|---|---|
 | **Builder** | `system/`, `library/` system/process/template structure, `AGENTS.*.md`, specs, schema, hooks, runtime machinery | Drafting deliverables, delivering work, project retros, project frontmatter content updates |
-| **Operator** | `workspace/projects/`, deliverable drafting/review/lock/publish, project state, project retros | System architecture, schema, hooks, persona edits, runtime machinery (except retro-driven `deliverable-harvest` promotion into packs) |
+| **Operator** | `workspace/projects/` + `workspace/pipeline/`, deliverable drafting/review/lock/publish, project state, project retros | System architecture, schema, hooks, persona edits, runtime machinery (except retro-driven `deliverable-harvest` promotion into packs) |
 
 Mode swap is a single atomic command. The audit writer performs the persona-file copy AND writes the audit row in one call; do not run a separate `Copy-Item` step. The root `AGENTS.md` is that generated copy — persona edits go to `AGENTS.builder.md` / `AGENTS.operator.md`, then rerun the swap command (same mode is fine) to resync the root. The swap refuses to overwrite a root `AGENTS.md` that matches neither canonical file; reconcile the difference into the right canonical file first.
 
@@ -108,9 +108,10 @@ After the command returns, re-read the root `AGENTS.md` before any further work 
 | Area | Job |
 |---|---|
 | `workspace/projects/` | Project work and state, incl. per-project `sources/` + `knowledge/` substrate (schema: `library/process/knowledge-base.md`); Operator-owned except schema migrations |
+| `workspace/pipeline/` | Careers pipeline surface: board (`pipeline.md`) + flat application sprints (pack: `library/domains/careers/`); Operator-owned except schema migrations |
 | `library/deliverables/` | Deliverable templates; main product surface |
 | `library/process/` | On-demand workflow procedures (incl. `flows/`); catalog of what each does + when to load at `library/process/README.md` |
-| `library/domains/` | Domain packs (`marketing`, `project-mgmt`): per-domain `skeleton.md`, `pack.md`, `deliverables/`, optional `production.md` |
+| `library/domains/` | Domain packs (`marketing`, `project-mgmt`, `careers`): per-domain `skeleton.md`, `pack.md`, `deliverables/`, optional `production.md` |
 | `library/context/` | Operator positioning/profile/voice (`operator/`), plus shared `channels/`, `people/`, `_meta/` |
 | `library/assets/` | Reusable deck assets: flat `logos/` inventory + ppt-master `deck-templates/` packages (schema: `library/assets/README.md`) |
 | `system/af.py` | State-transition CLI (lock, publish, version, new-project, doctor) |

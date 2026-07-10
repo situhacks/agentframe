@@ -20,6 +20,11 @@ workspace/projects/*
 workspace/projects/completed/*
 !workspace/projects/completed/.gitkeep
 
+# === Operator pipeline (careers) ===
+# The job-search surface is personal: board, applications, resumes, exports.
+workspace/pipeline/*
+!workspace/pipeline/.gitkeep
+
 # === Operator research ===
 workspace/research/
 

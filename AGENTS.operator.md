@@ -27,9 +27,10 @@ You run **any domain**, parameterized by the active project's `domain` (read fro
 | Head deliverable file named by `project.md` `deliverables.{slug}.file` | Current canonical deliverable content and frontmatter (the highest `v{N}` in the folder) | Drafting, reviewing, locking, delivering |
 | Lower-numbered `*-v{N}.md` files | Immutable prior versions in the same folder | Comparing evolution or restoring |
 | `workspace/projects/{slug}/activity.md` | Material-event audit trail | Lock, deliver, override, plan change, retro, structural decision — iteration narration belongs in the version chain's `changes_from_vN` |
-| `workspace/projects/{slug}/feedback-log.md` | Feedback on agent behaviour or deliverable shape, project-scoped | APPEND one line in the same turn the operator gives such feedback mid-project (system-wide friction goes to the builder backlog instead); read by the closeout retros |
+| `workspace/projects/{slug}/feedback-log.md` | Feedback on agent behaviour or deliverable shape, project-scoped | APPEND one line in the same turn the operator gives such feedback mid-project; read by closeout retros |
 | `workspace/projects/{slug}/sources/` (+ `INDEX.md`) | Raw, immutable inputs — transcripts, briefs, SOWs; never edited except INDEX registration | Citing source material or ingesting a new input |
 | `workspace/projects/{slug}/knowledge/` | Agent-owned distilled truth — governance docs (`raid-log`, `decision-log`, `stakeholder-map`, `workback-schedule`), people overlays, meeting index; schema in [`knowledge-base.md`](library/process/knowledge-base.md) | Maintaining living project knowledge across sessions |
+| `workspace/pipeline/` | Careers funnel — board owns stage state, applications hold the rest; runbook [`production.md`](library/domains/careers/production.md) | Job-search or application work |
 | [`system/audit/agentframe.db`](system/audit/README.md) | Append-only system-change audit | System/process/template/persona patches only |
 | [`system/builder-backlog.md`](system/builder-backlog.md) | Builder-mode tasks surfaced during Operator work (unresolved queue) | Capture system friction without mode-swapping mid-project; resolved items move to [`system/builder-backlog-completed.md`](system/builder-backlog-completed.md) |
 
@@ -44,7 +45,7 @@ Domain-agnostic. The left column is intent; domain-specific destinations resolve
 | Situation | Load First | Also Load If Needed | Do Not Load |
 |---|---|---|---|
 | State or continuity request | `project.md` frontmatter only | the project body only if the operator asks for depth | full deliverables, completed projects |
-| New project (no folder yet) OR loading an existing one | [research-and-signals](library/process/research-and-signals.md), the [flow registry](library/process/flows/README.md), the selected `flow` from `project.md`, [positioning](library/context/operator/positioning.md), [voice](library/context/operator/voice/README.md), and any global channel/person profiles the project references (`library/context/channels/`, `library/context/people/`) | topic research or operator profile when needed | completed projects unless referenced; brainstorming skill or ad-hoc web-research subagents |
+| New project (no folder yet) OR loading an existing one | [research-and-signals](library/process/research-and-signals.md), the [flow registry](library/process/flows/README.md), the selected `flow` from `project.md`, [positioning](library/context/operator/positioning.md), [voice](library/context/operator/voice/README.md), and any global channel/person profiles the project references | topic research or operator profile when needed | completed projects unless referenced; brainstorming skill or ad-hoc web-research subagents |
 | Deliverable drafting or iteration | **the template resolved for this deliverable** — pack `library/domains/{domain}/deliverables/{type}/template.md` ▸ shared `library/deliverables/{type}/template.md` ▸ `_local/{type}/` ▸ the generic [`_meta` shape](library/deliverables/_meta/deliverable-shape.md) — plus [deliverable-versioning](library/process/deliverable-versioning.md), the project tracker, upstream deps the template names | [voice](library/context/operator/voice/README.md) when the template marks it user-voiced; [positioning](library/context/operator/positioning.md) for strategic work | unrelated deliverables |
 | **Domain production / delivery work** (the active deliverable set's own workflow) | **the active pack's `library/domains/{domain}/production.md`** (if the pack declares one) | — | — |
 | **Technical build phase** — `project.md` has `build_repo` set, build not graduated | [`technical-build.md`](library/process/technical-build.md) before any build action | — | SDK docs into AgentFrame; plans into the repo |
@@ -93,7 +94,7 @@ Project state changes (lock, version, scaffold, drift check, and any pack-declar
 
 ### Domain Production & Delivery
 
-When the work is the active deliverable set's own production/delivery workflow, load the active pack's `library/domains/{domain}/production.md` (for `domain: marketing`, that routes post production, carousels, publish, and performance capture).
+When the work is the active deliverable set's own production/delivery workflow, load the active pack's `library/domains/{domain}/production.md`.
 
 ### Phase Overrides
 

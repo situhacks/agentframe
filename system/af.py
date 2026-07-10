@@ -47,7 +47,7 @@ PIPELINE = os.path.join(ROOT, "workspace", "pipeline")
 
 STATUS_ENUM = {"not_started", "drafting", "locked", "delivered", "deferred"}
 LIFECYCLE_ENUM = {"active", "complete", "cancelled"}
-EXPORTABLE_INGREDIENTS = ("image-prompts", "resume", "cover-letter")  # deliverables whose finals must be filed in exports[] before lock
+EXPORTABLE_INGREDIENTS = ("image-prompts",)  # cross-domain names; packs add their own via pack.md `exportable:`
 
 # Pipeline stage machine (pipeline-topology packs; board = pipeline.md).
 PIPE_STAGES = ("saved", "preparing", "applied", "interviewing", "offer", "rejected", "ghosted", "dropped")
@@ -283,14 +283,20 @@ def make_ctx():
 
 # ---------------------------------------------------------------- lock
 
-def exportable_ingredient(path):
+def pack_exportables(cfm):
+    """Deliverable basenames the owning pack gates behind filed exports (pack.md `exportable:` list)."""
+    desc, _ = load_pack(project_domain(cfm))
+    return tuple(fm_list(desc, "exportable")) if desc else ()
+
+
+def exportable_ingredient(path, extra=()):
     m = re.fullmatch(r"(.+)-v\d+\.md", os.path.basename(path))
-    return m.group(1) if m and m.group(1) in EXPORTABLE_INGREDIENTS else None
+    return m.group(1) if m and m.group(1) in EXPORTABLE_INGREDIENTS + tuple(extra) else None
 
 
-def export_gate_issues(cdir, rel, dfm):
+def export_gate_issues(cdir, rel, dfm, extra=()):
     """Blocking exports[] problems for an exportable deliverable; [] when clear."""
-    if not exportable_ingredient(rel):
+    if not exportable_ingredient(rel, extra):
         return []
     values = fm_list_values(dfm, "exports")
     if not values:
@@ -315,7 +321,7 @@ def cmd_lock(args):
     head_of(dpath)
 
     dfm, dbody = split_fm(read(dpath), rel)
-    gate = export_gate_issues(cdir, rel, dfm)
+    gate = export_gate_issues(cdir, rel, dfm, pack_exportables(cfm))
     override_note = ""
     if gate:
         if not args.allow_missing_exports:
@@ -801,12 +807,13 @@ def manifest_path_status(cdir, owner_rel, raw):
 def media_manifest_issues_for_fm(cdir, cfm, source_label="project.md"):
     issues = []
     rel = os.path.relpath(cdir, ROOT).replace("\\", "/")
+    extra = pack_exportables(cfm)
     for slug in all_rows(cfm):
         st, f = row_get(cfm, slug, "status"), row_get(cfm, slug, "file")
         if st not in ("locked", "delivered") or not f or not os.path.isfile(os.path.join(cdir, f)):
             continue
         dfm, _ = split_fm(read(os.path.join(cdir, f)), f)
-        if exportable_ingredient(f) and not fm_list_values(dfm, "exports"):
+        if exportable_ingredient(f, extra) and not fm_list_values(dfm, "exports"):
             issues.append(f"{rel}: {source_label} row '{slug}' is a {st} exportable deliverable with empty exports[] - land the finals in the deliverable's media/ folder and record them")
         for field in MEDIA_MANIFEST_FIELDS:
             for value in fm_list_values(dfm, field):

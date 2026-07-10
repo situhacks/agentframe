@@ -4,6 +4,7 @@ topology: pipeline
 prefix: null
 extension_fields: []
 verbs: [lock, version, doctor]
+exportable: [resume, cover-letter, deck]
 assembly_record: null
 flows: []
 ---

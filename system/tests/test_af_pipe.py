@@ -209,6 +209,17 @@ class TestLockGates(PipeBase):
         with self.assertRaises(SystemExit):
             quiet(af.cmd_lock, SimpleNamespace(project=slug, deliverable="resume", allow_missing_exports=False))
 
+    def test_deck_material_is_export_gated_via_pack(self):
+        slug, adir = self._prep_application()
+        write(os.path.join(adir, "deck", "deck-v1.md"),
+              "---\nstatus: drafting\nlast_updated: 2026-07-10\nexports: []\n---\n# Deck spec\n")
+        ap = os.path.join(adir, "application.md")
+        afm, abody = af.split_fm(af.read(ap), "application.md")
+        afm = afm.replace("deliverables:", "deliverables:\n  deck:\n    file: deck/deck-v1.md\n    status: drafting")
+        af.write(ap, af.join_fm(afm, abody))
+        with self.assertRaises(SystemExit):
+            quiet(af.cmd_lock, SimpleNamespace(project=slug, deliverable="deck", allow_missing_exports=False))
+
     def test_lock_succeeds_and_applied_records_shipped(self):
         slug, adir = self._prep_application()
         quiet(af.cmd_lock, SimpleNamespace(project=slug, deliverable="resume", allow_missing_exports=False))

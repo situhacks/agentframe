@@ -13,10 +13,17 @@ import datetime
 import hashlib
 from pathlib import Path
 
-from . import state
+from . import artifacts, state
 
 GOVERNANCE_DOCS = ("raid-log.md", "decision-log.md", "workback-schedule.md")
 WATCHED_FILENAMES = ("project.md", "activity.md")
+ARCHIVE_FILENAME = artifacts.ARCHIVE_REL_PATH
+TIMELINE_STATUS_RANK = {"active": 0, "complete": 1, "cancelled": 2}
+
+
+def _timeline_sort_key(project: dict) -> tuple:
+    rank = TIMELINE_STATUS_RANK.get(project.get("status"), 3)
+    return (rank, str(project.get("created_at") or ""), project.get("slug") or "")
 
 
 def resolve_in_project(project_dir: Path, rel: str) -> Path | None:
@@ -31,10 +38,23 @@ def resolve_in_project(project_dir: Path, rel: str) -> Path | None:
     return candidate
 
 
-def _latest_deliverable(deliverables: dict) -> dict | None:
+def _deliverable_payload(slug: str, row: dict) -> dict:
+    return {
+        "slug": slug,
+        "file": str(row["file"]),
+        "last_updated": state._iso(row.get("last_updated")),
+        "status": row.get("status"),
+        "review": row.get("review"),
+        "job": row.get("job"),
+    }
+
+
+def _latest_deliverable(deliverables: dict, *, status: str | None = None) -> dict | None:
     best = None
     for index, (slug, row) in enumerate((deliverables or {}).items()):
         if not isinstance(row, dict) or not row.get("file"):
+            continue
+        if status is not None and row.get("status") != status:
             continue
         key = (str(state._iso(row.get("last_updated")) or ""), index)
         if best is None or key >= best[0]:
@@ -42,12 +62,19 @@ def _latest_deliverable(deliverables: dict) -> dict | None:
     if best is None:
         return None
     _, slug, row = best
-    return {
-        "slug": slug,
-        "file": str(row["file"]),
-        "last_updated": state._iso(row.get("last_updated")),
-        "status": row.get("status"),
-    }
+    return _deliverable_payload(slug, row)
+
+
+def _current_deliverable(deliverables: dict) -> dict | None:
+    """Deterministic project pulse: in-flight work, otherwise latest real state."""
+    return _latest_deliverable(deliverables, status="drafting") or _latest_deliverable(deliverables)
+
+
+def _next_attention(attention: list[dict]) -> dict | None:
+    if not attention:
+        return None
+    item = min(attention, key=lambda row: (row.get("date") is None, row.get("date") or ""))
+    return {key: item.get(key) for key in ("date", "kind", "text", "file")}
 
 
 def _project_updated_at(project: dict, latest: dict | None) -> str | None:
@@ -83,15 +110,6 @@ def _governance_flags(project_dir: Path) -> dict:
     return {doc: (knowledge / doc).is_file() for doc in GOVERNANCE_DOCS}
 
 
-def _visibility(attention_open: int, deliverables: dict, governance: dict) -> str:
-    if any(governance.values()):
-        return "governed"
-    if attention_open > 0:
-        return "attention"
-    has_file = any(isinstance(r, dict) and r.get("file") for r in (deliverables or {}).values())
-    return "" if has_file else "limited"
-
-
 def _read_activity(project_dir: Path) -> str:
     activity = Path(project_dir) / "activity.md"
     if not activity.is_file():
@@ -100,6 +118,64 @@ def _read_activity(project_dir: Path) -> str:
         return activity.read_text(encoding="utf-8")
     except OSError:
         return ""
+
+
+def _timeline_deliverables(project: dict) -> list[dict]:
+    """Current + archived tracker rows shaped for the cosmetic calendar."""
+    rows = dict(artifacts.load_archived_rows(Path(project["dir"])))
+    archived_slugs = set(rows)
+    rows.update(project.get("deliverables") or {})
+    payload = []
+    for slug, row in rows.items():
+        if not isinstance(row, dict):
+            continue
+        item = {
+            "slug": slug,
+            "file": str(row.get("file")) if row.get("file") else None,
+            "last_updated": state._iso(row.get("last_updated")),
+            "status": row.get("status"),
+            "review": row.get("review"),
+            "job": row.get("job"),
+            "archived": slug in archived_slugs and slug not in (project.get("deliverables") or {}),
+        }
+        payload.append(item)
+    payload.sort(key=lambda item: (str(item.get("last_updated") or ""), item["slug"]))
+    return payload
+
+
+def _timeline_project(project: dict, activity_text: str) -> dict:
+    pdir = Path(project["dir"])
+    activity = []
+    for entry in state.parse_activity(activity_text):
+        if not entry.get("timestamp"):
+            continue
+        activity.append(
+            {
+                "timestamp": entry["timestamp"],
+                "event": entry.get("event"),
+                "text": entry.get("text"),
+                "file": state.detect_file_ref(entry["raw"], pdir),
+            }
+        )
+    attention = []
+    for item in state.parse_attention(activity_text):
+        if item.get("checked") or not item.get("date"):
+            continue
+        attention.append({key: item.get(key) for key in ("date", "kind", "text", "file")})
+    return {
+        "slug": project["slug"],
+        "name": project.get("name"),
+        "status": project.get("status"),
+        "domain": project.get("domain"),
+        "created_at": project.get("created_at"),
+        "last_activity": project.get("last_activity"),
+        "shipped_at": project.get("shipped_at"),
+        "completed_at": project.get("completed_at"),
+        "cancelled_at": project.get("cancelled_at"),
+        "deliverables": _timeline_deliverables(project),
+        "activity": activity,
+        "attention": attention,
+    }
 
 
 def humanize_timestamp(timestamp: str | None, now: datetime.datetime | None = None) -> str | None:
@@ -116,6 +192,7 @@ def humanize_timestamp(timestamp: str | None, now: datetime.datetime | None = No
 
 def build_snapshot(root: Path, activity_limit: int = 50) -> dict:
     projects = state.scan_projects(root)
+    timeline_source = state.scan_projects(root, include_completed=True)
     out_projects = []
     attention_items = []
     activity_entries = []
@@ -126,6 +203,7 @@ def build_snapshot(root: Path, activity_limit: int = 50) -> dict:
         attention = [a for a in state.parse_attention(activity_text) if not a["checked"]]
         governance = _governance_flags(pdir)
         latest = _latest_deliverable(project["deliverables"])
+        current = _current_deliverable(project["deliverables"])
         updated_at = _project_updated_at(project, latest)
         out_projects.append(
             {
@@ -139,7 +217,9 @@ def build_snapshot(root: Path, activity_limit: int = 50) -> dict:
                 "last_updated_label": humanize_project_updated(updated_at),
                 "attention_count": len(attention),
                 "latest_deliverable": latest,
-                "visibility": _visibility(len(attention), project["deliverables"], governance),
+                "current_deliverable": current,
+                "next_attention": _next_attention(attention),
+                "governance_status": "governed" if any(governance.values()) else "ungoverned",
                 "governance": governance,
             }
         )
@@ -155,12 +235,17 @@ def build_snapshot(root: Path, activity_limit: int = 50) -> dict:
     attention_items.sort(key=lambda a: (a["date"] is None, a["date"] or ""))
     out_projects.sort(key=lambda p: (p.get("last_updated") or "", p.get("slug") or ""), reverse=True)
     activity_entries = _newest_first(activity_entries)
+    timeline_projects = []
+    for project in timeline_source:
+        timeline_projects.append(_timeline_project(project, _read_activity(Path(project["dir"]))))
+    timeline_projects.sort(key=_timeline_sort_key)
 
     page = activity_entries[:activity_limit]
     return {
         "updated_at": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
         "workspace_root": str(Path(root).resolve()),
         "projects": out_projects,
+        "timeline_projects": timeline_projects,
         "attention": attention_items,
         "recent_activity": {
             "items": page,
@@ -188,12 +273,8 @@ class SnapshotCache:
 
     def _current_signature(self) -> str:
         h = hashlib.md5()
-        projects_dir = self._root / "workspace" / "projects"
-        try:
-            entries = sorted(p for p in projects_dir.iterdir() if p.is_dir() and p.name != "completed")
-        except OSError:
-            entries = []
-        h.update(str([e.name for e in entries]).encode())
+        entries = state.project_directories(self._root, include_completed=True)
+        h.update(str([str(e.relative_to(self._root)) for e in entries]).encode())
         for folder in entries:
             for name in WATCHED_FILENAMES:
                 f = folder / name
@@ -209,6 +290,12 @@ class SnapshotCache:
                     h.update(f"{doc}:{st.st_mtime_ns}:{st.st_size};".encode())
                 except OSError:
                     h.update(f"{doc}:absent;".encode())
+            archive = folder / ARCHIVE_FILENAME
+            try:
+                st = archive.stat()
+                h.update(f"archive:{st.st_mtime_ns}:{st.st_size};".encode())
+            except OSError:
+                h.update(b"archive:absent;")
         return h.hexdigest()
 
     def get(self) -> dict:

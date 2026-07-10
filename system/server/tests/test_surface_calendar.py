@@ -110,6 +110,24 @@ class SurfaceCalendarTests(unittest.TestCase):
                 ["early-active", "new-active", "old-complete"],
             )
 
+    def test_timeline_project_reports_worked_days(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            project = self._project(
+                root, "worklog", status="active",
+                created_at="2026-06-01", last_activity="2026-06-10T10:00:00-07:00",
+            )
+            (project / "activity.md").write_text(
+                "# Activity\n\n"
+                "2026-06-10 10:00 — deliverable_locked: brief locked; brief/brief-v1.md\n"
+                "2026-06-12 14:30 — export: deck exported\n",
+                encoding="utf-8",
+            )
+            timeline = snapshot.build_snapshot(root)["timeline_projects"]
+            worked = timeline[0]["worked_days"]
+            # deliverable stamped 2026-06-10 + activity on 06-10 and 06-12
+            self.assertEqual(worked, ["2026-06-10", "2026-06-12"])
+
     def test_snapshot_calendar_includes_milestones_events_and_future_attention(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

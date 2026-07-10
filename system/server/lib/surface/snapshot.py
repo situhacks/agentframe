@@ -143,6 +143,20 @@ def _timeline_deliverables(project: dict) -> list[dict]:
     return payload
 
 
+def _worked_days(deliverables: list[dict], activity: list[dict]) -> list[str]:
+    """Sorted unique YYYY-MM-DD strings for days with any logged event."""
+    days = set()
+    for item in deliverables:
+        value = item.get("last_updated")
+        if value:
+            days.add(str(value)[:10])
+    for entry in activity:
+        ts = entry.get("timestamp")
+        if ts:
+            days.add(str(ts)[:10])
+    return sorted(d for d in days if len(d) == 10 and d[4] == "-")
+
+
 def _timeline_project(project: dict, activity_text: str) -> dict:
     pdir = Path(project["dir"])
     activity = []
@@ -162,6 +176,7 @@ def _timeline_project(project: dict, activity_text: str) -> dict:
         if item.get("checked") or not item.get("date"):
             continue
         attention.append({key: item.get(key) for key in ("date", "kind", "text", "file")})
+    deliverables = _timeline_deliverables(project)
     return {
         "slug": project["slug"],
         "name": project.get("name"),
@@ -172,9 +187,10 @@ def _timeline_project(project: dict, activity_text: str) -> dict:
         "shipped_at": project.get("shipped_at"),
         "completed_at": project.get("completed_at"),
         "cancelled_at": project.get("cancelled_at"),
-        "deliverables": _timeline_deliverables(project),
+        "deliverables": deliverables,
         "activity": activity,
         "attention": attention,
+        "worked_days": _worked_days(deliverables, activity),
     }
 
 

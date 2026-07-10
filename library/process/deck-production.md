@@ -1,40 +1,31 @@
 # Deck Production
 
-Available deck/presentation paths for AgentFrame. Load this whenever a deliverable needs a `.pptx` (or deck-shaped) output, **and** whenever a follow-up pass is requested on an already-delivered deck (redo a slide, add slides, restructure, reword) — the versioning and round-trip rules below govern those passes. Deliverable templates call this file instead of naming individual deck tools directly. Usage rules, lock criteria, and export records are owned by the deliverable that calls this menu — project posts record deck media like any other delivered asset.
+Available deck and presentation paths for AgentFrame. Load this whenever a deliverable needs a `.pptx` or deck-shaped output, and whenever a follow-up pass is requested on an already-delivered deck. Deliverable templates call this file instead of naming individual deck tools directly.
 
 Default: use **PPT Master** for new PowerPoint creation and exports. Use another path only when the input state below requires it or the operator explicitly asks for it.
 
 | Path | Use when | Skill | Outputs |
 |---|---|---|---|
-| PPT Master | Default for new `.pptx` creation/export, from source material, storyboard, markdown deliverable, research, or existing deck-as-source. Best visual quality, native-editable output, charts, optional speaker notes/narration. Heavy: runs as its own dedicated session. Pick the specific workflow from the table below. | `system/skills/ppt-master/SKILL.md`; read the overlay `system/skills/ppt-master/AGENTS.md` first | Native `.pptx` from its SVG pipeline, promoted into the calling deliverable's folder |
-| PPTX skill (vendored Anthropic) | Native `.pptx` inspection, validation, small edits, extraction-diff, or slide splicing after a PPT Master round-trip. Use only when this file routes there. | `system/skills/pptx/SKILL.md` | Edited `.pptx` via OOXML or pptxgenjs |
-| Open Design (bundled) | Deck work that benefits from OD's interactive revise-in-UI loop, or when the project is already running other visuals through OD. | `system/skills/open-design/SKILL.md` (mode/skill defaults in [`image-production.md`](image-production.md)) | Exported `.pptx` / PDF / PNG to the calling post's `visuals/imports/` |
+| PPT Master | Default for new `.pptx` creation/export from source material, storyboard, Markdown deliverable, research, or an existing deck as source. The vendored router owns workflow and session-mode selection. | `system/skills/ppt-master/SKILL.md`; read `system/skills/ppt-master/AGENTS.md` first | Native `.pptx` promoted into the calling deliverable folder |
+| PPTX skill (vendored Anthropic) | Native `.pptx` inspection, validation, small edits, extraction-diff, or slide splicing after a PPT Master round trip | `system/skills/pptx/SKILL.md` | Edited `.pptx` via OOXML or pptxgenjs |
+| Open Design (bundled) | The work benefits from Open Design's interactive revise-in-UI loop, or the project already runs other visuals through Open Design | `system/skills/open-design/SKILL.md` (defaults in [`image-production.md`](image-production.md)) | Exported `.pptx`, PDF, or PNG in the calling deliverable's media location |
 
-Recommend the default route first and name the exception only when it applies. Record a project-wide preference in `project.md` notes when decks recur in a project. Mixing paths is normal after the initial route — generate with PPT Master or OD, then edit/splice the result with the PPTX skill.
+Recommend the default route first and name an exception only when it applies. Record a project-wide preference in `project.md` notes when decks recur. Mixing paths is normal after the initial route: generate with PPT Master or Open Design, then edit or splice with the PPTX skill.
 
-## PPT Master workflow selection
+## PPT Master handoff
 
-When PPT Master is the path, recommend the specific built-in workflow — do not default to the main pipeline for everything. Confirm the workflow with the operator before running.
+After AgentFrame selects PPT Master, read the local overlay and then follow the vendor's `SKILL.md`. Its `workflows/routing.md` owns workflow choice, ambiguity handling, and continuous-versus-split session mode. AgentFrame does not duplicate that matrix.
 
-| Operator intent | Workflow |
-|---|---|
-| Storyboard / slide-content → new designed deck (authored in AgentFrame, or a storyboard a coworker handed over) | Main pipeline, `content_divergence` = stay close |
-| Redesign an existing `.pptx` — keep every page, its order, and its wording; fix only layout / hierarchy / whitespace | `beautify` (strictly 1:1) |
-| Put my content into a coworker's native `.pptx` template | `template-fill` (clones slides, fills text in OOXML, no SVG generation) |
-| Save a deck design or brand identity I like for reuse | `create-template` / `create-brand` → package stored in `library/assets/deck-templates/` |
+## Versioning and round trip
 
-Discriminator (redesign vs restructure): if page count or order changes at all, it is the main pipeline, never `beautify`. On an ambiguous ask ("make this deck more professional"), ask one question — preserve page split + wording, or treat as source and restructure? — then route.
+Version identity is the timestamp in the filename (generation time, for example `deck_20260615_205814.pptx`). Latest version is the highest sortable filename timestamp; never rely on filesystem created or modified dates for identity. The promoted copy in the deliverable folder is the operator's working file and may be edited in place. The same-named twin frozen in the PPT Master project's `exports/` is the agent's reference.
 
-## Versioning & round-trip
+Edit detection: when the deliverable copy's modified time is newer than the timestamp in its filename, the operator has hand-edited it since generation.
 
-Version identity is the timestamp **in the filename** (generation time, e.g. `deck_20260615_205814.pptx`). Latest version = highest filename timestamp, sortable by name; never rely on filesystem created/modified dates for identity. The promoted copy in the deliverable folder is the operator's working file — edited in place, no rename. The same-named twin frozen in the working folder's `exports/` is the agent's reference.
+Round trip by requested scope:
 
-Edit detection: when the deliverable copy's modified time is newer than the timestamp in its own filename, the operator has hand-edited it since generation.
+- **Small wording or formatting:** the operator edits the deliverable copy directly; no agent pass.
+- **Specific-slide redo, new slides, or per-slide rewording:** regenerate the affected pages in the PPT Master project, re-export, and splice changed slides into the operator-edited deck via the PPTX skill so untouched slides retain manual work.
+- **Deck-wide restructure:** fully regenerate after folding the operator's text edits back into the slide-content source; manual shape edits must be re-specified.
 
-Round-trip by scope of the requested change:
-
-- **Small wording / formatting** — operator edits the deliverable copy directly; no agent pass.
-- **Specific-slide redo, new slides, per-slide reword** — agent regenerates the affected pages in the working folder (SVG sources persist there), re-exports, and splices the changed slides into the operator's edited deck via the `pptx` skill so untouched slides keep the operator's manual work.
-- **Deck-wide restructure** — full regeneration; fold the operator's text edits back into the slide-content source first; manual shape edits are acknowledged as needing re-specification.
-
-Before any agent pass on an operator-edited deck, extraction-diff to see what changed: run `pptx_intake.py` + `ppt_to_md.py` on the edited copy and on the same-named frozen `exports/` twin, then diff the extractions (text deltas, shape moves, adds/deletes). No visual/binary diffing. The operator's edited file is never overwritten or deleted; each pass produces a new timestamped export, promoted beside the previous one.
+Before any agent pass on an operator-edited deck, extraction-diff the edited copy against the same-named frozen export using the vendored PPTX intake/conversion route. Compare text deltas, shape moves, additions, and deletions; do not use visual or binary diffing. Never overwrite or delete the operator's edited file. Each agent pass produces a new timestamped export beside the previous one.

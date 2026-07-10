@@ -1,26 +1,25 @@
 # PPT Master - AgentFrame Boundary Notes
 
-Vendored deck-generation skill (see `VENDOR.md`). `SKILL.md` owns the generation pipeline; these notes govern how it runs inside AgentFrame. Read this file before running the skill - `library/process/deck-production.md` routes you here, and it is a required read whenever ppt-master is invoked, however the run started.
+Vendored deck-generation skill (see `VENDOR.md`). The vendor's `SKILL.md`, references, workflows, and docs own deck-generation knowledge. This overlay contains only AgentFrame integration boundaries and operator-specific defaults. Read it whenever AgentFrame routes work to PPT Master.
 
 ## Routing
 
-- **Deck routing lives in `library/process/deck-production.md`.** That file owns the default PowerPoint path and all exceptions. Change deck policy there, not in deliverable templates or skill-local notes.
-- **PPT Master is AgentFrame's default for new `.pptx` creation/export.** This overlay starts after `deck-production.md` has routed the work to PPT Master and selected the workflow.
-- **Dedicated session only.** The pipeline loads several thousand lines of references and generates SVG pages sequentially in main context. Run it as its own working session; never load it mid-campaign-turn alongside campaign context.
-- **Project workspace.** Stage its `<project_path>` inside the calling campaign (e.g. `workspace/projects/{slug}/phase-4-production/decks/{deck-name}/`) or `C:\tmp` for throwaway runs - not in this skill folder and not in a repo-root `projects/` directory.
+- **Deck routing lives in `library/process/deck-production.md`.** That file owns the default PowerPoint tool and its exceptions. Once routed to PPT Master, the vendored `SKILL.md` and `workflows/routing.md` own workflow and session-mode selection; AgentFrame does not mirror them.
+- **PPT Master is AgentFrame's default for new `.pptx` creation/export.** This overlay starts only after `deck-production.md` has selected PPT Master.
+- **Project workspace.** Stage `<project_path>` inside the calling project (for example, `workspace/projects/{slug}/phase-4-production/decks/{deck-name}/`) or `C:\tmp` for throwaway runs - never in this skill folder or a repo-root `projects/` directory.
 
 ## Run contract
 
-- **Speaker notes off by default.** Skip the Step 6 Logic Construction phase (`notes/total.md`) and Step 7.1 (`total_md_split.py`); export with `svg_to_pptx.py --no-notes`. Generate notes or narration only on explicit operator request.
-- **Paragraph authoring.** A multi-line paragraph is ONE `<text>` with dy-stacked `<tspan>` lines — sibling per-line `<text>` elements export as separate PowerPoint text boxes. The export guard denies violations; self-check any page with `python system/hooks/svg_paragraph_lint.py <project_path>/svg_output`.
-- **Deterministic guards.** `system/hooks/ppt_master_guard.py` (wired via the tracked `.claude/settings.json`) denies `project_manager.py init` staged inside `system/`, denies exports whose `svg_output/` fails the paragraph lint (prefix `AF_PPT_LINT=off` to skip once for genuine label stacks), and re-injects the promotion contract after each export. `af doctor` backstops any stray that slips through.
-- **Operator drafts stay canonical, pass a copy.** The skill's `import-sources --move` would absorb the operator's draft into `sources/`. For operator-authored files, copy into the run instead - the draft (storyboard, slide-content) stays put in the deliverable folder as the source of truth.
-- **Divergence pinning.** Operator-authored storyboard / slide-content -> set `content_divergence` to *stay close* (track the source's structure and wording). A redesign-only request additionally pins "no content compression; resize fonts to fit." Both are set at the Strategist confirmation stage, Stage 1 (direction anchors).
-- **Voice handoff.** When the run will author or reword copy (anything beyond stay-close verbatim), load `library/context/operator/voice/` and carry it into the Strategist confirmation stage's Identity / Voice & Tone field (Stage 2, design system). Content already drafted in AgentFrame has voice baked in - stay-close preserves it; do not re-apply.
-- **Design language.** When the deck belongs to a campaign with a locked design language, hand the palette/typography into the Strategist confirmation stage (Step 4, Stage 2 design system) rather than letting it invent a new identity.
-- **Brand assets.** Before design confirmation, check `library/assets/logos/` for every required company/product mark. If missing, follow the sourcing order in `library/assets/README.md`, vendor the credible asset when reuse is likely, and use the real file. Never hand-draw, trace, approximate, or recreate a logo as custom SVG. If no credible asset exists, use a text label or ask the operator.
-- **API keys.** Its `image_gen.py` reads the current process env first - the repo root `.env` (`GEMINI_API_KEY`) works with `IMAGE_BACKEND=gemini`. Don't create a second key store inside the skill folder.
+- **Speaker notes off by default.** Skip notes generation and export with the vendor's no-notes option. Generate notes or narration only on explicit operator request.
+- **Deterministic guards.** `system/hooks/ppt_master_guard.py` (wired through `.claude/settings.json`) blocks projects staged inside `system/`, blocks exports whose `svg_output/` fails the paragraph-editability lint, and re-injects the export-promotion contract. `af doctor` backstops strays. The vendor owns the SVG authoring guidance; the guard only guarantees the AgentFrame failure cases observed in production.
+- **Audience-ready copy.** Slide-visible text is written for the deck's audience: no planning labels, internal signposting, references to the source material as source material, tombstones, TODO/WIP markers, or internal rationale. Keep legitimate audience-facing citations. When the operator explicitly requests a skeleton or unfinished slide, use visibly temporary prose (`Lorem ipsum` or role-shaped placeholder text), never grey placeholder bars; otherwise keep unresolved content outside the deck.
+- **Operator drafts stay canonical; pass a copy.** The vendor's move-based import may absorb inputs into its project. For operator-authored storyboards or slide content, pass a copy so the deliverable-folder draft remains the source of truth.
+- **Divergence pinning.** For operator-authored storyboards or slide content, set `content_divergence` to stay close. A redesign-only request also pins no content compression; resize or reflow before cutting content.
+- **Voice handoff.** When PPT Master will author or reword copy, load `library/context/operator/voice/` and provide it at the vendor's voice/tone confirmation. Stay-close runs preserve voice already present in the source.
+- **Design language handoff.** When the calling project has a locked design language, provide its palette and typography at vendor confirmation rather than allowing a new identity.
+- **Brand assets.** Before design confirmation, check `library/assets/logos/`. Follow `library/assets/README.md` when an asset is missing; never approximate a real logo as custom SVG.
+- **API keys.** Use the repo-root environment configuration. Do not create a second key store inside the vendored skill.
 
 ## Outputs
 
-- **Promote each export.** After Step 7.3, copy the completed `.pptx` from the working folder's `exports/` up into the calling deliverable folder, keeping its timestamped filename. That copy is the operator's to edit in place; the twin in `exports/` stays frozen as the agent's reference. Versioning and the edit round-trip (extraction-diff before any agent pass, splice vs full regen) are owned by `library/process/deck-production.md`.
+- **Promote each export.** Copy the completed `.pptx` from the PPT Master project's `exports/` into the calling deliverable folder, preserving its timestamped filename. The vendor-project twin stays frozen; AgentFrame versioning and operator-edit round trips remain owned by `library/process/deck-production.md`.

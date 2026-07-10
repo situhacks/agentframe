@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from xml.etree import ElementTree as ET
 from dataclasses import dataclass, field
+
+if TYPE_CHECKING:
+    from .theme_colors import ThemeColorSpec
+    from .theme_fonts import ThemeFontSpec
 
 AffineMatrix = tuple[float, float, float, float, float, float]
 IDENTITY_MATRIX: AffineMatrix = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
@@ -46,6 +50,10 @@ class ConvertContext:
     rel_id_counter: int = 2  # rId1 reserved for slideLayout
     svg_dir: Path | None = None
     inherited_styles: dict[str, str] = field(default_factory=dict)
+    # SVG group opacity is post-compositing, not an inherited presentation
+    # property. DrawingML has no equivalent group alpha, so native export
+    # approximates it by multiplying this value into each descendant object.
+    opacity_multiplier: float = 1.0
     # Recursion depth — only the depth==0 (root) context records anim targets.
     depth: int = 0
     # Top-level <g id="..."> groups, recorded as (shape_id, svg_id) in z-order.
@@ -67,6 +75,12 @@ class ConvertContext:
     # Optional per-element conversion diagnostics. Shared by child contexts so
     # callers can inspect native / skipped / unsupported decisions per slide.
     trace_events: list[dict[str, Any]] | None = None
+    # Optional project theme contract. Matching SVG title/body families emit
+    # DrawingML +mj/+mn tokens instead of fixed typeface names.
+    theme_font_spec: ThemeFontSpec | None = None
+    # Optional project theme-color contract. Exact locked colors are promoted
+    # to context-safe DrawingML scheme slots while local colors stay concrete.
+    theme_color_spec: ThemeColorSpec | None = None
 
     def next_id(self) -> int:
         """Allocate the next shape ID."""
@@ -89,6 +103,7 @@ class ConvertContext:
         transform_matrix: AffineMatrix | None = None,
         filter_id: str | None = None,
         style_overrides: dict[str, str] | None = None,
+        opacity_multiplier: float = 1.0,
     ) -> ConvertContext:
         """Create a child context with accumulated translate / scale / styles.
 
@@ -101,6 +116,7 @@ class ConvertContext:
                 converters that can faithfully map it to DrawingML.
             filter_id: Override filter ID.
             style_overrides: Style attribute overrides from child element.
+            opacity_multiplier: Local group opacity to multiply into descendants.
         """
         local_matrix = transform_matrix or IDENTITY_MATRIX
         # When first crossing from scalar to matrix mode, fold accumulated
@@ -128,24 +144,10 @@ class ConvertContext:
         )
 
         merged = dict(self.inherited_styles)
-
         if style_overrides:
-            # Opacity is multiplicative, not a simple override
-            _OPACITY_KEYS = ('opacity', 'fill-opacity', 'stroke-opacity')
-            for op_key in _OPACITY_KEYS:
-                if op_key in style_overrides and op_key in merged:
-                    try:
-                        merged[op_key] = str(
-                            float(merged[op_key]) * float(style_overrides[op_key])
-                        )
-                    except ValueError:
-                        merged[op_key] = style_overrides[op_key]
-                elif op_key in style_overrides:
-                    merged[op_key] = style_overrides[op_key]
+            merged.update(style_overrides)
 
-            for k, v in style_overrides.items():
-                if k not in _OPACITY_KEYS:
-                    merged[k] = v
+        local_opacity = max(0.0, min(1.0, opacity_multiplier))
 
         return ConvertContext(
             defs=self.defs,
@@ -167,6 +169,7 @@ class ConvertContext:
             rel_id_counter=self.rel_id_counter,
             svg_dir=self.svg_dir,
             inherited_styles=merged,
+            opacity_multiplier=self.opacity_multiplier * local_opacity,
             depth=self.depth + 1,
             # anim_targets is intentionally a fresh list on the child;
             # only the root-level context's list is read by the builder.
@@ -178,6 +181,8 @@ class ConvertContext:
             image_scale=self.image_scale,
             image_quality=self.image_quality,
             trace_events=self.trace_events,
+            theme_font_spec=self.theme_font_spec,
+            theme_color_spec=self.theme_color_spec,
         )
 
     def sync_from_child(self, child_ctx: ConvertContext) -> None:

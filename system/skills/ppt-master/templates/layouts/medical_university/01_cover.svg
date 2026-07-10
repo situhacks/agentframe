@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" data-pptx-layout="01_cover" data-pptx-layout-name="Cover">
     <!-- 背景 -->
-    <rect width="1280" height="720" fill="#FFFFFF" />
+    <rect width="1280" height="720" fill="#FFFFFF"  id="layout-01_cover-background" data-pptx-layer="layout" data-pptx-editable="false"/>
 
     <!-- ==================== 顶部装饰区域 ==================== -->
     <!-- 医学蓝主横条 -->
@@ -17,20 +17,20 @@
     <rect x="1080" y="25" width="160" height="50" fill="none" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.3"
         rx="4" />
     <text x="1160" y="58" text-anchor="middle" fill="#FFFFFF" font-family="Microsoft YaHei, Arial, sans-serif"
-        font-size="16" font-weight="bold">
+        font-size="16" font-weight="bold" id="semantic-01_cover-logo-1" data-pptx-role="logo">
         {{LOGO}}
     </text>
 
     <!-- ==================== 主内容区域 ==================== -->
     <!-- 主标题 -->
     <text x="640" y="320" text-anchor="middle" fill="#004080" font-family="Microsoft YaHei, Arial, sans-serif"
-        font-size="52" font-weight="bold">
+        font-size="52" font-weight="bold" id="slot-01_cover-title-1" data-pptx-placeholder="title">
         {{TITLE}}
     </text>
 
     <!-- 副标题 -->
     <text x="640" y="385" text-anchor="middle" fill="#666666" font-family="Microsoft YaHei, Arial, sans-serif"
-        font-size="26">
+        font-size="26" id="slot-01_cover-subtitle-2" data-pptx-placeholder="subtitle">
         {{SUBTITLE}}
     </text>
 

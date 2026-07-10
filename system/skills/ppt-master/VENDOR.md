@@ -1,22 +1,23 @@
 ## PPT Master Skill Vendor Record
 
 - Upstream repository: `https://github.com/hugohe3/ppt-master`
-- Upstream version: `main` @ `b0beba5b659c664bdbf0c07227fbdee313698dd7` (24 commits ahead of the last tag, `v3.1.0`; upstream tags lag `main` — pin the commit hash, not the tag)
-- Snapshot date (UTC): `2026-07-09`
-- Source location in AgentFrame: `system/skills/ppt-master/` (upstream `skills/ppt-master/` only — the repo's `projects/`, `examples/`, and docs workspace are not vendored)
-- Excluded from the snapshot: `references/ai-image-comparison/` (~43 MB of model-comparison sample PNGs; two "see also" pointers in `references/strategist.md` reference it, nothing in the pipeline consumes it)
-- License: MIT — see `LICENSE.txt`
+- Upstream version: `main` @ `b520a0a96f931d4a1ba173bfe769a39de4d46c6d` (pin the commit hash, not the moving branch)
+- Snapshot date (UTC): `2026-07-10`
+- Source locations in AgentFrame: `system/skills/ppt-master/` (upstream `skills/ppt-master/`) and `system/docs/` (all authored upstream `docs/**/*.md`, preserving the upstream relative layout)
+- Excluded from the docs snapshot: binary screenshots, sponsor images, and other non-Markdown presentation assets; they carry no agent-facing operating knowledge
+- Excluded from the skill snapshot: `references/ai-image-comparison/` (~43 MB of model-comparison sample PNGs; the pipeline does not consume it)
+- License: MIT - see `LICENSE.txt`
 
 ### Purpose
 
-Track the upstream source and refresh procedure for the vendored PPT Master deck-generation skill. AgentFrame-specific boundary rules live in `AGENTS.md` next to this file.
+Track the upstream source and refresh procedure for the vendored PPT Master deck-generation skill. Vendor files own deck workflow and design knowledge. AgentFrame-specific integration boundaries live only in `AGENTS.md` next to this file.
 
 ### Refresh Procedure
 
-1. Clone upstream to a temporary directory (depth 1 is acceptable for routine refreshes).
-2. Remove `system/skills/ppt-master/` from this repo.
+1. Clone upstream to a temporary directory and check out the exact commit being adopted.
+2. Preserve the AgentFrame overlay files (`VENDOR.md`, `AGENTS.md`), then remove `system/skills/ppt-master/` and `system/docs/`.
 3. Copy upstream `skills/ppt-master/` into `system/skills/ppt-master/`, excluding `references/ai-image-comparison/`.
-4. Copy the upstream root `LICENSE` to `LICENSE.txt`.
-5. Reapply the AgentFrame overlay files (`VENDOR.md`, `AGENTS.md`) and verify both still exist.
+4. Copy every upstream `docs/**/*.md` into `system/docs/`, preserving relative paths. These files are vendor-owned dependencies, not AgentFrame summaries.
+5. Copy the upstream root `LICENSE` to `system/skills/ppt-master/LICENSE.txt`, then restore the two overlay files.
 6. Remove the temporary clone directory.
-7. Run `python -m unittest system.tests.test_ppt_master_guard` — the AgentFrame guard hooks (`system/hooks/ppt_master_guard.py`) match upstream's CLI command shapes (`project_manager.py init`, `svg_to_pptx.py <project_path>`). If upstream renamed or moved those entry points, update the guard hooks and their tests; never patch vendored files.
+7. Run `python -m unittest system.tests.test_ppt_master_guard system.tests.test_ppt_master_vendor` and `python system/af.py doctor`. If upstream changed an integration contract, update the AgentFrame boundary or guard; never restate or patch vendor-owned workflow guidance.

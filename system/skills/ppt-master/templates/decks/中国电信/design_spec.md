@@ -1,6 +1,7 @@
 ---
 deck_id: 中国电信
 kind: deck
+native_structure_mode: template
 summary: China Telecom related briefings, 政企数字化方案, 转型规划, 内部汇报.
 canvas_format: ppt169
 page_count: 5
@@ -98,6 +99,7 @@ primary_color: "#C00000"
 - Chapter pages are cleaner section-divider pages and should not inherit the content-page header ribbon.
 - Each page should contain at most one formal logo mark; sidebars should rely on slogan and skyline imagery instead of repeated logo lockups.
 - The content page remains open-canvas by default and should not reserve a large fixed sidebar.
+- Repeated telecom motifs use one reusable structure family rather than unrelated decorative variants.
 
 ---
 
@@ -179,18 +181,7 @@ primary_color: "#C00000"
 
 ---
 
-## X. SVG Technical Constraints
-
-1. `viewBox` must remain `0 0 1280 720`
-2. Do not use `mask`, `<style>`, `class`, `foreignObject`, or `rgba()`. `clipPath` is allowed only on `<image>` under `shared-standards.md` §1.2
-3. Use plain vector geometry and `<image>` references to packaged assets only
-4. Transparency must use `fill-opacity` / `stroke-opacity`
-5. Text wrapping should be handled with `<tspan>` if needed
-6. Avoid PPT-fragile decorative complexity; simplify repeated motifs into reusable structures
-
----
-
-## XI. Placeholder Specification
+## X. Placeholder Specification
 
 | Placeholder | Purpose | Applicable Page |
 | --- | --- | --- |
@@ -213,8 +204,9 @@ primary_color: "#C00000"
 
 ---
 
-## XII. Usage Guide
+## XI. Usage Guide
 
 1. Reuse `logo.png` and `footer_ribbon.png` as fixed brand assets; `slogan_red.png` and `skyline_bg.png` should be used selectively and only on the cover / ending pages.
 2. Keep generated text inside the documented safe areas; only chapter pages use a strong left/right split.
 3. Prefer red emphasis only for structure and key figures; do not over-saturate the content area.
+4. Reference only assets packaged with this template.

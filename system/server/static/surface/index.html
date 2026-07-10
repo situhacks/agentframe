@@ -18,6 +18,7 @@
     </div>
     <nav class="top-tabs">
       <button id="tab-dashboard" data-route="dashboard">Dashboard</button>
+      <button id="tab-calendar" data-route="calendar">Calendar</button>
       <button id="tab-preview" data-route="preview">Preview</button>
     </nav>
     <div class="top-status">
@@ -55,6 +56,43 @@
       <header><span class="title">Recent Activity</span><span class="count" id="activity-count"></span></header>
       <div class="scroll" id="activity-body"></div>
     </section>
+  </main>
+
+  <main id="view-calendar" class="view" hidden>
+    <header class="calendar-header">
+      <div>
+        <h1>Project history</h1>
+        <p>Evidence of work over time — hover any marker for detail, click a deliverable to open it.</p>
+      </div>
+      <div class="calendar-controls">
+        <div class="calendar-views" id="calendar-views" role="tablist">
+          <button data-view="timeGridDay">Day</button>
+          <button data-view="timeGridWeek" class="on">Week</button>
+          <button data-view="dayGridMonth">Month</button>
+          <button data-view="timeline">Timeline</button>
+        </div>
+        <label class="calendar-check"><input id="calendar-ghost" type="checkbox" checked> ghost inactive days</label>
+        <label class="calendar-check"><input id="calendar-ribbons" type="checkbox" checked> project ribbons</label>
+        <label class="calendar-check"><input id="calendar-expand" type="checkbox"> expand labels</label>
+        <label class="calendar-check"><input id="calendar-future" type="checkbox" checked> future commitments</label>
+        <button id="calendar-print" class="calendar-print">print / PDF</button>
+      </div>
+    </header>
+    <section id="calendar-summary" class="calendar-summary"></section>
+    <div class="calendar-shell">
+      <aside class="calendar-filters">
+        <header>
+          <span>Projects</span>
+          <span><button id="calendar-all">all</button> · <button id="calendar-active">active</button> · <button id="calendar-none">none</button></span>
+        </header>
+        <div id="calendar-project-filters" class="scroll"></div>
+        <div class="calendar-legend" id="calendar-legend"></div>
+      </aside>
+      <section class="calendar-stage">
+        <div id="calendar-fc" class="calendar-fc"></div>
+        <div id="calendar-board" class="calendar-board scroll" hidden></div>
+      </section>
+    </div>
   </main>
 
   <main id="view-preview" class="view" hidden>

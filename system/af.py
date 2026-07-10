@@ -277,7 +277,7 @@ def make_ctx():
     return types.SimpleNamespace(
         ROOT=ROOT, read=read, write=write, split_fm=split_fm, join_fm=join_fm,
         set_scalar=set_scalar, get_scalar=get_scalar, row_set=row_set, row_get=row_get,
-        row_span=row_span, all_rows=all_rows, versions_in=versions_in, today=today,
+        row_span=row_span, all_rows=all_rows, fm_list=fm_list, versions_in=versions_in, today=today,
         now_iso=now_iso, append_activity=append_activity, touch_lifecycle=touch_lifecycle, die=die)
 
 
@@ -496,6 +496,11 @@ def pipe_rows(fm):
     return re.findall(r"^  ([A-Za-z0-9_-]+):\s*$", block, re.M)
 
 
+def app_materials(afm):
+    """Deliverable rows that constitute the submission; resume-only when `materials` is absent."""
+    return fm_list(afm, "materials") or ["resume"]
+
+
 def pipe_row_add(fm, slug, fields):
     fm = re.sub(r"^applications:\s*\{\}\s*$", "applications:", fm, count=1, flags=re.M)
     m = re.search(r"^applications:\s*$", fm, re.M)
@@ -599,12 +604,17 @@ def cmd_pipe_stage(args):
         ap = os.path.join(adir, "application.md")
         if os.path.isfile(ap):
             afm, _ = split_fm(read(ap), "application.md")
-            rel, st = row_get(afm, "resume", "file"), row_get(afm, "resume", "status")
+            mats = app_materials(afm)
+            rel, st = row_get(afm, mats[0], "file"), row_get(afm, mats[0], "status")
             m = re.search(r"-v(\d+)\.md$", rel or "")
             if m and st in ("locked", "delivered"):
                 fm = row_set(fm, slug, "shipped", f"v{m.group(1)}")
             else:
-                notes.append(f"resume row is '{st}' — shipped left unset (lock + export before submitting next time)")
+                notes.append(f"primary material '{mats[0]}' is '{st}' — shipped left unset (lock + export before submitting next time)")
+            for mat in mats[1:]:
+                mst = row_get(afm, mat, "status")
+                if mst not in ("locked", "delivered"):
+                    notes.append(f"material '{mat}' is '{mst}'")
     elif new == "interviewing":
         fm = row_set(fm, slug, "next_nudge", (datetime.date.today() + datetime.timedelta(days=PIPE_NUDGE_DAYS)).isoformat())
     else:
@@ -691,6 +701,9 @@ def check_pipeline():
         for field in ("name", "slug", "schema_version", "created_at", "domain", "company", "role", "job_url", "last_activity"):
             if get_scalar(afm, field) in (None, ""):
                 issues.append(f"{rel}: required field '{field}' missing")
+        for mat in app_materials(afm):
+            if mat not in all_rows(afm):
+                issues.append(f"{rel}: materials names '{mat}' but no such deliverable row exists")
         if get_scalar(afm, "slug") != slug:
             issues.append(f"{rel}: slug '{get_scalar(afm, 'slug')}' != folder name")
         if stage != "saved" and not os.path.isfile(os.path.join(adir, "jd.md")):

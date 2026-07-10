@@ -127,6 +127,22 @@ class TestStageMachine(PipeBase):
         self.stage(slug, "interviewing")
         self.assertEqual(af.row_get(self.board_fm(), slug, "stage"), "interviewing")
 
+    def test_shipped_derives_from_primary_material(self):
+        slug = self.save()
+        write(af.jd_cache_path(slug), "jd")
+        self.start(slug)
+        adir = af.app_dir(slug)
+        write(os.path.join(adir, "deck", "deck-v2.md"),
+              "---\nstatus: locked\nlast_updated: 2026-07-10\nexports: [media/deck-v2.pptx]\n---\n# Deck\n")
+        write(os.path.join(adir, "deck", "media", "deck-v2.pptx"), "pptx")
+        ap = os.path.join(adir, "application.md")
+        afm, abody = af.split_fm(af.read(ap), "application.md")
+        afm = af.set_scalar(afm, "materials", "[deck]")
+        afm = afm.replace("deliverables:", "deliverables:\n  deck:\n    file: deck/deck-v2.md\n    status: locked")
+        af.write(ap, af.join_fm(afm, abody))
+        self.stage(slug, "applied")
+        self.assertEqual(af.row_get(self.board_fm(), slug, "shipped"), "v2")
+
 
 class TestPipelineDoctor(PipeBase):
     def test_clean_pipeline_is_quiet(self):
@@ -176,6 +192,17 @@ class TestPipelineDoctor(PipeBase):
         self.assertTrue(any("non-canonical heading" in i for i in issues))
         self.assertTrue(any("year-only date range" in i for i in issues))
         self.assertTrue(any("AI-tell" in n for n in notes))
+
+    def test_materials_naming_missing_row_is_issue(self):
+        slug = self.save()
+        write(af.jd_cache_path(slug), "jd")
+        self.start(slug)
+        ap = os.path.join(af.app_dir(slug), "application.md")
+        afm, abody = af.split_fm(af.read(ap), "application.md")
+        afm = af.set_scalar(afm, "materials", "[deck]")
+        af.write(ap, af.join_fm(afm, abody))
+        issues, _ = af.check_pipeline()
+        self.assertTrue(any("materials" in i and "deck" in i for i in issues))
 
 
 class TestLockGates(PipeBase):

@@ -18,6 +18,10 @@ salary_range: "{salary}"
 # LIFECYCLE
 last_activity: {ts}
 
+# MATERIALS (submission rows; first = primary and drives `shipped`)
+# Add deck/demo rows per application; add cover-letter only when the posting requires one.
+materials: [resume]
+
 # DELIVERABLES
 deliverables:
   resume:

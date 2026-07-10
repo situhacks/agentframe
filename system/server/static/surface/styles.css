@@ -1074,3 +1074,17 @@ tr.expanded .activity-md.excerpt {
 .calendar-legend .legend-dot { border-radius: 50%; border: 2px solid var(--ink-soft); background: var(--base-white); }
 .calendar-legend .legend-block { background: var(--accent-pink); }
 .calendar-legend .legend-square { background: transparent; border: 2px solid var(--ink-soft); }
+
+/* ---- Calendar v2: FullCalendar spans + blocks ---- */
+.af-span.ghost { opacity: 0.16; }
+.af-span.solid { opacity: 0.9; }
+.calendar-fc .fc-event { cursor: default; }
+.calendar-fc .fc-timegrid-event { min-height: 30px; }
+.calendar-fc .fc .fc-toolbar-title { font-size: 15px; }
+.calendar-fc .fc-timegrid-event .fc-event-main { padding: 1px 2px; }
+
+/* span bars live in the all-day lane as thin ribbons (gradient painted in JS) */
+.calendar-fc .fc-daygrid-event.af-span { border: none; padding: 0; margin: 1px 0; min-height: 16px; font-size: 10.5px; font-weight: 600; }
+.calendar-fc .fc-daygrid-event.af-span .fc-event-title { padding: 1px 6px; color: #fff; }
+.calendar-fc .fc-daygrid-event.af-span.ghost { opacity: 1; }
+.calendar-fc .fc-daygrid-day-events { margin-bottom: 1px; }

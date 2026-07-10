@@ -145,9 +145,102 @@ function renderFilters(projects) {
   host.scrollTop = scrollTop;
 }
 
-// ---- FullCalendar (Task 5) + dots/popovers (Task 6) ----
+// ---- FullCalendar ----
 
-function renderFullCalendar(_projects) {}
+const FC_SRC = 'https://cdn.jsdelivr.net/npm/fullcalendar@6.1.21/index.global.min.js';
+let fcLoad = null;
+
+function ensureFullCalendar() {
+  if (window.FullCalendar) return Promise.resolve(window.FullCalendar);
+  if (!fcLoad) {
+    fcLoad = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = FC_SRC;
+      s.onload = () => resolve(window.FullCalendar);
+      s.onerror = () => reject(new Error('FullCalendar failed to load from CDN'));
+      document.head.append(s);
+    });
+  }
+  return fcLoad;
+}
+
+function colorFor(slug) {
+  // deterministic hue from slug; matches keycap spread
+  let hash = 0;
+  for (const ch of String(slug)) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  return `hsl(${hash % 360} 45% 45%)`;
+}
+
+function endExclusive(dateStr) {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  return new Date(d.getTime() + DAY_MS).toISOString().slice(0, 10);
+}
+
+function pad(minutes) {
+  const h = String(Math.floor(minutes / 60)).padStart(2, '0');
+  const m = String(minutes % 60).padStart(2, '0');
+  return `${h}:${m}:00`;
+}
+
+function projectEvents(project) {
+  const color = colorFor(project.slug);
+  const events = [];
+  const start = String(project.created_at || project.last_activity || '').slice(0, 10);
+  const rawEnd = String(project.completed_at || project.cancelled_at || '').slice(0, 10);
+  const today = new Date().toISOString().slice(0, 10);
+  const end = rawEnd || today;
+  if (calendarState.ribbons && start) {
+    events.push({
+      start, end: endExclusive(end), allDay: true,
+      title: project.name || project.slug,
+      classNames: ['af-span', calendarState.ghost ? 'ghost' : 'solid'],
+      extendedProps: { project: project.slug, color, worked: project.worked_days || [], kind: 'span' },
+    });
+  }
+  for (const block of project.work_blocks || []) {
+    events.push({
+      start: `${block.date}T${pad(block.start)}`,
+      end: `${block.date}T${pad(block.end)}`,
+      title: project.name || project.slug,
+      backgroundColor: color, borderColor: color,
+      extendedProps: { project: project.slug, color, kind: 'block', events: block.events },
+    });
+  }
+  return events;
+}
+
+async function renderFullCalendar(projects) {
+  const host = document.getElementById('calendar-fc');
+  let FC;
+  try {
+    FC = await ensureFullCalendar();
+  } catch (err) {
+    host.innerHTML = `<div class="viewer-note"><b>Calendar failed to load.</b><br>` +
+      `FullCalendar loads from cdn.jsdelivr.net — check the network connection and refresh.<br>` +
+      `<span class="warn">${String(err.message || err)}</span></div>`;
+    return;
+  }
+  const events = projects.flatMap(projectEvents);
+  if (!calendarState.fc) {
+    calendarState.fc = new FC.Calendar(host, {
+      initialView: calendarState.view === 'timeline' ? 'timeGridWeek' : calendarState.view,
+      initialDate: calendarState.focusDate || undefined,
+      headerToolbar: { left: 'prev,next today', center: 'title', right: '' },
+      allDaySlot: true,
+      nowIndicator: true,
+      height: 'auto',
+      datesSet: (info) => {
+        calendarState.focusDate = info.startStr.slice(0, 10);
+        writeCalendarHash();
+      },
+    });
+    calendarState.fc.render();
+  }
+  const fc = calendarState.fc;
+  fc.changeView(calendarState.view === 'timeline' ? 'timeGridWeek' : calendarState.view);
+  fc.removeAllEvents();
+  for (const ev of events) fc.addEvent(ev);
+}
 
 // ---- Timeline (Task 7) ----
 

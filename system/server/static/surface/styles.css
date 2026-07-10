@@ -1064,6 +1064,7 @@ tr.expanded .activity-md.excerpt {
 .calendar-views button.on { background: var(--ink); color: var(--base-white); }
 .calendar-stage { flex: 1; min-width: 0; }
 .calendar-fc { min-height: 480px; }
+.calendar-fc[hidden], .calendar-board[hidden] { display: none !important; }
 .calendar-legend .legend-ghost,
 .calendar-legend .legend-solid,
 .calendar-legend .legend-dot,
@@ -1109,3 +1110,22 @@ tr.expanded .activity-md.excerpt {
 .pop-link { cursor: pointer; border-bottom: 1px dotted var(--ink-soft); }
 .calendar-fc .fc-daygrid-event.af-deliverable,
 .calendar-fc .fc-daygrid-event.af-future { background: transparent; border: none; }
+
+/* ---- Calendar v2: skinny swimlane (Timeline view) ---- */
+.calendar-axis, .calendar-row { grid-template-columns: 200px minmax(0, 1fr); }
+.calendar-row { min-height: 40px; }
+.calendar-project-label { max-width: 200px; }
+.calendar-project-copy strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; display: inline-block; }
+/* ghost track = faint full-span bar; solid worked segments layered on top */
+.calendar-duration.ghost-track { opacity: 0.18; }
+.calendar-worked-seg { position: absolute; top: 15px; height: 8px; border-radius: 3px; z-index: 2; }
+.calendar-worked-seg.active { background: var(--accent-teal); }
+.calendar-worked-seg.complete { background: var(--accent-modifier); }
+.calendar-worked-seg.cancelled { background: var(--accent-pink); }
+/* clustered deliverable dot for the skinny lane */
+.calendar-marker.deliverable-dot { top: 13px; width: 13px; height: 13px; border-radius: 50%; background: var(--base-white); border: 2px solid var(--accent-teal); display: inline-flex; align-items: center; justify-content: center; }
+.calendar-marker.deliverable-dot .dot-badge { font-size: 8px; font-weight: 700; color: var(--ink); }
+.calendar-marker.deliverable-dot.no-link { cursor: help; }
+/* compress activity/future markers to the skinny row */
+.calendar-row .calendar-marker.activity { top: 28px; }
+.calendar-row .calendar-marker.future { top: 26px; }

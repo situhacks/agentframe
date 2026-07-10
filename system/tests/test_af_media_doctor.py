@@ -89,5 +89,57 @@ class TestMediaDoctor(unittest.TestCase):
         self.assertTrue(any("empty shipped_media" in note for note in notes))
 
 
+CAROUSEL_PROJECT_FM = """\
+name: Test
+slug: test
+domain: marketing
+status: active
+deliverables:
+  post-1-carousel:
+    status: locked
+    file: post-1-carousel/image-prompts-v1.md
+    last_updated: 2026-07-09
+"""
+
+
+class TestLockedExportableDoctor(unittest.TestCase):
+    """Doctor flags locked/delivered exportable deliverables with empty exports[]."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.cdir = self.tmp.name
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_locked_image_prompts_without_exports_is_issue(self):
+        write(
+            os.path.join(self.cdir, "post-1-carousel/image-prompts-v1.md"),
+            textwrap.dedent("""\
+                ---
+                status: locked
+                last_updated: 2026-07-09
+                ---
+                """),
+        )
+        issues = af.media_manifest_issues(self.cdir, CAROUSEL_PROJECT_FM)
+        self.assertTrue(any("empty exports[]" in issue for issue in issues))
+
+    def test_locked_image_prompts_with_filed_exports_passes(self):
+        write(os.path.join(self.cdir, "post-1-carousel/media/final.pdf"), "x")
+        write(
+            os.path.join(self.cdir, "post-1-carousel/image-prompts-v1.md"),
+            textwrap.dedent("""\
+                ---
+                status: locked
+                last_updated: 2026-07-09
+                exports:
+                  - media/final.pdf
+                ---
+                """),
+        )
+        self.assertEqual(af.media_manifest_issues(self.cdir, CAROUSEL_PROJECT_FM), [])
+
+
 if __name__ == "__main__":
     unittest.main()

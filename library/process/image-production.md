@@ -23,4 +23,4 @@ When the Open Design path is picked, stage the project with these defaults (oper
 
 ## Record convention
 
-Prompts and their iteration trail are owned by the post's `image-prompts-v{N}.md` — shape, constraints, and lock criteria in [`library/deliverables/image-prompts/template.md`](../deliverables/image-prompts/template.md). Generated files land in the post's `images/` or `visuals/` folder beside it. Gemini API docs own prompt best practices; the design language owns the reusable treatment block the prompts build on.
+Prompts and their iteration trail are owned by the post's `image-prompts-v{N}.md` — shape, constraints, and lock criteria in [`library/deliverables/image-prompts/template.md`](../deliverables/image-prompts/template.md). Working renders and variants land in the post's `images/` or `visuals/` folder beside it; approved finals land in the deliverable folder's `media/` and are recorded in the owning deliverable's `exports[]` frontmatter. Gemini API docs own prompt best practices; the design language owns the reusable treatment block the prompts build on.

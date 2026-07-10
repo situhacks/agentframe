@@ -17,7 +17,7 @@ Fire when either is true:
 
 1. **Verify template lock criteria.** Read the deliverable template and confirm criteria pass; surface gaps before locking.
 2. **Run declared pre-lock quality gates.** If the template includes `## Humanizer Pass` (or another explicit gate), run it using the referenced process.
-3. **Land shipped/exported media first.** Final media files live inside the deliverable folder (`media/` for shipped assets, `exports/` for generated exports) before a terminal state is recorded.
+3. **Land shipped/exported media first.** Final media files live inside the deliverable folder (`media/` for shipped/final assets, `exports/` for generated exports) and are recorded in the deliverable's `exports[]` frontmatter before a terminal state is recorded. When renders happen outside the agent's tool loop (the operator runs prompts in an external tool), ask where the finals live and land them into `{deliverable-folder}/media/` now — `af lock` refuses an exportable deliverable whose `exports[]` is empty or dangling.
 4. **Run the button.** `python system/af.py lock <project-slug> <deliverable-slug-or-path>` — it owns the mechanics atomically: frontmatter flip, post-FINAL assembly for manifest ingredients, tracker sync, activity event. Never hand-edit a terminal status.
 5. **Work the printed checklist.** The button prints the judgment steps that remain (voice mini-retro eligibility per [`voice-mini-retro.md`](voice-mini-retro.md), remaining follow-ups). Surface the result to the operator.
 

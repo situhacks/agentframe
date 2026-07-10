@@ -35,6 +35,7 @@ DOMAINS = os.path.join(ROOT, "library", "domains")
 
 STATUS_ENUM = {"not_started", "drafting", "locked", "delivered", "deferred"}
 LIFECYCLE_ENUM = {"active", "complete", "cancelled"}
+EXPORTABLE_INGREDIENTS = ("image-prompts",)  # deliverables whose finals must be filed in exports[] before lock
 FLOWS = {"marketing-solo-flow": "1-research-and-architecture",
          "marketing-standard-flow": "1-research",
          "open-flow": "active",
@@ -247,6 +248,22 @@ def make_ctx():
 
 # ---------------------------------------------------------------- lock
 
+def exportable_ingredient(path):
+    m = re.fullmatch(r"(.+)-v\d+\.md", os.path.basename(path))
+    return m.group(1) if m and m.group(1) in EXPORTABLE_INGREDIENTS else None
+
+
+def export_gate_issues(cdir, rel, dfm):
+    """Blocking exports[] problems for an exportable deliverable; [] when clear."""
+    if not exportable_ingredient(rel):
+        return []
+    values = fm_list_values(dfm, "exports")
+    if not values:
+        return ["exports[] is empty"]
+    return [f"exports path {status}: {v}"
+            for v in values for status in [manifest_path_status(cdir, rel, v)] if status]
+
+
 def cmd_lock(args):
     cdir = project_dir(args.project)
     cfm, cbody = split_fm(read(os.path.join(cdir, "project.md")), "project.md")
@@ -262,6 +279,16 @@ def cmd_lock(args):
     head_of(dpath)
 
     dfm, dbody = split_fm(read(dpath), rel)
+    gate = export_gate_issues(cdir, rel, dfm)
+    override_note = ""
+    if gate:
+        if not args.allow_missing_exports:
+            folder = os.path.dirname(rel).replace("\\", "/") or "."
+            die(f"{rel}: exportable deliverable failed the exports gate ({'; '.join(gate)}). "
+                f"Land the approved finals under {folder}/media/ and record each path in exports[] "
+                f"frontmatter, then rerun. Override (rare): --allow-missing-exports - doctor flags "
+                f"the row until exports land.")
+        override_note = f"LOCKED WITHOUT EXPORTS (override): {'; '.join(gate)}"
     dfm = set_scalar(dfm, "status", "locked", rel)
     dfm = set_scalar(dfm, "last_updated", today(), rel)
     write(dpath, join_fm(dfm, dbody))
@@ -270,6 +297,8 @@ def cmd_lock(args):
     rules = load_rules(load_pack(project_domain(cfm))[1])
     if rules and hasattr(rules, "on_lock"):
         cfm, notes = rules.on_lock(make_ctx(), cdir, dpath, rel, cfm)
+    if override_note:
+        notes.append(override_note)
 
     if slug:
         cfm = row_set(cfm, slug, "status", "locked")
@@ -464,6 +493,8 @@ def media_manifest_issues_for_fm(cdir, cfm, source_label="project.md"):
         if st not in ("locked", "delivered") or not f or not os.path.isfile(os.path.join(cdir, f)):
             continue
         dfm, _ = split_fm(read(os.path.join(cdir, f)), f)
+        if exportable_ingredient(f) and not fm_list_values(dfm, "exports"):
+            issues.append(f"{rel}: {source_label} row '{slug}' is a {st} exportable deliverable with empty exports[] - land the finals in the deliverable's media/ folder and record them")
         for field in MEDIA_MANIFEST_FIELDS:
             for value in fm_list_values(dfm, field):
                 status = manifest_path_status(cdir, f, value)
@@ -860,7 +891,8 @@ def main():
     p = argparse.ArgumentParser(prog="af", description="AgentFrame state-transition CLI")
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    s = sub.add_parser("lock");            s.add_argument("project"); s.add_argument("deliverable"); s.set_defaults(fn=cmd_lock)
+    s = sub.add_parser("lock");            s.add_argument("project"); s.add_argument("deliverable")
+    s.add_argument("--allow-missing-exports", action="store_true"); s.set_defaults(fn=cmd_lock)
     s = sub.add_parser("publish");         s.add_argument("project"); s.add_argument("post")
     s.add_argument("--url", required=True); s.add_argument("--posted-at"); s.add_argument("--platform")
     s.add_argument("--media", nargs="*", default=[]); s.set_defaults(fn=cmd_publish)

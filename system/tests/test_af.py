@@ -1,6 +1,9 @@
+import contextlib
 import datetime
+import io
 import os
 import tempfile
+import types
 import unittest
 from unittest.mock import patch
 
@@ -145,6 +148,86 @@ class ArchivedRowCounterTests(unittest.TestCase):
     def test_no_archive_file_counts_tracker_only(self):
         issues = self.rules.check(af.make_ctx(), self.cdir, PROJECT_FM.format(declared=1))
         self.assertEqual(issues, [])
+
+
+LOCK_PROJECT_FM = """name: carousel-proj
+slug: carousel-proj
+domain: marketing
+status: active
+last_activity: 2026-07-01T10:00:00+00:00
+deliverables:
+  {slug}:
+    status: drafting
+    file: {file}
+    last_updated: 2026-07-01"""
+
+
+class LockExportGateTests(unittest.TestCase):
+    """af lock refuses exportable deliverables whose exports[] are empty or dangling."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = self._tmp.name
+        projects = os.path.join(self.root, "workspace", "projects")
+        self._patch = patch.object(af, "PROJECTS", projects)
+        self._patch.start()
+        self.addCleanup(self._patch.stop)
+        self.addCleanup(self._tmp.cleanup)
+        self.cdir = os.path.join(projects, "carousel-proj")
+        os.makedirs(self.cdir)
+
+    def make_deliverable(self, slug, fname, extra_fm=""):
+        rel = f"{slug}/{fname}"
+        af.write(os.path.join(self.cdir, "project.md"),
+                 "---\n" + LOCK_PROJECT_FM.format(slug=slug, file=rel) + "\n---\n")
+        os.makedirs(os.path.join(self.cdir, slug), exist_ok=True)
+        dfm = "status: drafting\nlast_updated: 2026-07-01"
+        if extra_fm:
+            dfm += "\n" + extra_fm
+        af.write(os.path.join(self.cdir, rel), f"---\n{dfm}\n---\n\nbody\n")
+        return rel
+
+    def run_lock(self, slug, allow_missing_exports=False):
+        args = types.SimpleNamespace(project="carousel-proj", deliverable=slug,
+                                     allow_missing_exports=allow_missing_exports)
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            af.cmd_lock(args)
+
+    def deliverable_status(self, rel):
+        dfm, _ = af.split_fm(af.read(os.path.join(self.cdir, rel)), rel)
+        return af.get_scalar(dfm, "status")
+
+    def test_lock_refuses_image_prompts_with_no_exports(self):
+        rel = self.make_deliverable("post-1-carousel", "image-prompts-v1.md")
+        with self.assertRaises(SystemExit):
+            self.run_lock("post-1-carousel")
+        self.assertEqual(self.deliverable_status(rel), "drafting")
+
+    def test_lock_refuses_dangling_exports_path(self):
+        rel = self.make_deliverable("post-1-carousel", "image-prompts-v1.md",
+                                    "exports:\n  - media/missing.png")
+        with self.assertRaises(SystemExit):
+            self.run_lock("post-1-carousel")
+        self.assertEqual(self.deliverable_status(rel), "drafting")
+
+    def test_lock_locks_image_prompts_with_filed_exports(self):
+        rel = self.make_deliverable("post-1-carousel", "image-prompts-v1.md",
+                                    "exports:\n  - media/final.pdf")
+        os.makedirs(os.path.join(self.cdir, "post-1-carousel", "media"))
+        af.write(os.path.join(self.cdir, "post-1-carousel", "media", "final.pdf"), "x")
+        self.run_lock("post-1-carousel")
+        self.assertEqual(self.deliverable_status(rel), "locked")
+
+    def test_override_locks_and_marks_activity(self):
+        rel = self.make_deliverable("post-1-carousel", "image-prompts-v1.md")
+        self.run_lock("post-1-carousel", allow_missing_exports=True)
+        self.assertEqual(self.deliverable_status(rel), "locked")
+        self.assertIn("WITHOUT EXPORTS", af.read(os.path.join(self.cdir, "activity.md")))
+
+    def test_non_exportable_deliverable_locks_without_exports(self):
+        rel = self.make_deliverable("post-1-body", "body-copy-v1.md")
+        self.run_lock("post-1-body")
+        self.assertEqual(self.deliverable_status(rel), "locked")
 
 
 if __name__ == "__main__":

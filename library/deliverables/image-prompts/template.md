@@ -32,4 +32,5 @@ One file per image set: `image-prompts-v{N}.md`.
 ## Lock Criteria
 
 - Every image needed has its assembled prompt in FINAL, and the operator approved the render it produced.
+- The approved finals are landed under the deliverable folder's `media/` and recorded in `exports[]` frontmatter — approval without a filed copy does not meet lock (`af lock` enforces this).
 - Lock-event mechanics per [`library/process/lock-event.md`](../../process/lock-event.md); the FINAL section lands in the active pack's assembly-record deliverable in the lock turn, when the pack declares one.

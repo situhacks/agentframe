@@ -375,6 +375,9 @@ def cmd_new_project(args):
 # mechanics); the project-consolidate skill owns what a dream pass does.
 DREAM_AGE_DAYS = 30            # active project this long past last_consolidated → nudge
 DREAM_ACTIVE_WINDOW_DAYS = 14  # ...but only if it saw activity this recently
+ACTIVITY_LINE_CAP = 200        # chars; longer reads as narration, not an event line
+ACTIVITY_DAY_CAP = 6           # events in one day; more smells like per-turn logging
+ACTIVITY_LINE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}( \d{2}:\d{2})?\s*[—-]\s*[a-z][a-z0-9_]*:\s")
 DREAM_LINE_CAPS = (("knowledge/decision-log.md", 300),
                    ("knowledge/raid-log.md", 300),
                    ("activity.md", 500),
@@ -563,6 +566,44 @@ def dream_note(cdir):
     if not signals:
         return None
     return f"{rel}: dream pass recommended — " + "; ".join(signals) + " (offer system/skills/project-consolidate)"
+
+
+def activity_notes(cdir):
+    """Shape lint for activity.md — drift alarms, never issues. Checks shape
+    only (timestamp/event-type prefix, line length, per-day volume), never
+    event vocabulary, so any domain can introduce event types freely. Active
+    projects only — completed history won't change, and a permanent alarm is
+    noise (same contract as dream_note)."""
+    path = os.path.join(cdir, "activity.md")
+    if not os.path.isfile(path):
+        return []
+    try:
+        cfm, _ = split_fm(read(os.path.join(cdir, "project.md")), "project.md")
+    except SystemExit:
+        return []
+    if get_scalar(cfm, "status") != "active":
+        return []
+    rel = os.path.relpath(cdir, ROOT).replace("\\", "/")
+    unshaped, overlong, per_day = 0, 0, {}
+    for raw in read(path).splitlines():
+        s = raw.strip()
+        if not s or s.startswith("#") or s.startswith("- ["):
+            continue  # blank, heading, or Attention bullet
+        if re.match(r"^\d{4}-\d{2}-\d{2}", s):
+            per_day[s[:10]] = per_day.get(s[:10], 0) + 1
+        if not ACTIVITY_LINE_RE.match(s):
+            unshaped += 1
+        if len(s) > ACTIVITY_LINE_CAP:
+            overlong += 1
+    notes = []
+    if unshaped:
+        notes.append(f"{rel}: activity.md {unshaped} line(s) not shaped 'YYYY-MM-DD [HH:MM] — event_type: ...' — one line per material event")
+    if overlong:
+        notes.append(f"{rel}: activity.md {overlong} line(s) over {ACTIVITY_LINE_CAP} chars — iteration narration belongs in the version files' changes_from_vN, not here")
+    busy = [f"{d} ({n})" for d, n in sorted(per_day.items()) if n > ACTIVITY_DAY_CAP]
+    if busy:
+        notes.append(f"{rel}: activity.md heavy day(s) {', '.join(busy)} — check for per-turn logging (material events rarely exceed {ACTIVITY_DAY_CAP}/day)")
+    return notes
 
 
 def check_project(cdir):
@@ -772,6 +813,7 @@ def cmd_doctor(args):
         if note:
             notes.append(note)
         notes += media_manifest_notes(d)
+        notes += activity_notes(d)
     system_scope = ""
     if not args.project:
         sys_issues, sys_notes = check_system()

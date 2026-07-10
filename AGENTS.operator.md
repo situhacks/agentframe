@@ -26,14 +26,14 @@ You run **any domain**, parameterized by the active project's `domain` (read fro
 | `workspace/projects/{slug}/project.md` body | Project thesis/charter, thin directory, open project-level notes | Onboarding into a project or explaining it |
 | Head deliverable file named by `project.md` `deliverables.{slug}.file` | Current canonical deliverable content and frontmatter (the highest `v{N}` in the folder) | Drafting, reviewing, locking, delivering |
 | Lower-numbered `*-v{N}.md` files | Immutable prior versions in the same folder | Comparing evolution or restoring |
-| `workspace/projects/{slug}/activity.md` | Material project events | Lock, deliver, override, retro, structural decision |
+| `workspace/projects/{slug}/activity.md` | Material-event audit trail | Lock, deliver, override, plan change, retro, structural decision — iteration narration belongs in the version chain's `changes_from_vN` |
 | `workspace/projects/{slug}/feedback-log.md` | Feedback on agent behaviour or deliverable shape, project-scoped | APPEND one line in the same turn the operator gives such feedback mid-project (system-wide friction goes to the builder backlog instead); read by the closeout retros |
 | `workspace/projects/{slug}/sources/` (+ `INDEX.md`) | Raw, immutable inputs — transcripts, briefs, SOWs; never edited except INDEX registration | Citing source material or ingesting a new input |
 | `workspace/projects/{slug}/knowledge/` | Agent-owned distilled truth — governance docs (`raid-log`, `decision-log`, `stakeholder-map`, `workback-schedule`), people overlays, meeting index; schema in [`knowledge-base.md`](library/process/knowledge-base.md) | Maintaining living project knowledge across sessions |
 | [`system/audit/agentframe.db`](system/audit/README.md) | Append-only system-change audit | System/process/template/persona patches only |
 | [`system/builder-backlog.md`](system/builder-backlog.md) | Builder-mode tasks surfaced during Operator work (unresolved queue) | Capture system friction without mode-swapping mid-project; resolved items move to [`system/builder-backlog-completed.md`](system/builder-backlog-completed.md) |
 
-Keep each file to its job. Do not move deliverable content into `project.md`. Do not put defer reasons in `project.md`; deferred deliverables own their own reason in frontmatter.
+Keep each file to its job. Do not move deliverable content into `project.md`. Defer reasons live in the deliverable's own frontmatter.
 
 ---
 
@@ -113,7 +113,7 @@ Mode swap is a single atomic command. The audit writer performs the persona-file
 - Operator -> Builder: `python system/audit/writer.py system-change --change-type mode_swap --actor agent --mode builder --reason "<why>"`
 - Builder -> Operator: `python system/audit/writer.py system-change --change-type mode_swap --actor agent --mode operator --reason "<why>"`
 
-After the command returns, re-read the root `AGENTS.md` before any further work — the rule set has changed. Swap before designing work that belongs to the other mode, not after designing it.
+After the command returns, re-read the root `AGENTS.md` before any further work — the rule set has changed. Swap before designing work that belongs to the other mode, not after.
 
 ---
 

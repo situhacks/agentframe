@@ -87,6 +87,8 @@ deliverables:
 
 `status` is required. `file` is required and may point at a folder only while `status: not_started`. `last_updated` is required once work begins.
 
+`job` is the row's stable role description: written at row creation, rewritten only when the role or status genuinely changes — never on content iteration. Current working state, standing directives, and open questions live in the head version file, not here.
+
 | `status` | Meaning |
 |---|---|
 | `not_started` | Tracker-only placeholder; no deliverable file exists yet. |
@@ -127,8 +129,13 @@ Judgment that stays with the agent: peek locked rows for `back_filled: true`; fo
 
 ## Activity Events
 
-`activity.md` is the material-event log. Each entry is one line prefixed with local `YYYY-MM-DD HH:MM`.
-One line means one material event, not one chat turn. The first clause after the event type is a short result lead; the rest of the line carries only resume-useful consequence, file path, state change, or reason. Split unrelated state changes into separate lines; do not split just to polish prose.
+`activity.md` is the material-event audit trail: locks, deliveries, overrides, plan changes, retros, cancellations, and structural decisions. It is a tracker, not a work journal.
+
+Line shape (`af doctor` lints shape, never vocabulary): `{YYYY-MM-DD HH:MM} — {event_type}: {short result lead}; {resume-useful consequence, path, state change, or reason}`. `event_type` is a snake_case token; keep a line under ~200 characters. One line means one material event, not one chat turn. Split unrelated state changes into separate lines; do not split just to polish prose.
+
+Self-check before appending: name the event type first. If the moment is not a lock, delivery, override, plan change, retro, cancellation, or structural decision, it gets no line.
+
+Never log pre-lock iteration — draft feedback, prompt/copy/render churn, version bumps. That trail lives in each version file's `changes_from_v{N}` per [deliverable-versioning](deliverable-versioning.md); the `af lock` activity line is the loop's one roll-up. Pulse ("what moved when") is derived from tracker `last_updated` / `last_activity`, never written as prose.
 
 ### Attention Block
 
@@ -141,7 +148,7 @@ One line means one material event, not one chat turn. The first clause after the
 - [ ] 2026-07-18 | waiting | Client reply on [deck](phase-4-demo/demo-deck-v1.md)
 ```
 
-`kind` is one of `due`, `waiting`, `meeting`, `decision`, `review`. The dashboard shows unchecked items only; check an item off when it resolves and log the resolution as a normal activity line. Governed projects keep the full record in `knowledge/raid-log.md` / `decision-log.md` / `workback-schedule.md` — Attention is only the shortlist.
+`kind` is one of `due`, `waiting`, `meeting`, `decision`, `review`. The dashboard shows unchecked items only; check an item off when it resolves and log the resolution as a normal activity line. Waiting-on / next-action state that must survive a session gap belongs here as one bullet, not as an activity line. Governed projects keep the full record in `knowledge/raid-log.md` / `decision-log.md` / `workback-schedule.md` — Attention is only the shortlist.
 
 Canonical event shapes:
 

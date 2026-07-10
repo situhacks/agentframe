@@ -19,6 +19,8 @@ last_updated: <ISO 8601 date>
 
 No `current_version` field. No `version_history` array. The filename carries the version number, the directory listing carries the chain, and `git log` carries the audit detail when someone wants it.
 
+Where the deliverable template declares a `changes_from_v{N}` field, each version file records its own delta — what changed from the prior head and why. That chain is the iteration trail's only home: per-version narration never goes to `activity.md`; the `af lock` activity line is the loop's single roll-up (see [lock-event.md](lock-event.md)).
+
 ## First draft (v1)
 
 The agent writes `{name}-v1.md` with `status: drafting`. The project tracker `deliverables.{slug}.file` is set to that path in the same turn (post-ingredient drafts don't move the post row — it points at `post-FINAL.md`, created with the first ingredient).

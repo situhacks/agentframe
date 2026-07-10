@@ -1055,6 +1055,10 @@ tr.expanded .activity-md.excerpt {
   .calendar-axis { position: static; }
   .calendar-axis, .calendar-row { grid-template-columns: 230px minmax(0, 1fr); min-width: 0; break-inside: avoid; }
   .calendar-popover { display: none !important; }
+  /* FullCalendar views: drop the interactive nav, keep the grid legible */
+  .calendar-fc .fc-header-toolbar { display: none !important; }
+  .calendar-fc .fc-event { break-inside: avoid; }
+  .calendar-fc .fc-daygrid-event.af-span.ghost-band { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 }
 
 /* ---- Calendar v2: view switcher + stage ---- */

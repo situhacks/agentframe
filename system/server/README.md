@@ -2,7 +2,7 @@
 
 Localhost server with two jobs:
 
-1. **Local surface at `/`** — the AgentFrame dashboard (attention items, active projects, recent activity) plus an IDE-style Preview tab (media-first artifact index from `project.md` tracker rows, manifest media, exports, and untracked files; tabs/splits via Dockview; viewers for markdown/text/HTML/image/PDF/video, and PPTX/DOCX via LibreOffice conversion). Backend modules live in `lib/surface/`, frontend in `static/surface/`. Deterministic file reads only — no LLM, no API keys.
+1. **Local surface at `/`** — the AgentFrame dashboard (attention items, active projects, recent activity), historical Calendar (Day/Week/Month via FullCalendar + a slimmed swimlane Timeline; ghost/solid project ribbons with a toggle, synthesized work blocks, hover-to-preview deliverable dots, active-first filters, print/PDF), and IDE-style Preview tab (media-first artifact index from `project.md` tracker rows, manifest media, exports, and untracked files; tabs/splits via Dockview; viewers for markdown/text/HTML/image/PDF/video, and PPTX/DOCX via LibreOffice conversion). Backend modules live in `lib/surface/`, frontend in `static/surface/`. Deterministic file reads only — no LLM, no API keys.
 2. **Static + LiveReload serving** of the whole repo root, which the Preview viewers and the legacy hub (`/hub`) build on.
 
 Operator-facing process: [`library/process/preview-server.md`](../../library/process/preview-server.md).
@@ -53,6 +53,8 @@ workspace/projects/*/phase-4-production/posts/**/edit/**
 
 Adjust `config.yaml` and restart if you need to widen the scope (e.g. while iterating on a brand new project whose folders don't match the glob shape yet).
 
+On Windows and macOS, `watchdog` observes these paths with filesystem events; glob discovery never runs on the HTTP request loop. If `watchdog` is unavailable, the server keeps serving files but logs a warning and disables automatic refresh rather than falling back to a blocking poll.
+
 ## 4. tokens.css regeneration
 
 Every time `tokens.yaml` changes, regenerate the CSS variables:
@@ -98,7 +100,7 @@ The agent is responsible for keeping the post's `image-prompts-v{N}.md` and `alt
 |--------|-----|
 | `OSError: [WinError 10048]` or "address already in use" on start | Another process is on 8080. Stop it, or run `python system/server/run.py --port 8081` and update your browser tab. |
 | Browser doesn't auto-refresh after a file save | Hard refresh (Ctrl+Shift+R). If LiveReload still doesn't fire, confirm your file matches a glob in `config.yaml` and that watchdog installed cleanly (`pip show watchdog`). |
-| `watchdog` install fails on Windows | LiveReload will still serve files; you just lose auto-refresh. Restart Python after re-installing with `pip install --upgrade watchdog`. |
+| `watchdog` install fails on Windows | The server still serves files, but automatic refresh is disabled to keep requests responsive. Restart Python after re-installing with `pip install --upgrade watchdog`. |
 | Standalone HTML opened via `file://` doesn't refresh | Auto-injection only works for files served over the server. Use the helper to inject the script tag into the HTML at author time: `python -c "from system.server.lib.livereload_inject import inject_file; inject_file('path/to.html')"`. |
 | Image call fails with "model not found" or "404" | Pass `--model nb2` or `--model pro`, or a current raw model id if Google rotates naming. |
 | Image call fails with auth error | Confirm `GEMINI_API_KEY` is set in root `.env` or exported in your shell. |

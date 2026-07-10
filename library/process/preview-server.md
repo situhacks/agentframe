@@ -1,6 +1,6 @@
 # Local Surface Process
 
-Lazy-load this file when a turn writes a previewable artifact under `workspace/projects/`, or when the operator asks for the dashboard, a preview, or a look at any deliverable/version/export without opening desktop apps.
+Lazy-load this file when a turn writes a previewable artifact under `workspace/projects/`, or when the operator asks for the dashboard, historical calendar, a preview, or a look at any deliverable/version/export without opening desktop apps.
 
 ## Previewable Types
 
@@ -20,12 +20,14 @@ After the first previewable artifact write in a turn, run the start-or-open comm
 
 1. Deep link with the artifact loaded: `http://localhost:8080/#/preview?project={slug}&file={path-from-project-root}`
 2. Dashboard: `http://localhost:8080/`
+3. Historical calendar: `http://localhost:8080/#/calendar`
 
 Do not repeat the offer after every file edit in the same turn. Add `--no-open` to suppress the browser tab when only the URL is wanted.
 
 ## Surface Map
 
 - **Dashboard tab** — Attention items (from each active project's `activity.md` `## Attention` block; convention in [`project-frontmatter.md`](project-frontmatter.md)), active-project table, recent activity. Deterministic file reads only; no LLM.
+- **Calendar tab** — retrospective, career-narrative view of work over time, derived from active and completed project state. Four views: **Day/Week/Month** (FullCalendar, loaded from CDN) place project spans as ribbons and logged activity as synthesized work blocks; **Timeline** is the presentation-ready swimlane (creation-to-close/today duration bars) slimmed for many-project scale. Ribbons use a **ghost/solid** treatment — a faint track for the whole span, solid segments only on days with logged work — toggleable to a solid fill via `ghost inactive days`. Deliverables collapse to hover-to-preview dots; toggle `expand labels` to show them as chips. Filter projects at left (active-first, with `all · active · none` shortcuts); hover markers for detail; click a deliverable to open it in Preview; `print / PDF` for a coach or leadership handoff. View, focus date, and toggle state persist in the URL hash (`?view=`, `?date=`, `?ghost=`, `?expand=`).
 - **Preview tab** — media-first artifact index built from `project.md` tracker rows (+ archived rows), manifest media, exports, and untracked previewable files. The rail defaults to `media`; `text` shows `.md`/`.txt`; `all` restores grouped deliverables with current file, previous versions, manifest media, and exports behind the expand control. IDE-style tabs and splits support side-by-side version comparison.
 - Legacy file-tree hub remains at `http://localhost:8080/hub`.
 

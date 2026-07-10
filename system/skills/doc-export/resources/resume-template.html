@@ -1,0 +1,144 @@
+<!--
+  ATS-safe resume template - tuned for a senior candidate (experience-first, no Professional Summary).
+  The agent fills the <body> from the polished resume-v{N}.md, keeping the <style> block EXACTLY as-is.
+  Render via scripts/export_pdf.mjs, or manually: Ctrl/Cmd+P -> Save as PDF -> Margins: Default ->
+  UNCHECK "Headers and footers" -> Save.
+
+  This is a REFERENCE PALETTE, not a fixed layout. Section order below is the operator's default
+  (Work Experience -> Applied AI Projects -> Education -> Skills & Certifications). The jd-map may
+  promote Projects above Experience when the JD values them; an optional 1-2 line positioning line
+  (exact JD-title mirror) may sit directly under the header WHEN the operator chose one - it is a
+  plain <p>, never a new section.
+
+  Design rules baked in (July-2026 parser research - do not "improve" these into a fancier layout):
+    - SINGLE COLUMN only. No tables, no CSS grid/flex columns, no sidebars.
+    - No icons, no skill bars, no images. DOM order == reading order; never reposition with absolute/float.
+    - Calibri/Arial only (99-100% parse completeness; Garamond/serifs trigger extraction errors).
+    - Dates as "Month YYYY - Month YYYY" with a plain hyphen. No em/en dashes anywhere.
+    - URLs written out in full visible text. All content in <main>; nothing in header/footer regions.
+    - 1 page US default; 2 pages allowed for senior Canadian-enterprise roles with real tenure.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Resume</title>
+<style>
+  @page { size: letter; margin: 0.6in; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: Calibri, Arial, Helvetica, sans-serif;
+    font-size: 10.5pt;
+    line-height: 1.22;
+    color: #000;
+    margin: 0;
+    text-align: left;            /* never justify - browsers can't hyphenate well, leaves "rivers" */
+  }
+  main { display: block; width: 100%; }
+
+  header { text-align: center; margin-bottom: 10px; }
+  header .name { font-size: 17pt; font-weight: bold; letter-spacing: 1px; text-transform: uppercase; }
+  header .contact { font-size: 9.5pt; margin-top: 2px; }  /* URLs as FULL TEXT - resumes get printed */
+
+  h2 {
+    font-size: 11pt;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    border-bottom: 1px solid #000;
+    padding-bottom: 2px;
+    margin: 11px 0 5px;
+  }
+
+  .entry { margin-bottom: 7px; }
+  /* flex space-between aligns org left / location|dates right ON ONE LINE without a <table> */
+  .row { display: flex; justify-content: space-between; align-items: baseline; }
+  .org { font-weight: bold; }
+  .role { font-style: italic; }
+  .meta { white-space: nowrap; padding-left: 12px; }
+
+  .label { font-style: italic; margin: 3px 0 1px; }      /* "Highlighted Project Experience:" */
+  .project { font-weight: bold; margin-top: 4px; }        /* named project / build sub-header */
+
+  ul { margin: 1px 0 0; padding-left: 17px; }
+  li { margin-bottom: 2px; }
+  ul ul { margin-top: 1px; }                              /* nested bullets under a named project */
+
+  .skills p { margin: 2px 0; }
+</style>
+</head>
+<body>
+<main>
+
+  <!-- ============ FILL FROM HERE DOWN (example content - replace with the head resume-v{N}.md) ============ -->
+
+  <header>
+    <div class="name">Jordan Velez</div>
+    <div class="contact">jordan.velez@email.com &nbsp;|&nbsp; linkedin.com/in/jordanvelez &nbsp;|&nbsp; github.com/jvelez &nbsp;|&nbsp; (416) 555-0187 &nbsp;|&nbsp; Toronto, ON</div>
+  </header>
+
+  <section>
+    <h2>Work Experience</h2>
+    <div class="entry">
+      <div class="row"><span class="org">Northbridge Consulting</span><span class="meta">Toronto, ON</span></div>
+      <div class="row"><span class="role">Senior Consultant - AI Strategy &amp; Delivery</span><span class="meta">Sep 2022 - Present</span></div>
+      <div class="label">Highlighted Project Experience:</div>
+      <ul>
+        <li><span class="project">AI Enablement Lead on GenAI Rollout - National Retail Bank</span>
+          <ul>
+            <li>Led adoption across four teams, choosing embedded per-team coaching over a central training program to fit real workflows, lifting weekly active usage from 30% to 80% in three weeks with an adoption scorecard tracking depth and sentiment.</li>
+            <li>Shipped research agents on Azure AI Foundry that cut a core deliverable's turnaround 80% at higher rated quality, giving the change story a working proof point.</li>
+          </ul>
+        </li>
+        <li><span class="project">Workstream Lead on Loyalty Program Design - Provincial Crown Corporation</span>
+          <ul>
+            <li>Drove alignment across six business units and 35+ stakeholders, resolving conflicting requirements so the functional design held through delivery without major rework.</li>
+          </ul>
+        </li>
+      </ul>
+    </div>
+    <div class="entry">
+      <div class="row"><span class="org">SwiftCart</span><span class="meta">Vancouver, BC</span></div>
+      <div class="row"><span class="role">Business Analyst - New Verticals</span><span class="meta">Aug 2021 - Aug 2022</span></div>
+      <ul>
+        <li>Ran weekly partnership reviews with national retail partners, surfacing commercial and operational fixes that drove a 120% average sales uplift once implemented.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Applied AI Projects</h2>
+    <div class="entry">
+      <div class="project">AgentKit - Self-improving multi-agent marketing harness (Claude Code)</div>
+      <ul>
+        <li>Built a multi-agent system that runs a campaign end to end and sharpens itself each run, cutting production time from six hours to under two across three campaigns.</li>
+      </ul>
+      <div class="project">AI Enablement Workshops - Hands-on sessions for clients and early-career professionals</div>
+      <ul>
+        <li>Designed hackathon-style workshops grounded in each attendee's own work, so people leave actually using the tools rather than having watched a demo.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Education</h2>
+    <div class="entry">
+      <div class="row"><span class="org">University of British Columbia - Sauder School of Business</span><span class="meta">Vancouver, BC</span></div>
+      <div class="row"><span class="role">Bachelor of Commerce - Management Information Systems</span><span class="meta">2021</span></div>
+      <ul>
+        <li>4x first place across case competitions and hackathons</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="skills">
+    <h2>Skills &amp; Certifications</h2>
+    <p><strong>AI &amp; Agents:</strong> Agentic orchestration, Model Context Protocol (MCP), RAG pipelines, LLM evaluation, Azure AI Foundry, Copilot Studio</p>
+    <p><strong>Delivery:</strong> Functional PM, change management and adoption, stakeholder alignment, workshop facilitation</p>
+    <p><strong>Analysis &amp; Tools:</strong> SQL, Python, Tableau, Excel financial modelling</p>
+  </section>
+
+  <!-- ============ END FILL ============ -->
+
+</main>
+</body>
+</html>

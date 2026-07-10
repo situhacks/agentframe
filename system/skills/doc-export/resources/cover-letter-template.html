@@ -1,0 +1,61 @@
+<!--
+  Cover-letter template - styles the finished cover-letter-v{N}.md; keep the <style> block EXACTLY as-is.
+  Render via scripts/export_pdf.mjs or manual print-to-PDF (uncheck headers/footers).
+
+  Structure follows HCPA (Hook -> Connection -> Proof -> Ask), NOT a rigid 5-paragraph form.
+  Default is SHORT: 100-180 words. Segment escalations (Canadian enterprise <=1 page, consulting
+  250-350 words) come from the cover-letter template's rules - never pad to fill the page.
+  Same hazard rules as the resume: no em/en dashes, plain punctuation, full visible URLs.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Cover Letter</title>
+<style>
+  @page { size: letter; margin: 1in; }
+  body {
+    font-family: Calibri, Arial, Helvetica, sans-serif;   /* match the resume */
+    font-size: 11pt;
+    line-height: 1.35;
+    color: #000;
+    margin: 0;
+    text-align: left;
+  }
+  .sender { margin-bottom: 18px; }
+  .sender .name { font-weight: bold; font-size: 13pt; letter-spacing: 0.5px; }
+  .sender .contact { font-size: 10pt; }
+  .recipient { margin-bottom: 16px; }
+  p { margin: 0 0 11px; }
+  .signoff { margin-top: 14px; }
+</style>
+</head>
+<body>
+
+  <!-- ============ FILL FROM HERE DOWN (example content - replace with the head cover-letter-v{N}.md) ============ -->
+
+  <div class="sender">
+    <div class="name">Jordan Velez</div>
+    <div class="contact">jordan.velez@email.com &nbsp;|&nbsp; linkedin.com/in/jordanvelez &nbsp;|&nbsp; (416) 555-0187</div>
+  </div>
+
+  <div class="recipient">
+    Meridian Labs - Product Team
+  </div>
+
+  <p>To the Meridian product team,</p>
+
+  <p>Your April post on why agent evals break at the handoff between offline benchmarks and production traffic described the exact wall my last rollout hit - so when the Senior AI PM posting named eval infrastructure as the first problem, I applied the same day.</p>
+
+  <p>At Northbridge I owned that problem end to end: I shipped the research agents, then built the adoption scorecard that proved they worked - usage went from 30% to 80% in three weeks because the evals measured what the teams actually did, not what the demo showed. The write-up is at github.com/jvelez/adoption-scorecard.</p>
+
+  <p>I would like to bring that to Meridian's agent platform. Happy to talk whenever works.</p>
+
+  <div class="signoff">
+    Jordan Velez
+  </div>
+
+  <!-- ============ END FILL ============ -->
+
+</body>
+</html>

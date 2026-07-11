@@ -1045,20 +1045,26 @@ tr.expanded .activity-md.excerpt {
 @media print {
   :root { --topbar-h: 0px; }
   html, body { height: auto; overflow: visible; display: block; width: auto; max-width: none; }
-  #topbar, #view-dashboard, #view-preview, .calendar-filters, .calendar-print { display: none !important; }
+  #topbar, #view-dashboard, #view-preview, .calendar-filters, .calendar-print, .calendar-controls, .float-card, .filters-toggle { display: none !important; }
   #view-calendar { display: block !important; height: auto; overflow: visible; padding: 0; background: white; }
-  .calendar-header { margin: 0; padding: 8px 0 12px; }
-  .calendar-controls { display: none; }
-  .calendar-summary { margin: 10px 0; }
-  .calendar-shell { display: block; border: 1px solid var(--grid-line); }
+  .calendar-header { margin: 0; padding: 8px 0 10px; }
+  .calendar-summary { margin: 8px 0; }
+  .calendar-shell, .calendar-shell.filters-collapsed { display: block; border: 1px solid var(--grid-line); }
+  .calendar-stage { display: block; overflow: visible; }
+  .calendar-nav { border-bottom: none; padding: 4px 0 8px; }
+  .calendar-nav button, .calendar-nav select { display: none !important; }
+  .calendar-title { margin-left: 0; font-size: 16px; }
+  #view-calendar * { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  /* The FC hour grid positions events with screen-time inline pixels and
+     cannot reflow for print — week/day print the ribbon story instead. */
+  .calendar-fc { display: none !important; }
+  .rib-rows { max-height: none; overflow: visible; }
+  .calendar-month { overflow: visible; display: block; }
+  .cal-month-week { min-height: 92px; break-inside: avoid; }
   .calendar-board { overflow: visible; }
   .calendar-axis { position: static; }
-  .calendar-axis, .calendar-row { grid-template-columns: 230px minmax(0, 1fr); min-width: 0; break-inside: avoid; }
-  .calendar-popover { display: none !important; }
-  /* FullCalendar views: drop the interactive nav, keep the grid legible */
-  .calendar-fc .fc-header-toolbar { display: none !important; }
-  .calendar-fc .fc-event { break-inside: avoid; }
-  .calendar-fc .fc-daygrid-event.af-span.ghost-band { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .calendar-axis, .calendar-row { min-width: 0; break-inside: avoid; }
+  .filters-collapsed .calendar-legend { display: none; }
 }
 
 /* ---- Calendar v2: view switcher + stage ---- */
@@ -1196,3 +1202,16 @@ tr.expanded .activity-md.excerpt {
 .proj-swatch { width: 9px; height: 9px; flex: none; border-radius: 2px; display: inline-block; }
 .filters-collapsed .calendar-filters { display: flex; flex-direction: column; }
 .filters-collapsed .calendar-legend { margin-top: auto; align-content: end; }
+
+/* ---- round 4: legend floats bottom-left when the sidebar is collapsed ---- */
+.filters-collapsed .calendar-legend {
+  position: fixed; left: 46px; bottom: 16px; z-index: 60;
+  margin: 0; padding: 10px 12px;
+  background: var(--base-white); border: 1px solid var(--grid-line);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.10);
+}
+.filters-collapsed .calendar-legend span { font: 9px var(--mono); }
+.filters-collapsed .calendar-legend i { margin-right: 5px; }
+/* Monday date labels when the window is too wide for every day */
+.calendar-days span.wkstart { justify-content: flex-start; padding-left: 3px; border-left: 1px solid var(--grid-line-soft); }
+@page { size: A4 landscape; margin: 10mm; }

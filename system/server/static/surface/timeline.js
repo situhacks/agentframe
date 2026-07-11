@@ -183,10 +183,13 @@ function attentionMarker(project, item, range) {
   return marker;
 }
 
+const BANDS_MAX_DAYS = 400; // beyond this, per-day/weekly texture is noise
+
 function gridRules(range) {
   const frag = document.createDocumentFragment();
   const totalDays = Math.round((range.end - range.start) / DAY_MS);
-  if (totalDays <= DAY_TICKS_MAX_DAYS) {
+  if (totalDays <= BANDS_MAX_DAYS) {
+    const everyDay = totalDays <= DAY_TICKS_MAX_DAYS;
     for (let d = 0; d < totalDays; d++) {
       const cur = addDays(range.start, d);
       const dow = cur.getUTCDay();
@@ -196,7 +199,8 @@ function gridRules(range) {
           style: `left:${(d / totalDays) * 100}%;width:${100 / totalDays}%`,
         }));
       }
-      if (d > 0) {
+      // day ticks when zoomed in; weekly (Monday) rhythm when zoomed out
+      if (d > 0 && (everyDay || dow === 1)) {
         frag.append(el('i', { class: 'calendar-dayline', style: `left:${(d / totalDays) * 100}%` }));
       }
     }
@@ -305,16 +309,26 @@ function renderAxis(range) {
   }));
   const right = el('div', { class: 'calendar-axis-right' }, months);
   const totalDays = Math.round((range.end - range.start) / DAY_MS);
-  if (totalDays <= DAY_NUMBERS_MAX_DAYS) {
+  if (totalDays <= BANDS_MAX_DAYS) {
+    // dates at every zoom: per-day numbers when they fit, Monday dates when tight
+    const everyDay = totalDays <= DAY_NUMBERS_MAX_DAYS;
     const days = el('div', { class: 'calendar-days' });
     for (let d = 0; d < totalDays; d++) {
       const cur = addDays(range.start, d);
       const dow = cur.getUTCDay();
-      days.append(el('span', {
-        class: dow === 0 || dow === 6 ? 'wknd' : '',
-        style: `left:${(d / totalDays) * 100}%;width:${100 / totalDays}%`,
-        text: String(cur.getUTCDate()),
-      }));
+      if (everyDay) {
+        days.append(el('span', {
+          class: dow === 0 || dow === 6 ? 'wknd' : '',
+          style: `left:${(d / totalDays) * 100}%;width:${100 / totalDays}%`,
+          text: String(cur.getUTCDate()),
+        }));
+      } else if (dow === 1) {
+        days.append(el('span', {
+          class: 'wkstart',
+          style: `left:${(d / totalDays) * 100}%;width:${(7 / totalDays) * 100}%`,
+          text: String(cur.getUTCDate()),
+        }));
+      }
     }
     right.append(days);
   }

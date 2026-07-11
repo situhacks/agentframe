@@ -1070,7 +1070,7 @@ tr.expanded .activity-md.excerpt {
 .calendar-stage { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
 .calendar-stage > [hidden] { display: none !important; }
 .calendar-fc { flex: 1 1 0; min-height: 0; }
-.calendar-month { flex: 1 1 0; min-height: 0; }
+.calendar-month { flex: 1 1 0; min-height: 0; overflow-y: auto; }
 .calendar-stage .calendar-board { flex: 1 1 0; }
 
 .calendar-nav { flex: none; display: flex; align-items: center; gap: 6px; padding: 7px 10px; border-bottom: 1px solid var(--grid-line); }
@@ -1087,7 +1087,7 @@ tr.expanded .activity-md.excerpt {
 .rib { position: relative; height: 20px; margin: 2px 0; border-radius: 4px; overflow: visible; }
 .rib-seg { position: absolute; top: 0; height: 100%; border-radius: 4px; z-index: 1; }
 .rib-name { position: absolute; left: 4px; top: 1px; z-index: 3; display: inline-flex; align-items: center; gap: 5px; pointer-events: none; }
-.rib-name-text { font-size: 10.5px; font-weight: 650; white-space: nowrap; text-shadow: 0 0 2px rgba(255, 255, 255, 0.5); }
+.rib-name-text { font-size: 10.5px; font-weight: 450; white-space: nowrap; text-shadow: 0 0 2px rgba(255, 255, 255, 0.5); }
 .rib .keycap, .af-block-title .keycap { width: 15px; height: 15px; font-size: 6.5px; line-height: 14px; border-radius: 3px; box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.6), 0 1px 0 rgba(0, 0, 0, 0.12); }
 .rib.done .rib-seg { opacity: 0.75; }
 .rib-dot { position: absolute; top: 3px; z-index: 5; width: 14px; height: 14px; border-radius: 50%; background: var(--base-white); border: 2.5px solid var(--ink-soft); display: inline-flex; align-items: center; justify-content: center; font-size: 8.5px; font-weight: 700; color: var(--ink); cursor: pointer; padding: 0; }
@@ -1132,7 +1132,7 @@ tr.expanded .activity-md.excerpt {
 .calendar-month { display: flex; flex-direction: column; background: var(--base-white); }
 .cal-month-dow { flex: none; position: sticky; top: 0; z-index: 10; display: grid; grid-template-columns: repeat(7, 1fr); background: #f7f7f6; border-bottom: 1px solid var(--grid-line); }
 .cal-month-dow span { padding: 6px 8px; font: 10px var(--mono); color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.5px; border-right: 1px solid var(--grid-line-soft); }
-.cal-month-week { flex: 1 1 0; min-height: 92px; position: relative; border-bottom: 1px solid var(--grid-line); background-image: linear-gradient(90deg, var(--grid-line) 1px, transparent 1px); background-size: calc(100% / 7) 100%; }
+.cal-month-week { flex: 1 1 auto; min-height: 92px; position: relative; border-bottom: 1px solid var(--grid-line); background-image: linear-gradient(90deg, var(--grid-line) 1px, transparent 1px); background-size: calc(100% / 7) 100%; }
 .cal-month-today-wash { position: absolute; top: 0; bottom: 0; z-index: 0; background: rgba(135, 199, 192, 0.14); pointer-events: none; }
 .cal-month-dates { position: relative; z-index: 1; display: grid; grid-template-columns: repeat(7, 1fr); }
 .cal-month-date { padding: 5px 8px; font: 11px var(--mono); color: var(--meta); min-height: 24px; }
@@ -1153,10 +1153,10 @@ tr.expanded .activity-md.excerpt {
 .calendar-legend .legend-square { background: transparent; border: 2px solid var(--ink-soft); }
 
 /* ---- skinny swimlane (Timeline): ribbon language, exact overlay ---- */
-.calendar-axis, .calendar-row { grid-template-columns: 200px minmax(0, 1fr); }
+.calendar-axis, .calendar-row { grid-template-columns: 260px minmax(0, 1fr); }
 .calendar-row { min-height: 40px; }
-.calendar-project-label { max-width: 200px; padding: 6px 10px; }
-.calendar-project-copy strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; display: inline-block; }
+.calendar-project-label { max-width: 260px; padding: 6px 10px; }
+.calendar-project-copy strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 210px; display: inline-block; }
 /* track and worked segments share one geometry so they read as one bar */
 .calendar-duration, .calendar-worked-seg { position: absolute; top: 14px; height: 12px; border-radius: 4px; box-shadow: none; }
 .calendar-worked-seg { z-index: 2; }
@@ -1167,3 +1167,32 @@ tr.expanded .activity-md.excerpt {
 /* markers embedded in the same bar row, project-colored via inline style */
 .calendar-row .calendar-marker.activity { top: 16px; width: 8px; height: 8px; border: 1.5px solid var(--base-white); }
 .calendar-row .calendar-marker.future { top: 15px; }
+
+/* ---- round 3: future extensions, axis day numbers, collapsed filters ---- */
+.rib-ext { position: absolute; top: 9px; height: 0; border-top: 2px dashed; opacity: 0.45; z-index: 0; pointer-events: none; }
+.lane-ext { position: absolute; top: 19px; height: 0; border-top: 2px dashed; opacity: 0.45; pointer-events: none; }
+
+.calendar-axis { height: auto; min-height: 40px; }
+.calendar-axis-right { position: relative; display: flex; flex-direction: column; min-width: 0; }
+.calendar-axis-right .calendar-months { flex: 1 1 0; min-height: 26px; }
+.calendar-days { position: relative; height: 14px; border-top: 1px solid var(--grid-line-soft); }
+.calendar-days span { position: absolute; top: 0; bottom: 0; display: flex; align-items: center; justify-content: center; font: 7.5px var(--mono); color: var(--meta); overflow: hidden; }
+.calendar-days span.wknd { background: rgba(181, 182, 177, 0.14); }
+.calendar-weekend { position: absolute; top: 0; bottom: 0; background: rgba(181, 182, 177, 0.10); pointer-events: none; z-index: 0; }
+
+.calendar-filters header { display: flex; align-items: center; gap: 6px; }
+.filters-actions { margin-left: auto; }
+.filters-toggle { flex: none; width: 20px; height: 20px; border: 1px solid var(--grid-line); background: var(--base-white); font-size: 11px; color: var(--ink-soft); }
+.filters-toggle:hover { background: var(--teal-wash); border-color: var(--accent-teal); }
+.calendar-shell.filters-collapsed { grid-template-columns: 34px minmax(0, 1fr); }
+.filters-collapsed .calendar-filters .filters-title,
+.filters-collapsed .filters-actions,
+.filters-collapsed #calendar-project-filters { display: none; }
+.filters-collapsed .calendar-filters header { justify-content: center; padding: 8px 0; }
+.filters-collapsed .calendar-legend { padding: 8px 5px; }
+.filters-collapsed .calendar-legend span { font-size: 0; }
+.filters-collapsed .calendar-legend i { margin-right: 0; }
+
+.proj-swatch { width: 9px; height: 9px; flex: none; border-radius: 2px; display: inline-block; }
+.filters-collapsed .calendar-filters { display: flex; flex-direction: column; }
+.filters-collapsed .calendar-legend { margin-top: auto; align-content: end; }

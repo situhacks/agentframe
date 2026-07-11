@@ -194,13 +194,16 @@ export function renderRibbons(host, projects, windowStart, windowEnd, opts) {
       }
     }
 
-    // future commitments as hollow squares
+    // future commitments as hollow squares, with a dashed ghost continuation
+    // from the ribbon's end so the square reads as part of this project's row
     if (opts.showFuture) {
+      let maxFuture = 0;
       for (const item of project.attention || []) {
         const d = dayOf(item.date);
         if (!d || d <= today) continue;
         const t = dateUtc(d).getTime();
         if (t < w0 || t >= w1) continue;
+        maxFuture = Math.max(maxFuture, t + DAY_MS);
         const center = ((t + DAY_MS / 2 - visStart) / (visEnd - visStart)) * 100;
         const sq = el('button', {
           class: 'rib-future',
@@ -212,6 +215,13 @@ export function renderRibbons(host, projects, windowStart, windowEnd, opts) {
           [{ text: String(item.text || '') }],
         ));
         ribbon.append(sq);
+      }
+      if (maxFuture > visEnd) {
+        const extWidth = ((Math.min(maxFuture, w1) - visEnd) / (visEnd - visStart)) * 100;
+        ribbon.append(el('span', {
+          class: 'rib-ext',
+          style: `left:100%;width:${extWidth}%;border-color:${color}`,
+        }));
       }
     }
 

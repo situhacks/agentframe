@@ -87,10 +87,10 @@ function rangeFor(projects, showFuture, windowMonths) {
     const clip = addDays(today, -Math.round(windowMonths * 30.4));
     if (start < clip) start = clip;
   }
-  let end = addDays(today, 14);
+  let end = addDays(today, 7);
   if (showFuture) {
-    end = addDays(new Date(Math.max(...dates.map(Number))), 14);
-    if (end < addDays(today, 14)) end = addDays(today, 14);
+    const maxDate = new Date(Math.max(...dates.map(Number)));
+    if (addDays(maxDate, 4) > end) end = addDays(maxDate, 4);
   }
   if (end <= start) end = addDays(start, 30);
   return { start, end, today };
@@ -187,11 +187,18 @@ function gridRules(range) {
   const frag = document.createDocumentFragment();
   const totalDays = Math.round((range.end - range.start) / DAY_MS);
   if (totalDays <= DAY_TICKS_MAX_DAYS) {
-    for (let d = 1; d < totalDays; d++) {
-      frag.append(el('i', {
-        class: 'calendar-dayline',
-        style: `left:${(d / totalDays) * 100}%`,
-      }));
+    for (let d = 0; d < totalDays; d++) {
+      const cur = addDays(range.start, d);
+      const dow = cur.getUTCDay();
+      if (dow === 0 || dow === 6) {
+        frag.append(el('i', {
+          class: 'calendar-weekend',
+          style: `left:${(d / totalDays) * 100}%;width:${100 / totalDays}%`,
+        }));
+      }
+      if (d > 0) {
+        frag.append(el('i', { class: 'calendar-dayline', style: `left:${(d / totalDays) * 100}%` }));
+      }
     }
   }
   for (const segment of monthSegments(range)) {
@@ -233,6 +240,25 @@ function durationBar(project, range, ghost, color) {
   return frag;
 }
 
+// Dashed continuation from the bar's end to the furthest future commitment,
+// so future squares read as part of the project's lane.
+function futureExtension(project, range, color) {
+  let maxFuture = null;
+  for (const item of datedAttention(project, range.today)) {
+    const parsed = dateOf(item.date);
+    if (parsed && (!maxFuture || parsed > maxFuture)) maxFuture = parsed;
+  }
+  if (!maxFuture) return null;
+  const barEnd = projectEnd(project, range.today);
+  const left = position(isoDate(barEnd), range);
+  const right = position(isoDate(addDays(maxFuture, 1)), range);
+  if (right <= left) return null;
+  return el('span', {
+    class: 'lane-ext',
+    style: `left:${left}%;width:${right - left}%;border-color:${color}`,
+  });
+}
+
 function projectRow(project, range, opts) {
   const color = colorFor(project.slug);
   const deliverables = project.deliverables || [];
@@ -253,12 +279,16 @@ function projectRow(project, range, opts) {
     if (inRange(item.timestamp, range)) track.append(activityMarker(project, item, range, color));
   }
   if (opts.showFuture) {
+    const ext = futureExtension(project, range, color);
+    if (ext) track.append(ext);
     for (const item of datedAttention(project, range.today)) {
       if (inRange(item.date, range)) track.append(attentionMarker(project, item, range));
     }
   }
   return el('div', { class: 'calendar-row' }, label, track);
 }
+
+const DAY_NUMBERS_MAX_DAYS = 60; // show per-day numbers only when they fit
 
 function renderAxis(range) {
   const months = el('div', { class: 'calendar-months' });
@@ -273,9 +303,24 @@ function renderAxis(range) {
     style: `left:${position(isoDate(range.today), range)}%`,
     text: 'today',
   }));
+  const right = el('div', { class: 'calendar-axis-right' }, months);
+  const totalDays = Math.round((range.end - range.start) / DAY_MS);
+  if (totalDays <= DAY_NUMBERS_MAX_DAYS) {
+    const days = el('div', { class: 'calendar-days' });
+    for (let d = 0; d < totalDays; d++) {
+      const cur = addDays(range.start, d);
+      const dow = cur.getUTCDay();
+      days.append(el('span', {
+        class: dow === 0 || dow === 6 ? 'wknd' : '',
+        style: `left:${(d / totalDays) * 100}%;width:${100 / totalDays}%`,
+        text: String(cur.getUTCDate()),
+      }));
+    }
+    right.append(days);
+  }
   return el('div', { class: 'calendar-axis' },
     el('div', { class: 'calendar-axis-label', text: `${dateLabel(isoDate(range.start))} — ${dateLabel(isoDate(range.end))}` }),
-    months);
+    right);
 }
 
 function renderSummary(projects, range) {

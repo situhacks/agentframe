@@ -23,6 +23,7 @@ const calendarState = {
   expandLabels: false,
   showFuture: true,
   window: 'all',     // timeline lookback: all | 12 | 6 | 3 | 1 (months)
+  filtersOpen: true,
   focusDate: null,   // 'YYYY-MM-DD' anchor
   fc: null,          // FullCalendar instance (lazy)
 };
@@ -42,6 +43,7 @@ function readCalendarHash() {
   if (params.get('ghost') === '0') calendarState.ghost = false;
   if (params.get('expand') === '1') calendarState.expandLabels = true;
   if (params.get('future') === '0') calendarState.showFuture = false;
+  if (params.get('filters') === '0') calendarState.filtersOpen = false;
   const date = params.get('date');
   if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) calendarState.focusDate = date;
 }
@@ -51,6 +53,7 @@ function writeCalendarHash() {
   if (!calendarState.ghost) params.ghost = '0';
   if (calendarState.expandLabels) params.expand = '1';
   if (!calendarState.showFuture) params.future = '0';
+  if (!calendarState.filtersOpen) params.filters = '0';
   if (calendarState.focusDate) params.date = calendarState.focusDate;
   navigate('calendar', params);
 }
@@ -114,7 +117,24 @@ export function setupCalendar() {
     rerender();
   });
   document.getElementById('calendar-print')?.addEventListener('click', () => window.print());
+  document.getElementById('calendar-filters-toggle')?.addEventListener('click', () => {
+    calendarState.filtersOpen = !calendarState.filtersOpen;
+    applyFiltersCollapsed();
+    writeCalendarHash();
+  });
+  applyFiltersCollapsed();
   renderLegend();
+}
+
+function applyFiltersCollapsed() {
+  document.querySelector('.calendar-shell')?.classList.toggle('filters-collapsed', !calendarState.filtersOpen);
+  const btn = document.getElementById('calendar-filters-toggle');
+  if (btn) {
+    btn.textContent = calendarState.filtersOpen ? '⟨' : '⟩';
+    btn.title = calendarState.filtersOpen ? 'hide filters' : 'show filters';
+  }
+  // FullCalendar needs to re-measure after the column width changes
+  requestAnimationFrame(() => calendarState.fc?.updateSize());
 }
 
 function navByStep(step) {
@@ -145,11 +165,11 @@ function renderLegend() {
   const host = document.getElementById('calendar-legend');
   if (!host) return;
   host.replaceChildren(
-    el('span', {}, el('i', { class: 'legend-ghost' }), 'active, no logged work'),
-    el('span', {}, el('i', { class: 'legend-solid' }), 'worked that day'),
-    el('span', {}, el('i', { class: 'legend-dot' }), 'deliverable (hover)'),
-    el('span', {}, el('i', { class: 'legend-block' }), 'synthesized work block'),
-    el('span', {}, el('i', { class: 'legend-square' }), 'future commitment'),
+    el('span', { title: 'active, no logged work' }, el('i', { class: 'legend-ghost' }), 'active, no logged work'),
+    el('span', { title: 'worked that day' }, el('i', { class: 'legend-solid' }), 'worked that day'),
+    el('span', { title: 'deliverable (hover)' }, el('i', { class: 'legend-dot' }), 'deliverable (hover)'),
+    el('span', { title: 'synthesized work block' }, el('i', { class: 'legend-block' }), 'synthesized work block'),
+    el('span', { title: 'future commitment' }, el('i', { class: 'legend-square' }), 'future commitment'),
   );
 }
 
@@ -176,6 +196,7 @@ function renderFilters(projects) {
     host.append(el('label', { class: 'calendar-filter-row' },
       input,
       keycapEl(project.slug, project.name),
+      el('i', { class: 'proj-swatch', style: `background:${colorFor(project.slug)}`, title: 'calendar color' }),
       el('span', { class: 'grow', text: project.name || project.slug, title: project.name || project.slug }),
       el('span', { class: `calendar-filter-status ${project.status}`, text: plainLabel(project.status) })));
   }

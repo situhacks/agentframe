@@ -1,7 +1,7 @@
 ## PPT Master Skill Vendor Record
 
 - Upstream repository: `https://github.com/hugohe3/ppt-master`
-- Upstream version: `main` @ `b520a0a96f931d4a1ba173bfe769a39de4d46c6d` (pin the commit hash, not the moving branch)
+- Upstream version: `main` @ `96572e7b529b6e27e2bd268f4a928e1e62227dcb` (pin the commit hash, not the moving branch)
 - Snapshot date (UTC): `2026-07-10`
 - Source locations in AgentFrame: `system/skills/ppt-master/` (upstream `skills/ppt-master/`) and `system/docs/` (all authored upstream `docs/**/*.md`, preserving the upstream relative layout)
 - Excluded from the docs snapshot: binary screenshots, sponsor images, and other non-Markdown presentation assets; they carry no agent-facing operating knowledge

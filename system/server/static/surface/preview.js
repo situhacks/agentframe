@@ -6,6 +6,11 @@ import { getJSON, postJSON, keycapEl, basename, el } from './api.js';
 import { renderViewer } from './viewers.js';
 
 const LAYOUT_KEY = 'af-surface-layout-v1';
+const PDF_SCALE_KEY = 'af-preview-pdf-scale-v1';
+const PDF_SCALE_EVENT = 'agentframe:pdf-scale';
+const PDF_SCALE_DEFAULT = 0.55;
+const PDF_SCALE_MIN = 0.25;
+const PDF_SCALE_MAX = 1.5;
 
 const rail = {
   projects: [],
@@ -77,6 +82,28 @@ function flowLabel(flow) {
   return String(flow).replace(/^marketing-/, '').replace(/-flow$/, '');
 }
 
+function isPdfLike(meta) {
+  return ['pdf', 'office'].includes(meta?.type);
+}
+
+function clampPdfScale(scale) {
+  return Math.max(PDF_SCALE_MIN, Math.min(PDF_SCALE_MAX, scale));
+}
+
+function storedPdfScale() {
+  try {
+    const parsed = Number.parseFloat(localStorage.getItem(PDF_SCALE_KEY));
+    if (Number.isFinite(parsed)) return clampPdfScale(parsed);
+  } catch { /* storage is best-effort */ }
+  return PDF_SCALE_DEFAULT;
+}
+
+function storePdfScale(scale) {
+  try {
+    localStorage.setItem(PDF_SCALE_KEY, String(clampPdfScale(scale)));
+  } catch { /* storage is best-effort */ }
+}
+
 // ---------- dockview panels ----------
 
 class ViewerPanel {
@@ -91,6 +118,12 @@ class ViewerPanel {
     const { project, file } = initParams.params;
     this.project = project;
     this.file = file;
+    this.onPdfScale = (event) => {
+      if (isPdfLike(this.meta) && event.detail?.source !== this) {
+        this.setScale(event.detail.scale, { persist: false });
+      }
+    };
+    window.addEventListener(PDF_SCALE_EVENT, this.onPdfScale);
 
     this.toolbar = el('div', { class: 'viewer-toolbar' },
       el('span', { class: 'path', text: file, title: file }));
@@ -98,9 +131,11 @@ class ViewerPanel {
     this.element.replaceChildren(this.toolbar, this.body);
 
     this.zoomOut = el('button', { text: '-', title: 'zoom out', onclick: () => this.adjustScale(-0.10) });
-    this.zoomLabel = el('span', { class: 'viewer-zoom', text: '82%' });
+    this.zoomLabel = el('span', { class: 'viewer-zoom', text: '82%', title: 'viewer scale' });
     this.zoomIn = el('button', { text: '+', title: 'zoom in', onclick: () => this.adjustScale(0.10) });
-    this.zoomReset = el('button', { text: '100%', title: 'actual size', onclick: () => this.setScale(1) });
+    this.zoomReset = el('button', {
+      text: '100%', title: 'actual size', onclick: () => this.setScale(1, { broadcast: true }),
+    });
     this.zoomGroup = el('div', { class: 'viewer-zoom-group', hidden: '' },
       this.zoomOut, this.zoomLabel, this.zoomIn, this.zoomReset);
     this.toolbar.append(this.zoomGroup);
@@ -133,19 +168,25 @@ class ViewerPanel {
   }
 
   defaultScaleFor(meta) {
-    if (['pdf', 'office'].includes(meta?.type)) return 0.55;
+    if (isPdfLike(meta)) return storedPdfScale();
     if (meta?.type === 'html') return 0.82;
     return 1;
   }
 
-  setScale(scale) {
+  setScale(scale, { persist = true, broadcast = false } = {}) {
     this.scale = Math.max(0.25, Math.min(1.5, scale));
     if (this.viewerControl?.setScale) this.scale = this.viewerControl.setScale(this.scale);
+    if (isPdfLike(this.meta) && persist) storePdfScale(this.scale);
     if (this.zoomLabel) this.zoomLabel.textContent = `${Math.round(this.scale * 100)}%`;
+    if (isPdfLike(this.meta) && broadcast) {
+      window.dispatchEvent(new CustomEvent(PDF_SCALE_EVENT, {
+        detail: { scale: this.scale, source: this },
+      }));
+    }
   }
 
   adjustScale(delta) {
-    this.setScale(this.scale + delta);
+    this.setScale(this.scale + delta, { broadcast: true });
   }
 
   setZoomVisible(visible) {
@@ -156,7 +197,7 @@ class ViewerPanel {
     try {
       this.meta = await fileMeta(this.project, this.file);
       this.scale = this.defaultScaleFor(this.meta);
-      this.viewerControl = await renderViewer(this.meta, this.body);
+      this.viewerControl = await renderViewer(this.meta, this.body, { scale: this.scale });
       this.setZoomVisible(Boolean(this.viewerControl?.zoomable));
       this.setScale(this.scale);
     } catch (err) {
@@ -165,6 +206,10 @@ class ViewerPanel {
         el('b', { text: this.file }), document.createElement('br'),
         el('span', { class: 'warn', text: err.message })));
     }
+  }
+
+  dispose() {
+    window.removeEventListener(PDF_SCALE_EVENT, this.onPdfScale);
   }
 }
 

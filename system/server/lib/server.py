@@ -87,7 +87,7 @@ class _HubServer:
         from livereload import Server
 
         self._project_root = Path(project_root)
-        self._inner = Server()
+        self._inner = Server(watcher=watcher.make_watcher(self._project_root))
         self._patch_handlers(exclude_globs=exclude_globs)
 
     def _patch_handlers(self, *, exclude_globs: list[str] | None = None) -> None:
@@ -117,7 +117,12 @@ class _HubServer:
         return self._inner.watch(*args, **kwargs)
 
     def serve(self, **kwargs):
-        return self._inner.serve(**kwargs)
+        try:
+            return self._inner.serve(**kwargs)
+        finally:
+            close = getattr(self._inner.watcher, "close", None)
+            if close:
+                close()
 
 
 def build_server(

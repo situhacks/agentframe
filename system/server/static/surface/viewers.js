@@ -55,7 +55,8 @@ async function renderText(meta, body) {
 function withPdfFragment(url, scale = 0.55) {
   const base = String(url).split('#')[0];
   const zoom = Math.round(scale * 100);
-  return `${base}#zoom=${zoom}&pagemode=none`;
+  const separator = base.includes('?') ? '&' : '?';
+  return `${base}${separator}af_pdf_zoom=${zoom}#zoom=${zoom}&pagemode=none`;
 }
 
 function renderIframe(meta, body, options = {}) {
@@ -71,7 +72,8 @@ function renderIframe(meta, body, options = {}) {
 
     function setScale(nextScale) {
       const clamped = Math.max(0.25, Math.min(1.5, nextScale));
-      frame.src = withPdfFragment(meta.url, clamped);
+      const nextSrc = withPdfFragment(meta.url, clamped);
+      if (frame.getAttribute('src') !== nextSrc) frame.setAttribute('src', nextSrc);
       return clamped;
     }
 
@@ -106,11 +108,11 @@ function renderVideo(meta, body) {
   body.replaceChildren(el('video', { src: meta.url, controls: '' }));
 }
 
-async function renderOffice(meta, body) {
+async function renderOffice(meta, body, scale = 0.55) {
   body.replaceChildren(note(`converting <b>${meta.file}</b> with LibreOffice&hellip;`));
   try {
     const result = await postJSON('/api/convert', { project: meta.project, file: meta.file });
-    return renderIframe({ ...meta, url: result.url, type: 'pdf' }, body, { scale: 0.55, nativePdfZoom: true });
+    return renderIframe({ ...meta, url: result.url, type: 'pdf' }, body, { scale, nativePdfZoom: true });
   } catch (err) {
     body.replaceChildren(note(
       `<span class="warn">conversion unavailable:</span> ${err.message}<br><br>` +
@@ -132,15 +134,16 @@ function renderUnsupported(meta, body) {
     `size ${formatSize(meta.size)} — use <b>open original</b> or <b>reveal file</b> in the toolbar`));
 }
 
-export async function renderViewer(meta, body) {
+export async function renderViewer(meta, body, options = {}) {
+  const scale = options.scale;
   switch (meta.type) {
     case 'markdown': return renderMarkdown(meta, body);
     case 'text': return renderText(meta, body);
-    case 'html': return renderIframe(meta, body, { scale: 0.82 });
-    case 'pdf': return renderIframe(meta, body, { scale: 0.55, nativePdfZoom: true });
+    case 'html': return renderIframe(meta, body, { scale: scale ?? 0.82 });
+    case 'pdf': return renderIframe(meta, body, { scale: scale ?? 0.55, nativePdfZoom: true });
     case 'image': return renderImage(meta, body);
     case 'video': return renderVideo(meta, body);
-    case 'office': return renderOffice(meta, body);
+    case 'office': return renderOffice(meta, body, scale ?? 0.55);
     default: return renderUnsupported(meta, body);
   }
 }

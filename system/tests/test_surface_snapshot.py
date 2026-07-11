@@ -99,6 +99,8 @@ class TestSnapshot(SnapshotFixture):
         self.assertEqual(alpha["attention_count"], 1)  # unchecked only
         self.assertEqual(alpha["latest_deliverable"]["slug"], "deck")  # newer last_updated wins
         self.assertEqual(alpha["latest_deliverable"]["file"], "phase-2/deck/deck-v1.md")
+        self.assertEqual(alpha["current_deliverable"]["slug"], "deck")
+        self.assertEqual(alpha["next_attention"]["text"], "Finish preread")
         self.assertEqual(alpha["last_updated"], "2026-07-05T10:00:00-07:00")
         self.assertEqual(alpha["last_updated_label"], "Jul 5, 10:00 AM")
 
@@ -107,17 +109,40 @@ class TestSnapshot(SnapshotFixture):
         snap = snapshot.build_snapshot(self.root)
         self.assertEqual([p["slug"] for p in snap["projects"]], ["gamma", "alpha", "beta"])
 
-    def test_visibility_rules(self):
+    def test_governance_status_comes_only_from_governance_files(self):
         snap = snapshot.build_snapshot(self.root)
         alpha = next(p for p in snap["projects"] if p["slug"] == "alpha")
         beta = next(p for p in snap["projects"] if p["slug"] == "beta")
-        self.assertEqual(alpha["visibility"], "attention")  # open attention items
-        self.assertEqual(beta["visibility"], "limited")  # no deliverable has a file
-        # governance doc flips to governed
+        self.assertEqual(alpha["governance_status"], "ungoverned")
+        self.assertEqual(beta["governance_status"], "ungoverned")
         write(str(self.root / "workspace/projects/alpha/knowledge/raid-log.md"), "# RAID")
         snap2 = snapshot.build_snapshot(self.root)
         alpha2 = next(p for p in snap2["projects"] if p["slug"] == "alpha")
-        self.assertEqual(alpha2["visibility"], "governed")
+        self.assertEqual(alpha2["governance_status"], "governed")
+
+    def test_current_work_prefers_drafting_over_newer_terminal_state(self):
+        fm = """
+        name: "Delta"
+        slug: delta
+        status: active
+        domain: marketing
+        deliverables:
+          in-flight:
+            status: drafting
+            file: drafts/in-flight.md
+            last_updated: 2026-07-01
+            job: current work
+          shipped:
+            status: delivered
+            file: shipped/final.md
+            last_updated: 2026-07-08
+        """
+        make_project(self.root, "delta", fm)
+        snap = snapshot.build_snapshot(self.root)
+        delta = next(p for p in snap["projects"] if p["slug"] == "delta")
+        self.assertEqual(delta["latest_deliverable"]["slug"], "shipped")
+        self.assertEqual(delta["current_deliverable"]["slug"], "in-flight")
+        self.assertEqual(delta["current_deliverable"]["job"], "current work")
 
     def test_attention_lists_unchecked_only_sorted_by_date(self):
         snap = snapshot.build_snapshot(self.root)

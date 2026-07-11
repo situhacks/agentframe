@@ -57,13 +57,8 @@ def pick_port(preferred: int) -> int:
     raise RuntimeError(f"no free port in {preferred}..{preferred + PORT_SCAN_RANGE - 1}")
 
 
-def is_healthy(port: int, *, expected_root: str, timeout: float = 6.0) -> bool:
-    """True when /api/health answers AND serves this workspace.
-
-    The timeout is generous because the livereload watcher's periodic glob
-    scan can block the server's ioloop for ~3s; a short probe misreads a
-    healthy-but-busy server as down and spawns a duplicate.
-    """
+def is_healthy(port: int, *, expected_root: str, timeout: float = 1.0) -> bool:
+    """True when /api/health answers promptly AND serves this workspace."""
     try:
         with urllib.request.urlopen(f"http://localhost:{port}/api/health", timeout=timeout) as resp:
             data = json.loads(resp.read().decode("utf-8"))

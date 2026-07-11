@@ -57,7 +57,7 @@ class _JsonHandler(web.RequestHandler):
         self.emit({"error": message}, status=status)
 
     def find_project(self, slug: str) -> dict | None:
-        for project in state.scan_projects(self.root):
+        for project in state.scan_projects(self.root, include_completed=True):
             if project["slug"] == slug:
                 return project
         return None

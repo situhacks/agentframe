@@ -1,10 +1,12 @@
 """Deterministic project-state readers for the local surface.
 
-Scanner contract (see the V2 plan): root-level ``workspace/projects/*`` only,
-``completed/`` excluded, folders without ``project.md`` skipped silently,
-missing fields tolerated as ``None``. Frontmatter is parsed with PyYAML so
-inline comments parse cleanly; a project whose frontmatter fails to parse is
-skipped, never fatal.
+Scanner contract (see the V2 plan): active projects live at root-level
+``workspace/projects/*`` and historical projects live one level below
+``workspace/projects/completed/*``. Callers choose whether to include history.
+Folders without ``project.md`` are skipped silently and missing fields are
+tolerated as ``None``. Frontmatter is parsed with PyYAML so inline comments
+parse cleanly; a project whose frontmatter fails to parse is skipped, never
+fatal.
 """
 
 from __future__ import annotations
@@ -23,7 +25,18 @@ EVENT_PREFIX_RE = re.compile(r"^([a-z][a-z0-9_]*):(?!//)\s*(.*)$")
 MD_LINK_RE = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
 PATH_TOKEN_RE = re.compile(r"[\w.\-]+(?:/[\w.\-]+)+\.\w{2,5}")
 
-PROJECT_FIELDS = ("name", "status", "domain", "flow", "current_phase", "last_activity")
+PROJECT_FIELDS = (
+    "name",
+    "status",
+    "domain",
+    "flow",
+    "current_phase",
+    "created_at",
+    "last_activity",
+    "shipped_at",
+    "completed_at",
+    "cancelled_at",
+)
 
 
 def _iso(value):
@@ -45,15 +58,26 @@ def parse_frontmatter(text: str) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def scan_projects(root: Path) -> list[dict]:
-    """Scan active root-level projects under ``workspace/projects``."""
+def project_directories(root: Path, *, include_completed: bool = False) -> list[Path]:
+    """Project directories in deterministic order, optionally including history."""
     projects_dir = Path(root) / "workspace" / "projects"
     if not projects_dir.is_dir():
         return []
+    folders = [
+        folder
+        for folder in sorted(projects_dir.iterdir())
+        if folder.is_dir() and folder.name != "completed"
+    ]
+    completed_dir = projects_dir / "completed"
+    if include_completed and completed_dir.is_dir():
+        folders.extend(folder for folder in sorted(completed_dir.iterdir()) if folder.is_dir())
+    return folders
+
+
+def scan_projects(root: Path, *, include_completed: bool = False) -> list[dict]:
+    """Scan active projects, or active + completed/cancelled project history."""
     out = []
-    for folder in sorted(projects_dir.iterdir()):
-        if not folder.is_dir() or folder.name == "completed":
-            continue
+    for folder in project_directories(root, include_completed=include_completed):
         project_md = folder / "project.md"
         if not project_md.is_file():
             continue
@@ -61,7 +85,9 @@ def scan_projects(root: Path) -> list[dict]:
             fm = parse_frontmatter(project_md.read_text(encoding="utf-8"))
         except OSError:
             continue
-        if not fm or fm.get("status") != "active":
+        if not fm or (not include_completed and fm.get("status") != "active"):
+            continue
+        if include_completed and fm.get("status") not in {"active", "complete", "cancelled"}:
             continue
         project = {field: _iso(fm.get(field)) for field in PROJECT_FIELDS}
         project["slug"] = fm.get("slug") or folder.name

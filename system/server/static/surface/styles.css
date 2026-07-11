@@ -76,13 +76,16 @@ button {
 .lockup { display: flex; align-items: center; gap: 10px; user-select: none; }
 .lockup { cursor: default; }
 .lockup:hover .wordmark { text-decoration: underline; text-decoration-color: var(--accent-teal); text-underline-offset: 3px; }
+/* The AF mark is the photographic keycap itself — no text overlay, no fill
+   behind it (the source PNG carries its own transparent margin). */
 .af-mark {
+  display: inline-block;
   width: 30px; height: 30px;
-  background: var(--ink);
-  color: var(--base-white);
-  font: 700 12px/30px var(--sans);
-  text-align: center;
-  letter-spacing: 0.5px;
+  box-sizing: border-box;
+  /* cover (crop to square), matching the colored .keycap treatment — contain
+     preserved the full cap shape and read as a different object next to them. */
+  background: url('assets/keycaps/af-mark-1.png') center / cover no-repeat;
+  border-radius: 4px;
   flex: none;
 }
 .wordmark { font-weight: 700; font-size: 15px; }
@@ -364,27 +367,46 @@ td.nowrap { white-space: nowrap; }
 
 .keycap {
   display: inline-block;
+  position: relative;
   width: 26px; height: 26px;
+  box-sizing: border-box;
   border-radius: 4px;
   border: 1px solid rgba(0, 0, 0, 0.14);
   box-shadow:
     inset 1px 1px 0 rgba(255, 255, 255, 0.75),
     inset -1px -2px 0 rgba(0, 0, 0, 0.07),
     0 1px 0 rgba(0, 0, 0, 0.16);
+  background-size: cover;
+  background-position: center;
   font-family: var(--mono);
   font-size: 9.5px;
   font-weight: 500;
-  line-height: 24px;
-  text-align: center;
   text-transform: uppercase;
   color: var(--ink);
   flex: none;
   user-select: none;
 }
-.keycap.c0 { background: #ececea; }
-.keycap.c1 { background: #c9c9c8; }
-.keycap.c2 { background: #9fc6ba; }
-.keycap.c3 { background: #e18d9c; }
+/* Legend text overlays the cap face. The photo is shot at a slight downward
+   angle, so the top face (where the legend sits) reads above the frame's
+   geometric center — ~38% down centers the text on the visible top face. */
+.keycap::after {
+  content: attr(data-initials);
+  position: absolute;
+  left: 0; right: 0;
+  top: 38%;
+  transform: translateY(-50%);
+  text-align: center;
+}
+/* Flat color is the base/fallback; the photo layers on top when it loads.
+   Text stays live DOM per the visual spec — never baked into the image. */
+.keycap.c0 { background-color: #ececea; background-image: url('assets/keycaps/alpha-1.png'); }
+.keycap.c1 { background-color: #c9c9c8; background-image: url('assets/keycaps/modifier-1.png'); }
+.keycap.c2 { background-color: #9fc6ba; background-image: url('assets/keycaps/teal-1.png'); }
+.keycap.c3 { background-color: #e18d9c; background-image: url('assets/keycaps/pink-1.png'); }
+/* Modifier grey is the darkest cap — pure-black legend for max contrast. */
+.keycap.c1::after { color: #000; }
+/* All four cap colors (alpha, modifier, teal, pink) carry ink legends —
+   the Dolch tones are all light enough that black reads better than white. */
 
 .proj-cell { display: flex; align-items: center; gap: 8px; }
 .proj-cell { min-width: 0; }
@@ -584,7 +606,7 @@ tr.expanded .activity-md.excerpt {
 }
 .calendar-filter-row:hover { background: var(--teal-wash); }
 .calendar-filter-row input { accent-color: var(--accent-teal); flex: none; }
-.calendar-filter-row .keycap { width: 22px; height: 22px; line-height: 20px; font-size: 8px; }
+.calendar-filter-row .keycap { width: 22px; height: 22px; font-size: 8px; }
 .calendar-filter-row .grow { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 11px; }
 .calendar-filter-status { flex: none; font: 8.5px var(--mono); color: var(--meta); text-transform: uppercase; }
 .calendar-filter-status.active { color: #4e8f88; }
@@ -1094,7 +1116,7 @@ tr.expanded .activity-md.excerpt {
 .rib-seg { position: absolute; top: 0; height: 100%; border-radius: 4px; z-index: 1; }
 .rib-name { position: absolute; left: 4px; top: 1px; z-index: 3; display: inline-flex; align-items: center; gap: 5px; pointer-events: none; }
 .rib-name-text { font-size: 10.5px; font-weight: 450; white-space: nowrap; text-shadow: 0 0 2px rgba(255, 255, 255, 0.5); }
-.rib .keycap, .af-block-title .keycap { width: 15px; height: 15px; font-size: 6.5px; line-height: 14px; border-radius: 3px; box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.6), 0 1px 0 rgba(0, 0, 0, 0.12); }
+.rib .keycap, .af-block-title .keycap { width: 15px; height: 15px; font-size: 6.5px; border-radius: 3px; box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.6), 0 1px 0 rgba(0, 0, 0, 0.12); }
 .rib.done .rib-seg { opacity: 0.75; }
 .rib-dot { position: absolute; top: 3px; z-index: 5; width: 14px; height: 14px; border-radius: 50%; background: var(--base-white); border: 2.5px solid var(--ink-soft); display: inline-flex; align-items: center; justify-content: center; font-size: 8.5px; font-weight: 700; color: var(--ink); cursor: pointer; padding: 0; }
 .rib-dot:hover { transform: scale(1.25); z-index: 30; }
@@ -1121,7 +1143,7 @@ tr.expanded .activity-md.excerpt {
 /* ---- work blocks: one shared left inset for title and latent dots ---- */
 .af-block-inner { position: relative; padding: 2px 4px 2px 6px; height: 100%; }
 .af-block-title { display: flex; align-items: center; gap: 4px; min-width: 0; }
-.af-block-title span { font-size: 10.5px; font-weight: 650; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.af-block-title span:not(.keycap) { font-size: 10.5px; font-weight: 650; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .af-block-dots { position: absolute; left: 6px; top: 22px; display: flex; flex-direction: column; gap: 3px; }
 .af-bdot { width: 7px; height: 7px; border-radius: 50%; background: #fff; opacity: 0.45; cursor: pointer; position: relative; padding: 0; border: none; }
 .calendar-fc .fc-event:hover .af-bdot { opacity: 1; }

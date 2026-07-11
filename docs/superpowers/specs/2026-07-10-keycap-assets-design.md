@@ -12,11 +12,15 @@ on top of the image — never baked into the PNG, per the existing visual spec
 
 ## Shared Style-Lock (applies to all 5 variants)
 
-- Top-down orthographic angle (camera directly above the cap, not a 3/4 hero angle)
+- GMK/Cherry-profile keycap, explicitly from the **GMK Light Dolch** keyset (named directly in
+  each prompt so the model can draw on any training-data familiarity with the real set)
+- ABS plastic, not PBT — glossier satin finish, matches real GMK caps
+- Slight top-down angle, not strict orthographic — a small tilt (~10-15°) so the sculpted profile
+  and front wall read correctly; pure straight-down-the-barrel top-down flattens the cap and looks
+  wrong
 - No cast shadow onto the background — background is pure flat white for clean cutout
 - Lighting/ambient occlusion lives on the cap surface only (bevel highlights, wall-taper shading)
-- Sculpted-keycap material realism: visible stem well silhouette, wall taper, top bezel from
-  directly above
+- Sculpted-keycap material realism: visible stem well silhouette, wall taper, top bezel
 - Consistent framing/crop across all generations so batch outputs drop into the same asset
   pipeline without per-image manual alignment
 
@@ -71,79 +75,88 @@ times per color/variant.
 ### 1. Alpha (pale cool grey)
 
 ```
-Studio product photograph of a single mechanical keyboard keycap, shot from directly above
-(top-down orthographic view, camera perfectly perpendicular to the cap so no side walls are
-visible except a thin sliver of bevel at the very edge). The keycap is a Cherry-profile sculpted
-cap in a pale, cool light-grey satin PBT plastic, color approximately #E7F1F3, completely blank
-with no legend, text, or printing on it. Soft, even studio lighting from slightly above creates a
-subtle highlight across the top bezel and gentle ambient occlusion in the corners and stem-well
-area, but casts no visible shadow onto the background. The background is pure flat white
-(#FFFFFF), seamless, with zero shadow or gradient falling on it, suitable for a clean automated
-cutout. The keycap is centered in the frame with generous white margin on all sides. Photorealistic,
-sharp focus, macro product photography, no text, no logo, no watermark.
+Studio product photograph of a single mechanical keyboard keycap from the GMK Light Dolch keycap
+set, a real Cherry-profile artisan keycap set made of ABS plastic. Shot from a slight, gentle
+downward angle (roughly 10-15 degrees off directly overhead, not perfectly flat top-down) so the
+sculpted Cherry profile, the top bezel, and a thin sliver of the front wall are all visible. The
+keycap is the pale, cool light-grey alpha colorway from that set, satin ABS plastic, color
+approximately #E7F1F3, completely blank with no legend, text, or printing on it. Soft, even studio
+lighting from slightly above creates a subtle glossy highlight across the top bezel and gentle
+ambient occlusion in the corners and stem-well area, but casts no visible shadow onto the
+background. The background is pure flat white (#FFFFFF), seamless, with zero shadow or gradient
+falling on it, suitable for a clean automated cutout. The keycap is centered in the frame with
+generous white margin on all sides. Photorealistic, sharp focus, macro product photography, no
+text, no logo, no watermark.
 ```
 
 ### 2. Modifier (cool grey)
 
 ```
-Studio product photograph of a single mechanical keyboard keycap, shot from directly above
-(top-down orthographic view, camera perfectly perpendicular to the cap so no side walls are
-visible except a thin sliver of bevel at the very edge). The keycap is a Cherry-profile sculpted
-cap in a cool medium-grey satin PBT plastic, color approximately #C5D1D9, completely blank with
-no legend, text, or printing on it. Soft, even studio lighting from slightly above creates a
-subtle highlight across the top bezel and gentle ambient occlusion in the corners and stem-well
-area, but casts no visible shadow onto the background. The background is pure flat white
-(#FFFFFF), seamless, with zero shadow or gradient falling on it, suitable for a clean automated
-cutout. The keycap is centered in the frame with generous white margin on all sides. Photorealistic,
-sharp focus, macro product photography, no text, no logo, no watermark.
+Studio product photograph of a single mechanical keyboard keycap from the GMK Light Dolch keycap
+set, a real Cherry-profile artisan keycap set made of ABS plastic. Shot from a slight, gentle
+downward angle (roughly 10-15 degrees off directly overhead, not perfectly flat top-down) so the
+sculpted Cherry profile, the top bezel, and a thin sliver of the front wall are all visible. The
+keycap is the cool medium-grey modifier colorway from that set, satin ABS plastic, color
+approximately #C5D1D9, completely blank with no legend, text, or printing on it. Soft, even studio
+lighting from slightly above creates a subtle glossy highlight across the top bezel and gentle
+ambient occlusion in the corners and stem-well area, but casts no visible shadow onto the
+background. The background is pure flat white (#FFFFFF), seamless, with zero shadow or gradient
+falling on it, suitable for a clean automated cutout. The keycap is centered in the frame with
+generous white margin on all sides. Photorealistic, sharp focus, macro product photography, no
+text, no logo, no watermark.
 ```
 
 ### 3. Teal accent
 
 ```
-Studio product photograph of a single mechanical keyboard keycap, shot from directly above
-(top-down orthographic view, camera perfectly perpendicular to the cap so no side walls are
-visible except a thin sliver of bevel at the very edge). The keycap is a Cherry-profile sculpted
-cap in a muted dusty teal satin PBT plastic, color approximately #00A896, completely blank with
-no legend, text, or printing on it. Soft, even studio lighting from slightly above creates a
-subtle highlight across the top bezel and gentle ambient occlusion in the corners and stem-well
-area, but casts no visible shadow onto the background. The background is pure flat white
-(#FFFFFF), seamless, with zero shadow or gradient falling on it, suitable for a clean automated
-cutout. The keycap is centered in the frame with generous white margin on all sides. Photorealistic,
-sharp focus, macro product photography, no text, no logo, no watermark.
+Studio product photograph of a single mechanical keyboard keycap from the GMK Light Dolch keycap
+set, a real Cherry-profile artisan keycap set made of ABS plastic. Shot from a slight, gentle
+downward angle (roughly 10-15 degrees off directly overhead, not perfectly flat top-down) so the
+sculpted Cherry profile, the top bezel, and a thin sliver of the front wall are all visible. The
+keycap is the muted dusty teal accent colorway from that set, satin ABS plastic, color
+approximately #00A896, completely blank with no legend, text, or printing on it. Soft, even studio
+lighting from slightly above creates a subtle glossy highlight across the top bezel and gentle
+ambient occlusion in the corners and stem-well area, but casts no visible shadow onto the
+background. The background is pure flat white (#FFFFFF), seamless, with zero shadow or gradient
+falling on it, suitable for a clean automated cutout. The keycap is centered in the frame with
+generous white margin on all sides. Photorealistic, sharp focus, macro product photography, no
+text, no logo, no watermark.
 ```
 
 ### 4. Pink accent
 
 ```
-Studio product photograph of a single mechanical keyboard keycap, shot from directly above
-(top-down orthographic view, camera perfectly perpendicular to the cap so no side walls are
-visible except a thin sliver of bevel at the very edge). The keycap is a Cherry-profile sculpted
-cap in a muted dusty rose-pink satin PBT plastic, color approximately #E18D9C, completely blank
-with no legend, text, or printing on it, matching the same satin plastic finish as a light grey
-and teal keycap set from the same keyboard keyset family. Soft, even studio lighting from slightly
-above creates a subtle highlight across the top bezel and gentle ambient occlusion in the corners
-and stem-well area, but casts no visible shadow onto the background. The background is pure flat
-white (#FFFFFF), seamless, with zero shadow or gradient falling on it, suitable for a clean
-automated cutout. The keycap is centered in the frame with generous white margin on all sides.
-Photorealistic, sharp focus, macro product photography, no text, no logo, no watermark.
+Studio product photograph of a single mechanical keyboard keycap styled as an accent colorway
+from the GMK Light Dolch keycap set, a real Cherry-profile artisan keycap set made of ABS plastic.
+Shot from a slight, gentle downward angle (roughly 10-15 degrees off directly overhead, not
+perfectly flat top-down) so the sculpted Cherry profile, the top bezel, and a thin sliver of the
+front wall are all visible. The keycap is a muted dusty rose-pink accent colorway, satin ABS
+plastic, color approximately #E18D9C, completely blank with no legend, text, or printing on it,
+matching the same satin ABS finish as the pale grey and teal keycaps from that same set. Soft,
+even studio lighting from slightly above creates a subtle glossy highlight across the top bezel
+and gentle ambient occlusion in the corners and stem-well area, but casts no visible shadow onto
+the background. The background is pure flat white (#FFFFFF), seamless, with zero shadow or
+gradient falling on it, suitable for a clean automated cutout. The keycap is centered in the frame
+with generous white margin on all sides. Photorealistic, sharp focus, macro product photography,
+no text, no logo, no watermark.
 ```
 
 ### 5. AF mark (dark graphite, recessed teal window)
 
 ```
-Studio product photograph of a single premium mechanical keyboard keycap, shot from directly above
-(top-down orthographic view, camera perfectly perpendicular to the cap so no side walls are
-visible except a thin sliver of bevel at the very edge, same camera angle and framing as a plain
-top-down keycap product shot). The keycap is a Cherry-profile sculpted cap in a dark matte
-charcoal/graphite plastic body, color approximately #2A2A2A. Centered on the top face is a
-recessed square legend window (a dye-sub style inset panel, inset a millimeter or two below the
-surrounding cap surface) filled with a muted dusty teal color approximately #00A896, with a subtle
-glossy highlight along its top edge. The teal window is left completely blank with no text or
-symbol printed on it. Soft, even studio lighting from slightly above creates a subtle highlight
-across the top bezel and gentle ambient occlusion in the corners and stem-well area, but casts no
-visible shadow onto the background. The background is pure flat white (#FFFFFF), seamless, with
-zero shadow or gradient falling on it, suitable for a clean automated cutout. The keycap is
-centered in the frame with generous white margin on all sides. Photorealistic, sharp focus, macro
-product photography, no text, no logo, no watermark.
+Studio product photograph of a single premium mechanical keyboard keycap, Cherry profile, ABS
+plastic, same keyset family and photography style as the GMK Light Dolch keycap set. Shot from a
+slight, gentle downward angle (roughly 10-15 degrees off directly overhead, not perfectly flat
+top-down) so the sculpted Cherry profile, the top bezel, and a thin sliver of the front wall are
+all visible — same camera angle and framing as a matching plain keycap product shot from that set.
+The keycap body is a dark matte charcoal/graphite ABS plastic, color approximately #2A2A2A.
+Centered on the top face is a recessed square legend window (a dye-sub style inset panel, inset a
+millimeter or two below the surrounding cap surface) filled with a muted dusty teal color
+approximately #00A896, with a subtle glossy highlight along its top edge. The teal window is left
+completely blank with no text or symbol printed on it. Soft, even studio lighting from slightly
+above creates a subtle glossy highlight across the top bezel and gentle ambient occlusion in the
+corners and stem-well area, but casts no visible shadow onto the background. The background is
+pure flat white (#FFFFFF), seamless, with zero shadow or gradient falling on it, suitable for a
+clean automated cutout. The keycap is centered in the frame with generous white margin on all
+sides. Photorealistic, sharp focus, macro product photography, no text, no logo, no watermark.
 ```

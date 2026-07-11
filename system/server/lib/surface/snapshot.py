@@ -158,7 +158,8 @@ def _minutes(timestamp: str) -> int | None:
 
 def _finish_block(date: str, events: list[dict]) -> dict:
     start = max(0, events[0]["time"] - _BLOCK_PAD_MIN)
-    end = min(1439, events[-1]["time"] + _BLOCK_PAD_MIN)
+    # a block is never shorter than one hour, so single events stay legible
+    end = min(1439, max(events[-1]["time"] + _BLOCK_PAD_MIN, start + 60))
     return {"date": date, "start": start, "end": end, "events": events}
 
 

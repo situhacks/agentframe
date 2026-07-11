@@ -6,8 +6,10 @@
 
 import { el, keycapEl } from './api.js';
 import { navigate } from './app.js';
+import { colorFor, ghostTint, deliverableDot, attachPopover, popContent } from './ribbons.js';
 
 const DAY_MS = 86400000;
+const DAY_TICKS_MAX_DAYS = 100; // show per-day gridlines only when zoomed in
 
 function day(value) {
   const text = String(value || '').slice(0, 10);
@@ -77,10 +79,14 @@ function collectDates(projects, showFuture, today) {
   return dates;
 }
 
-function rangeFor(projects, showFuture) {
+function rangeFor(projects, showFuture, windowMonths) {
   const today = todayUtc();
   const dates = collectDates(projects, showFuture, today);
-  const start = addDays(new Date(Math.min(...dates.map(Number))), -7);
+  let start = addDays(new Date(Math.min(...dates.map(Number))), -7);
+  if (windowMonths) {
+    const clip = addDays(today, -Math.round(windowMonths * 30.4));
+    if (start < clip) start = clip;
+  }
   let end = addDays(today, 14);
   if (showFuture) {
     end = addDays(new Date(Math.max(...dates.map(Number))), 14);
@@ -128,21 +134,14 @@ function monthSegments(range) {
   return segments;
 }
 
-function popover(title, meta, body) {
-  return el('span', { class: 'calendar-popover' },
-    el('strong', { text: title }),
-    el('span', { class: 'popover-meta', text: meta }),
-    body ? el('span', { text: body }) : null);
+function popLines(meta, body) {
+  const lines = [{ text: meta }];
+  if (body) lines.push({ text: body });
+  return lines;
 }
 
-function markerClass(pos) {
-  if (pos < 18) return ' align-left';
-  if (pos > 82) return ' align-right';
-  return '';
-}
-
-// Cluster deliverables by day into one dot per project-day.
-function deliverableDots(project, range) {
+// Cluster deliverables by day into one ribbon-style dot per project-day.
+function deliverableDots(project, range, color) {
   const byDay = {};
   for (const item of project.deliverables || []) {
     const d = day(item.last_updated);
@@ -151,43 +150,34 @@ function deliverableDots(project, range) {
   const dots = [];
   for (const [d, items] of Object.entries(byDay)) {
     const pos = position(d, range);
-    const dot = el('button', {
-      class: `calendar-marker deliverable-dot${markerClass(pos)}`,
-      style: `left:${pos}%`,
-      'aria-label': `${items.length} deliverable(s) on ${d}`,
-    }, el('span', { class: 'dot-badge', text: items.length > 1 ? String(items.length) : '' }),
-       popover(
-         items.length > 1 ? `${items.length} deliverables` : plainLabel(items[0].slug),
-         dateLabel(d),
-         items.map((i) => plainLabel(i.slug)).join(', '),
-       ));
-    const linked = items.find((i) => i.file && i.status !== 'not_started');
-    if (linked) dot.addEventListener('click', () => navigate('preview', { project: project.slug, file: linked.file }));
-    else dot.classList.add('no-link');
+    const dot = deliverableDot(project, d, items, pos, color);
+    dot.classList.add('on-lane');
     dots.push(dot);
   }
   return dots;
 }
 
-function activityMarker(project, item, range) {
-  const pos = position(item.timestamp, range);
+// Material-activity diamond: project-colored, embedded in the bar row.
+function activityMarker(project, item, range, color) {
   const marker = el('button', {
-    class: `calendar-marker activity${markerClass(pos)}`,
-    style: `left:${pos}%`,
+    class: 'calendar-marker activity',
+    style: `left:${position(item.timestamp, range)}%;background:${color}`,
     'aria-label': `${plainLabel(item.event)}, ${item.timestamp}`,
-  }, popover(plainLabel(item.event), dateLabel(item.timestamp), item.text));
+  });
+  attachPopover(marker, () => popContent(plainLabel(item.event), popLines(dateLabel(item.timestamp), item.text)));
   if (item.file) marker.addEventListener('click', () => navigate('preview', { project: project.slug, file: item.file }));
   else marker.classList.add('no-link');
   return marker;
 }
 
 function attentionMarker(project, item, range) {
-  const pos = position(item.date, range);
   const marker = el('button', {
-    class: `calendar-marker future${markerClass(pos)}`,
-    style: `left:${pos}%`,
+    class: 'calendar-marker future',
+    style: `left:${position(item.date, range)}%`,
     'aria-label': `${item.kind || 'future commitment'}, ${item.date}`,
-  }, popover(plainLabel(item.kind || 'future commitment'), dateLabel(item.date), item.text));
+  });
+  attachPopover(marker, () => popContent(
+    plainLabel(item.kind || 'future commitment'), popLines(dateLabel(item.date), item.text)));
   if (item.file) marker.addEventListener('click', () => navigate('preview', { project: project.slug, file: item.file }));
   else marker.classList.add('no-link');
   return marker;
@@ -195,6 +185,15 @@ function attentionMarker(project, item, range) {
 
 function gridRules(range) {
   const frag = document.createDocumentFragment();
+  const totalDays = Math.round((range.end - range.start) / DAY_MS);
+  if (totalDays <= DAY_TICKS_MAX_DAYS) {
+    for (let d = 1; d < totalDays; d++) {
+      frag.append(el('i', {
+        class: 'calendar-dayline',
+        style: `left:${(d / totalDays) * 100}%`,
+      }));
+    }
+  }
   for (const segment of monthSegments(range)) {
     if (segment.boundary > 0) frag.append(el('i', { class: 'calendar-gridline', style: `left:${segment.boundary}%` }));
   }
@@ -203,9 +202,10 @@ function gridRules(range) {
   return frag;
 }
 
-// Two-layer duration bar: ghost track spanning the whole project, solid
-// segments on worked days. When ghost is off, one full solid bar.
-function durationBar(project, range, ghost) {
+// Two-layer duration bar in the shared ribbon language: flat tint ghost
+// track spanning the whole project, hard solid segments on worked days.
+// When ghost is off, one full solid bar.
+function durationBar(project, range, ghost, color) {
   const created = dateOf(project.created_at) || dateOf(project.last_activity) || range.start;
   const rawEnd = projectEnd(project, range.today);
   const visibleStart = created < range.start ? range.start : created;
@@ -214,20 +214,19 @@ function durationBar(project, range, ghost) {
   const right = position(isoDate(visibleEnd), range);
   const width = Math.max(0.5, right - left);
   const frag = document.createDocumentFragment();
-  const track = el('span', {
-    class: `calendar-duration ${project.status || 'unknown'}${ghost ? ' ghost-track' : ''}`,
-    style: `left:${left}%;width:${width}%`,
+  frag.append(el('span', {
+    class: 'calendar-duration',
+    style: `left:${left}%;width:${width}%;background:${ghost ? ghostTint(color) : color}`,
     title: `${dateLabel(project.created_at)} to ${project.status === 'active' ? 'today' : dateLabel(project.completed_at || project.cancelled_at)}`,
-  });
-  frag.append(track);
+  }));
   if (ghost) {
     for (const d of project.worked_days || []) {
       if (!inRange(d, range)) continue;
       const segLeft = position(d, range);
       const segRight = position(isoDate(addDays(dateOf(d), 1)), range);
       frag.append(el('span', {
-        class: `calendar-worked-seg ${project.status || 'unknown'}`,
-        style: `left:${segLeft}%;width:${Math.max(0.4, segRight - segLeft)}%`,
+        class: 'calendar-worked-seg',
+        style: `left:${segLeft}%;width:${Math.max(0.4, segRight - segLeft)}%;background:${color}`,
       }));
     }
   }
@@ -235,6 +234,7 @@ function durationBar(project, range, ghost) {
 }
 
 function projectRow(project, range, opts) {
+  const color = colorFor(project.slug);
   const deliverables = project.deliverables || [];
   const label = el('button', { class: 'calendar-project-label' },
     keycapEl(project.slug, project.name),
@@ -247,10 +247,10 @@ function projectRow(project, range, opts) {
 
   const track = el('div', { class: 'calendar-track' });
   track.append(gridRules(range));
-  track.append(durationBar(project, range, opts.ghost));
-  for (const dot of deliverableDots(project, range)) track.append(dot);
+  track.append(durationBar(project, range, opts.ghost, color));
+  for (const dot of deliverableDots(project, range, color)) track.append(dot);
   for (const item of project.activity || []) {
-    if (inRange(item.timestamp, range)) track.append(activityMarker(project, item, range));
+    if (inRange(item.timestamp, range)) track.append(activityMarker(project, item, range, color));
   }
   if (opts.showFuture) {
     for (const item of datedAttention(project, range.today)) {
@@ -296,7 +296,7 @@ function renderSummary(projects, range) {
 }
 
 export function renderTimeline(board, projects, opts) {
-  const range = rangeFor(projects.length ? projects : [], opts.showFuture);
+  const range = rangeFor(projects.length ? projects : [], opts.showFuture, opts.windowMonths);
   const visible = projects.filter((project) => projectIntersects(project, range));
   renderSummary(visible, range);
   const scrollTop = board.scrollTop;

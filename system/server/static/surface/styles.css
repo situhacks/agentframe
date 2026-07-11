@@ -1062,13 +1062,85 @@ tr.expanded .activity-md.excerpt {
 }
 
 /* ---- Calendar v2: view switcher + stage ---- */
-.calendar-views { display: inline-flex; border: 1px solid var(--grid-line); border-radius: 6px; overflow: hidden; }
+.calendar-views { display: inline-flex; border: 1px solid var(--grid-line); overflow: hidden; }
 .calendar-views button { padding: 4px 12px; font-size: 12px; background: var(--base-white); border: none; border-right: 1px solid var(--grid-line); cursor: pointer; }
 .calendar-views button:last-child { border-right: none; }
 .calendar-views button.on { background: var(--ink); color: var(--base-white); }
-.calendar-stage { flex: 1; min-width: 0; }
-.calendar-fc { min-height: 480px; }
-.calendar-fc[hidden], .calendar-board[hidden] { display: none !important; }
+
+.calendar-stage { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
+.calendar-stage > [hidden] { display: none !important; }
+.calendar-fc { flex: 1 1 0; min-height: 0; }
+.calendar-month { flex: 1 1 0; min-height: 0; }
+.calendar-stage .calendar-board { flex: 1 1 0; }
+
+.calendar-nav { flex: none; display: flex; align-items: center; gap: 6px; padding: 7px 10px; border-bottom: 1px solid var(--grid-line); }
+.calendar-nav button, .calendar-nav select { min-width: 26px; height: 24px; padding: 0 8px; border: 1px solid var(--grid-line); background: var(--base-white); font-family: var(--mono); font-size: 11px; color: var(--ink-soft); }
+.calendar-nav button:hover { background: var(--teal-wash); border-color: var(--accent-teal); }
+.calendar-nav [hidden] { display: none !important; }
+.calendar-title { margin-left: 10px; font-size: 14px; font-weight: 700; }
+
+/* ---- ribbons (mockup contract): flat tint track + hard solid day segments ---- */
+.calendar-ribbons-head { flex: none; display: grid; grid-template-columns: var(--rib-gutter, 58px) minmax(0, 1fr) var(--rib-scrollpad, 0px); border-bottom: 1px solid var(--grid-line); background: var(--base-white); }
+.rib-gutter { border-right: 1px solid var(--grid-line-soft); }
+.rib-rows { padding: 4px 0; min-width: 0; max-height: 168px; overflow-y: auto; }
+
+.rib { position: relative; height: 20px; margin: 2px 0; border-radius: 4px; overflow: visible; }
+.rib-seg { position: absolute; top: 0; height: 100%; border-radius: 4px; z-index: 1; }
+.rib-name { position: absolute; left: 4px; top: 1px; z-index: 3; display: inline-flex; align-items: center; gap: 5px; pointer-events: none; }
+.rib-name-text { font-size: 10.5px; font-weight: 650; white-space: nowrap; text-shadow: 0 0 2px rgba(255, 255, 255, 0.5); }
+.rib .keycap, .af-block-title .keycap { width: 15px; height: 15px; font-size: 6.5px; line-height: 14px; border-radius: 3px; box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.6), 0 1px 0 rgba(0, 0, 0, 0.12); }
+.rib.done .rib-seg { opacity: 0.75; }
+.rib-dot { position: absolute; top: 3px; z-index: 5; width: 14px; height: 14px; border-radius: 50%; background: var(--base-white); border: 2.5px solid var(--ink-soft); display: inline-flex; align-items: center; justify-content: center; font-size: 8.5px; font-weight: 700; color: var(--ink); cursor: pointer; padding: 0; }
+.rib-dot:hover { transform: scale(1.25); z-index: 30; }
+.rib-inline-label { position: absolute; top: 4px; z-index: 4; font-size: 9.5px; font-weight: 600; white-space: nowrap; background: rgba(255, 255, 255, 0.82); padding: 0 3px; border-radius: 2px; }
+.rib-future { position: absolute; top: 5px; z-index: 5; width: 10px; height: 10px; background: var(--base-white); border: 2px solid var(--accent-pink); cursor: pointer; padding: 0; }
+
+/* ---- FullCalendar theme: surface palette, no default yellow ----
+   FC adds .fc to the container itself, so target the same element. */
+.calendar-fc.fc, .calendar-fc .fc {
+  --fc-border-color: var(--grid-line-soft);
+  --fc-today-bg-color: rgba(135, 199, 192, 0.07);
+  --fc-non-business-color: rgba(181, 182, 177, 0.16);
+  --fc-now-indicator-color: var(--accent-pink);
+  --fc-page-bg-color: var(--base-white);
+  font-size: 11px;
+}
+.calendar-fc .fc-col-header-cell-cushion { padding: 6px 4px; font: 10px var(--mono); color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.5px; text-decoration: none; }
+.calendar-fc .fc-timegrid-slot-label-cushion { font: 9.5px var(--mono); color: var(--meta); }
+.calendar-fc .fc-timegrid-slot { height: 26px; }
+.calendar-fc .fc-event { cursor: default; }
+.calendar-fc .fc-timegrid-event { min-height: 30px; border-radius: 4px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15); }
+.calendar-fc .fc-timegrid-event .fc-event-main { padding: 1px 2px; }
+
+/* ---- work blocks: one shared left inset for title and latent dots ---- */
+.af-block-inner { position: relative; padding: 2px 4px 2px 6px; height: 100%; }
+.af-block-title { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.af-block-title span { font-size: 10.5px; font-weight: 650; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.af-block-dots { position: absolute; left: 6px; top: 22px; display: flex; flex-direction: column; gap: 3px; }
+.af-bdot { width: 7px; height: 7px; border-radius: 50%; background: #fff; opacity: 0.45; cursor: pointer; position: relative; padding: 0; border: none; }
+.calendar-fc .fc-event:hover .af-bdot { opacity: 1; }
+
+/* ---- floating popover card (body-level, never clips, never jitters) ---- */
+.float-card { position: fixed; z-index: 300; min-width: 150px; max-width: 260px; background: var(--base-white); border: 1px solid var(--grid-line); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16); padding: 8px 10px; font-size: 11.5px; font-weight: 400; text-align: left; white-space: normal; color: var(--ink); }
+.float-card[hidden] { display: none; }
+.float-card strong { display: block; margin-bottom: 3px; font-size: 11.5px; }
+.pop-line { display: block; padding: 1px 0; }
+.pop-link { cursor: pointer; border-bottom: 1px dotted var(--ink-soft); }
+.pop-link:hover { color: #4e8f88; }
+
+/* ---- custom month: even week heights, day gridlines, today column fill ---- */
+.calendar-month { display: flex; flex-direction: column; background: var(--base-white); }
+.cal-month-dow { flex: none; position: sticky; top: 0; z-index: 10; display: grid; grid-template-columns: repeat(7, 1fr); background: #f7f7f6; border-bottom: 1px solid var(--grid-line); }
+.cal-month-dow span { padding: 6px 8px; font: 10px var(--mono); color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.5px; border-right: 1px solid var(--grid-line-soft); }
+.cal-month-week { flex: 1 1 0; min-height: 92px; position: relative; border-bottom: 1px solid var(--grid-line); background-image: linear-gradient(90deg, var(--grid-line) 1px, transparent 1px); background-size: calc(100% / 7) 100%; }
+.cal-month-today-wash { position: absolute; top: 0; bottom: 0; z-index: 0; background: rgba(135, 199, 192, 0.14); pointer-events: none; }
+.cal-month-dates { position: relative; z-index: 1; display: grid; grid-template-columns: repeat(7, 1fr); }
+.cal-month-date { padding: 5px 8px; font: 11px var(--mono); color: var(--meta); min-height: 24px; }
+.cal-month-date.other { opacity: 0.4; }
+.cal-month-date.today span { background: var(--ink); color: var(--base-white); padding: 1px 6px; font-weight: 700; }
+.cal-month-ribbons { position: relative; z-index: 1; padding: 2px 0 8px; min-height: 14px; }
+
+/* ---- legend swatches ---- */
 .calendar-legend .legend-ghost,
 .calendar-legend .legend-solid,
 .calendar-legend .legend-dot,
@@ -1080,56 +1152,18 @@ tr.expanded .activity-md.excerpt {
 .calendar-legend .legend-block { background: var(--accent-pink); }
 .calendar-legend .legend-square { background: transparent; border: 2px solid var(--ink-soft); }
 
-/* ---- Calendar v2: FullCalendar spans + blocks ---- */
-.calendar-fc .fc-event { cursor: default; }
-.calendar-fc .fc-timegrid-event { min-height: 30px; }
-.calendar-fc .fc .fc-toolbar-title { font-size: 15px; }
-.calendar-fc .fc-timegrid-event .fc-event-main { padding: 1px 2px; }
-
-/* span bars live in the all-day lane as thin ribbons (gradient painted in JS) */
-.calendar-fc .fc-daygrid-event.af-span { border: none; padding: 0; margin: 1px 0; min-height: 15px; font-size: 10px; font-weight: 700; border-radius: 3px; }
-.calendar-fc .fc-daygrid-event.af-span .fc-event-title {
-  padding: 1px 6px; color: var(--ink);
-  position: sticky; left: 0; width: fit-content;
-  text-shadow: 0 0 3px var(--base-white), 0 0 3px var(--base-white), 0 0 3px var(--base-white);
-}
-/* ghost base tint sits under the JS-painted solid worked segments */
-.calendar-fc .fc-daygrid-event.af-span.ghost-band { background-color: color-mix(in srgb, var(--pc) 12%, transparent); }
-
-/* ---- Calendar v2: block latent dots, deliverable dots, popovers ---- */
-.af-block-inner { position: relative; padding: 2px 4px 2px 6px; height: 100%; }
-.af-block-title { font-size: 10.5px; font-weight: 650; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.af-block-dots { position: absolute; left: 6px; top: 16px; display: flex; flex-direction: column; gap: 3px; }
-.af-bdot { width: 7px; height: 7px; border-radius: 50%; background: #fff; opacity: .45; cursor: pointer; position: relative; }
-.calendar-fc .fc-event:hover .af-bdot { opacity: 1; }
-.af-dot { display: inline-flex; align-items: center; justify-content: center; min-width: 14px; height: 14px; padding: 0 3px; border: 2px solid; border-radius: 8px; background: var(--base-white); font-size: 9px; font-weight: 700; position: relative; cursor: pointer; }
-.af-chips { display: flex; flex-wrap: wrap; gap: 2px; }
-.af-chip { display: inline-block; padding: 1px 5px; font-size: 10.5px; border-left: 3px solid var(--pc); background: var(--base-white); color: var(--ink); border-radius: 3px; }
-.af-chip.linked { cursor: pointer; }
-.af-future-marker { display: inline-block; width: 10px; height: 10px; border: 2px solid var(--ink-soft); position: relative; cursor: pointer; }
-.calendar-popover { display: none; position: absolute; z-index: 40; top: 16px; left: 0; min-width: 140px; max-width: 240px; background: var(--base-white); border: 1px solid var(--grid-line); border-radius: 6px; box-shadow: 0 4px 14px rgba(0,0,0,.16); padding: 8px 10px; font-size: 11.5px; font-weight: 400; text-align: left; white-space: normal; color: var(--ink); }
-.af-dot:hover .calendar-popover, .af-bdot:hover .calendar-popover, .af-future-marker:hover .calendar-popover { display: block; }
-.calendar-popover strong { display: block; margin-bottom: 3px; }
-.pop-line { display: block; padding: 1px 0; }
-.pop-link { cursor: pointer; border-bottom: 1px dotted var(--ink-soft); }
-.calendar-fc .fc-daygrid-event.af-deliverable,
-.calendar-fc .fc-daygrid-event.af-future { background: transparent; border: none; }
-
-/* ---- Calendar v2: skinny swimlane (Timeline view) ---- */
+/* ---- skinny swimlane (Timeline): ribbon language, exact overlay ---- */
 .calendar-axis, .calendar-row { grid-template-columns: 200px minmax(0, 1fr); }
 .calendar-row { min-height: 40px; }
-.calendar-project-label { max-width: 200px; }
+.calendar-project-label { max-width: 200px; padding: 6px 10px; }
 .calendar-project-copy strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; display: inline-block; }
-/* ghost track = faint full-span bar; solid worked segments layered on top */
-.calendar-duration.ghost-track { opacity: 0.18; }
-.calendar-worked-seg { position: absolute; top: 15px; height: 8px; border-radius: 3px; z-index: 2; }
-.calendar-worked-seg.active { background: var(--accent-teal); }
-.calendar-worked-seg.complete { background: var(--accent-modifier); }
-.calendar-worked-seg.cancelled { background: var(--accent-pink); }
-/* clustered deliverable dot for the skinny lane */
-.calendar-marker.deliverable-dot { top: 13px; width: 13px; height: 13px; border-radius: 50%; background: var(--base-white); border: 2px solid var(--accent-teal); display: inline-flex; align-items: center; justify-content: center; }
-.calendar-marker.deliverable-dot .dot-badge { font-size: 8px; font-weight: 700; color: var(--ink); }
-.calendar-marker.deliverable-dot.no-link { cursor: help; }
-/* compress activity/future markers to the skinny row */
-.calendar-row .calendar-marker.activity { top: 28px; }
-.calendar-row .calendar-marker.future { top: 26px; }
+/* track and worked segments share one geometry so they read as one bar */
+.calendar-duration, .calendar-worked-seg { position: absolute; top: 14px; height: 12px; border-radius: 4px; box-shadow: none; }
+.calendar-worked-seg { z-index: 2; }
+.rib-dot.on-lane { top: 13px; transform: translateX(-50%); }
+.rib-dot.on-lane:hover { transform: translateX(-50%) scale(1.25); }
+/* per-day gridlines when the window is short */
+.calendar-dayline { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--grid-line-soft); opacity: 0.55; pointer-events: none; }
+/* markers embedded in the same bar row, project-colored via inline style */
+.calendar-row .calendar-marker.activity { top: 16px; width: 8px; height: 8px; border: 1.5px solid var(--base-white); }
+.calendar-row .calendar-marker.future { top: 15px; }

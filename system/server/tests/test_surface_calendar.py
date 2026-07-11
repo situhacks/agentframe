@@ -170,7 +170,7 @@ class SurfaceCalendarTests(unittest.TestCase):
             blocks = snapshot.build_snapshot(root)["timeline_projects"][0]["work_blocks"]
             self.assertEqual(len(blocks), 1)
             self.assertEqual(blocks[0]["start"], 0)          # clamped, not -30
-            self.assertEqual(blocks[0]["end"], 30)
+            self.assertEqual(blocks[0]["end"], 60)           # 1-hour minimum
 
     def test_snapshot_calendar_includes_milestones_events_and_future_attention(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

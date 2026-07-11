@@ -89,7 +89,26 @@
         <div class="calendar-legend" id="calendar-legend"></div>
       </aside>
       <section class="calendar-stage">
-        <div id="calendar-fc" class="calendar-fc"></div>
+        <div id="calendar-nav" class="calendar-nav">
+          <button id="calendar-prev" aria-label="Previous">&#8249;</button>
+          <button id="calendar-next" aria-label="Next">&#8250;</button>
+          <button id="calendar-today-btn">today</button>
+          <select id="calendar-window" hidden>
+            <option value="all">all history</option>
+            <option value="12">last 12 months</option>
+            <option value="6">last 6 months</option>
+            <option value="3">last 3 months</option>
+            <option value="1">last month</option>
+          </select>
+          <span id="calendar-title" class="calendar-title"></span>
+        </div>
+        <div id="calendar-ribbons-head" class="calendar-ribbons-head" hidden>
+          <div class="rib-gutter"></div>
+          <div id="calendar-ribbons-rows" class="rib-rows"></div>
+          <div class="rib-scrollpad"></div>
+        </div>
+        <div id="calendar-fc" class="calendar-fc" hidden></div>
+        <div id="calendar-month" class="calendar-month scroll" hidden></div>
         <div id="calendar-board" class="calendar-board scroll" hidden></div>
       </section>
     </div>

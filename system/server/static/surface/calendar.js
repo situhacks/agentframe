@@ -22,7 +22,7 @@ const calendarState = {
   ribbons: true,
   expandLabels: false,
   showFuture: true,
-  window: 'all',     // timeline lookback: all | 12 | 6 | 3 | 1 (months)
+  window: '3',       // timeline lookback: all | 12 | 6 | 3 | 1 (months)
   filtersOpen: true,
   focusDate: null,   // 'YYYY-MM-DD' anchor
   fc: null,          // FullCalendar instance (lazy)
@@ -44,8 +44,9 @@ function readCalendarHash() {
   if (params.get('expand') === '1') calendarState.expandLabels = true;
   if (params.get('future') === '0') calendarState.showFuture = false;
   if (params.get('filters') === '0') calendarState.filtersOpen = false;
-  const date = params.get('date');
-  if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) calendarState.focusDate = date;
+  // Deliberately ignore a persisted `date`: on a cold load each view should
+  // land on today's period, not a stale anchor left in the hash from a prior
+  // session. In-session navigation sets focusDate directly, not via this read.
 }
 
 function writeCalendarHash() {

@@ -4,6 +4,7 @@
 
 import { getJSON, postJSON } from './api.js';
 import { renderDashboard, applyActivityUpdate, setupDashboardDensity } from './dashboard.js';
+import { renderCalendar, setupCalendar } from './calendar.js';
 
 const POLL_MS = 12000;
 
@@ -43,6 +44,7 @@ async function poll({ force = false } = {}) {
     state.etag = snap.etag;
     state.snapshot = snap;
     renderDashboard(snap);
+    renderCalendar(snap);
     applyActivityUpdate(snap);
     const dashMeta = document.getElementById('dash-meta');
     dashMeta.textContent = `${snap.projects.length} active projects`;
@@ -86,12 +88,18 @@ export function navigate(path, params = null) {
 
 async function applyRoute() {
   const { path, params } = parseHash();
-  const route = path.startsWith('preview') ? 'preview' : 'dashboard';
+  const route = path.startsWith('preview') ? 'preview' : path.startsWith('calendar') ? 'calendar' : 'dashboard';
   state.route = route;
 
+  const calendarWasHidden = document.getElementById('view-calendar').hidden;
   document.getElementById('view-dashboard').hidden = route !== 'dashboard';
+  document.getElementById('view-calendar').hidden = route !== 'calendar';
   document.getElementById('view-preview').hidden = route !== 'preview';
+  // re-render on entry: width-dependent layout (timeline day detail) needs
+  // the view visible to measure
+  if (route === 'calendar' && calendarWasHidden && state.snapshot) renderCalendar(state.snapshot);
   document.getElementById('tab-dashboard').classList.toggle('active', route === 'dashboard');
+  document.getElementById('tab-calendar').classList.toggle('active', route === 'calendar');
   document.getElementById('tab-preview').classList.toggle('active', route === 'preview');
 
   if (route === 'preview') {
@@ -128,6 +136,7 @@ window.addEventListener('hashchange', applyRoute);
 window.addEventListener('focus', () => poll());
 
 setupDashboardDensity();
+setupCalendar();
 setFreshness('manual', 'connecting...');
 poll().then(applyRoute);
 setInterval(poll, POLL_MS);

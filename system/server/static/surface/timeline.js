@@ -9,7 +9,8 @@ import { navigate } from './app.js';
 import { colorFor, ghostTint, deliverableDot, attachPopover, popContent } from './ribbons.js';
 
 const DAY_MS = 86400000;
-const DAY_TICKS_MAX_DAYS = 100; // show per-day gridlines only when zoomed in
+const MIN_PX_PER_DAY = 11;  // per-day numbers/ticks whenever a 2-digit label fits
+const LABEL_COL_PX = 260;   // keep in sync with the .calendar-row grid template
 
 function day(value) {
   const text = String(value || '').slice(0, 10);
@@ -189,7 +190,7 @@ function gridRules(range) {
   const frag = document.createDocumentFragment();
   const totalDays = Math.round((range.end - range.start) / DAY_MS);
   if (totalDays <= BANDS_MAX_DAYS) {
-    const everyDay = totalDays <= DAY_TICKS_MAX_DAYS;
+    const everyDay = range.dayDetail;
     for (let d = 0; d < totalDays; d++) {
       const cur = addDays(range.start, d);
       const dow = cur.getUTCDay();
@@ -292,8 +293,6 @@ function projectRow(project, range, opts) {
   return el('div', { class: 'calendar-row' }, label, track);
 }
 
-const DAY_NUMBERS_MAX_DAYS = 60; // show per-day numbers only when they fit
-
 function renderAxis(range) {
   const months = el('div', { class: 'calendar-months' });
   for (const segment of monthSegments(range)) {
@@ -310,8 +309,9 @@ function renderAxis(range) {
   const right = el('div', { class: 'calendar-axis-right' }, months);
   const totalDays = Math.round((range.end - range.start) / DAY_MS);
   if (totalDays <= BANDS_MAX_DAYS) {
-    // dates at every zoom: per-day numbers when they fit, Monday dates when tight
-    const everyDay = totalDays <= DAY_NUMBERS_MAX_DAYS;
+    // dates at every zoom: per-day numbers whenever the pixels fit,
+    // Monday dates only when they genuinely don't
+    const everyDay = range.dayDetail;
     const days = el('div', { class: 'calendar-days' });
     for (let d = 0; d < totalDays; d++) {
       const cur = addDays(range.start, d);
@@ -356,6 +356,9 @@ function renderSummary(projects, range) {
 
 export function renderTimeline(board, projects, opts) {
   const range = rangeFor(projects.length ? projects : [], opts.showFuture, opts.windowMonths);
+  const totalDays = Math.max(1, Math.round((range.end - range.start) / DAY_MS));
+  const trackWidth = Math.max(0, board.clientWidth - LABEL_COL_PX);
+  range.dayDetail = trackWidth / totalDays >= MIN_PX_PER_DAY;
   const visible = projects.filter((project) => projectIntersects(project, range));
   renderSummary(visible, range);
   const scrollTop = board.scrollTop;

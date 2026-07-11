@@ -17,6 +17,7 @@ Commands:
   python system/af.py version <project> <deliverable-slug>
   python system/af.py new-project <slug> [--domain marketing] [--flow open-flow] [--name NAME]
   python system/af.py doctor [project|pipeline]
+  python system/af.py autonomy init|check|start|checkpoint|finish ...
   python system/af.py pipe save --company C --role R --url U [--ats A] [--source S] [--posted D] [--deadline D] [--salary S] [--slug K]
   python system/af.py pipe start <slug>
   python system/af.py pipe stage <slug> <stage>
@@ -65,6 +66,13 @@ FLOWS = {"marketing-solo-flow": "1-research-and-architecture",
          "marketing-standard-flow": "1-research",
          "open-flow": "active",
          "project-mgmt-open-flow": "active"}
+
+AUTONOMY_SCHEMA_VERSION = "2026-07-10"
+AUTONOMY_STATUSES = {"proposed", "running", "blocked", "review", "complete"}
+AUTONOMY_LEVELS = {"plan-only", "assisted", "unattended"}
+AUTONOMY_REVIEWER_MODES = {"independent", "same-context", "human"}
+AUTONOMY_COMPLETION_GATES = {"human", "independent-review"}
+AUTONOMY_MODEL_TIERS = {"premium", "workhorse", "economical", "current", "none"}
 
 
 def die(msg):
@@ -141,6 +149,15 @@ def set_scalar(fm, key, value, path="frontmatter"):
 
 def clean_value(v):
     return re.sub(r"\s+#.*$", "", v).strip().strip('"')
+
+
+def yaml_quote(value):
+    """One-line double-quoted YAML scalar for CLI-provided text."""
+    if value in (None, ""):
+        return "null"
+    clean = " ".join(str(value).split())
+    clean = clean.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{clean}"'
 
 
 def get_scalar(fm, key):
@@ -442,6 +459,334 @@ def cmd_new_project(args):
     print("\nJudgment (stays with the agent):")
     print(f"  - Load library/process/flows/{args.flow}.md and run its kickoff")
     print("    (research offer / plan proposal / pack-owned kickoff steps — flow-owned, not script-owned).")
+
+
+# ---------------------------------------------------------------- bounded autonomy
+
+def autonomy_run_id(value):
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", value or ""):
+        die(f"autonomy run id '{value}' is not folder-safe (use lowercase letters, numbers, hyphens)")
+    return value
+
+
+def autonomy_ref(project, run_id, must_exist=True):
+    cdir = project_dir(project)
+    if state_doc(cdir) != "project.md":
+        die("bounded autonomy runs belong to workspace projects, not pipeline applications")
+    run_id = autonomy_run_id(run_id)
+    path = os.path.join(cdir, "knowledge", "autonomy", f"{run_id}.md")
+    if must_exist and not os.path.isfile(path):
+        die(f"autonomy run '{run_id}' not found at {os.path.relpath(path, ROOT)}")
+    return cdir, path
+
+
+def autonomy_int(fm, key, issues, label, minimum=0):
+    raw = get_scalar(fm, key)
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        issues.append(f"{label}: field '{key}' must be an integer")
+        return None
+    if value < minimum:
+        issues.append(f"{label}: field '{key}' must be >= {minimum}")
+    return value
+
+
+def autonomy_issues(path, expected_project=None, require_ready=True):
+    label = os.path.relpath(path, ROOT).replace("\\", "/")
+    if not os.path.isfile(path):
+        return [f"{label}: file missing"]
+    try:
+        fm, body = split_fm(read(path), label)
+    except SystemExit:
+        return [f"{label}: missing or invalid frontmatter"]
+
+    issues = []
+    required = (
+        "schema_version", "run_id", "project", "status", "autonomy_level", "goal",
+        "done_when", "context_sources", "allowed_paths", "verification", "max_iterations",
+        "max_subagents", "subagents_used", "iteration", "planner_tier", "executor_tier", "reviewer_tier",
+        "reviewer_mode", "completion_gate", "started_at", "last_checkpoint", "completed_at",
+        "blocked_reason", "completion_evidence", "approved_by",
+    )
+    for field in required:
+        if not has_field(fm, field):
+            issues.append(f"{label}: required field '{field}' missing")
+
+    if get_scalar(fm, "schema_version") != AUTONOMY_SCHEMA_VERSION:
+        issues.append(f"{label}: schema_version must be {AUTONOMY_SCHEMA_VERSION}")
+    if get_scalar(fm, "run_id") != os.path.splitext(os.path.basename(path))[0]:
+        issues.append(f"{label}: run_id must match filename")
+    if expected_project and get_scalar(fm, "project") != expected_project:
+        issues.append(f"{label}: project must be '{expected_project}'")
+
+    status = get_scalar(fm, "status")
+    level = get_scalar(fm, "autonomy_level")
+    reviewer_mode = get_scalar(fm, "reviewer_mode")
+    completion_gate = get_scalar(fm, "completion_gate")
+    if status not in AUTONOMY_STATUSES:
+        issues.append(f"{label}: status '{status}' invalid")
+    if level not in AUTONOMY_LEVELS:
+        issues.append(f"{label}: autonomy_level '{level}' invalid")
+    if reviewer_mode not in AUTONOMY_REVIEWER_MODES:
+        issues.append(f"{label}: reviewer_mode '{reviewer_mode}' invalid")
+    if completion_gate not in AUTONOMY_COMPLETION_GATES:
+        issues.append(f"{label}: completion_gate '{completion_gate}' invalid")
+    for field in ("planner_tier", "executor_tier", "reviewer_tier"):
+        if get_scalar(fm, field) not in AUTONOMY_MODEL_TIERS:
+            issues.append(f"{label}: {field} '{get_scalar(fm, field)}' invalid")
+
+    max_iterations = autonomy_int(fm, "max_iterations", issues, label, minimum=1)
+    max_subagents = autonomy_int(fm, "max_subagents", issues, label, minimum=0)
+    subagents_used = autonomy_int(fm, "subagents_used", issues, label, minimum=0)
+    iteration = autonomy_int(fm, "iteration", issues, label, minimum=0)
+    if max_iterations is not None and iteration is not None and iteration > max_iterations:
+        issues.append(f"{label}: iteration {iteration} exceeds max_iterations {max_iterations}")
+    if max_subagents is not None and subagents_used is not None and subagents_used > max_subagents:
+        issues.append(f"{label}: subagents_used {subagents_used} exceeds max_subagents {max_subagents}")
+
+    if require_ready or status != "proposed":
+        for field in ("goal", "done_when"):
+            if get_scalar(fm, field) in (None, "", "null"):
+                issues.append(f"{label}: readiness field '{field}' is unresolved")
+        for field in ("context_sources", "allowed_paths", "verification"):
+            if not fm_list(fm, field):
+                issues.append(f"{label}: readiness list '{field}' is empty")
+
+    if level == "unattended":
+        if reviewer_mode != "independent":
+            issues.append(f"{label}: unattended runs require reviewer_mode: independent")
+        if max_subagents is not None and max_subagents < 1:
+            issues.append(f"{label}: unattended runs require max_subagents >= 1")
+
+    started = get_scalar(fm, "started_at")
+    completed = get_scalar(fm, "completed_at")
+    evidence = get_scalar(fm, "completion_evidence")
+    approved_by = get_scalar(fm, "approved_by")
+    blocked_reason = get_scalar(fm, "blocked_reason")
+    if status in {"running", "blocked", "review", "complete"} and started in (None, "", "null"):
+        issues.append(f"{label}: status '{status}' requires started_at")
+    if status == "blocked" and blocked_reason in (None, "", "null"):
+        issues.append(f"{label}: blocked status requires blocked_reason")
+    if status in {"review", "complete"} and evidence in (None, "", "null"):
+        issues.append(f"{label}: status '{status}' requires completion_evidence")
+    if status == "complete":
+        if completed in (None, "", "null"):
+            issues.append(f"{label}: complete status requires completed_at")
+        if approved_by not in {"operator", "reviewer"}:
+            issues.append(f"{label}: complete status requires approved_by: operator|reviewer")
+
+    for heading in ("## Context", "## Plan", "## Model Routing", "## Checkpoints"):
+        if heading not in body:
+            issues.append(f"{label}: body missing '{heading}'")
+    return issues
+
+
+def autonomy_project_slug(cdir, require_active=True):
+    fm, _ = split_fm(read(os.path.join(cdir, "project.md")), "project.md")
+    if require_active and get_scalar(fm, "status") != "active":
+        die("bounded autonomy requires an active project")
+    return get_scalar(fm, "slug")
+
+
+def autonomy_save(path, fm, body):
+    write(path, join_fm(fm, body))
+
+
+def autonomy_touch(cdir):
+    path = os.path.join(cdir, "project.md")
+    fm, body = split_fm(read(path), "project.md")
+    write(path, join_fm(touch_lifecycle(fm), body))
+
+
+def autonomy_checkpoint_body(body, iteration, outcome, summary, evidence=None):
+    line = f"- {now_iso()} | iteration {iteration} | {outcome} | {' '.join(summary.split())}"
+    if evidence:
+        line += f" | evidence: {' '.join(evidence.split())}"
+    return body.rstrip() + "\n" + line + "\n"
+
+
+def cmd_autonomy_init(args):
+    cdir, path = autonomy_ref(args.project, args.run_id, must_exist=False)
+    project = autonomy_project_slug(cdir)
+    if os.path.exists(path):
+        die(f"autonomy run already exists: {os.path.relpath(path, ROOT)}")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    fm = f"""schema_version: {AUTONOMY_SCHEMA_VERSION}
+run_id: {args.run_id}
+project: {project}
+status: proposed
+autonomy_level: {args.level}
+goal: null
+done_when: null
+context_sources: []
+allowed_paths: []
+verification: []
+max_iterations: 6
+max_subagents: 6
+subagents_used: 0
+iteration: 0
+planner_tier: premium
+executor_tier: workhorse
+reviewer_tier: premium
+reviewer_mode: independent
+completion_gate: human
+started_at: null
+last_checkpoint: null
+completed_at: null
+blocked_reason: null
+completion_evidence: null
+approved_by: null"""
+    body = f"""
+# Bounded Autonomy Run — {args.run_id}
+
+## Context
+
+Describe the source material, constraints, and decisions the run must preserve.
+
+## Plan
+
+Write independently checkable work units before starting.
+
+## Model Routing
+
+Record requested roles and the actual/inherited models the harness provided.
+
+## Checkpoints
+
+"""
+    autonomy_save(path, fm, body)
+    rel = os.path.relpath(path, ROOT).replace("\\", "/")
+    print(f"af autonomy init: {rel} -> proposed")
+    print("  complete the run contract, then run: af autonomy check <project> <run-id>")
+
+
+def cmd_autonomy_check(args):
+    cdir, path = autonomy_ref(args.project, args.run_id)
+    project = autonomy_project_slug(cdir, require_active=False)
+    issues = autonomy_issues(path, expected_project=project, require_ready=True)
+    if issues:
+        print(f"af autonomy check: {len(issues)} issue(s)", file=sys.stderr)
+        for issue in issues:
+            print(f"  - {issue}", file=sys.stderr)
+        sys.exit(1)
+    fm, _ = split_fm(read(path), path)
+    print(f"af autonomy check: {args.run_id} is valid ({get_scalar(fm, 'status')})")
+
+
+def cmd_autonomy_start(args):
+    cdir, path = autonomy_ref(args.project, args.run_id)
+    project = autonomy_project_slug(cdir)
+    issues = autonomy_issues(path, expected_project=project, require_ready=True)
+    if issues:
+        die("autonomy readiness failed:\n  - " + "\n  - ".join(issues))
+    fm, body = split_fm(read(path), path)
+    prior = get_scalar(fm, "status")
+    if prior not in {"proposed", "blocked"}:
+        die(f"autonomy start requires proposed|blocked, found '{prior}'")
+    if prior == "blocked" and not args.resume_reason:
+        die("resuming a blocked run requires --resume-reason")
+    iteration = int(get_scalar(fm, "iteration"))
+    max_iterations = int(get_scalar(fm, "max_iterations"))
+    if iteration >= max_iterations:
+        die(f"iteration budget exhausted ({iteration}/{max_iterations}); raise max_iterations deliberately before resuming")
+
+    when = now_iso()
+    fm = set_scalar(fm, "status", "running", path)
+    if get_scalar(fm, "started_at") in (None, "", "null"):
+        fm = set_scalar(fm, "started_at", when, path)
+    fm = set_scalar(fm, "last_checkpoint", when, path)
+    fm = set_scalar(fm, "blocked_reason", "null", path)
+    if prior == "blocked":
+        body = autonomy_checkpoint_body(body, iteration, "resumed", args.resume_reason)
+    autonomy_save(path, fm, body)
+    autonomy_touch(cdir)
+    event = "autonomy_started" if prior == "proposed" else "autonomy_resumed"
+    detail = f"{args.run_id} running; level={get_scalar(fm, 'autonomy_level')}, budget={iteration}/{max_iterations}"
+    if args.resume_reason:
+        detail += f". Reason: \"{' '.join(args.resume_reason.split())}\""
+    append_activity(cdir, f"{event}: {detail}")
+    print(f"af autonomy start: {args.run_id} -> running ({iteration}/{max_iterations})")
+
+
+def cmd_autonomy_checkpoint(args):
+    cdir, path = autonomy_ref(args.project, args.run_id)
+    project = autonomy_project_slug(cdir)
+    issues = autonomy_issues(path, expected_project=project, require_ready=True)
+    if issues:
+        die("autonomy state invalid:\n  - " + "\n  - ".join(issues))
+    fm, body = split_fm(read(path), path)
+    if get_scalar(fm, "status") != "running":
+        die(f"autonomy checkpoint requires running, found '{get_scalar(fm, 'status')}'")
+    if args.outcome == "review" and not args.evidence:
+        die("review checkpoint requires --evidence")
+    if args.subagents_spawned < 0:
+        die("--subagents-spawned must be >= 0")
+
+    iteration = int(get_scalar(fm, "iteration")) + 1
+    max_iterations = int(get_scalar(fm, "max_iterations"))
+    subagents_used = int(get_scalar(fm, "subagents_used")) + args.subagents_spawned
+    max_subagents = int(get_scalar(fm, "max_subagents"))
+    when = now_iso()
+    outcome = args.outcome
+    fm = set_scalar(fm, "iteration", str(iteration), path)
+    fm = set_scalar(fm, "subagents_used", str(subagents_used), path)
+    fm = set_scalar(fm, "last_checkpoint", when, path)
+
+    if subagents_used > max_subagents:
+        outcome = "blocked"
+        reason = f"subagent budget exceeded ({subagents_used}/{max_subagents}): {args.summary}"
+        fm = set_scalar(fm, "status", "blocked", path)
+        fm = set_scalar(fm, "blocked_reason", yaml_quote(reason), path)
+    elif outcome == "review":
+        fm = set_scalar(fm, "status", "review", path)
+        fm = set_scalar(fm, "completion_evidence", yaml_quote(args.evidence), path)
+    elif outcome == "blocked":
+        fm = set_scalar(fm, "status", "blocked", path)
+        fm = set_scalar(fm, "blocked_reason", yaml_quote(args.summary), path)
+    elif iteration >= max_iterations:
+        outcome = "blocked"
+        reason = f"iteration budget exhausted ({iteration}/{max_iterations}): {args.summary}"
+        fm = set_scalar(fm, "status", "blocked", path)
+        fm = set_scalar(fm, "blocked_reason", yaml_quote(reason), path)
+
+    body = autonomy_checkpoint_body(body, iteration, outcome, args.summary, args.evidence)
+    autonomy_save(path, fm, body)
+    autonomy_touch(cdir)
+    if outcome == "blocked":
+        append_activity(cdir, f"autonomy_blocked: {args.run_id} blocked at iteration {iteration}; {get_scalar(fm, 'blocked_reason')}")
+    elif outcome == "review":
+        append_activity(cdir, f"autonomy_review_ready: {args.run_id} reached review at iteration {iteration}; evidence recorded in knowledge/autonomy/{args.run_id}.md")
+    print(f"af autonomy checkpoint: {args.run_id} -> {get_scalar(fm, 'status')} "
+          f"({iteration}/{max_iterations} iterations; {subagents_used}/{max_subagents} subagents)")
+
+
+def cmd_autonomy_finish(args):
+    cdir, path = autonomy_ref(args.project, args.run_id)
+    project = autonomy_project_slug(cdir)
+    issues = autonomy_issues(path, expected_project=project, require_ready=True)
+    if issues:
+        die("autonomy state invalid:\n  - " + "\n  - ".join(issues))
+    fm, body = split_fm(read(path), path)
+    if get_scalar(fm, "status") != "review":
+        die(f"autonomy finish requires review, found '{get_scalar(fm, 'status')}'")
+    gate = get_scalar(fm, "completion_gate")
+    if gate == "human" and args.approved_by != "operator":
+        die("completion_gate: human requires --approved-by operator")
+    if args.approved_by == "reviewer" and get_scalar(fm, "reviewer_mode") != "independent":
+        die("reviewer approval requires reviewer_mode: independent")
+
+    when = now_iso()
+    fm = set_scalar(fm, "status", "complete", path)
+    fm = set_scalar(fm, "completed_at", when, path)
+    fm = set_scalar(fm, "last_checkpoint", when, path)
+    fm = set_scalar(fm, "approved_by", args.approved_by, path)
+    iteration = int(get_scalar(fm, "iteration"))
+    body = autonomy_checkpoint_body(body, iteration, "complete", f"approved by {args.approved_by}")
+    autonomy_save(path, fm, body)
+    autonomy_touch(cdir)
+    append_activity(cdir, f"autonomy_completed: {args.run_id} complete after {iteration} iteration(s); approved_by={args.approved_by}")
+    print(f"af autonomy finish: {args.run_id} -> complete (approved by {args.approved_by})")
 
 
 # ---------------------------------------------------------------- pipe (pipeline topology)
@@ -1035,6 +1380,10 @@ def check_project(cdir):
     if rules and hasattr(rules, "check"):
         issues += rules.check(make_ctx(), cdir, cfm)
     issues += media_manifest_issues(cdir, cfm)
+    autonomy_dir = os.path.join(cdir, "knowledge", "autonomy")
+    if os.path.isdir(autonomy_dir):
+        for path in sorted(glob.glob(os.path.join(autonomy_dir, "*.md"))):
+            issues += autonomy_issues(path, expected_project=get_scalar(cfm, "slug"), require_ready=False)
     return issues
 
 
@@ -1209,6 +1558,7 @@ def cmd_doctor(args):
 # and allowed in any mode; so is `pipe board`.
 OPERATOR_VERBS = {"lock", "publish", "version", "new-project"}
 OPERATOR_PIPE_VERBS = {"save", "start", "stage"}
+OPERATOR_AUTONOMY_VERBS = {"init", "start", "checkpoint", "finish"}
 
 
 def check_mode_gate(cmd, args=None):
@@ -1220,6 +1570,9 @@ def check_mode_gate(cmd, args=None):
     """
     if cmd == "pipe":
         if getattr(args, "pipe_cmd", None) not in OPERATOR_PIPE_VERBS:
+            return
+    elif cmd == "autonomy":
+        if getattr(args, "autonomy_cmd", None) not in OPERATOR_AUTONOMY_VERBS:
             return
     elif cmd not in OPERATOR_VERBS:
         return
@@ -1247,6 +1600,20 @@ def main():
     s.add_argument("--flow", default="open-flow", choices=sorted(FLOWS)); s.add_argument("--domain", default="marketing")
     s.add_argument("--name"); s.set_defaults(fn=cmd_new_project)
     s = sub.add_parser("doctor");          s.add_argument("project", nargs="?"); s.set_defaults(fn=cmd_doctor)
+
+    s = sub.add_parser("autonomy")
+    asub = s.add_subparsers(dest="autonomy_cmd", required=True)
+    aa = asub.add_parser("init"); aa.add_argument("project"); aa.add_argument("run_id")
+    aa.add_argument("--level", choices=sorted(AUTONOMY_LEVELS), default="assisted"); aa.set_defaults(fn=cmd_autonomy_init)
+    aa = asub.add_parser("check"); aa.add_argument("project"); aa.add_argument("run_id"); aa.set_defaults(fn=cmd_autonomy_check)
+    aa = asub.add_parser("start"); aa.add_argument("project"); aa.add_argument("run_id")
+    aa.add_argument("--resume-reason"); aa.set_defaults(fn=cmd_autonomy_start)
+    aa = asub.add_parser("checkpoint"); aa.add_argument("project"); aa.add_argument("run_id")
+    aa.add_argument("--outcome", choices=("continue", "blocked", "review"), required=True)
+    aa.add_argument("--summary", required=True); aa.add_argument("--evidence")
+    aa.add_argument("--subagents-spawned", type=int, required=True); aa.set_defaults(fn=cmd_autonomy_checkpoint)
+    aa = asub.add_parser("finish"); aa.add_argument("project"); aa.add_argument("run_id")
+    aa.add_argument("--approved-by", choices=("operator", "reviewer"), required=True); aa.set_defaults(fn=cmd_autonomy_finish)
 
     s = sub.add_parser("pipe")
     psub = s.add_subparsers(dest="pipe_cmd", required=True)

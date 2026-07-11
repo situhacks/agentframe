@@ -4,6 +4,7 @@ Available image-creation paths for AgentFrame. Load this when a project or post 
 
 | Path | Use when | Owner deliverable | Outputs |
 |---|---|---|---|
+| D2 diagram renderer | A flow, decision tree, handoff, or system explainer is primarily a graph of nodes and edges. | Calling deliverable; load [`diagram-production.md`](diagram-production.md) | `diagram.d2` plus a derived SVG beside the owning visual artifact |
 | HTML render + browser screenshot | Slide-shaped visuals from tokens/layout are enough (covers, diagrams, doc-style panels). | `design-language` (tokens + layout guidance) | `carousel-slide-{i}.html` and manual PNG screenshots in the post's `visuals/` |
 | Gemini Nano Banana 2 (`gemini-3.1-flash-image-preview`) | Default raster generation for standard illustrations and fast A/B/C variants. | `image-prompts` | `image-variant-{a|b|c}.png` via `system/server/lib/image_generate.py` |
 | Gemini Nano Banana Pro (`gemini-3-pro-image-preview`) | Prompt fidelity and text-in-image quality matter more than speed (hero or leadership-facing visuals). | `image-prompts` | `image-variant-{a|b|c}.png` via `system/server/lib/image_generate.py` |

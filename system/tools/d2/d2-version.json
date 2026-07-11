@@ -1,0 +1,7 @@
+﻿{
+    "upstream":  "https://github.com/terrastruct/d2",
+    "version":  "0.7.1",
+    "platform":  "windows-amd64",
+    "archive_url":  "https://github.com/terrastruct/d2/releases/download/v0.7.1/d2-v0.7.1-windows-amd64.tar.gz",
+    "archive_sha256":  "D289C2866221C618C9FC6EFCD416EE8C16E122BD0100761AEA51001E3C958F57"
+}

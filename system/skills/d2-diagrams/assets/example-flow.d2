@@ -1,0 +1,32 @@
+direction: right
+
+classes: {
+  stage: {
+    style: {
+      fill: "#EFF6FF"
+      stroke: "#2563EB"
+      font-color: "#172554"
+      bold: true
+    }
+  }
+  decision: {
+    shape: diamond
+    style: {
+      fill: "#FFF7ED"
+      stroke: "#EA580C"
+      font-color: "#7C2D12"
+      bold: true
+    }
+  }
+}
+
+brief: Brief { class: stage }
+draft: Draft { class: stage }
+ready: Ready? { class: decision }
+revise: Revise { class: stage }
+ship: Ship { class: stage }
+
+brief -> draft -> ready
+ready -> ship: yes
+ready -> revise: no
+revise -> draft

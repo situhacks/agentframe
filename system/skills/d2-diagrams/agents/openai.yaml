@@ -1,0 +1,4 @@
+interface:
+  display_name: "D2 Diagrams"
+  short_description: "Render static diagrams with D2"
+  default_prompt: "Create a polished flow diagram as SVG."

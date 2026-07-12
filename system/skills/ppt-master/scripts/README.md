@@ -45,7 +45,9 @@ python3 scripts/update_repo.py
 |------|-----------------|---------------|
 | Conversion | `source_to_md.py`, `source_to_md/pdf_to_md.py`, `source_to_md/doc_to_md.py`, `source_to_md/excel_to_md.py`, `source_to_md/ppt_to_md.py`, `source_to_md/web_to_md.py`, `pptx_intake.py`, `pptx_to_svg.py` | [docs/conversion.md](./docs/conversion.md) |
 | Project management | `project_manager.py`, `batch_validate.py`, `generate_examples_index.py`, `error_helper.py`, `pptx_template_import.py`, `template_fill_pptx.py`, `native_enhance_pptx.py` | [docs/project.md](./docs/project.md) |
-| SVG pipeline | `finalize_svg.py`, `svg_to_pptx.py`, `total_md_split.py`, `svg_quality_checker.py`, `extract_svg_assets.py`, `animation_config.py`, `notes_to_audio.py` | [docs/svg-pipeline.md](./docs/svg-pipeline.md) |
+| SVG pipeline | `preset_shape_svg.py`, `finalize_svg.py`, `svg_to_pptx.py`, `total_md_split.py`, `svg_quality_checker.py`, `extract_svg_assets.py`, `animation_config.py`, `notes_to_audio.py` | [docs/svg-pipeline.md](./docs/svg-pipeline.md); [native preset authoring](../references/native-shape-authoring.md) |
+| PPTX transitions | `pptx_transitions.py` | [docs/pptx-transitions.md](./docs/pptx-transitions.md) |
+| PPTX animations | `pptx_animations.py`, `animation_config.py` | [docs/pptx-animations.md](./docs/pptx-animations.md) |
 | Spec maintenance | `update_spec.py` | [docs/update_spec.md](./docs/update_spec.md) |
 | Image tools | `image_gen.py`, `latex_render.py`, `analyze_images.py`, `gemini_watermark_remover.py` | [docs/image.md](./docs/image.md) |
 | Repo maintenance | `update_repo.py` | README install/update section |
@@ -105,6 +107,16 @@ python3 scripts/native_enhance_pptx.py validate <project_path>
 python3 scripts/native_enhance_pptx.py apply <project_path>
 ```
 
+Native preset shape authoring (one registry-backed fragment on stdout):
+
+```bash
+python3 scripts/preset_shape_svg.py list --search arrow
+python3 scripts/preset_shape_svg.py describe rightArrow
+python3 scripts/preset_shape_svg.py render rightArrow --id process-arrow --frame 120 180 240 96 --fill '#2563EB'
+```
+
+The helper never writes a page or project file. Select one exact semantic stock-shape match, inspect the emitted fragment, and insert it into the hand-authored SVG with the normal patch workflow. Keep ordinary rectangles, ellipses, freeform geometry, charts, icons, and ambiguous silhouettes as regular SVG. See [`references/native-shape-authoring.md`](../references/native-shape-authoring.md) for the selection and metadata contract.
+
 Post-processing and export:
 
 ```bash
@@ -126,7 +138,11 @@ Deck/layout template routes use explicit template structure. Each complete SVG n
 
 Current `create-template` output always rebuilds explicit SVG structure and does not package `native_structure.json` or `source_template.pptx`. `preserve` remains available only for existing projects that already carry the legacy pair.
 
-`pptx_to_svg.py` annotates supported unmerged tables and conservative classic-chart caches with `data-pptx-native` metadata. Source table-style inheritance, supported solid cell fills/basic text formatting, chart title/legend/axis titles, and plot-level data-label flags for area/bar/column/line charts are retained when the current schema can represent them. Tables with direct borders, non-solid fills, or mixed rich-text formatting remain fallback-only, as do charts with unsupported label scopes/types, custom axis semantics, trendlines/error bars, or subtype options. Unsupported tables keep their rendered SVG table; unsupported charts keep a baked preview or explicit placeholder. Both carry `data-pptx-native-status`, which `svg_quality_checker.py` and `svg_to_pptx.py --native-objects` report as a warning.
+`pptx_to_svg.py` annotates verified text-grid tables and conservative classic-chart caches with `data-pptx-native` metadata. Table import now covers unmerged grids plus canonical rectangular merges, safe solid/no-fill per-side borders, and plain multi-paragraph cells. A merge must use the exact `rowSpan` / `gridSpan` / `hMerge` / `vMerge` physical topology with empty merge slaves; unsafe border XML, mixed run formatting, non-solid fills, and other merge encodings remain fallback-only. For table style `{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}`, the normalized SVG fallback resolves `wholeTbl`, `firstRow`, horizontal banding, theme colors/fonts, and direct cell/run overrides; other built-in/custom style families are not implied.
+
+Supported parsed column/bar/line/area, pie/doughnut, scatter, and bubble charts without a baked preview receive a deterministic readable fallback marked `data-pptx-visual-status="normalized"`. The importer additionally activates verified column/line/area combo charts, canonical OHLC stock charts, area charts with numeric date axes, and verified scatter/bubble charts whose two value axes fit the closed `axes.x` / `axes.y` contract. Combo plots may retain independent primary/secondary category caches and workbook ranges. Both the category/value and XY contracts retain kind/position/visibility/label position/number format/min/max/major unit/reverse/major gridlines for native read-back. Scatter import derives effective `scatter_style` from uniform per-series line/marker/smooth state. The normalized XY fallback newly consumes only the two major-gridline flags; other XY fields do not imply complete visual-axis parity. These contracts are not a full `AxisSpec`: ChartEx import, arbitrary stock variants, other date-axis families, and other unlisted axis semantics remain fallback-only. Safe common series paint forms and theme scheme colors are resolved; unknown series paint/style XML outside the explicit normalization boundaries still fails closed. Safe stock series style may pass the structural gate, but stock series, `hiLowLines`, and up-down bar local styling can still normalize under the editable-first contract. The editable native replacement remains allowed to normalize unmodeled no-fill/alpha/line/marker details and reports the route-level loss risk. Chart title/legend/axis titles and supported data-label flags are retained when the current schema can represent them. Fallback-only objects keep rendered SVG content or a baked chart preview and carry `data-pptx-native-status`, which validation and `--native-objects` export report as a warning. A supported active marker without a renderer, such as current `of_pie`, keeps `data-pptx-visual-status="placeholder"` plus `data-pptx-route-status="reconstruction-only"`; default export keeps the placeholder and native opt-in may still reconstruct it.
+
+Active imported table/chart markers carry `data-pptx-fallback-sha256`. Visible fallback edits, reachable SVG fragment-definition changes, marker-local reference-target changes, and marker transforms make the baseline stale: the mandatory quality checker warns, default export remains available, and `--native-objects` fails instead of discarding the SVG edit. Legacy markers without a baseline remain convertible with a checker/native-route warning. ChartEx export now writes valid payload palette entries into its color-style part; it still does not promise full source ChartEx styling.
 
 Exporter-canonical classic charts also recover canonical solid series/slice
 colors and exact one- or two-paragraph title styling; two paragraphs retain
@@ -163,6 +179,7 @@ python3 scripts/update_repo.py --skip-pip
 - [Conversion Tools](./docs/conversion.md)
 - [Project Tools](./docs/project.md)
 - [SVG Pipeline Tools](./docs/svg-pipeline.md)
+- [PPTX Transition Core](./docs/pptx-transitions.md)
 - [Image Tools](./docs/image.md)
 - [Troubleshooting](./docs/troubleshooting.md)
 - [Skill Entry](../SKILL.md)

@@ -146,7 +146,7 @@ Before the first SVG page, output a confirmation listing: canvas dimensions, bod
 
 **Per-block expression**: render each `design_spec.md §IX Content` block in its written texture — a full-sentence block as wrapped prose, a fragment/label block as bullets/keywords. **Never split a full-sentence block into a bullet list** — splitting loses the information that the block was continuous reasoning, not a set of parallel points; not because a bullet lays out easier, and not because an inherited template slot is shaped as a list. If a block carries no clear texture, infer the mode from its wording and the page layout.
 
-- **Prose render recipe**: one `<text>` per paragraph; wrap lines with sibling `<tspan>` that reset `x` to the block's left edge and advance `dy` by the font size × a line-height factor. **Default — line-height by density (may override per content fit)**: ~1.4–1.5× for dense / small-body blocks (CLReq comfortable minimum), 1.6–2.0× for large-type, sparse, or `breathing` blocks. Fit about width ÷ font-size CJK glyphs per line (Latin fits roughly twice that); the last line runs short. Use the body ramp size, not a new one.
+- **Prose render recipe**: one `<text>` per paragraph; wrap lines with sibling `<tspan>` where the first line uses `dy="0"` and every subsequent line repeats the parent `<text>`'s **exact `x`** and the **same positive relative `dy`** (the line-height). Equal relative `dy` + matching `x` is what merges the lines into one editable PowerPoint text frame; a growing/cumulative `dy`, an irregular gap, or a mismatched `x` (e.g. `x="0"` under `<text x="60">`) splits them into separate single-line boxes. Set the line-height `dy` from the font size × a line-height factor. **Default — line-height by density (may override per content fit)**: ~1.4–1.5× for dense / small-body blocks (CLReq comfortable minimum), 1.6–2.0× for large-type, sparse, or `breathing` blocks. Fit about width ÷ font-size CJK glyphs per line (Latin fits roughly twice that); the last line runs short. Use the body ramp size, not a new one.
 - **Template precedence**: when an inherited template slot is a bullet list but the §IX block is prose, the prose wins — widen or reflow the container to hold the paragraph, or drop that card; do not pour the sentence back into the list slot.
 - **Mode precedence**: the locked mode shapes voice / register, not §IX's authored titles or page order. When a `§IX` title is a user-authored topic label, keep it — do not upgrade it to an assertion just because the mode (e.g. `pyramid`) favors them; mode title-tendencies apply only to AI-drafted titles.
 
@@ -213,6 +213,7 @@ Before drawing each page, look up its entry in `page_charts` to decide which cha
 ## 3. Execution Guidelines
 
 - **Proximity**: group related elements with tight spacing; separate unrelated groups
+- **Element grouping (Mandatory)**: wrap every logical content unit — title, core-message line, each content block, card, list item, diagram, and footer chrome — in a top-level `<g id="...">` with a descriptive id. This is a hard requirement per [`shared-standards.md`](shared-standards.md) §4.3, not an optional convenience: aim for 3–8 content groups per slide (chrome excluded), because ungrouped top-level `<text>` / `<rect>` / `<path>` loses real PowerPoint groups and per-element animation anchors, and degrades select/move/edit. Authored native preset fragments (`preset_shape_svg.py`) already are one atomic `<g id>` each and count as one group; keep their labels in a sibling parent `<g>`.
 - **Spec adherence**: follow color, layout, canvas format, and typography in the spec
 - **Template structure**: if templates exist, inherit the visual framework
 - **Main-agent ownership**: SVG generation must run in the main agent (not sub-agents) — pages share upstream context for cross-page visual continuity
@@ -222,6 +223,43 @@ Before drawing each page, look up its entry in `page_charts` to decide which cha
   1. **Visual Construction Phase**: generate all SVG pages sequentially for visual consistency. Use layout judgment for chart marks during the draft. **MUST embed plot-area markers** per §3.1 below on every chart page — coordinate calibration is a post-generation step (see [`workflows/verify-charts.md`](../workflows/verify-charts.md)) that depends on these markers — and **native object metadata** per §3.2 on every eligible data-chart page.
   2. **Quality Check Gate**: run `python3 scripts/svg_quality_checker.py <project_path>` on `svg_output/`. Any `error` (banned features, viewBox mismatch, spec_lock drift, non-PPT-safe font, etc.) MUST be fixed on the offending page before proceeding — regenerate and re-check. Address `warning`s when straightforward. Do NOT defer to after `finalize_svg.py` — finalize rewrites SVG and masks some violations.
   3. **Logic Construction Phase**: after SVGs pass the quality check, batch-generate speaker notes for narrative continuity.
+
+### 3.0 Native Preset Shape Selection
+
+**Reach for a native preset whenever one expresses a complete object — this is
+the default, not the exception.** Block arrows, chevrons, banners / ribbons,
+callouts, flowchart nodes, stars, and other Office symbols should be **authored
+as presets** via `preset_shape_svg.py`, not drawn as plain `<path>`s or faked
+with rectangles: presets are what give the slide real PowerPoint shapes with
+adjustment handles and the designed, non-flat-card look. When a page calls for
+one of these, use the preset. Apply the decision gate in
+[`native-shape-authoring.md`](./native-shape-authoring.md) to pick the right
+shape and to keep only the exceptions below as ordinary SVG.
+
+| Decision | Action |
+|---|---|
+| Plain rect / symmetric round rect / circle / ellipse | Keep the ordinary SVG primitive; it is already natively editable. |
+| Exact single-preset match | Call `preset_shape_svg.py render` and paste its complete stdout fragment into the current hand-authored SVG. |
+| Page-specific, compound, organic, branded, icon, or data geometry | Keep ordinary SVG path/polygon geometry. |
+| Similar-looking contour only | Never guess; keep ordinary SVG. |
+
+This automatic decision applies only before drawing a new object. Do not scan
+existing SVG, classify path contours, or upgrade ordinary SVG during export.
+
+**Hard rule**: do not hand-write `data-pptx-authoring`, `data-pptx-prst`,
+`data-pptx-frame`, adjustment, carrier, preview, or fingerprint metadata. The
+helper generates them atomically from the shared 187-shape registry. Rerun the
+helper when geometry or paint changes.
+
+Connector-family presets require `--object-kind connector`, `fill="none"`, and
+a visible stroke. They export as unconnected `p:cxnSp`; do not hand-add
+endpoint/site metadata. `actionButton*` presets provide visual geometry only,
+not actions or hyperlinks.
+
+**Hard rule — narrow helper scope**: the helper prints one shape fragment to
+stdout. It does not write a page or choose layout. Read the fragment and insert
+it through the normal `apply_patch` page edit; never redirect, loop, or batch it
+into `svg_output/`.
 
 ### 3.1 Chart Plot-Area Marker (MANDATORY on every chart page)
 
@@ -273,7 +311,7 @@ grep "chart-plot-area" <project_path>/svg_output/<current_page>.svg
 **Hard rule**: every data chart whose type appears in the **Supported chart types** list of [shared-standards.md](shared-standards.md) "Native PPTX Table / Chart Markers" (the single authority for the eligible set, marker contract, and JSON schemas) gets `data-pptx-native="chart"` plus a `<metadata data-pptx-native="chart">` JSON child on its top-level `<g>`, transcribing the same data just plotted. Every pure text-grid data table gets `data-pptx-native="table"` the same way, transcribing all visible cell text into `columns` / `rows`.
 
 - Chart types absent from that list and conceptual/diagrammatic graphics (process flows, cycles, quadrant cards, timelines, KPI cards) get **no marker** — `svg_quality_checker.py` rejects unsupported marker types.
-- Tables with merged, spanning, or graphical cells (icons, harvey balls, rating dots) get **no table marker** — the exporter rejects merged-cell metadata; they stay on the SVG fallback route.
+- Canonical rectangular merged text cells may carry a table marker by putting anchor-only `row_span` / `col_span` in metadata and leaving covered cells blank. Nonrectangular/overlapping merges, nonblank covered cells, and graphical cells (icons, harvey balls, rating dots) get **no table marker** and stay on the SVG fallback route.
 - Transcribe, don't restyle: `categories` / `series[].values` are the numbers just plotted; `style.colors` carries the series HEX values already used on the page (from `spec_lock.colors`).
 - Data-point color: when a single column/bar series uses data-point colors in the fallback, copy those fills into `series[].point_colors` in category order.
 - Data labels: when visible point values are part of the fallback chart, write `data_labels` instead of companion text; use `data_labels.points` for selected labels, and use `number_format`, `font_size`, `font_family`, and per-point `colors` / `color` when the fallback labels carry suffixes or color-coded text.

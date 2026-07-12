@@ -36,6 +36,7 @@ Cell painting order:
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
 from typing import Any
 from xml.etree import ElementTree as ET
@@ -49,9 +50,49 @@ from .emu_units import (
     hundredths_pt_to_px,
     ooxml_bool,
 )
-from .fill_to_svg import resolve_fill
+from .fill_to_svg import FillResult, resolve_fill
 from .ln_to_svg import resolve_stroke
 from .txbody_to_svg import convert_txbody
+
+
+BUILTIN_MEDIUM_STYLE_2_ACCENT_1 = "{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}"
+
+_BUILTIN_MEDIUM_STYLE_2_ACCENT_1_XML = ET.fromstring(
+    f'''<a:tblStyle xmlns:a="{NS["a"]}"
+        styleId="{BUILTIN_MEDIUM_STYLE_2_ACCENT_1}">
+      <a:wholeTbl>
+        <a:tcTxStyle>
+          <a:fontRef idx="minor"><a:prstClr val="black"/></a:fontRef>
+          <a:schemeClr val="dk1"/>
+        </a:tcTxStyle>
+        <a:tcStyle>
+          <a:tcBdr>
+            <a:left><a:ln w="12700"><a:solidFill><a:schemeClr val="lt1"/></a:solidFill></a:ln></a:left>
+            <a:right><a:ln w="12700"><a:solidFill><a:schemeClr val="lt1"/></a:solidFill></a:ln></a:right>
+            <a:top><a:ln w="12700"><a:solidFill><a:schemeClr val="lt1"/></a:solidFill></a:ln></a:top>
+            <a:bottom><a:ln w="12700"><a:solidFill><a:schemeClr val="lt1"/></a:solidFill></a:ln></a:bottom>
+            <a:insideH><a:ln w="12700"><a:solidFill><a:schemeClr val="lt1"/></a:solidFill></a:ln></a:insideH>
+            <a:insideV><a:ln w="12700"><a:solidFill><a:schemeClr val="lt1"/></a:solidFill></a:ln></a:insideV>
+          </a:tcBdr>
+          <a:fill><a:solidFill><a:schemeClr val="accent1"><a:tint val="20000"/></a:schemeClr></a:solidFill></a:fill>
+        </a:tcStyle>
+      </a:wholeTbl>
+      <a:band1H>
+        <a:tcStyle><a:fill><a:solidFill><a:schemeClr val="accent1"><a:tint val="40000"/></a:schemeClr></a:solidFill></a:fill></a:tcStyle>
+      </a:band1H>
+      <a:band2H><a:tcStyle/></a:band2H>
+      <a:firstRow>
+        <a:tcTxStyle b="on">
+          <a:fontRef idx="minor"><a:prstClr val="black"/></a:fontRef>
+          <a:schemeClr val="lt1"/>
+        </a:tcTxStyle>
+        <a:tcStyle>
+          <a:tcBdr><a:bottom><a:ln w="38100"><a:solidFill><a:schemeClr val="lt1"/></a:solidFill></a:ln></a:bottom></a:tcBdr>
+          <a:fill><a:solidFill><a:schemeClr val="accent1"/></a:solidFill></a:fill>
+        </a:tcStyle>
+      </a:firstRow>
+    </a:tblStyle>'''
+)
 
 
 @dataclass
@@ -68,6 +109,155 @@ class TableResult:
             self.defs = []
 
 
+@dataclass(frozen=True)
+class _TableStyleContext:
+    """Small, best-effort view of the table style regions we render."""
+
+    style: ET.Element | None
+    table_properties: ET.Element | None
+
+    def regions_for_row(self, row_index: int) -> tuple[tuple[str, ET.Element], ...]:
+        if self.style is None:
+            return ()
+
+        names: list[str] = []
+        first_row = bool(
+            self.table_properties is not None
+            and ooxml_bool(self.table_properties.get("firstRow"))
+        )
+        if first_row and row_index == 0:
+            names.append("firstRow")
+        elif (
+            self.table_properties is not None
+            and ooxml_bool(self.table_properties.get("bandRow"))
+        ):
+            band_index = row_index - (1 if first_row else 0)
+            names.append("band1H" if band_index % 2 == 0 else "band2H")
+        names.append("wholeTbl")
+
+        regions: list[tuple[str, ET.Element]] = []
+        for name in names:
+            region = self.style.find(f"a:{name}", NS)
+            if region is not None:
+                regions.append((name, region))
+        return tuple(regions)
+
+
+def _normalize_table_style_id(value: str | None) -> str:
+    return (value or "").strip().strip("{}").upper()
+
+
+def _resolve_table_style(
+    tbl: ET.Element,
+    table_styles: ET.Element | None,
+) -> _TableStyleContext:
+    tbl_pr = tbl.find("a:tblPr", NS)
+    style_id = (
+        tbl_pr.findtext("a:tableStyleId", default="", namespaces=NS).strip()
+        if tbl_pr is not None else ""
+    )
+    if not style_id and table_styles is not None:
+        style_id = table_styles.get("def", "").strip()
+    normalized_id = _normalize_table_style_id(style_id)
+    supported_id = _normalize_table_style_id(BUILTIN_MEDIUM_STYLE_2_ACCENT_1)
+
+    # P1 deliberately supports one built-in family.  Consuming an arbitrary
+    # custom definition here would be asymmetric: native reconstruction keeps
+    # only the style id and does not copy custom tableStyles.xml definitions.
+    if normalized_id != supported_id:
+        return _TableStyleContext(None, tbl_pr)
+
+    if table_styles is not None and normalized_id:
+        for candidate in table_styles.findall("a:tblStyle", NS):
+            if _normalize_table_style_id(candidate.get("styleId")) == normalized_id:
+                return _TableStyleContext(candidate, tbl_pr)
+
+    return _TableStyleContext(_BUILTIN_MEDIUM_STYLE_2_ACCENT_1_XML, tbl_pr)
+
+
+def _effective_cell_fill(
+    tc_pr: ET.Element | None,
+    table_style: _TableStyleContext,
+    row_index: int,
+    palette: ColorPalette | None,
+    *,
+    id_prefix: str,
+    id_seq: list[int],
+) -> FillResult:
+    """Resolve direct cell fill before row-region and whole-table defaults."""
+    direct = resolve_fill(
+        tc_pr, palette, id_prefix=id_prefix, id_seq=id_seq,
+    )
+    if direct.attrs or direct.defs:
+        return direct
+
+    for _name, region in table_style.regions_for_row(row_index):
+        fill_parent = region.find("a:tcStyle/a:fill", NS)
+        if fill_parent is None:
+            continue
+        inherited = resolve_fill(
+            fill_parent, palette, id_prefix=id_prefix, id_seq=id_seq,
+        )
+        if inherited.attrs or inherited.defs:
+            return inherited
+    return direct
+
+
+def _table_text_run_props(
+    table_style: _TableStyleContext,
+    row_index: int,
+    theme_fonts: dict[str, str],
+) -> tuple[ET.Element, ...]:
+    """Materialize table text-style regions as lowest-priority run defaults."""
+    props: list[ET.Element] = []
+    for _name, region in table_style.regions_for_row(row_index):
+        tx_style = region.find("a:tcTxStyle", NS)
+        if tx_style is None:
+            continue
+        run_props = _table_tx_style_run_props(tx_style, theme_fonts)
+        if run_props is not None:
+            props.append(run_props)
+    return tuple(props)
+
+
+def _table_tx_style_run_props(
+    tx_style: ET.Element,
+    theme_fonts: dict[str, str],
+) -> ET.Element | None:
+    run_props = ET.Element(f"{{{NS['a']}}}rPr")
+    for attr in ("b", "i"):
+        value = tx_style.get(attr)
+        if value is not None:
+            run_props.set(attr, "1" if ooxml_bool(value) else "0")
+
+    font_ref = tx_style.find("a:fontRef", NS)
+    font_role = font_ref.get("idx") if font_ref is not None else None
+    if font_role in {"major", "minor"}:
+        prefix = "major" if font_role == "major" else "minor"
+        latin = theme_fonts.get(f"{prefix}Latin")
+        east_asia = theme_fonts.get(f"{prefix}EastAsia") or latin
+        complex_script = theme_fonts.get(f"{prefix}ComplexScript") or latin
+        for tag, typeface in (
+            ("latin", latin),
+            ("ea", east_asia),
+            ("cs", complex_script),
+        ):
+            if typeface:
+                ET.SubElement(
+                    run_props, f"{{{NS['a']}}}{tag}",
+                    {"typeface": typeface},
+                )
+
+    color = find_color_elem(tx_style)
+    if color is not None:
+        solid_fill = ET.SubElement(run_props, f"{{{NS['a']}}}solidFill")
+        solid_fill.append(copy.deepcopy(color))
+
+    if not run_props.attrib and not list(run_props):
+        return None
+    return run_props
+
+
 # ---------------------------------------------------------------------------
 # Public entry
 # ---------------------------------------------------------------------------
@@ -77,6 +267,7 @@ def convert_tbl(
     xfrm: Xfrm,
     palette: ColorPalette | None,
     *,
+    table_styles: ET.Element | None = None,
     theme_fonts: dict[str, str] | None = None,
     slide_number: int | None = None,
     id_prefix: str = "tbl",
@@ -93,6 +284,7 @@ def convert_tbl(
     rows = tbl.findall("a:tr", NS)
     if not rows:
         return TableResult()
+    table_style = _resolve_table_style(tbl, table_styles)
     row_heights_px = [_row_height_px(r) for r in rows]
 
     # PowerPoint's tblGrid widths and tr heights together describe the
@@ -113,10 +305,11 @@ def convert_tbl(
     # and dropped cells don't render anything. PowerPoint expresses merges via
     # gridSpan/rowSpan on the anchor cell + hMerge/vMerge on the dropped cells.
     cells = _build_cell_grid(rows, len(col_widths))
+    merge_status = _canonical_native_merge_status(rows, len(col_widths))
     if xfrm.rot or xfrm.flip_h or xfrm.flip_v:
         native_status = "unsupported-native-transform"
-    elif _table_has_merges(rows):
-        native_status = "unsupported-merge"
+    elif merge_status:
+        native_status = merge_status
     elif len(rows) > 1000 or len(col_widths) > 1000:
         native_status = "unsupported-table-size"
     elif (
@@ -156,8 +349,8 @@ def convert_tbl(
             rect_w = sum(col_widths[c:c + cell.col_span])
             rect_h = sum(row_heights[r:r + cell.row_span])
             tcPr = cell.element.find("a:tcPr", NS)
-            fill = resolve_fill(
-                tcPr, palette,
+            fill = _effective_cell_fill(
+                tcPr, table_style, r, palette,
                 id_prefix=f"{id_prefix}fill",
                 id_seq=grad_seq,
             )
@@ -186,6 +379,9 @@ def convert_tbl(
             cell_xfrm = Xfrm(x=cell_x, y=cell_y, w=cell_w, h=cell_h)
             text_result = _convert_cell_text(
                 tx_body, tcPr, cell_xfrm, palette, theme_fonts,
+                fallback_run_props=_table_text_run_props(
+                    table_style, r, theme_fonts or {},
+                ),
                 slide_number=slide_number,
                 id_prefix=f"{id_prefix}txt",
                 id_seq=grad_seq,
@@ -211,7 +407,8 @@ def convert_tbl(
                 ("a:lnL", cell_x, cell_y, cell_x, cell_y + cell_h),
             ):
                 line_xml = _border_line(
-                    tcPr, tag, x1, y1, x2, y2, palette,
+                    tcPr, table_style, r, c, len(rows), len(col_widths), tag,
+                    x1, y1, x2, y2, palette,
                     id_prefix=f"{id_prefix}stk", id_seq=marker_seq, defs=defs,
                 )
                 if line_xml:
@@ -278,6 +475,14 @@ class _CellSlot:
     is_dropped: bool = False  # True for h/vMerge slaves: don't paint anything
 
 
+@dataclass(frozen=True)
+class _CanonicalMergeRegion:
+    row: int
+    col: int
+    row_span: int
+    col_span: int
+
+
 def _build_cell_grid(rows: list[ET.Element], col_count: int) -> list[list[_CellSlot | None]]:
     """Map each (row, col) to the <a:tc> that owns it.
 
@@ -288,11 +493,21 @@ def _build_cell_grid(rows: list[ET.Element], col_count: int) -> list[list[_CellS
     grid: list[list[_CellSlot | None]] = [[None] * col_count for _ in rows]
 
     for r, row in enumerate(rows):
+        row_cells = row.findall("a:tc", NS)
+        # PowerPoint writes one physical <a:tc> for every grid column, including
+        # explicit hMerge/vMerge continuation cells. In that canonical form the
+        # physical index is the grid column; advancing by gridSpan would consume
+        # the continuation cell twice and shift every following cell left.
+        explicit_grid = len(row_cells) >= col_count
         c = 0
-        for tc in row.findall("a:tc", NS):
-            # Skip already-occupied slots from a row above's rowSpan anchor.
-            while c < col_count and grid[r][c] is not None:
-                c += 1
+        for physical_col, tc in enumerate(row_cells):
+            if explicit_grid:
+                c = physical_col
+            else:
+                # Retain best-effort support for compact/non-canonical rows that
+                # omit explicit merge continuation cells.
+                while c < col_count and grid[r][c] is not None:
+                    c += 1
             if c >= col_count:
                 break
 
@@ -302,10 +517,8 @@ def _build_cell_grid(rows: list[ET.Element], col_count: int) -> list[list[_CellS
             v_merge = ooxml_bool(tc.attrib.get("vMerge"))
 
             if h_merge or v_merge:
-                # This cell is a merge slave; leave the slot tied to the anchor
-                # if one was already placed there, else mark as dropped placeholder.
-                if grid[r][c] is None:
-                    grid[r][c] = _CellSlot(element=tc, is_dropped=True)
+                # Merge slaves are physical cells but have no independent paint.
+                grid[r][c] = _CellSlot(element=tc, is_dropped=True)
                 c += 1
                 continue
 
@@ -326,7 +539,7 @@ def _build_cell_grid(rows: list[ET.Element], col_count: int) -> list[list[_CellS
                         grid[rr][cc] = _CellSlot(
                             element=tc, is_dropped=True,
                         )
-            c += slot.col_span
+            c += 1 if explicit_grid else slot.col_span
 
     return grid
 
@@ -340,17 +553,130 @@ def _safe_int(value: str | None, default: int) -> int:
         return default
 
 
-def _table_has_merges(rows: list[ET.Element]) -> bool:
-    """Return True when the table uses merged cells."""
-    for row in rows:
-        for tc in row.findall("a:tc", NS):
-            if ooxml_bool(tc.attrib.get("hMerge")) or ooxml_bool(tc.attrib.get("vMerge")):
-                return True
-            if _safe_int(tc.attrib.get("gridSpan"), 1) > 1:
-                return True
-            if _safe_int(tc.attrib.get("rowSpan"), 1) > 1:
-                return True
-    return False
+def _strict_merge_bool(value: str | None) -> bool:
+    if value is None:
+        return False
+    normalized = value.strip().lower()
+    if normalized in {"1", "on", "true"}:
+        return True
+    if normalized in {"0", "false", "off"}:
+        return False
+    raise ValueError("invalid OOXML boolean")
+
+
+def _strict_merge_span(value: str | None) -> int:
+    if value is None:
+        return 1
+    normalized = value.strip()
+    if not normalized.isdigit():
+        raise ValueError("invalid OOXML span")
+    span = int(normalized)
+    if span <= 0:
+        raise ValueError("invalid OOXML span")
+    return span
+
+
+def _canonical_merge_slave_is_empty(tc: ET.Element) -> bool:
+    tc_pr = tc.find("a:tcPr", NS)
+    if tc_pr is None or tc_pr.attrib or list(tc_pr):
+        return False
+    tx_body = tc.find("a:txBody", NS)
+    if tx_body is None:
+        return False
+    paragraph_count = 0
+    for child in tx_body:
+        name = child.tag.rsplit("}", 1)[-1]
+        if name in {"bodyPr", "lstStyle"}:
+            if child.attrib or list(child):
+                return False
+            continue
+        if name == "p" and not child.attrib and not list(child):
+            paragraph_count += 1
+            continue
+        return False
+    return paragraph_count > 0 and not (tx_body.text or "").strip()
+
+
+def _canonical_native_merge_status(
+    rows: list[ET.Element],
+    col_count: int,
+) -> str | None:
+    """Accept only explicit rectangular merge topology safe for regeneration."""
+    physical_rows = [row.findall("a:tc", NS) for row in rows]
+    merge_attrs = {"gridSpan", "rowSpan", "hMerge", "vMerge"}
+    if not any(
+        any(name in tc.attrib for name in merge_attrs)
+        for row_cells in physical_rows
+        for tc in row_cells
+    ):
+        return None
+    if col_count <= 0 or any(
+        len(row_cells) != col_count for row_cells in physical_rows
+    ):
+        return "unsupported-merge-topology"
+
+    states: dict[tuple[int, int], tuple[ET.Element, int, int, bool, bool]] = {}
+    try:
+        for row_idx, row_cells in enumerate(physical_rows):
+            for col_idx, tc in enumerate(row_cells):
+                states[(row_idx, col_idx)] = (
+                    tc,
+                    _strict_merge_span(tc.get("rowSpan")),
+                    _strict_merge_span(tc.get("gridSpan")),
+                    _strict_merge_bool(tc.get("hMerge")),
+                    _strict_merge_bool(tc.get("vMerge")),
+                )
+    except ValueError:
+        return "unsupported-merge-topology"
+
+    anchors: list[_CanonicalMergeRegion] = []
+    for (
+        (row_idx, col_idx),
+        (_tc, row_span, col_span, h_merge, v_merge),
+    ) in states.items():
+        if not h_merge and not v_merge and (row_span > 1 or col_span > 1):
+            anchors.append(
+                _CanonicalMergeRegion(row_idx, col_idx, row_span, col_span)
+            )
+
+    owners: dict[tuple[int, int], _CanonicalMergeRegion] = {}
+    for region in anchors:
+        if (
+            region.row + region.row_span > len(rows)
+            or region.col + region.col_span > col_count
+        ):
+            return "unsupported-merge-topology"
+        for covered_row in range(region.row, region.row + region.row_span):
+            for covered_col in range(region.col, region.col + region.col_span):
+                position = (covered_row, covered_col)
+                if position in owners:
+                    return "unsupported-merge-topology"
+                owners[position] = region
+
+    for (
+        (row_idx, col_idx),
+        (tc, row_span, col_span, h_merge, v_merge),
+    ) in states.items():
+        region = owners.get((row_idx, col_idx))
+        if region is None:
+            if h_merge or v_merge or row_span != 1 or col_span != 1:
+                return "unsupported-merge-topology"
+            continue
+
+        is_anchor = row_idx == region.row and col_idx == region.col
+        expected_row_span = region.row_span if row_idx == region.row else 1
+        expected_col_span = region.col_span if col_idx == region.col else 1
+        if (
+            row_span != expected_row_span
+            or col_span != expected_col_span
+            or h_merge != (col_idx > region.col)
+            or v_merge != (row_idx > region.row)
+        ):
+            return "unsupported-merge-topology"
+        if not is_anchor and not _canonical_merge_slave_is_empty(tc):
+            return "unsupported-merge-topology"
+
+    return None
 
 
 def _table_has_unsupported_style(tbl: ET.Element) -> bool:
@@ -374,6 +700,105 @@ def _table_has_unsupported_style(tbl: ET.Element) -> bool:
     )
 
 
+_DIRECT_BORDER_TAGS = {
+    "lnL": "left",
+    "lnR": "right",
+    "lnT": "top",
+    "lnB": "bottom",
+}
+_DIRECT_BORDER_WIDTH_MAX = 20116800
+_OPAQUE_COLOR_MODIFIERS = {
+    "tint",
+    "shade",
+    "lumMod",
+    "lumOff",
+    "satMod",
+    "satOff",
+}
+
+
+def _validate_opaque_border_color(color_elem: ET.Element | None) -> None:
+    if color_elem is None:
+        raise ValueError("missing border color")
+    name = color_elem.tag.rsplit("}", 1)[-1]
+    if name not in {"srgbClr", "schemeClr"} or set(color_elem.attrib) != {"val"}:
+        raise ValueError("unsupported border color")
+    for modifier in color_elem:
+        modifier_name = modifier.tag.rsplit("}", 1)[-1]
+        if (
+            modifier_name not in _OPAQUE_COLOR_MODIFIERS
+            or set(modifier.attrib) != {"val"}
+            or list(modifier)
+        ):
+            raise ValueError("unsupported border color modifier")
+        value = modifier.get("val", "")
+        if not value.isdigit() or not 0 <= int(value) <= 100000:
+            raise ValueError("invalid border color modifier")
+
+
+def _direct_border_payload(
+    ln: ET.Element,
+    palette: ColorPalette | None,
+) -> dict[str, Any]:
+    if set(ln.attrib) - {"w"}:
+        raise ValueError("unsupported border line attribute")
+    width_emu: int | None = None
+    if "w" in ln.attrib:
+        raw_width = ln.get("w", "")
+        if not raw_width.isdigit():
+            raise ValueError("invalid border width")
+        width_emu = int(raw_width)
+        if not 0 < width_emu <= _DIRECT_BORDER_WIDTH_MAX:
+            raise ValueError("invalid border width")
+
+    children = list(ln)
+    child_names = [child.tag.rsplit("}", 1)[-1] for child in children]
+    if child_names == ["noFill"]:
+        no_fill = children[0]
+        if no_fill.attrib or list(no_fill):
+            raise ValueError("invalid noFill border")
+        return {"style": "none"}
+
+    if child_names.count("solidFill") != 1 or any(
+        name not in {"solidFill", "prstDash"} for name in child_names
+    ):
+        raise ValueError("unsupported border paint")
+    if child_names.count("prstDash") > 1 or width_emu is None:
+        raise ValueError("invalid solid border")
+    dash = next(
+        (child for child in children if child.tag.rsplit("}", 1)[-1] == "prstDash"),
+        None,
+    )
+    if dash is not None and (
+        dash.attrib != {"val": "solid"} or list(dash)
+    ):
+        raise ValueError("unsupported border dash")
+
+    solid_fill = next(
+        child for child in children
+        if child.tag.rsplit("}", 1)[-1] == "solidFill"
+    )
+    if solid_fill.attrib or len(list(solid_fill)) != 1:
+        raise ValueError("invalid solid border fill")
+    color_elem = find_color_elem(solid_fill)
+    _validate_opaque_border_color(color_elem)
+    try:
+        color, alpha = resolve_color(color_elem, palette)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("invalid solid border color") from exc
+    if color is None or alpha != 1.0:
+        raise ValueError("border color must resolve to opaque RGB")
+
+    width = _round_payload_number(emu_to_px(str(width_emu)))
+    if width <= 0:
+        raise ValueError("border width is too small")
+    return {
+        "style": "solid",
+        "color": color,
+        "width": width,
+    }
+
+
 def _table_has_unsupported_direct_formatting(
     tbl: ET.Element,
     palette: ColorPalette | None,
@@ -388,10 +813,20 @@ def _table_has_unsupported_direct_formatting(
             if tc_pr.get("anchor") not in {None, "t", "ctr", "b"}:
                 return True
             if any(
-                child.tag.rsplit("}", 1)[-1] != "solidFill"
+                child.tag.rsplit("}", 1)[-1]
+                not in {"solidFill", *_DIRECT_BORDER_TAGS}
                 for child in tc_pr
             ):
                 return True
+            for border_tag in _DIRECT_BORDER_TAGS:
+                borders = tc_pr.findall(f"a:{border_tag}", NS)
+                if len(borders) > 1:
+                    return True
+                if borders:
+                    try:
+                        _direct_border_payload(borders[0], palette)
+                    except ValueError:
+                        return True
             solid_fill = tc_pr.find("a:solidFill", NS)
             if solid_fill is not None:
                 if solid_fill.find(".//a:alpha", NS) is not None:
@@ -427,17 +862,12 @@ def _text_body_has_unsupported_formatting(tx_body: ET.Element | None) -> bool:
         return True
 
     paragraphs = tx_body.findall("a:p", NS)
-    if len(paragraphs) > 1:
-        return True
-
-    alignments: set[str | None] = set()
     run_signatures: set[tuple[str | None, str | None, bytes | None]] = set()
     for paragraph in paragraphs:
         p_pr = paragraph.find("a:pPr", NS)
         alignment = p_pr.get("algn") if p_pr is not None else None
         if alignment not in {None, "l", "ctr", "r"}:
             return True
-        alignments.add(alignment)
         if p_pr is not None:
             if any(name != "algn" for name in p_pr.attrib):
                 return True
@@ -461,7 +891,7 @@ def _text_body_has_unsupported_formatting(tx_body: ET.Element | None) -> bool:
         if not paragraph.findall("a:r", NS) and end_r_pr is not None:
             run_signatures.add(_effective_run_signature(end_r_pr, default_r_pr))
 
-    return len(alignments) > 1 or len(run_signatures) > 1
+    return len(run_signatures) > 1
 
 
 def _run_props_have_unsupported_formatting(r_pr: ET.Element | None) -> bool:
@@ -557,7 +987,12 @@ def _native_table_payload(
             if slot is None or slot.is_dropped:
                 row_payload.append("")
                 continue
-            row_payload.append(_native_cell_payload(slot.element, palette))
+            cell_payload = _native_cell_payload(slot.element, palette)
+            if slot.row_span > 1:
+                cell_payload["row_span"] = slot.row_span
+            if slot.col_span > 1:
+                cell_payload["col_span"] = slot.col_span
+            row_payload.append(cell_payload)
         rows_payload.append(row_payload)
     payload["rows"] = rows_payload
     return payload
@@ -566,7 +1001,11 @@ def _native_table_payload(
 def _native_cell_payload(tc: ET.Element, palette: ColorPalette | None) -> dict[str, Any]:
     tx_body = tc.find("a:txBody", NS)
     tc_pr = tc.find("a:tcPr", NS)
-    cell: dict[str, Any] = {"text": _cell_plain_text(tx_body)}
+    paragraph_payloads = _cell_paragraph_payloads(tx_body)
+    if len(paragraph_payloads) > 1:
+        cell: dict[str, Any] = {"paragraphs": paragraph_payloads}
+    else:
+        cell = {"text": _cell_plain_text(tx_body)}
 
     fill = _cell_fill_hex(tc_pr, palette)
     if fill:
@@ -577,15 +1016,19 @@ def _native_cell_payload(tc: ET.Element, palette: ColorPalette | None) -> dict[s
     font_size = _cell_font_size_px(tx_body)
     if font_size:
         cell["font_size"] = font_size
-    align = _cell_align(tx_body)
-    if align:
-        cell["align"] = align
+    if len(paragraph_payloads) <= 1:
+        align = _cell_align(tx_body)
+        if align:
+            cell["align"] = align
     valign = _cell_valign(tc_pr)
     if valign:
         cell["valign"] = valign
     bold = _cell_bold(tx_body)
     if bold is not None:
         cell["bold"] = bold
+    borders = _cell_borders_payload(tc_pr, palette)
+    if borders:
+        cell["borders"] = borders
     _copy_cell_margins(tc_pr, cell)
     return cell
 
@@ -599,6 +1042,23 @@ def _cell_plain_text(tx_body: ET.Element | None) -> str:
         if text:
             paragraphs.append(text)
     return "\n".join(paragraphs)
+
+
+def _cell_paragraph_payloads(
+    tx_body: ET.Element | None,
+) -> list[str | dict[str, str]]:
+    if tx_body is None:
+        return []
+    payloads: list[str | dict[str, str]] = []
+    for paragraph in tx_body.findall("a:p", NS):
+        text = "".join(node.text or "" for node in paragraph.findall(".//a:t", NS))
+        p_pr = paragraph.find("a:pPr", NS)
+        align = p_pr.get("algn") if p_pr is not None else None
+        if align in {"l", "ctr", "r"}:
+            payloads.append({"text": text, "align": align})
+        else:
+            payloads.append(text)
+    return payloads
 
 
 def _cell_fill_hex(tc_pr: ET.Element | None, palette: ColorPalette | None) -> str | None:
@@ -654,6 +1114,20 @@ def _cell_bold(tx_body: ET.Element | None) -> bool | None:
     return None
 
 
+def _cell_borders_payload(
+    tc_pr: ET.Element | None,
+    palette: ColorPalette | None,
+) -> dict[str, dict[str, Any]]:
+    if tc_pr is None:
+        return {}
+    borders: dict[str, dict[str, Any]] = {}
+    for border_tag, side in _DIRECT_BORDER_TAGS.items():
+        ln = tc_pr.find(f"a:{border_tag}", NS)
+        if ln is not None:
+            borders[side] = _direct_border_payload(ln, palette)
+    return borders
+
+
 def _text_run_props_in_priority(tx_body: ET.Element | None) -> list[ET.Element]:
     if tx_body is None:
         return []
@@ -690,6 +1164,7 @@ def _convert_cell_text(
     palette: ColorPalette | None,
     theme_fonts: dict[str, str] | None,
     *,
+    fallback_run_props: tuple[ET.Element, ...],
     slide_number: int | None,
     id_prefix: str,
     id_seq: list[int] | None,
@@ -709,6 +1184,7 @@ def _convert_cell_text(
     try:
         return convert_txbody(
             tx_body, cell_xfrm, palette, theme_fonts=theme_fonts,
+            fallback_run_props=fallback_run_props,
             slide_number=slide_number,
             id_prefix=id_prefix,
             id_seq=id_seq,
@@ -735,6 +1211,11 @@ def _tcPr_inset_overrides(tcPr: ET.Element | None) -> dict[str, str]:
 
 def _border_line(
     tcPr: ET.Element | None,
+    table_style: _TableStyleContext,
+    row_index: int,
+    col_index: int,
+    row_count: int,
+    col_count: int,
     tag: str,
     x1: float, y1: float, x2: float, y2: float,
     palette: ColorPalette | None,
@@ -745,11 +1226,69 @@ def _border_line(
 ) -> str:
     """Emit a single border <line> for a given cell side, or empty string when
     that side is explicitly noFill / not specified."""
-    if tcPr is None:
+    ln = tcPr.find(tag, NS) if tcPr is not None else None
+    if ln is not None:
+        return _line_element_to_svg(
+            ln, x1, y1, x2, y2, palette,
+            id_prefix=id_prefix, id_seq=id_seq, defs=defs,
+        )
+
+    # Draw inherited shared edges once, from the upper/left cell.  This keeps
+    # a specific firstRow bottom border from being painted over by the next
+    # row's whole-table top border.  A direct border above still wins because
+    # it is handled before this de-duplication gate.
+    if (tag == "a:lnT" and row_index > 0) or (
+        tag == "a:lnL" and col_index > 0
+    ):
         return ""
-    ln = tcPr.find(tag, NS)
-    if ln is None:
-        return ""
+
+    for region_name, region in table_style.regions_for_row(row_index):
+        for border_name in _table_style_border_names(
+            region_name, row_index, col_index, row_count, col_count, tag,
+        ):
+            ln = region.find(
+                f"a:tcStyle/a:tcBdr/a:{border_name}/a:ln", NS,
+            )
+            if ln is not None:
+                return _line_element_to_svg(
+                    ln, x1, y1, x2, y2, palette,
+                    id_prefix=id_prefix, id_seq=id_seq, defs=defs,
+                )
+    return ""
+
+
+def _table_style_border_names(
+    region_name: str,
+    row_index: int,
+    col_index: int,
+    row_count: int,
+    col_count: int,
+    tag: str,
+) -> tuple[str, ...]:
+    side_names = {
+        "a:lnT": ("top", "insideH", row_index > 0),
+        "a:lnR": ("right", "insideV", col_index < col_count - 1),
+        "a:lnB": ("bottom", "insideH", row_index < row_count - 1),
+        "a:lnL": ("left", "insideV", col_index > 0),
+    }
+    side, inside, is_internal = side_names[tag]
+    if region_name == "wholeTbl" and is_internal:
+        return inside, side
+    return side, inside
+
+
+def _line_element_to_svg(
+    ln: ET.Element,
+    x1: float,
+    y1: float,
+    x2: float,
+    y2: float,
+    palette: ColorPalette | None,
+    *,
+    id_prefix: str,
+    id_seq: list[int],
+    defs: list[str],
+) -> str:
     # Skip explicit no-line.
     if ln.find("a:noFill", NS) is not None:
         return ""

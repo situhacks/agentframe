@@ -1,6 +1,6 @@
 # Workspace Dashboard Process
 
-Lazy-load this file when a turn writes a previewable artifact under `workspace/projects/`, or when the operator asks for the dashboard, historical calendar, a preview, or a look at any deliverable/version/export without opening desktop apps.
+Lazy-load this file only when the operator explicitly asks for the dashboard, historical calendar, a browser preview, or a look at a deliverable/version/export without opening desktop apps.
 
 ## Previewable Types
 
@@ -9,20 +9,28 @@ Markdown, HTML, images (`.png`, `.jpg`, `.jpeg`, `.webp`, `.gif`, `.svg`), PDF, 
 ## Start Or Open — One Command, No Ceremony
 
 ```
-python system/server/run.py --daemon
+python system/server/run.py --daemon --view dashboard
 ```
 
-Idempotent start-or-open: reuses an already-running healthy surface (lock file + health check), otherwise starts one detached on a free port, then opens the browser and prints the URL. Run it yourself when the environment allows instead of telling the operator to run something — the operator should never need a second manual step after asking for a preview.
+Idempotent start-or-open: reuses an already-running healthy surface (lock file + health check), otherwise starts one detached on a free port, then opens the requested view and prints its URL. Run it yourself when the environment allows instead of telling the operator to run something — the operator should never need a second manual step after asking for a preview.
 
-## Offer Trigger
+Choose the destination from the request:
 
-After the first previewable artifact write in a turn, run the start-or-open command (or, if you cannot execute commands, give the URLs) once for that turn:
+- Dashboard: `--view dashboard`
+- Historical calendar: `--view calendar`
+- Artifact: `--view preview --project {slug} --file {path-from-project-root}`
 
-1. Deep link with the artifact loaded: `http://localhost:8080/#/preview?project={slug}&file={path-from-project-root}`
-2. Dashboard: `http://localhost:8080/`
-3. Historical calendar: `http://localhost:8080/#/calendar`
+If the operator asks only for the preview server, default to Dashboard. Add `--no-open` when only a clickable URL is wanted.
 
-Do not repeat the offer after every file edit in the same turn. Add `--no-open` to suppress the browser tab when only the URL is wanted.
+## Stop
+
+When the operator explicitly asks to close or stop the preview server, run:
+
+```
+python system/server/run.py --stop
+```
+
+Do not stop it automatically; the operator may still be using the open browser view.
 
 ## Surface Map
 

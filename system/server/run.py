@@ -7,7 +7,9 @@ change.
 Usage:
     python system/server/run.py
     python system/server/run.py --port 8081
-    python system/server/run.py --project <project-slug>
+    python system/server/run.py --daemon --view dashboard
+    python system/server/run.py --daemon --view preview --project <project-slug> --file <relative-path>
+    python system/server/run.py --stop
 """
 
 from __future__ import annotations
@@ -32,17 +34,33 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--project",
         default=None,
-        help="Open the browser to this project's design-language preview after start",
+        help="Project slug for a preview deep link",
+    )
+    parser.add_argument(
+        "--file",
+        default=None,
+        help="Project-relative artifact path for a preview deep link",
+    )
+    parser.add_argument(
+        "--view",
+        choices=("dashboard", "calendar", "preview"),
+        default=None,
+        help="Surface view to open (default dashboard, or preview when --project is supplied)",
     )
     parser.add_argument(
         "--no-open",
         action="store_true",
-        help="Do not open a browser tab even if --project is set",
+        help="Print the destination URL without opening a browser tab",
     )
     parser.add_argument(
         "--daemon",
         action="store_true",
         help="Start-or-open: reuse a healthy running surface, else start one detached and open it",
+    )
+    parser.add_argument(
+        "--stop",
+        action="store_true",
+        help="Stop this workspace's detached preview server if it is running",
     )
     return parser.parse_args()
 
@@ -63,12 +81,34 @@ def main() -> int:
     host = args.host or str(cfg.get("host", "localhost"))
     delay = float(cfg.get("debounce_delay_seconds", 0.5))
 
+    if args.stop and args.daemon:
+        raise SystemExit("--stop cannot be combined with --daemon")
+    if args.file and not args.project:
+        raise SystemExit("--file requires --project")
+
+    if args.stop:
+        from system.server.lib.surface import daemon
+
+        result = daemon.stop(preferred_port=port)
+        if result["stopped"]:
+            print(f"[surface] stopped: pid {result['pid']} on port {result['port']}")
+        else:
+            print("[surface] not running")
+        return 0
+
     if args.daemon:
         from system.server.lib.surface import daemon
 
-        result = daemon.start_or_open(preferred_port=port, open_browser=not args.no_open)
-        verb = "started" if result["started"] else "already running — opened"
-        print(f"[surface] {verb}: {result['url']}")
+        view = args.view or ("preview" if args.project else "dashboard")
+        result = daemon.start_or_open(
+            preferred_port=port,
+            open_browser=not args.no_open,
+            view=view,
+            project=args.project,
+            file=args.file,
+        )
+        status = "started" if result["started"] else "already running"
+        print(f"[surface] {status}: {result['url']}")
         return 0
 
     from system.server.lib import server as server_lib

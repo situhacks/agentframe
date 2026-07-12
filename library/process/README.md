@@ -20,7 +20,7 @@ Catalog of reusable process files: what each owns and when to load it. Check her
 | [`knowledge-base.md`](knowledge-base.md) | Per-project `sources/` + `knowledge/` substrate schema and workflows | Ingesting sources or maintaining governance docs / project knowledge |
 | [`lock-event.md`](lock-event.md) | Generic lock mechanics and the post-lock judgment checklist | A deliverable is being locked by state change or clear operator intent |
 | [`operator-context-setup.md`](operator-context-setup.md) | First-time generation of operator context surfaces | Loading `library/context/operator/` finds a surface missing |
-| [`preview-server.md`](preview-server.md) | Workspace Dashboard start-or-open, preview deep links, noise hygiene | A turn writes a previewable file (markdown, HTML, image, PDF, video, PPTX/DOCX) under `workspace/projects/*/`, or the operator asks for the dashboard/preview |
+| [`preview-server.md`](preview-server.md) | Workspace Dashboard start-or-open, preview deep links, stop, noise hygiene | The operator explicitly asks for the dashboard, calendar, or a browser preview |
 | [`process-authoring.md`](process-authoring.md) | Authoring standard for process files, incl. the catalog-row requirement | Creating or materially reshaping a file in this folder (Builder) |
 | [`project-frontmatter.md`](project-frontmatter.md) | Canonical project frontmatter schema + drift check + `phase_override` shape | Reading or writing `project.md` frontmatter for state decisions |
 | [`research-and-signals.md`](research-and-signals.md) | Shared kickoff research procedure (workspace scan, MCP scan, research-method offer) | Any flow's research phase, or new-project kickoff |

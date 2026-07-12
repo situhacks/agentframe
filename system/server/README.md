@@ -20,7 +20,7 @@ This installs `livereload`, `watchdog`, `PyYAML`, and `google-genai` (the last i
 ## 2. Run
 
 ```
-python system/server/run.py --daemon
+python system/server/run.py --daemon --view dashboard
 ```
 
 Start-or-open: reuses an already-running healthy surface (lock file `.surface.lock` + `/api/health` check), otherwise starts one detached on a free port, then opens the browser. This is the command agents run when the operator asks for a preview — no second manual step. Plain `python system/server/run.py` still runs in the foreground (Ctrl+C to stop).
@@ -35,10 +35,12 @@ Useful flags:
 
 - `--port 8081` if 8080 is taken (see Troubleshooting).
 - `--host 0.0.0.0` to expose on the LAN (rare; default `localhost` is correct for solo work).
-- `--project <project-slug>` opens the browser tab on that project's design-language preview.
-- `--no-open` prevents the browser open even when `--project` is set.
+- `--view dashboard|calendar|preview` opens the requested Workspace Dashboard tab.
+- `--project <project-slug> --file <project-relative-path>` deep-links Preview to an artifact.
+- `--no-open` prints the destination URL without opening a browser tab.
+- `--stop` safely stops this workspace's detached server.
 
-Stop with `Ctrl+C`.
+Stop a detached server with `python system/server/run.py --stop`. A foreground server still stops with `Ctrl+C`.
 
 ## 3. What gets watched
 

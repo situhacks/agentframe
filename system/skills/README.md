@@ -19,18 +19,12 @@ All AgentFrame skills live here. Some are AgentFrame-owned, some are vendored sn
 | [`humanizer/`](humanizer/) | Remove AI-writing patterns from prose. | Vendored (see [`humanizer/VENDOR.md`](humanizer/VENDOR.md)) |
 | [`docx/`](docx/) | Generic `.docx` creation/editing capability. | Vendored (see [`docx/VENDOR.md`](docx/VENDOR.md)) |
 | [`pptx/`](pptx/) | Native `.pptx` inspection/editing capability; deck creation routes through `library/process/deck-production.md`. | Vendored (see [`pptx/VENDOR.md`](pptx/VENDOR.md)) |
-| [`hyperframes/`](hyperframes/) | HyperFrames composition authoring for HTML-based video production. | Vendored (see [`hyperframes/VENDOR.md`](hyperframes/VENDOR.md)) |
-| [`hyperframes-cli/`](hyperframes-cli/) | HyperFrames CLI workflow (`init`, `lint`, `inspect`, `preview`, `render`). | Vendored (see [`hyperframes-cli/VENDOR.md`](hyperframes-cli/VENDOR.md)) |
-| [`gsap/`](gsap/) | GSAP animation reference used by HyperFrames compositions. | Vendored (see [`gsap/VENDOR.md`](gsap/VENDOR.md)) |
+| [`hyperframes/`](hyperframes/) | Full upstream HyperFrames repository: Studio, CLI, engine, and routed video skill library. | Vendored (see [`hyperframes/VENDOR.md`](hyperframes/VENDOR.md)) |
 | [`browser-harness/`](browser-harness/) | Local browser control harness used by AgentFrame browser fallback workflows. | Vendored (see [`browser-harness/VENDOR.md`](browser-harness/VENDOR.md)) |
 | [`open-design/`](open-design/) | Bundled Open Design runtime for advanced image/deck generation workflows. | Vendored (see [`open-design/VENDOR.md`](open-design/VENDOR.md)) |
 | [`extract-design/`](extract-design/) | Extract a website's full design language (colors, type, tokens, Tailwind/React/shadcn themes, WCAG score) via the `designlang` CLI. | Vendored thin overlay (see [`extract-design/VENDOR.md`](extract-design/VENDOR.md)) |
 | [`d2-diagrams/`](d2-diagrams/) | Render static flowcharts, decision trees, and system explainers as SVG. | Owned by AgentFrame; uses the vendored D2 CLI ([`system/tools/d2/VENDOR.md`](../tools/d2/VENDOR.md)) |
 | [`ppt-master/`](ppt-master/) | Convert source documents (PDF/DOCX/URL/Markdown) into SVG pages and export to PPTX via a multi-role pipeline. Read [`ppt-master/AGENTS.md`](ppt-master/AGENTS.md) boundary notes before running. | Vendored (see [`ppt-master/VENDOR.md`](ppt-master/VENDOR.md)) |
-
-## Asset References
-
-- HyperFrames launch-video references live at [`hyperframes/references/launch-video/`](hyperframes/references/launch-video/) and are loaded only when needed.
 
 ## Operator Notes
 

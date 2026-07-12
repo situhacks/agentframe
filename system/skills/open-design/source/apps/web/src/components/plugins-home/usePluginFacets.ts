@@ -11,7 +11,7 @@
 // override rather than AND-compose so a saved pick is never
 // accidentally hidden behind a still-selected category pill.
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { InstalledPluginRecord } from '@open-design/contracts';
 import {
   applyFacetSelection,
@@ -22,6 +22,12 @@ import {
   type FacetSelection,
 } from './facets';
 import { sortByVisualAppeal } from './visualScore';
+import {
+  readStoredSortOrder,
+  sortByNewest,
+  writeStoredSortOrder,
+  type PluginSortOrder,
+} from './sortOrder';
 
 export type FilterMode = 'all' | 'saved';
 
@@ -29,13 +35,7 @@ interface UsePluginFacetsArgs {
   plugins: InstalledPluginRecord[];
   savedPluginIds?: ReadonlySet<string>;
   preferDefaultFacet?: boolean;
-  // External selection driven by the Home hero chip rail. When this
-  // value changes to a new (non-null) selection, the hook applies it,
-  // overriding both the user's manual pick and the default-facet
-  // bootstrap. We track the last-applied identity so the user can
-  // still click a different category afterwards without the effect
-  // snapping back on every re-render.
-  presetSelection?: FacetSelection | null;
+  locale?: string;
 }
 
 export interface UsePluginFacetsResult {
@@ -52,6 +52,8 @@ export interface UsePluginFacetsResult {
   setMode: (next: FilterMode) => void;
   query: string;
   setQuery: (next: string) => void;
+  sortOrder: PluginSortOrder;
+  setSortOrder: (next: PluginSortOrder) => void;
   totalVisible: number;
 }
 
@@ -64,17 +66,22 @@ export function usePluginFacets({
   plugins,
   savedPluginIds,
   preferDefaultFacet = true,
-  presetSelection = null,
+  locale,
 }: UsePluginFacetsArgs): UsePluginFacetsResult {
   const [mode, setMode] = useState<FilterMode>('all');
   const [selection, setSelection] = useState<FacetSelection>(EMPTY_SELECTION);
   const [query, setQuery] = useState('');
+  // Hot vs newest scan order, remembered per browser so a returning
+  // user keeps their preferred ordering (lazy read: storage is only
+  // touched once per mount).
+  const [sortOrder, setSortOrderState] = useState<PluginSortOrder>(
+    () => readStoredSortOrder(),
+  );
   // Apply the preferred default selection once, on the first render that
   // sees a non-empty catalog. Using a flag (instead of a useState lazy
   // initializer) handles the realistic case where `args.plugins` is
   // empty at first paint and arrives a tick later.
   const [bootstrapped, setBootstrapped] = useState(false);
-  const lastAppliedPresetKeyRef = useRef<string | null>(null);
 
   // Atoms are infrastructure pieces (`code-import`, `patch-edit`) that
   // are not user-facing on the home grid; the original section already
@@ -91,9 +98,18 @@ export function usePluginFacets({
     [plugins],
   );
 
+  // Re-rank for the "newest" order on top of the visual-appeal base:
+  // sortByNewest is stable, so same-timestamp batches (e.g. the bundled
+  // catalog seeded in one transaction) keep their appeal ranking
+  // instead of collapsing into raw daemon order.
+  const orderedPlugins = useMemo(
+    () => (sortOrder === 'newest' ? sortByNewest(visiblePlugins) : visiblePlugins),
+    [sortOrder, visiblePlugins],
+  );
+
   const savedList = useMemo(
-    () => visiblePlugins.filter((plugin) => savedPluginIds?.has(plugin.id)),
-    [savedPluginIds, visiblePlugins],
+    () => orderedPlugins.filter((plugin) => savedPluginIds?.has(plugin.id)),
+    [savedPluginIds, orderedPlugins],
   );
 
   const catalog = useMemo(() => buildFacetCatalog(visiblePlugins), [visiblePlugins]);
@@ -112,22 +128,6 @@ export function usePluginFacets({
     setBootstrapped(true);
   }, [bootstrapped, preferDefaultFacet, visiblePlugins.length, catalog]);
 
-  // Sync an externally-driven selection (the Home chip rail) into the
-  // facet state. We only apply a preset once per identity so the user
-  // can still click a different facet pill afterwards without the
-  // effect snapping back. Setting `bootstrapped` here also prevents
-  // the default-facet effect above from overriding the preset on the
-  // first non-empty render.
-  useEffect(() => {
-    if (!presetSelection) return;
-    const key = `${presetSelection.category ?? ''}::${presetSelection.subcategory ?? ''}`;
-    if (lastAppliedPresetKeyRef.current === key) return;
-    lastAppliedPresetKeyRef.current = key;
-    setSelection(presetSelection);
-    setMode((current) => (current === 'saved' ? 'all' : current));
-    setBootstrapped(true);
-  }, [presetSelection]);
-
   // The visual-appeal sort is applied at `visiblePlugins` derivation
   // (above), so any downstream `applyFacetSelection` slice preserves
   // the ranking. We do not re-sort here because filter + featured
@@ -136,9 +136,9 @@ export function usePluginFacets({
     const base =
       mode === 'saved'
         ? savedList
-        : applyFacetSelection(visiblePlugins, selection);
-    return filterByQuery(base, query);
-  }, [mode, savedList, visiblePlugins, selection, query]);
+        : applyFacetSelection(orderedPlugins, selection);
+    return filterByQuery(base, query, locale);
+  }, [mode, savedList, orderedPlugins, selection, query, locale]);
 
   function pickCategory(slug: string | null): void {
     if (mode === 'saved') setMode('all');
@@ -154,6 +154,11 @@ export function usePluginFacets({
       ...prev,
       subcategory: prev.subcategory === slug ? null : slug,
     }));
+  }
+
+  function setSortOrder(next: PluginSortOrder): void {
+    setSortOrderState(next);
+    writeStoredSortOrder(next);
   }
 
   function clearFacets(): void {
@@ -184,6 +189,8 @@ export function usePluginFacets({
     setMode,
     query,
     setQuery,
+    sortOrder,
+    setSortOrder,
     totalVisible: visiblePlugins.length,
   };
 }

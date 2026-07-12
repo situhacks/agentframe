@@ -1,18 +1,15 @@
-## PPTX Skill Vendor Record
+# PPTX vendor record
 
-- Upstream repository: `https://github.com/anthropics/skills`
-- Snapshot date (UTC): `2026-04-18`
-- Source location in AgentFrame: `system/skills/pptx/`
-- License: see `system/skills/pptx/LICENSE.txt`
+- Upstream: `https://github.com/anthropics/skills`
+- Source ref: `9d2f1ae187231d8199c64b5b762e1bdf2244733d`
+- Upstream path: `skills/pptx/`
+- Snapshot date (UTC): `2026-07-11`
+- License: `LICENSE.txt`
 
-### Purpose
+## Scope
 
-Track the upstream source and refresh procedure for the vendored PPTX skill.
+This is an upstream source mirror with no AgentFrame overlay.
 
-### Refresh Procedure
+## Refresh
 
-1. Clone upstream to a temporary directory (depth 1 is acceptable for routine refreshes).
-2. Remove `system/skills/pptx/` from this repo.
-3. Copy upstream `skills/pptx` into `system/skills/pptx/`.
-4. Reapply AgentFrame-specific overlays (for example Open Design routing notes) and verify this file still exists.
-5. Remove the temporary clone directory.
+Copy `skills/pptx/` from the source ref and restore this record. Verify `SKILL.md`, `scripts/`, and `LICENSE.txt` are present.

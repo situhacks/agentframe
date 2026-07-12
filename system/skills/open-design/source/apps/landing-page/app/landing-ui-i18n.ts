@@ -188,9 +188,9 @@ function buildUiCopy(t: UiText): DeepPartial<LandingUiCopy> {
       },
     },
     tutorials: {
-      title: t.guides,
-      seoTitle: `${t.guides} — Open Design`,
-      description: `${t.guides}: Open Design / YouTube / ${t.skills} / ${t.systems} / ${t.community}.`,
+      title: `Open Design ${t.guides}`,
+      seoTitle: `Open Design ${t.guides}`,
+      description: `Open Design ${t.guides}: ${t.skills} / ${t.systems} / ${t.community}.`,
       categoriesLabel: `${t.guides} · ${t.category}`,
       categories: {
         all: t.all,
@@ -539,10 +539,10 @@ const zhTw: UiText = {
 const make = (text: UiText): DeepPartial<LandingUiCopy> => buildUiCopy(text);
 
 const zhTutorialsCopy = {
-  title: '教程',
-  seoTitle: '教程 — Open Design',
+  title: 'Open Design 教程',
+  seoTitle: 'Open Design 教程 — 免费视频指南与上手教程',
   description:
-    '观看 Open Design 的上手 walkthrough、插件教程、演示、评测与社区视频。所有视频都在页面内播放，并保留原始 YouTube 来源。',
+    'Open Design 使用教程合集：手把手视频带你上手 Open Design，涵盖安装入门、插件、设计系统与实战工作流，全部可在页面内直接观看。',
   categoriesLabel: '教程分类',
   categories: {
     all: '全部',
@@ -572,10 +572,10 @@ const zhTutorialsCopy = {
 } satisfies NonNullable<DeepPartial<LandingUiCopy>['tutorials']>;
 
 const zhTwTutorialsCopy = {
-  title: '教學',
-  seoTitle: '教學 — Open Design',
+  title: 'Open Design 教學',
+  seoTitle: 'Open Design 教學 — 如何使用 Open Design',
   description:
-    '觀看 Open Design 的上手 walkthrough、外掛教學、演示、評測與社群影片。所有影片都在頁面內播放，並保留原始 YouTube 來源。',
+    'Open Design 使用教學合集：手把手影片帶你上手 Open Design，涵蓋安裝入門、外掛、設計系統與實戰工作流，全部可在頁面內直接觀看。',
   categoriesLabel: '教學分類',
   categories: {
     all: '全部',
@@ -1116,6 +1116,32 @@ const simple: Record<Exclude<LandingLocaleCode, 'en' | 'zh' | 'zh-tw' | 'ja' | '
   uk: cloneWith(es, { blogTitle: 'Журнал', blogCategories: 'Категорії журналу', all: 'Усе', product: 'Продукт', guides: 'Посібники', useCases: 'Сценарії', community: 'Спільнота', minRead: 'хв читання', readMore: 'Читати далі →', read: 'Читати →', backToBlog: '← Назад до журналу', noEntries: 'Поки немає записів.', noPosts: 'У цій категорії поки немає статей.', nextStep: 'Наступний крок', joinDiscord: 'Приєднатися до Discord', catalog: 'Каталог', system: 'дизайн-система', systems: 'дизайн-системи', template: 'шаблон', templates: 'шаблони', craft: 'правила якості', craftRule: 'правило якості', plugin: 'плагін', plugins: 'плагіни', mode: 'Режим', scenario: 'Сценарій', platform: 'Платформа', featured: 'Вибране', category: 'Категорія', copy: 'Копіювати', copied: 'Скопійовано', select: 'Вибрати', official: 'Офіційно', registry: 'Реєстр', version: 'Версія', license: 'Ліцензія', publisher: 'Видавець', notSpecified: 'Не вказано', pluginId: 'ID плагіна', installFromRegistry: 'Встановити з реєстру', relatedPlugins: 'Пов’язані плагіни' }),
 };
 
+// Localized SEO <title> for the tutorials index page. Locales whose tutorials
+// copy comes from buildUiCopy() otherwise inherit a generic "Open Design <guides>"
+// title; this table injects a faithful localization of the English seoTitle
+// "Open Design Tutorials — Free Video Guides & How-Tos" for each. zh / zh-tw carry
+// their own seoTitle inside zhTutorialsCopy / zhTwTutorialsCopy above.
+const TUTORIALS_SEO_TITLE_OVERRIDES: Partial<Record<LandingLocaleCode, string>> = {
+  ja: 'Open Design チュートリアル — 無料の動画ガイドと使い方',
+  ko: 'Open Design 튜토리얼 — 무료 동영상 가이드 및 사용법',
+  de: 'Open Design Tutorials — Kostenlose Video-Anleitungen & Praxistipps',
+  fr: 'Open Design Tutoriels — Guides vidéo gratuits et modes d’emploi',
+  es: 'Open Design Tutoriales — Guías en vídeo gratuitas y guías prácticas',
+  ru: 'Open Design Уроки — Бесплатные видеоруководства и инструкции',
+  'pt-br': 'Open Design Tutoriais — Guias em vídeo gratuitos e passo a passo',
+  it: 'Open Design Tutorial — Video guide gratuite e guide pratiche',
+  tr: 'Open Design Eğitimleri — Ücretsiz video kılavuzları ve nasıl yapılır rehberleri',
+};
+
+function withTutorialsSeoTitle(
+  locale: LandingLocaleCode,
+  copy: DeepPartial<LandingUiCopy>,
+): DeepPartial<LandingUiCopy> {
+  const seoTitle = TUTORIALS_SEO_TITLE_OVERRIDES[locale];
+  if (!seoTitle) return copy;
+  return { ...copy, tutorials: { ...(copy.tutorials ?? {}), seoTitle } };
+}
+
 export const EXTRA_LOCALIZED_LANDING_UI_COPY: Partial<
   Record<LandingLocaleCode, DeepPartial<LandingUiCopy>>
 > = {
@@ -1127,15 +1153,18 @@ export const EXTRA_LOCALIZED_LANDING_UI_COPY: Partial<
     ...make(localizeOwnedUiText('zh-tw', zhTw)),
     tutorials: zhTwTutorialsCopy,
   },
-  ja: make(localizeOwnedUiText('ja', jp)),
-  ko: make(localizeOwnedUiText('ko', ko)),
-  de: make(localizeOwnedUiText('de', de)),
-  fr: make(localizeOwnedUiText('fr', fr)),
-  es: make(localizeOwnedUiText('es', es)),
+  ja: withTutorialsSeoTitle('ja', make(localizeOwnedUiText('ja', jp))),
+  ko: withTutorialsSeoTitle('ko', make(localizeOwnedUiText('ko', ko))),
+  de: withTutorialsSeoTitle('de', make(localizeOwnedUiText('de', de))),
+  fr: withTutorialsSeoTitle('fr', make(localizeOwnedUiText('fr', fr))),
+  es: withTutorialsSeoTitle('es', make(localizeOwnedUiText('es', es))),
   ...Object.fromEntries(
     Object.entries(simple).map(([locale, text]) => [
       locale,
-      make(localizeOwnedUiText(locale as Exclude<LandingLocaleCode, 'en'>, text)),
+      withTutorialsSeoTitle(
+        locale as LandingLocaleCode,
+        make(localizeOwnedUiText(locale as Exclude<LandingLocaleCode, 'en'>, text)),
+      ),
     ]),
   ),
 };

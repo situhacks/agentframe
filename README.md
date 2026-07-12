@@ -309,9 +309,7 @@ My current production stack — swap any one for a sharper tool without touching
 | `docx` | Project skill — generates Word documents from markdown deliverables |
 | `pptx` | Project skill - native `.pptx` inspection, validation, extraction, and small edits after `deck-production` routes there |
 | `humanizer` | Vendored from [blader/humanizer](https://github.com/blader/humanizer) |
-| `hyperframes` | Vendored from [heygen-com/hyperframes](https://github.com/heygen-com/hyperframes) |
-| `hyperframes-cli` | Vendored from [heygen-com/hyperframes](https://github.com/heygen-com/hyperframes) |
-| `gsap` | Vendored animation skill for HyperFrames workflows |
+| `hyperframes` | Full HyperFrames source, Studio, and routed video skill library |
 | `ppt-master` | Vendored from [hugohe3/ppt-master](https://github.com/hugohe3/ppt-master) — native-editable deck generation via SVG→PPTX |
 | `extract-design` | Thin skill over [Manavarya09/design-extract](https://github.com/Manavarya09/design-extract); CLI runs via `npx designlang` |
 | `open-design` | Vendored local-first runtime from [nexu-io/open-design](https://github.com/nexu-io/open-design) for image/deck production |

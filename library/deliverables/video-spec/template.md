@@ -12,10 +12,7 @@ Planning and production tracker for a video deliverable. It gives the agent enou
 - `library/process/video-production.md`.
 - Operator Voice (load the voice system (`library/context/operator/voice/`) if the video includes user-voiced narration, captions meant to sound like the operator, or external-facing script copy; do not load for purely technical render/planning work).
 - Video capability references as needed:
-  - `system/skills/hyperframes/SKILL.md`, `system/skills/hyperframes-cli/SKILL.md`, and `system/skills/gsap/SKILL.md` for authored composition and rendering.
-  - `system/skills/hyperframes/references/launch-video/` for optional launch-video reference artifacts (load only when needed).
-  - video-use for raw-footage transcript/edit work.
-  - Manual Flow/Veo/Nano Banana browser workflow for generated assets.
+  - `system/skills/hyperframes/SKILL.md` for the upstream HyperFrames route and selected capability.
 
 ## Sections
 
@@ -23,7 +20,7 @@ Planning and production tracker for a video deliverable. It gives the agent enou
 - **Format** — platform, aspect ratio, resolution, fps, target runtime, caption/subtitle expectation, voiceover/talking-head expectation.
 - **Project structure** — the working folders/files for this video project.
 - **Asset inventory and provenance** — raw footage, screen recordings, screenshots, generated clips, generated images, audio, transcripts, and prompts/provenance for manual Flow assets.
-- **Production notes** — current plan, open decisions, known risks, and links to `SCRIPT.md`, `STORYBOARD.md`, `HANDOFF.md`, `edit/`, or `video/` files.
+- **Production notes** — current plan, decisions, and the active HyperFrames project path.
 - **Preview and render outputs** — preview URLs, draft renders, final renders, and any known issues.
 
 ## Hard Constraints
@@ -51,8 +48,7 @@ Generated media files, `video/renders/scenes/`, `video/renders/final/`, `edit/pr
 - Asset inventory records all source footage, generated assets, and manual Flow prompts/provenance where applicable.
 - Draft or final render path is recorded.
 - Appropriate verification ran:
-  - HyperFrames: `doctor`, `lint`, `validate`, `inspect`, render.
-  - video-use: transcript/EDL artifacts present, preview/final render present, self-eval notes recorded.
+  - HyperFrames: the selected upstream workflow's `npx hyperframes check` and render gates.
 - Known issues are fixed or explicitly accepted by the operator.
 - The active pack's delivery flow knows which video file will ship, when the deliverable feeds one.
 
@@ -64,9 +60,9 @@ Generated media files, `video/renders/scenes/`, `video/renders/final/`, `edit/pr
 
 ## Humanizer Pass
 
-Partial. Run only when `video/SCRIPT.md` is authored or substantively revised. Scope to public-facing script prose: narration, captions, and on-screen editorial text.
+Partial. Run only when the upstream HyperFrames `SCRIPT.md` is authored or substantively revised. Scope to public-facing script prose: narration, captions, and on-screen editorial text.
 
-Do not run this gate at `video-spec-v{N}.md` lock time. Skip `STORYBOARD.md`, structured production fields, commands, frontmatter, code, EDL JSON, and model prompt text.
+Do not run this gate at `video-spec-v{N}.md` lock time. Skip the upstream `STORYBOARD.md`, structured production fields, commands, frontmatter, code, and model prompt text.
 
 When needed, follow `library/process/humanizer-integration.md`.
 

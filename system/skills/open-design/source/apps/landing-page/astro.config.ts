@@ -1,7 +1,7 @@
 import sitemap, { type SitemapItem } from '@astrojs/sitemap';
-import { readFileSync, readdirSync } from 'node:fs';
+import { appendFileSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import type { AstroUserConfig } from 'astro';
+import type { AstroIntegration, AstroUserConfig } from 'astro';
 import { defineConfig } from 'astro/config';
 import {
   DEFAULT_LOCALE,
@@ -109,6 +109,34 @@ const editorialPaperTheme: ShikiThemeObject = {
 // builds (Cloudflare Pages preview deployments, local previews on a
 // different host) can stamp their own URL without forking the config.
 const site = process.env.OD_LANDING_SITE ?? 'https://open-design.ai';
+// Staging / PR-preview builds set OD_LANDING_NOINDEX=1. Resolved here (config
+// runs in Node and can read process.env) and inlined into components as the
+// compile-time constant `__OD_LANDING_NOINDEX__` via vite.define below —
+// `.astro` frontmatter is transformed by Vite and cannot read process.env.
+const landingNoindex = process.env.OD_LANDING_NOINDEX === '1';
+
+// Staging / PR-preview only: append a catch-all `X-Robots-Tag: noindex` to the
+// Cloudflare Pages `_headers` so EVERY response stays out of search indexes —
+// including the React-rendered homepage and `og.astro`, which build their own
+// <head> and don't go through SeoHead (whose <meta robots> covers HTML pages).
+// Production builds (flag unset) leave `_headers` untouched.
+const noindexHeaders: AstroIntegration = {
+  name: 'staging-noindex-headers',
+  hooks: {
+    'astro:build:done': () => {
+      if (!landingNoindex) return;
+      // `out/_headers` already exists (copied verbatim from public/_headers
+      // during the build). Append a catch-all noindex header. Path is built
+      // from the config dir + outDir rather than the hook's `dir` URL to
+      // avoid any URL-resolution ambiguity.
+      appendFileSync(
+        join(import.meta.dirname, 'out', '_headers'),
+        '\n# Staging / preview mirror — keep out of search indexes.\n/*\n  X-Robots-Tag: noindex, nofollow\n',
+      );
+    },
+  },
+};
+
 const sitemapLocales = Object.fromEntries(
   LANDING_LOCALES.map((locale) => [locale.code, locale.htmlLang]),
 );
@@ -137,6 +165,49 @@ export default defineConfig({
   srcDir: './app',
   outDir: './out',
   trailingSlash: 'always',
+  vite: {
+    define: {
+      // Staging / PR-preview builds set OD_LANDING_NOINDEX=1. SeoHead reads
+      // this compile-time constant (frontmatter can't read process.env).
+      __OD_LANDING_NOINDEX__: JSON.stringify(landingNoindex),
+    },
+    server: {
+      // The project path contains a space + emoji ("open design-👌"), which can
+      // break native fsevents file-watching and leave the dev server serving
+      // stale inlined CSS. Poll instead so edits (globals.css etc.) reliably
+      // hot-reload without needing a manual restart.
+      watch: { usePolling: true, interval: 250 },
+    },
+    plugins: [
+      {
+        // `/community/` is a static page served verbatim from
+        // `public/community/index.html`. Cloudflare Pages maps directory
+        // URLs to their index.html in production, but the Vite dev server
+        // does not — without this rewrite every /community/ link 404s
+        // locally. Dev-only; build output is untouched.
+        name: 'community-static-dir-index',
+        apply: 'serve' as const,
+        configureServer(server) {
+          server.middlewares.use((req, _res, next) => {
+            const [path = '', query] = (req.url ?? '').split('?');
+            if (path.startsWith('/community') && !path.includes('.')) {
+              const rewritten = `${path.endsWith('/') ? path : `${path}/`}index.html`;
+              req.url = query ? `${rewritten}?${query}` : rewritten;
+            }
+            next();
+          });
+        },
+      },
+    ],
+  },
+  build: {
+    // Inline every emitted stylesheet directly into the HTML <head>.
+    // Trade-off: HTML pages grow by ~10-15KB (already Brotli-compressed
+    // on CF). Win: zero render-blocking CSS roundtrip. Combined with the
+    // self-hosted variable fonts (see globals.css), this drops the
+    // PageSpeed "Render-blocking requests" estimate from ~2.3s to ~0.
+    inlineStylesheets: 'always',
+  },
   markdown: {
     // Use our paper-toned theme for fenced code blocks. Astro ships
     // Shiki under the hood and the default theme (`github-dark`)
@@ -151,6 +222,7 @@ export default defineConfig({
     },
   },
   integrations: [
+    noindexHeaders,
     sitemap({
       i18n: {
         defaultLocale: DEFAULT_LOCALE,
@@ -178,6 +250,15 @@ export default defineConfig({
       filter: (page) => {
         if (page.includes('/og/')) return false;
         const path = new URL(page).pathname;
+        // Legacy catalog routes (/skills, /systems, /templates) now live
+        // under /plugins/* and are 301-redirected by `public/_redirects`,
+        // and legacy region-cased locale codes (zh-CN, zh-TW, es-ES, pt-BR)
+        // 301 to their canonical lowercase locale (/zh/, /es/). Their old
+        // page routes still build, so without this guard `@astrojs/sitemap`
+        // lists ~460 redirecting URLs. A sitemap must carry only final 200
+        // canonical URLs — never redirects — so drop these legacy prefixes.
+        if (/^\/(skills|systems|templates)\//.test(path)) return false;
+        if (/^\/(zh-CN|zh-TW|es-ES|pt-BR)\//.test(path)) return false;
         const localeMatch = path.match(/^\/([a-z]{2}(?:-[a-z]{2})?)\//);
         if (localeMatch) {
           const code = localeMatch[1];
@@ -214,11 +295,15 @@ export default defineConfig({
           item.priority = 0.9;
           item.changefreq = changefreq.weekly;
         } else if (
-          path === '/skills/' ||
-          path === '/systems/' ||
-          path === '/templates/' ||
           path === '/craft/' ||
-          path === '/plugins/'
+          path === '/plugins/' ||
+          // Canonical section hubs that the legacy /skills, /systems, and
+          // /templates roots now 301 to — keep them on the elevated catalog
+          // crawl hint (0.7 / weekly) rather than letting them fall through
+          // to the generic 0.5 / monthly default.
+          path === '/plugins/skills/' ||
+          path === '/plugins/systems/' ||
+          path === '/plugins/templates/'
         ) {
           item.priority = 0.7;
           item.changefreq = changefreq.weekly;

@@ -1,17 +1,17 @@
-## Extract-Design Skill Vendor Record
+# Extract Design vendor record
 
-- Upstream repository: `https://github.com/Manavarya09/design-extract`
-- Upstream version: v12.15.0
-- Snapshot date (UTC): `2026-06-10`
-- Source location in AgentFrame: `system/skills/extract-design/` (upstream `skills/extract-design/SKILL.md` only — the CLI itself is npm-distributed and runs via `npx designlang`, so no source is vendored)
-- License: MIT — see `LICENSE.txt`
+- Upstream artifact: `designlang@12.21.0` from npm
+- Package source ref: `a51e406c01cdb801b007a02a332752d1c80952a0`
+- Tarball SHA-1: `188fb18030e12239843d9389ed92baa7c90aa22e`
+- Tarball integrity: `sha512-BTu2lxRlf3ybLZrw3WVikNAC0V2kHjXxwKZvuGWESct4DVwti93JZnHN7wz4XpJ2HRLuareW1ItXd62tX2Fb1g==`
+- Upstream path: `skills/extract-design/SKILL.md`
+- Snapshot date (UTC): `2026-07-11`
+- License: MIT (`LICENSE.txt`)
 
-### Purpose
+## Scope
 
-Track the upstream source for the thin extraction skill. The actual tool is the `designlang` CLI (Node 20+, Playwright headless Chromium pulled on first run). AgentFrame-specific routing and distillation rules live in `AGENTS.md` next to this file.
+`SKILL.md` and `LICENSE.txt` mirror the published npm artifact. `AGENTS.md` is the AgentFrame integration boundary.
 
-### Refresh Procedure
+## Refresh
 
-1. Download upstream `skills/extract-design/SKILL.md` and root `LICENSE` (as `LICENSE.txt`) into this folder, replacing the existing copies.
-2. Reapply the AgentFrame overlay files (`VENDOR.md`, `AGENTS.md`) and verify both still exist.
-3. If upstream output filenames changed, update the distillation table in `AGENTS.md`.
+Download the pinned package tarball, copy `skills/extract-design/SKILL.md` and `LICENSE`, restore this record and `AGENTS.md`, then verify the recorded integrity value.

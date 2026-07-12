@@ -1,12 +1,10 @@
 ---
 name: pptx
-description: "Native .pptx inspection, extraction, validation, and small-edit capability. For AgentFrame deck creation or export, load library/process/deck-production.md first; use this skill only when that process routes to the PPTX-native path or when the task is directly inspecting/editing an existing .pptx."
+description: "Use this skill any time a .pptx file is involved in any way — as input, output, or both. This includes: creating slide decks, pitch decks, or presentations; reading, parsing, or extracting text from any .pptx file (even if the extracted content will be used elsewhere, like in an email or summary); editing, modifying, or updating existing presentations; combining or splitting slide files; working with templates, layouts, speaker notes, or comments. Trigger whenever the user mentions \"deck,\" \"slides,\" \"presentation,\" or references a .pptx filename, regardless of what they plan to do with the content afterward. If a .pptx file needs to be opened, created, or touched, use this skill."
 license: Proprietary. LICENSE.txt has complete terms
 ---
 
 # PPTX Skill
-
-Path selection for deck work lives in `library/process/deck-production.md`. Continue here only after that process routes to the PPTX-native path, or when the task is directly inspecting/extracting/editing an existing `.pptx`.
 
 ## Quick Reference
 
@@ -14,7 +12,7 @@ Path selection for deck work lives in `library/process/deck-production.md`. Cont
 |------|-------|
 | Read/analyze content | `python -m markitdown presentation.pptx` |
 | Edit or create from template | Read [editing.md](editing.md) |
-| Low-level native create/edit | Read [pptxgenjs.md](pptxgenjs.md) only when `deck-production.md` routes here |
+| Create from scratch | Read [pptxgenjs.md](pptxgenjs.md) |
 
 ---
 
@@ -222,12 +220,6 @@ To re-render specific slides after fixes:
 ```bash
 pdftoppm -jpeg -r 150 -f N -l N output.pdf slide-fixed
 ```
-
----
-
-## Known Gotchas
-
-- If renders behave unexpectedly, check [`gotchas.md`](gotchas.md) before debugging from scratch.
 
 ---
 

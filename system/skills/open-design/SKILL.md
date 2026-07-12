@@ -97,7 +97,7 @@ Goal: a non-blank Open Design session with campaign design language staged, the 
 
    Avoid duplicating the full design-language body in the prompt. OD injects the active design system separately through `designSystemId`.
 
-5. **Create the project.** POST to `<daemon-url>/api/projects` with: project id `agentframe-{campaign-slug}-{deliverable-id}`, the confirmed `skillId`, `designSystemId: agentframe-{campaign-slug}`, the `pendingPrompt`, and metadata (`source: agentframe`, `campaignSlug`, `deliverablePath`, `mode`). Daemon docs in `source/docs/` own the request shape — read those if the API changes.
+5. **Create the project.** POST to `<daemon-url>/api/projects` with: project id `agentframe-{campaign-slug}-{deliverable-id}`, the confirmed `skillId`, `designSystemId: agentframe-{campaign-slug}`, the `pendingPrompt`, and metadata (`source: agentframe`, `campaignSlug`, `deliverablePath`, `mode`).
 
 6. **Reply to the operator.** Short handoff:
    - Open Design URL: `<web-url>/projects/<project-id>`

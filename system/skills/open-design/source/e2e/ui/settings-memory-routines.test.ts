@@ -1,9 +1,11 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from '@/playwright/suite';
+import { ensureRailOpen } from '@/playwright/rail';
+import { routeAgents } from '@/playwright/mock-factory';
 import type { Page } from '@playwright/test';
+import { openSettingsDialog } from '../lib/playwright/amr.js';
 
 const STORAGE_KEY = 'open-design:config';
 const OPEN_SETTINGS_LABEL = /Open settings|打开设置|開啟設定/i;
-const SETTINGS_MENU_LABEL = /^Settings$|^设置$|^設定$/i;
 
 test.describe.configure({ timeout: 30_000 });
 
@@ -39,21 +41,47 @@ async function seedSettingsBase(page: Page) {
     });
   });
 
-  await page.route('**/api/agents', async (route) => {
-    await route.fulfill({
-      json: {
-        agents: [
-          {
-            id: 'codex',
-            name: 'Codex CLI',
-            bin: 'codex',
-            available: true,
-            version: '0.130.0',
-            models: [{ id: 'default', label: 'Default' }],
-          },
-        ],
-      },
-    });
+  await routeAgents(page, [
+    {
+      id: 'codex',
+      name: 'Codex CLI',
+      bin: 'codex',
+      available: true,
+      version: '0.130.0',
+      models: [{ id: 'default', label: 'Default' }],
+    },
+  ]);
+
+  await page.route('**/api/app-config', async (route) => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ config: baseConfig() }) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
+  });
+  await page.route('**/api/editors', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{"editors":[]}' });
+  });
+  await page.route('**/api/media/config', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{"providers":{}}' });
+  });
+  await page.route('**/api/connectors/composio/config', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{"configured":false,"apiKeyTail":""}' });
+  });
+  await page.route('**/api/skills', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{"skills":[]}' });
+  });
+  await page.route('**/api/design-systems', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{"designSystems":[]}' });
+  });
+  await page.route('**/api/projects', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{"projects":[]}' });
+  });
+  await page.route('**/api/templates', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{"templates":[]}' });
+  });
+  await page.route('**/api/prompt-templates', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{"promptTemplates":[]}' });
   });
 }
 
@@ -65,33 +93,27 @@ async function gotoEntryHome(page: Page) {
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await waitForLoadingToClear(page);
   const privacyDialog = page.getByRole('dialog').filter({ hasText: 'Help us improve Open Design' });
-  if (await privacyDialog.isVisible().catch(() => false)) {
-    await privacyDialog.getByRole('button', { name: /not now/i }).click();
+  if (await privacyDialog.isVisible()) {
+    await privacyDialog.getByRole('button', { name: /I get it|not now|got it|don't share/i }).click();
   }
   await expect(page.getByRole('button', { name: OPEN_SETTINGS_LABEL })).toBeVisible();
 }
 
 async function openSettings(page: Page) {
   await gotoEntryHome(page);
-  await page.getByRole('button', { name: OPEN_SETTINGS_LABEL }).click();
-  const menu = page.getByRole('menu');
-  if (await menu.isVisible().catch(() => false)) {
-    await menu.getByRole('button', { name: SETTINGS_MENU_LABEL }).click();
-  }
-  const dialog = page.getByRole('dialog');
-  await expect(dialog).toBeVisible();
-  return dialog;
+  return openSettingsDialog(page);
 }
 
 async function openMemorySettings(page: Page) {
   const dialog = await openSettings(page);
   await dialog.getByRole('button', { name: /^Memory\b/ }).click();
-  await expect(dialog.getByRole('button', { name: 'New memory' })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Add or import memories' })).toBeVisible();
+  await expect(dialog.getByText('Saved memory')).toBeVisible();
   return dialog;
 }
 
 test.describe('Settings Memory and Automations flows', () => {
-  test('renders the new Memory information architecture with source tabs, saved stats, and tree summaries', async ({ page }) => {
+  test('[P1] renders the new Memory information architecture with source tabs, saved stats, and tree summaries', async ({ page }) => {
     await seedSettingsBase(page);
 
     await page.route('**/api/memory', async (route) => {
@@ -253,7 +275,176 @@ test.describe('Settings Memory and Automations flows', () => {
     await expect(memoryTree.getByText('Weekly launch brief')).toBeVisible();
   });
 
-  test('creates a memory entry and keeps it visible after reopening settings', async ({ page }) => {
+  test('[P1] edits and deletes saved memory while keeping type filters and counts in sync', async ({ page }) => {
+    await seedSettingsBase(page);
+
+    let entries = [
+      {
+        id: 'user_ui_preferences',
+        name: 'UI preferences',
+        description: 'Persistent UI rendering preferences',
+        type: 'user',
+        body: '- Prefer dark mode',
+        updatedAt: Date.now(),
+      },
+      {
+        id: 'feedback_density',
+        name: 'Density feedback',
+        description: 'Keep operational screens compact.',
+        type: 'feedback',
+        body: '- Prefer dense tables for operations',
+        updatedAt: Date.now(),
+      },
+    ];
+    const memoryTree = () => ({
+      tree: [
+        {
+          id: 'folder-user',
+          parentId: null,
+          path: '/USER',
+          name: 'User',
+          kind: 'folder',
+          scope: 'global',
+          childrenCount: entries.filter((entry) => entry.type === 'user').length,
+          sourcePacketIds: [],
+          proposalIds: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        ...entries
+          .filter((entry) => entry.type === 'user')
+          .map((entry) => ({
+            id: entry.id,
+            parentId: 'folder-user',
+            path: `/USER/${entry.id}`,
+            name: entry.name,
+            description: entry.description,
+            kind: 'entry',
+            type: entry.type,
+            scope: 'global',
+            sourcePacketIds: [],
+            proposalIds: [],
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date(entry.updatedAt).toISOString(),
+          })),
+        {
+          id: 'folder-feedback',
+          parentId: null,
+          path: '/FEEDBACK',
+          name: 'Feedback',
+          kind: 'folder',
+          scope: 'global',
+          childrenCount: entries.filter((entry) => entry.type === 'feedback').length,
+          sourcePacketIds: [],
+          proposalIds: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        ...entries
+          .filter((entry) => entry.type === 'feedback')
+          .map((entry) => ({
+            id: entry.id,
+            parentId: 'folder-feedback',
+            path: `/FEEDBACK/${entry.id}`,
+            name: entry.name,
+            description: entry.description,
+            kind: 'entry',
+            type: entry.type,
+            scope: 'global',
+            sourcePacketIds: [],
+            proposalIds: [],
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date(entry.updatedAt).toISOString(),
+          })),
+      ],
+    });
+
+    await page.route('**/api/memory', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          enabled: true,
+          chatExtractionEnabled: true,
+          rootDir: '/tmp/memory',
+          index: '# Memory\n',
+          entries,
+          extraction: null,
+        }),
+      });
+    });
+    await page.route('**/api/memory/tree', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(memoryTree()) });
+    });
+    await page.route('**/api/memory/extractions', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '{"extractions":[]}' });
+    });
+    await page.route('**/api/memory/events', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'text/event-stream', body: '' });
+    });
+    await page.route('**/api/memory/user_ui_preferences', async (route) => {
+      const method = route.request().method();
+      if (method === 'GET') {
+        const entry = entries.find((item) => item.id === 'user_ui_preferences')!;
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ entry }) });
+        return;
+      }
+      if (method === 'PUT') {
+        const body = route.request().postDataJSON() as {
+          name: string;
+          description: string;
+          type: string;
+          body: string;
+        };
+        entries = entries.map((entry) =>
+          entry.id === 'user_ui_preferences'
+            ? { ...entry, ...body, type: body.type as 'user' | 'feedback', updatedAt: Date.now() }
+            : entry,
+        );
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ entry: entries.find((item) => item.id === 'user_ui_preferences') }),
+        });
+        return;
+      }
+      if (method === 'DELETE') {
+        entries = entries.filter((entry) => entry.id !== 'user_ui_preferences');
+        await route.fulfill({ status: 204, body: '' });
+        return;
+      }
+      await route.fulfill({ status: 405, body: '' });
+    });
+
+    const dialog = await openMemorySettings(page);
+    await expect(dialog.getByText('2 saved')).toBeVisible();
+    await dialog.getByRole('button', { name: 'User 1' }).click();
+    await expect(dialog.getByText('UI preferences')).toBeVisible();
+    await expect(dialog.getByText('Density feedback')).toHaveCount(0);
+
+    const card = dialog.locator('.library-card', { hasText: 'UI preferences' }).first();
+    await card.getByTitle('Edit').click();
+    const editor = dialog.locator('.memory-manual-panel');
+    await editor.locator('input').nth(0).fill('Updated UI preferences');
+    await editor.locator('input').nth(1).fill('Updated rendering preferences');
+    await editor.locator('textarea').fill('- Prefer compact, high-contrast controls');
+    await dialog.getByRole('button', { name: 'Save', exact: true }).click();
+
+    await expect(dialog.getByText('Updated UI preferences')).toBeVisible();
+    await expect(dialog.getByText('UI preferences', { exact: true })).toHaveCount(0);
+    await expect(dialog.getByRole('button', { name: 'User 1' })).toBeVisible();
+
+    await dialog.locator('.library-card', { hasText: 'Updated UI preferences' }).first().getByTitle('Delete').click();
+    await expect(dialog.getByText('Updated UI preferences')).toHaveCount(0);
+    await expect(dialog.getByText('1 saved')).toBeVisible();
+    await expect(dialog.getByRole('button', { name: 'User 0' })).toBeVisible();
+
+    await dialog.getByRole('button', { name: 'All 1' }).click();
+    await expect(dialog.getByText('Density feedback')).toBeVisible();
+    await expect(dialog.getByRole('button', { name: 'Feedback 1' })).toBeVisible();
+  });
+
+  test('[P1] creates a memory entry and keeps it visible after reopening settings', async ({ page }) => {
     await seedSettingsBase(page);
 
     let enabled = true;
@@ -353,7 +544,7 @@ test.describe('Settings Memory and Automations flows', () => {
     await expect(reopened.getByText('Persistent rendering preferences')).toBeVisible();
   });
 
-  test('disables memory injection and keeps the disabled banner after reopening settings', async ({ page }) => {
+  test('[P1] disables memory injection and keeps the disabled banner after reopening settings', async ({ page }) => {
     await seedSettingsBase(page);
 
     let enabled = true;
@@ -407,7 +598,7 @@ test.describe('Settings Memory and Automations flows', () => {
     await expect(reopened.locator('.memory-disabled-banner')).toBeVisible();
   });
 
-  test('toggles Learn from chats and keeps the setting after reopening Memory', async ({ page }) => {
+  test('[P1] toggles Learn from chats and keeps the setting after reopening Memory', async ({ page }) => {
     await seedSettingsBase(page);
 
     let enabled = true;
@@ -488,7 +679,7 @@ test.describe('Settings Memory and Automations flows', () => {
     ).not.toBeChecked();
   });
 
-  test('opens Connectors from Import from apps Manage action', async ({ page }) => {
+  test('[P1] opens Connectors from Import from apps Manage action', async ({ page }) => {
     await seedSettingsBase(page);
 
     await page.route('**/api/memory', async (route) => {
@@ -579,7 +770,7 @@ test.describe('Settings Memory and Automations flows', () => {
     await expect(dialog.getByText('Composio API Key', { exact: true })).toBeVisible();
   });
 
-  test('scans connected apps from Import from apps and shows suggested memories', async ({ page }) => {
+  test('[P1] scans connected apps from Import from apps and shows suggested memories', async ({ page }) => {
     await seedSettingsBase(page);
 
     const suggestionBodies: Array<Record<string, unknown>> = [];
@@ -735,7 +926,7 @@ test.describe('Settings Memory and Automations flows', () => {
     ]);
   });
 
-  test('keeps connector authorization pending after reopening Import from apps', async ({ page }) => {
+  test('[P1] keeps connector authorization pending after reopening Import from apps', async ({ page }) => {
     await seedSettingsBase(page);
 
     await page.addInitScript(() => {
@@ -868,7 +1059,7 @@ test.describe('Settings Memory and Automations flows', () => {
     await expect(reopenedGithubRow.getByRole('button', { name: 'Connect GitHub' })).toBeDisabled();
   });
 
-  test('completes connector authorization callback and scans the newly connected app', async ({ page }) => {
+  test('[P1] completes connector authorization callback and scans the newly connected app', async ({ page }) => {
     await seedSettingsBase(page);
 
     await page.addInitScript(() => {
@@ -1069,7 +1260,7 @@ test.describe('Settings Memory and Automations flows', () => {
     ]);
   });
 
-  test('keeps mixed connector states and scan selection stable across connected, newly authorized, and still-available apps', async ({ page }) => {
+  test('[P1] keeps mixed connector states and scan selection stable across connected, newly authorized, and still-available apps', async ({ page }) => {
     await seedSettingsBase(page);
 
     await page.addInitScript(() => {
@@ -1316,7 +1507,7 @@ test.describe('Settings Memory and Automations flows', () => {
     ]);
   });
 
-  test('reconciles selected apps when a connected source disconnects and later reconnects', async ({ page }) => {
+  test('[P1] reconciles selected apps when a connected source disconnects and later reconnects', async ({ page }) => {
     await seedSettingsBase(page);
 
     await page.route('**/api/memory', async (route) => {
@@ -1521,7 +1712,7 @@ test.describe('Settings Memory and Automations flows', () => {
     ]);
   });
 
-  test('saves selected suggested memories from connected apps into Saved memory', async ({ page }) => {
+  test('[P1] saves selected suggested memories from connected apps into Saved memory', async ({ page }) => {
     await seedSettingsBase(page);
 
     let entries: Array<{
@@ -1682,7 +1873,7 @@ test.describe('Settings Memory and Automations flows', () => {
     await expect(dialog.getByText('1 saved')).toBeVisible();
   });
 
-  test('shows connected app scan diagnostics when reading selected apps fails', async ({ page }) => {
+  test('[P1] shows connected app scan diagnostics when reading selected apps fails', async ({ page }) => {
     await seedSettingsBase(page);
 
     await page.route('**/api/memory', async (route) => {
@@ -1791,7 +1982,7 @@ test.describe('Settings Memory and Automations flows', () => {
     await expect(dialog.getByText('Could not read Notion')).toBeVisible();
   });
 
-  test('refreshes and clears extraction history from Saved memory', async ({ page }) => {
+  test('[P1] refreshes and clears extraction history from Saved memory', async ({ page }) => {
     await seedSettingsBase(page);
 
     await page.addInitScript(() => {
@@ -1883,7 +2074,7 @@ test.describe('Settings Memory and Automations flows', () => {
     await expect(dialog.getByText('Remember I prefer dense dashboards')).toHaveCount(0);
   });
 
-  test('keeps the memory editor open when creating a memory entry fails', async ({ page }) => {
+  test('[P1] keeps the memory editor open when creating a memory entry fails', async ({ page }) => {
     await seedSettingsBase(page);
 
     await page.route('**/api/memory', async (route) => {
@@ -1946,7 +2137,7 @@ test.describe('Settings Memory and Automations flows', () => {
     await expect(dialog.getByText('No memory yet.')).toBeVisible();
   });
 
-  test('creates an automation from the main Automations surface and runs it now', async ({ page }) => {
+  test('[P1] creates an automation from the main Automations surface and runs it now', async ({ page }) => {
     await seedSettingsBase(page);
 
     const projects = [{ id: 'proj-1', name: 'Routine Test Project' }];
@@ -2033,6 +2224,7 @@ test.describe('Settings Memory and Automations flows', () => {
     });
 
     await gotoEntryHome(page);
+    await ensureRailOpen(page);
     await page.getByTestId('entry-nav-tasks').click();
     const view = page.getByTestId('tasks-view');
     await expect(view.getByRole('heading', { name: 'Automations', exact: true })).toBeVisible();
@@ -2052,7 +2244,7 @@ test.describe('Settings Memory and Automations flows', () => {
     await expect(row.getByRole('button', { name: 'Open result' })).toBeVisible();
   });
 
-  test('keeps the automation modal open when creating an automation fails', async ({ page }) => {
+  test('[P1] keeps the automation modal open when creating an automation fails', async ({ page }) => {
     await seedSettingsBase(page);
 
     const projects = [{ id: 'proj-1', name: 'Routine Test Project' }];
@@ -2103,6 +2295,7 @@ test.describe('Settings Memory and Automations flows', () => {
     });
 
     await gotoEntryHome(page);
+    await ensureRailOpen(page);
     await page.getByTestId('entry-nav-tasks').click();
     const view = page.getByTestId('tasks-view');
 

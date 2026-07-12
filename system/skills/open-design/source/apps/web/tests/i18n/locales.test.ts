@@ -32,7 +32,7 @@ async function loadDict(locale: Locale): Promise<Dict> {
 
 function explicitLocaleKeys(locale: Locale): string[] {
   const source = readFileSync(new URL(`../../src/i18n/locales/${locale}.ts`, import.meta.url), 'utf8');
-  return Array.from(source.matchAll(/'([^']+)':/g), (match) => match[1] ?? '').filter(Boolean);
+  return Array.from(source.matchAll(/^\s*['"]([^'"]+)['"]:/gm), (match) => match[1] ?? '').filter(Boolean);
 }
 
 describe('i18n locales', () => {
@@ -157,6 +157,31 @@ describe('i18n locales', () => {
     }
   });
 
+  it('keeps Routines settings page copy translated in Chinese (issue #1372)', () => {
+    const translatedKeys: Array<keyof Dict> = [
+      'routines.title',
+      'routines.subtitle',
+      'routines.newAutomation',
+      'routines.runNow',
+      'routines.pause',
+      'routines.resume',
+      'routines.history',
+      'routines.delete',
+      'routines.describe.daily',
+      'routines.describe.weekly',
+      'routines.status.succeeded',
+      'routines.status.failed',
+      'routines.modeCreate',
+      'routines.confirmDelete',
+      'routines.errorPickProject',
+    ];
+
+    for (const key of translatedKeys) {
+      expect(zhCN[key], `zh-CN.${key}`).not.toBe(en[key]);
+      expect(zhTW[key], `zh-TW.${key}`).not.toBe(en[key]);
+    }
+  });
+
   it('declares CI-sensitive Indonesian fallback keys explicitly', () => {
     const explicitKeys = new Set(explicitLocaleKeys('id'));
     const requiredExplicitKeys = Object.keys(en).filter((key) => {
@@ -170,5 +195,87 @@ describe('i18n locales', () => {
     const source = readFileSync(new URL('../../src/i18n/locales/id.ts', import.meta.url), 'utf8');
 
     expect(source).not.toMatch(/en\['(?:connectors\.category\.|liveArtifact\.viewer\.)/);
+  });
+
+  // Tier-1 locale parity lock (issue #1894):
+  //
+  // Most locale modules use `...en` spread so missing translations silently
+  // fall back to English at runtime — that satisfies the dictionary-shape
+  // test above (`Object.keys(dict)` is complete) but hides drift between
+  // English and the rendered locale. `zh-CN` is the one locale today that
+  // declares every key explicitly with no `...en` spread, so a new English
+  // key without a matching `zh-CN` entry is a *real* hole, not a benign
+  // fallback. The two cases below lock that property in place: any future
+  // PR that lets `zh-CN` drift, or reintroduces an implicit spread, fails
+  // CI loudly instead of regressing translation coverage in silence.
+  it('keeps zh-CN explicitly translated for every English key (tier-1 parity lock)', () => {
+    const englishKeys = Object.keys(en).sort();
+    const explicit = explicitLocaleKeys('zh-CN').sort();
+
+    expect(
+      explicit,
+      'zh-CN must explicitly declare every English key (no implicit `...en` spread fallback). ' +
+        'Add the missing translations to `apps/web/src/i18n/locales/zh-CN.ts` rather than re-introducing the spread.',
+    ).toEqual(englishKeys);
+  });
+
+  it('keeps the zh-CN locale source free of the `...en` spread fallback', () => {
+    const source = readFileSync(
+      new URL('../../src/i18n/locales/zh-CN.ts', import.meta.url),
+      'utf8',
+    );
+
+    expect(
+      source,
+      'zh-CN.ts must not use `...en` spread — every key must be explicitly translated. ' +
+        'If you need to add new keys, declare them with their Chinese values directly.',
+    ).not.toMatch(/\.\.\.en\b/);
+  });
+
+  // Tier-1 locale parity lock for Japanese (matches the zh-CN guarantee above):
+  // `ja` is now fully localized — every English key has an explicit Japanese
+  // value with no `...en` spread fallback. These two cases keep that property
+  // from regressing: a new English key without a matching `ja` entry, or a
+  // reintroduced spread, fails CI loudly instead of silently rendering English
+  // to Japanese users.
+  it('keeps ja explicitly translated for every English key (tier-1 parity lock)', () => {
+    const englishKeys = Object.keys(en).sort();
+    const explicit = explicitLocaleKeys('ja').sort();
+
+    expect(
+      explicit,
+      'ja must explicitly declare every English key (no implicit `...en` spread fallback). ' +
+        'Add the missing translations to `apps/web/src/i18n/locales/ja.ts` rather than re-introducing the spread.',
+    ).toEqual(englishKeys);
+  });
+
+  it('keeps the ja locale source free of the `...en` spread fallback', () => {
+    const source = readFileSync(
+      new URL('../../src/i18n/locales/ja.ts', import.meta.url),
+      'utf8',
+    );
+
+    expect(
+      source,
+      'ja.ts must not use `...en` spread — every key must be explicitly translated. ' +
+        'If you need to add new keys, declare them with their Japanese values directly.',
+    ).not.toMatch(/\.\.\.en\b/);
+  });
+
+  // Brand / proper-noun lock: these labels are product or technical proper
+  // nouns and must stay verbatim English in EVERY locale, never translated.
+  // (e.g. the plugin-details "Integrity" field was wrongly localized to
+  // 完整性 / Integrität / etc.; lock it so a future translation pass can't
+  // re-localize it.)
+  it('keeps brand/proper-noun labels verbatim English across every locale', async () => {
+    const verbatim: Array<{ key: keyof Dict; value: string }> = [
+      { key: 'plugins.availableDetails.integrity', value: 'Integrity' },
+    ];
+    for (const locale of LOCALES) {
+      const dict = await loadDict(locale);
+      for (const { key, value } of verbatim) {
+        expect(dict[key], `${locale}.${String(key)}`).toBe(value);
+      }
+    }
   });
 });

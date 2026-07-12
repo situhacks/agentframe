@@ -1,17 +1,15 @@
-## HyperFrames Skill Vendor Record
+# HyperFrames vendor record
 
-- Upstream repository: `https://github.com/heygen-com/hyperframes`
-- Snapshot date (UTC): `2026-05-10`
-- Source location in AgentFrame: `system/skills/hyperframes/`
+- Upstream: `https://github.com/heygen-com/hyperframes`
+- Source ref: `58a36d70788ebdbef716bc804474ff23d758afc7`
+- Snapshot date (UTC): `2026-07-11`
+- Source location: `system/skills/hyperframes/source/`
+- License: Apache-2.0 (`source/LICENSE`)
 
-### Purpose
+## Scope
 
-Track the upstream source and refresh procedure for the vendored HyperFrames authoring skill.
+This is the full upstream repository, excluding `.git/`. Its complete `source/skills/` library is available through the upstream HyperFrames router.
 
-### Refresh Procedure
+## Refresh
 
-1. Clone upstream to a temporary directory at the target commit.
-2. Remove `system/skills/hyperframes/` from this repo.
-3. Copy the curated AgentFrame HyperFrames skill files into `system/skills/hyperframes/`.
-4. Reapply AgentFrame-specific overlays (launch-video references, routing notes, local constraints) and verify this file still exists.
-5. Remove the temporary clone directory.
+Clone the source ref, replace `source/`, remove `.git/`, restore this record and the AgentFrame entry skill, then verify `source/LICENSE`, `source/packages/studio/`, and `source/skills/hyperframes/SKILL.md` are present.

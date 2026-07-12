@@ -29,6 +29,8 @@ print(page_info())
 
 The wrapper intentionally uses a dedicated Edge profile under `system/browser/local/` so browser-harness does not attach to an arbitrary personal or work browser profile.
 
+AgentFrame uses Browser Harness locally only. Do not authenticate to, start, or route work through its cloud-browser, remote-daemon, or profile-sync paths.
+
 ## Runtime Storage
 
 The following paths are local runtime state and are not workflow memory:

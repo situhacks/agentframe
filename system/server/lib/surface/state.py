@@ -1,4 +1,4 @@
-"""Deterministic project-state readers for the local surface.
+"""Deterministic project-state readers for the Workspace Dashboard.
 
 Scanner contract (see the V2 plan): active projects live at root-level
 ``workspace/projects/*`` and historical projects live one level below

@@ -1,4 +1,4 @@
-"""Tornado JSON handlers for the local surface.
+"""Tornado JSON handlers for the Workspace Dashboard.
 
 Mounted by ``system/server/lib/server.py`` in front of livereload's static
 route. Everything reads through the tested ``state``/``artifacts``/``snapshot``
@@ -98,7 +98,38 @@ class ActivityHandler(_JsonHandler):
 
 class ProjectsHandler(_JsonHandler):
     def get(self):
-        self.emit({"projects": self.cache.get()["projects"]})
+        project_filter = self.get_argument("filter", "active")
+        if project_filter not in {"active", "completed", "all"}:
+            self.fail(400, "filter must be active, completed, or all")
+            return
+        self.emit({"projects": project_summaries(self.root, self.cache.get(), project_filter)})
+
+
+def project_summaries(root: Path, snap: dict, project_filter: str = "active") -> list[dict]:
+    """Preview-rail projects, retaining richer dashboard data for active work."""
+    active = {project["slug"]: project for project in snap["projects"]}
+    projects = []
+    for project in state.scan_projects(root, include_completed=True):
+        status = project.get("status")
+        if project_filter == "active" and status != "active":
+            continue
+        if project_filter == "completed" and status != "complete":
+            continue
+        summary = active.get(project["slug"])
+        if summary is None:
+            updated = project.get("last_activity") or project.get("completed_at") or project.get("cancelled_at")
+            summary = {
+                "slug": project["slug"],
+                "name": project.get("name"),
+                "status": status,
+                "flow": project.get("flow"),
+                "current_phase": project.get("current_phase"),
+                "last_updated": updated,
+                "last_updated_label": snapshot.humanize_project_updated(updated),
+                "attention_count": 0,
+            }
+        projects.append(summary)
+    return projects
 
 
 class ProjectHandler(_JsonHandler):
@@ -107,14 +138,14 @@ class ProjectHandler(_JsonHandler):
             if project["slug"] == slug:
                 self.emit({"project": project})
                 return
-        self.fail(404, f"no active project '{slug}'")
+        self.fail(404, f"no project '{slug}'")
 
 
 class ArtifactsHandler(_JsonHandler):
     def get(self, slug):
         project = self.find_project(slug)
         if project is None:
-            self.fail(404, f"no active project '{slug}'")
+            self.fail(404, f"no project '{slug}'")
             return
         pdir = Path(project["dir"])
         groups = artifacts.artifact_groups(pdir, project["deliverables"])
@@ -147,7 +178,7 @@ class ProjectFilesHandler(_JsonHandler):
     def get(self, slug):
         project = self.find_project(slug)
         if project is None:
-            self.fail(404, f"no active project '{slug}'")
+            self.fail(404, f"no project '{slug}'")
             return
         file_class = self.get_argument("class", None)
         narrow_type = self.get_argument("type", None)
@@ -166,7 +197,7 @@ class ArtifactDetailHandler(_JsonHandler):
     def get(self, slug, group_id):
         project = self.find_project(slug)
         if project is None:
-            self.fail(404, f"no active project '{slug}'")
+            self.fail(404, f"no project '{slug}'")
             return
         pdir = Path(project["dir"])
         if group_id == "untracked":
@@ -196,7 +227,7 @@ class PreviewHandler(_JsonHandler):
             return
         project = self.find_project(slug)
         if project is None:
-            self.fail(404, f"no active project '{slug}'")
+            self.fail(404, f"no project '{slug}'")
             return
         pdir = Path(project["dir"])
         resolved = snapshot.resolve_in_project(pdir, rel)
@@ -238,7 +269,7 @@ class _JsonBodyHandler(_JsonHandler):
             return None
         project = self.find_project(slug)
         if project is None:
-            self.fail(404, f"no active project '{slug}'")
+            self.fail(404, f"no project '{slug}'")
             return None
         resolved = snapshot.resolve_in_project(Path(project["dir"]), rel)
         if resolved is None:
@@ -306,7 +337,7 @@ class HideHandler(_JsonBodyHandler):
             return
         _, resolved = result
         marker = resolved / ".preview-hide"
-        marker.write_text("hidden via AgentFrame local surface\n", encoding="utf-8")
+        marker.write_text("hidden via AgentFrame Workspace Dashboard\n", encoding="utf-8")
         self.emit({"ok": True, "marker": str(marker)})
 
 

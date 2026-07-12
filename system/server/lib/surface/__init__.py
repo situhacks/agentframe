@@ -1,4 +1,4 @@
-"""AgentFrame local surface: deterministic dashboard/preview data layer.
+"""AgentFrame Workspace Dashboard: deterministic dashboard/preview data layer.
 
 Reads workspace files only — no LLM calls, no network. Modules:
 

@@ -2,17 +2,9 @@
 
 ![AgentFrame — a file-native AI workspace for context, projects, and agents](.github/readme-assets/banner.svg)
 
-AgentFrame is a file-native AI workspace for running real work inside coding agents. It gives the model a durable map of your projects, context, decisions, deliverables, tools, and feedback loops, then gets out of the way so the model can do what it is already good at.
+AgentFrame is a file-native AI workspace that runs inside your coding agent — Claude Code, Codex, Cursor, VS Code, Antigravity, or whatever you already use. It keeps your projects, context, deliverables, decisions, and feedback loops as plain files the model can read, so the agent picks up real work exactly where it was left, and gets out of the way for the parts the model is already good at.
 
-I am not a software engineer. I built AgentFrame because raw chat windows were a bad place to manage several projects at once: context disappeared, decisions drifted, files forked, and every new session needed the same briefing. The answer was not another AI wrapper. It was a workspace that made the context legible enough for any capable coding agent to pick up the work.
-
-AgentFrame now combines three layers:
-
-- **Prompt engineering:** reusable personas, templates, process files, and production rules.
-- **Context engineering:** a graph of plain files that tells the agent what to load, what owns the truth, and what can stay out of context until it is needed.
-- **Loop engineering:** bounded goals, iteration budgets, checkpoints, deterministic gates, independent review, and retros that improve the system after the work ships.
-
-The default is a domain-neutral **open-flow project**. Give it an objective and it proposes a plan scaled to the work. Marketing, governed project management, and careers add stronger structures when those structures are useful; they are not required to make the workspace useful.
+I'm not a software engineer. I built this because I run long projects with AI every day, and the workspace is what makes that work — every template, process, and rule in here has been used on real shipped work. It's free to fork; take whatever is useful for your own setup.
 
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" /></a>
@@ -20,47 +12,88 @@ The default is a domain-neutral **open-flow project**. Give it an objective and 
   <img alt="Status" src="https://img.shields.io/badge/status-actively%20used-orange?style=flat-square" />
 </p>
 
-## What makes it different
+## Table of contents
 
-### One workspace, many projects, many agents
+- [Why this exists](#why-this-exists)
+- [Key features](#key-features)
+- [Quick start](#quick-start)
+- [What it can run](#what-it-can-run)
+- [A real project, step by step](#a-real-project-step-by-step)
+- [At a glance](#at-a-glance)
+- [Architecture](#architecture)
+- [The Workspace Dashboard](#the-workspace-dashboard)
+- [Repository map](#repository-map)
+- [Integrations](#integrations)
+- [Auditability](#auditability)
+- [Design constraints](#design-constraints)
+- [Contributing](#contributing)
+- [References and lineage](#references-and-lineage)
+- [License](#license)
+- [Contact](#contact)
 
-Each project carries its own objective, plan, source material, working knowledge, deliverable tracker, and activity history. I can run agents against different projects in parallel without asking a chat thread to remember which facts belong where. A new agent can reconstruct the state from disk after a provider switch, a memory compaction, or a month away.
+## Why this exists
 
-### The open project is the universal surface
+I built the first version of AgentFrame to run marketing campaigns, because working on copy and strategy in raw chat windows meant losing context every session — decisions drifted, files forked, and every new chat needed the same briefing. Moving the work into structured files fixed that, and the marketing system worked well enough that I shipped a whole campaign series through it.
 
-`project-mgmt + open-flow` is the default because a project is the lowest useful denominator for knowledge work. It adds no domain-specific fields and derives no governance ceremony. The agent proposes only the phases and artifacts the objective needs, and every tracked deliverable still gets versioning, state, review, and history.
+Then I noticed what I was actually doing with it. I kept pointing the marketing system at work that had nothing to do with marketing — PowerPoint redesigns, document deliverables, little research jobs — by dressing them up as "campaigns" so the system would accept them. It worked, and that was the tell. Managing activity state, deliverable versions, and a production pipeline was never really marketing; the system had been doing context management the whole time, and marketing was just the first thing I pointed it at.
 
-You do not need to author a domain pack before AgentFrame can help. Packs exist for repeated work where a stronger schema, vocabulary, or gate has earned its place.
+<!-- IMAGE STUB · slot: realization-hero · shows: the context-management core revealed beneath the marketing-specific shell — same visual family as the release post's image, campaign design language -->
 
-### Files are the memory; the interface is derived
+So I rebuilt it around that. The core unit is now the **project** — the smallest useful denominator of knowledge work, flexible enough for anything you can throw at a frontier model, because underneath, all of it is context management. Marketing became one domain pack among several instead of the whole identity. Along the way the workspace picked up the features I'm proudest of: domain-agnostic projects, long-horizon memory that consolidates instead of forgetting, a voice system trained on my real edits, versioned deliverables, a career workspace, and more — the full tour is in [Key features](#key-features).
 
-The Local Surface looks like an application: dashboard, attention queue, project calendar, timeline, work blocks, previews, and multi-format viewers. Underneath, it is a Python server reading the same markdown and media files the agents use. There is no second project database to reconcile and no LLM call required to render it.
+The original marketing-only system is frozen at [agentframe-marketing](https://github.com/situhacks/agentframe-marketing). This repository is its successor.
 
-That is the point of the dashboard. It is proof that the workspace state is coherent enough to become an interface without first being translated into another system.
+## Key features
 
-### Buttons own mechanics; agents own judgment
+AgentFrame is three layers on one file substrate: **prompt engineering** (reusable personas, templates, and process files — the disciplined version of what everyone was doing in 2023), **context engineering** (a file graph that decides what the model sees, which is where most of the value lives), and **loop engineering** (the exploratory edge — bounded autonomous runs, where the market is heading now). Any coding agent that reads files can drive all three.
 
-Models are strong at research, synthesis, critique, and drafting. They are less reliable at remembering exact bookkeeping steps for months. `system/af.py` therefore owns state transitions such as project creation, versioning, locking, publishing, pipeline movement, doctor checks, and autonomous-run checkpoints.
+<!-- IMAGE STUB · slot: three-layers · shows: prompt / context / loop engineering as one visual, context as the core layer -->
 
-The command changes the files and writes the paper trail atomically, then hands the judgment back to the agent. Required export, verification, and state gates are enforced in code instead of being left as polite instructions.
+### Context engineering — a project never needs a re-briefing
 
-### Context loads as a graph, not a giant prompt
+**Full state reconstructs from disk.** After a memory compaction, a provider switch, or a month away, a fresh agent reads the project files and continues mid-stream — no "let me catch you up" paragraph, no re-uploading the brief.
 
-Only the active persona loads by default. Project state points to the selected flow; the flow points to the process or template needed for the current step; skills load only when the work calls for them. Raw sources remain separate from distilled working knowledge, and long-running projects periodically consolidate resolved detail into archives.
+**Raw sources and distilled knowledge are kept apart.** Transcripts and briefs land in `sources/` and never get edited; the agent maintains its working understanding in `knowledge/`. When a long project accumulates resolved detail, a consolidation pass archives it instead of deleting it, so active files stay lean without losing the history.
 
-The result is a large workspace with a deliberately small active context window.
+**The workspace loads lazily.** Only the active persona loads by default; project state points to the flow, the flow points to the process the current step needs, and skills load only when the work calls for them. A large workspace with a deliberately small active context window — which also keeps token costs sane.
 
-### The system learns from finished work
+<!-- IMAGE STUB · slot: context-graph · shows: D2 mini-diagram — project → flow → process → skill, each loading only what the step needs -->
 
-Project closeout is not just an archive step. AgentFrame compares drafts, manual edits, locked outputs, and workflow friction to propose improvements to templates, processes, and voice.
+### Prompt engineering — templates, processes, and a voice that reads from real edits
 
-The voice system is anchored in complete pieces I would actually publish, then steered with channel-specific registers and annotated contrastive pairs showing how I rewrite generic AI prose. The full pieces provide the imitation target; the pairs teach the moves.
+**Templates and process files are the durable product.** Every deliverable shape and workflow procedure in the library was refined on real work. Models and tools can change around them.
 
-### Autonomy is a contract, not a vibe
+**The voice system writes like me because it reads my edits.** It anchors on complete pieces I actually published, layers channel-specific registers on top, and learns moves from contrastive pairs mined from my real revision passes. I'm still refining it against the latest work on voice fidelity, and it has improved immensely the more work I run through it.
 
-For work that benefits from iteration, bounded-autonomy runs declare the goal, evidence of completion, allowed write paths, model roles, iteration and subagent budgets, checkpoints, reviewer mode, and stop conditions. The frontier model plans and controls; economical scouts can gather context; workhorse executors implement bounded units; an independent reviewer challenges completion when the run is unattended.
+**Domain packs add structure only where repeated work earned it.** Marketing, project management, and careers ship today; a new domain is a folder of templates and a descriptor, with zero changes to the core engine. My read on the market is that the big model makers are converging on this same pattern — domain packs on a core platform, the way Anthropic ships Claude for Financial Services. AgentFrame applies it to a local workspace, on a context-management substrate that keeps it flexible.
 
-The loop can move quickly without quietly expanding its own authority.
+<!-- IMAGE STUB · slot: voice-pair · shows: one real contrastive pair — a generic AI line beside the operator's rewrite, rendered as a styled snippet -->
+
+### The deterministic spine — buttons own mechanics, agents own judgment
+
+**State transitions run as commands.** Models are strong at research, synthesis, and drafting, and unreliable at remembering exact bookkeeping steps for months. So `system/af.py` owns project creation, versioning, locking, publishing, and doctor checks: one command changes the files and records the event atomically, then hands judgment back to the agent.
+
+**Deliverables are versioned like code.** Immutable snapshots, a head pointer, and lock gates before anything ships — plus real exports when the destination needs a file rather than a chat message. The payoff is traceability: what changed, when, and why, for every piece of work.
+
+**Everything leaves a paper trail at near-zero cost.** Activity logs, version notes, an append-only audit database, and `af doctor` checks that report drift without silently fixing it. That trail is what makes the dashboard renderable and gives the learning loop below its raw material.
+
+<!-- IMAGE STUB · slot: spine-flow · shows: D2 flow — draft → version → lock → gate → publish, with the paper trail written underneath each step -->
+
+### Self-improvement — invoked, not automatic
+
+**The system learns from finished work.** When a project closes, harvest passes compare drafts, my manual edits, and workflow friction, then propose upgrades to templates, processes, and the voice corpus. The improvement is deliberate: I decide when a body of work has earned a harvest.
+
+**Loop engineering is the part I'm still exploring.** Bounded-autonomy runs declare a goal, evidence of completion, iteration budgets, checkpoints, and an independent reviewer before the agent works unattended. Today that's one process file — [`bounded-autonomy.md`](library/process/bounded-autonomy.md) — and I expect it to grow as I figure out what works in practice.
+
+### Standing on community shoulders
+
+The production capabilities — deck generation, advanced visuals, video composition, prose humanizing, deep research — are vendored from well-known, well-used community projects rather than rebuilt from scratch. Each one carries my own tweaks and builds layered on top without forking the whole thing, so upstream improvements can still flow in while the customizations persist. The full catalog, with what's vendored and what's internal, is in [At a glance](#at-a-glance).
+
+### The Workspace Dashboard — proof the files are coherent
+
+There's also a dashboard: projects, attention items, calendar, and a timeline, rendered straight from the same markdown the agents use. Honestly, I mostly use it for the at-a-glance view (and a little vanity), but it proves a point I care about — the workspace state is coherent enough to become an interface **with no second database and no LLM call**. Details in [The Workspace Dashboard](#the-workspace-dashboard).
+
+<!-- IMAGE STUB · slot: dashboard-hero · shows: one Workspace Dashboard screenshot — active projects, attention queue, calendar -->
 
 ## Quick start
 
@@ -73,17 +106,17 @@ The loop can move quickly without quietly expanding its own authority.
 
 2. Open the folder in Claude Code, Codex, Cursor, VS Code, Antigravity, or another coding agent that can read and write the workspace.
 
-3. Copy `.env.example` to `.env` if you want optional Gemini or Composio integrations. The local workspace, CLI, project system, and Local Surface work without API keys.
+3. Copy `.env.example` to `.env` if you want the optional Gemini or Composio integrations. The workspace, CLI, project system, and dashboard all run without API keys.
 
-4. Tell the agent: **“Swap to Operator and start a new project.”** The default command is equivalent to:
+4. Tell the agent: **"Swap to Operator and start a new project."** Under the hood that's:
 
    ```bash
    python system/af.py new-project my-project --domain project-mgmt --flow open-flow
    ```
 
-   The agent will propose a plan scaled to the objective. Nothing governed is created unless the work needs it.
+   The agent proposes a plan scaled to your objective. Nothing governed is created unless the work needs it.
 
-5. Install the Local Surface dependencies, then open it:
+5. Optionally, start the Workspace Dashboard:
 
    ```bash
    pip install -r system/server/requirements.txt
@@ -92,45 +125,60 @@ The loop can move quickly without quietly expanding its own authority.
 
 ### Modes
 
-AgentFrame uses two generated `AGENTS.md` personas with a hard ownership boundary:
+Two generated `AGENTS.md` personas with a hard ownership boundary:
 
 - **Operator** runs projects and career work under `workspace/` and reads the system on demand.
 - **Builder** evolves the templates, packs, processes, personas, CLI, and runtime under `library/` and `system/`.
 
-Mode swaps copy the canonical persona and append the transition to the local audit database in one operation. The CLI refuses Operator state transitions while Builder is active.
+Mode swaps copy the canonical persona and append the transition to the local audit database in one operation, and the CLI refuses Operator state transitions while Builder is active.
 
 ### Pulling upstream changes
 
-Personal context, projects, pipeline data, and the audit database are gitignored. In Builder mode, ask the agent to **“pull upstream AgentFrame updates.”** The upstream-sync skill can walk changes commit by commit or apply a reviewed bulk migration without overwriting the personal layer.
+Personal context, projects, pipeline data, and the audit database are gitignored, so your working layer never collides with updates. In Builder mode, ask the agent to **"pull upstream AgentFrame updates"** — the sync skill walks changes commit by commit, or applies a reviewed bulk migration, without touching the personal layer.
 
 ## What it can run
 
-AgentFrame currently ships three domain packs and two work topologies.
+Three domain packs and two work topologies ship today.
 
 | Surface | What it is for | Default shape |
 |---|---|---|
-| **Open project** | The domain-neutral starting point for research, planning, building, writing, analysis, or any other objective the model and its tools can handle | `project-mgmt` + `open-flow`; no fixed phase ladder or mandatory governance files |
-| **Governed project** | Longer engagements that benefit from a charter, RAID log, stakeholder map, decision log, and workback schedule | `project-mgmt` + opt-in `project-mgmt-open-flow` |
-| **Marketing project** | Research, campaign architecture, copy, visuals, video, decks, publishing, and performance capture | `marketing` + open flow or an opt-in marketing phase ladder |
-| **Career workspace** | Ongoing career context, internal progression, promotion evidence, coach/manager preparation, and structured cases | Career bank + calendar/pipeline + application-shaped case folders |
+| **Open project** | The domain-neutral starting point for research, planning, building, writing, analysis — any objective the model and its tools can handle | `project-mgmt` + `open-flow`; no fixed phase ladder, no mandatory governance files |
+| **Governed project** | Longer engagements that benefit from a charter, RAID log, stakeholder map, decision log, and workback schedule | `project-mgmt` + opt-in governance flow |
+| **Marketing project** | Research, campaign architecture, copy, visuals, video, decks, publishing, and performance capture | `marketing` + open flow or an opt-in phase ladder |
+| **Career workspace** | Ongoing career context, internal progression, promotion evidence, and structured application cases | Career bank + calendar/pipeline + case folders |
 
-### Career development first
-
-The career workspace is designed first as a durable record of work and growth. It can hold role expectations, KPIs, proof points, resume bullets, stories, manager and coach context, employer history, promotion rubrics, cycle dates, and evidence gathered from completed projects. The calendar and pipeline make upcoming conversations, submission dates, and follow-ups visible alongside the rest of the workspace.
-
-An internal promotion case uses the same mechanics as any evidence-backed application: the rubric becomes the requirements source, the JD map becomes a rubric map, gaps become a plan to produce stronger evidence, and the final material can be a deck rather than a resume.
-
-The pack also supports external applications, ATS-aware resume and cover-letter export, and login-free job scouting. I included that complete path because I have built versions of this workflow for students and other people navigating the market. It is one use of the career substrate, not the center of AgentFrame.
+The open project is the default because a project is the lowest useful denominator of knowledge work. You don't need to author a domain pack before AgentFrame helps you; packs exist for repeated work where a stronger schema or gate has earned its place.
 
 ### Technical builds without splitting the brain
 
-When a project phase turns into a proof of concept or application, the code lives in its own repository while AgentFrame keeps the plan, sources, decisions, and build log. Behavior Decision Records turn requirements into observable tests. At graduation, the repository receives compiled native context and AgentFrame stops orchestrating it.
+When a project phase turns into a proof of concept or an application, the code lives in its own repository while AgentFrame keeps the plan, sources, decisions, and build log. At graduation, the repository receives compiled native context and AgentFrame stops orchestrating it — one brain during the build, one deliberate handoff when the project can stand on its own.
 
-One brain during the build; one deliberate context transfer when the project can stand on its own.
+## A real project, step by step
 
-## A marketing project, end to end
+One walkthrough per pack, same spine each time: context in, versioned work through, learning back out.
 
-The marketing pack is the most visual example of the same project spine: context in, versioned work through, learning back out.
+### A governed project
+
+The project-management pack takes a charter and turns it into living context the agent maintains for months.
+
+<table>
+<tr>
+<td width="50%" valign="top"><!-- IMAGE STUB · pm-walkthrough-01 · shows: Operator kickoff — scaffold from the PM skeleton, charter lands in sources/ --><br/><sub><b>1 · Kickoff</b> — Tell the agent to start a new governed project. It scaffolds the workspace from the pack skeleton and files your charter into the project's <code>sources/</code>.</sub></td>
+<td width="50%" valign="top"><!-- IMAGE STUB · pm-walkthrough-02 · shows: the four governance files derived from the charter under knowledge/ --><br/><sub><b>2 · Derive the knowledge base</b> — From the charter, the agent derives living context files under <code>knowledge/</code>: a RAID log, a stakeholder map, a decision log, and a workback schedule.</sub></td>
+</tr>
+<tr>
+<td width="50%" valign="top"><!-- IMAGE STUB · pm-walkthrough-03 · shows: living maintenance — RAID updates from a meeting transcript, decisions appending --><br/><sub><b>3 · Maintain and consolidate</b> — Meeting transcripts land in <code>sources/</code>; the agent updates the RAID log, appends decisions, and re-plans the schedule. On long projects, a consolidation pass archives resolved items so active files stay lean without losing history.</sub></td>
+<td width="50%" valign="top"><!-- IMAGE STUB · pm-walkthrough-04 · shows: a versioned deliverable draft with its -v{N} snapshot trail --><br/><sub><b>4 · Draft deliverables</b> — Findings, memos, and decks are drafted in your voice from the deliverable library, and every replacement-shaped revision becomes an immutable <code>-v{N}</code> snapshot.</sub></td>
+</tr>
+<tr>
+<td width="50%" valign="top"><!-- IMAGE STUB · pm-walkthrough-05 · shows: lock gate passing + a deck export landing in the operator's own template --><br/><sub><b>5 · Deliver</b> — Deliverables pass lock criteria before delivery is recorded, including deck exports in your own PowerPoint template when the destination needs a file.</sub></td>
+<td width="50%" valign="top"><!-- IMAGE STUB · pm-walkthrough-06 · shows: the closeout harvest proposing template/voice updates --><br/><sub><b>6 · Learn</b> — Closeout harvests your manual edits and workflow friction into proposed template, process, and voice improvements.</sub></td>
+</tr>
+</table>
+
+### A marketing campaign
+
+The marketing pack runs the same spine with the most visual output — it's also the pack this workspace grew up in.
 
 <table>
 <tr>
@@ -142,109 +190,123 @@ The marketing pack is the most visual example of the same project spine: context
 <td width="50%" valign="top"><img src=".github/readme-assets/walkthrough-04-image-production.png" alt="Media production" /><br/><sub><b>4 · Produce</b> — Route images, diagrams, decks, carousels, or video through the appropriate production process.</sub></td>
 </tr>
 <tr>
-<td width="50%" valign="top"><img src=".github/readme-assets/walkthrough-05-published.png" alt="Publish" /><br/><sub><b>5 · Deliver</b> — Deterministic gates verify locked copy and landed exports before publishing or delivery is recorded.</sub></td>
+<td width="50%" valign="top"><img src=".github/readme-assets/walkthrough-05-published.png" alt="Publish" /><br/><sub><b>5 · Deliver</b> — Deterministic gates verify locked copy and landed exports before publishing is recorded.</sub></td>
 <td width="50%" valign="top"><img src=".github/readme-assets/walkthrough-06-retro.png" alt="Harvest retro" /><br/><sub><b>6 · Learn</b> — Harvest real edits and workflow friction into proposed voice, template, and process improvements.</sub></td>
 </tr>
 </table>
 
-## Architecture
+### A career workspace
 
-```mermaid
-flowchart TD
-    A["Coding agent"] --> B{"Active persona"}
-    B -->|"Operator"| C["Workspace state"]
-    B -->|"Builder"| D["System and library"]
+The careers pack treats your career as a long-horizon project — the internal one first.
 
-    C --> E{"Work topology"}
-    E -->|"Project"| F["project.md + activity.md"]
-    E -->|"Career case"| G["pipeline.md + application.md"]
+<table>
+<tr>
+<td width="50%" valign="top"><!-- IMAGE STUB · career-walkthrough-01 · shows: the career bank — role expectations, KPIs, proof points, stories --><br/><sub><b>1 · Build the career bank</b> — Role expectations, KPIs, proof points, resume bullets, stories, manager context, promotion rubrics, and cycle dates live as durable files.</sub></td>
+<td width="50%" valign="top"><!-- IMAGE STUB · career-walkthrough-02 · shows: the pipeline board + calendar with upcoming conversations and dates --><br/><sub><b>2 · See what's coming</b> — The calendar and pipeline board make upcoming conversations, submission dates, and follow-ups visible next to the rest of the workspace.</sub></td>
+</tr>
+<tr>
+<td width="50%" valign="top"><!-- IMAGE STUB · career-walkthrough-03 · shows: evidence harvested from completed projects into the bank --><br/><sub><b>3 · Gather evidence</b> — Completed projects already contain your wins; harvest passes turn them into proof points and a running impact record instead of a panic the week before review season.</sub></td>
+<td width="50%" valign="top"><!-- IMAGE STUB · career-walkthrough-04 · shows: a promotion case built as a rubric map + evidence + gaps plan --><br/><sub><b>4 · Run a case</b> — An internal promotion case works like any evidence-backed application: the rubric becomes the requirements source, gaps become a plan, and the final material can be a deck rather than a resume.</sub></td>
+</tr>
+<tr>
+<td width="50%" valign="top"><!-- IMAGE STUB · career-walkthrough-05 · shows: ATS-safe resume/cover exports keyed to the destination system --><br/><sub><b>5 · Produce materials</b> — The same substrate handles external applications when you need it to: ATS-aware resume and cover-letter exports, and login-free job scouting from public feeds.</sub></td>
+<td width="50%" valign="top"><!-- IMAGE STUB · career-walkthrough-06 · shows: dashboard timeline view of career activity across months --><br/><sub><b>6 · Keep the record</b> — Everything accrues back into the bank, so the next case starts from evidence instead of memory.</sub></td>
+</tr>
+</table>
 
-    F --> H["Selected flow"]
-    G --> I["Careers production route"]
-    H --> J["Processes + templates"]
-    I --> J
-    J --> K["Skills + tools"]
+## At a glance
 
-    F --> L["Local Surface"]
-    G --> L
-    F --> M["Consolidation + harvest"]
-    M --> D
-```
-
-### Architectural rules
-
-- **The default project is domain-neutral.** `project-mgmt/open-flow` contributes no domain fields and no mandatory governance ceremony.
-- **Specialization is additive.** Packs declare vocabulary, templates, valid verbs, optional rules, and topology-specific routes.
-- **Files own working truth.** Markdown and media hold project state, context, decisions, and outputs. SQLite is reserved for the append-only system-change audit.
-- **Sources and knowledge are different things.** Immutable inputs live in `sources/`; distilled working context lives in `knowledge/`.
-- **Prose owns judgment; mechanisms guarantee invariants.** The agent decides what good work is. The CLI and hooks protect state, exports, and repeatable gates.
-- **The Local Surface is a reader.** It does not become a competing state owner.
-- **Templates are the durable product.** Skills and runtimes can be replaced without rewriting the deliverable library.
-
-## The capability library
-
-The library is intentionally modular. A project loads only the process and skill needed for the current step, but the complete production stack is already in the box.
-
-### Processes
-
-| Process | What it gives the agent |
-|---|---|
-| `bounded-autonomy` | Goal contracts, authority levels, model routing, budgets, checkpoints, reviewer gates, and stop rules |
-| `browser-fallback` | A controlled browser route when a supported API, connector, or CLI is unavailable |
-| `career-harvest` | Promotion of real project wins into proof points, reusable stories, and resume-bank bullets |
-| `composio-notes` | Connected-workspace publishing and performance-capture conventions |
-| `deck-production` | Central deck routing with PPT Master as the default for new PowerPoint work |
-| `deliverable-versioning` | Head pointers, immutable snapshots, and surgical-versus-replacement revision judgment |
-| `diagram-production` | Static graph-shaped explainers through D2 |
-| `flow-authoring` | The standard for adding or materially reshaping project flows |
-| `humanizer-integration` | A calibrated humanization pass where a template explicitly calls for it |
-| `image-production` | Path selection for generated imagery, HTML visuals, Open Design, and other image routes |
-| `knowledge-base` | Source ingestion, living knowledge files, archives, and consolidation rules |
-| `lock-event` | Generic lock mechanics and the post-lock judgment checklist |
-| `operator-context-setup` | First-run generation of personal positioning, profile, career, and voice surfaces |
-| `preview-server` | Start-or-open behavior, deep links, and preview hygiene for the Local Surface |
-| `process-authoring` | The standard for reusable process files |
-| `project-frontmatter` | Canonical project state, tracker schema, overrides, and drift checks |
-| `research-and-signals` | Kickoff context scans and research-method selection |
-| `substack-publishing` | Draft preparation, editor handoff, back-publishing, and live-result reconciliation |
-| `technical-build` | External-repository orchestration, BDRs, derived status, and graduation |
-| `video-production` | Talking-head, HyperFrames, generated-asset, and hybrid video routes |
-| `voice-mini-retro` | The lock-time eligibility gate for harvesting meaningful voice edits |
-| `voice-setup` | Corpus mining, taste interview, register compilation, and initial voice-system setup |
-
-The live process catalog, including load triggers, is [`library/process/README.md`](library/process/README.md).
+The full capability catalog. Skills carry provenance — this system is deliberately built on community work where the community's version is already good; every process file and template is AgentFrame-owned and earned on real projects.
 
 ### Skills
 
-| Skill | What it does |
+| Skill | What it does | Provenance |
+|---|---|---|
+| `agentframe-structure` | Safely changes flows, deliverable types, defaults, and ownership boundaries | Internal |
+| `browser-harness` | Runs local CDP-driven browser workflows | Vendored |
+| `d2-diagrams` | Renders deterministic SVG diagrams | Internal (pinned D2 binary vendored) |
+| `deep-research` | Architect → specialist → synthesis research on the agent's own tools | Internal (prompts adapted from upstream) |
+| `deliverable-harvest` | Mines finished projects for earned template and process improvements | Internal |
+| `deliverable-scaffolding` | Creates deliverable instances with the correct shape and frontmatter | Internal |
+| `doc-export` | Produces ATS-safe resume and cover-letter files keyed to the destination system | Adapted |
+| `docx` | Creates, inspects, and edits Word documents | Vendored |
+| `extract-design` | Measures a website's design language via the `designlang` CLI | Vendored |
+| `humanizer` | Detects and removes common AI-writing patterns | Vendored |
+| `hyperframes` | HTML-to-video composition: Studio, CLI, engine, and routed video skills | Vendored |
+| `job-scout` | Sweeps public ATS feeds against the career search profile, login-free | Adapted |
+| `open-design` | Local-first advanced image and deck runtime | Vendored |
+| `ppt-master` | Converts sources into designed SVG pages and native-editable PowerPoint decks | Vendored |
+| `pptx` | Inspects, validates, and performs native PowerPoint edits | Vendored |
+| `project-consolidate` | Archives stale project detail and promotes durable context | Internal |
+| `system-improvement` | Applies scoped system patches with verification and audit discipline | Internal |
+| `upstream-sync` | Adopts upstream AgentFrame changes without overwriting the personal layer | Internal |
+| `voice-harvest` | Turns finished work and edit deltas into corpus examples and contrastive pairs | Internal |
+
+Vendored skills keep a skill-local `VENDOR.md` with the upstream source and refresh procedure, so pulling the latest community version is a documented step. The live index is [`system/skills/README.md`](system/skills/README.md).
+
+### Processes
+
+All AgentFrame-owned. Each loads on demand when the work reaches it.
+
+| Process | What it gives the agent |
 |---|---|
-| `agentframe-structure` | Safely changes flows, deliverable types, defaults, and ownership boundaries |
-| `browser-harness` | Runs local CDP-driven browser workflows |
-| `d2-diagrams` | Renders deterministic SVG diagrams through a pinned D2 binary |
-| `deep-research` | Runs architect → specialist → synthesis research on the agent's own tools |
-| `deliverable-harvest` | Mines finished projects for earned template and process improvements |
-| `deliverable-scaffolding` | Creates deliverable instances with the correct shape and frontmatter |
-| `doc-export` | Produces ATS-safe resume and cover-letter files keyed to the destination system |
-| `docx` | Creates, inspects, and edits Word documents |
-| `extract-design` | Measures a website's design language through the `designlang` CLI |
-| `humanizer` | Detects and removes common AI-writing patterns |
-| `hyperframes` | Full HyperFrames source, Studio, and routed video skill library |
-| `job-scout` | Sweeps public ATS feeds against the career search profile without login automation |
-| `open-design` | Provides a local-first advanced image and deck runtime |
-| `ppt-master` | Converts sources into designed SVG pages and native-editable PowerPoint decks |
-| `pptx` | Inspects, validates, extracts, and performs small native PowerPoint edits |
-| `project-consolidate` | Archives stale project detail and promotes durable context across projects |
-| `system-improvement` | Applies scoped system patches with verification and audit discipline |
-| `upstream-sync` | Adopts upstream AgentFrame changes without overwriting the personal layer |
-| `voice-harvest` | Turns finished work and manual edit deltas into corpus examples and contrastive pairs |
+| `bounded-autonomy` | Goal contracts, budgets, checkpoints, reviewer gates, and stop rules |
+| `browser-fallback` | A controlled browser route when a supported API, connector, or CLI is unavailable |
+| `career-harvest` | Promotion of real project wins into proof points, stories, and resume-bank bullets |
+| `composio-notes` | Connected-workspace publishing and performance-capture conventions |
+| `deck-production` | Central deck routing with PPT Master as the default for new PowerPoint work |
+| `deliverable-versioning` | Head pointers, immutable snapshots, and revision judgment |
+| `diagram-production` | Static graph-shaped explainers through D2 |
+| `flow-authoring` | The standard for adding or reshaping project flows |
+| `humanizer-integration` | A calibrated humanization pass where a template calls for it |
+| `image-production` | Path selection across generated imagery, HTML visuals, and Open Design |
+| `knowledge-base` | Source ingestion, living knowledge files, archives, and consolidation rules |
+| `lock-event` | Lock mechanics and the post-lock judgment checklist |
+| `operator-context-setup` | First-run generation of positioning, profile, career, and voice surfaces |
+| `preview-server` | Start-or-open behaviour, deep links, and preview hygiene for the dashboard |
+| `process-authoring` | The standard for reusable process files |
+| `project-frontmatter` | Canonical project state, tracker schema, overrides, and drift checks |
+| `research-and-signals` | Kickoff context scans and research-method selection |
+| `substack-publishing` | Draft preparation, editor handoff, and live-result reconciliation |
+| `technical-build` | External-repository orchestration and graduation |
+| `video-production` | Talking-head, HyperFrames, generated-asset, and hybrid video routes |
+| `voice-mini-retro` | The lock-time eligibility gate for harvesting meaningful voice edits |
+| `voice-setup` | Corpus mining, taste interview, and initial voice-system setup |
 
-The live skill catalog and provenance notes are in [`system/skills/README.md`](system/skills/README.md).
+The live catalog with load triggers is [`library/process/README.md`](library/process/README.md).
 
-## Local Surface
+### Deliverable templates
 
-`python system/server/run.py --daemon` starts or reuses the local server and opens the workspace UI.
+All AgentFrame-owned, shaped by real use.
 
-The Surface currently provides:
+| Where | Templates |
+|---|---|
+| Shared (`library/deliverables/`) | design-language · image-prompts · video-spec · closeout-retro · system-retro · the generic `_meta` deliverable shape |
+| Marketing pack | body-copy · business-brief · campaign-architecture · campaign-brief · post-final · research-artifact · slide-copy · substack-essay |
+| Project-mgmt pack | charter · raid-log · decision-log · stakeholder-map · workback-schedule |
+| Careers pack | resume · cover-letter · jd-map · company-brief |
+
+## Architecture
+
+<!-- IMAGE STUB · slot: architecture-flow · shows: D2 flow diagram — coding agent → active persona → workspace state → selected flow → processes/templates → skills/tools, with the dashboard reading from the same files; legible to non-technical readers -->
+
+The rules the structure holds to:
+
+- **The default project is domain-neutral.** `project-mgmt/open-flow` contributes no domain fields and no mandatory governance ceremony.
+- **Specialization is additive.** Packs declare vocabulary, templates, valid verbs, and routes; the core engine stays blind to what a project is about.
+- **Files own working truth.** Markdown and media hold project state, context, decisions, and outputs. SQLite is reserved for the append-only system-change audit.
+- **Sources and knowledge are different things.** Immutable inputs live in `sources/`; distilled working context lives in `knowledge/`.
+- **Prose owns judgment; mechanisms guarantee invariants.** The agent decides what good work is. The CLI and hooks protect state, exports, and repeatable gates.
+- **The dashboard is a reader.** It never becomes a competing state owner.
+- **Templates are the durable product.** Skills and runtimes can be replaced without rewriting the deliverable library.
+
+## The Workspace Dashboard
+
+`python system/server/run.py --daemon` starts or reuses the local server and opens the workspace UI. It reads deterministically from the workspace files — no model, no API key, no second database.
+
+<!-- IMAGE STUB · slot: dashboard-tour · shows: 2-3 dashboard screenshots — dashboard home, calendar/timeline, preview workspace -->
+
+What it provides:
 
 - A dashboard of active projects, attention items, and recent activity
 - Day, week, and month calendar views
@@ -255,8 +317,6 @@ The Surface currently provides:
 - Markdown, text, HTML, image, PDF, video, PPTX, and DOCX viewing
 - Completed-project history and print/PDF calendar output
 - File watching and LiveReload for production work
-
-It reads deterministically from the workspace. No model and no API key are required.
 
 ## Repository map
 
@@ -277,18 +337,18 @@ agentframe/
 │   ├── browser/                 # browser runtime and recipes
 │   ├── hooks/                   # deterministic production guards
 │   ├── research/                # Gemini deep-research runtime
-│   ├── server/                  # Local Surface and preview server
+│   ├── server/                  # Workspace Dashboard and preview server
 │   ├── skills/                  # owned and vendored capabilities
-│   ├── tests/                   # CLI, guards, Surface, and runtime tests
+│   ├── tests/                   # CLI, guards, dashboard, and runtime tests
 │   └── tools/                   # pinned local tool binaries
 └── workspace/
     ├── projects/                # open-flow and structured projects
     └── pipeline/                # career board and case folders
 ```
 
-## Integrations and production runtimes
+## Integrations
 
-AgentFrame itself runs locally. External services and bundled production runtimes add capabilities rather than becoming dependencies.
+AgentFrame runs locally; external services add capability without becoming dependencies. Your coding agent provides the model — environment keys power only the optional tools.
 
 | Integration or runtime | Used for |
 |---|---|
@@ -298,16 +358,19 @@ AgentFrame itself runs locally. External services and bundled production runtime
 | PPT Master | Native-editable deck generation from source material and SVG |
 | HyperFrames | HTML-to-video composition and rendering |
 
-Your coding agent provides the model. Environment keys power only the optional external tools.
-
 ## Auditability
 
-- `project.md` or `application.md` owns current state.
-- `activity.md` records material project events.
-- Version files explain what changed from the previous head.
-- `system/af.py doctor` checks schemas, files, exports, mirrors, and pack rules without silently fixing them.
-- `system/audit/agentframe.db` records low-volume system changes such as mode swaps, template patches, runtime changes, and migrations.
-- Git carries the version history of the reusable system; personal work remains local and ignored.
+Every trail has one owner:
+
+| Trail | Lives in |
+|---|---|
+| Current project state | `project.md` / `application.md` frontmatter |
+| Material project events | `activity.md` |
+| What changed between versions | the version files themselves |
+| Low-volume system changes (mode swaps, template patches, migrations) | `system/audit/agentframe.db` |
+| Schema, file, export, and pack-rule checks | `python system/af.py doctor` — reports drift, never silently fixes it |
+
+Git carries the version history of the reusable system; personal work stays local and gitignored.
 
 ## Design constraints
 
@@ -319,11 +382,11 @@ AgentFrame stays useful by refusing a few tempting directions:
 - It does not encode every possible workflow before real work earns the abstraction.
 - It does not let scripts make creative or project-management judgments.
 
-The durable asset is the context, workflow knowledge, and deliverable library. Models, tools, and interfaces can change around it.
+The durable asset is the context, the workflow knowledge, and the deliverable library. Models, tools, and interfaces change around it.
 
 ## Contributing
 
-PRs for templates, process improvements, domain packs, skills, and runtime fixes are welcome. Open an issue before a major architecture change so the system does not grow faster than future agents can understand it.
+PRs for templates, process improvements, domain packs, skills, and runtime fixes are welcome. Open an issue before a major architecture change so the system doesn't grow faster than future agents can understand it.
 
 ## References and lineage
 

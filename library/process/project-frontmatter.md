@@ -139,7 +139,7 @@ Never log pre-lock iteration — draft feedback, prompt/copy/render churn, versi
 
 ### Attention Block
 
-`activity.md` may open with an `## Attention` block directly under the title — the dashboard-facing shortlist the local surface reads. One checkbox bullet per open item:
+`activity.md` may open with an `## Attention` block directly under the title — the dashboard-facing shortlist the Workspace Dashboard reads. One checkbox bullet per open item:
 
 ```md
 ## Attention

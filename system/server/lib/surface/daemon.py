@@ -1,4 +1,4 @@
-"""Start-or-open lifecycle for the local surface.
+"""Start-or-open lifecycle for the Workspace Dashboard.
 
 ``start_or_open`` is the one entry point: if a healthy surface for THIS
 workspace already answers on the remembered port, open/print its URL;
@@ -81,7 +81,7 @@ def start_or_open(*, preferred_port: int = 8080, open_browser: bool = True, root
         candidates.append(preferred_port)
     for port in candidates:
         if is_healthy(port, expected_root=str(root)):
-            url = f"http://localhost:{port}/"
+            url = f"http://localhost:{port}/#/dashboard"
             if open_browser:
                 _open(url)
             return {"url": url, "port": port, "started": False}
@@ -110,7 +110,7 @@ def start_or_open(*, preferred_port: int = 8080, open_browser: bool = True, root
     else:
         raise RuntimeError(f"surface server did not become healthy on port {port}; see {LOG_PATH}")
 
-    url = f"http://localhost:{port}/"
+    url = f"http://localhost:{port}/#/dashboard"
     if open_browser:
         _open(url)
     return {"url": url, "port": port, "started": True}

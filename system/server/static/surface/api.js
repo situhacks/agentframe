@@ -22,6 +22,22 @@ export async function postJSON(path, payload) {
   return resp.json();
 }
 
+export function parseHash() {
+  const hash = location.hash.replace(/^#\/?/, '');
+  const [path, query = ''] = hash.split('?');
+  return { path: path || 'dashboard', params: new URLSearchParams(query) };
+}
+
+export function navigate(path, params = null) {
+  let hash = `#/${path}`;
+  if (params) {
+    const qs = new URLSearchParams(params).toString();
+    if (qs) hash += `?${qs}`;
+  }
+  if (location.hash !== hash) history.replaceState(null, '', hash);
+  window.dispatchEvent(new Event('agentframe:navigate'));
+}
+
 // Deterministic keycap identity: initials + GMK Light Dolch cap bucket
 // (c0 alpha / c1 modifier / c2 teal / c3 pink).
 const KEYCAP_HASH_SALT = 'modol';

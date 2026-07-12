@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dockview-core@4.13.1/dist/styles/dockview.css">
-<link rel="stylesheet" href="/system/server/static/surface/styles.css">
+<link rel="stylesheet" href="/system/server/static/surface/styles.css?v=12">
 </head>
 <body>
   <header id="topbar">
@@ -75,7 +75,7 @@
         <label class="calendar-check"><input id="calendar-ribbons" type="checkbox" checked> project ribbons</label>
         <label class="calendar-check"><input id="calendar-expand" type="checkbox"> expand labels</label>
         <label class="calendar-check"><input id="calendar-future" type="checkbox" checked> future commitments</label>
-        <button id="calendar-print" class="calendar-print">print / PDF</button>
+        <button id="calendar-export" class="calendar-export">export PNG</button>
       </div>
     </header>
     <section id="calendar-summary" class="calendar-summary"></section>
@@ -83,11 +83,21 @@
       <aside class="calendar-filters">
         <header>
           <span class="filters-title">Projects</span>
-          <span class="filters-actions"><button id="calendar-all">all</button> · <button id="calendar-active">active</button> · <button id="calendar-none">none</button></span>
+          <label class="filters-actions" for="calendar-project-scope">
+            <span class="sr-only">Project selection</span>
+            <select id="calendar-project-scope" aria-label="Project selection">
+              <option value="all" selected>all projects</option>
+              <option value="active">active only</option>
+              <option value="completed">completed only</option>
+              <option value="none">none</option>
+              <option value="custom" disabled>custom</option>
+            </select>
+          </label>
           <button id="calendar-filters-toggle" class="filters-toggle" title="hide filters">⟨</button>
         </header>
         <div id="calendar-project-filters" class="scroll"></div>
         <div class="calendar-legend" id="calendar-legend"></div>
+        <button id="calendar-legend-show" class="calendar-legend-show" hidden>show legend</button>
       </aside>
       <section class="calendar-stage">
         <div id="calendar-nav" class="calendar-nav">
@@ -118,6 +128,11 @@
   <main id="view-preview" class="view" hidden>
     <aside id="rail">
       <div class="rail-head">Projects</div>
+      <div class="rail-filters project-filters" id="project-status-filters">
+        <button data-status="active" class="active">active</button>
+        <button data-status="completed">completed</button>
+        <button data-status="all">all</button>
+      </div>
       <div class="scroll" id="rail-projects"></div>
       <div class="rail-head">Artifacts<span class="count" id="rail-artifacts-count"></span></div>
       <div class="rail-filters" id="artifact-class-filters">
@@ -137,6 +152,6 @@
     <div id="editor-area"></div>
   </main>
 
-  <script type="module" src="/system/server/static/surface/app.js"></script>
+  <script type="module" src="/system/server/static/surface/app.js?v=7"></script>
 </body>
 </html>

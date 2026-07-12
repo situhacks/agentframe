@@ -8,8 +8,7 @@
 // spawn scrollbars. Used by the week/day header strip, every month week-row,
 // and the timeline.
 
-import { el, keycapEl } from './api.js';
-import { navigate } from './app.js';
+import { el, keycapEl, navigate } from './api.js?v=5';
 
 export const DAY_MS = 86400000;
 

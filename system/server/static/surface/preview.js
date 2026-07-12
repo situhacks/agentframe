@@ -2,10 +2,11 @@
 // Loaded lazily by app.js so the Dashboard never depends on the CDN.
 
 import { createDockview } from 'https://cdn.jsdelivr.net/npm/dockview-core@4.13.1/+esm';
-import { getJSON, postJSON, keycapEl, basename, el } from './api.js';
-import { renderViewer } from './viewers.js';
+import { getJSON, postJSON, keycapEl, basename, el } from './api.js?v=5';
+import { renderViewer } from './viewers.js?v=5';
 
-const LAYOUT_KEY = 'af-surface-layout-v1';
+const LAYOUT_KEY = 'af-surface-layout-v2';
+const TRANSIENT_PANEL_ID = 'af-preview-current';
 const PDF_SCALE_KEY = 'af-preview-pdf-scale-v1';
 const PDF_SCALE_EVENT = 'agentframe:pdf-scale';
 const PDF_SCALE_DEFAULT = 0.55;
@@ -23,6 +24,7 @@ const rail = {
   untrackedFiles: null,
   filterClass: 'media',
   filterType: null,
+  projectFilter: 'active',
   flatFiles: [],
   flatCacheKey: null,
 };
@@ -141,14 +143,16 @@ class ViewerPanel {
     this.toolbar.append(this.zoomGroup);
 
     const actions = [
-      ['open original', () => this.meta && window.open(this.meta.url, '_blank')],
-      ['reveal', () => reveal(project, file)],
-      ['refresh', () => this.load()],
-      ['copy path', () => copyPath(project, file)],
-      ['close', () => this.api.close()],
+      ['open-original', 'open original', () => this.meta && window.open(this.meta.url, '_blank')],
+      ['reveal', 'reveal', () => reveal(project, file)],
+      ['refresh', 'refresh', () => this.load()],
+      ['copy-path', 'copy path', () => copyPath(project, file)],
+      ['close', 'close', () => this.api.close()],
     ];
-    for (const [label, action] of actions) {
-      this.toolbar.append(el('button', { text: label, title: label, onclick: action }));
+    for (const [name, label, action] of actions) {
+      this.toolbar.append(el('button', {
+        'data-action': name, text: label, title: label, onclick: action,
+      }));
     }
 
     this.body.addEventListener('contextmenu', (e) => {
@@ -261,7 +265,7 @@ function moveToNewGroup(panelId) {
   } catch { /* layout op failed — leave panel where it is */ }
 }
 
-export function openFile(project, file, { direction = null, forceNew = false } = {}) {
+export function openFile(project, file, { direction = null, forceNew = false, transient = false } = {}) {
   if (!dockview || !file) return;
   const baseId = `${project}::${file}`;
   const existing = dockview.panels.find((p) => p.id === baseId);
@@ -269,7 +273,11 @@ export function openFile(project, file, { direction = null, forceNew = false } =
     existing.api.setActive();
     return;
   }
-  let id = baseId;
+  if (transient) {
+    const prior = dockview.panels.find((p) => p.id === TRANSIENT_PANEL_ID);
+    if (prior) prior.api.close();
+  }
+  let id = transient ? TRANSIENT_PANEL_ID : baseId;
   if (existing || forceNew) id = `${baseId}::${Date.now()}`;
   const options = {
     id,
@@ -289,7 +297,7 @@ export function openFile(project, file, { direction = null, forceNew = false } =
 
 async function renderProjects() {
   const host = document.getElementById('rail-projects');
-  const data = await getJSON('/api/projects');
+  const data = await getJSON(`/api/projects?filter=${encodeURIComponent(rail.projectFilter)}`);
   rail.projects = data.projects;
   host.replaceChildren();
   for (const p of rail.projects) {
@@ -306,6 +314,20 @@ async function renderProjects() {
     row.addEventListener('click', () => selectProject(p.slug));
     host.append(row);
   }
+}
+
+async function setProjectFilter(nextFilter) {
+  if (rail.projectFilter === nextFilter) return;
+  rail.projectFilter = nextFilter;
+  rail.selected = null;
+  rail.groups = [];
+  document.getElementById('rail-artifacts-count').textContent = '';
+  document.getElementById('rail-artifacts').replaceChildren(
+    el('div', { class: 'rail-section-note', text: 'select a project' }));
+  for (const btn of document.querySelectorAll('#project-status-filters button')) {
+    btn.classList.toggle('active', btn.dataset.status === nextFilter);
+  }
+  await renderProjects();
 }
 
 async function selectProject(slug) {
@@ -508,7 +530,7 @@ function fileRow(file, { tag = '', current = false } = {}) {
   const row = el('button', { class: `rail-file${current ? ' current-file' : ''}`, title: file },
     el('span', { class: 'grow', text: basename(file) }),
     el('span', { class: 'tag', text: current ? 'current' : tag }));
-  row.addEventListener('click', () => openFile(rail.selected, file));
+  row.addEventListener('click', () => openFile(rail.selected, file, { transient: true }));
   row.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     fileMenu(e, file);
@@ -544,10 +566,10 @@ async function openGroupPrimary(g) {
   if (rail.filterClass === 'media') {
     await ensureGroupDetail(g);
     const files = detailFilesForFilter(g, rail.details.get(g.slug));
-    openFile(rail.selected, files[0] || g.current);
+    openFile(rail.selected, files[0] || g.current, { transient: true });
     return;
   }
-  openFile(rail.selected, g.current);
+  openFile(rail.selected, g.current, { transient: true });
 }
 
 function renderGroupDetail(host, g) {
@@ -630,6 +652,9 @@ function fileMenu(e, file) {
 
 export async function mountPreview() {
   const area = document.getElementById('editor-area');
+  for (const btn of document.querySelectorAll('#project-status-filters button')) {
+    btn.addEventListener('click', () => setProjectFilter(btn.dataset.status));
+  }
   for (const btn of document.querySelectorAll('#artifact-class-filters button')) {
     btn.addEventListener('click', () => setArtifactClass(btn.dataset.class));
   }
@@ -672,6 +697,15 @@ export async function mountPreview() {
 }
 
 export async function focus(project, file) {
+  const projectData = await getJSON('/api/projects?filter=all');
+  const target = projectData.projects.find((item) => item.slug === project);
+  if (target && target.status !== 'active' && rail.projectFilter === 'active') {
+    rail.projectFilter = target.status === 'complete' ? 'completed' : 'all';
+    for (const btn of document.querySelectorAll('#project-status-filters button')) {
+      btn.classList.toggle('active', btn.dataset.status === rail.projectFilter);
+    }
+    await renderProjects();
+  }
   await selectProject(project);
-  if (file) openFile(project, file);
+  if (file) openFile(project, file, { transient: true });
 }

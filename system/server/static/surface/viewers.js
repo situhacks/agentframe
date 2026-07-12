@@ -1,7 +1,7 @@
 // Viewer adapters: markdown, HTML, image/SVG, PDF, video, Office (via
 // server-side LibreOffice conversion), and a metadata fallback.
 
-import { postJSON, el } from './api.js';
+import { postJSON, el } from './api.js?v=5';
 
 let markedModule = null;
 async function getMarked() {

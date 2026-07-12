@@ -4,9 +4,8 @@
 // markers, month axis, and a summary bar. Ported from the pre-v2 calendar
 // renderer and slimmed for many-project scale.
 
-import { el, keycapEl } from './api.js';
-import { navigate } from './app.js';
-import { colorFor, ghostTint, deliverableDot, attachPopover, popContent } from './ribbons.js';
+import { el, keycapEl, navigate } from './api.js?v=5';
+import { colorFor, ghostTint, deliverableDot, attachPopover, popContent } from './ribbons.js?v=5';
 
 const DAY_MS = 86400000;
 const MIN_PX_PER_DAY = 11;  // per-day numbers/ticks whenever a 2-digit label fits

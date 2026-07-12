@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from system.server.lib.surface import snapshot, state
+from system.server.lib.surface import api, snapshot, state
 
 
 PROJECT = """---
@@ -82,6 +82,32 @@ class SurfaceCalendarTests(unittest.TestCase):
             self.assertEqual([p["slug"] for p in state.scan_projects(root)], ["active-project"])
             self.assertEqual(
                 {p["slug"] for p in state.scan_projects(root, include_completed=True)},
+                {"active-project", "completed-project"},
+            )
+
+    def test_preview_project_filters_include_completed_history(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            self._project(
+                root, "active-project", status="active",
+                created_at="2026-06-01", last_activity="2026-06-10T10:00:00-07:00",
+            )
+            self._project(
+                root, "completed-project", status="complete",
+                created_at="2026-05-01", last_activity="2026-05-20T10:00:00-07:00",
+                completed_at="2026-05-20", under_completed=True,
+            )
+            snap = snapshot.build_snapshot(root)
+
+            self.assertEqual(
+                [p["slug"] for p in api.project_summaries(root, snap, "active")],
+                ["active-project"],
+            )
+            completed = api.project_summaries(root, snap, "completed")
+            self.assertEqual([p["slug"] for p in completed], ["completed-project"])
+            self.assertEqual(completed[0]["status"], "complete")
+            self.assertEqual(
+                {p["slug"] for p in api.project_summaries(root, snap, "all")},
                 {"active-project", "completed-project"},
             )
 

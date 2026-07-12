@@ -2,9 +2,9 @@
 // Dashboard has no CDN dependencies; the Preview module (Dockview) loads
 // lazily the first time the Preview tab opens.
 
-import { getJSON, postJSON } from './api.js';
-import { renderDashboard, applyActivityUpdate, setupDashboardDensity } from './dashboard.js';
-import { renderCalendar, setupCalendar } from './calendar.js';
+import { getJSON, postJSON, navigate, parseHash } from './api.js?v=5';
+import { renderDashboard, applyActivityUpdate, setupDashboardDensity } from './dashboard.js?v=5';
+import { renderCalendar, setupCalendar } from './calendar.js?v=7';
 
 const POLL_MS = 12000;
 
@@ -69,23 +69,6 @@ async function poll({ force = false } = {}) {
 
 // ---------- router ----------
 
-export function parseHash() {
-  const hash = location.hash.replace(/^#\/?/, '');
-  const [path, query = ''] = hash.split('?');
-  const params = new URLSearchParams(query);
-  return { path: path || 'dashboard', params };
-}
-
-export function navigate(path, params = null) {
-  let hash = `#/${path}`;
-  if (params) {
-    const qs = new URLSearchParams(params).toString();
-    if (qs) hash += `?${qs}`;
-  }
-  if (location.hash !== hash) history.replaceState(null, '', hash);
-  applyRoute();
-}
-
 async function applyRoute() {
   const { path, params } = parseHash();
   const route = path.startsWith('preview') ? 'preview' : path.startsWith('calendar') ? 'calendar' : 'dashboard';
@@ -105,7 +88,7 @@ async function applyRoute() {
   if (route === 'preview') {
     if (!state.preview) {
       try {
-        state.preview = await import('./preview.js');
+        state.preview = await import('./preview.js?v=5');
         await state.preview.mountPreview();
       } catch (err) {
         state.preview = null;
@@ -133,6 +116,7 @@ document.querySelector('.lockup')?.addEventListener('contextmenu', (e) => {
   postJSON('/api/reveal-root', {}).catch(() => {});
 });
 window.addEventListener('hashchange', applyRoute);
+window.addEventListener('agentframe:navigate', applyRoute);
 window.addEventListener('focus', () => poll());
 
 setupDashboardDensity();

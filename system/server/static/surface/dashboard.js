@@ -2,8 +2,7 @@
 // Each region scrolls internally; the page never scrolls. Activity pages
 // lazily via cursor and never yanks the operator's scroll position.
 
-import { getJSON, keycapEl, el } from './api.js';
-import { navigate } from './app.js';
+import { getJSON, keycapEl, el, navigate } from './api.js?v=5';
 
 const ZOOM_KEY = 'af-dashboard-zoom-v1';
 const DEFAULT_ZOOM = 90;

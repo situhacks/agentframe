@@ -11,22 +11,29 @@ Usage:
 If `--out` is omitted, the CSS is written next to `tokens.yaml` at
 `./preview/assets/tokens.css` (relative to the yaml file).
 
-Schema mapping (from `library/deliverables/design-language/template.md` companion `tokens.yaml`):
+Canonical schema mapping (as used by real project `tokens.yaml` files; see
+`library/deliverables/design-language/storybook.md` for the reader contract):
 
-- palette.{key}            -> --{key}                e.g. --bg, --accent_primary
-- typography.{role}.family -> --font-{role}          e.g. --font-headline
-  typography.{role}.weight -> --fw-{role}
-  typography.{role}.line_height -> --lh-{role}
-  typography.{role}.fallback can be a list or string (joined into the family stack)
-- spacing.base_unit        -> --space-unit
-  spacing.scale[i]         -> --space-{i+1}          (multiplied by base_unit, in px)
-- layout.slide_width       -> --slide-w
-  layout.slide_height      -> --slide-h
-  layout.safe_margin       -> --slide-safe
-  layout.gutter            -> --slide-gutter
-- grid.columns             -> --grid-cols
-  grid.gutter              -> --grid-gutter
-- motifs[i].name           -> emitted only as a CSS comment for traceability
+- palette.{key}            -> --{key}                e.g. --base-white, --accent-teal
+- palette_roles.{role}     -> --role-{role}          value is a palette token key
+                                                     e.g. palette_roles.background: base-white
+                                                     -> --role-background: var(--base-white)
+- type.{role}.family       -> --font-{role}          role keys are project-defined
+                                                     (display/body/mono or primary/annotation/mono)
+  type.{role}.weights[0]   -> --fw-{role}            first weight as the default
+  type.{role}.line_height  -> --lh-{role}
+  type.{role}.sizes.{name} -> --size-{role}-{name}   (px unless already a unit)
+  type.google_fonts_import is ignored here (belongs in the HTML <link>)
+- canvas.width             -> --canvas-w
+  canvas.height            -> --canvas-h
+  canvas.aspect            -> --canvas-aspect
+  canvas.safe_margin       -> --canvas-safe
+  canvas.grid_columns      -> --grid-cols
+  canvas.grid_gutter       -> --grid-gutter
+
+Project-specific sections (emphasis, highlighter, nano-banana, etc.) are not
+mapped to CSS variables; they are consumed by renderers/storybook prose, not
+by tokens.css.
 """
 
 from __future__ import annotations
@@ -61,8 +68,9 @@ def to_css(tokens: dict) -> str:
     lines: list[str] = []
     lines.append("/* Auto-generated from tokens.yaml by system/server/lib/tokens_to_css.py */")
     lines.append("/* Do not hand-edit. Edit tokens.yaml and re-run. */")
-    project = tokens.get("project")
-    version = tokens.get("version")
+    meta = tokens.get("meta") or {}
+    project = meta.get("campaign") or tokens.get("project")
+    version = meta.get("version") or tokens.get("version")
     if project or version:
         lines.append(f"/* project: {project}  version: {version} */")
     lines.append("")
@@ -75,59 +83,50 @@ def to_css(tokens: dict) -> str:
             _emit_var(lines, str(key), value)
         lines.append("")
 
-    typography = tokens.get("typography") or {}
-    if typography:
-        lines.append("  /* typography */")
-        for role, spec in typography.items():
-            spec = spec or {}
+    palette_roles = tokens.get("palette_roles") or {}
+    if palette_roles:
+        lines.append("  /* palette roles (semantic -> palette token) */")
+        for role, token_key in palette_roles.items():
+            if token_key is None or token_key == "":
+                continue
+            # Skip role values that are lists (e.g. risograph_spots) \u2014 not single vars.
+            if isinstance(token_key, (list, tuple, dict)):
+                continue
+            _emit_var(lines, f"role-{role}", f"var(--{token_key})")
+        lines.append("")
+
+    type_block = tokens.get("type") or {}
+    if type_block:
+        lines.append("  /* type */")
+        for role, spec in type_block.items():
+            if not isinstance(spec, dict):
+                continue  # skips scalars like google_fonts_import
             family = spec.get("family")
             fallback = spec.get("fallback")
             stack = _quote_family(family, fallback)
             if stack:
                 _emit_var(lines, f"font-{role}", stack)
-            _emit_var(lines, f"fw-{role}", spec.get("weight"))
+            weights = spec.get("weights")
+            if isinstance(weights, (list, tuple)) and weights:
+                _emit_var(lines, f"fw-{role}", weights[0])
+            else:
+                _emit_var(lines, f"fw-{role}", spec.get("weight"))
             _emit_var(lines, f"lh-{role}", spec.get("line_height"))
+            sizes = spec.get("sizes") or {}
+            if isinstance(sizes, dict):
+                for name, value in sizes.items():
+                    _emit_var(lines, f"size-{role}-{name}", _px(value))
         lines.append("")
 
-    spacing = tokens.get("spacing") or {}
-    if spacing:
-        lines.append("  /* spacing */")
-        base = spacing.get("base_unit")
-        if base is not None:
-            _emit_var(lines, "space-unit", f"{base}px")
-        scale = spacing.get("scale") or []
-        for i, multiplier in enumerate(scale, start=1):
-            try:
-                px = float(multiplier) * float(base or 1)
-            except (TypeError, ValueError):
-                continue
-            px_str = f"{int(px)}px" if px.is_integer() else f"{px}px"
-            _emit_var(lines, f"space-{i}", px_str)
-        lines.append("")
-
-    layout = tokens.get("layout") or {}
-    if layout:
-        lines.append("  /* layout */")
-        _emit_var(lines, "slide-w", _px(layout.get("slide_width")))
-        _emit_var(lines, "slide-h", _px(layout.get("slide_height")))
-        _emit_var(lines, "slide-safe", _px(layout.get("safe_margin")))
-        _emit_var(lines, "slide-gutter", _px(layout.get("gutter")))
-        lines.append("")
-
-    grid = tokens.get("grid") or {}
-    if grid:
-        lines.append("  /* grid */")
-        _emit_var(lines, "grid-cols", grid.get("columns"))
-        _emit_var(lines, "grid-gutter", _px(grid.get("gutter")))
-        lines.append("")
-
-    motifs = tokens.get("motifs") or []
-    if motifs:
-        lines.append("  /* motifs (names only \u2014 enforcement lives in renderer + checks) */")
-        for m in motifs:
-            name = (m or {}).get("name") if isinstance(m, dict) else None
-            if name:
-                lines.append(f"  /* motif: {name} */")
+    canvas = tokens.get("canvas") or {}
+    if canvas:
+        lines.append("  /* canvas */")
+        _emit_var(lines, "canvas-w", _px(canvas.get("width")))
+        _emit_var(lines, "canvas-h", _px(canvas.get("height")))
+        _emit_var(lines, "canvas-aspect", canvas.get("aspect"))
+        _emit_var(lines, "canvas-safe", _px(canvas.get("safe_margin")))
+        _emit_var(lines, "grid-cols", canvas.get("grid_columns"))
+        _emit_var(lines, "grid-gutter", _px(canvas.get("grid_gutter")))
         lines.append("")
 
     while lines and lines[-1] == "":

@@ -9,6 +9,8 @@ status: <drafting | locked>
 last_updated: <ISO-8601>
 preview: preview/directions-compare.html
 tokens: tokens.yaml
+storybook: preview/storybook.html    # optional — present only when a storybook exists
+storybook_samples: []                # optional — relative paths to real artifacts embedded in the storybook gallery
 category: <short OD-style category, optional — e.g. "Editorial & Print", "AI & LLM">
 summary: <one-line picker-style summary>
 light_variant:
@@ -33,6 +35,8 @@ Divergence-first. When this deliverable opens, offer the starting points — don
 4. **Lock.** The picked direction becomes `design-language-v{N}.md` with its treatment block, plus `tokens.yaml`/`tokens.css` when surfaces will render as HTML.
 
 The project-level base locks here; per-deliverable evolution of the language is allowed when the work calls for it — version this deliverable, don't fork it.
+
+**Storybook (optional):** offer a rendered HTML storybook when the operator wants to *visualize* the language or *compare* candidate directions — it costs generation time, so skip it for rudimentary languages. Shape and generation paths (script or agent-authored) are in the [`storybook.md`](storybook.md) companion. When one exists, set the `storybook:` frontmatter field so the preview server pins it atop the Design section.
 
 Single-direction authoring is allowed only when the operator explicitly says "skip the directions, pick one" or chooses text-only defer. Do not invent the single-direction path silently.
 
@@ -78,6 +82,7 @@ Sections without earned content can stay short ("none for this project") rather 
 - `tokens.css` — CSS variables for browser preview and render. All tokens go inside a `:root {}` block (and `[data-theme="dark"]` block when a dark variant exists). Keeps the file drop-in-compatible with Open Design's parser.
 - When a project renders slides or pages as HTML, this deliverable is the renderer's source: surfaces render per the Layout & Composition section and `tokens.css`, then screenshot to PNG for delivery.
 - `preview/directions-compare.html` — side-by-side render of the proposed directions during authoring; the locked direction's preview lives in this same file with non-picked columns dimmed or removed.
+- `preview/storybook.html` — optional browsable HTML catalog of the language; shape in [`storybook.md`](storybook.md). Present only when generated.
 - [`transfer-to-open-design.md`](transfer-to-open-design.md) — sibling child resource documenting the field-by-field mapping from this template into Open Design's 9-section design-system schema. Read on demand only when the operator wants to use the project DL inside Open Design.
 
 ## Not In This Template

@@ -65,6 +65,18 @@ python -m system.server.lib.tokens_to_css workspace/projects/<project-slug>/phas
 
 Output goes to `./preview/assets/tokens.css` next to the yaml by default. Override with `--out PATH` if needed. The agent runs this automatically after editing tokens.yaml; the standalone CLI is for ad-hoc fix-ups.
 
+The canonical `tokens.yaml` schema (`palette`, `palette_roles`, `type.{role}`, `canvas`) is documented in the `tokens_to_css.py` module docstring. Project-specific token sections (e.g. `emphasis`, `highlighter`) are passed over, not mapped to CSS.
+
+## 4a. Design storybook
+
+Optional browsable HTML catalog of a design language (palette, type, emphasis, composition, samples, anti-patterns). Generated from the canonical `tokens.yaml` plus prose extracted from the highest `design-language-v{N}.md`:
+
+```
+python -m system.server.lib.storybook workspace/projects/<project-slug>/phase-3-planning/design-language/
+```
+
+Output is `preview/storybook.html`. The script validates schema up front and **fails loudly** (named error, no partial file) on drift, so the agent can fix the schema or hand-author instead. Shape and rules: [`library/deliverables/design-language/storybook.md`](../../library/deliverables/design-language/storybook.md). When a design language names a `storybook:` file that exists, the Preview tab pins a **Design** entry at the top of the rail (`media` shows the storybook HTML; `all` shows the whole folder).
+
 ## 5. Image generation (Nano Banana)
 
 HTML is the primary visual medium for AgentFrame — slide HTML + tokens.css covers most of what carousel posts need. This helper exists for the cases where a real image is the right tool: mockups, textured backdrops, hero stills, or anywhere a flat colour block would feel cheap.

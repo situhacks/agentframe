@@ -126,6 +126,12 @@ class ArtifactsHandler(_JsonHandler):
     def _claimed(pdir: Path, groups: list[dict]) -> set[str]:
         claimed: set[str] = set()
         for g in groups:
+            if g.get("kind") == "design":
+                detail = artifacts.design_detail(pdir, g["folder"])
+                claimed.update(detail["versions"])
+                if g.get("current"):
+                    claimed.add(g["current"])
+                continue
             if not g["current"]:
                 continue
             detail = artifacts.group_detail(pdir, g["current"])
@@ -170,11 +176,12 @@ class ArtifactDetailHandler(_JsonHandler):
             return
         for g in artifacts.artifact_groups(pdir, project["deliverables"]):
             if g["slug"] == group_id:
-                detail = artifacts.group_detail(pdir, g["current"]) if g["current"] else {
-                    "current": None,
-                    "versions": [],
-                    "exports": [],
-                }
+                if g.get("kind") == "design":
+                    detail = artifacts.design_detail(pdir, g["folder"])
+                elif g["current"]:
+                    detail = artifacts.group_detail(pdir, g["current"])
+                else:
+                    detail = {"current": None, "versions": [], "exports": []}
                 self.emit({"project": slug, "group": {**g, **detail}})
                 return
         self.fail(404, f"no artifact group '{group_id}' in '{slug}'")

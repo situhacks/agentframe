@@ -89,6 +89,65 @@ def load_archived_rows(project_dir: Path) -> dict:
     return rows if isinstance(rows, dict) else {}
 
 
+DESIGN_LANGUAGE_RE = re.compile(r"^design-language-v(\d+)\.md$", re.IGNORECASE)
+
+
+def _find_design_language(project_dir: Path) -> Path | None:
+    """Locate the highest-versioned design-language-v{N}.md under any phase folder."""
+    root = Path(project_dir)
+    best: tuple[int, Path] | None = None
+    for md in root.glob("phase-*/**/design-language/design-language-v*.md"):
+        m = DESIGN_LANGUAGE_RE.match(md.name)
+        if not m:
+            continue
+        n = int(m.group(1))
+        if best is None or n > best[0]:
+            best = (n, md)
+    return best[1] if best else None
+
+
+def design_group(project_dir: Path) -> dict | None:
+    """A pinned 'Design' group for the project's current design language.
+
+    Present only when a design-language-v{N}.md exists. ``current`` points at
+    the storybook HTML when the frontmatter names one and the file exists;
+    otherwise it falls back to the design-language markdown so the Design pin
+    still opens something. ``folder`` carries the design-language directory so
+    the rail can list the whole folder under the ``all`` filter.
+    """
+    root = Path(project_dir)
+    md = _find_design_language(root)
+    if md is None:
+        return None
+    try:
+        fm = state.parse_frontmatter(md.read_text(encoding="utf-8"))
+    except OSError:
+        fm = {}
+    folder = md.parent
+    storybook_rel = fm.get("storybook")
+    current = None
+    if storybook_rel:
+        candidate = folder / storybook_rel
+        if candidate.is_file():
+            current = _rel_posix(candidate, root)
+    if current is None:
+        current = _rel_posix(md, root)
+    return {
+        "kind": "design",
+        "slug": "design-language",
+        "label": "Design",
+        "status": fm.get("status"),
+        "current": current,
+        "last_updated": state._iso(fm.get("last_updated")),
+        "version_count": 1,
+        "has_exports": False,
+        "types": _type_tags(root, current),
+        "archived": False,
+        "folder": _rel_posix(folder, root),
+        "pinned": True,
+    }
+
+
 def _sibling_versions(project_dir: Path, current_rel: str) -> list[str]:
     """Stem-scoped version chain for the current file, ascending; [] if missing."""
     root = Path(project_dir)
@@ -294,7 +353,34 @@ def artifact_groups(project_dir: Path, rows: dict) -> list[dict]:
     groups.sort(key=lambda g: (g["last_updated"] or "", g["_row_index"]), reverse=True)
     for g in groups:
         del g["_row_index"]
+    dg = design_group(project_dir)
+    if dg is not None:
+        groups.insert(0, dg)
     return groups
+
+
+def design_detail(project_dir: Path, folder_rel: str) -> dict:
+    """Whole design-language folder listing for the pinned Design group.
+
+    Under the ``all`` filter the rail expands the Design group to every
+    previewable file in the folder (md, tokens.yaml/.css, storybook, preview
+    subfiles). ``versions`` carries the flat file list; media buckets stay
+    empty since this group is not tracker-backed.
+    """
+    root = Path(project_dir)
+    folder = root / folder_rel
+    files: list[str] = []
+    if folder.is_dir():
+        for f in sorted(folder.rglob("*")):
+            if f.is_file() and f.suffix.lower() in PREVIEWABLE_EXTS:
+                files.append(_rel_posix(f, root))
+    return {
+        "current": None,
+        "versions": files,
+        "manifest_media": [],
+        "exports": [],
+        "folder_media": [],
+    }
 
 
 def group_detail(project_dir: Path, current_rel: str) -> dict:

@@ -807,6 +807,8 @@ tr.expanded .activity-md.excerpt {
 }
 .rail-row:hover { background: var(--teal-wash); box-shadow: inset 2px 0 0 var(--accent-teal); }
 .rail-row.selected { background: var(--teal-wash); box-shadow: inset 2px 0 0 var(--accent-teal); }
+.rail-row.design-pin { box-shadow: inset 3px 0 0 var(--accent-teal); border-bottom: 1px solid var(--accent-alpha); }
+.rail-row.design-pin .grow > span:first-child { font-weight: 600; letter-spacing: 0.02em; }
 .rail-row .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rail-row .sub { font-family: var(--mono); font-size: 10px; color: var(--meta); display: block; margin-top: 1px; }
 .rail-row .chev {

@@ -379,6 +379,18 @@ function typeForPath(path) {
 }
 
 function groupMatchesFilter(g) {
+  // The pinned Design group always shows: under `media` it surfaces the
+  // storybook HTML, under `text` the design-language markdown, under `all`
+  // the whole folder. Its `current` reflects the right primary per filter.
+  if (g.kind === 'design') {
+    if (rail.filterClass === 'all') return true;
+    const curType = typeForPath(g.current);
+    if (rail.filterClass === 'text') return curType === 'text' || g.current;
+    if (rail.filterClass === 'media') {
+      return curType !== 'text' && (!rail.filterType || curType === rail.filterType);
+    }
+    return true;
+  }
   if (rail.filterClass === 'all') return true;
   const types = (g.types || []).map((ext) => typeForPath(`x.${ext}`));
   if (rail.filterClass === 'text') return types.includes('text');
@@ -389,6 +401,18 @@ function groupMatchesFilter(g) {
 }
 
 function detailFilesForFilter(g, detail) {
+  if (g.kind === 'design') {
+    // Design group: `versions` is the flat folder listing.
+    const all = detail?.versions || [];
+    if (rail.filterClass === 'text') return [...new Set(all.filter((f) => typeForPath(f) === 'text'))];
+    if (rail.filterClass === 'media') {
+      return [...new Set(all.filter((f) => {
+        const t = typeForPath(f);
+        return t !== 'text' && (!rail.filterType || t === rail.filterType);
+      }))];
+    }
+    return [...new Set(all)];
+  }
   const versions = detail?.versions || [];
   const media = [
     ...(detail?.manifest_media || []),
@@ -426,7 +450,7 @@ async function renderArtifacts() {
 
   for (const g of visibleGroups) {
     const expanded = rail.expanded.has(g.slug);
-    const row = el('button', { class: 'rail-row' },
+    const row = el('button', { class: `rail-row${g.kind === 'design' ? ' design-pin' : ''}` },
       el('span', { class: 'chev', title: expanded ? 'hide versions' : 'show versions', text: expanded ? 'v' : '>' }),
       el('span', { class: 'grow' },
         el('span', { text: g.label }),

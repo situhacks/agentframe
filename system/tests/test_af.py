@@ -2,6 +2,7 @@ import contextlib
 import datetime
 import io
 import os
+import sys
 import tempfile
 import types
 import unittest
@@ -35,6 +36,18 @@ def make_project(root, slug, *, status="active", created_at, last_activity,
         af.write(os.path.join(cdir, "knowledge", "decision-log.md"),
                  "\n".join(f"- decision {i}" for i in range(decision_log_lines)))
     return cdir
+
+
+class NewProjectDefaultTests(unittest.TestCase):
+    def test_cli_defaults_to_neutral_project_management_open_flow(self):
+        with patch.object(af, "cmd_new_project") as command, \
+             patch.object(af, "check_mode_gate"), \
+             patch.object(sys, "argv", ["af", "new-project", "anything"]):
+            af.main()
+
+        args = command.call_args.args[0]
+        self.assertEqual(args.domain, "project-mgmt")
+        self.assertEqual(args.flow, "open-flow")
 
 
 class DreamNoteTests(unittest.TestCase):

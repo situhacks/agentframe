@@ -15,7 +15,7 @@ Commands:
   python system/af.py lock <project> <deliverable-slug-or-path>
   python system/af.py publish <project> <target> --url URL [--posted-at ISO] [--platform P] [--media PATH ...]
   python system/af.py version <project> <deliverable-slug>
-  python system/af.py new-project <slug> [--domain marketing] [--flow open-flow] [--name NAME]
+  python system/af.py new-project <slug> [--domain project-mgmt] [--flow open-flow] [--name NAME]
   python system/af.py doctor [project|pipeline]
   python system/af.py autonomy init|check|start|checkpoint|finish ...
   python system/af.py pipe save --company C --role R --url U [--ats A] [--source S] [--posted D] [--deadline D] [--salary S] [--slug K]
@@ -62,6 +62,8 @@ PIPE_TRANSITIONS = {
 }
 PIPE_NUDGE_DAYS = 7        # applied/interviewing rows silent this long → follow-up note
 PIPE_STALE_SAVED_DAYS = 30 # saved rows older than this → drop-or-start note
+DEFAULT_DOMAIN = "project-mgmt"
+DEFAULT_FLOW = "open-flow"
 FLOWS = {"marketing-solo-flow": "1-research-and-architecture",
          "marketing-standard-flow": "1-research",
          "open-flow": "active",
@@ -1597,7 +1599,7 @@ def main():
     s.add_argument("--media", nargs="*", default=[]); s.set_defaults(fn=cmd_publish)
     s = sub.add_parser("version");         s.add_argument("project"); s.add_argument("deliverable"); s.set_defaults(fn=cmd_version)
     s = sub.add_parser("new-project");     s.add_argument("slug")
-    s.add_argument("--flow", default="open-flow", choices=sorted(FLOWS)); s.add_argument("--domain", default="marketing")
+    s.add_argument("--flow", default=DEFAULT_FLOW, choices=sorted(FLOWS)); s.add_argument("--domain", default=DEFAULT_DOMAIN)
     s.add_argument("--name"); s.set_defaults(fn=cmd_new_project)
     s = sub.add_parser("doctor");          s.add_argument("project", nargs="?"); s.set_defaults(fn=cmd_doctor)
 

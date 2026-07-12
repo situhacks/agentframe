@@ -205,6 +205,72 @@ class SurfaceCalendarTests(unittest.TestCase):
             self.assertEqual(timeline[0]["attention"][0]["date"], "2026-07-15")
             self.assertEqual(timeline[0]["attention"][0]["file"], "brief/brief-v1.md")
 
+    def test_snapshot_calendar_includes_live_career_deadlines_and_nudges(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            pipeline = root / "workspace" / "pipeline"
+            pipeline.mkdir(parents=True)
+            (pipeline / "pipeline.md").write_text(
+                """---
+created_at: 2026-07-01
+last_activity: 2026-07-10T09:00:00-07:00
+applications:
+  promotion-case:
+    stage: preparing
+    company: Acme
+    role: Senior promotion
+    saved: 2026-07-02
+    deadline: 2026-08-15
+  market-case:
+    stage: applied
+    company: Example Co
+    role: Product lead
+    saved: 2026-07-03
+    applied: 2026-07-09
+    next_nudge: 2026-07-16
+  closed-case:
+    stage: dropped
+    company: Old Co
+    role: Closed role
+    deadline: 2026-09-01
+---
+""",
+                encoding="utf-8",
+            )
+
+            timeline = snapshot.build_snapshot(root)["timeline_projects"]
+
+            self.assertEqual(len(timeline), 1)
+            career = timeline[0]
+            self.assertEqual(career["slug"], "@career-pipeline")
+            self.assertEqual(career["name"], "Career cases")
+            self.assertFalse(career["previewable"])
+            self.assertEqual(career["worked_days"], ["2026-07-02", "2026-07-03", "2026-07-09", "2026-07-10"])
+            self.assertEqual(
+                [(item["date"], item["kind"], item["text"]) for item in career["attention"]],
+                [
+                    ("2026-07-16", "career follow-up", "Example Co · Product lead"),
+                    ("2026-08-15", "career case deadline", "Acme · Senior promotion"),
+                ],
+            )
+
+    def test_pipeline_calendar_change_invalidates_snapshot_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            pipeline = root / "workspace" / "pipeline"
+            pipeline.mkdir(parents=True)
+            board = pipeline / "pipeline.md"
+            board.write_text("---\ncreated_at: 2026-07-01\napplications: {}\n---\n", encoding="utf-8")
+            cache = snapshot.SnapshotCache(root)
+            first = cache.get()["etag"]
+
+            board.write_text(
+                "---\ncreated_at: 2026-07-01\napplications:\n  case:\n    stage: preparing\n    deadline: 2026-08-15\n---\n",
+                encoding="utf-8",
+            )
+
+            self.assertNotEqual(first, cache.get()["etag"])
+
 
 if __name__ == "__main__":
     unittest.main()

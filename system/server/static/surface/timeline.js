@@ -267,14 +267,19 @@ function futureExtension(project, range, color) {
 function projectRow(project, range, opts) {
   const color = colorFor(project.slug);
   const deliverables = project.deliverables || [];
-  const label = el('button', { class: 'calendar-project-label' },
+  const summary = project.previewable === false
+    ? `${plainLabel(project.domain)} · ${(project.attention || []).length} commitments`
+    : `${plainLabel(project.status)} · ${dateLabel(project.created_at, { year: false })} → ${project.status === 'active' ? 'now' : dateLabel(project.completed_at || project.cancelled_at, { year: false })} · ${deliverables.length} deliverables`;
+  const label = el(project.previewable === false ? 'div' : 'button', { class: 'calendar-project-label' },
     keycapEl(project.slug, project.name),
     el('span', { class: 'calendar-project-copy' },
       el('strong', { text: project.name || project.slug, title: project.name || project.slug }),
       el('span', {
-        text: `${plainLabel(project.status)} · ${dateLabel(project.created_at, { year: false })} → ${project.status === 'active' ? 'now' : dateLabel(project.completed_at || project.cancelled_at, { year: false })} · ${deliverables.length} deliverables`,
+        text: summary,
       })));
-  label.addEventListener('click', () => navigate('preview', { project: project.slug }));
+  if (project.previewable !== false) {
+    label.addEventListener('click', () => navigate('preview', { project: project.slug }));
+  }
 
   const track = el('div', { class: 'calendar-track' });
   track.append(gridRules(range));

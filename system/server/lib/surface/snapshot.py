@@ -1,7 +1,7 @@
 """Cached dashboard snapshot with etag invalidation.
 
 Invalidation is a stat signature over the narrow watch set (``project.md``,
-``activity.md``, governance docs, and the projects folder itself) — recomputed
+``activity.md``, governance docs, ``pipeline.md``, and project folders) — recomputed
 per request, which is a dozen ``stat`` calls, cheaper and less fragile than a
 watcher thread. Clients poll ``GET /api/snapshot?etag=`` and get a tiny
 ``{"unchanged": true}`` when nothing moved.
@@ -19,6 +19,7 @@ GOVERNANCE_DOCS = ("raid-log.md", "decision-log.md", "workback-schedule.md")
 WATCHED_FILENAMES = ("project.md", "activity.md")
 ARCHIVE_FILENAME = artifacts.ARCHIVE_REL_PATH
 TIMELINE_STATUS_RANK = {"active": 0, "complete": 1, "cancelled": 2}
+PIPELINE_TERMINAL_STAGES = {"offer", "rejected", "ghosted", "dropped"}
 
 
 def _timeline_sort_key(project: dict) -> tuple:
@@ -244,6 +245,64 @@ def _timeline_project(project: dict, activity_text: str) -> dict:
     }
 
 
+def _pipeline_timeline(root: Path) -> dict | None:
+    """Aggregate live career-case dates into one read-only calendar lane."""
+    board = Path(root) / "workspace" / "pipeline" / "pipeline.md"
+    if not board.is_file():
+        return None
+    try:
+        fm = state.parse_frontmatter(board.read_text(encoding="utf-8"))
+    except OSError:
+        return None
+    rows = fm.get("applications")
+    if not isinstance(rows, dict):
+        return None
+
+    attention = []
+    worked_days = set()
+    for slug, row in rows.items():
+        if not isinstance(row, dict):
+            continue
+        for key in ("saved", "applied"):
+            day = str(state._iso(row.get(key)) or "")[:10]
+            if state.DATE_RE.match(day):
+                worked_days.add(day)
+        if row.get("stage") in PIPELINE_TERMINAL_STAGES:
+            continue
+        label = " · ".join(str(value) for value in (row.get("company"), row.get("role")) if value) or str(slug)
+        for field, kind in (("deadline", "career case deadline"), ("next_nudge", "career follow-up")):
+            day = str(state._iso(row.get(field)) or "")[:10]
+            if state.DATE_RE.match(day):
+                attention.append({"date": day, "kind": kind, "text": label, "file": None})
+
+    created_at = state._iso(fm.get("created_at"))
+    last_activity = state._iso(fm.get("last_activity"))
+    if not attention and not rows:
+        return None
+    if last_activity:
+        day = str(last_activity)[:10]
+        if state.DATE_RE.match(day):
+            worked_days.add(day)
+    attention.sort(key=lambda item: (item["date"], item["kind"], item["text"]))
+    return {
+        "slug": "@career-pipeline",
+        "name": "Career cases",
+        "previewable": False,
+        "status": "active",
+        "domain": "careers",
+        "created_at": created_at,
+        "last_activity": last_activity,
+        "shipped_at": None,
+        "completed_at": None,
+        "cancelled_at": None,
+        "deliverables": [],
+        "activity": [],
+        "attention": attention,
+        "worked_days": sorted(worked_days),
+        "work_blocks": [],
+    }
+
+
 def humanize_timestamp(timestamp: str | None, now: datetime.datetime | None = None) -> str | None:
     """Consistent month/day/time label for dashboard activity rows."""
     if not timestamp:
@@ -304,6 +363,9 @@ def build_snapshot(root: Path, activity_limit: int = 50) -> dict:
     timeline_projects = []
     for project in timeline_source:
         timeline_projects.append(_timeline_project(project, _read_activity(Path(project["dir"]))))
+    pipeline_timeline = _pipeline_timeline(root)
+    if pipeline_timeline:
+        timeline_projects.append(pipeline_timeline)
     timeline_projects.sort(key=_timeline_sort_key)
 
     page = activity_entries[:activity_limit]
@@ -362,6 +424,12 @@ class SnapshotCache:
                 h.update(f"archive:{st.st_mtime_ns}:{st.st_size};".encode())
             except OSError:
                 h.update(b"archive:absent;")
+        pipeline = self._root / "workspace" / "pipeline" / "pipeline.md"
+        try:
+            st = pipeline.stat()
+            h.update(f"pipeline.md:{st.st_mtime_ns}:{st.st_size};".encode())
+        except OSError:
+            h.update(b"pipeline.md:absent;")
         return h.hexdigest()
 
     def get(self) -> dict:

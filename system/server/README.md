@@ -2,7 +2,7 @@
 
 Localhost server with two jobs:
 
-1. **Local surface at `/`** — the AgentFrame dashboard (attention items, active projects, recent activity), historical Calendar (Day/Week/Month via FullCalendar + a slimmed swimlane Timeline; ghost/solid project ribbons with a toggle, synthesized work blocks, hover-to-preview deliverable dots, active-first filters, print/PDF), and IDE-style Preview tab (media-first artifact index from `project.md` tracker rows, manifest media, exports, and untracked files; tabs/splits via Dockview; viewers for markdown/text/HTML/image/PDF/video, and PPTX/DOCX via LibreOffice conversion). Backend modules live in `lib/surface/`, frontend in `static/surface/`. Deterministic file reads only — no LLM, no API keys.
+1. **Local surface at `/`** — the AgentFrame dashboard (attention items, active projects, recent activity), historical Calendar (Day/Week/Month via FullCalendar + a slimmed swimlane Timeline; ghost/solid project ribbons with a toggle, synthesized work blocks, hover-to-preview deliverable dots, career-case deadline/follow-up markers, active-first filters, print/PDF), and IDE-style Preview tab (media-first artifact index from `project.md` tracker rows, manifest media, exports, and untracked files; tabs/splits via Dockview; viewers for markdown/text/HTML/image/PDF/video, and PPTX/DOCX via LibreOffice conversion). Backend modules live in `lib/surface/`, frontend in `static/surface/`. Deterministic file reads only — no LLM, no API keys.
 2. **Static + LiveReload serving** of the whole repo root, which the Preview viewers and the legacy hub (`/hub`) build on.
 
 Operator-facing process: [`library/process/preview-server.md`](../../library/process/preview-server.md).

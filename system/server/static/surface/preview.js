@@ -402,16 +402,25 @@ function groupMatchesFilter(g) {
 
 function detailFilesForFilter(g, detail) {
   if (g.kind === 'design') {
-    // Design group: `versions` is the flat folder listing.
+    // Design group: `versions` is the flat folder listing. The current file
+    // (the storybook when it exists) always leads the list so it reads as the
+    // group's default.
     const all = detail?.versions || [];
-    if (rail.filterClass === 'text') return [...new Set(all.filter((f) => typeForPath(f) === 'text'))];
+    const hoist = (files) => {
+      const set = [...new Set(files)];
+      if (g.current && set.includes(g.current)) {
+        return [g.current, ...set.filter((f) => f !== g.current)];
+      }
+      return set;
+    };
+    if (rail.filterClass === 'text') return hoist(all.filter((f) => typeForPath(f) === 'text'));
     if (rail.filterClass === 'media') {
-      return [...new Set(all.filter((f) => {
+      return hoist(all.filter((f) => {
         const t = typeForPath(f);
         return t !== 'text' && (!rail.filterType || t === rail.filterType);
-      }))];
+      }));
     }
-    return [...new Set(all)];
+    return hoist(all);
   }
   const versions = detail?.versions || [];
   const media = [

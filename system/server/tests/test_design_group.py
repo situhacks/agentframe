@@ -74,6 +74,17 @@ class DesignGroupTests(unittest.TestCase):
             self.assertTrue(any(f.endswith("storybook.html") for f in files))
             self.assertTrue(any(f.endswith("direction-2.html") for f in files))
 
+    def test_design_detail_does_not_clobber_group_current(self):
+        # The detail endpoint merges {**group, **detail}; design_detail must not
+        # carry a `current` key, or it would overwrite the group's storybook.
+        with tempfile.TemporaryDirectory() as tmp:
+            pdir = _project(Path(tmp))
+            g = artifacts.design_group(pdir)
+            detail = artifacts.design_detail(pdir, g["folder"])
+            self.assertNotIn("current", detail)
+            merged = {**g, **detail}
+            self.assertTrue(merged["current"].endswith("storybook.html"))
+
     def test_picks_highest_version(self):
         with tempfile.TemporaryDirectory() as tmp:
             pdir = _project(Path(tmp))

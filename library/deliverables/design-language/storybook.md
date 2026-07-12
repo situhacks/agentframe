@@ -2,7 +2,9 @@
 
 An **optional** single-file HTML catalog of a project's design language — a browsable visual reference rendered from the locked language. Offer it when the operator wants to *visualize* the language or *compare* candidate directions; skip it for rudimentary languages that don't earn the generation cost.
 
-One storybook per design language, versioned with the language it renders. It is a companion to `design-language-v{N}.md`, not a replacement — the `.md` is the source of truth; the storybook is the visual view of it.
+One storybook per design language. It is a companion to `design-language-v{N}.md`, not a replacement — the `.md` is the source of truth; the storybook is the visual view of it.
+
+**Not versioned.** The storybook is a *rendered view*, like `tokens.css` — a single `storybook.html` that is regenerated when the language changes, always reflecting the current (highest) `design-language-v{N}.md`. The version history already lives in the language's `v{N}` chain; do not create `storybook-v{N}.html`. Static filename, dynamically current content. It is the Design group's default/current file in the preview server.
 
 ## When It Exists
 

@@ -374,8 +374,10 @@ def design_detail(project_dir: Path, folder_rel: str) -> dict:
         for f in sorted(folder.rglob("*")):
             if f.is_file() and f.suffix.lower() in PREVIEWABLE_EXTS:
                 files.append(_rel_posix(f, root))
+    # No ``current`` key here: the design group summary already carries the
+    # storybook (or md fallback) as ``current``; a None here would clobber it
+    # when merged as ``{**group, **detail}``.
     return {
-        "current": None,
         "versions": files,
         "manifest_media": [],
         "exports": [],

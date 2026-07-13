@@ -45,55 +45,57 @@ The original marketing-only system is frozen at [agentframe-marketing](https://g
 
 ## Key features
 
-AgentFrame keeps three layers on the same files. Prompt engineering gives the agent reusable personas, templates, and processes. Context engineering decides which of those files the agent should read for the work in front of it. Loop engineering is the part I am still exploring: bounded runs where the agent can keep working toward a defined result without me sitting in the chat the whole time. Any coding agent that reads files can run all three.
+AgentFrame keeps its context, working rules, and project state in files that any coding agent can read. These are the parts that make that useful in practice.
 
 <!-- IMAGE STUB · slot: three-layers · shows: prompt / context / loop engineering as one visual, context as the core layer -->
 
-### Context engineering without the re-briefing
+### 1. Pick up a project without re-briefing
 
-**The project reconstructs from disk.** After a memory compaction, a provider switch, or a month away, a fresh agent reads the project files and continues from the same state. I do not need to write a catch-up paragraph or upload the brief again.
+- **Reconstruct the project from disk.** After a memory compaction, a provider switch, or a month away, a fresh agent reads the project files and continues from the same state. I do not need to write a catch-up paragraph or upload the brief again.
 
-**Sources and working knowledge stay separate.** Transcripts and briefs land in `sources/` and never get edited. The agent maintains what it has learned from them in `knowledge/`, and when that working context gets too big, a consolidation pass archives the resolved detail so the active files stay useful without deleting the history.
+- **Keep sources and working knowledge separate.** Transcripts and briefs land in `sources/` and never get edited. The agent maintains what it has learned from them in `knowledge/`, and a consolidation pass archives resolved detail when the active context gets too big.
 
-**The workspace only loads what the task needs.** The active persona points to the project, the project points to its flow, and the flow points to the process for the current step. Skills stay out of context until the work calls for them, so the workspace can get large without every chat carrying all of it.
+- **Load only what the task needs.** The active persona points to the project, the project points to its flow, and the flow points to the process for the current step. Skills stay out of context until the work calls for them, so the workspace can get large without every chat carrying all of it.
 
 <!-- IMAGE STUB · slot: context-graph · shows: D2 mini-diagram, project → flow → process → skill, each loading only what the step needs -->
 
-### Prompt engineering built from real work
+### 2. Reuse instructions shaped by real work
 
-**Templates and processes are the part meant to last.** Every deliverable shape and workflow in the library was refined on work I actually ran. The model and the tools around them can change without taking that knowledge with them.
+- **Start from templates and processes that have already been used.** Every deliverable shape and workflow in the library was refined on work I actually ran. The model and tools can change without taking that knowledge with them.
 
-**The voice system learns from my edits.** It reads complete pieces I published, uses a different register for each channel, and compares agent drafts against my rewrites to learn the moves I keep making by hand. I am still refining it, but it gets better as more real work runs through the system.
+- **Teach the voice system from real edits.** It reads complete pieces I published, uses a different register for each channel, and compares agent drafts against my rewrites to learn the moves I keep making by hand.
 
-**Domain packs only exist where repeated work has earned the extra structure.** Marketing, project management, and careers ship today. Adding another domain means adding its templates and a descriptor rather than rewriting the core. My read is that the model companies are moving toward a similar shape, with specialised packs on top of a general platform; Anthropic's Claude for Financial Services is one example. AgentFrame uses that pattern in a local workspace.
+- **Add specialised structure through domain packs.** Marketing, project management, and careers ship today. Adding another domain means adding its templates and descriptor rather than rewriting the core.
 
 <!-- IMAGE STUB · slot: voice-pair · shows: one real contrastive pair, a generic AI line beside the operator's rewrite, rendered as a styled snippet -->
 
-### Commands handle the bookkeeping
+### 3. Keep state and automation deterministic
 
-**Project state changes through commands.** Models are good at research, synthesis, and drafting, but I do not trust one to remember the exact bookkeeping steps months into a project. `system/af.py` handles creation, versioning, locking, publishing, and doctor checks, then gives the work back to the agent for the part that needs judgment.
+- **Run project state changes through commands.** Models are good at research, synthesis, and drafting, but I do not trust one to remember exact bookkeeping steps months into a project. `system/af.py` handles creation, versioning, locking, publishing, and doctor checks, then gives the work back to the agent for the part that needs judgment.
 
-**Deliverables keep their own version trail.** Replacement-shaped revisions become immutable snapshots, the project always points at the current version, and lock gates run before delivery. When the destination needs a real file, the export is tracked too, so I can see what changed and why without reconstructing it from chat history.
+- **Keep a version trail for every deliverable.** Replacement-shaped revisions become immutable snapshots, the project always points at the current version, and lock gates run before delivery. When the destination needs a real file, the export is tracked too.
 
-**The workspace records what happened as part of the work.** Activity logs and version notes cover projects, while an append-only audit database records system changes. `af doctor` reports drift without silently fixing it. The same trail feeds the dashboard and gives the harvest passes something concrete to learn from later.
+- **Record what happened as part of the work.** Activity logs and version notes cover projects, while an append-only audit database records system changes. `af doctor` reports drift without silently fixing it.
+
+- **Run standing project work through managed automations.** A project can define a job, receive queued tasks, and run them through a bounded local agent that returns a `done`, `blocked`, or `failed` receipt. The first deployment uses Power Automate, OneDrive, and a single-flight Cursor host; I have just started testing it in real use, so the project contracts are more settled than the runtime around them.
 
 <!-- IMAGE STUB · slot: spine-flow · shows: D2 flow, draft → version → lock → gate → publish, with the paper trail written underneath each step -->
 
-### Self-improvement when the work earns it
+### 4. Learn deliberately from finished work
 
-**Finished work can feed the system back.** When a project closes, harvest passes compare the drafts with my manual edits and the friction logged along the way. They propose changes to templates, processes, or the voice corpus, but nothing updates itself automatically. I decide when there is enough evidence to change the system.
+- **Feed finished work back into the system.** When a project closes, harvest passes compare drafts with my manual edits and the friction logged along the way. They propose changes to templates, processes, or the voice corpus, but nothing updates itself automatically.
 
-**Loop engineering is still an experiment.** A bounded run defines the goal, the evidence that would count as done, its iteration budget, and the points where a reviewer checks the work. Today that is one process file, [`bounded-autonomy.md`](library/process/bounded-autonomy.md), and I expect the shape to change as I use it more.
+- **Bound experiments before they run unattended.** A bounded run defines its goal, evidence of completion, iteration budget, and review points before the agent starts. Today that is one process file, [`bounded-autonomy.md`](library/process/bounded-autonomy.md), and I expect the shape to change as I use it more.
 
-### What I reused
+### 5. See the workspace without another database
 
-I did not rebuild every production tool from scratch. Deck generation, advanced visuals, video composition, prose cleanup, and deep research come from community projects that already do those jobs well. AgentFrame keeps the upstream source and refresh path beside each vendored skill, then layers its own tweaks on top. The full split between vendored and internal work is in [At a glance](#at-a-glance).
+- **Render the workspace from the same files the agents use.** The dashboard covers projects, attention items, the calendar, and the timeline without adding another database or making a model call. Honestly, I mostly use it for the quick view (and a little vanity), but I like that the files are coherent enough to become an interface.
 
-### The Workspace Dashboard
+- **See what the automation runtime is doing.** The read-only Automations pulse shows waiting requests, terminal receipts, exceptions, and mismatches between a project's declared lifecycle and the local runtime. It reports problems without starting, retrying, or changing an automation.
 
-There is also a dashboard for projects, attention items, the calendar, and the timeline, all rendered from the same markdown the agents read. Honestly, I mostly use it for the quick view (and a little vanity), but I like that the workspace is coherent enough to become an interface without adding a second database or making another model call. Details are in [The Workspace Dashboard](#the-workspace-dashboard).
+More detail is in [The Workspace Dashboard](#the-workspace-dashboard).
 
-<!-- IMAGE STUB · slot: dashboard-hero · shows: one Workspace Dashboard screenshot with active projects, attention queue, and calendar -->
+<!-- IMAGE STUB · slot: dashboard-hero · shows: Workspace Dashboard home and the Automations pulse -->
 
 ## Quick start
 
@@ -216,7 +218,7 @@ The careers pack treats a career as a long project, starting with the work you a
 
 ## At a glance
 
-This is the full capability catalog. Skills name where they came from because AgentFrame uses existing community work when it already does the job well. The process files and templates are AgentFrame's own, built from projects that ran through the workspace.
+This is the full capability catalog. I did not rebuild every production tool from scratch: deck generation, advanced visuals, video composition, prose cleanup, and deep research come from community projects that already do those jobs well. Each vendored skill keeps its upstream source and refresh path nearby, while the process files and templates are AgentFrame's own and come from projects that ran through the workspace.
 
 ### Skills
 
@@ -265,6 +267,7 @@ All AgentFrame-owned. Each loads on demand when the work reaches it.
 | `operator-context-setup` | First-run generation of positioning, profile, career, and voice surfaces |
 | `preview-server` | Start-or-open behaviour, deep links, and preview hygiene for the dashboard |
 | `process-authoring` | The standard for reusable process files |
+| `project-automation` | Project-owned contracts, lifecycle, deployment joins, and result verification for standing work |
 | `project-frontmatter` | Canonical project state, tracker schema, overrides, and drift checks |
 | `research-and-signals` | Kickoff context scans and research-method selection |
 | `substack-publishing` | Draft preparation, editor handoff, and live-result reconciliation |
@@ -304,11 +307,12 @@ The structure follows a few rules that have kept it from turning into a second j
 
 `python system/server/run.py --daemon` starts or reuses the local server and opens the workspace UI. It reads the workspace files directly, so it does not need a model, an API key, or a second database.
 
-<!-- IMAGE STUB · slot: dashboard-tour · shows: 2-3 dashboard screenshots of the dashboard home, calendar/timeline, and preview workspace -->
+<!-- IMAGE STUB · slot: dashboard-tour · shows: dashboard home, Automations pulse, calendar/timeline, and preview workspace -->
 
 What it provides:
 
 - A dashboard of active projects, attention items, and recent activity
+- A read-only Automations pulse for waiting requests, receipts, exceptions, and runtime drift
 - Day, week, and month calendar views
 - A multi-month swimlane timeline with active-first sorting
 - Work blocks derived from actual logged activity
@@ -325,6 +329,7 @@ agentframe/
 ├── AGENTS.md                   # generated active persona
 ├── AGENTS.operator.md          # project execution and routing
 ├── AGENTS.builder.md           # system architecture and maintenance
+├── AGENTS.daemon.md            # unattended managed-run overlay
 ├── library/
 │   ├── context/                 # operator, people, channel, career, and voice context
 │   ├── deliverables/            # shared deliverable templates
@@ -335,6 +340,7 @@ agentframe/
 │   ├── af.py                    # deterministic state-transition CLI
 │   ├── audit/                   # append-only system-change audit
 │   ├── browser/                 # browser runtime and recipes
+│   ├── daemon/                  # local managed-automation host and queue protocol
 │   ├── hooks/                   # deterministic production guards
 │   ├── research/                # Gemini deep-research runtime
 │   ├── server/                  # Workspace Dashboard and preview server

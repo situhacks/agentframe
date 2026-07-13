@@ -46,8 +46,9 @@ def _receipt_summary(queue_root: Path, now: dt.datetime) -> dict:
     outbox = queue_root / "outbox"
     counts = {"done": 0, "blocked": 0, "failed": 0}
     latest = None
+    receipts = []
     if not outbox.is_dir():
-        return {"today": counts, "last_result": None}
+        return {"today": counts, "last_result": None, "receipts": receipts, "receipt_ids": []}
     for path in outbox.glob("*.result.json"):
         payload = _read_json(path)
         status_value = payload.get("status")
@@ -63,9 +64,52 @@ def _receipt_summary(queue_root: Path, now: dt.datetime) -> dict:
             "summary": payload.get("summary"),
             "time": modified.isoformat(timespec="seconds"),
         }
+        receipts.append(row)
         if latest is None or row["time"] > latest["time"]:
             latest = row
-    return {"today": counts, "last_result": latest}
+    receipts.sort(key=lambda row: row["time"], reverse=True)
+    return {
+        "today": counts,
+        "last_result": latest,
+        "receipts": receipts[:20],
+        "receipt_ids": [row["task_id"] for row in receipts if row.get("task_id")],
+    }
+
+
+def _task_summary(queue_root: Path, now: dt.datetime, receipt_ids: set[str]) -> dict:
+    submitted_today = set()
+    awaiting = []
+    for folder in ("inbox", "processing", "archive"):
+        base = queue_root / folder
+        if not base.is_dir():
+            continue
+        for path in base.glob("*.task.json"):
+            payload = _read_json(path)
+            task_id = payload.get("id")
+            if not task_id:
+                continue
+            requested = _parse_time(payload.get("requested_at"))
+            if requested is None:
+                try:
+                    requested = dt.datetime.fromtimestamp(path.stat().st_mtime, tz=now.tzinfo)
+                except OSError:
+                    continue
+            if requested.date() == now.date():
+                submitted_today.add(task_id)
+            if folder in {"inbox", "processing"} and task_id not in receipt_ids:
+                awaiting.append({
+                    "task_id": task_id,
+                    "requested_at": requested.isoformat(timespec="seconds"),
+                    "age_seconds": max(0, int((now - requested).total_seconds())),
+                    "state": "running" if folder == "processing" else "queued",
+                })
+    awaiting.sort(key=lambda row: row["requested_at"])
+    return {
+        "requests_today": len(submitted_today),
+        "awaiting": len(awaiting),
+        "awaiting_tasks": awaiting,
+        "oldest_awaiting_seconds": awaiting[0]["age_seconds"] if awaiting else None,
+    }
 
 
 def _runtime_rows(root: Path, now: dt.datetime) -> tuple[dict, dict]:
@@ -80,9 +124,12 @@ def _runtime_rows(root: Path, now: dt.datetime) -> tuple[dict, dict]:
         if not isinstance(item, dict) or not item.get("id"):
             continue
         queue_root = Path(str(item.get("queue_root") or ""))
-        queued = len(list((queue_root / "inbox").glob("*.task.json"))) if queue_root.is_absolute() else 0
         receipts = _receipt_summary(queue_root, now) if queue_root.is_absolute() else {
-            "today": {"done": 0, "blocked": 0, "failed": 0}, "last_result": None}
+            "today": {"done": 0, "blocked": 0, "failed": 0}, "last_result": None,
+            "receipts": [], "receipt_ids": []}
+        receipt_ids = set(receipts.pop("receipt_ids"))
+        tasks = _task_summary(queue_root, now, receipt_ids) if queue_root.is_absolute() else {
+            "requests_today": 0, "awaiting": 0, "awaiting_tasks": [], "oldest_awaiting_seconds": None}
         current = status.get("current") or {}
         deployments[item["id"]] = {
             "deployment_id": item["id"],
@@ -90,10 +137,12 @@ def _runtime_rows(root: Path, now: dt.datetime) -> tuple[dict, dict]:
             "project": item.get("project"),
             "automation_id": item.get("automation_id"),
             "enabled": bool(item.get("enabled", True)),
+            "body_profile": item.get("body_profile"),
             "runtime_state": _runtime_state(status, item["id"], poll_seconds, now),
-            "queued": queued,
+            "queued": tasks["awaiting"],
             "current_task": current.get("task_id") if current.get("deployment_id") == item["id"] else None,
             **receipts,
+            **tasks,
         }
     return deployments, {"registry_path": str(registry_path), "heartbeat_at": status.get("heartbeat_at")}
 
@@ -136,6 +185,10 @@ def build_model(root: Path, now: dt.datetime | None = None) -> dict:
                 "deployment_id": deployment_id,
                 "runtime_state": runtime_state,
                 "queued": queued,
+                "requests_today": runtime.get("requests_today", 0) if runtime else 0,
+                "awaiting_tasks": runtime.get("awaiting_tasks", []) if runtime else [],
+                "oldest_awaiting_seconds": runtime.get("oldest_awaiting_seconds") if runtime else None,
+                "body_profile": runtime.get("body_profile") if runtime else None,
                 "current_task": runtime.get("current_task") if runtime else None,
                 "today": runtime.get("today") if runtime else {"done": 0, "blocked": 0, "failed": 0},
                 "last_result": runtime.get("last_result") if runtime else None,
@@ -154,10 +207,49 @@ def build_model(root: Path, now: dt.datetime | None = None) -> dict:
             "deployment_id": deployment_id,
             "runtime_state": runtime.get("runtime_state"),
             "queued": runtime.get("queued", 0),
+            "requests_today": runtime.get("requests_today", 0),
+            "awaiting_tasks": runtime.get("awaiting_tasks", []),
+            "oldest_awaiting_seconds": runtime.get("oldest_awaiting_seconds"),
+            "body_profile": runtime.get("body_profile"),
             "current_task": runtime.get("current_task"),
             "today": runtime.get("today"),
             "last_result": runtime.get("last_result"),
             "issues": ["runtime-orphan"],
         })
     rows.sort(key=lambda row: (not row["issues"], row.get("project") or "", row.get("automation_id") or ""))
-    return {"generated_at": now.isoformat(timespec="seconds"), "rows": rows, **meta}
+    recent_receipts = []
+    attention = []
+    for row in rows:
+        identity = {
+            "automation_id": row.get("automation_id"),
+            "deployment_id": row.get("deployment_id"),
+            "project": row.get("project"),
+            "project_name": row.get("project_name"),
+        }
+        for issue in row.get("issues") or []:
+            attention.append({**identity, "kind": issue, "summary": "Declared and observed state do not match."})
+        for task in row.get("awaiting_tasks") or []:
+            attention.append({
+                **identity, "kind": "unanswered", "task_id": task["task_id"],
+                "time": task["requested_at"], "age_seconds": task["age_seconds"],
+                "summary": f"Request is still {task['state']} with no terminal receipt.",
+            })
+        runtime = deployments.get(row.get("deployment_id"))
+        for receipt in (runtime or {}).get("receipts", []):
+            enriched = {**identity, **receipt}
+            recent_receipts.append(enriched)
+            parsed = _parse_time(receipt.get("time"))
+            if receipt.get("status") in {"blocked", "failed"} and parsed and parsed.date() == now.date():
+                attention.append({
+                    **enriched, "kind": receipt["status"],
+                    "summary": receipt.get("summary") or "Terminal receipt needs review.",
+                })
+    recent_receipts.sort(key=lambda row: row.get("time") or "", reverse=True)
+    attention.sort(key=lambda row: row.get("time") or "", reverse=True)
+    return {
+        "generated_at": now.isoformat(timespec="seconds"),
+        "rows": rows,
+        "attention": attention,
+        "recent_receipts": recent_receipts[:20],
+        **meta,
+    }

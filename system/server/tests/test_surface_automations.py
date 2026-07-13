@@ -80,7 +80,10 @@ class SurfaceAutomationTests(unittest.TestCase):
     def test_active_runtime_joins_queue_today_and_current_task(self):
         self.write_project()
         self.write_runtime(current={"deployment_id": "work-email", "task_id": "task-2"})
-        (self.queue / "inbox" / "task-3.task.json").write_text("{}", encoding="utf-8")
+        (self.queue / "inbox" / "task-3.task.json").write_text(json.dumps({
+            "schema_version": 1, "id": "task-3", "requested_at": self.now.isoformat(),
+            "task": "waiting",
+        }), encoding="utf-8")
         receipt = self.queue / "outbox" / "task-1.result.json"
         receipt.write_text(json.dumps({
             "schema_version": 1, "task_id": "task-1", "status": "done",
@@ -92,9 +95,12 @@ class SurfaceAutomationTests(unittest.TestCase):
         row = model["rows"][0]
         self.assertEqual(row["runtime_state"], "busy")
         self.assertEqual(row["queued"], 1)
+        self.assertEqual(row["requests_today"], 1)
         self.assertEqual(row["current_task"], "task-2")
         self.assertEqual(row["today"]["done"], 1)
         self.assertEqual(row["issues"], [])
+        self.assertEqual(model["recent_receipts"][0]["task_id"], "task-1")
+        self.assertEqual(model["attention"][0]["kind"], "unanswered")
 
     def test_stale_heartbeat_surfaces_active_offline(self):
         self.write_project()
@@ -113,9 +119,32 @@ class SurfaceAutomationTests(unittest.TestCase):
     def test_paused_automation_with_queued_task_is_attention(self):
         self.write_project(status="paused")
         self.write_runtime()
-        (self.queue / "inbox" / "waiting.task.json").write_text("{}", encoding="utf-8")
+        (self.queue / "inbox" / "waiting.task.json").write_text(json.dumps({
+            "schema_version": 1, "id": "waiting", "requested_at": self.now.isoformat(),
+            "task": "waiting",
+        }), encoding="utf-8")
         row = automations.build_model(self.root, self.now)["rows"][0]
         self.assertEqual(row["issues"], ["paused-with-queue"])
+
+    def test_failed_receipt_surfaces_in_attention_with_summary(self):
+        self.write_project()
+        self.write_runtime()
+        task = self.queue / "archive" / "failed-task.task.json"
+        task.write_text(json.dumps({
+            "schema_version": 1, "id": "failed-task", "requested_at": self.now.isoformat(),
+            "task": "fail",
+        }), encoding="utf-8")
+        receipt = self.queue / "outbox" / "failed-task.result.json"
+        receipt.write_text(json.dumps({
+            "schema_version": 1, "task_id": "failed-task", "status": "failed",
+            "summary": "body timed out", "outputs": [], "operator_action": "review",
+        }), encoding="utf-8")
+        timestamp = self.now.timestamp()
+        os.utime(receipt, (timestamp, timestamp))
+        model = automations.build_model(self.root, self.now)
+        failed = next(item for item in model["attention"] if item["kind"] == "failed")
+        self.assertEqual(failed["summary"], "body timed out")
+        self.assertEqual(model["rows"][0]["requests_today"], 1)
 
 
 if __name__ == "__main__":

@@ -3,7 +3,8 @@
 // lazily the first time the Preview tab opens.
 
 import { getJSON, postJSON, navigate, parseHash } from './api.js?v=5';
-import { renderDashboard, renderAutomations, applyActivityUpdate, setupDashboardDensity } from './dashboard.js?v=6';
+import { renderDashboard, applyActivityUpdate, setupDashboardDensity } from './dashboard.js?v=7';
+import { renderAutomations } from './automations.js?v=2';
 import { renderCalendar, setupCalendar } from './calendar.js?v=7';
 
 const POLL_MS = 12000;
@@ -74,17 +75,21 @@ async function poll({ force = false } = {}) {
 
 async function applyRoute() {
   const { path, params } = parseHash();
-  const route = path.startsWith('preview') ? 'preview' : path.startsWith('calendar') ? 'calendar' : 'dashboard';
+  const route = path.startsWith('preview') ? 'preview'
+    : path.startsWith('calendar') ? 'calendar'
+      : path.startsWith('automations') ? 'automations' : 'dashboard';
   state.route = route;
 
   const calendarWasHidden = document.getElementById('view-calendar').hidden;
   document.getElementById('view-dashboard').hidden = route !== 'dashboard';
+  document.getElementById('view-automations').hidden = route !== 'automations';
   document.getElementById('view-calendar').hidden = route !== 'calendar';
   document.getElementById('view-preview').hidden = route !== 'preview';
   // re-render on entry: width-dependent layout (timeline day detail) needs
   // the view visible to measure
   if (route === 'calendar' && calendarWasHidden && state.snapshot) renderCalendar(state.snapshot);
   document.getElementById('tab-dashboard').classList.toggle('active', route === 'dashboard');
+  document.getElementById('tab-automations').classList.toggle('active', route === 'automations');
   document.getElementById('tab-calendar').classList.toggle('active', route === 'calendar');
   document.getElementById('tab-preview').classList.toggle('active', route === 'preview');
 

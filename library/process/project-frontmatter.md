@@ -14,6 +14,7 @@ Each v2 frontmatter block has one job:
 | `LIFECYCLE` | Project state, active phase, activity timestamps, terminal state. |
 | `MANIFEST` | Which post ingredients this project uses by default. |
 | `DELIVERABLES` | Per-deliverable tracker; the primary state-discovery surface. |
+| `AUTOMATIONS` | Optional pointers to standing project-attached automation contracts; absent until first use. |
 | `COUNTERS` | Cheap rollups derived from deliverable rows. |
 
 Pointers live inside the relevant block, not in a catch-all section. Do not move deliverable content into `project.md`.
@@ -109,6 +110,22 @@ deliverables:
 Do not add `status: in_review`; use `status: drafting` + `review: pending`.
 
 **Row archiving.** The tracker is the working set. [`project-consolidate`](../../system/skills/project-consolidate/SKILL.md) may move delivered rows older than 30 days to `knowledge/_archive/deliverables-archive.md`, whose frontmatter is a top-level `deliverables:` map holding the rows verbatim. `af doctor` and `af publish` count tracker + archive. `locked` and `deferred` rows never archive.
+
+### Automations
+
+The optional `automations` mapping appears only after `af automation init`. Each row points to one living operational bundle:
+
+```yaml
+automations:
+  email-intake:
+    status: active
+    file: automations/email-intake/automation.md
+    deployment_id: client-email-intake-work
+    last_updated: 2026-07-12T15:10:00-07:00
+    job: "Route approved client emails into project intake"
+```
+
+`status` is `proposed | ready | active | paused | retired`. Project state records desired lifecycle; deployment heartbeat and run outcomes remain observed runtime state. Create and transition rows only through `python system/af.py automation`. Existing projects require no backfill.
 
 ### Counters
 

@@ -3,7 +3,7 @@
 // lazily the first time the Preview tab opens.
 
 import { getJSON, postJSON, navigate, parseHash } from './api.js?v=5';
-import { renderDashboard, applyActivityUpdate, setupDashboardDensity } from './dashboard.js?v=5';
+import { renderDashboard, renderAutomations, applyActivityUpdate, setupDashboardDensity } from './dashboard.js?v=6';
 import { renderCalendar, setupCalendar } from './calendar.js?v=7';
 
 const POLL_MS = 12000;
@@ -33,6 +33,9 @@ function timeNow() {
 // ---------- snapshot polling ----------
 
 async function poll({ force = false } = {}) {
+  getJSON('/api/automations').then(renderAutomations).catch(() => {
+    renderAutomations({ rows: [] });
+  });
   try {
     const query = state.etag && !force ? `?etag=${encodeURIComponent(state.etag)}` : '';
     const snap = await getJSON(`/api/snapshot${query}`);

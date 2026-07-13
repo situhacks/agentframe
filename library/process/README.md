@@ -21,6 +21,7 @@ Catalog of reusable process files: what each owns and when to load it. Check her
 | [`lock-event.md`](lock-event.md) | Generic lock mechanics and the post-lock judgment checklist | A deliverable is being locked by state change or clear operator intent |
 | [`operator-context-setup.md`](operator-context-setup.md) | First-time generation of operator context surfaces | Loading `library/context/operator/` finds a surface missing |
 | [`preview-server.md`](preview-server.md) | Workspace Dashboard start-or-open, preview deep links, stop, noise hygiene | The operator explicitly asks for the dashboard, calendar, or a browser preview |
+| [`project-automation.md`](project-automation.md) | Project-attached standing automations: contract, lifecycle, deployment join, and promotion boundary | Project work becomes recurring or event-driven managed execution, or `project.md` has an `automations` row |
 | [`process-authoring.md`](process-authoring.md) | Authoring standard for process files, incl. the catalog-row requirement | Creating or materially reshaping a file in this folder (Builder) |
 | [`project-frontmatter.md`](project-frontmatter.md) | Canonical project frontmatter schema + drift check + `phase_override` shape | Reading or writing `project.md` frontmatter for state decisions |
 | [`research-and-signals.md`](research-and-signals.md) | Shared kickoff research procedure (workspace scan, MCP scan, research-method offer) | Any flow's research phase, or new-project kickoff |

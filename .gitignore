@@ -108,3 +108,6 @@ docs/
 system/server/.surface.lock
 system/server/.surface.log
 system/server/.cache/
+
+# === Managed automation deployment state (per-machine) ===
+system/daemon/local/

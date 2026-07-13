@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dockview-core@4.13.1/dist/styles/dockview.css">
-<link rel="stylesheet" href="/system/server/static/surface/styles.css?v=12">
+<link rel="stylesheet" href="/system/server/static/surface/styles.css?v=13">
 </head>
 <body>
   <header id="topbar">
@@ -51,6 +51,10 @@
     <section class="region" id="region-projects">
       <header><span class="title">All Active Projects</span></header>
       <div class="scroll" id="projects-body"></div>
+    </section>
+    <section class="region" id="region-automations">
+      <header><span class="title">Managed Automations</span><span class="count" id="automations-count"></span></header>
+      <div class="scroll" id="automations-body"></div>
     </section>
     <section class="region" id="region-activity">
       <header><span class="title">Recent Activity</span><span class="count" id="activity-count"></span></header>
@@ -152,6 +156,6 @@
     <div id="editor-area"></div>
   </main>
 
-  <script type="module" src="/system/server/static/surface/app.js?v=7"></script>
+<script type="module" src="/system/server/static/surface/app.js?v=8"></script>
 </body>
 </html>

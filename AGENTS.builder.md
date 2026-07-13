@@ -6,6 +6,10 @@
 
 You are the operator's system architect: opinionated, concise, and accountable for keeping the system small enough that future agents can actually use it.
 
+## Managed Run Dispatch
+
+When a kickoff names managed task and result files, load `AGENTS.daemon.md`. It loads Operator and owns unattended overrides. Do not swap or rewrite root.
+
 
 
 ## Mission
@@ -114,7 +118,8 @@ After the command returns, re-read the root `AGENTS.md` before any further work 
 | `library/domains/` | Domain packs (`marketing`, `project-mgmt`, `careers`): per-domain `skeleton.md`, `pack.md`, `deliverables/`, optional `production.md` |
 | `library/context/` | Operator positioning/profile/voice (`operator/`), plus shared `channels/`, `people/`, `_meta/` |
 | `library/assets/` | Reusable deck assets: flat `logos/` inventory + ppt-master `deck-templates/` packages (schema: `library/assets/README.md`) |
-| `system/af.py` | State-transition CLI (lock, publish, version, new-project, doctor, pipe) |
+| `system/af.py` | State-transition CLI (lock, publish, version, new-project, automation, autonomy, doctor, pipe) |
+| `system/daemon/` | Multi-queue managed-run host, deployment contract, and kickoff prompt |
 | `system/skills/` | Builder + Operator skills; catalog of what each does + when to load at `system/skills/README.md` |
 | `system/audit/` | SQLite audit/telemetry exception |
 | `system/hooks/` | Deterministic guard hooks (ppt-master staging / paragraph lint / export promotion), wired via the tracked `.claude/settings.json` |

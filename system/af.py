@@ -17,6 +17,7 @@ Commands:
   python system/af.py version <project> <deliverable-slug>
   python system/af.py new-project <slug> [--domain project-mgmt] [--flow open-flow] [--name NAME]
   python system/af.py doctor [project|pipeline]
+  python system/af.py automation init|ready|activate|pause|retire ...
   python system/af.py autonomy init|check|start|checkpoint|finish ...
   python system/af.py pipe save --company C --role R --url U [--ats A] [--source S] [--posted D] [--deadline D] [--salary S] [--slug K]
   python system/af.py pipe start <slug>
@@ -75,6 +76,15 @@ AUTONOMY_LEVELS = {"plan-only", "assisted", "unattended"}
 AUTONOMY_REVIEWER_MODES = {"independent", "same-context", "human"}
 AUTONOMY_COMPLETION_GATES = {"human", "independent-review"}
 AUTONOMY_MODEL_TIERS = {"premium", "workhorse", "economical", "current", "none"}
+AUTOMATION_SCHEMA_VERSION = "2026-07-12"
+AUTOMATION_STATUSES = {"proposed", "ready", "active", "paused", "retired"}
+AUTOMATION_TRANSITIONS = {
+    "proposed": {"ready", "retired"},
+    "ready": {"active", "retired"},
+    "active": {"paused", "retired"},
+    "paused": {"active", "retired"},
+    "retired": set(),
+}
 
 
 def die(msg):
@@ -463,6 +473,191 @@ def cmd_new_project(args):
     print("    (research offer / plan proposal / pack-owned kickoff steps — flow-owned, not script-owned).")
 
 
+# ---------------------------------------------------------------- project automation
+
+def automation_id(value):
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", value or ""):
+        die(f"automation id '{value}' is not folder-safe (use lowercase letters, numbers, hyphens)")
+    return value
+
+
+def automation_ref(project, automation, must_exist=True):
+    cdir = project_dir(project)
+    if state_doc(cdir) != "project.md":
+        die("project automations belong to workspace projects, not pipeline applications")
+    automation = automation_id(automation)
+    rel = f"automations/{automation}/automation.md"
+    path = os.path.join(cdir, *rel.split("/"))
+    if must_exist and not os.path.isfile(path):
+        die(f"automation '{automation}' not found at {rel}")
+    return cdir, rel, path
+
+
+def automation_issues(cdir, cfm=None):
+    cpath = os.path.join(cdir, "project.md")
+    if cfm is None:
+        cfm, _ = split_fm(read(cpath), "project.md")
+    project = get_scalar(cfm, "slug")
+    issues = []
+    tracked = set(mapping_rows(cfm, "automations"))
+    for aid in sorted(tracked):
+        rel_project = os.path.relpath(cdir, ROOT).replace("\\", "/")
+        label = f"{rel_project}: automation '{aid}'"
+        status = mapping_row_get(cfm, "automations", aid, "status")
+        rel = mapping_row_get(cfm, "automations", aid, "file")
+        deployment = mapping_row_get(cfm, "automations", aid, "deployment_id")
+        job = mapping_row_get(cfm, "automations", aid, "job")
+        if status not in AUTOMATION_STATUSES:
+            issues.append(f"{label} status '{status}' invalid")
+        if not rel:
+            issues.append(f"{label} has no file pointer")
+            continue
+        expected = f"automations/{aid}/automation.md"
+        if rel != expected:
+            issues.append(f"{label} file must be {expected}")
+        path = os.path.join(cdir, *rel.replace("\\", "/").split("/"))
+        if not os.path.isfile(path):
+            issues.append(f"{label} file missing: {rel}")
+            continue
+        try:
+            afm, body = split_fm(read(path), rel)
+        except SystemExit:
+            issues.append(f"{label} contract has invalid frontmatter")
+            continue
+        required = {
+            "schema_version": AUTOMATION_SCHEMA_VERSION,
+            "automation_id": aid,
+            "project": project,
+        }
+        for key, expected_value in required.items():
+            if get_scalar(afm, key) != expected_value:
+                issues.append(f"{label} contract {key} must be '{expected_value}'")
+        for heading in ("## Job", "## Trigger And Inputs", "## Project Route",
+                        "## Human Boundaries", "## Result", "## Verification", "## Deployment"):
+            if heading not in body:
+                issues.append(f"{label} contract missing '{heading}'")
+        if not job:
+            issues.append(f"{label} job is empty")
+        if status == "active" and deployment in (None, "", "null"):
+            issues.append(f"{label} active status requires deployment_id")
+
+    root = os.path.join(cdir, "automations")
+    if os.path.isdir(root):
+        for path in sorted(glob.glob(os.path.join(root, "*", "automation.md"))):
+            aid = os.path.basename(os.path.dirname(path))
+            if aid not in tracked:
+                rel = os.path.relpath(path, cdir).replace("\\", "/")
+                issues.append(f"{rel}: automation contract has no project.md tracker row")
+    return issues
+
+
+def automation_write_project(cdir, cfm, cbody):
+    write(os.path.join(cdir, "project.md"), join_fm(touch_lifecycle(cfm), cbody))
+
+
+def cmd_automation_init(args):
+    cdir, rel, path = automation_ref(args.project, args.automation_id, must_exist=False)
+    cpath = os.path.join(cdir, "project.md")
+    cfm, cbody = split_fm(read(cpath), "project.md")
+    if get_scalar(cfm, "status") != "active":
+        die("project automation requires an active project")
+    if mapping_row_span(cfm, "automations", args.automation_id) or os.path.exists(path):
+        die(f"automation '{args.automation_id}' already exists")
+    project = get_scalar(cfm, "slug")
+    os.makedirs(os.path.dirname(path), exist_ok=False)
+    afm = f"""schema_version: {AUTOMATION_SCHEMA_VERSION}
+automation_id: {args.automation_id}
+project: {project}
+created_at: {now_iso()}"""
+    body = f"""
+# Project Automation — {args.automation_id}
+
+## Job
+
+{args.job}
+
+## Trigger And Inputs
+
+(Define the standing trigger and the minimum inputs each run receives.)
+
+## Project Route
+
+(Name the project files, processes, templates, or deliverables a fresh managed run loads.)
+
+## Human Boundaries
+
+(Narrow the daemon charter for this automation. Never widen it.)
+
+## Result
+
+(Define the useful done, blocked, and failed receipt summaries.)
+
+## Verification
+
+(Name the checks one run can perform before reporting done.)
+
+## Deployment
+
+Not deployed. Runtime paths, credentials, queues, logs, and heartbeat state stay outside this project bundle.
+"""
+    write(path, join_fm(afm, body))
+    cfm = mapping_row_add(cfm, "automations", args.automation_id, (
+        ("status", "proposed"),
+        ("file", rel),
+        ("deployment_id", "null"),
+        ("last_updated", now_iso()),
+        ("job", yaml_quote(args.job)),
+    ))
+    automation_write_project(cdir, cfm, cbody)
+    append_activity(cdir, f"automation_proposed: {args.automation_id} contract created; {rel}")
+    print(f"af automation init: {args.automation_id} -> proposed ({rel})")
+
+
+def automation_transition(args, target):
+    cdir, rel, path = automation_ref(args.project, args.automation_id)
+    cpath = os.path.join(cdir, "project.md")
+    cfm, cbody = split_fm(read(cpath), "project.md")
+    current = mapping_row_get(cfm, "automations", args.automation_id, "status")
+    if current is None:
+        die(f"project.md has no automation row '{args.automation_id}'")
+    if target not in AUTOMATION_TRANSITIONS.get(current, set()):
+        die(f"automation transition {current} -> {target} is not allowed")
+    if target == "ready":
+        issues = automation_issues(cdir, cfm)
+        if issues:
+            die("automation contract invalid:\n  - " + "\n  - ".join(issues))
+    if target == "active":
+        deployment = getattr(args, "deployment", None) or mapping_row_get(
+            cfm, "automations", args.automation_id, "deployment_id")
+        if deployment in (None, "", "null"):
+            die("activating an automation requires --deployment <registry-id>")
+        cfm = mapping_row_set(cfm, "automations", args.automation_id,
+                              "deployment_id", yaml_quote(deployment))
+    cfm = mapping_row_set(cfm, "automations", args.automation_id, "status", target)
+    cfm = mapping_row_set(cfm, "automations", args.automation_id, "last_updated", now_iso())
+    automation_write_project(cdir, cfm, cbody)
+    event = {"ready": "automation_ready", "active": "automation_activated",
+             "paused": "automation_paused", "retired": "automation_retired"}[target]
+    append_activity(cdir, f"{event}: {args.automation_id} -> {target}; {rel}")
+    print(f"af automation {target}: {args.automation_id} -> {target}")
+
+
+def cmd_automation_ready(args):
+    automation_transition(args, "ready")
+
+
+def cmd_automation_activate(args):
+    automation_transition(args, "active")
+
+
+def cmd_automation_pause(args):
+    automation_transition(args, "paused")
+
+
+def cmd_automation_retire(args):
+    automation_transition(args, "retired")
+
+
 # ---------------------------------------------------------------- bounded autonomy
 
 def autonomy_run_id(value):
@@ -841,6 +1036,79 @@ def pipe_rows(fm):
     nxt = re.search(r"^\S", rest, re.M)
     block = rest[: nxt.start() if nxt else len(rest)]
     return re.findall(r"^  ([A-Za-z0-9_-]+):\s*$", block, re.M)
+
+
+def mapping_span(fm, key):
+    """Span of a top-level mapping block, excluding the next top-level key/comment."""
+    m = re.search(rf"^{re.escape(key)}:\s*(?:\{{\}})?\s*$", fm, re.M)
+    if not m:
+        return None
+    rest = fm[m.end():]
+    nxt = re.search(r"^(?:\S[^:]*:|# )", rest, re.M)
+    return m.start(), m.end() + (nxt.start() if nxt else len(rest))
+
+
+def mapping_rows(fm, key):
+    span = mapping_span(fm, key)
+    if not span:
+        return []
+    return re.findall(r"^  ([A-Za-z0-9_-]+):\s*$", fm[span[0]:span[1]], re.M)
+
+
+def mapping_row_span(fm, key, slug):
+    span = mapping_span(fm, key)
+    if not span:
+        return None
+    block = fm[span[0]:span[1]]
+    m = re.search(rf"^  {re.escape(slug)}:\s*$", block, re.M)
+    if not m:
+        return None
+    start = span[0] + m.start()
+    rest = fm[span[0] + m.end():span[1]]
+    nxt = re.search(r"^  \S", rest, re.M)
+    end = span[0] + m.end() + (nxt.start() if nxt else len(rest))
+    return start, end
+
+
+def mapping_row_get(fm, mapping, slug, key):
+    span = mapping_row_span(fm, mapping, slug)
+    if not span:
+        return None
+    m = re.search(rf"^    {re.escape(key)}:[ \t]*(.*?)\s*$", fm[span[0]:span[1]], re.M)
+    return clean_value(m.group(1)) if m else None
+
+
+def mapping_row_set(fm, mapping, slug, key, value):
+    span = mapping_row_span(fm, mapping, slug)
+    if not span:
+        die(f"project.md: '{slug}' not found in {mapping} block")
+    s, e = span
+    block = fm[s:e]
+    pat = re.compile(rf"^(    {re.escape(key)}:)[ \t]*.*$", re.M)
+    if pat.search(block):
+        block = pat.sub(rf"\g<1> {value}", block, count=1)
+    else:
+        block = block.rstrip("\n") + f"\n    {key}: {value}\n"
+    return fm[:s] + block + fm[e:]
+
+
+def mapping_row_add(fm, mapping, slug, fields):
+    if mapping_row_span(fm, mapping, slug):
+        die(f"project.md: '{slug}' already exists in {mapping} block")
+    row = f"  {slug}:\n" + "".join(f"    {key}: {value}\n" for key, value in fields)
+    span = mapping_span(fm, mapping)
+    if span:
+        s, e = span
+        block = fm[s:e]
+        if re.search(rf"^{re.escape(mapping)}:\s*\{{\}}\s*$", block, re.M):
+            block = re.sub(rf"^{re.escape(mapping)}:\s*\{{\}}\s*$", f"{mapping}:\n", block, count=1, flags=re.M)
+        block = block.rstrip("\n") + "\n" + row
+        return fm[:s] + block + fm[e:]
+    section = f"\n# AUTOMATIONS\n{mapping}:\n{row}"
+    marker = re.search(r"^# COUNTERS\s*$", fm, re.M)
+    if marker:
+        return fm[:marker.start()].rstrip() + "\n" + section + "\n" + fm[marker.start():]
+    return fm.rstrip() + "\n" + section.rstrip() + "\n"
 
 
 def app_materials(afm):
@@ -1386,6 +1654,7 @@ def check_project(cdir):
     if os.path.isdir(autonomy_dir):
         for path in sorted(glob.glob(os.path.join(autonomy_dir, "*.md"))):
             issues += autonomy_issues(path, expected_project=get_scalar(cfm, "slug"), require_ready=False)
+    issues += automation_issues(cdir, cfm)
     return issues
 
 
@@ -1399,7 +1668,7 @@ TEMPLATE_WORD_BUDGET = 900    # */deliverables/*/template.md
 VOICE_LIVE = os.path.join(ROOT, "library", "context", "operator", "voice")
 VOICE_SCHEMA = os.path.join(ROOT, "library", "context", "operator-schema", "voice")
 
-LINK_SCAN_GLOBS = ("AGENTS.md", "AGENTS.builder.md", "AGENTS.operator.md",
+LINK_SCAN_GLOBS = ("AGENTS.md", "AGENTS.builder.md", "AGENTS.operator.md", "AGENTS.daemon.md",
                    "library/process/**/*.md", "library/deliverables/**/*.md",
                    "library/domains/**/*.md", "library/assets/README.md",
                    "system/audit/README.md", "system/skills/README.md",
@@ -1440,7 +1709,7 @@ def dead_link_issues():
 def budget_notes():
     notes = []
     targets = [(os.path.join(ROOT, f), PERSONA_WORD_BUDGET, "persona")
-               for f in ("AGENTS.builder.md", "AGENTS.operator.md")]
+               for f in ("AGENTS.builder.md", "AGENTS.operator.md", "AGENTS.daemon.md")]
     targets += [(p, PROCESS_WORD_BUDGET, "process file")
                 for p in sorted(glob.glob(os.path.join(ROOT, "library", "process", "**", "*.md"), recursive=True))]
     targets += [(p, TEMPLATE_WORD_BUDGET, "template")
@@ -1561,6 +1830,7 @@ def cmd_doctor(args):
 OPERATOR_VERBS = {"lock", "publish", "version", "new-project"}
 OPERATOR_PIPE_VERBS = {"save", "start", "stage"}
 OPERATOR_AUTONOMY_VERBS = {"init", "start", "checkpoint", "finish"}
+OPERATOR_AUTOMATION_VERBS = {"init", "ready", "activate", "pause", "retire"}
 
 
 def check_mode_gate(cmd, args=None):
@@ -1570,11 +1840,18 @@ def check_mode_gate(cmd, args=None):
     Blocks only on an explicit Builder heading; a missing or unrecognized
     persona does not block, so customized copies keep working.
     """
+    if os.environ.get("AGENTFRAME_MANAGED_RUN") == "1":
+        if cmd in {"lock", "publish", "automation"}:
+            die(f"'af {cmd}' is outside the managed-run charter; report blocked and exit")
+        return
     if cmd == "pipe":
         if getattr(args, "pipe_cmd", None) not in OPERATOR_PIPE_VERBS:
             return
     elif cmd == "autonomy":
         if getattr(args, "autonomy_cmd", None) not in OPERATOR_AUTONOMY_VERBS:
+            return
+    elif cmd == "automation":
+        if getattr(args, "automation_cmd", None) not in OPERATOR_AUTOMATION_VERBS:
             return
     elif cmd not in OPERATOR_VERBS:
         return
@@ -1602,6 +1879,19 @@ def main():
     s.add_argument("--flow", default=DEFAULT_FLOW, choices=sorted(FLOWS)); s.add_argument("--domain", default=DEFAULT_DOMAIN)
     s.add_argument("--name"); s.set_defaults(fn=cmd_new_project)
     s = sub.add_parser("doctor");          s.add_argument("project", nargs="?"); s.set_defaults(fn=cmd_doctor)
+
+    s = sub.add_parser("automation")
+    msub = s.add_subparsers(dest="automation_cmd", required=True)
+    ma = msub.add_parser("init"); ma.add_argument("project"); ma.add_argument("automation_id")
+    ma.add_argument("--job", required=True); ma.set_defaults(fn=cmd_automation_init)
+    ma = msub.add_parser("ready"); ma.add_argument("project"); ma.add_argument("automation_id")
+    ma.set_defaults(fn=cmd_automation_ready)
+    ma = msub.add_parser("activate"); ma.add_argument("project"); ma.add_argument("automation_id")
+    ma.add_argument("--deployment"); ma.set_defaults(fn=cmd_automation_activate)
+    ma = msub.add_parser("pause"); ma.add_argument("project"); ma.add_argument("automation_id")
+    ma.set_defaults(fn=cmd_automation_pause)
+    ma = msub.add_parser("retire"); ma.add_argument("project"); ma.add_argument("automation_id")
+    ma.set_defaults(fn=cmd_automation_retire)
 
     s = sub.add_parser("autonomy")
     asub = s.add_subparsers(dest="autonomy_cmd", required=True)

@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "workspace_root": "C:\\path\\to\\work-AgentFrame",
+  "poll_seconds": 5,
+  "body_profiles": {
+    "cursor-work": {
+      "executable": "cursor-agent",
+      "args": [
+        "-p",
+        "--force",
+        "--model",
+        "PINNED_MODEL_ID",
+        "--output-format",
+        "json",
+        "{prompt}"
+      ],
+      "timeout_seconds": 1800,
+      "env": {}
+    }
+  },
+  "automations": [
+    {
+      "id": "client-email-intake-work",
+      "label": "Client email intake",
+      "project": "client-engagement",
+      "automation_id": "email-intake",
+      "queue_root": "C:\\Users\\operator\\OneDrive - Company\\AgentFrame Queues\\email-intake",
+      "body_profile": "cursor-work",
+      "enabled": true
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 # AgentFrame — Technical Build Lifecycle
 
-When a project phase turns technical — vibe-coding a proof-of-concept app, managed agent, or SDK integration — AgentFrame is the planning/memory brain and the **code lives in a separate repo outside AgentFrame**, with its own git history. Load this on demand when `project.md` has `build_repo` set and the build is not graduated, before any build action or build-state report.
+When a project phase turns into independent software — a proof-of-concept app, standalone agent product/service, or SDK integration — AgentFrame is the planning/memory brain and the **code lives in a separate repo outside AgentFrame**, with its own git history. Load this on demand when `project.md` has `build_repo` set and the build is not graduated, before any build action or build-state report. Small project-bound automation glue stays under the owning project's `automations/` surface per [`project-automation.md`](project-automation.md).
 
 **Core principle: one brain during the build, brain transplant at graduation.** While AgentFrame orchestrates, the external repo carries only a thin *umbilical stub* pointing back here. Two brains drift; one brain plus a stub cannot. The full context transfer happens exactly once, at graduation.
 

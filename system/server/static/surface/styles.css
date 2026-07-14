@@ -260,12 +260,10 @@ button {
 }
 #region-attention {
   grid-area: attention;
-  height: fit-content;
   max-height: min(36vh, 235px);
 }
 #region-projects {
   grid-area: projects;
-  height: fit-content;
   max-height: min(42vh, 350px);
 }
 #region-activity { grid-area: activity; min-height: var(--activity-floor); }

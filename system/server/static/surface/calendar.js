@@ -203,7 +203,8 @@ async function exportCalendarPng() {
   const month = document.getElementById('calendar-month');
   const board = document.getElementById('calendar-board');
   const filters = document.getElementById('calendar-project-filters');
-  const scrollState = [month, board, filters].map((node) => [node, node?.scrollTop || 0]);
+  const scrollNodes = [month, board, filters, ...document.querySelectorAll('.rib-rows')];
+  const scrollState = scrollNodes.map((node) => [node, node?.scrollTop || 0]);
   button.disabled = true;
   button.textContent = 'exporting…';
   view.classList.add('calendar-exporting');

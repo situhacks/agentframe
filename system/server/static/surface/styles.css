@@ -1426,19 +1426,22 @@ tr.expanded .activity-md.excerpt {
   height: auto;
   min-height: 0;
   overflow: visible;
+  align-content: start;
   grid-template-rows: auto auto auto;
 }
 .calendar-exporting .calendar-controls,
 .calendar-exporting .filters-toggle,
 .calendar-exporting .calendar-legend-show { display: none !important; }
+.calendar-exporting .filters-collapsed .calendar-legend { display: none !important; }
 .calendar-exporting .calendar-shell,
 .calendar-exporting .calendar-stage,
 .calendar-exporting .calendar-filters { height: auto; min-height: 0; overflow: visible; }
 .calendar-exporting .calendar-filters { grid-template-rows: 38px auto auto; }
+.calendar-exporting #calendar-project-filters { min-width: 0; }
 .calendar-exporting #calendar-project-filters,
+.calendar-exporting .rib-rows { max-height: none; overflow-x: clip; overflow-y: visible; }
 .calendar-exporting .calendar-month,
-.calendar-exporting .calendar-board,
-.calendar-exporting .rib-rows { max-height: none; overflow: visible; }
+.calendar-exporting .calendar-board { max-height: none; overflow: visible; }
 .calendar-exporting .calendar-month,
 .calendar-exporting .calendar-board,
 .calendar-exporting .calendar-fc { flex: none; height: auto !important; }

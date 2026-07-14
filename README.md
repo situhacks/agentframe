@@ -1,6 +1,6 @@
 # AgentFrame
 
-![AgentFrame, a file-native AI workspace for context, projects, and agents](.github/readme-assets/banner.svg)
+![AgentFrame — a file-native context workspace for any kind of work, inside your AI coding agent](.github/readme-assets/banner.jpg)
 
 AgentFrame is the workspace I use to run long projects with coding agents. It works with Claude Code, Codex, Cursor, VS Code, Antigravity, or anything else that can read files, because the projects, context, deliverables, decisions, and feedback loops are all plain files too. A fresh agent can read the workspace, pick up the work where I left it, and spend its context on the project instead of making me explain everything again.
 
@@ -37,8 +37,6 @@ The first version of AgentFrame was a marketing system. I was trying to run camp
 
 Then I kept using the marketing system for work that had nothing to do with marketing. I ran PowerPoint redesigns through it, made document deliverables, and did small research jobs by pretending they were all "campaigns" so the structure would still fit. That worked surprisingly well, which made the problem pretty obvious: the useful part was never the marketing language. It was the way the system kept project state, versioned the work, and carried the right context into the next step.
 
-<!-- IMAGE STUB · slot: realization-hero · shows: the context-management core revealed beneath the marketing-specific shell, in the same visual family as the release post -->
-
 So I rebuilt AgentFrame around projects. Marketing is still there, but now it is one domain pack beside project management and careers, while the core handles the things all of them share: context, state, deliverables, and the path between them. That rebuild also gave me the parts I care about most now, including long-horizon memory that can consolidate without forgetting, a voice system trained on my actual edits, and deliverables that keep a real version trail.
 
 The original marketing-only system is frozen at [agentframe-marketing](https://github.com/situhacks/agentframe-marketing). This repository is its successor.
@@ -47,7 +45,7 @@ The original marketing-only system is frozen at [agentframe-marketing](https://g
 
 AgentFrame keeps its context, working rules, and project state in files that any coding agent can read. These are the parts that make that useful in practice.
 
-<!-- IMAGE STUB · slot: three-layers · shows: prompt / context / loop engineering as one visual, context as the core layer -->
+<!-- IMAGE STUB · slot: three-layers · GENERATE (not SVG) · shows: prompt / context / loop engineering as three visually distinct shapes or columns, context as the emphasized core. See .github/readme-assets/three-layers.prompt.md -->
 
 ### 1. Pick up a project without re-briefing
 
@@ -57,8 +55,6 @@ AgentFrame keeps its context, working rules, and project state in files that any
 
 - **Load only what the task needs.** The active persona points to the project, the project points to its flow, and the flow points to the process for the current step. Skills stay out of context until the work calls for them, so the workspace can get large without every chat carrying all of it.
 
-<!-- IMAGE STUB · slot: context-graph · shows: D2 mini-diagram, project → flow → process → skill, each loading only what the step needs -->
-
 ### 2. Reuse instructions shaped by real work
 
 - **Start from templates and processes that have already been used.** Every deliverable shape and workflow in the library was refined on work I actually ran. The model and tools can change without taking that knowledge with them.
@@ -67,7 +63,9 @@ AgentFrame keeps its context, working rules, and project state in files that any
 
 - **Add specialised structure through domain packs.** Marketing, project management, and careers ship today. Adding another domain means adding its templates and descriptor rather than rewriting the core.
 
-<!-- IMAGE STUB · slot: voice-pair · shows: one real contrastive pair, a generic AI line beside the operator's rewrite, rendered as a styled snippet -->
+<p align="center">
+  <img src=".github/readme-assets/voice-system-edit-01.svg" alt="How the voice system works in detail. Built from (loaded before every draft): the per-register corpus of your published pieces, the always-three files (identity, voice-profile, anti-patterns), the register overlay, and contrastive pairs. Every draft runs a four-pass method: content pass, style pass (corpus-first with 3-4 mandated markers), clean pass (anti-patterns plus humanizer in a separate turn), and a register test. Then you revise by hand; a mini-retro gate decides whether the edit is worth harvesting; and harvest turns edit deltas into new contrastive pairs that feed back into what the system is built from." width="880" />
+</p>
 
 ### 3. Keep state and automation deterministic
 
@@ -78,8 +76,6 @@ AgentFrame keeps its context, working rules, and project state in files that any
 - **Record what happened as part of the work.** Activity logs and version notes cover projects, while an append-only audit database records system changes. `af doctor` reports drift without silently fixing it.
 
 - **Run standing project work through managed automations.** A project can define a job, receive queued tasks, and run them through a bounded local agent that returns a `done`, `blocked`, or `failed` receipt. The first deployment uses Power Automate, OneDrive, and a single-flight Cursor host; I have just started testing it in real use, so the project contracts are more settled than the runtime around them.
-
-<!-- IMAGE STUB · slot: spine-flow · shows: D2 flow, draft → version → lock → gate → publish, with the paper trail written underneath each step -->
 
 ### 4. Learn deliberately from finished work
 
@@ -94,8 +90,6 @@ AgentFrame keeps its context, working rules, and project state in files that any
 - **See what the automation runtime is doing.** The read-only Automations pulse shows waiting requests, terminal receipts, exceptions, and mismatches between a project's declared lifecycle and the local runtime. It reports problems without starting, retrying, or changing an automation.
 
 More detail is in [The Workspace Dashboard](#the-workspace-dashboard).
-
-<!-- IMAGE STUB · slot: dashboard-hero · shows: Workspace Dashboard home and the Automations pulse -->
 
 ## Quick start
 
@@ -199,7 +193,7 @@ The marketing pack has the most visual production because it is where this works
 
 ### A career workspace
 
-The careers pack treats a career as a long project, starting with the work you are already doing rather than waiting until you need a new job.
+The careers pack treats your own career as a long project. It is built first for the internal case: turning the work you are already doing into promotion evidence, because this is a work workspace before it is a job-search tool. The same system also handles external searching and login-free job scouting when you need it.
 
 <table>
 <tr>
@@ -211,7 +205,7 @@ The careers pack treats a career as a long project, starting with the work you a
 <td width="50%" valign="top"><!-- IMAGE STUB · career-walkthrough-04 · shows: a promotion case built as a rubric map + evidence + gaps plan --><br/><sub><b>4 · Run a case.</b> An internal promotion case works like any evidence-backed application: the rubric becomes the requirements source, gaps become a plan, and the final material can be a deck rather than a resume.</sub></td>
 </tr>
 <tr>
-<td width="50%" valign="top"><!-- IMAGE STUB · career-walkthrough-05 · shows: ATS-safe resume/cover exports keyed to the destination system --><br/><sub><b>5 · Produce materials.</b> The same substrate handles external applications when you need it to: ATS-aware resume and cover-letter exports, and login-free job scouting from public feeds.</sub></td>
+<td width="50%" valign="top"><!-- IMAGE STUB · career-walkthrough-05 · shows: ATS-safe resume/cover exports keyed to the destination system --><br/><sub><b>5 · Produce materials.</b> A promotion case exports as a deck; when you do look outside, the same substrate produces ATS-aware resume and cover-letter files and scouts public job feeds without a login.</sub></td>
 <td width="50%" valign="top"><!-- IMAGE STUB · career-walkthrough-06 · shows: dashboard timeline view of career activity across months --><br/><sub><b>6 · Keep the record.</b> Everything accrues back into the bank, so the next case starts from evidence instead of memory.</sub></td>
 </tr>
 </table>
@@ -291,7 +285,9 @@ All AgentFrame-owned, shaped by real use.
 
 ## Architecture
 
-<!-- IMAGE STUB · slot: architecture-flow · shows: D2 flow diagram, coding agent → active persona → workspace state → selected flow → processes/templates → skills/tools, with the dashboard reading from the same files; legible to non-technical readers -->
+<p align="center">
+  <img src=".github/readme-assets/architecture-flow.svg" alt="AgentFrame architecture: a coding agent opens a conversation and takes the Operator or Builder persona. In Operator, project.md holds state alongside activity.md and the sources/knowledge substrate; the selected flow loads a process per step, which pulls skills on demand and produces deliverables in your voice, gated by a lock before delivery. Finished work harvests back into the Builder surface (templates, processes, domain packs, personas, voice corpus, builder backlog), which shapes future runs. The Workspace Dashboard reads the same files and never writes." width="760" />
+</p>
 
 The structure follows a few rules that have kept it from turning into a second job to maintain:
 
@@ -307,18 +303,25 @@ The structure follows a few rules that have kept it from turning into a second j
 
 `python system/server/run.py --daemon` starts or reuses the local server and opens the workspace UI. It reads the workspace files directly, so it does not need a model, an API key, or a second database.
 
-<!-- IMAGE STUB · slot: dashboard-tour · shows: dashboard home, Automations pulse, calendar/timeline, and preview workspace -->
+<table>
+<tr>
+<td width="50%" valign="top"><img src=".github/readme-assets/dash-home.jpg" alt="Dashboard home" /><br/><sub><b>Surface · Dashboard.</b> Active projects, attention items, and recent activity, read straight from the workspace files.</sub></td>
+<td width="50%" valign="top"><img src=".github/readme-assets/dash-automations.jpg" alt="Automations pulse" /><br/><sub><b>Surface · Automations.</b> Read-only pulse of declared automations reconciled against live runtime state, receipts, and drift.</sub></td>
+</tr>
+<tr>
+<td width="50%" valign="top"><img src=".github/readme-assets/dash-preview.jpg" alt="Preview workspace" /><br/><sub><b>Surface · Preview.</b> An IDE-style workspace with tabs and splits for markdown, decks, PDFs, images, and video.</sub></td>
+<td width="50%" valign="top"><img src=".github/readme-assets/cal-week.jpg" alt="Week calendar" /><br/><sub><b>Calendar · Week.</b> Work blocks derived from logged activity; the day view zooms into this.</sub></td>
+</tr>
+<tr>
+<td width="50%" valign="top"><img src=".github/readme-assets/cal-month.jpg" alt="Month calendar" /><br/><sub><b>Calendar · Month.</b> Deliverable and shipped-media markers across the month, with hover previews.</sub></td>
+<td width="50%" valign="top"><img src=".github/readme-assets/cal-timeline.jpg" alt="Timeline" /><br/><sub><b>Calendar · Timeline.</b> A multi-month swimlane across projects, active-first.</sub></td>
+</tr>
+</table>
 
-What it provides:
+Beyond what the tour shows:
 
-- A dashboard of active projects, attention items, and recent activity
-- A read-only Automations pulse for waiting requests, receipts, exceptions, and runtime drift
-- Day, week, and month calendar views
-- A multi-month swimlane timeline with active-first sorting
-- Work blocks derived from actual logged activity
-- Deliverable and shipped-media markers with hover previews
-- An IDE-style preview workspace with tabs and splits
-- Markdown, text, HTML, image, PDF, video, PPTX, and DOCX viewing
+- Markdown, text, HTML, image, PDF, video, PPTX, and DOCX viewing in the preview workspace
+- Deliverable and shipped-media markers with hover previews across the calendar
 - Completed-project history and print/PDF calendar output
 - File watching and LiveReload for production work
 

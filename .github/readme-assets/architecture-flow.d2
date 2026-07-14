@@ -1,0 +1,75 @@
+# AgentFrame architecture flow — the whole system at a glance.
+# Top level flows left→right as zones; the Operator zone folds DOWNWARD inside
+# its column so the long run doesn't stretch into a ribbon.
+# Palette: Agent Architecture POV design language.
+#   teal #87c7c0 = system / structure   pink #e58a9b = entry / human moment
+#   ink #1a1a1a = type   white canvas   grey accents only   NO blue
+
+direction: down
+
+classes: {
+  entry:   { style: { fill: "#fbeef1"; stroke: "#e58a9b"; font-color: "#1a1a1a"; bold: true; stroke-width: 2 } }
+  persona: { style: { fill: "#e9f4f2"; stroke: "#87c7c0"; font-color: "#1a1a1a"; bold: true; stroke-width: 2 } }
+  node:    { style: { fill: "#ffffff"; stroke: "#b5b6b1"; font-color: "#2a2a2a"; stroke-width: 1 } }
+  state:   { style: { fill: "#ffffff"; stroke: "#87c7c0"; font-color: "#1a1a1a"; stroke-width: 2 } }
+  gate:    { shape: diamond; style: { fill: "#e9f4f2"; stroke: "#87c7c0"; font-color: "#1a1a1a"; bold: true } }
+  reader:  { style: { fill: "#f0f0f0"; stroke: "#b5b6b1"; font-color: "#6d6e6a"; italic: true } }
+  grp:     { style: { fill: "#fcfcfb"; stroke: "#d1d1cc"; font-color: "#6d6e6a"; stroke-dash: 3; bold: true; font-size: 22 } }
+  link:    { style: { stroke: "#2a2a2a"; font-color: "#6d6e6a" } }
+  soft:    { style: { stroke: "#b5b6b1"; font-color: "#6d6e6a"; stroke-dash: 4 } }
+}
+
+# ---- entry column ----
+agent: Coding agent { class: entry }
+persona: "Active persona\nOperator | Builder" { class: persona }
+agent -> persona: starts a\nconversation { class: link }
+
+# ---- OPERATOR zone (folds downward) ----
+operator: "OPERATOR  ·  runs the work" {
+  class: grp
+  direction: down
+
+  project: "project.md\nstate · tracker · deps" { class: state }
+  activity: "activity.md\nmaterial-event log" { class: state }
+  substrate: "sources/ + knowledge/\ninputs · distilled truth" { class: state }
+  flow: "selected flow" { class: node }
+  process: "process\n(loads per step)" { class: node }
+  skill: "skill / tool\n(loads on demand)" { class: node }
+  draft: "deliverable\ndraft → version\nyour voice · prompt lives here" { class: node }
+  lock: lock gate { class: gate }
+  deliver: "deliver / publish\n+ tracked export" { class: node }
+
+  project -> activity: logged to { class: soft }
+  project -> substrate: draws on { class: soft }
+  project -> flow: { class: link }
+  flow -> process: { class: link }
+  process -> skill: needs a capability { class: link }
+  process -> draft: produces { class: link }
+  draft -> lock: { class: link }
+  lock -> deliver: pass { class: link }
+  lock -> draft: revise { class: soft }
+}
+
+# ---- BUILDER zone (folds downward) ----
+builder: "BUILDER  ·  evolves the system" {
+  class: grp
+  direction: down
+  templates: templates { class: node }
+  processes: processes { class: node }
+  packs: "domain packs" { class: node }
+  personas: personas { class: node }
+  voice: "voice corpus\nlearned from your edits" { class: node }
+  backlog: "builder backlog\nearned system work" { class: node }
+}
+
+# ---- cross-zone wiring (kept minimal) ----
+persona -> operator.project: Operator { class: link }
+persona -> builder: Builder { class: link }
+
+operator.deliver -> builder: "harvest → voice · templates · processes" { class: link }
+builder -> operator.flow: shapes future runs { class: soft }
+
+# ---- dashboard reads everything, writes nothing ----
+dashboard: "Workspace\nDashboard\n\nreads the same files\nnever writes" { class: reader }
+operator -> dashboard: { class: soft }
+builder -> dashboard: { class: soft }

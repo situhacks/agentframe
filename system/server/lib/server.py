@@ -83,21 +83,30 @@ class _HubServer:
     disturbing static serving for everything else (projects, livereload.js).
     """
 
-    def __init__(self, project_root: Path, *, exclude_globs: list[str] | None = None):
+    def __init__(
+        self,
+        project_root: Path,
+        *,
+        exclude_globs: list[str] | None = None,
+        workspace_root: Path | None = None,
+    ):
         from livereload import Server
 
         self._project_root = Path(project_root)
-        self._inner = Server(watcher=watcher.make_watcher(self._project_root))
+        # Static assets always serve from the repo; workspace scanning may point
+        # at a separate seed workspace (e.g. for demo screenshots).
+        self._workspace_root = Path(workspace_root) if workspace_root else self._project_root
+        self._inner = Server(watcher=watcher.make_watcher(self._workspace_root))
         self._patch_handlers(exclude_globs=exclude_globs)
 
     def _patch_handlers(self, *, exclude_globs: list[str] | None = None) -> None:
         original_get = self._inner.get_web_handlers
-        hub_handler = _make_hub_handler(self._project_root, exclude_globs=exclude_globs)
+        hub_handler = _make_hub_handler(self._workspace_root, exclude_globs=exclude_globs)
         surface_handler = _make_surface_handler(self._project_root)
 
         from .surface import api as surface_api
 
-        api_routes = surface_api.make_handlers(self._project_root)
+        api_routes = surface_api.make_handlers(self._workspace_root)
 
         def patched(script):
             base = list(original_get(script))
@@ -131,12 +140,20 @@ def build_server(
     *,
     exclude_globs: Iterable[str] | None = None,
     delay: float = 0.5,
+    workspace_root: str | Path | None = None,
 ):
     """Construct a hub-aware server with the given watch globs registered.
 
+    ``workspace_root`` (default ``project_root``) is where projects/automations
+    are scanned; static assets always serve from ``project_root``.
+
     Imported lazily so `--help` works without `livereload` installed.
     """
-    server = _HubServer(Path(project_root), exclude_globs=list(exclude_globs or []))
+    server = _HubServer(
+        Path(project_root),
+        exclude_globs=list(exclude_globs or []),
+        workspace_root=Path(workspace_root) if workspace_root else None,
+    )
     watcher.register(server, watch_globs, delay=delay)
     return server
 
@@ -149,10 +166,17 @@ def serve(
     watch_globs: Iterable[str] | None = None,
     exclude_globs: Iterable[str] | None = None,
     delay: float = 0.5,
+    workspace_root: str | Path | None = None,
 ) -> None:
-    """Start the preview server in the foreground."""
+    """Start the preview server in the foreground.
+
+    Static files serve from ``project_root`` (the repo); ``workspace_root``
+    (default ``project_root``) is the workspace scanned for projects.
+    """
     globs = list(watch_globs) if watch_globs is not None else list(watcher.DEFAULT_GLOBS)
-    server = build_server(project_root, globs, exclude_globs=exclude_globs, delay=delay)
+    server = build_server(
+        project_root, globs, exclude_globs=exclude_globs, delay=delay, workspace_root=workspace_root
+    )
     server.serve(
         root=str(project_root),
         port=port,

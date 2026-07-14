@@ -53,6 +53,14 @@ def parse_args() -> argparse.Namespace:
         help="Print the destination URL without opening a browser tab",
     )
     parser.add_argument(
+        "--root",
+        default=None,
+        help="Workspace to scan for projects/automations (default: the repo). "
+        "Static assets always serve from the repo; use this to serve a throwaway "
+        "seed workspace (e.g. for demo screenshots) without touching the real one. "
+        "Foreground mode only.",
+    )
+    parser.add_argument(
         "--daemon",
         action="store_true",
         help="Start-or-open: reuse a healthy running surface, else start one detached and open it",
@@ -85,6 +93,8 @@ def main() -> int:
         raise SystemExit("--stop cannot be combined with --daemon")
     if args.file and not args.project:
         raise SystemExit("--file requires --project")
+    if args.root and (args.daemon or args.stop):
+        raise SystemExit("--root is foreground-only; it cannot be combined with --daemon or --stop")
 
     if args.stop:
         from system.server.lib.surface import daemon
@@ -127,10 +137,16 @@ def main() -> int:
         except Exception:
             pass
 
+    workspace_root = Path(args.root).resolve() if args.root else PROJECT_ROOT
+    if args.root and not workspace_root.is_dir():
+        raise SystemExit(f"--root is not a directory: {workspace_root}")
+
     from system.server.lib.surface import daemon as surface_daemon
 
     surface_daemon.write_lock(port=port, root=str(PROJECT_ROOT))
 
+    if workspace_root != PROJECT_ROOT:
+        print(f"[preview] Scanning workspace {workspace_root} (static assets from {PROJECT_ROOT})")
     print(f"[preview] Serving {PROJECT_ROOT} at http://{host}:{port}")
     print(f"[preview] Surface:  http://{host}:{port}/   (legacy hub: /hub)")
     print(f"[preview] Watching {len(globs)} glob(s):")
@@ -150,6 +166,7 @@ def main() -> int:
         watch_globs=globs,
         exclude_globs=exclude_globs,
         delay=delay,
+        workspace_root=workspace_root,
     )
     return 0
 

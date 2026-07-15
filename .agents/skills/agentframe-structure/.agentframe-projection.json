@@ -1,0 +1,14 @@
+{
+  "bundle_sha256": "e50336adf9d74e58c143c0eadcace9ab8be2892373090c169bca5680c8b459ec",
+  "do_not_edit": true,
+  "files": {
+    "SKILL.md": "c553253822c1d097dd2d2254e697844b1a05190d42428e4ee6c7c84061710e7d",
+    "deliverable-template-changes.md": "be9cc8513fa39f51dcde8921def99382738aecf4bcd21962df1640db9dedc11d",
+    "flow-changes.md": "bbe7e845bff0309da003efd98858564183b2a0ddfd514b60189ce5563a582476",
+    "process-file-changes.md": "ead67d8739944b593caa821710fb0ffe227a757754ce76cd2466c638163e635f"
+  },
+  "generated_by": "AgentFrame af sync-harnesses",
+  "overlay": null,
+  "regenerate": "python system/af.py sync-harnesses --write",
+  "source": "system/skills/agentframe-structure"
+}

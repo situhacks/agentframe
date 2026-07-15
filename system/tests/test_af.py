@@ -243,5 +243,242 @@ class LockExportGateTests(unittest.TestCase):
         self.assertEqual(self.deliverable_status(rel), "locked")
 
 
+VERSION_PROJECT_FM = """---
+name: Version Project
+slug: version-project
+schema_version: 2026-04-23
+created_at: 2026-07-01
+domain: marketing
+status: active
+current_phase: active
+flow: open-flow
+last_activity: 2026-07-01T10:00:00+00:00
+deliverables:
+  {row}:
+    status: {status}
+    file: {file}
+    last_updated: 2026-07-01
+---
+"""
+
+
+class VersionCommandCharacterizationTests(unittest.TestCase):
+    """Pin the pre-repair af version contract, including the Post 8 failure."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.projects = os.path.join(self._tmp.name, "workspace", "projects")
+        self._patch_projects = patch.object(af, "PROJECTS", self.projects)
+        self._patch_pipeline = patch.object(af, "PIPELINE", os.path.join(self._tmp.name, "workspace", "pipeline"))
+        self._patch_projects.start()
+        self._patch_pipeline.start()
+        self.addCleanup(self._patch_projects.stop)
+        self.addCleanup(self._patch_pipeline.stop)
+        self.addCleanup(self._tmp.cleanup)
+        self.cdir = os.path.join(self.projects, "version-project")
+        os.makedirs(self.cdir)
+
+    def make_state(self, row, rel, *, status="drafting"):
+        af.write(
+            os.path.join(self.cdir, "project.md"),
+            VERSION_PROJECT_FM.format(row=row, status=status, file=rel),
+        )
+
+    def make_artifact(self, rel, *, status="drafting", body="body\n"):
+        path = os.path.join(self.cdir, rel)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        af.write(
+            path,
+            f"---\nstatus: {status}\nlast_updated: 2026-07-01\n---\n\n{body}",
+        )
+        return path
+
+    def run_version(self, row, artifact=None):
+        args = types.SimpleNamespace(project="version-project", deliverable=row, artifact=artifact)
+        with contextlib.redirect_stdout(io.StringIO()):
+            af.cmd_version(args)
+
+    def tracker_file(self, row):
+        fm, _ = af.split_fm(af.read(os.path.join(self.cdir, "project.md")), "project.md")
+        return af.row_get(fm, row, "file")
+
+    def test_tracker_owned_head_versions_and_moves_pointer(self):
+        rel = "brief/brief-v1.md"
+        self.make_state("brief", rel)
+        source = self.make_artifact(rel, body="source snapshot\n")
+        before = af.read(source)
+
+        self.run_version("brief")
+
+        new_rel = "brief/brief-v2.md"
+        self.assertEqual(self.tracker_file("brief"), new_rel)
+        self.assertTrue(os.path.isfile(os.path.join(self.cdir, new_rel)))
+        self.assertEqual(af.read(source), before)
+
+    def test_tracker_owned_new_head_resets_drafting_fields(self):
+        rel = "brief/brief-v1.md"
+        self.make_state("brief", rel, status="locked")
+        self.make_artifact(rel, status="locked")
+
+        self.run_version("brief")
+
+        new_fm, _ = af.split_fm(af.read(os.path.join(self.cdir, "brief", "brief-v2.md")))
+        self.assertEqual(af.get_scalar(new_fm, "status"), "drafting")
+        self.assertEqual(af.get_scalar(new_fm, "last_updated"), af.today())
+
+    def test_post_final_pointer_versions_named_nested_body_copy(self):
+        rel = "posts/post-8/post-FINAL.md"
+        self.make_state("post-8", rel)
+        self.make_artifact(rel)
+        source = self.make_artifact("posts/post-8/body-copy-v1.md", body="ingredient\n")
+        before = af.read(source)
+
+        self.run_version("post-8", artifact="body-copy")
+
+        self.assertTrue(os.path.exists(os.path.join(self.cdir, "posts", "post-8", "body-copy-v2.md")))
+        self.assertEqual(af.read(source), before)
+        self.assertEqual(self.tracker_file("post-8"), rel)
+
+    def test_nested_artifact_name_is_exact(self):
+        rel = "posts/post-8/post-FINAL.md"
+        self.make_state("post-8", rel)
+        self.make_artifact(rel)
+        self.make_artifact("posts/post-8/body-copy-notes-v1.md")
+        stderr = io.StringIO()
+
+        with contextlib.redirect_stderr(stderr), self.assertRaises(SystemExit):
+            self.run_version("post-8", artifact="body-copy")
+
+        self.assertIn("artifact 'body-copy' has no versioned head", stderr.getvalue())
+
+    def test_nested_artifact_updates_parent_status_but_not_pointer(self):
+        rel = "posts/post-8/post-FINAL.md"
+        self.make_state("post-8", rel, status="locked")
+        self.make_artifact(rel, status="locked")
+        self.make_artifact("posts/post-8/body-copy-v1.md", status="locked")
+
+        self.run_version("post-8", artifact="body-copy")
+
+        fm, _ = af.split_fm(af.read(os.path.join(self.cdir, "project.md")))
+        self.assertEqual(af.row_get(fm, "post-8", "file"), rel)
+        self.assertEqual(af.row_get(fm, "post-8", "status"), "drafting")
+
+    def test_versioning_locked_head_records_explicit_unlock_version_event(self):
+        rel = "brief/brief-v1.md"
+        self.make_state("brief", rel, status="locked")
+        self.make_artifact(rel, status="locked")
+
+        self.run_version("brief")
+
+        self.assertTrue(os.path.isfile(os.path.join(self.cdir, "brief", "brief-v2.md")))
+        activity = af.read(os.path.join(self.cdir, "activity.md"))
+        self.assertIn("unlock_version: brief", activity)
+        self.assertIn("source_status=locked", activity)
+
+    def test_cli_parser_accepts_nested_artifact_address(self):
+        with patch.object(af, "cmd_version") as command, \
+             patch.object(af, "check_mode_gate"), \
+             patch.object(sys, "argv", ["af", "version", "version-project", "post-8", "--artifact", "body-copy"]):
+            af.main()
+
+        args = command.call_args.args[0]
+        self.assertEqual(args.artifact, "body-copy")
+
+
+class DraftCommandTests(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.projects = os.path.join(self._tmp.name, "workspace", "projects")
+        self._patch_projects = patch.object(af, "PROJECTS", self.projects)
+        self._patch_pipeline = patch.object(af, "PIPELINE", os.path.join(self._tmp.name, "workspace", "pipeline"))
+        self._patch_projects.start()
+        self._patch_pipeline.start()
+        self.addCleanup(self._patch_projects.stop)
+        self.addCleanup(self._patch_pipeline.stop)
+        self.addCleanup(self._tmp.cleanup)
+        self.cdir = os.path.join(self.projects, "version-project")
+        os.makedirs(self.cdir)
+
+    def make_state(self, row, rel, *, status="drafting"):
+        af.write(
+            os.path.join(self.cdir, "project.md"),
+            VERSION_PROJECT_FM.format(row=row, status=status, file=rel),
+        )
+
+    def make_artifact(self, rel, *, status="drafting", body="body\n"):
+        path = os.path.join(self.cdir, rel)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        af.write(
+            path,
+            f"---\nstatus: {status}\nlast_updated: 2026-07-01\n---\n\n{body}",
+        )
+        return path
+
+    def tracker_file(self, row):
+        fm, _ = af.split_fm(af.read(os.path.join(self.cdir, "project.md")), "project.md")
+        return af.row_get(fm, row, "file")
+
+    def run_draft(self, row, *, artifact=None, file=None):
+        args = types.SimpleNamespace(
+            project="version-project", deliverable=row, artifact=artifact, file=file
+        )
+        with contextlib.redirect_stdout(io.StringIO()):
+            af.cmd_draft(args)
+
+    def test_tracker_owned_draft_creates_v1_and_moves_pointer(self):
+        self.make_state("brief", "brief/placeholder.md", status="not_started")
+
+        self.run_draft("brief", file="brief/brief-v1.md")
+
+        path = os.path.join(self.cdir, "brief", "brief-v1.md")
+        self.assertTrue(os.path.isfile(path))
+        self.assertEqual(self.tracker_file("brief"), "brief/brief-v1.md")
+        fm, _ = af.split_fm(af.read(path))
+        self.assertEqual(af.get_scalar(fm, "status"), "drafting")
+
+    def test_tracker_owned_draft_refuses_non_v1_path(self):
+        self.make_state("brief", "brief/placeholder.md", status="not_started")
+        stderr = io.StringIO()
+
+        with contextlib.redirect_stderr(stderr), self.assertRaises(SystemExit):
+            self.run_draft("brief", file="brief/brief.md")
+
+        self.assertIn("must name a canonical -v1.md", stderr.getvalue())
+
+    def test_marketing_artifact_draft_creates_assembly_record_and_preserves_parent_address(self):
+        parent = "phase-3-production/posts/post-8/post-FINAL.md"
+        self.make_state("post-8", parent, status="not_started")
+
+        self.run_draft("post-8", artifact="body-copy")
+
+        ingredient = os.path.join(self.cdir, "phase-3-production", "posts", "post-8", "body-copy-v1.md")
+        assembly = os.path.join(self.cdir, "phase-3-production", "posts", "post-8", "post-FINAL.md")
+        self.assertTrue(os.path.isfile(ingredient))
+        self.assertTrue(os.path.isfile(assembly))
+        self.assertEqual(self.tracker_file("post-8"), parent)
+
+    def test_artifact_draft_refuses_existing_chain(self):
+        parent = "posts/post-8/post-FINAL.md"
+        self.make_state("post-8", parent, status="drafting")
+        self.make_artifact(parent)
+        self.make_artifact("posts/post-8/body-copy-v1.md")
+        stderr = io.StringIO()
+
+        with contextlib.redirect_stderr(stderr), self.assertRaises(SystemExit):
+            self.run_draft("post-8", artifact="body-copy")
+
+        self.assertIn("already has a version chain", stderr.getvalue())
+
+    def test_cli_parser_requires_one_draft_address(self):
+        with patch.object(af, "cmd_draft") as command, \
+             patch.object(af, "check_mode_gate"), \
+             patch.object(sys, "argv", ["af", "draft", "version-project", "post-8", "--artifact", "body-copy"]):
+            af.main()
+
+        args = command.call_args.args[0]
+        self.assertEqual(args.artifact, "body-copy")
+        self.assertIsNone(args.file)
+
+
 if __name__ == "__main__":
     unittest.main()

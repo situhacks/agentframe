@@ -125,16 +125,17 @@ class AutomationTests(unittest.TestCase):
         self.assertTrue(any("active status requires deployment_id" in issue for issue in issues))
 
     def test_managed_run_marker_allows_project_mechanics_but_blocks_terminal_actions(self):
-        af.write(os.path.join(self.root, "AGENTS.md"), "# AgentFrame - Builder Mode\n")
         args = types.SimpleNamespace(automation_cmd="init")
-        with self.assertRaises(SystemExit):
-            af.check_mode_gate("automation", args)
+        af.check_mode_gate("automation", args)
         with patch.dict(os.environ, {"AGENTFRAME_MANAGED_RUN": "1"}):
             af.check_mode_gate("version", args)
+            af.check_mode_gate("draft", args)
             with self.assertRaises(SystemExit):
                 af.check_mode_gate("lock", args)
             with self.assertRaises(SystemExit):
                 af.check_mode_gate("automation", args)
+            with self.assertRaises(SystemExit):
+                af.check_mode_gate("sync-harnesses", args)
 
 
 if __name__ == "__main__":

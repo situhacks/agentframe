@@ -5,11 +5,11 @@ description: "Pull updates from the upstream AgentFrame repository into a custom
 
 # Upstream Sync
 
-Builder-mode procedure. Git required. The personal layer (`library/context/operator/`, real campaigns, builder backlog, audit DB, `.claude/`) is gitignored and untouched by every step below — only tracked system/library/template files sync.
+Builder-router procedure. Git required. The personal layer (`library/context/operator/`, real campaigns, builder backlog, audit DB, `.claude/`) is gitignored and untouched by every step below — only tracked system/library/template files sync.
 
 ## Preflight
 
-1. Builder mode active; working tree clean — commit local work first, never sync over uncommitted changes.
+1. `AGENTS.builder.md` loaded for this task; working tree clean — commit local work first, never sync over uncommitted changes.
 2. Upstream remote exists: `git remote get-url upstream`. If missing, verify the target repository:
    - For syncing within the V2 multi-domain architecture: `git remote add upstream https://github.com/situhacks/agentframe.git`.
    - For migrating from the legacy marketing-only structure: `git remote add upstream-v1 https://github.com/situhacks/agentframe-marketing.git` and point `upstream` to the new repo `https://github.com/situhacks/agentframe.git`.

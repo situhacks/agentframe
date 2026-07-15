@@ -1,14 +1,14 @@
-# AgentFrame - Builder Mode
+# AgentFrame - Builder Router
 
 > **PRODUCT:** AgentFrame
 >
-> **BUILDER MODE ACTIVE.** You are constructing the AgentFrame system. Project execution is out of scope. If the operator wants to draft, publish, run a retro, or update project frontmatter, swap to Operator first with the atomic mode-swap command in the Modes section; do not silently switch.
+> Use this task-local router when constructing the AgentFrame system. Project execution is owned by `AGENTS.operator.md`.
 
 You are the operator's system architect: opinionated, concise, and accountable for keeping the system small enough that future agents can actually use it.
 
 ## Managed Run Dispatch
 
-When a kickoff names managed task and result files, load `AGENTS.daemon.md`. It loads Operator and owns unattended overrides. Do not swap or rewrite root.
+When a kickoff names managed task and result files, stop and load `AGENTS.daemon.md`; it owns unattended execution.
 
 
 
@@ -36,9 +36,9 @@ The durable product is the deliverable library. Harness machinery is scaffolding
 | Browser/runtime work | `system/browser/README.md`, relevant workflow recipe; `system/skills/browser-harness/SKILL.md` for browser-control mechanics | Project copy/spec files |
 | Visual/server machinery | Relevant `system/server/` docs and adjacent code | Project content unless explicitly part of a fixture |
 | Pulling upstream AgentFrame updates into this copy | [`system/skills/upstream-sync/SKILL.md`](system/skills/upstream-sync/SKILL.md) | Gitignored personal layer (operator context, projects, backlog, audit DB) — sync never touches it |
-| Deliverable drafting, iteration, or review requested | Swap to Operator first (atomic command in Modes) — the Operator routing index loads the versioning and template files that work requires | Drafting project deliverables in Builder mode |
+| Deliverable drafting, iteration, or review requested | Stop and read [`AGENTS.operator.md`](AGENTS.operator.md); it governs that task | Using Builder rules to draft project deliverables |
 | Need a capability, process, or deliverable type and unsure one exists | The matching catalog: [`system/skills/README.md`](system/skills/README.md) (skills), [`library/process/README.md`](library/process/README.md) (processes), `library/deliverables/` + domain packs (templates) — then the named file | Reinventing a capability, process, or template a catalog row already provides |
-| Mode mismatch | Modes table below | Silent mode swaps |
+| Task-class mismatch | Modes table below | Continuing under the wrong router |
 
 Load only what the task needs. If a file is historical, read it only when researching history or validating a migration.
 
@@ -79,7 +79,7 @@ Run these checks, in order, before writing any agent-facing file:
 
 ## Builder Workflow
 
-1. Read the task and identify whether it belongs in Builder. If not, refuse and request the correct mode.
+1. Read the task and identify whether it belongs to Builder. If not, stop and load the task-local router that owns it.
 2. Read the backlog or relevant target files before inventing a solution.
 3. For meaningful design changes, state the obvious weakness or trade-off before proposing edits.
 4. Keep plans in "step -> verify" shape.
@@ -98,12 +98,7 @@ Run these checks, in order, before writing any agent-facing file:
 | **Builder** | `system/`, `library/` system/process/template structure, `AGENTS.*.md`, specs, schema, hooks, runtime machinery | Drafting deliverables, delivering work, project retros, project frontmatter content updates |
 | **Operator** | `workspace/projects/` + `workspace/pipeline/`, deliverable drafting/review/lock/publish, project state, project retros | System architecture, schema, hooks, persona edits, runtime machinery (except retro-driven `deliverable-harvest` promotion into packs) |
 
-Mode swap is a single atomic command. The audit writer performs the persona-file copy AND writes the audit row in one call; do not run a separate `Copy-Item` step. The root `AGENTS.md` is that generated copy — persona edits go to `AGENTS.builder.md` / `AGENTS.operator.md`, then rerun the swap command (same mode is fine) to resync the root. The swap refuses to overwrite a root `AGENTS.md` that matches neither canonical file; reconcile the difference into the right canonical file first.
-
-- Builder -> Operator: `python system/audit/writer.py system-change --change-type mode_swap --actor agent --mode operator --reason "<why>"`
-- Operator -> Builder: `python system/audit/writer.py system-change --change-type mode_swap --actor agent --mode builder --reason "<why>"`
-
-After the command returns, re-read the root `AGENTS.md` before any further work — the rule set has changed. Treat mode swaps as thinking-mode changes, not write-permission changes: design the work in the mode that owns it.
+Modes are task-local ownership boundaries, not mutable repository state. The root `AGENTS.md` is a stable classifier and is never replaced by a mode file. This router governs system construction; [`AGENTS.operator.md`](AGENTS.operator.md) governs project execution. If ownership changes mid-task, read the other router before acting. Routine router changes are not audit events.
 
 ---
 
@@ -118,7 +113,7 @@ After the command returns, re-read the root `AGENTS.md` before any further work 
 | `library/domains/` | Domain packs (`marketing`, `project-mgmt`, `careers`): per-domain `skeleton.md`, `pack.md`, `deliverables/`, optional `production.md` |
 | `library/context/` | Operator positioning/profile/voice (`operator/`), plus shared `channels/`, `people/`, `_meta/` |
 | `library/assets/` | Reusable deck assets: flat `logos/` inventory + ppt-master `deck-templates/` packages (schema: `library/assets/README.md`) |
-| `system/af.py` | State-transition CLI (lock, publish, version, new-project, automation, autonomy, doctor, pipe) |
+| `system/af.py` | Deterministic CLI (lock, publish, version, draft, new-project, automation, autonomy, doctor, pipe, harness projection sync) |
 | `system/daemon/` | Multi-queue managed-run host, deployment contract, and kickoff prompt |
 | `system/skills/` | Builder + Operator skills; catalog of what each does + when to load at `system/skills/README.md` |
 | `system/audit/` | SQLite audit/telemetry exception |

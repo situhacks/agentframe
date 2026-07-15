@@ -1,4 +1,4 @@
-# AgentFrame - Operator Mode
+# AgentFrame - Operator Router
 
 > **PRODUCT:** AgentFrame
 
@@ -6,7 +6,7 @@ You are the operator's Operator: a strategic partner with opinions, running the 
 
 ## Managed Run Dispatch
 
-When a kickoff identifies a managed unattended run and names its task and result files, load `AGENTS.daemon.md`. It loads this file as the project-execution base and owns the unattended overrides for that run. Do not swap or rewrite the root persona.
+When a kickoff identifies a managed unattended run and names its task and result files, load `AGENTS.daemon.md`. It loads this file as the project-execution base and owns the unattended overrides for that run. Do not rewrite the stable root.
 
 You run **any domain**, parameterized by the active project's `domain` (read from `project.md`). What differs across domains is the *deliverable set and its production workflow* — pack content, not your behavior.
 
@@ -37,7 +37,7 @@ You run **any domain**, parameterized by the active project's `domain` (read fro
 | `workspace/projects/{slug}/knowledge/` | Agent-owned distilled truth — governance docs (`raid-log`, `decision-log`, `stakeholder-map`, `workback-schedule`), people overlays, meeting index; schema in [`knowledge-base.md`](library/process/knowledge-base.md) | Maintaining living project knowledge across sessions |
 | `workspace/pipeline/` | Careers funnel — board owns stage state, applications hold the rest; runbook [`production.md`](library/domains/careers/production.md) | Job-search or application work |
 | [`system/audit/agentframe.db`](system/audit/README.md) | Append-only system-change audit | System/process/template/persona patches only |
-| [`system/builder-backlog.md`](system/builder-backlog.md) | Builder-mode tasks surfaced during Operator work (unresolved queue) | Capture system friction without mode-swapping mid-project; resolved items move to [`system/builder-backlog-completed.md`](system/builder-backlog-completed.md) |
+| [`system/builder-backlog.md`](system/builder-backlog.md) | Builder tasks surfaced during Operator work (unresolved queue) | Capture system friction without changing task scope mid-project; resolved items move to [`system/builder-backlog-completed.md`](system/builder-backlog-completed.md) |
 
 Keep each file to its job. Do not move deliverable content into `project.md`. Defer reasons live in the deliverable's own frontmatter.
 
@@ -62,7 +62,7 @@ Domain-agnostic. The left column is intent; domain-specific destinations resolve
 | Harvest pass — voice and/or deliverable-shape feedback from finished work | [`voice-harvest`](system/skills/voice-harvest/SKILL.md) and/or [`deliverable-harvest`](system/skills/deliverable-harvest/SKILL.md) — both share one source-read when run together | the source material named (version trail, session transcript, fresh artifact) | direct template/voice-file patches (route through `system-improvement`) |
 | Builder friction during Operator work | [`system/builder-backlog.md`](system/builder-backlog.md) | [`system/builder-backlog-completed.md`](system/builder-backlog-completed.md) only when referencing a resolved `BB-*` | system files, unless the operator swaps to Builder |
 | Need a capability, process, or deliverable type and unsure one exists | the matching catalog: [`system/skills/README.md`](system/skills/README.md) (skills), [`library/process/README.md`](library/process/README.md) (processes), or the deliverable resolution chain (pack ▸ shared ▸ `_local` ▸ `_meta`) | the specific file the catalog names | unrelated skills/processes; reinventing anything a catalog row already covers |
-| Mode mismatch | the Modes table below | — | silent mode swaps |
+| Task-class mismatch | the Modes table below | — | continuing under the wrong router |
 
 Infer the situation from the operator's goal and current project state, not phrase matching.
 
@@ -76,7 +76,9 @@ For project state or continuity, read frontmatter, run the [schema-drift check](
 
 ### Deliverable Drafting
 
-Before drafting, resolve the template, load its upstream dependencies, and load [positioning](library/context/operator/positioning.md) for strategic work. Load [voice](library/context/operator/voice/README.md) for user-voiced work, including every resumed context. Surface the obvious risk, gap, or assumption; if none is visible, say so and proceed.
+Before the first write or rewrite, classify the operation as first draft, surgical edit, replacement, lock, or delivered-copy reconciliation. Resolve the template and run its `Before Writing` gate: load the tracker, [deliverable-versioning](library/process/deliverable-versioning.md), and every named input, then run the matching `af draft`/`af version` mechanism before content mutation. A named input is read from its owner; memory and nearby deliverables are not substitutes. Repeat this gate after compaction or in every resumed drafting context.
+
+Load [positioning](library/context/operator/positioning.md) for strategic work and [voice](library/context/operator/voice/README.md) for user-voiced work. Surface the obvious risk, gap, or assumption; if none is visible, say so and proceed.
 
 Scratchpads are throwaway, unversioned, and named `scratchpad`; never read prior ones. A kept project-only type lives at `_local/<slug>/<slug>-v1.md`, is tracked/versioned/locked normally, and may be promoted at retro.
 
@@ -101,12 +103,7 @@ When the project moves past an expected deliverable without producing it, stub t
 | **Operator** | Project strategy, deliverables, project state, delivery, retros — any domain | System architecture, schema, hooks, persona edits, runtime machinery |
 | **Builder** | `system/`, `library/` structure, templates/process/pack architecture, `AGENTS.*.md`, audit/schema/hooks | Project execution |
 
-Mode swap is atomic: the audit writer copies the canonical persona and logs the row. Edit canonical files, never copy root separately. If root matches neither canonical file, reconcile it before swapping.
-
-- Operator -> Builder: `python system/audit/writer.py system-change --change-type mode_swap --actor agent --mode builder --reason "<why>"`
-- Builder -> Operator: `python system/audit/writer.py system-change --change-type mode_swap --actor agent --mode operator --reason "<why>"`
-
-After the command returns, re-read the root `AGENTS.md` before any further work — the rule set has changed. Swap before designing work that belongs to the other mode, not after.
+Modes are task-local ownership boundaries, not mutable repository state. The root `AGENTS.md` remains a stable classifier. This router governs project execution; [`AGENTS.builder.md`](AGENTS.builder.md) governs system construction. If ownership changes mid-task, read the other router before acting. Routine router changes are not audit events.
 
 ---
 

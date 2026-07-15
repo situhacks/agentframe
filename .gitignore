@@ -2,18 +2,13 @@
 .env
 .env.local
 
-# === Operator content (PII / private to the operator running this fork) ===
-# All operator context is private by default, except the shared metadata shapes
-# and operator examples.
+# === Operator content (PII / private to this fork) ===
 library/context/*
 !library/context/_meta/
 !library/context/operator-schema/
-
-# Operator builder backlogs (keeps personal system fixes out of forks)
 system/builder-backlog*.md
 
 # === Operator projects ===
-# All projects are private by default.
 workspace/projects/*
 !workspace/projects/.gitkeep
 !workspace/projects/completed/
@@ -21,7 +16,6 @@ workspace/projects/completed/*
 !workspace/projects/completed/.gitkeep
 
 # === Operator pipeline (careers) ===
-# The job-search surface is personal: board, applications, resumes, exports.
 workspace/pipeline/*
 !workspace/pipeline/.gitkeep
 
@@ -44,8 +38,6 @@ system/browser/dist/
 system/browser/.env
 
 # === Open Design local runtime / build artifacts ===
-# Upstream source/.gitignore is canonical; these top-level guards prevent
-# accidental staging from tools that bypass nested ignore rules.
 system/skills/open-design/source/node_modules/
 system/skills/open-design/source/.od/
 system/skills/open-design/source/.od-e2e/
@@ -59,19 +51,16 @@ system/skills/open-design/source/playwright-report/
 system/skills/open-design/source/e2e/.od-data/
 system/skills/open-design/source/e2e/reports/
 
-# === Open Design — operator content added under the source subtree ===
-# Match every subdirectory under design-systems/ and skills/. Git only
-# applies gitignore to UNTRACKED paths, so upstream-shipped design systems
-# and skills (already tracked) stay tracked. Anything new the operator adds
-# here is campaign- or operator-specific and stays local.
+# === Open Design — operator content under the source subtree ===
+# gitignore only affects UNTRACKED paths, so upstream-shipped systems/skills
+# (already tracked) stay; anything new the operator adds here stays local.
 system/skills/open-design/source/design-systems/*/
 system/skills/open-design/source/skills/*/
 
-# === Scratch / scratchpad directories anywhere in the tree ===
+# === Scratch directories anywhere in the tree ===
 **/_scratch/
 
-# === Exported deliverable binaries inside campaigns ===
-# Keep authoring sources in markdown; export binaries are regenerable.
+# === Exported deliverable binaries (regenerable from markdown sources) ===
 workspace/**/*.docx
 workspace/**/*.pptx
 
@@ -79,33 +68,22 @@ workspace/**/*.pptx
 Thumbs.db
 .DS_Store
 *.swp
+.vscode/
+.idea/
 
 # === Python bytecode caches ===
 __pycache__/
 *.pyc
 *.pyo
 
-# === Editor metadata ===
-.vscode/
-.idea/
-
-# === Claude Code operator-local config ===
-# Personal hook scripts and local settings (e.g. git-push-guard) stay on the
-# operator's machine. Repo-default hooks ship via the tracked
-# .claude/settings.json (scripts live in system/hooks/); everything else
-# under .claude/ stays local. `.claude/*` (not `.claude/`) because git
-# cannot re-include a file whose parent directory is excluded.
+# === Operator-local config: Claude Code + Codex ===
+# `.claude/*` (not `.claude/`) so the tracked settings.json can be re-included;
+# git cannot re-include a file whose parent dir is excluded.
 .claude/*
 !.claude/settings.json
-
-# === Codex operator-local scratch ===
-# Mirrors .claude/ handling: nothing under .codex/ is tracked.
 .codex/
 
-# === Design specs / plugin scratch (operator-local) ===
-# docs/ holds design specs written by the brainstorming/writing-plans plugins.
-# They are personal to the operator's instance and specific to a plugin
-# convention, not something forks need. Keep the whole tree local.
+# === Plugin scratch (brainstorming / writing-plans design specs) ===
 docs/
 
 # === Local surface runtime state (per-machine) ===

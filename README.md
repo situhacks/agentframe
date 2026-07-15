@@ -2,9 +2,9 @@
 
 ![AgentFrame — a file-native context workspace for any kind of work, inside your AI coding agent](.github/readme-assets/banner.jpg)
 
-AgentFrame is the workspace I use to run long projects with coding agents. It works with Claude Code, Codex, Cursor, VS Code, Antigravity, or anything else that can read files, because the projects, context, deliverables, decisions, and feedback loops are all plain files too. A fresh agent can read the workspace, pick up the work where I left it, and spend its context on the project instead of making me explain everything again.
+AgentFrame is the workspace I use to run all my work alongside coding agents. It works with Claude Code, Codex, Cursor, VS Code, Antigravity, or anything else that can read files, because the projects, context, deliverables, decisions, and feedback loops are all plain markdown files. Everything about your work is organized and maintained, so a fresh agent can read the workspace and pick up the work without you having to rexplain everything.
 
-I'm not a software engineer. I built this because I use AI for real work every day, and after enough broken chat threads, repeated briefings, and folders full of mystery finals, I wanted a setup that could actually survive a project. Every template and process in here comes from work I have run through it. It's free to fork, so take whatever is useful for your own setup.
+I built this for my professional and personal work, over many weekends and likely main more. It's free to fork, so take whatever is useful for your own setup.
 
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" /></a>
@@ -33,23 +33,21 @@ I'm not a software engineer. I built this because I use AI for real work every d
 
 ## Why this exists
 
-The first version of AgentFrame was a marketing system. I was trying to run campaigns in raw chat windows, which meant decisions drifted between sessions, drafts forked without a clear final, and every new chat started with me giving the same briefing again. Moving the work into structured files fixed enough of that mess that I ended up shipping a whole campaign series through it.
+The first version of AgentFrame was a marketing system. It was born from me trying to run campaigns in raw AI chat windows, which meant single chats were becoming huge token sinks with context rot, and separating chats meant every new chat required me to rebrief it again on the task. So, AgentFrame was created to organize my context into structured files, so one prompt can become a repeatable process and one campaign can become an example for future ones.
 
-Then I kept using the marketing system for work that had nothing to do with marketing. I ran PowerPoint redesigns through it, made document deliverables, and did small research jobs by pretending they were all "campaigns" so the structure would still fit. That worked surprisingly well, which made the problem pretty obvious: the useful part was never the marketing language. It was the way the system kept project state, versioned the work, and carried the right context into the next step.
+Then I kept using the marketing system for work that had nothing to do with marketing. I ran PowerPoint redesigns through it, made Word document deliverables, and did small research jobs by asking my coding agent to consider them "campaigns". That worked surprisingly well, which made the problem pretty obvious: the useful part of AgentFrame was not just the its marketing system but the context organizaiton. It was the way the system kept project state, versioned the work, and carried the right information into the next step.
 
-So I rebuilt AgentFrame around projects. Marketing is still there, but now it is one domain pack beside project management and careers, while the core handles the things all of them share: context, state, deliverables, and the path between them. That rebuild also gave me the parts I care about most now, including long-horizon memory that can consolidate without forgetting, a voice system trained on my actual edits, and deliverables that keep a real version trail.
+So I rebuilt AgentFrame around the smallest piece of work: projects. Marketing is still there, but now it is one domain pack beside project management and careers, while the core handles the things all of them share: context, state, deliverables, and the path between them. That rebuild also gave me the parts I care about most now, including long-horizon memory that can consolidate without forgetting, a voice system trained on my actual edits, and deliverables that keep a version trail.
 
 The original marketing-only system is frozen at [agentframe-marketing](https://github.com/situhacks/agentframe-marketing). This repository is its successor.
 
 ## Key features
 
-AgentFrame keeps its context, working rules, and project state in files that any coding agent can read. These are the parts that make that useful in practice.
-
-<!-- IMAGE STUB · slot: three-layers · GENERATE (not SVG) · shows: prompt / context / loop engineering as three visually distinct shapes or columns, context as the emphasized core. See .github/readme-assets/three-layers.prompt.md -->
+AgentFrame keeps its context, working rules, and project state in files that any coding agent can read.
 
 ### 1. Pick up a project without re-briefing
 
-- **Reconstruct the project from disk.** After a memory compaction, a provider switch, or a month away, a fresh agent reads the project files and continues from the same state. I do not need to write a catch-up paragraph or upload the brief again.
+- **Reconstruct the project from disk.** After a memory compaction, a provider switch, or a month long haitus, a fresh agent reads the project files and continues from the same state. I do not need to write a catch-up paragraph or upload the brief again.
 
 - **Keep sources and working knowledge separate.** Transcripts and briefs land in `sources/` and never get edited. The agent maintains what it has learned from them in `knowledge/`, and a consolidation pass archives resolved detail when the active context gets too big.
 
@@ -57,37 +55,37 @@ AgentFrame keeps its context, working rules, and project state in files that any
 
 ### 2. Reuse instructions shaped by real work
 
-- **Start from templates and processes that have already been used.** Every deliverable shape and workflow in the library was refined on work I actually ran. The model and tools can change without taking that knowledge with them.
-
-- **Teach the voice system from real edits.** It reads complete pieces I published, uses a different register for each channel, and compares agent drafts against my rewrites to learn the moves I keep making by hand.
+- **Start from templates and processes that have already been used.** Every deliverable shape and workflow in the library was refined on work I actually ran. The coding agent model and tools can change without affecting the underlying system knowledge.
 
 - **Add specialised structure through domain packs.** Marketing, project management, and careers ship today. Adding another domain means adding its templates and descriptor rather than rewriting the core.
 
+- **Teach the voice system from real edits.** It reads complete pieces I published, uses a different register for each channel, and compares agent drafts against my rewrites to learn how my written voice sounds like. Every iteration from the agent's first attempt at my voice and my final rewrite gets it closer to sounds like me in the first go. 
+
 <p align="center">
-  <img src=".github/readme-assets/voice-system-edit-01.svg" alt="How the voice system works in detail. Built from (loaded before every draft): the per-register corpus of your published pieces, the always-three files (identity, voice-profile, anti-patterns), the register overlay, and contrastive pairs. Every draft runs a four-pass method: content pass, style pass (corpus-first with 3-4 mandated markers), clean pass (anti-patterns plus humanizer in a separate turn), and a register test. Then you revise by hand; a mini-retro gate decides whether the edit is worth harvesting; and harvest turns edit deltas into new contrastive pairs that feed back into what the system is built from." width="880" />
+  <img src=".github/readme-assets/voice-system.png" alt="How the voice system works in detail. Built from (loaded before every draft): the per-register corpus of your published pieces, the always-three files (identity, voice-profile, anti-patterns), the register overlay, and contrastive pairs. Every draft runs a four-pass method: content pass, style pass (corpus-first with 3-4 mandated markers), clean pass (anti-patterns plus humanizer in a separate turn), and a register test. Then you revise by hand; a mini-retro gate decides whether the edit is worth harvesting; and harvest turns edit deltas into new contrastive pairs that feed back into what the system is built from." width="880" />
 </p>
 
 ### 3. Keep state and automation deterministic
 
-- **Run project state changes through commands.** Models are good at research, synthesis, and drafting, but I do not trust one to remember exact bookkeeping steps months into a project. `system/af.py` handles creation, versioning, locking, publishing, and doctor checks, then gives the work back to the agent for the part that needs judgment.
+- **Run project state changes through commands.** Models are good at research, synthesis, and drafting, but I do not trust one to remember exact bookkeeping steps months into a project. A determisitic script: `system/af.py` handles creation, versioning, locking, publishing, and doctor checks without using tokens. If anything is out of order, it flags it for the agent to reason over.
 
-- **Keep a version trail for every deliverable.** Replacement-shaped revisions become immutable snapshots, the project always points at the current version, and lock gates run before delivery. When the destination needs a real file, the export is tracked too.
+- **Keep a version trail for every deliverable.** Replacement-shaped revisions become immutable snapshots, the project always points at the current version, and lock gates run before delivery. When the deliverable needs a real file (e.g., PPTX, DOCX), the export is tracked too.
 
 - **Record what happened as part of the work.** Activity logs and version notes cover projects, while an append-only audit database records system changes. `af doctor` reports drift without silently fixing it.
 
-- **Run standing project work through managed automations.** A project can define a job, receive queued tasks, and run them through a bounded local agent that returns a `done`, `blocked`, or `failed` receipt. The first deployment uses Power Automate, OneDrive, and a single-flight Cursor host; I have just started testing it in real use, so the project contracts are more settled than the runtime around them.
+- **Run standing project work through managed automations.** A project can define a job, receive queued tasks, and run them through a bounded local agent that returns a `done`, `blocked`, or `failed` receipt. The first deployment uses Power Automate, OneDrive, and a single-flight Cursor host; I have just started testing it in real use.
 
 ### 4. Learn deliberately from finished work
 
-- **Feed finished work back into the system.** When a project closes, harvest passes compare drafts with my manual edits and the friction logged along the way. They propose changes to templates, processes, or the voice corpus, but nothing updates itself automatically.
+- **Feed finished work back into the system.** When a project closes, harvest passes compare drafts with my manual edits and the friction logged along the way. They propose changes to templates, processes, or the voice corpus, but nothing updates itself automatically (at least one short human review step).
 
-- **Bound experiments before they run unattended.** A bounded run defines its goal, evidence of completion, iteration budget, and review points before the agent starts. Today that is one process file, [`bounded-autonomy.md`](library/process/bounded-autonomy.md), and I expect the shape to change as I use it more.
+- **Bound experiments before they run unattended.** A bounded run defines its goal, evidence of completion, iteration budget, and review points before the agent starts. Today that is one process file, [`bounded-autonomy.md`](library/process/bounded-autonomy.md), and I expect to further evolve this system as I use it more.
 
 ### 5. See the workspace without another database
 
 - **Render the workspace from the same files the agents use.** The dashboard covers projects, attention items, the calendar, and the timeline without adding another database or making a model call. Honestly, I mostly use it for the quick view (and a little vanity), but I like that the files are coherent enough to become an interface.
 
-- **See what the automation runtime is doing.** The read-only Automations pulse shows waiting requests, terminal receipts, exceptions, and mismatches between a project's declared lifecycle and the local runtime. It reports problems without starting, retrying, or changing an automation.
+- **See what the automation runtime is doing.** The read-only Automations tab shows waiting requests, terminal receipts, exceptions, and mismatches between a project's declared lifecycle and the local runtime. It reports problems without starting, retrying, or changing an automation.
 
 More detail is in [The Workspace Dashboard](#the-workspace-dashboard).
 
@@ -143,11 +141,11 @@ Three domain packs and two work topologies ship today.
 | **Marketing project** | Research, campaign architecture, copy, visuals, video, decks, publishing, and performance capture | `marketing` + open flow or an opt-in phase ladder |
 | **Career workspace** | Ongoing career context, internal progression, promotion evidence, and structured application cases | Career bank + calendar/pipeline + case folders |
 
-The open project is the default because most knowledge work fits inside a project before it needs anything more specialised. You do not have to design a domain pack before AgentFrame can help with the work. Packs are for the jobs you repeat often enough to justify a stronger shape.
+The open project is the default because most work fits inside a project shape before it needs anything more specialised - plus if you're using a frontier model it can reason and tailor the project for just about anything. You do not have to design a domain pack everytime. Packs are for the jobs you repeat often enough to justify a stronger shape.
 
 ### Technical builds without splitting the brain
 
-When a project turns into a proof of concept or an application, the code lives in its own repository while AgentFrame keeps the plan, sources, decisions, and build log. Once that repository can stand on its own, it receives the context it needs and AgentFrame stops orchestrating the build.
+When a project turns into a proof of concept or an application, the code lives in its own repository while AgentFrame keeps the plan, sources, decisions, and build log. Once that repository is mature enough, it receives the context it needs and AgentFrame stops orchestrating the build.
 
 ## A real project, step by step
 
@@ -159,16 +157,16 @@ The project-management pack takes a charter and turns it into living context the
 
 <table>
 <tr>
-<td width="50%" valign="top"><!-- IMAGE STUB · pm-walkthrough-01 · shows: Operator kickoff, scaffold from the PM skeleton, charter lands in sources/ --><br/><sub><b>1 · Kickoff.</b> Tell the agent to start a new governed project. It scaffolds the workspace from the pack skeleton and files your charter into the project's <code>sources/</code>.</sub></td>
-<td width="50%" valign="top"><!-- IMAGE STUB · pm-walkthrough-02 · shows: the four governance files derived from the charter under knowledge/ --><br/><sub><b>2 · Derive the knowledge base.</b> From the charter, the agent derives living context files under <code>knowledge/</code>: a RAID log, a stakeholder map, a decision log, and a workback schedule.</sub></td>
+<td width="50%" valign="top"><img src=".github/readme-assets/pm-walkthrough-01.jpg" alt="A 'new governed project' command scaffolding into a project folder tree" /><br/><sub><b>1 · Kickoff.</b> Tell the agent to start a new governed project. It scaffolds the workspace from the pack skeleton and files your charter into the project's <code>sources/</code>.</sub></td>
+<td width="50%" valign="top"><img src=".github/readme-assets/pm-walkthrough-02.jpg" alt="charter.md fanning out into four governance files" /><br/><sub><b>2 · Derive the knowledge base.</b> From the charter, the agent derives living context files under <code>knowledge/</code>: a RAID log, a stakeholder map, a decision log, and a workback schedule.</sub></td>
 </tr>
 <tr>
-<td width="50%" valign="top"><!-- IMAGE STUB · pm-walkthrough-03 · shows: living maintenance, RAID updates from a meeting transcript, decisions appending --><br/><sub><b>3 · Maintain and consolidate.</b> Meeting transcripts land in <code>sources/</code>; the agent updates the RAID log, appends decisions, and re-plans the schedule. On long projects, a consolidation pass archives resolved items so active files stay lean without losing history.</sub></td>
-<td width="50%" valign="top"><!-- IMAGE STUB · pm-walkthrough-04 · shows: a versioned deliverable draft with its -v{N} snapshot trail --><br/><sub><b>4 · Draft deliverables.</b> Findings, memos, and decks are drafted in your voice from the deliverable library, and every replacement-shaped revision becomes an immutable <code>-v{N}</code> snapshot.</sub></td>
+<td width="50%" valign="top"><img src=".github/readme-assets/pm-walkthrough-03.jpg" alt="A meeting transcript updating the RAID and decision logs, with resolved detail archived" /><br/><sub><b>3 · Maintain and consolidate.</b> Meeting transcripts land in <code>sources/</code>; the agent updates the RAID log, appends decisions, and re-plans the schedule. On long projects, a consolidation pass archives resolved items so active files stay lean without losing history.</sub></td>
+<td width="50%" valign="top"><img src=".github/readme-assets/pm-walkthrough-04.jpg" alt="A current deliverable with its immutable v3/v2/v1 snapshot stack" /><br/><sub><b>4 · Draft deliverables.</b> Findings, memos, and decks are drafted in your voice from the deliverable library, and every replacement-shaped revision becomes an immutable <code>-v{N}</code> snapshot.</sub></td>
 </tr>
 <tr>
-<td width="50%" valign="top"><!-- IMAGE STUB · pm-walkthrough-05 · shows: lock gate passing + a deck export landing in the operator's own template --><br/><sub><b>5 · Deliver.</b> Deliverables pass lock criteria before delivery is recorded, including deck exports in your own PowerPoint template when the destination needs a file.</sub></td>
-<td width="50%" valign="top"><!-- IMAGE STUB · pm-walkthrough-06 · shows: the closeout harvest proposing template/voice updates --><br/><sub><b>6 · Learn.</b> Closeout harvests your manual edits and workflow friction into proposed template, process, and voice improvements.</sub></td>
+<td width="50%" valign="top"><img src=".github/readme-assets/pm-walkthrough-05.jpg" alt="A locked deliverable passing a gate and exporting to a PowerPoint deck" /><br/><sub><b>5 · Deliver.</b> Deliverables pass lock criteria before delivery is recorded, including deck exports in your own PowerPoint template when the destination needs a file.</sub></td>
+<td width="50%" valign="top"><img src=".github/readme-assets/pm-walkthrough-06.jpg" alt="A closed project harvested into proposed template, process, and voice updates" /><br/><sub><b>6 · Learn.</b> Closeout harvests your manual edits and workflow friction into proposed template, process, and voice improvements.</sub></td>
 </tr>
 </table>
 
@@ -197,22 +195,22 @@ The careers pack treats your own career as a long project. It is built first for
 
 <table>
 <tr>
-<td width="50%" valign="top"><!-- IMAGE STUB · career-walkthrough-01 · shows: the career bank with role expectations, KPIs, proof points, and stories --><br/><sub><b>1 · Build the career bank.</b> Role expectations, KPIs, proof points, resume bullets, stories, manager context, promotion rubrics, and cycle dates live as durable files.</sub></td>
-<td width="50%" valign="top"><!-- IMAGE STUB · career-walkthrough-02 · shows: the pipeline board + calendar with upcoming conversations and dates --><br/><sub><b>2 · See what's coming.</b> The calendar and pipeline board make upcoming conversations, submission dates, and follow-ups visible next to the rest of the workspace.</sub></td>
+<td width="50%" valign="top"><img src=".github/readme-assets/career-walkthrough-01.jpg" alt="The career bank as a grid of durable named files" /><br/><sub><b>1 · Build the career bank.</b> Role expectations, KPIs, proof points, resume bullets, stories, manager context, promotion rubrics, and cycle dates live as durable files.</sub></td>
+<td width="50%" valign="top"><img src=".github/readme-assets/career-walkthrough-02.jpg" alt="A calendar and pipeline board showing upcoming career conversations and dates" /><br/><sub><b>2 · See what's coming.</b> The calendar and pipeline board make upcoming conversations, submission dates, and follow-ups visible next to the rest of the workspace.</sub></td>
 </tr>
 <tr>
-<td width="50%" valign="top"><!-- IMAGE STUB · career-walkthrough-03 · shows: evidence harvested from completed projects into the bank --><br/><sub><b>3 · Gather evidence.</b> Completed projects already contain your wins; harvest passes turn them into proof points and a running impact record instead of a panic the week before review season.</sub></td>
-<td width="50%" valign="top"><!-- IMAGE STUB · career-walkthrough-04 · shows: a promotion case built as a rubric map + evidence + gaps plan --><br/><sub><b>4 · Run a case.</b> An internal promotion case works like any evidence-backed application: the rubric becomes the requirements source, gaps become a plan, and the final material can be a deck rather than a resume.</sub></td>
+<td width="50%" valign="top"><img src=".github/readme-assets/career-walkthrough-03.jpg" alt="Completed projects harvested into a running proof-points file" /><br/><sub><b>3 · Gather evidence.</b> Completed projects already contain your wins; harvest passes turn them into proof points and a running impact record instead of a panic the week before review season.</sub></td>
+<td width="50%" valign="top"><img src=".github/readme-assets/career-walkthrough-04.jpg" alt="A promotion case: rubric mapped to evidence and gaps, exported as a deck" /><br/><sub><b>4 · Run a case.</b> An internal promotion case works like any evidence-backed application: the rubric becomes the requirements source, gaps become a plan, and the final material can be a deck rather than a resume.</sub></td>
 </tr>
 <tr>
-<td width="50%" valign="top"><!-- IMAGE STUB · career-walkthrough-05 · shows: ATS-safe resume/cover exports keyed to the destination system --><br/><sub><b>5 · Produce materials.</b> A promotion case exports as a deck; when you do look outside, the same substrate produces ATS-aware resume and cover-letter files and scouts public job feeds without a login.</sub></td>
-<td width="50%" valign="top"><!-- IMAGE STUB · career-walkthrough-06 · shows: dashboard timeline view of career activity across months --><br/><sub><b>6 · Keep the record.</b> Everything accrues back into the bank, so the next case starts from evidence instead of memory.</sub></td>
+<td width="50%" valign="top"><img src=".github/readme-assets/career-walkthrough-05.jpg" alt="The career bank producing an internal promotion deck, with external resume and cover-letter as a secondary branch" /><br/><sub><b>5 · Produce materials.</b> A promotion case exports as a deck; when you do look outside, the same system can produce ATS-aware resume and cover-letter files and scouts public job feeds.</sub></td>
+<td width="50%" valign="top"><img src=".github/readme-assets/career-walkthrough-06.jpg" alt="A closed case accruing back into the career bank" /><br/><sub><b>6 · Keep the record.</b> Everything accrues back into the bank, so the next case starts from evidence instead of memory.</sub></td>
 </tr>
 </table>
 
 ## At a glance
 
-This is the full capability catalog. I did not rebuild every production tool from scratch: deck generation, advanced visuals, video composition, prose cleanup, and deep research come from community projects that already do those jobs well. Each vendored skill keeps its upstream source and refresh path nearby, while the process files and templates are AgentFrame's own and come from projects that ran through the workspace.
+This is the full capability catalog. I did not build every production tool from scratch: deck generation, advanced visuals, video composition, prose cleanup, and deep research come from community projects that already do those jobs well. I do add my own process and tweaks on top of them but each vendored skill keeps its upstream source and refresh path nearby. The process files and templates are AgentFrame's own and come from my own work.
 
 ### Skills
 
@@ -296,12 +294,12 @@ The structure follows a few rules that have kept it from turning into a second j
 - **Files own working truth.** Markdown and media hold project state, context, decisions, and outputs. SQLite is reserved for the append-only system-change audit.
 - **Sources and knowledge are different things.** Immutable inputs live in `sources/`; distilled working context lives in `knowledge/`.
 - **Prose owns judgment; mechanisms guarantee invariants.** The agent decides what good work is. The CLI and hooks protect state, exports, and repeatable gates.
-- **The dashboard is a reader.** It never becomes a competing state owner.
+- **The dashboard is a reader.** It never becomes a competing state owner. It only shows what's already available in markdown.
 - **Templates hold the reusable knowledge.** Skills and runtimes can be replaced without rewriting the deliverable library.
 
 ## The Workspace Dashboard
 
-`python system/server/run.py --daemon` starts or reuses the local server and opens the workspace UI. It reads the workspace files directly, so it does not need a model, an API key, or a second database.
+`python system/server/run.py --daemon` starts or reuses the local server and opens the workspace UI (you can also just ask the agent to turn it on). It reads the workspace files directly, so it does not need a model, an API key, or a second database.
 
 <table>
 <tr>
@@ -381,21 +379,9 @@ Every trail has one owner:
 
 Git carries the version history of the reusable system; personal work stays local and gitignored.
 
-## Design constraints
-
-A few directions are intentionally out of scope:
-
-- It is not a replacement model or a wrapper around one provider.
-- It does not copy every fact into a vector database by default.
-- It does not make the dashboard a competing source of truth.
-- It does not encode every possible workflow before real work earns the abstraction.
-- It does not let scripts make creative or project-management judgments.
-
-The part I expect to keep is the context, the workflow knowledge, and the deliverable library. The models and tools around them will keep changing.
-
 ## Contributing
 
-PRs for templates, process improvements, domain packs, skills, and runtime fixes are welcome. Open an issue before a major architecture change, mostly so the system does not grow faster than the next agent can understand it.
+PRs for templates, process improvements, domain packs, skills, and runtime fixes are welcome. Open an issue if you spot any. 
 
 ## References and lineage
 

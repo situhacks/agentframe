@@ -2,9 +2,9 @@
 
 ![AgentFrame — a file-native context workspace for any kind of work, inside your AI coding agent](.github/readme-assets/banner.jpg)
 
-AgentFrame is the workspace I use to run all my work alongside coding agents. It works with Claude Code, Codex, Cursor, VS Code, Antigravity, or anything else that can read files, because the projects, context, deliverables, decisions, and feedback loops are all plain markdown files. Everything about your work is organized and maintained, so a fresh agent can read the workspace and pick up the work without you having to rexplain everything.
+AgentFrame is a file-native context workspace for running any kind of work alongside coding agents. It works with Claude Code, Codex, Cursor, VS Code, Antigravity, or anything else that can read files because the projects, context, deliverables, decisions, and feedback loops are all plain markdown files. Everything about your work stays organized, so a fresh agent can read the workspace and pick up where you left off without a lengthy re-explanation.
 
-I built this for my professional and personal work, over many weekends and likely main more. It's free to fork, so take whatever is useful for your own setup.
+I built it for my professional and personal work over many weekends, with likely many more to come. It's free to fork, so take whatever is useful for your own setup.
 
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" /></a>
@@ -33,9 +33,9 @@ I built this for my professional and personal work, over many weekends and likel
 
 ## Why this exists
 
-The first version of AgentFrame was a marketing system. It was born from me trying to run campaigns in raw AI chat windows, which meant single chats were becoming huge token sinks with context rot, and separating chats meant every new chat required me to rebrief it again on the task. So, AgentFrame was created to organize my context into structured files, so one prompt can become a repeatable process and one campaign can become an example for future ones.
+The first version of AgentFrame was a marketing system. It came from trying to run campaigns in raw AI chat windows. Individual chats became huge token sinks with context rot, while starting a new chat meant briefing it again on the same task. I created AgentFrame to organize my context into structured files, so one prompt could become a repeatable process and one campaign could become an example for future ones.
 
-Then I kept using the marketing system for work that had nothing to do with marketing. I ran PowerPoint redesigns through it, made Word document deliverables, and did small research jobs by asking my coding agent to consider them "campaigns". That worked surprisingly well, which made the problem pretty obvious: the useful part of AgentFrame was not just the its marketing system but the context organizaiton. It was the way the system kept project state, versioned the work, and carried the right information into the next step.
+Then I kept using the marketing system for work that had nothing to do with marketing. I ran PowerPoint redesigns through it, made Word document deliverables, and did small research jobs by asking my coding agent to treat them as "campaigns." That worked surprisingly well, which made the useful part of AgentFrame obvious: it was not just the marketing workflow but the context organization. It was the way the system kept project state, versioned the work, and carried the right information into the next step.
 
 So I rebuilt AgentFrame around the smallest piece of work: projects. Marketing is still there, but now it is one domain pack beside project management and careers, while the core handles the things all of them share: context, state, deliverables, and the path between them. That rebuild also gave me the parts I care about most now, including long-horizon memory that can consolidate without forgetting, a voice system trained on my actual edits, and deliverables that keep a version trail.
 
@@ -47,7 +47,7 @@ AgentFrame keeps its context, working rules, and project state in files that any
 
 ### 1. Pick up a project without re-briefing
 
-- **Reconstruct the project from disk.** After a memory compaction, a provider switch, or a month long haitus, a fresh agent reads the project files and continues from the same state. I do not need to write a catch-up paragraph or upload the brief again.
+- **Reconstruct the project from disk.** After a memory compaction, a provider switch, or a month-long hiatus, a fresh agent reads the project files and continues from the same state. You do not need to write a catch-up paragraph or upload the brief again.
 
 - **Keep sources and working knowledge separate.** Transcripts and briefs land in `sources/` and never get edited. The agent maintains what it has learned from them in `knowledge/`, and a consolidation pass archives resolved detail when the active context gets too big.
 
@@ -55,11 +55,11 @@ AgentFrame keeps its context, working rules, and project state in files that any
 
 ### 2. Reuse instructions shaped by real work
 
-- **Start from templates and processes that have already been used.** Every deliverable shape and workflow in the library was refined on work I actually ran. The coding agent model and tools can change without affecting the underlying system knowledge.
+- **Start from templates and processes that have already been used.** Every deliverable shape and workflow in the library has been refined through real work. The coding agent model and tools can change without affecting the underlying system knowledge.
 
 - **Add specialised structure through domain packs.** Marketing, project management, and careers ship today. Adding another domain means adding its templates and descriptor rather than rewriting the core.
 
-- **Teach the voice system from real edits.** It reads complete pieces I published, uses a different register for each channel, and compares agent drafts against my rewrites to learn how my written voice sounds like. Every iteration from the agent's first attempt at my voice and my final rewrite gets it closer to sounds like me in the first go. 
+- **Teach the voice system from real edits.** It reads complete pieces you have published, uses a different register for each channel, and compares agent drafts against your rewrites to learn your written voice. Each edit gives the system better evidence for making the next first draft sound more like you.
 
 <p align="center">
   <img src=".github/readme-assets/voice-system.png" alt="How the voice system works in detail. Built from (loaded before every draft): the per-register corpus of your published pieces, the always-three files (identity, voice-profile, anti-patterns), the register overlay, and contrastive pairs. Every draft runs a four-pass method: content pass, style pass (corpus-first with 3-4 mandated markers), clean pass (anti-patterns plus humanizer in a separate turn), and a register test. Then you revise by hand; a mini-retro gate decides whether the edit is worth harvesting; and harvest turns edit deltas into new contrastive pairs that feed back into what the system is built from." width="880" />
@@ -67,23 +67,23 @@ AgentFrame keeps its context, working rules, and project state in files that any
 
 ### 3. Keep state and automation deterministic
 
-- **Run project state changes through commands.** Models are good at research, synthesis, and drafting, but I do not trust one to remember exact bookkeeping steps months into a project. A determisitic script: `system/af.py` handles creation, versioning, locking, publishing, and doctor checks without using tokens. If anything is out of order, it flags it for the agent to reason over.
+- **Run project state changes through commands.** Models are good at research, synthesis, and drafting; deterministic commands handle the exact bookkeeping. The `system/af.py` script manages creation, versioning, locking, publishing, and doctor checks without using model tokens. If anything is out of order, it flags the problem for the agent to reason over.
 
 - **Keep a version trail for every deliverable.** Replacement-shaped revisions become immutable snapshots, the project always points at the current version, and lock gates run before delivery. When the deliverable needs a real file (e.g., PPTX, DOCX), the export is tracked too.
 
 - **Record what happened as part of the work.** Activity logs and version notes cover projects, while an append-only audit database records system changes. `af doctor` reports drift without silently fixing it.
 
-- **Run standing project work through managed automations.** A project can define a job, receive queued tasks, and run them through a bounded local agent that returns a `done`, `blocked`, or `failed` receipt. The first deployment uses Power Automate, OneDrive, and a single-flight Cursor host; I have just started testing it in real use.
+- **Run standing project work through managed automations.** A project can define a job, receive queued tasks, and run them through a bounded local agent that returns a `done`, `blocked`, or `failed` receipt. The included deployment path uses Power Automate, OneDrive, and a single-flight Cursor host. This part of the system is early and currently being tested in real use.
 
 ### 4. Learn deliberately from finished work
 
-- **Feed finished work back into the system.** When a project closes, harvest passes compare drafts with my manual edits and the friction logged along the way. They propose changes to templates, processes, or the voice corpus, but nothing updates itself automatically (at least one short human review step).
+- **Feed finished work back into the system.** When a project closes, harvest passes compare agent drafts with the operator's manual edits and the friction logged along the way. They propose changes to templates, processes, or the voice corpus, but nothing updates itself automatically; at least one short human review step remains.
 
-- **Bound experiments before they run unattended.** A bounded run defines its goal, evidence of completion, iteration budget, and review points before the agent starts. Today that is one process file, [`bounded-autonomy.md`](library/process/bounded-autonomy.md), and I expect to further evolve this system as I use it more.
+- **Bound experiments before they run unattended.** A bounded run defines its goal, evidence of completion, iteration budget, and review points before the agent starts. The contract currently lives in one process file, [`bounded-autonomy.md`](library/process/bounded-autonomy.md), and remains an evolving part of the system.
 
 ### 5. See the workspace without another database
 
-- **Render the workspace from the same files the agents use.** The dashboard covers projects, attention items, the calendar, and the timeline without adding another database or making a model call. Honestly, I mostly use it for the quick view (and a little vanity), but I like that the files are coherent enough to become an interface.
+- **Render the workspace from the same files the agents use.** The dashboard covers projects, attention items, the calendar, and the timeline without adding another database or making a model call. It provides a quick operational view while demonstrating that the underlying files are coherent enough to become an interface.
 
 - **See what the automation runtime is doing.** The read-only Automations tab shows waiting requests, terminal receipts, exceptions, and mismatches between a project's declared lifecycle and the local runtime. It reports problems without starting, retrying, or changing an automation.
 
@@ -141,7 +141,7 @@ Three domain packs and two work topologies ship today.
 | **Marketing project** | Research, campaign architecture, copy, visuals, video, decks, publishing, and performance capture | `marketing` + open flow or an opt-in phase ladder |
 | **Career workspace** | Ongoing career context, internal progression, promotion evidence, and structured application cases | Career bank + calendar/pipeline + case folders |
 
-The open project is the default because most work fits inside a project shape before it needs anything more specialised - plus if you're using a frontier model it can reason and tailor the project for just about anything. You do not have to design a domain pack everytime. Packs are for the jobs you repeat often enough to justify a stronger shape.
+The open project is the default because most work fits inside a project shape before it needs anything more specialised. A frontier model can reason about and tailor the project for just about anything, so you do not have to design a domain pack every time. Packs are for the jobs you repeat often enough to justify a stronger shape.
 
 ### Technical builds without splitting the brain
 
@@ -210,7 +210,7 @@ The careers pack treats your own career as a long project. It is built first for
 
 ## At a glance
 
-This is the full capability catalog. I did not build every production tool from scratch: deck generation, advanced visuals, video composition, prose cleanup, and deep research come from community projects that already do those jobs well. I do add my own process and tweaks on top of them but each vendored skill keeps its upstream source and refresh path nearby. The process files and templates are AgentFrame's own and come from my own work.
+This is the full capability catalog. AgentFrame does not rebuild every production tool from scratch: deck generation, advanced visuals, video composition, prose cleanup, and deep research come from community projects that already do those jobs well. AgentFrame adds its own process and adaptations, while each vendored skill keeps its upstream source and refresh path nearby. The process files and templates are AgentFrame's own and have been refined through real work.
 
 ### Skills
 

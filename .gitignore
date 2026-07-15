@@ -98,6 +98,10 @@ __pycache__/
 .claude/*
 !.claude/settings.json
 
+# === Codex operator-local scratch ===
+# Mirrors .claude/ handling: nothing under .codex/ is tracked.
+.codex/
+
 # === Design specs / plugin scratch (operator-local) ===
 # docs/ holds design specs written by the brainstorming/writing-plans plugins.
 # They are personal to the operator's instance and specific to a plugin

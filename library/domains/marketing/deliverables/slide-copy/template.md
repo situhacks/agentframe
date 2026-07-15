@@ -10,6 +10,13 @@ The carousel's slide-by-slide text — the copy, a few notes, nothing else. This
 - **Voice**: mandatory — load the voice system at `library/context/operator/voice/README.md` before drafting
 - **Design Language** only when slide text interacts with the visual treatment (text-over-image contrast, title placement)
 
+## Before Writing
+
+1. Classify the operation as first draft, surgical edit, replacement, or lock reconciliation; load the project tracker and [`deliverable-versioning.md`](../../../../process/deliverable-versioning.md).
+2. For first draft, run `python system/af.py draft <project> <post-row> --artifact slide-copy`. For replacement, run `python system/af.py version <project> <post-row> --artifact slide-copy` before changing prose. A surgical edit stays in the current drafting head.
+3. Read every input above. For Voice, follow the full [`voice/README.md`](../../../../context/operator/voice/README.md) route to its required register, corpus, and pairs; nearby shipped posts are not substitutes.
+4. Run the early agent-authored pass in [`humanizer-integration.md`](../../../../process/humanizer-integration.md) on slide prose before the first review surface. Later agent rewrites get a delta pass; operator hand-tuning does not.
+
 ## Artifact Shape
 
 One block per slide:
@@ -35,5 +42,5 @@ Options the operator is choosing between stay in the file until narrowed; remove
 ## Lock Criteria
 
 - Operator approves the full deck read top-to-bottom.
-- Humanizer pass run on slide prose per [`library/process/humanizer-integration.md`](../../../../process/humanizer-integration.md).
+- Required early/delta humanizer work already ran on slide prose per [`humanizer-integration.md`](../../../../process/humanizer-integration.md). Do not rerun a full pass solely because the artifact is locking.
 - Lock-event mechanics per [`library/process/lock-event.md`](../../../../process/lock-event.md); the locked copy lands in the post's `post-FINAL.md` in the lock turn.

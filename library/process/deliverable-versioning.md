@@ -1,77 +1,121 @@
 # Deliverable Versioning
 
-Owns the iteration shape for every deliverable instance under `workspace/projects/{slug}/` — from first draft through lock. Lazy-loaded when the agent is drafting or iterating any deliverable instance.
+## Purpose
 
-## Naming
+Own the iteration shape for versioned deliverables under `workspace/projects/{slug}/`: first-draft scaffolding, surgical edits, replacement versions, editable copies, and lock reconciliation. The CLI owns file and tracker mechanics; the agent and operator own change judgment and content.
 
-Versioned files use `{name}-v{N}.md`: `slide-copy-v1.md`, `body-copy-v2.md`, `draft-v1.md`. The highest `N` in the folder is the head version. The project tracker's `deliverables.{slug}.file` pointer names the head directly so a state-load reads the head without scanning the folder.
+## When To Load
 
-One exception per post folder: `post-FINAL.md` is unversioned. It is the post's assembly record — locked ingredient content accumulates there per the active pack's assembly-record deliverable — and the ingredient files around it carry the version trails. Post rows in the tracker point at it rather than at an ingredient head.
+Load before the first write or rewrite to a kept deliverable. Reload after context compaction or when resuming a drafting task in a new conversation.
 
-## Frontmatter
+Before mutation, classify the operation:
 
-Versioned files carry the deliverable type's existing frontmatter shape plus:
+| Operation | New version? | Mechanism |
+|---|---:|---|
+| First draft | Create v1 | `af draft` |
+| Surgical edit | No | Edit current drafting head; update `last_updated` |
+| Replacement | Yes | `af version` before editing |
+| Editable operator copy | Yes | `af version`, then hand off the new head |
+| Lock after replacement | Yes, then lock | `af version` -> edit -> `af lock` |
+| Delivered copy materially differs | Yes | Version the named row/artifact -> reconcile -> re-lock |
 
-```yaml
-status: drafting | locked | delivered | deferred
-last_updated: <ISO 8601 date>
+## Address Model
+
+Versioned files use `{name}-v{N}.md`. The highest numeric `N` is the head. Do not create `current_version` or `version_history` frontmatter; the filename and directory carry the chain.
+
+There are two addresses:
+
+1. **Tracker-owned deliverable.** Its `project.md` row points directly to the versioned head. Versioning moves that pointer.
+2. **Nested artifact.** A parent tracker row points to an assembly record or folder while named artifacts inside that folder carry their own version chains. Versioning the artifact preserves the parent pointer.
+
+Marketing posts use the nested form: the post row points at unversioned `post-FINAL.md`; `body-copy-v{N}.md`, `slide-copy-v{N}.md`, and other ingredients hold the snapshots.
+
+## Procedure
+
+### 1. First draft
+
+For a tracker-owned deliverable:
+
+```text
+python system/af.py draft <project> <row> --file <project-relative-name-v1.md>
 ```
 
-No `current_version` field. No `version_history` array. The filename carries the version number, the directory listing carries the chain, and `git log` carries the audit detail when someone wants it.
+For a nested artifact:
 
-Where the deliverable template declares a `changes_from_v{N}` field, each version file records its own delta — what changed from the prior head and why. That chain is the iteration trail's only home: per-version narration never goes to `activity.md`; the `af lock` activity line is the loop's single roll-up (see [lock-event.md](lock-event.md)).
+```text
+python system/af.py draft <project> <parent-row> --artifact <artifact-name>
+```
 
-## First draft (v1)
+The command creates a shared frontmatter container with `status: drafting` and `last_updated`, refuses an existing chain, and updates tracker state. A domain hook may create or reconcile a parent assembly record; for a marketing post, the first ingredient creates `post-FINAL.md` and keeps the post row pointed there.
 
-The agent writes `{name}-v1.md` with `status: drafting`. The project tracker `deliverables.{slug}.file` is set to that path in the same turn (post-ingredient drafts don't move the post row — it points at `post-FINAL.md`, created with the first ingredient).
+After scaffolding, load the resolved template and add any template-specific frontmatter fields before writing content. `af draft` does not render deliverable prose or infer template-specific fields.
 
-At the end of the drafting turn, the agent offers: *"Want an editable copy you can revise yourself before the next iteration?"* The offer is opt-in to avoid token cost and surprise files when the operator just wants to read the draft first.
+### 2. Surgical edit
 
-## Editable copy (operator opt-in)
+Edit the current drafting head in place only when the change is bounded and does not move the deliverable's shape or claims:
 
-When the operator accepts the offer, run `python system/af.py version <project> <deliverable>` — it copies the head to the next version and moves the tracker pointer atomically — then tell the operator the new head is ready to edit. The prior version stays in the folder, untouched, as the snapshot for that point.
+- typo, copyedit, or small wording swap inside a paragraph;
+- CTA wording swap that keeps the same CTA role;
+- one citation, link, or reference with the surrounding claim unchanged;
+- formatting-only change;
+- ordinary frontmatter maintenance.
 
-## Iteration (agent applies operator feedback)
+Update `last_updated`. Do not create a cosmetic version.
 
-When the feedback is replacement-shaped (see below), run `af version` first, then write the changes into the new head. The prior version stays in the folder as the snapshot.
+### 3. Replacement or editable copy
 
-If the feedback criticizes the deliverable's SHAPE or the agent's process (not just this draft's content — e.g. "v1 copy should never contain imagery notes," "the table format is wrong for this deliverable"), also append one line to the project's `feedback-log.md` in the same turn. That line is the paper trail the Phase-5 harvest retro reads; without it the correction lives only in chat.
+For a tracker-owned head:
 
-## Surgical edit (no new version)
+```text
+python system/af.py version <project> <row>
+```
 
-Apply when the change is bounded and does not move the deliverable's shape or claims:
+For a nested artifact:
 
-- Typo fixes, copyedits, small wording swaps inside a paragraph.
-- CTA wording swaps that keep the same CTA role.
-- Frontmatter updates: `last_updated`, `status`, `published.*`, `shipped_media`, `exports[]`, `review`, `expected_feedback_by`.
-- Adding a single citation, link, or reference where the surrounding claim is unchanged.
-- Reformatting (heading level, list to prose, etc.) that does not change content.
+```text
+python system/af.py version <project> <parent-row> --artifact <artifact-name>
+```
 
-The agent writes directly to the current head file. Update `last_updated`.
+Run the command before changing content. It resolves the exact numeric head, creates `N+1`, resets the new head to drafting, refuses malformed/missing/colliding addresses, and leaves the prior version untouched. The nested form updates parent drafting state but does not move the parent file pointer.
 
-## Replacement (new version)
+Replacement-shaped changes include:
 
-Apply when the change is structural or substantive:
+- full-body rewrite, new angle, or new thesis;
+- adding, removing, reordering, or materially rewriting sections;
+- new audience framing, goal, hook, or arc;
+- changing the recommended option among variants;
+- operator pushback that requires a fresh working copy;
+- an explicit request to save the current state and make a copy.
 
-- Full-body rewrite, new angle, or new thesis.
-- Section restructure (adding, removing, or reordering top-level sections).
-- Materially new audience framing, goal, hook, or arc.
-- Replacing the recommended option among variants.
-- Operator pushback that requires a fresh copy rather than an in-place edit.
-- Operator request to archive the current head and start a new working copy ("make a copy", "save this and start a new version").
+When the operator requests an editable copy, version first and identify the new head. The snapshot they are protecting remains untouched.
 
-Run `af version`, then write the new content into the new head. The prior version stays in the folder.
+### 4. Locked or delivered head
 
-## Lock and ship
+Direct edits to a locked or delivered head are not allowed. After the operator confirms substantive revision, `af version` is the explicit unlock/version event: it creates a drafting head and records the material event in `activity.md`. Re-lock or republish through the owning process after reconciliation.
 
-When the operator approves the current head, follow [`lock-event.md`](lock-event.md) — `python system/af.py lock` owns the mechanics, including landing post-ingredient content in `post-FINAL.md`. Publish state lives on `post-FINAL.md` via `af publish`, per the active pack's assembly-record deliverable.
+If the operator explicitly overrides versioning and asks for a substantive in-place edit, surface the snapshot risk first. Record the override in `activity.md` when downstream work depends on the prior shape.
 
-## Edge cases
+### 5. Lock
 
-- **Multiple iterations in one session:** each replacement gets its own `af version` call. No batching.
-- **Operator says "just edit in place" on a substantive change:** honor the request. Note the override in `activity.md` if downstream work depends on the prior shape.
-- **Locked deliverable that needs a substantive change:** unlock first (operator decision), then `af version`. The unlock event lives in `activity.md`.
+When the operator approves the current head, follow [`lock-event.md`](lock-event.md). If approval includes replacement-shaped changes, version and edit first, then lock. For post ingredients, lock assembly updates `post-FINAL.md`; publish state belongs to that assembly record.
 
-## Interaction with lock-event
+## Verification Or Logging
 
-If a lock turn includes replacement-shaped changes, run `af version` and write the new content first, then lock per [`lock-event.md`](lock-event.md). The two compose: this file owns when a new version is earned; the buttons own the file/tracker mechanics.
+After `af draft` or `af version`, verify the command receipt and filesystem:
+
+- the named destination exists;
+- the prior version is byte-unchanged;
+- tracker pointer movement matches the address type;
+- the new head has canonical shared drafting fields;
+- any template-specific frontmatter is present before content drafting;
+- no lower-numbered version was edited.
+
+Routine iteration does not go to `activity.md`. Per-version change narration belongs only in a template-declared `changes_from_v{N}` field. Lock is the ordinary activity roll-up; an unlock/version event from a locked or delivered source is material and is logged by the command.
+
+## Boundaries
+
+- The CLI does not decide surgical versus replacement.
+- The CLI does not generate content, run voice/humanizer passes, or encode domain phase order.
+- Templates own type-specific content and frontmatter requirements.
+- Domain packs own assembly behavior.
+- `post-FINAL.md` remains unversioned; its ingredients carry the version trail.

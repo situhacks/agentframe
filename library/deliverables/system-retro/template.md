@@ -17,7 +17,7 @@ Read only the smallest set needed to classify Builder-owned system behavior:
 
 - `system/builder-backlog.md` active unresolved entries; pull in any entries surfaced by this project or still blocking this project's workflow.
 - Project `feedback-log.md`, limited to agent behavior, routing, mode, state, connector, audit, or process failures.
-- Project `activity.md`, limited to overrides, deferrals, mode swaps, state repairs, and closeout events.
+- Project `activity.md`, limited to overrides, deferrals, structural decisions, state repairs, and closeout events.
 - `system/audit/agentframe.db` pending validations from recent `system_changes` rows when they affect this project's observed behavior.
 - Current system/process/persona files only when a recommended change needs target-file proof before execution.
 - Do not load voice profile; this is an analytical/operational doc.

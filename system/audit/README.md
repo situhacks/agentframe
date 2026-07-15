@@ -53,7 +53,7 @@ If a historical row used a different label, correct future rows and document the
 
 Use singular, lowercase, snake_case values. Canonical values:
 
-- `mode_swap` — persona swap/resync (the writer performs the file copy)
+- `mode_swap` — historical only; retired when `AGENTS.md` became a stable task classifier. New writes are rejected.
 - `persona_patch` — `AGENTS.*.md` rule or content changes
 - `template_patch` — deliverable template changes
 - `process_patch` — `library/process/*` changes

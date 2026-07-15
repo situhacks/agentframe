@@ -55,7 +55,7 @@ Collapse repeats into one candidate each. Per distinct finding:
 
 Surface all candidates grouped by destination: template-patch candidates (with target file + section), promotion candidates, backlog watches, feedback-log lines. The operator approves, edits, or drops each. 
 - **Approved template patches** route to `system/skills/system-improvement/SKILL.md` (which owns the patch discipline).
-- **Approved local promotions** write directly to the domain's pack directory (`library/domains/{domain}/deliverables/`) and are logged. This operator-driven promotion needs no mode swap but **must** still apply the `agentframe-structure` authoring standard (correct sections, purpose, lock criteria, etc.).
+- **Approved local promotions** write directly to the domain's pack directory (`library/domains/{domain}/deliverables/`) and are logged. This Operator-owned exception **must** still apply the `agentframe-structure` authoring standard (correct sections, purpose, lock criteria, etc.).
 
 ### Step 5 — Log
 

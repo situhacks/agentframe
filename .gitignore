@@ -81,6 +81,8 @@ __pycache__/
 # git cannot re-include a file whose parent dir is excluded.
 .claude/*
 !.claude/settings.json
+!.claude/skills/
+!.claude/skills/**
 .codex/
 
 # === Plugin scratch (brainstorming / writing-plans design specs) ===

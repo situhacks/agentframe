@@ -51,7 +51,7 @@ AgentFrame keeps its context, working rules, and project state in files that any
 
 - **Keep sources and working knowledge separate.** Transcripts and briefs land in `sources/` and never get edited. The agent maintains what it has learned from them in `knowledge/`, and a consolidation pass archives resolved detail when the active context gets too big.
 
-- **Load only what the task needs.** The active persona points to the project, the project points to its flow, and the flow points to the process for the current step. Skills stay out of context until the work calls for them, so the workspace can get large without every chat carrying all of it.
+- **Load only what the task needs.** The stable root selects one task router; that router points to the project or system owner, and those files route to the process for the current step. Skills stay out of context until the work calls for them, so the workspace can get large without every chat carrying all of it.
 
 ### 2. Reuse instructions shaped by real work
 
@@ -69,7 +69,7 @@ AgentFrame keeps its context, working rules, and project state in files that any
 
 - **Run project state changes through commands.** Models are good at research, synthesis, and drafting; deterministic commands handle the exact bookkeeping. The `system/af.py` script manages creation, versioning, locking, publishing, and doctor checks without using model tokens. If anything is out of order, it flags the problem for the agent to reason over.
 
-- **Keep a version trail for every deliverable.** Replacement-shaped revisions become immutable snapshots, the project always points at the current version, and lock gates run before delivery. When the deliverable needs a real file (e.g., PPTX, DOCX), the export is tracked too.
+- **Keep a version trail for every deliverable.** Replacement-shaped revisions become immutable snapshots, the tracker or artifact folder identifies the current numeric head, and lock gates run before delivery. When the deliverable needs a real file (e.g., PPTX, DOCX), the export is tracked too.
 
 - **Record what happened as part of the work.** Activity logs and version notes cover projects, while an append-only audit database records system changes. `af doctor` reports drift without silently fixing it.
 
@@ -102,7 +102,7 @@ More detail is in [The Workspace Dashboard](#the-workspace-dashboard).
 
 3. Copy `.env.example` to `.env` if you want the optional Gemini or Composio integrations. The workspace, CLI, project system, and dashboard all run without API keys.
 
-4. Tell the agent: **"Swap to Operator and start a new project."** Under the hood that's:
+4. Tell the agent: **"Start a new project."** The stable root routes project work to the Operator instructions; under the hood the state transition is:
 
    ```bash
    python system/af.py new-project my-project --domain project-mgmt --flow open-flow
@@ -119,16 +119,16 @@ More detail is in [The Workspace Dashboard](#the-workspace-dashboard).
 
 ### Modes
 
-Two generated `AGENTS.md` personas with a hard ownership boundary:
+One stable `AGENTS.md` classifier routes each task to a lazy-loaded instruction file with a hard ownership boundary:
 
 - **Operator** runs projects and career work under `workspace/` and reads the system on demand.
 - **Builder** evolves the templates, packs, processes, personas, CLI, and runtime under `library/` and `system/`.
 
-Mode swaps copy the canonical persona and append the transition to the local audit database in one operation, and the CLI refuses Operator state transitions while Builder is active.
+The root file is never rewritten to change modes. An agent reads only the task-local router it needs, then switches routers if the task's ownership changes. Managed unattended work has its own overlay.
 
 ### Pulling upstream changes
 
-Personal context, projects, pipeline data, and the audit database are gitignored, so your working layer never collides with updates. In Builder mode, ask the agent to **"pull upstream AgentFrame updates."** The sync skill walks changes commit by commit, or applies a reviewed bulk migration, without touching the personal layer.
+Personal context, projects, pipeline data, and the audit database are gitignored, so your working layer never collides with updates. Ask the agent to **"pull upstream AgentFrame updates."** The root routes that system task to Builder; the sync skill walks changes commit by commit, or applies a reviewed bulk migration, without touching the personal layer.
 
 ## What it can run
 
@@ -327,7 +327,7 @@ Beyond what the tour shows:
 
 ```text
 agentframe/
-├── AGENTS.md                   # generated active persona
+├── AGENTS.md                   # stable task classifier
 ├── AGENTS.operator.md          # project execution and routing
 ├── AGENTS.builder.md           # system architecture and maintenance
 ├── AGENTS.daemon.md            # unattended managed-run overlay
@@ -342,6 +342,7 @@ agentframe/
 │   ├── audit/                   # append-only system-change audit
 │   ├── browser/                 # browser runtime and recipes
 │   ├── daemon/                  # local managed-automation host and queue protocol
+│   ├── harnesses/               # native skill projection manifest and contract
 │   ├── hooks/                   # deterministic production guards
 │   ├── research/                # Gemini deep-research runtime
 │   ├── server/                  # Workspace Dashboard and preview server
@@ -374,7 +375,7 @@ Every trail has one owner:
 | Current project state | `project.md` / `application.md` frontmatter |
 | Material project events | `activity.md` |
 | What changed between versions | the version files themselves |
-| Low-volume system changes (mode swaps, template patches, migrations) | `system/audit/agentframe.db` |
+| Low-volume system changes (template patches, runtime changes, migrations) | `system/audit/agentframe.db` |
 | Schema, file, export, and pack-rule checks | `python system/af.py doctor`; it reports drift and never silently fixes it |
 
 Git carries the version history of the reusable system; personal work stays local and gitignored.

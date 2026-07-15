@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "canonical_root": "system/skills",
+  "skills": [
+    "humanizer",
+    "deep-research",
+    "agentframe-structure"
+  ],
+  "targets": {
+    "claude": ".claude/skills",
+    "codex": ".agents/skills",
+    "cursor": ".cursor/skills"
+  },
+  "overlays": {}
+}

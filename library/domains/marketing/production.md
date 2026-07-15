@@ -4,9 +4,9 @@ The domain-specific production/delivery routing the Operator lazy-loads when doi
 
 | Situation | Load First | Also Load If Needed |
 |---|---|---|
-| Post production (slide / body / image / video) | the ingredient template named by `post_manifest` (`library/domains/marketing/deliverables/{ingredient}/template.md`, or the shared `library/deliverables/{ingredient}/template.md` for image-prompts/video-spec), campaign-architecture, [voice], [positioning] | the post-final template when an ingredient locks or the post assembles |
-| Carousel or visual post | the visual deliverable template, [voice], campaign-architecture | [preview-server] for surface start-or-open and preview deep links |
-| Publish coordination | the post-final template, the post's `post-FINAL.md` named by the tracker, `activity.md` | the target channel profile; [`substack-publishing`](../../process/substack-publishing.md) when the target is Substack; [voice-mini-retro] if shipped copy materially differs |
+| Post production (slide / body / image / video) | the ingredient template named by `post_manifest` (`library/domains/marketing/deliverables/{ingredient}/template.md`, or the shared `library/deliverables/{ingredient}/template.md` for image-prompts/video-spec), campaign-architecture, [`voice`](../../context/operator/voice/README.md), [`positioning`](../../context/operator/positioning.md) | the [`post-final`](deliverables/post-final/template.md) template when an ingredient locks or the post assembles |
+| Carousel or visual post | the visual deliverable template, [`voice`](../../context/operator/voice/README.md), campaign-architecture | [`preview-server`](../../process/preview-server.md) for surface start-or-open and preview deep links |
+| Publish coordination | the [`post-final`](deliverables/post-final/template.md) template, the post's `post-FINAL.md` named by the tracker, `activity.md` | the target channel profile; [`substack-publishing`](../../process/substack-publishing.md) when the target is Substack; [`voice-mini-retro`](../../process/voice-mini-retro.md) if shipped copy materially differs |
 | Performance capture | the flow's performance-capture step, each post's `post-FINAL.md` frontmatter | live Composio/Rube tool search for the shipped platform; closeout retro only if closing the project |
 
 ## Publishing

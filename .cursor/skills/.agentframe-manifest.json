@@ -1,0 +1,42 @@
+{
+  "generated_by": "AgentFrame af sync-harnesses",
+  "harness": "cursor",
+  "regenerate": "python system/af.py sync-harnesses --write",
+  "schema_version": 1,
+  "skills": {
+    "agentframe-structure": {
+      "bundle_sha256": "e50336adf9d74e58c143c0eadcace9ab8be2892373090c169bca5680c8b459ec",
+      "files": {
+        "SKILL.md": "c553253822c1d097dd2d2254e697844b1a05190d42428e4ee6c7c84061710e7d",
+        "deliverable-template-changes.md": "be9cc8513fa39f51dcde8921def99382738aecf4bcd21962df1640db9dedc11d",
+        "flow-changes.md": "bbe7e845bff0309da003efd98858564183b2a0ddfd514b60189ce5563a582476",
+        "process-file-changes.md": "ead67d8739944b593caa821710fb0ffe227a757754ce76cd2466c638163e635f"
+      },
+      "overlay": null,
+      "source": "system/skills/agentframe-structure"
+    },
+    "deep-research": {
+      "bundle_sha256": "a23b6b3da370901a80c0b99d38bd8565f30128cf3f0f9103ff01a9f4d947803c",
+      "files": {
+        "PROVENANCE.md": "4c26f2e9f5bc11380b881d8f06a97a07696496421760b27d3a4b58e8fa171690",
+        "SKILL.md": "c5a57a39c06bee80f07fd32bd5c75643d488c5f1adaaf72afa2d9253f29a2e9c"
+      },
+      "overlay": null,
+      "source": "system/skills/deep-research"
+    },
+    "humanizer": {
+      "bundle_sha256": "a56e4b7b7400026df32eef41ec3f5ec1ddf842aa94e6fb6eacae050c0d4bd5ad",
+      "files": {
+        "AGENTS.md": "bd737189de1e890994e056f2d0970126473661b401ab51e61c11ad2294c4ab0e",
+        "LICENSE": "caa1be9cba41c1afb88fe730ab1a4e04728295ea5b29ac2ee9f003a4ffbe3a77",
+        "README.md": "e769e33d01d4850ef56916fab69e214f9795a10b0bff7136f9aa4f0fb52fbb0b",
+        "SKILL.md": "0faa152a5ab67ba77f5359434d4854cfe8d68d6105d01bae620e7ff99c32dddb",
+        "VENDOR.md": "987adf7d89bf33c090a319419ee7261276707d53feae4140b5e390b45570494d"
+      },
+      "overlay": null,
+      "source": "system/skills/humanizer"
+    }
+  },
+  "source_manifest": "system/harnesses/manifest.json",
+  "source_manifest_sha256": "762ff3dae09ee8a83993316710b4354ffb31f0133f6f716868c02bcb4c834746"
+}

@@ -14,9 +14,11 @@ the agent must still run. Stdlib only.
 Commands:
   python system/af.py lock <project> <deliverable-slug-or-path>
   python system/af.py publish <project> <target> --url URL [--posted-at ISO] [--platform P] [--media PATH ...]
-  python system/af.py version <project> <deliverable-slug>
+  python system/af.py version <project> <deliverable-slug> [--artifact <artifact-name>]
+  python system/af.py draft <project> <deliverable-slug> (--file <project-relative-v1.md> | --artifact <artifact-name>)
   python system/af.py new-project <slug> [--domain project-mgmt] [--flow open-flow] [--name NAME]
   python system/af.py doctor [project|pipeline]
+  python system/af.py sync-harnesses --check|--write
   python system/af.py automation init|ready|activate|pause|retire ...
   python system/af.py autonomy init|check|start|checkpoint|finish ...
   python system/af.py pipe save --company C --role R --url U [--ats A] [--source S] [--posted D] [--deadline D] [--salary S] [--slug K]
@@ -35,12 +37,16 @@ topology by declaring `topology: pipeline`.
 import argparse
 import datetime
 import glob
+import hashlib
 import importlib.util
+import json
 import os
 import re
 import shutil
 import sys
+import tempfile
 import types
+from pathlib import Path
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROJECTS = os.path.join(ROOT, "workspace", "projects")
@@ -405,35 +411,157 @@ def cmd_publish(args):
 
 # ---------------------------------------------------------------- version
 
+def version_target(cdir, cfm, row, artifact=None):
+    """Resolve a row-owned head or an exact nested artifact head.
+
+    Returns (source_rel, move_tracker_pointer). A nested artifact is addressed
+    relative to the folder owned by the parent row and never moves that row's
+    assembly-record pointer.
+    """
+    rel = row_get(cfm, row, "file") or die(f"tracker row '{row}' not found or has no file")
+    if not artifact:
+        dpath = os.path.join(cdir, rel)
+        os.path.isfile(dpath) or die(f"deliverable file not found: {rel}")
+        head_of(dpath) or die(f"{rel} is not a versioned -v{{N}}.md file")
+        return rel.replace("\\", "/"), True
+
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", artifact):
+        die("artifact name must contain only letters, numbers, underscores, and hyphens")
+
+    parent_path = os.path.join(cdir, rel)
+    if os.path.isdir(parent_path):
+        folder = parent_path
+    elif os.path.isfile(parent_path):
+        folder = os.path.dirname(parent_path)
+    else:
+        die(f"parent tracker path not found: {rel}")
+
+    versions = versions_in(folder, artifact)
+    if not versions:
+        die(f"artifact '{artifact}' has no versioned head under "
+            f"{os.path.relpath(folder, cdir).replace(os.sep, '/')}; start it with af draft")
+    n = max(versions)
+    source_path = os.path.join(folder, f"{artifact}-v{n}.md")
+    head_of(source_path)
+    return os.path.relpath(source_path, cdir).replace(os.sep, "/"), False
+
+
 def cmd_version(args):
     cdir = project_dir(args.project)
     sdoc = state_doc(cdir)
     cpath = os.path.join(cdir, sdoc)
     cfm, cbody = split_fm(read(cpath), sdoc)
-    rel = row_get(cfm, args.deliverable, "file") or die(f"tracker row '{args.deliverable}' not found or has no file")
+    rel, move_pointer = version_target(
+        cdir, cfm, args.deliverable, getattr(args, "artifact", None)
+    )
     dpath = os.path.join(cdir, rel)
-    os.path.isfile(dpath) or die(f"deliverable file not found: {rel}")
-    name, n = head_of(dpath) or die(f"{rel} is not a versioned -v{{N}}.md file")
+    name, n = head_of(dpath)
 
     new_rel = os.path.join(os.path.dirname(rel), f"{name}-v{n + 1}.md").replace("\\", "/")
     new_path = os.path.join(cdir, new_rel)
-    shutil.copyfile(dpath, new_path)
-    dfm, dbody = split_fm(read(new_path), new_rel)
+    if os.path.exists(new_path):
+        die(f"destination already exists: {new_rel}")
+
+    dfm, dbody = split_fm(read(dpath), rel)
+    source_status = get_scalar(dfm, "status")
     dfm = set_scalar(dfm, "status", "drafting", new_rel)
     dfm = set_scalar(dfm, "last_updated", today(), new_rel)
     write(new_path, join_fm(dfm, dbody))
 
-    cfm = row_set(cfm, args.deliverable, "file", new_rel)
+    if move_pointer:
+        cfm = row_set(cfm, args.deliverable, "file", new_rel)
     cfm = row_set(cfm, args.deliverable, "status", "drafting")
     cfm = row_set(cfm, args.deliverable, "last_updated", today())
     cfm = touch_lifecycle(cfm)
     write(cpath, join_fm(cfm, cbody))
 
-    print(f"af version: {rel} -> {new_rel} (head; prior version untouched as the snapshot)")
+    if source_status in {"locked", "delivered"}:
+        append_activity(
+            cdir,
+            f"unlock_version: {args.deliverable} {rel} -> {new_rel}; "
+            f"source_status={source_status}; tracker_pointer_moved={str(move_pointer).lower()}",
+        )
+
+    pointer_note = "tracker pointer moved" if move_pointer else "parent tracker pointer unchanged"
+    print(f"af version: {rel} -> {new_rel} (head; {pointer_note}; prior version untouched as the snapshot)")
     print("\nJudgment (stays with the agent):")
     print("  - Use this for REPLACEMENT-shaped changes (deliverable-versioning.md). Surgical")
     print("    edits (typos, frontmatter, small wording) go directly into the current head.")
     print("  - If the operator feedback criticized SHAPE or process, append one feedback-log.md line this turn.")
+
+
+# ---------------------------------------------------------------- draft
+
+def safe_project_rel(cdir, value):
+    """Return a normalized project-relative path and its absolute target."""
+    value = (value or "").replace("\\", "/").strip()
+    if not value or os.path.isabs(value) or value == ".." or value.startswith("../") or "/../" in value:
+        die("file path must stay inside the project and be project-relative")
+    target = os.path.abspath(os.path.join(cdir, value))
+    if os.path.commonpath((os.path.abspath(cdir), target)) != os.path.abspath(cdir):
+        die("file path resolves outside the project")
+    return value, target
+
+
+def cmd_draft(args):
+    cdir = project_dir(args.project)
+    sdoc = state_doc(cdir)
+    cpath = os.path.join(cdir, sdoc)
+    cfm, cbody = split_fm(read(cpath), sdoc)
+    row_span(cfm, args.deliverable) or die(f"tracker row '{args.deliverable}' not found")
+
+    notes = []
+    if args.artifact:
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", args.artifact):
+            die("artifact name must contain only letters, numbers, underscores, and hyphens")
+        parent_rel = row_get(cfm, args.deliverable, "file") or die(
+            f"tracker row '{args.deliverable}' has no parent file/folder pointer"
+        )
+        parent_rel = parent_rel.replace("\\", "/")
+        folder_rel = os.path.dirname(parent_rel) if parent_rel.lower().endswith(".md") else parent_rel.rstrip("/")
+        folder_rel = folder_rel or "."
+        new_rel, new_path = safe_project_rel(cdir, f"{folder_rel}/{args.artifact}-v1.md")
+        if versions_in(os.path.dirname(new_path), args.artifact):
+            die(f"artifact '{args.artifact}' already has a version chain under {folder_rel}")
+        move_pointer = False
+    else:
+        new_rel, new_path = safe_project_rel(cdir, args.file)
+        m = re.fullmatch(r"(.+)-v1\.md", os.path.basename(new_rel))
+        if not m:
+            die("--file must name a canonical -v1.md first-draft path")
+        current_rel = row_get(cfm, args.deliverable, "file")
+        if current_rel and os.path.exists(os.path.join(cdir, current_rel)):
+            die(f"tracker row '{args.deliverable}' already has an existing artifact: {current_rel}")
+        if versions_in(os.path.dirname(new_path), m.group(1)):
+            die(f"deliverable '{m.group(1)}' already has a version chain under {os.path.dirname(new_rel) or '.'}")
+        move_pointer = True
+
+    if os.path.exists(new_path):
+        die(f"destination already exists: {new_rel}")
+
+    os.makedirs(os.path.dirname(new_path), exist_ok=True)
+    write(new_path, f"---\nstatus: drafting\nlast_updated: {today()}\n---\n\n")
+
+    rules = load_rules(load_pack(project_domain(cfm))[1])
+    if rules and hasattr(rules, "on_draft"):
+        cfm, notes = rules.on_draft(
+            make_ctx(), cdir, new_path, new_rel, cfm, args.deliverable
+        )
+
+    if move_pointer:
+        cfm = row_set(cfm, args.deliverable, "file", new_rel)
+    cfm = row_set(cfm, args.deliverable, "status", "drafting")
+    cfm = row_set(cfm, args.deliverable, "last_updated", today())
+    cfm = touch_lifecycle(cfm)
+    write(cpath, join_fm(cfm, cbody))
+
+    pointer_note = "tracker pointer moved" if move_pointer else "parent tracker pointer preserved"
+    print(f"af draft: created {new_rel} ({pointer_note}" +
+          (f"; {'; '.join(notes)}" if notes else "") + ")")
+    print("\nJudgment (stays with the agent):")
+    print("  - Load the resolved deliverable template before writing content.")
+    print("  - Add any template-specific frontmatter fields before drafting; this command")
+    print("    creates only the shared status/last_updated container.")
 
 
 # ---------------------------------------------------------------- new-project
@@ -1777,6 +1905,219 @@ def ppt_master_stray_issues(base=None):
     return issues
 
 
+HARNESS_MANIFEST = os.path.join("system", "harnesses", "manifest.json")
+PROJECTION_MARKER = ".agentframe-projection.json"
+PROJECTION_MANIFEST = ".agentframe-manifest.json"
+PROJECTION_GENERATOR = "AgentFrame af sync-harnesses"
+
+
+def _sha256(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def _projection_config(root=ROOT):
+    path = Path(root) / HARNESS_MANIFEST
+    try:
+        config = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"cannot load {HARNESS_MANIFEST}: {exc}") from exc
+    if config.get("schema_version") != 1:
+        raise ValueError(f"{HARNESS_MANIFEST}: unsupported schema_version")
+    if not config.get("skills") or not config.get("targets"):
+        raise ValueError(f"{HARNESS_MANIFEST}: skills and targets are required")
+    return path, config
+
+
+def _tree_hashes(folder):
+    folder = Path(folder)
+    hashes = {}
+    for path in sorted(p for p in folder.rglob("*") if p.is_file()):
+        rel = path.relative_to(folder).as_posix()
+        hashes[rel] = _sha256(path.read_bytes())
+    return hashes
+
+
+def _bundle_hash(file_hashes):
+    payload = "".join(f"{name}\0{digest}\n" for name, digest in sorted(file_hashes.items()))
+    return _sha256(payload.encode("utf-8"))
+
+
+def _build_harness_projections(root, build_root):
+    root, build_root = Path(root), Path(build_root)
+    config_path, config = _projection_config(root)
+    canonical_root = root / config["canonical_root"]
+    config_hash = _sha256(config_path.read_bytes())
+    overlays = config.get("overlays", {})
+    built = {}
+
+    for harness, target_rel in sorted(config["targets"].items()):
+        target_build = build_root / harness
+        target_build.mkdir(parents=True)
+        skill_records = {}
+        for skill in config["skills"]:
+            source = canonical_root / skill
+            if not (source / "SKILL.md").is_file():
+                raise ValueError(f"canonical skill is missing SKILL.md: {source}")
+            destination = target_build / skill
+            shutil.copytree(source, destination)
+
+            overlay_rel = overlays.get(harness, {}).get(skill)
+            if overlay_rel:
+                overlay = root / overlay_rel
+                if not overlay.is_dir():
+                    raise ValueError(f"projection overlay does not exist: {overlay_rel}")
+                shutil.copytree(overlay, destination, dirs_exist_ok=True)
+
+            file_hashes = _tree_hashes(destination)
+            record = {
+                "source": f"{config['canonical_root']}/{skill}",
+                "overlay": overlay_rel,
+                "bundle_sha256": _bundle_hash(file_hashes),
+                "files": file_hashes,
+            }
+            marker = {
+                "generated_by": PROJECTION_GENERATOR,
+                "regenerate": "python system/af.py sync-harnesses --write",
+                "do_not_edit": True,
+                **record,
+            }
+            (destination / PROJECTION_MARKER).write_text(
+                json.dumps(marker, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            )
+            skill_records[skill] = record
+
+        root_manifest = {
+            "schema_version": 1,
+            "generated_by": PROJECTION_GENERATOR,
+            "regenerate": "python system/af.py sync-harnesses --write",
+            "source_manifest": HARNESS_MANIFEST.replace("\\", "/"),
+            "source_manifest_sha256": config_hash,
+            "harness": harness,
+            "skills": skill_records,
+        }
+        (target_build / PROJECTION_MANIFEST).write_text(
+            json.dumps(root_manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        built[harness] = (target_build, root / target_rel)
+    return built
+
+
+def _projection_drift(expected, actual):
+    expected, actual = Path(expected), Path(actual)
+    if not actual.is_dir():
+        return [f"missing projection directory: {actual}"]
+    expected_files = {
+        p.relative_to(expected).as_posix(): p for p in expected.rglob("*") if p.is_file()
+    }
+    actual_files = {
+        p.relative_to(actual).as_posix(): p for p in actual.rglob("*") if p.is_file()
+    }
+    issues = []
+    for rel in sorted(expected_files.keys() - actual_files.keys()):
+        issues.append(f"missing generated file: {actual / rel}")
+    for rel in sorted(actual_files.keys() - expected_files.keys()):
+        issues.append(f"unexpected generated file: {actual / rel}")
+    for rel in sorted(expected_files.keys() & actual_files.keys()):
+        if expected_files[rel].read_bytes() != actual_files[rel].read_bytes():
+            issues.append(f"drifted generated file: {actual / rel}")
+    return issues
+
+
+def _remove_projection_path(path):
+    path = Path(path)
+    if path.is_dir():
+        shutil.rmtree(path)
+    elif path.exists():
+        path.unlink()
+
+
+def _validate_projection_destination(path):
+    path = Path(path)
+    if not path.exists():
+        return
+    marker_path = path / PROJECTION_MARKER
+    try:
+        marker = json.loads(marker_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(
+            f"refusing to replace non-generated skill directory: {path}"
+        ) from exc
+    if marker.get("generated_by") != PROJECTION_GENERATOR:
+        raise ValueError(f"refusing to replace foreign projection: {path}")
+
+
+def sync_harnesses(*, root=ROOT, write=False):
+    root = Path(root)
+    with tempfile.TemporaryDirectory(prefix=".agentframe-sync-", dir=root) as tmp:
+        temp_root = Path(tmp)
+        built = _build_harness_projections(root, temp_root / "build")
+        if not write:
+            issues = []
+            for _harness, (expected_root, actual_root) in built.items():
+                for skill in json.loads((root / HARNESS_MANIFEST).read_text(encoding="utf-8-sig"))["skills"]:
+                    issues.extend(_projection_drift(expected_root / skill, actual_root / skill))
+                expected_manifest = expected_root / PROJECTION_MANIFEST
+                actual_manifest = actual_root / PROJECTION_MANIFEST
+                if not actual_manifest.is_file():
+                    issues.append(f"missing projection manifest: {actual_manifest}")
+                elif expected_manifest.read_bytes() != actual_manifest.read_bytes():
+                    issues.append(f"drifted projection manifest: {actual_manifest}")
+            return issues
+
+        operations = []
+        backup_root = temp_root / "backup"
+        for harness, (expected_root, actual_root) in built.items():
+            actual_root.mkdir(parents=True, exist_ok=True)
+            for skill_dir in sorted(p for p in expected_root.iterdir() if p.is_dir()):
+                destination = actual_root / skill_dir.name
+                _validate_projection_destination(destination)
+                operations.append((skill_dir, destination, backup_root / harness / skill_dir.name))
+            manifest_source = expected_root / PROJECTION_MANIFEST
+            manifest_destination = actual_root / PROJECTION_MANIFEST
+            if manifest_destination.exists():
+                try:
+                    current = json.loads(manifest_destination.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError) as exc:
+                    raise ValueError(
+                        f"refusing to replace foreign manifest: {manifest_destination}"
+                    ) from exc
+                if current.get("generated_by") != PROJECTION_GENERATOR:
+                    raise ValueError(f"refusing to replace foreign manifest: {manifest_destination}")
+            operations.append((manifest_source, manifest_destination,
+                               backup_root / harness / PROJECTION_MANIFEST))
+
+        installed = []
+        backups = []
+        try:
+            for source, destination, backup in operations:
+                if destination.exists():
+                    backup.parent.mkdir(parents=True, exist_ok=True)
+                    os.replace(destination, backup)
+                    backups.append((backup, destination))
+                os.replace(source, destination)
+                installed.append(destination)
+        except Exception:
+            for destination in reversed(installed):
+                _remove_projection_path(destination)
+            for backup, destination in reversed(backups):
+                os.replace(backup, destination)
+            raise
+    return []
+
+
+def cmd_sync_harnesses(args):
+    try:
+        issues = sync_harnesses(write=args.write)
+    except ValueError as exc:
+        die(str(exc))
+    if issues:
+        for issue in issues:
+            print(f"af sync-harnesses: DRIFT: {issue}")
+        raise SystemExit(1)
+    action = "wrote" if args.write else "checked"
+    print(f"af sync-harnesses: {action} native skill projections; clean")
+
+
 def check_system():
     return dead_link_issues() + ppt_master_stray_issues(), budget_notes() + voice_mirror_notes()
 
@@ -1827,42 +2168,23 @@ def cmd_doctor(args):
 
 # Verbs that mutate project state are Operator actions. `doctor` is read-only
 # and allowed in any mode; so is `pipe board`.
-OPERATOR_VERBS = {"lock", "publish", "version", "new-project"}
+OPERATOR_VERBS = {"lock", "publish", "version", "draft", "new-project"}
 OPERATOR_PIPE_VERBS = {"save", "start", "stage"}
 OPERATOR_AUTONOMY_VERBS = {"init", "start", "checkpoint", "finish"}
 OPERATOR_AUTOMATION_VERBS = {"init", "ready", "activate", "pause", "retire"}
 
 
 def check_mode_gate(cmd, args=None):
-    """Refuse Operator verbs while the Builder persona is active.
+    """Enforce the unattended-run charter for state-changing commands.
 
-    Reads the first heading of the root AGENTS.md (the active persona copy).
-    Blocks only on an explicit Builder heading; a missing or unrecognized
-    persona does not block, so customized copies keep working.
+    Interactive task ownership is routed by the stable root AGENTS.md and its
+    task-local routers, not by mutable repository mode state.
     """
     if os.environ.get("AGENTFRAME_MANAGED_RUN") == "1":
-        if cmd in {"lock", "publish", "automation"}:
+        if cmd in {"lock", "publish", "automation", "sync-harnesses"}:
             die(f"'af {cmd}' is outside the managed-run charter; report blocked and exit")
         return
-    if cmd == "pipe":
-        if getattr(args, "pipe_cmd", None) not in OPERATOR_PIPE_VERBS:
-            return
-    elif cmd == "autonomy":
-        if getattr(args, "autonomy_cmd", None) not in OPERATOR_AUTONOMY_VERBS:
-            return
-    elif cmd == "automation":
-        if getattr(args, "automation_cmd", None) not in OPERATOR_AUTOMATION_VERBS:
-            return
-    elif cmd not in OPERATOR_VERBS:
-        return
-    agents_md = os.path.join(ROOT, "AGENTS.md")
-    if not os.path.isfile(agents_md):
-        return
-    first_line = read(agents_md).lstrip().splitlines()[0].strip().lower()
-    if first_line.startswith("#") and "builder mode" in first_line:
-        die(f"'af {cmd}' is an Operator action but the Builder persona is active. "
-            "Swap modes first: python system/audit/writer.py system-change "
-            "--change-type mode_swap --actor agent --mode operator --reason \"<why>\"")
+    return
 
 
 def main():
@@ -1874,11 +2196,21 @@ def main():
     s = sub.add_parser("publish");         s.add_argument("project"); s.add_argument("post")
     s.add_argument("--url", required=True); s.add_argument("--posted-at"); s.add_argument("--platform")
     s.add_argument("--media", nargs="*", default=[]); s.set_defaults(fn=cmd_publish)
-    s = sub.add_parser("version");         s.add_argument("project"); s.add_argument("deliverable"); s.set_defaults(fn=cmd_version)
+    s = sub.add_parser("version");         s.add_argument("project"); s.add_argument("deliverable")
+    s.add_argument("--artifact"); s.set_defaults(fn=cmd_version)
+    s = sub.add_parser("draft");           s.add_argument("project"); s.add_argument("deliverable")
+    target = s.add_mutually_exclusive_group(required=True)
+    target.add_argument("--artifact"); target.add_argument("--file")
+    s.set_defaults(fn=cmd_draft)
     s = sub.add_parser("new-project");     s.add_argument("slug")
     s.add_argument("--flow", default=DEFAULT_FLOW, choices=sorted(FLOWS)); s.add_argument("--domain", default=DEFAULT_DOMAIN)
     s.add_argument("--name"); s.set_defaults(fn=cmd_new_project)
     s = sub.add_parser("doctor");          s.add_argument("project", nargs="?"); s.set_defaults(fn=cmd_doctor)
+    s = sub.add_parser("sync-harnesses")
+    action = s.add_mutually_exclusive_group(required=True)
+    action.add_argument("--check", action="store_true")
+    action.add_argument("--write", action="store_true")
+    s.set_defaults(fn=cmd_sync_harnesses)
 
     s = sub.add_parser("automation")
     msub = s.add_subparsers(dest="automation_cmd", required=True)

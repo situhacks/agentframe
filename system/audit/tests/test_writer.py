@@ -74,17 +74,9 @@ class AuditWriterTests(unittest.TestCase):
             with patch(
                 "sys.argv",
                 [
-                    "writer.py",
-                    "--db-path",
-                    str(db_path),
-                    "system-change",
-                    "--change-type",
-                    "process_refinement",
-                    "--actor",
-                    "agent",
-                    "--reason",
-                    "Payload file test",
-                    "--payload-json-file",
+                    "writer.py", "--db-path", str(db_path), "system-change",
+                    "--change-type", "process_refinement", "--actor", "agent",
+                    "--reason", "Payload file test", "--payload-json-file",
                     str(payload_path),
                 ],
             ):
@@ -111,17 +103,9 @@ class AuditWriterTests(unittest.TestCase):
             with patch(
                 "sys.argv",
                 [
-                    "writer.py",
-                    "--db-path",
-                    str(db_path),
-                    "system-change",
-                    "--change-type",
-                    "process_refinement",
-                    "--actor",
-                    "agent",
-                    "--reason",
-                    "BOM payload file test",
-                    "--payload-json-file",
+                    "writer.py", "--db-path", str(db_path), "system-change",
+                    "--change-type", "process_refinement", "--actor", "agent",
+                    "--reason", "BOM payload file test", "--payload-json-file",
                     str(payload_path),
                 ],
             ):
@@ -137,254 +121,32 @@ class AuditWriterTests(unittest.TestCase):
             self.assertIn('"validation_pending": true', payload_json)
 
 
-class ModeSwapAtomicityTests(unittest.TestCase):
-    """Coverage for BB-2026-05-26-01.
-
-    The mode-swap protocol must be atomic: an audit row with
-    `change_type=mode_swap` is only written if the AGENTS.{mode}.md → AGENTS.md
-    file copy succeeds. Failed copies must not leave a row behind.
-    """
-
-    def _scaffold_project_root(self, root: Path) -> dict[str, Path]:
-        """Create a minimal repo layout so writer.append_system_change can run."""
-        agents_md = root / "AGENTS.md"
-        builder_md = root / "AGENTS.builder.md"
-        cmo_md = root / "AGENTS.operator.md"
-        builder_md.write_text("# Builder persona\n## rules go here\n", encoding="utf-8")
-        cmo_md.write_text("# Operator persona\n## different rules\n", encoding="utf-8")
-        # Root starts as a faithful copy of one canonical persona (Operator),
-        # the only state the drift guard allows a swap to overwrite.
-        agents_md.write_text(cmo_md.read_text(encoding="utf-8"), encoding="utf-8")
-        return {
-            "agents_md": agents_md,
-            "builder_md": builder_md,
-            "cmo_md": cmo_md,
-        }
-
-    def test_mode_swap_copies_persona_file_before_writing_row(self) -> None:
+class StableRootTests(unittest.TestCase):
+    def test_mode_swap_is_retired_without_touching_root_or_db(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             project_root = Path(tmpdir)
-            files = self._scaffold_project_root(project_root)
+            root_agents = project_root / "AGENTS.md"
+            root_agents.write_text("# Stable classifier\n", encoding="utf-8")
             db_path = project_root / "system" / "audit" / "agentframe.db"
 
-            row_id = writer.append_system_change(
-                db_path=db_path,
-                change_type="mode_swap",
-                actor="agent",
-                mode="builder",
-                reason="Test atomic mode swap",
-                project_root=project_root,
-            )
-
-            # File copy actually happened
-            self.assertEqual(
-                files["agents_md"].read_text(encoding="utf-8"),
-                files["builder_md"].read_text(encoding="utf-8"),
-            )
-            # And the audit row exists
-            with closing(sqlite3.connect(db_path)) as conn:
-                row = conn.execute(
-                    "SELECT change_type, mode FROM system_changes WHERE id = ?",
-                    (row_id,),
-                ).fetchone()
-            self.assertEqual(row[0], "mode_swap")
-            self.assertEqual(row[1], "builder")
-
-    def test_mode_swap_round_trip_builder_then_cmo(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            project_root = Path(tmpdir)
-            files = self._scaffold_project_root(project_root)
-            db_path = project_root / "system" / "audit" / "agentframe.db"
-
-            writer.append_system_change(
-                db_path=db_path,
-                change_type="mode_swap",
-                actor="agent",
-                mode="builder",
-                reason="Swap to Builder",
-                project_root=project_root,
-            )
-            self.assertEqual(
-                files["agents_md"].read_text(encoding="utf-8"),
-                files["builder_md"].read_text(encoding="utf-8"),
-            )
-
-            writer.append_system_change(
-                db_path=db_path,
-                change_type="mode_swap",
-                actor="agent",
-                mode="operator",
-                reason="Swap back to Operator",
-                project_root=project_root,
-            )
-            self.assertEqual(
-                files["agents_md"].read_text(encoding="utf-8"),
-                files["cmo_md"].read_text(encoding="utf-8"),
-            )
-
-            with closing(sqlite3.connect(db_path)) as conn:
-                count = conn.execute(
-                    "SELECT COUNT(*) FROM system_changes WHERE change_type = 'mode_swap'"
-                ).fetchone()[0]
-            self.assertEqual(count, 2)
-
-    def test_mode_swap_rejects_unknown_mode_and_writes_no_row(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            project_root = Path(tmpdir)
-            files = self._scaffold_project_root(project_root)
-            original_content = files["agents_md"].read_text(encoding="utf-8")
-            db_path = project_root / "system" / "audit" / "agentframe.db"
-
-            with self.assertRaises(ValueError) as ctx:
-                writer.append_system_change(
-                    db_path=db_path,
-                    change_type="mode_swap",
-                    actor="agent",
-                    mode="not-a-real-mode",
-                    reason="Should not land",
-                    project_root=project_root,
-                )
-            self.assertIn("unknown mode", str(ctx.exception))
-
-            # AGENTS.md untouched
-            self.assertEqual(
-                files["agents_md"].read_text(encoding="utf-8"),
-                original_content,
-            )
-
-            # No row written. ensure_db is only called AFTER the side effect,
-            # so a rejected mode_swap leaves the DB uncreated. That's fine —
-            # query against the DB only if it exists.
-            if db_path.exists():
-                with closing(sqlite3.connect(db_path)) as conn:
-                    count = conn.execute(
-                        "SELECT COUNT(*) FROM system_changes"
-                    ).fetchone()[0]
-                self.assertEqual(count, 0)
-
-    def test_mode_swap_rejects_missing_mode_arg(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            project_root = Path(tmpdir)
-            self._scaffold_project_root(project_root)
-            db_path = project_root / "system" / "audit" / "agentframe.db"
-
-            with self.assertRaises(ValueError) as ctx:
-                writer.append_system_change(
-                    db_path=db_path,
-                    change_type="mode_swap",
-                    actor="agent",
-                    mode=None,
-                    reason="No mode provided",
-                    project_root=project_root,
-                )
-            self.assertIn("mode is required", str(ctx.exception))
-
-    def test_mode_swap_rejects_when_source_persona_missing(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            project_root = Path(tmpdir)
-            files = self._scaffold_project_root(project_root)
-            # Delete the builder persona to simulate a broken repo state
-            files["builder_md"].unlink()
-            original_content = files["agents_md"].read_text(encoding="utf-8")
-            db_path = project_root / "system" / "audit" / "agentframe.db"
-
-            with self.assertRaises(ValueError) as ctx:
+            with self.assertRaisesRegex(ValueError, "mode_swap is retired"):
                 writer.append_system_change(
                     db_path=db_path,
                     change_type="mode_swap",
                     actor="agent",
                     mode="builder",
-                    reason="Should reject because source file missing",
+                    reason="Legacy caller",
                     project_root=project_root,
                 )
-            self.assertIn("not found", str(ctx.exception))
 
-            # AGENTS.md untouched, no row written
-            self.assertEqual(
-                files["agents_md"].read_text(encoding="utf-8"),
-                original_content,
-            )
+            self.assertEqual(root_agents.read_text(encoding="utf-8"), "# Stable classifier\n")
+            self.assertFalse(db_path.exists())
 
-    def test_mode_swap_blocked_when_root_matches_neither_canonical(self) -> None:
+    def test_normal_change_does_not_touch_stable_root(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             project_root = Path(tmpdir)
-            files = self._scaffold_project_root(project_root)
-            # Simulate the drift failure: someone edited the root copy directly
-            drifted = files["cmo_md"].read_text(encoding="utf-8") + "\n## edited in the copy\n"
-            files["agents_md"].write_text(drifted, encoding="utf-8")
-            db_path = project_root / "system" / "audit" / "agentframe.db"
-
-            with self.assertRaises(ValueError) as ctx:
-                writer.append_system_change(
-                    db_path=db_path,
-                    change_type="mode_swap",
-                    actor="agent",
-                    mode="builder",
-                    reason="Should block: root copy has unreconciled edits",
-                    project_root=project_root,
-                )
-            self.assertIn("matches neither", str(ctx.exception))
-
-            # Drifted edits preserved, no row written
-            self.assertEqual(
-                files["agents_md"].read_text(encoding="utf-8"), drifted
-            )
-            if db_path.exists():
-                with closing(sqlite3.connect(db_path)) as conn:
-                    count = conn.execute(
-                        "SELECT COUNT(*) FROM system_changes"
-                    ).fetchone()[0]
-                self.assertEqual(count, 0)
-
-    def test_mode_swap_allows_missing_root_agents_md(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            project_root = Path(tmpdir)
-            files = self._scaffold_project_root(project_root)
-            files["agents_md"].unlink()
-            db_path = project_root / "system" / "audit" / "agentframe.db"
-
-            writer.append_system_change(
-                db_path=db_path,
-                change_type="mode_swap",
-                actor="agent",
-                mode="builder",
-                reason="Fresh copy with no root file yet",
-                project_root=project_root,
-            )
-            self.assertEqual(
-                files["agents_md"].read_text(encoding="utf-8"),
-                files["builder_md"].read_text(encoding="utf-8"),
-            )
-
-    def test_mode_swap_same_mode_resync_passes_guard(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            project_root = Path(tmpdir)
-            files = self._scaffold_project_root(project_root)
-            # Root matches the operator canonical; editing AGENTS.builder.md and
-            # resyncing must pass the guard, since root still matches A canonical.
-            files["builder_md"].write_text(
-                "# Builder persona\n## rules go here\n## new row\n", encoding="utf-8"
-            )
-            db_path = project_root / "system" / "audit" / "agentframe.db"
-
-            writer.append_system_change(
-                db_path=db_path,
-                change_type="mode_swap",
-                actor="agent",
-                mode="builder",
-                reason="Resync root after canonical edit",
-                project_root=project_root,
-            )
-            self.assertEqual(
-                files["agents_md"].read_text(encoding="utf-8"),
-                files["builder_md"].read_text(encoding="utf-8"),
-            )
-
-    def test_non_mode_swap_change_does_not_touch_agents_md(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            project_root = Path(tmpdir)
-            files = self._scaffold_project_root(project_root)
-            original_content = files["agents_md"].read_text(encoding="utf-8")
+            root_agents = project_root / "AGENTS.md"
+            root_agents.write_text("# Stable classifier\n", encoding="utf-8")
             db_path = project_root / "system" / "audit" / "agentframe.db"
 
             writer.append_system_change(
@@ -392,15 +154,11 @@ class ModeSwapAtomicityTests(unittest.TestCase):
                 change_type="process_patch",
                 actor="agent",
                 mode="builder",
-                reason="Unrelated change should not trigger file copy",
+                reason="Normal audited change",
                 project_root=project_root,
             )
 
-            # AGENTS.md is exactly as we left it
-            self.assertEqual(
-                files["agents_md"].read_text(encoding="utf-8"),
-                original_content,
-            )
+            self.assertEqual(root_agents.read_text(encoding="utf-8"), "# Stable classifier\n")
 
 
 if __name__ == "__main__":

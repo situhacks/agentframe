@@ -6,6 +6,7 @@ nothing outside the marketing pack's concern and never imports af.py (decoupled
 via ctx). Stdlib only.
 
 Hooks the host calls:
+  on_draft(ctx, cdir, dpath, rel, cfm, parent_row) -> (cfm, notes)
   on_lock(ctx, cdir, dpath, rel, cfm) -> (cfm, notes)   # post-FINAL assembly
   check(ctx, cdir, cfm)               -> [issue, ...]    # post-counting reconciliation
   publish(ctx, cdir, args)            -> None            # the publish verb (marketing-only)
@@ -69,6 +70,24 @@ def _assemble_post_final(ctx, post_dir, locked_path, ingredient):
     fm = ctx.set_scalar(fm, "last_updated", ctx.today(), "post-FINAL.md")
     ctx.write(pf, ctx.join_fm(fm, body))
     return pf
+
+
+def on_draft(ctx, cdir, dpath, rel, cfm, parent_row):
+    """Create the post assembly record when its first ingredient starts."""
+    notes = []
+    norm = rel.replace("\\", "/")
+    if not re.search(r"(^|/)posts/", norm):
+        return cfm, notes
+    post_dir = os.path.dirname(dpath)
+    pf = os.path.join(post_dir, "post-FINAL.md")
+    if not os.path.isfile(pf):
+        title = os.path.basename(post_dir)
+        ctx.write(pf, POST_FINAL_SKELETON.format(date=ctx.today(), title=title))
+        notes.append("post-FINAL.md created")
+    if ctx.row_span(cfm, parent_row):
+        pf_rel = os.path.relpath(pf, cdir).replace("\\", "/")
+        cfm = ctx.row_set(cfm, parent_row, "file", pf_rel)
+    return cfm, notes
 
 
 def _post_complete(ctx, post_dir, ingredients):

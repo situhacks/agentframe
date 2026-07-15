@@ -1,0 +1,15 @@
+{
+  "bundle_sha256": "a56e4b7b7400026df32eef41ec3f5ec1ddf842aa94e6fb6eacae050c0d4bd5ad",
+  "do_not_edit": true,
+  "files": {
+    "AGENTS.md": "bd737189de1e890994e056f2d0970126473661b401ab51e61c11ad2294c4ab0e",
+    "LICENSE": "caa1be9cba41c1afb88fe730ab1a4e04728295ea5b29ac2ee9f003a4ffbe3a77",
+    "README.md": "e769e33d01d4850ef56916fab69e214f9795a10b0bff7136f9aa4f0fb52fbb0b",
+    "SKILL.md": "0faa152a5ab67ba77f5359434d4854cfe8d68d6105d01bae620e7ff99c32dddb",
+    "VENDOR.md": "987adf7d89bf33c090a319419ee7261276707d53feae4140b5e390b45570494d"
+  },
+  "generated_by": "AgentFrame af sync-harnesses",
+  "overlay": null,
+  "regenerate": "python system/af.py sync-harnesses --write",
+  "source": "system/skills/humanizer"
+}

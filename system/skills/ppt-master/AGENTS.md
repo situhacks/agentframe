@@ -6,6 +6,7 @@ Vendored deck-generation skill (see `VENDOR.md`). The vendor's `SKILL.md`, refer
 
 - **Deck routing lives in `library/process/deck-production.md`.** That file owns the default PowerPoint tool and its exceptions. Once routed to PPT Master, the vendored `SKILL.md` and `workflows/routing.md` own workflow and session-mode selection; AgentFrame does not mirror them.
 - **PPT Master is AgentFrame's default for new `.pptx` creation/export.** This overlay starts only after `deck-production.md` has selected PPT Master.
+- **Reference-grounded redesign is a separate AgentFrame route.** When `library/process/reference-grounded-deck-redesign.md` is loaded, do not run the full source deck through `beautify-pptx`. The source clone and manifest remain authoritative; PPT Master receives only slides marked `rebuild`, one isolated complex slide at a time.
 - **Project workspace.** Stage `<project_path>` inside the calling project (for example, `workspace/projects/{slug}/phase-4-production/decks/{deck-name}/`) or `C:\tmp` for throwaway runs - never in this skill folder or a repo-root `projects/` directory.
 
 ## Run contract
@@ -15,6 +16,7 @@ Vendored deck-generation skill (see `VENDOR.md`). The vendor's `SKILL.md`, refer
 - **Audience-ready copy.** Slide-visible text is written for the deck's audience: no planning labels, internal signposting, references to the source material as source material, tombstones, TODO/WIP markers, or internal rationale. Keep legitimate audience-facing citations. When the operator explicitly requests a skeleton or unfinished slide, use visibly temporary prose (`Lorem ipsum` or role-shaped placeholder text), never grey placeholder bars; otherwise keep unresolved content outside the deck.
 - **Operator drafts stay canonical; pass a copy.** The vendor's move-based import may absorb inputs into its project. For operator-authored storyboards or slide content, pass a copy so the deliverable-folder draft remains the source of truth.
 - **Divergence pinning.** For operator-authored storyboards or slide content, set `content_divergence` to stay close. A redesign-only request also pins no content compression; resize or reflow before cutting content.
+- **Isolated reference rebuild.** Treat the origin render, source-derived shape facts, and manifest delta as the page contract. Preserve everything outside the delta; do not replace an intricate source composition with a familiar layout archetype. Return only the isolated rebuilt slide for PowerPoint-native replacement and AgentFrame verification.
 - **Voice handoff.** When PPT Master will author or reword copy, load `library/context/operator/voice/` and provide it at the vendor's voice/tone confirmation. Stay-close runs preserve voice already present in the source.
 - **Design language handoff.** When the calling project has a locked design language, provide its palette and typography at vendor confirmation rather than allowing a new identity.
 - **Brand assets.** Before design confirmation, check `library/assets/logos/`. Follow `library/assets/README.md` when an asset is missing; never approximate a real logo as custom SVG.

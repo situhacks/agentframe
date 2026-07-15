@@ -6,6 +6,7 @@ Default: use **PPT Master** for new PowerPoint creation and exports. Use another
 
 | Path | Use when | Skill | Outputs |
 |---|---|---|---|
+| Reference-grounded redesign | An existing PPTX is the visual target and named deltas must not simplify or reinterpret its layouts, diagrams, or native object structure | [`reference-grounded-deck-redesign.md`](reference-grounded-deck-redesign.md); uses PPTX natively and PPT Master only for isolated rebuild slides | Verified 1:1 redesign assembled on a source-deck copy |
 | PPT Master | Default for new `.pptx` creation/export from source material, storyboard, Markdown deliverable, research, or an existing deck as source. The vendored router owns workflow and session-mode selection. | `system/skills/ppt-master/SKILL.md`; read `system/skills/ppt-master/AGENTS.md` first | Native `.pptx` promoted into the calling deliverable folder |
 | PPTX skill (vendored Anthropic) | Native `.pptx` inspection, validation, small edits, extraction-diff, or slide splicing after a PPT Master round trip | `system/skills/pptx/SKILL.md` | Edited `.pptx` via OOXML or pptxgenjs |
 | Open Design (bundled) | The work benefits from Open Design's interactive revise-in-UI loop, or the project already runs other visuals through Open Design | `system/skills/open-design/SKILL.md` (defaults in [`image-production.md`](image-production.md)) | Exported `.pptx`, PDF, or PNG in the calling deliverable's media location |
@@ -15,6 +16,8 @@ Recommend the default route first and name an exception only when it applies. Re
 ## PPT Master handoff
 
 After AgentFrame selects PPT Master, read the local overlay and then follow the vendor's `SKILL.md`. Its `workflows/routing.md` owns workflow choice, ambiguity handling, and continuous-versus-split session mode. AgentFrame does not duplicate that matrix.
+
+Reference-grounded redesign is selected before this handoff. It is a hybrid preservation path the vendor's rebuild-from-scratch beautify workflow does not own.
 
 ## Versioning and round trip
 

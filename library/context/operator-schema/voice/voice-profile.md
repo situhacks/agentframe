@@ -42,4 +42,4 @@ The generative prior. Write toward this; it's how [you] think on the page, not a
 [The division of labour: who drafts, who edits, who does the final pass. e.g. "operator dictates → agent edits → operator hand voice pass; the agent's job is to get it CLOSE enough that the final pass is light, not a rescue." Note when direction lands: big structural passes EARLY, small line passes LATE — never treat a structural note as a small edit.]
 
 ## Reference anchor
-Your own shipped work is the register test: would this paragraph sit naturally inside the register's `corpus/` pieces? [Name an admired outside source only as STRUCTURE aspiration (see corpus/aspiration/) — a draft that could sit in the admired source but contains no line that sounds like you has failed.]
+Your own shipped work is the register test: would this paragraph sit naturally inside the selected register's `corpus/` pieces? Channel conventions are checked separately. [Name an admired outside source only as STRUCTURE aspiration (see corpus/aspiration/) — a draft that could sit in the admired source but contains no line that sounds like you has failed.]

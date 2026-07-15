@@ -59,10 +59,10 @@ AgentFrame keeps its context, working rules, and project state in files that any
 
 - **Add specialised structure through domain packs.** Marketing, project management, and careers ship today. Adding another domain means adding its templates and descriptor rather than rewriting the core.
 
-- **Teach the voice system from real edits.** It reads complete pieces you have published, uses a different register for each channel, and compares agent drafts against your rewrites to learn your written voice. Each edit gives the system better evidence for making the next first draft sound more like you.
+- **Teach the voice system from real edits.** It reads complete pieces you have published, keeps reusable voice registers separate from channel rules, and compares agent drafts against your rewrites. A formal or informal voice can travel across posts, emails, decks, and essays, with an explicit blend when one register needs a controlled borrow from the other.
 
 <p align="center">
-  <img src=".github/readme-assets/voice-system.png" alt="How the voice system works in detail. Built from (loaded before every draft): the per-register corpus of your published pieces, the always-three files (identity, voice-profile, anti-patterns), the register overlay, and contrastive pairs. Every draft runs a four-pass method: content pass, style pass (corpus-first with 3-4 mandated markers), clean pass (anti-patterns plus humanizer in a separate turn), and a register test. Then you revise by hand; a mini-retro gate decides whether the edit is worth harvesting; and harvest turns edit deltas into new contrastive pairs that feed back into what the system is built from." width="880" />
+  <img src=".github/readme-assets/voice-system.png" alt="How the voice system works in detail. Built from the per-register corpus of published pieces, the always-three files (identity, voice-profile, anti-patterns), a formal or informal register overlay selected independently from channel, and contrastive pairs. Every draft runs a four-pass method: content, corpus-first style, a separate anti-pattern and humanizer clean pass, and a register test. Human edits pass through a mini-retro gate; worthwhile deltas become new contrastive pairs that feed the system." width="880" />
 </p>
 
 ### 3. Keep state and automation deterministic

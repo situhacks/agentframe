@@ -12,7 +12,7 @@ Load when a project targets Substack and:
 - an existing Substack draft needs a substantive update; or
 - a delivered post is being back-published to Substack.
 
-Also load the canonical source named by the project tracker and the Substack channel profile. Load the voice system with register `substack-informal` when copy is being adapted rather than transferred verbatim.
+Also load the canonical source named by the project tracker and the Substack channel profile. When copy is adapted rather than transferred verbatim, resolve its voice recipe independently from the platform; Substack does not imply the informal register.
 
 ## Procedure
 

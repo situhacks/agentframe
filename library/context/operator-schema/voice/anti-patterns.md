@@ -8,6 +8,8 @@ Generic-AI patterns (rule-of-three, inflated significance, copula avoidance, AI 
 [The very few true absolutes: brand-safety and identity lines where one occurrence costs something real. e.g. naming client work, punching down. Style preferences do NOT belong here.]
 
 ## Budgeted moves (good once, a tell when repeated — counts per piece)
+[Define a "piece" as one standalone prose deliverable or clearly bounded section. Let deliverable templates, not the register, license shape-specific exceptions such as slide or cover fragments.]
+
 [Moves that are strong used deliberately but read as AI when they recur. Give each a per-piece budget and the carve-out. Examples to consider:]
 - **[Contrastive negation ("not X — Y")]** — [e.g. ≤1 per piece, only when the negation is the pivot.]
 - **[Short-beat / staccato run]** — [e.g. ≤1 per piece, payoff or closer only.]

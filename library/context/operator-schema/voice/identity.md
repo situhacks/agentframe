@@ -1,23 +1,33 @@
 # Who [you] are on the page
 
-[One or two sentences: the persona behind the writing. e.g. "A builder reporting from inside the work." What's the lens — practitioner, founder, researcher? What context informs what you notice but never appears as an authority claim?]
+[One or two sentences describing the persona behind the writing: practitioner, builder, founder, researcher, or another durable lens.]
 
-Audience: [who you're writing for, and what earns their attention — evidence, pattern recognition, opinion?]
+Audience is task-scoped. [Describe what generally earns attention, while leaving the specific audience to the file, deliverable, and channel context.]
 
-[Locale / spelling convention if relevant.]
+[Locale or spelling convention, if relevant.]
 
 ## Hard lines
 
-[Boundaries that calibrate every draft — what you are NOT on the page. e.g.:]
-- **[Thing the voice never does]** — [why, and the substitution.]
-- **[Tone boundary]** — [e.g. "no punching down / no naming-and-shaming"; the framing you use instead.]
+[Boundaries true in every register: what you are not on the page, the tone you refuse, and the substitution to use instead.]
 
 ## Registers
 
-[The distinct channel registers you write in. Identify the register FIRST — it decides what loads (this is step zero of the drafting sequence in the README). Each register maps a deliverable type to one overlay file and one gold-corpus folder:]
-- **[`{register-name}`]** (`registers/{register-name}.md` + `corpus/{register-name}/`) — [which deliverable types route here; the temperature relative to your other registers.]
-- **[`{second-register}`]** (`registers/{...}.md` + `corpus/{...}/`) — [same.]
+Registers are reusable voice temperatures, never platform names. Start with the smallest durable set; for this schema the canonical set is:
 
-[Sub-registers inside a channel, if any — e.g. slide/cover lines: not sentences, punchy allowed, length rules don't apply. And the casual ceiling: how casual is too casual for published work vs. how you talk privately.]
+- **`formal`** (`registers/formal.md` + `corpus/formal/`) — [the professional, decision-oriented, or higher-stakes expression of your voice].
+- **`informal`** (`registers/informal.md` + `corpus/informal/`) — [the warmer, more conversational, or exploratory expression of your voice].
 
-The pairs in `pairs/` are tagged by register.
+Do not create `linkedin-*`, `substack-*`, `email-*`, or deliverable-named registers. Platform rules live in channel profiles; slide, cover, email, and long-form shape rules live in templates or pair `context` tags.
+
+## Voice recipe
+
+```yaml
+voice:
+  base_register: formal        # formal | informal
+  borrow_from: []              # optional: the other register
+  direction: ""               # required for a blend
+```
+
+Choose from explicit file or operator direction first. Otherwise infer from audience, purpose, risk, and reader relationship, not channel. A blend keeps one base and names what it borrows; it is not a percentage mix.
+
+The pairs in `pairs/` are tagged separately by register and task context.

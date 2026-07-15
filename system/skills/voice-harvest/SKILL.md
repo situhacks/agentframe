@@ -70,7 +70,7 @@ Ask with `AskUserQuestion`: *"How deep should I mine — diffs only (cheap), + t
 - **The hand-edit-copy convention (how to isolate operator keystrokes):** operator-edit versions are created as a verbatim copy ("Operator hand-edit copy — edit directly here") and edited in place, so `diff v(N-1)→v(N)` on that copy isolates the operator's changes exactly. Typos in these diffs mark authentic operator text — signal, not noise. The operator may also edit *other* versions in place; those edits only surface inside the next agent-cleanup diff, mixed with agent changes — use the version notes ("cleanup of the operator's vN edits") to attribute. A line-level change you can't attribute from disk gets reported as unattributed, never assumed.
 - **Transcript (Tier 2):** read the session JSONL for the stretch where this work evolved — the operator's dictated direction, the "too fancy / fix it" feedback, the reject→accept exchanges. This captures corrections that never hit a version file (in-chat iteration).
 - **Fresh artifact:** if the input is a net-new piece (an article, a sent email, a post the person wrote), read it as a positive exemplar — extract BRANDON-side lines directly; the BASE is the generic version you reconstruct.
-- Always read the current `pairs/*.md` (all register files) so you know what's already covered and don't duplicate. Read `pairs/README.md` for the format.
+- Always read the current `pairs/*.md` so you know what's already covered across register- and context-grouped files. Read `pairs/README.md` for the format.
 
 ### Step 3 — Extract and classify deltas
 
@@ -97,10 +97,11 @@ Do the first pass yourself, then surface candidates for the operator to approve 
 BASE: <generic / pre-edit version>
 BRANDON: <the operator's actual rewrite>
 MOVE: <what changed + why — generatively useful; cite the source delta, e.g. "Post 5 v9→v10op">
-register: builder-pov | market-signal | slide | cover
+register: formal | informal | both
+context: builder-pov | market-signal | slide | cover | email | long-form | <other task context>
 ```
 
-**Pairs hygiene** (from `pairs/README.md` / voice-mini-retro): cap ~30 total grouped by register; over cap → a new pair REPLACES the weakest/most-redundant (name it); dedup by move; recency-weighted (newest approved work wins). Surface candidates; write only approved ones to the matching `pairs/{register}.md`.
+**Pairs hygiene** (from `pairs/README.md` / voice-mini-retro): keep register and task context separate; never use a channel as either one. Cap ~30 total; over cap → a new pair REPLACES the weakest/most-redundant (name it); dedup by move; recency-weighted. Surface candidates; write only approved ones to the matching register- or context-grouped pair file.
 
 ### Step 6 — Corpus promotion (full-piece exemplars)
 

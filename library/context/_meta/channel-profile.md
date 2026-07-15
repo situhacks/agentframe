@@ -18,4 +18,4 @@ type: channel
 - **Purpose & Target Audience** — High-level role of the channel in distribution and who it targets.
 - **Connection & Credentials** — MCP server details, user environment variables, auth session token details (sid/cookies), and rotation expectations.
 - **Conventions & Formatting** — Specific title/subtitle structures, footer append formats, handling of media (carousels, slide PNG exports), and subscribe buttons.
-- **Voice & Tone Constraints** — Specific register or stylistic rules that apply exclusively to this channel's output.
+- **Voice Interaction** — Channel-only constraints such as length, formatting, audience context, and prohibited platform behavior. A channel profile never selects or names a voice register; the voice recipe is resolved independently through `library/context/operator/voice/README.md`.

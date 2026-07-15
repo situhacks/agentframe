@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dockview-core@4.13.1/dist/styles/dockview.css">
-<link rel="stylesheet" href="/system/server/static/surface/styles.css?v=15">
+<link rel="stylesheet" href="/system/server/static/surface/styles.css?v=16">
 </head>
 <body>
   <header id="topbar">
@@ -68,17 +68,19 @@
       </div>
       <span class="meta" id="automations-meta"></span>
     </header>
-    <section class="automation-summary" id="automations-summary"></section>
-    <section class="automation-panel" id="automation-attention-panel">
-      <header><span class="title">Needs attention</span><span class="count" id="automation-attention-count"></span></header>
-      <div class="scroll" id="automation-attention-body"></div>
-    </section>
     <section class="automation-panel" id="automation-inventory-panel">
-      <header><span class="title">All automations</span><span class="count" id="automations-count"></span></header>
-      <div class="scroll" id="automations-body"></div>
+      <header><span class="title">Managed roster</span><span class="count" id="automations-count"></span></header>
+      <div class="automation-roster-body" id="automations-body"></div>
     </section>
     <section class="automation-panel" id="automation-receipts-panel">
-      <header><span class="title">Recent receipts</span><span class="count" id="automation-receipts-count"></span></header>
+      <header id="automation-receipts-header">
+        <span class="title">Activity</span>
+        <span class="count" id="automation-receipts-count"></span>
+        <div class="automation-receipt-filters" id="automation-receipt-filters" aria-label="Run status filter">
+          <button data-status="all" class="active">all</button>
+          <button data-status="issues">issues</button>
+        </div>
+      </header>
       <div class="scroll" id="automation-receipts-body"></div>
     </section>
   </main>
@@ -177,6 +179,6 @@
     <div id="editor-area"></div>
   </main>
 
-<script type="module" src="/system/server/static/surface/app.js?v=10"></script>
+<script type="module" src="/system/server/static/surface/app.js?v=11"></script>
 </body>
 </html>

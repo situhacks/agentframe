@@ -10,6 +10,8 @@ from . import state
 
 
 REGISTRY_REL = Path("system/daemon/local/registry.json")
+RECEIPT_PAGE_SIZE = 50
+RECEIPT_FILTERS = {"all", "issues", "done", "blocked", "failed"}
 
 
 def _read_json(path: Path) -> dict:
@@ -52,28 +54,36 @@ def _receipt_summary(queue_root: Path, now: dt.datetime) -> dict:
     for path in outbox.glob("*.result.json"):
         payload = _read_json(path)
         status_value = payload.get("status")
-        try:
-            modified = dt.datetime.fromtimestamp(path.stat().st_mtime, tz=now.tzinfo)
-        except OSError:
-            continue
-        if modified.date() == now.date() and status_value in counts:
+        finished = _parse_time(payload.get("finished_at"))
+        if finished is None:
+            try:
+                finished = dt.datetime.fromtimestamp(path.stat().st_mtime, tz=now.tzinfo)
+            except OSError:
+                continue
+        if finished.date() == now.date() and status_value in counts:
             counts[status_value] += 1
         row = {
             "task_id": payload.get("task_id"),
             "status": status_value,
             "summary": payload.get("summary"),
-            "time": modified.isoformat(timespec="seconds"),
+            "time": finished.isoformat(timespec="seconds"),
         }
         receipts.append(row)
-        if latest is None or row["time"] > latest["time"]:
+        if latest is None or _receipt_sort_key(row) > _receipt_sort_key(latest):
             latest = row
-    receipts.sort(key=lambda row: row["time"], reverse=True)
+    receipts.sort(key=_receipt_sort_key, reverse=True)
     return {
         "today": counts,
         "last_result": latest,
-        "receipts": receipts[:20],
+        "receipts": receipts,
         "receipt_ids": [row["task_id"] for row in receipts if row.get("task_id")],
     }
+
+
+def _receipt_sort_key(row: dict) -> tuple[float, str]:
+    parsed = _parse_time(row.get("time"))
+    timestamp = parsed.timestamp() if parsed else 0.0
+    return timestamp, str(row.get("task_id") or "")
 
 
 def _task_summary(queue_root: Path, now: dt.datetime, receipt_ids: set[str]) -> dict:
@@ -147,9 +157,7 @@ def _runtime_rows(root: Path, now: dt.datetime) -> tuple[dict, dict]:
     return deployments, {"registry_path": str(registry_path), "heartbeat_at": status.get("heartbeat_at")}
 
 
-def build_model(root: Path, now: dt.datetime | None = None) -> dict:
-    root = Path(root)
-    now = now or dt.datetime.now().astimezone()
+def _reconcile(root: Path, now: dt.datetime) -> tuple[list[dict], dict, dict]:
     deployments, meta = _runtime_rows(root, now)
     claimed = set()
     rows = []
@@ -169,8 +177,6 @@ def build_model(root: Path, now: dt.datetime | None = None) -> dict:
                 issues.append("ready-not-deployed")
             if desired == "active" and not runtime:
                 issues.append("active-not-deployed")
-            elif desired == "active" and runtime_state == "offline":
-                issues.append("active-offline")
             if desired == "paused" and queued:
                 issues.append("paused-with-queue")
             if runtime and not runtime.get("enabled") and desired == "active":
@@ -217,7 +223,66 @@ def build_model(root: Path, now: dt.datetime | None = None) -> dict:
             "issues": ["runtime-orphan"],
         })
     rows.sort(key=lambda row: (not row["issues"], row.get("project") or "", row.get("automation_id") or ""))
+    return rows, deployments, meta
+
+
+def _all_receipts(rows: list[dict], deployments: dict) -> list[dict]:
+    identities = {}
+    for row in rows:
+        deployment_id = row.get("deployment_id")
+        if deployment_id and deployment_id not in identities:
+            identities[deployment_id] = {
+                "automation_id": row.get("automation_id"),
+                "deployment_id": deployment_id,
+                "project": row.get("project"),
+                "project_name": row.get("project_name"),
+            }
+
     recent_receipts = []
+    for deployment_id, runtime in deployments.items():
+        identity = identities.get(deployment_id) or {
+            "automation_id": runtime.get("automation_id"),
+            "deployment_id": deployment_id,
+            "project": runtime.get("project"),
+            "project_name": None,
+        }
+        for receipt in runtime.get("receipts", []):
+            recent_receipts.append({**identity, **receipt})
+    recent_receipts.sort(key=_receipt_sort_key, reverse=True)
+    return recent_receipts
+
+
+def receipt_page(
+    root: Path,
+    cursor: int = 0,
+    limit: int = RECEIPT_PAGE_SIZE,
+    status: str = "all",
+    now: dt.datetime | None = None,
+) -> dict:
+    root = Path(root)
+    now = now or dt.datetime.now().astimezone()
+    cursor = max(0, int(cursor))
+    limit = max(1, min(int(limit), 200))
+    if status not in RECEIPT_FILTERS:
+        raise ValueError(f"status must be one of: {', '.join(sorted(RECEIPT_FILTERS))}")
+
+    rows, deployments, _ = _reconcile(root, now)
+    receipts = _all_receipts(rows, deployments)
+    if status == "issues":
+        receipts = [row for row in receipts if row.get("status") in {"blocked", "failed"}]
+    elif status != "all":
+        receipts = [row for row in receipts if row.get("status") == status]
+
+    page = receipts[cursor:cursor + limit]
+    next_cursor = cursor + limit if cursor + limit < len(receipts) else None
+    return {"items": page, "next_cursor": next_cursor, "total": len(receipts), "status": status}
+
+
+def build_model(root: Path, now: dt.datetime | None = None) -> dict:
+    root = Path(root)
+    now = now or dt.datetime.now().astimezone()
+    rows, deployments, meta = _reconcile(root, now)
+    recent_receipts = _all_receipts(rows, deployments)
     attention = []
     for row in rows:
         identity = {
@@ -234,22 +299,21 @@ def build_model(root: Path, now: dt.datetime | None = None) -> dict:
                 "time": task["requested_at"], "age_seconds": task["age_seconds"],
                 "summary": f"Request is still {task['state']} with no terminal receipt.",
             })
-        runtime = deployments.get(row.get("deployment_id"))
-        for receipt in (runtime or {}).get("receipts", []):
-            enriched = {**identity, **receipt}
-            recent_receipts.append(enriched)
-            parsed = _parse_time(receipt.get("time"))
-            if receipt.get("status") in {"blocked", "failed"} and parsed and parsed.date() == now.date():
-                attention.append({
-                    **enriched, "kind": receipt["status"],
-                    "summary": receipt.get("summary") or "Terminal receipt needs review.",
-                })
-    recent_receipts.sort(key=lambda row: row.get("time") or "", reverse=True)
+    for receipt in recent_receipts:
+        parsed = _parse_time(receipt.get("time"))
+        if receipt.get("status") in {"blocked", "failed"} and parsed and parsed.date() == now.date():
+            attention.append({
+                **receipt, "kind": receipt["status"],
+                "summary": receipt.get("summary") or "Terminal receipt needs review.",
+            })
     attention.sort(key=lambda row: row.get("time") or "", reverse=True)
+    first_page = recent_receipts[:RECEIPT_PAGE_SIZE]
     return {
         "generated_at": now.isoformat(timespec="seconds"),
         "rows": rows,
         "attention": attention,
-        "recent_receipts": recent_receipts[:20],
+        "recent_receipts": first_page,
+        "receipts_total": len(recent_receipts),
+        "receipts_next_cursor": RECEIPT_PAGE_SIZE if len(recent_receipts) > RECEIPT_PAGE_SIZE else None,
         **meta,
     }

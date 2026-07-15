@@ -102,13 +102,13 @@ class SurfaceAutomationTests(unittest.TestCase):
         self.assertEqual(model["recent_receipts"][0]["task_id"], "task-1")
         self.assertEqual(model["attention"][0]["kind"], "unanswered")
 
-    def test_stale_heartbeat_surfaces_active_offline(self):
+    def test_stale_heartbeat_is_runtime_state_not_operator_issue(self):
         self.write_project()
         stale = (self.now - dt.timedelta(minutes=10)).isoformat()
         self.write_runtime(heartbeat=stale)
         row = automations.build_model(self.root, self.now)["rows"][0]
         self.assertEqual(row["runtime_state"], "offline")
-        self.assertEqual(row["issues"], ["active-offline"])
+        self.assertEqual(row["issues"], [])
 
     def test_registry_without_project_declaration_is_runtime_orphan(self):
         self.write_runtime()
@@ -145,6 +145,51 @@ class SurfaceAutomationTests(unittest.TestCase):
         failed = next(item for item in model["attention"] if item["kind"] == "failed")
         self.assertEqual(failed["summary"], "body timed out")
         self.assertEqual(model["rows"][0]["requests_today"], 1)
+
+    def test_receipt_history_pages_all_rows_and_filters_server_side(self):
+        self.write_project()
+        self.write_runtime()
+        expected_issues = 0
+        for index in range(65):
+            status = "failed" if index % 10 == 0 else "blocked" if index % 15 == 0 else "done"
+            if status in {"failed", "blocked"}:
+                expected_issues += 1
+            finished = self.now - dt.timedelta(minutes=index)
+            receipt = self.queue / "outbox" / f"task-{index:03d}.result.json"
+            receipt.write_text(json.dumps({
+                "schema_version": 1,
+                "task_id": f"task-{index:03d}",
+                "status": status,
+                "summary": f"result {index}",
+                "outputs": [],
+                "operator_action": None,
+                "finished_at": finished.isoformat(),
+            }), encoding="utf-8")
+            # File mtimes are deliberately identical: receipt time owns audit ordering.
+            os.utime(receipt, (self.now.timestamp(), self.now.timestamp()))
+
+        model = automations.build_model(self.root, self.now)
+        self.assertEqual(len(model["recent_receipts"]), 50)
+        self.assertEqual(model["receipts_total"], 65)
+        self.assertEqual(model["receipts_next_cursor"], 50)
+        self.assertEqual(model["recent_receipts"][0]["task_id"], "task-000")
+
+        first = automations.receipt_page(self.root, cursor=0, limit=20, now=self.now)
+        second = automations.receipt_page(self.root, cursor=20, limit=20, now=self.now)
+        self.assertEqual(first["next_cursor"], 20)
+        self.assertEqual(second["next_cursor"], 40)
+        self.assertEqual(first["total"], 65)
+        self.assertTrue(
+            {item["task_id"] for item in first["items"]}.isdisjoint(
+                {item["task_id"] for item in second["items"]}))
+
+        issues = automations.receipt_page(self.root, status="issues", now=self.now)
+        self.assertEqual(issues["total"], expected_issues)
+        self.assertTrue(all(item["status"] in {"failed", "blocked"} for item in issues["items"]))
+
+    def test_receipt_page_rejects_unknown_filter(self):
+        with self.assertRaises(ValueError):
+            automations.receipt_page(self.root, status="unknown", now=self.now)
 
 
 if __name__ == "__main__":

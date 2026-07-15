@@ -4,7 +4,7 @@
 
 import { getJSON, postJSON, navigate, parseHash } from './api.js?v=5';
 import { renderDashboard, applyActivityUpdate, setupDashboardDensity } from './dashboard.js?v=7';
-import { renderAutomations } from './automations.js?v=2';
+import { renderAutomations } from './automations.js?v=3';
 import { renderCalendar, setupCalendar } from './calendar.js?v=7';
 
 const POLL_MS = 12000;

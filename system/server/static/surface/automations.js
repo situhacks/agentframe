@@ -1,6 +1,17 @@
-// Managed automations pulse: requests in, terminal receipts out, exceptions visible.
+// Managed automations: durable roster plus complete, paged run history.
 
-import { keycapEl, el, navigate } from './api.js?v=5';
+import { getJSON, keycapEl, el, navigate } from './api.js?v=5';
+
+const PAGE_SIZE = 50;
+const receiptState = {
+  items: [],
+  nextCursor: null,
+  total: 0,
+  filter: 'all',
+  loading: false,
+  initialized: false,
+  allHeadKey: null,
+};
 
 function plainLabel(value) {
   if (!value) return '--';
@@ -17,26 +28,27 @@ function projCell(slug, name) {
     }));
 }
 
-function stateLabel(value, attention = false) {
+function stateLabel(value, attention = false, label = null, title = '') {
   return el('span', {
     class: `state ${attention ? 'attention' : value || 'unknown'}`,
-    text: `[${plainLabel(value)}]`,
+    text: `[${label || plainLabel(value)}]`,
+    title,
   });
 }
 
-function summaryCard(label, value, detail, tone = '') {
-  return el('div', { class: `automation-summary-card ${tone}` },
-    el('span', { class: 'summary-label', text: label }),
-    el('strong', { text: String(value) }),
-    el('span', { class: 'summary-detail', text: detail }));
-}
-
 function humanAge(seconds) {
-  if (seconds === null || seconds === undefined) return '--';
+  if (seconds === null || seconds === undefined || Number.isNaN(seconds)) return '--';
   if (seconds < 60) return '<1m';
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
   if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
   return `${Math.floor(seconds / 86400)}d`;
+}
+
+function ageFromTime(value) {
+  if (!value) return '--';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '--';
+  return humanAge(Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000)));
 }
 
 function timeLabel(value) {
@@ -47,51 +59,25 @@ function timeLabel(value) {
   });
 }
 
-function receiptCount(row) {
-  return (row.today?.done || 0) + (row.today?.blocked || 0) + (row.today?.failed || 0);
+function workerState(row) {
+  if (row.runtime_state === 'offline') {
+    return stateLabel('offline', false, 'not running', 'No fresh watcher heartbeat; neutral for on-demand --once runs.');
+  }
+  return stateLabel(row.runtime_state, false, null, row.current_task || '');
 }
 
-function renderSummary(model) {
-  const rows = model.rows || [];
-  const requests = rows.reduce((sum, row) => sum + (row.requests_today || 0), 0);
-  const receipts = rows.reduce((sum, row) => sum + receiptCount(row), 0);
-  const done = rows.reduce((sum, row) => sum + (row.today?.done || 0), 0);
-  const awaiting = rows.reduce((sum, row) => sum + (row.queued || 0), 0);
-  const blocked = rows.reduce((sum, row) => sum + (row.today?.blocked || 0), 0);
-  const failed = rows.reduce((sum, row) => sum + (row.today?.failed || 0), 0);
-  document.getElementById('automations-summary').replaceChildren(
-    summaryCard('Automations', rows.length, 'declared or deployed'),
-    summaryCard('Requests today', requests, 'task files received'),
-    summaryCard('Receipts today', receipts, `${done} done · ${blocked} blocked · ${failed} failed`, blocked || failed ? 'warn' : 'good'),
-    summaryCard('Awaiting receipt', awaiting, 'queued or processing', awaiting ? 'warn' : 'good'),
-    summaryCard('Exceptions today', blocked + failed, 'terminal receipts needing review', blocked || failed ? 'warn' : 'good'));
+function lastRunCell(last) {
+  if (!last) return el('span', { class: 'mono', text: '--' });
+  const attention = ['blocked', 'failed'].includes(last.status);
+  return el('div', { class: 'automation-last', title: [last.summary, timeLabel(last.time)].filter(Boolean).join(' · ') },
+    stateLabel(last.status, attention),
+    el('span', { class: 'mono automation-run-age', text: ageFromTime(last.time) }));
 }
 
-function renderAttention(model) {
-  const attention = model.attention || [];
-  const body = document.getElementById('automation-attention-body');
-  const table = el('table', { class: 'grid attention-automation-table' });
-  table.append(el('thead', {}, el('tr', {},
-    el('th', { text: 'When' }), el('th', { text: 'Automation' }),
-    el('th', { text: 'Project' }), el('th', { text: 'Issue' }),
-    el('th', { text: 'Request' }), el('th', { text: 'Summary' }))));
-  const tbody = el('tbody');
-  if (!attention.length) {
-    tbody.append(el('tr', { class: 'empty-row good-empty' },
-      el('td', { colspan: '6', text: 'every observed request has a terminal receipt and no runtime mismatch needs attention' })));
-  }
-  for (const item of attention) {
-    tbody.append(el('tr', {},
-      el('td', { class: 'mono nowrap', text: item.kind === 'unanswered' ? humanAge(item.age_seconds) : timeLabel(item.time) }),
-      el('td', { text: plainLabel(item.automation_id || item.deployment_id) }),
-      el('td', {}, item.project ? projCell(item.project, item.project_name) : el('span', { text: '--' })),
-      el('td', {}, stateLabel(item.kind, true)),
-      el('td', { class: 'mono', text: item.task_id || '--' }),
-      el('td', { text: item.summary || '--' })));
-  }
-  table.append(tbody);
-  body.replaceChildren(table);
-  document.getElementById('automation-attention-count').textContent = attention.length ? `${attention.length} open` : 'clear';
+function issueCell(issues) {
+  if (!issues?.length) return el('span', { class: 'mono', text: '--' });
+  const label = issues.length === 1 ? plainLabel(issues[0]) : `${issues.length} issues`;
+  return stateLabel(issues[0], true, label, issues.map(plainLabel).join(' · '));
 }
 
 function renderInventory(rows) {
@@ -100,63 +86,176 @@ function renderInventory(rows) {
   table.append(el('thead', {}, el('tr', {},
     el('th', { text: 'Automation' }), el('th', { text: 'Project' }),
     el('th', { text: 'Runs through' }), el('th', { text: 'Worker' }),
-    el('th', { text: 'Requests' }), el('th', { text: 'Receipts' }),
-    el('th', { text: 'Awaiting' }), el('th', { text: 'Last receipt' }))));
+    el('th', { text: 'Queued' }), el('th', { text: 'Last run' }),
+    el('th', { text: 'Health' }))));
   const tbody = el('tbody');
   if (!rows.length) {
     tbody.append(el('tr', { class: 'empty-row' },
-      el('td', { colspan: '8', text: 'no managed automations declared or deployed' })));
+      el('td', { colspan: '7', text: 'no managed automations declared or deployed' })));
   }
   for (const row of rows) {
-    const last = row.last_result;
     tbody.append(el('tr', {},
       el('td', { text: plainLabel(row.automation_id || row.deployment_id), title: row.job || '' }),
       el('td', {}, row.project ? projCell(row.project, row.project_name) : el('span', { text: '--' })),
       el('td', { class: 'mono', text: plainLabel(row.body_profile) }),
-      el('td', {}, stateLabel(row.runtime_state, row.issues?.length)),
-      el('td', { class: 'mono', text: String(row.requests_today || 0) }),
-      el('td', { class: 'mono', text: String(receiptCount(row)) }),
-      el('td', { class: `mono${row.queued ? ' attention-text' : ''}`, text: row.queued ? `${row.queued} · ${humanAge(row.oldest_awaiting_seconds)}` : '0' }),
-      el('td', { class: 'automation-last', text: last ? `${plainLabel(last.status)}: ${last.summary || last.task_id}` : '--', title: last?.time || '' })));
+      el('td', {}, workerState(row)),
+      el('td', {
+        class: `mono${row.queued ? ' attention-text' : ''}`,
+        text: row.queued ? `${row.queued} · ${humanAge(row.oldest_awaiting_seconds)}` : '0',
+      }),
+      el('td', {}, lastRunCell(row.last_result)),
+      el('td', {}, issueCell(row.issues))));
   }
   table.append(tbody);
   body.replaceChildren(table);
   document.getElementById('automations-count').textContent = `${rows.length} total`;
 }
 
-function renderReceipts(receipts) {
+function receiptKey(receipt) {
+  if (!receipt) return '';
+  return [receipt.deployment_id, receipt.task_id, receipt.status, receipt.time].join('|');
+}
+
+function receiptRow(receipt) {
+  const row = el('tr', {},
+    el('td', { class: 'mono nowrap', text: timeLabel(receipt.time), title: receipt.time || '' }),
+    el('td', { text: plainLabel(receipt.automation_id || receipt.deployment_id) }),
+    el('td', {}, receipt.project ? projCell(receipt.project, receipt.project_name) : el('span', { text: '--' })),
+    el('td', {}, stateLabel(receipt.status, ['blocked', 'failed'].includes(receipt.status))),
+    el('td', { class: 'mono', text: receipt.task_id || '--' }),
+    el('td', {}, el('span', { class: 'excerpt', text: receipt.summary || '--' })));
+  row.addEventListener('click', () => row.classList.toggle('expanded'));
+  return row;
+}
+
+function receiptCountText() {
+  const suffix = receiptState.nextCursor === null ? '' : '; loads more on scroll';
+  return `showing ${receiptState.items.length} of ${receiptState.total}${suffix}`;
+}
+
+function renderReceiptList() {
   const body = document.getElementById('automation-receipts-body');
   const table = el('table', { class: 'grid automation-receipts-table' });
   table.append(el('thead', {}, el('tr', {},
     el('th', { text: 'When' }), el('th', { text: 'Automation' }),
     el('th', { text: 'Project' }), el('th', { text: 'Status' }),
     el('th', { text: 'Request' }), el('th', { text: 'Receipt summary' }))));
-  const tbody = el('tbody');
-  if (!receipts.length) {
-    tbody.append(el('tr', { class: 'empty-row' }, el('td', { colspan: '6', text: 'no receipts yet' })));
+  const tbody = el('tbody', { id: 'automation-receipt-rows' });
+  if (!receiptState.items.length) {
+    tbody.append(el('tr', { class: 'empty-row' },
+      el('td', { colspan: '6', text: receiptState.filter === 'issues' ? 'no failed or blocked runs' : 'no receipts yet' })));
   }
-  for (const receipt of receipts) {
-    tbody.append(el('tr', {},
-      el('td', { class: 'mono nowrap', text: timeLabel(receipt.time) }),
-      el('td', { text: plainLabel(receipt.automation_id || receipt.deployment_id) }),
-      el('td', {}, receipt.project ? projCell(receipt.project, receipt.project_name) : el('span', { text: '--' })),
-      el('td', {}, stateLabel(receipt.status, ['blocked', 'failed'].includes(receipt.status))),
-      el('td', { class: 'mono', text: receipt.task_id || '--' }),
-      el('td', { text: receipt.summary || '--' })));
-  }
+  for (const receipt of receiptState.items) tbody.append(receiptRow(receipt));
   table.append(tbody);
   body.replaceChildren(table);
-  document.getElementById('automation-receipts-count').textContent = `latest ${receipts.length}`;
+  document.getElementById('automation-receipts-count').textContent = receiptCountText();
 }
 
+function appendReceiptRows(items) {
+  const tbody = document.getElementById('automation-receipt-rows');
+  tbody?.querySelector('.empty-row')?.remove();
+  for (const receipt of items) tbody?.append(receiptRow(receipt));
+  document.getElementById('automation-receipts-count').textContent = receiptCountText();
+}
+
+function setActiveFilter() {
+  for (const button of document.querySelectorAll('#automation-receipt-filters button')) {
+    button.classList.toggle('active', button.dataset.status === receiptState.filter);
+  }
+}
+
+function clearNewActivityChip() {
+  document.querySelector('#automation-receipts-header .chip')?.remove();
+}
+
+function showNewActivityChip() {
+  const header = document.getElementById('automation-receipts-header');
+  if (header.querySelector('.chip')) return;
+  header.append(el('button', {
+    class: 'chip',
+    text: 'new runs - refresh',
+    onclick: () => resetReceipts(receiptState.filter),
+  }));
+}
+
+async function resetReceipts(filter = receiptState.filter) {
+  if (receiptState.loading) return;
+  receiptState.loading = true;
+  receiptState.filter = filter;
+  setActiveFilter();
+  try {
+    const page = await getJSON(`/api/automations/receipts?cursor=0&limit=${PAGE_SIZE}&status=${encodeURIComponent(filter)}`);
+    receiptState.items = [...page.items];
+    receiptState.nextCursor = page.next_cursor;
+    receiptState.total = page.total;
+    receiptState.initialized = true;
+    renderReceiptList();
+    document.getElementById('automation-receipts-body').scrollTop = 0;
+    clearNewActivityChip();
+  } finally {
+    receiptState.loading = false;
+  }
+}
+
+async function loadMoreReceipts() {
+  if (receiptState.loading || receiptState.nextCursor === null) return;
+  receiptState.loading = true;
+  try {
+    const page = await getJSON(`/api/automations/receipts?cursor=${receiptState.nextCursor}&limit=${PAGE_SIZE}&status=${encodeURIComponent(receiptState.filter)}`);
+    receiptState.nextCursor = page.next_cursor;
+    receiptState.total = page.total;
+    receiptState.items.push(...page.items);
+    appendReceiptRows(page.items);
+  } finally {
+    receiptState.loading = false;
+  }
+}
+
+function applyReceiptHead(model) {
+  const head = model.recent_receipts || [];
+  const nextHeadKey = receiptKey(head[0]);
+  const changed = receiptState.initialized && receiptState.allHeadKey !== nextHeadKey;
+  receiptState.allHeadKey = nextHeadKey;
+
+  if (!receiptState.initialized) {
+    receiptState.items = [...head];
+    receiptState.nextCursor = model.receipts_next_cursor ?? null;
+    receiptState.total = model.receipts_total || 0;
+    receiptState.initialized = true;
+    renderReceiptList();
+    return;
+  }
+  if (!changed) return;
+
+  const body = document.getElementById('automation-receipts-body');
+  if (body.scrollTop >= 40) {
+    showNewActivityChip();
+    return;
+  }
+  if (receiptState.filter === 'all') {
+    receiptState.items = [...head];
+    receiptState.nextCursor = model.receipts_next_cursor ?? null;
+    receiptState.total = model.receipts_total || 0;
+    renderReceiptList();
+  } else {
+    resetReceipts(receiptState.filter);
+  }
+}
+
+for (const button of document.querySelectorAll('#automation-receipt-filters button')) {
+  button.addEventListener('click', () => resetReceipts(button.dataset.status));
+}
+
+document.getElementById('automation-receipts-body').addEventListener('scroll', (event) => {
+  const node = event.target;
+  if (node.scrollTop + node.clientHeight > node.scrollHeight - 200) loadMoreReceipts();
+});
+
 export function renderAutomations(model) {
-  const safe = model || { rows: [], attention: [], recent_receipts: [] };
-  renderSummary(safe);
-  renderAttention(safe);
+  const safe = model || { rows: [], recent_receipts: [], receipts_total: 0 };
   renderInventory(safe.rows || []);
-  renderReceipts(safe.recent_receipts || []);
+  applyReceiptHead(safe);
   const meta = document.getElementById('automations-meta');
-  const heartbeat = safe.heartbeat_at ? `worker heartbeat ${timeLabel(safe.heartbeat_at)}` : 'no worker heartbeat';
-  meta.textContent = heartbeat;
+  meta.textContent = safe.heartbeat_at ? `watcher last seen ${timeLabel(safe.heartbeat_at)}` : 'watcher not observed';
   meta.title = safe.registry_path || 'no local deployment registry';
 }

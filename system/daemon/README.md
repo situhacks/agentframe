@@ -36,7 +36,7 @@ One terminal receipt lands at `outbox/{id}.result.json` with `done | blocked | f
 1. Copy `registry.example.json` to `system/daemon/local/registry.json` and fill the work-machine values.
 2. Verify enterprise policy permits unattended Cursor use.
 3. Verify `cursor-agent -p --force` can modify a disposable file with the pinned model and existing enterprise authentication.
-4. Run one fake/disposable task with `python system/daemon/watcher.py --registry system/daemon/local/registry.json --once`.
+4. Run one fake/disposable task with `python system/daemon/watcher.py --registry system/daemon/local/registry.smoke.json --once`. Keep smoke deployments in that disposable registry and queue; `registry.json` is durable live inventory for the Workspace Dashboard.
 5. Register `python system/daemon/watcher.py --registry <absolute-registry-path>` at logon in Task Scheduler. Configure it to run only while the operator is logged in; queueing remains available while the laptop is offline.
 6. Add Power Automate producers only after the local lifecycle test passes.
 

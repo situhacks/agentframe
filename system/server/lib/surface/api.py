@@ -110,6 +110,23 @@ class AutomationsHandler(_JsonHandler):
         self.emit(automations.build_model(self.root))
 
 
+class AutomationReceiptsHandler(_JsonHandler):
+    def get(self):
+        try:
+            cursor = int(self.get_argument("cursor", "0"))
+            limit = int(self.get_argument("limit", str(automations.RECEIPT_PAGE_SIZE)))
+        except ValueError:
+            self.fail(400, "cursor and limit must be integers")
+            return
+        status = self.get_argument("status", "all")
+        try:
+            page = automations.receipt_page(self.root, cursor=cursor, limit=limit, status=status)
+        except ValueError as exc:
+            self.fail(400, str(exc))
+            return
+        self.emit(page)
+
+
 def project_summaries(root: Path, snap: dict, project_filter: str = "active") -> list[dict]:
     """Preview-rail projects, retaining richer dashboard data for active work."""
     active = {project["slug"]: project for project in snap["projects"]}
@@ -355,6 +372,7 @@ def make_handlers(project_root: Path) -> list[tuple]:
         (r"/api/health", HealthHandler, kw),
         (r"/api/snapshot", SnapshotHandler, kw),
         (r"/api/activity", ActivityHandler, kw),
+        (r"/api/automations/receipts", AutomationReceiptsHandler, kw),
         (r"/api/automations", AutomationsHandler, kw),
         (r"/api/projects", ProjectsHandler, kw),
         (r"/api/projects/([^/]+)/files", ProjectFilesHandler, kw),

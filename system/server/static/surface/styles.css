@@ -440,7 +440,7 @@ td.nowrap { white-space: nowrap; }
   --dash-line: 1.4;
   display: grid;
   height: calc(100vh - var(--topbar-h));
-  grid-template-rows: auto auto minmax(92px, auto) minmax(150px, 1fr) minmax(150px, 1fr);
+  grid-template-rows: auto auto minmax(220px, 1fr);
   gap: 10px;
   padding: 0 12px 12px;
   overflow: hidden;
@@ -460,27 +460,6 @@ td.nowrap { white-space: nowrap; }
 .automations-header h1 { margin: 0 0 3px; font-size: 18px; line-height: 1.2; }
 .automations-header p { margin: 0; color: var(--meta); font-size: 11.5px; }
 .automations-header .meta { font-family: var(--mono); font-size: 10.5px; color: var(--meta); white-space: nowrap; }
-.automation-summary {
-  display: flex;
-  align-items: stretch;
-  gap: 0;
-  border: 1px solid var(--grid-line);
-  background: var(--base-white);
-}
-.automation-summary-card {
-  display: grid;
-  grid-template-rows: auto auto auto;
-  flex: 1 1 0;
-  min-width: 0;
-  padding: 9px 14px;
-  border-right: 1px solid var(--grid-line-soft);
-}
-.automation-summary-card:last-child { border-right: 0; }
-.automation-summary-card.good { box-shadow: inset 3px 0 0 var(--accent-teal); }
-.automation-summary-card.warn { box-shadow: inset 3px 0 0 var(--accent-pink); }
-.automation-summary-card .summary-label { font-family: var(--mono); font-size: 9.5px; letter-spacing: 1px; text-transform: uppercase; color: var(--meta); }
-.automation-summary-card strong { margin-top: 3px; font-size: 16px; line-height: 1.15; }
-.automation-summary-card .summary-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10.5px; color: var(--meta); }
 .automation-panel {
   display: grid;
   grid-template-rows: 30px minmax(0, 1fr);
@@ -502,13 +481,38 @@ td.nowrap { white-space: nowrap; }
   color: var(--meta);
 }
 .automation-panel > header .count { letter-spacing: 0; }
+#automation-inventory-panel { grid-template-rows: 30px auto; }
+.automation-roster-body { overflow-x: auto; }
 #view-automations .scroll { overflow: auto; }
 #view-automations table.grid { table-layout: fixed; min-width: 900px; }
 #view-automations table.grid th,
 #view-automations table.grid td { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 #view-automations .attention-text { color: var(--accent-pink); }
 #view-automations .good-empty td { color: var(--accent-teal); }
-#view-automations .automation-last { white-space: nowrap; }
+#view-automations .automation-last { display: flex; align-items: center; gap: 7px; min-width: 0; white-space: nowrap; }
+#view-automations .automation-run-age { color: var(--meta); }
+#view-automations .state.online, #view-automations .state.busy, #view-automations .state.done { color: var(--accent-teal); }
+#view-automations .state.offline { color: var(--meta); }
+.automation-receipt-filters { display: flex; gap: 4px; margin-left: auto; letter-spacing: 0; }
+.automation-receipt-filters button {
+  padding: 2px 7px;
+  border: 1px solid transparent;
+  color: var(--meta);
+  font: 10px var(--mono);
+  text-transform: lowercase;
+}
+.automation-receipt-filters button:hover { color: var(--ink); border-color: var(--grid-line); background: var(--teal-wash); }
+.automation-receipt-filters button.active { color: var(--ink); border-color: var(--accent-teal); background: var(--teal-wash); }
+.automation-panel > header .chip {
+  padding: 2px 7px;
+  border: 1px solid var(--accent-teal);
+  color: var(--ink);
+  font: 10px var(--mono);
+  letter-spacing: 0;
+  text-transform: lowercase;
+  background: var(--teal-wash);
+}
+.automation-panel > header .chip + .automation-receipt-filters { margin-left: 0; }
 #view-dashboard .proj-cell { gap: calc(8px * var(--dash-zoom)); }
 .proj-cell { min-width: 0; }
 .proj-cell .pname { font-weight: 500; white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -1202,11 +1206,9 @@ tr.expanded .activity-md.excerpt {
   .dash-zoom button { min-width: 24px; padding: 0 5px; }
   .dash-zoom input { width: 34px; }
   #view-automations {
-    grid-template-rows: auto auto minmax(180px, auto) minmax(220px, auto) minmax(220px, auto);
+    grid-template-rows: auto auto minmax(320px, 1fr);
     overflow-y: auto;
   }
-  .automation-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .automation-summary-card { border-bottom: 1px solid var(--grid-line-soft); }
   .calendar-header p { display: none; }
   .calendar-controls > label:first-child { display: none; }
   .calendar-controls .calendar-check { display: none; }

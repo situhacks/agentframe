@@ -19,6 +19,17 @@ After AgentFrame selects PPT Master, read the local overlay and then follow the 
 
 Reference-grounded redesign is selected before this handoff. It is a hybrid preservation path the vendor's rebuild-from-scratch beautify workflow does not own.
 
+## Bounded visual-quality runs
+
+When a bounded-autonomy run's `goal` or `done_when` depends on deck appearance, the approved run contract counts as an explicit request for route-appropriate rendered visual QA. The operator does not need to repeat tool-specific invocation wording.
+
+Before the run can checkpoint for review:
+
+1. Run the selected route's static and structural checks.
+2. Render and inspect the complete current deck through its actual viewing surface. For PPT Master, invoke its visual-review workflow after the SVG checker, then inspect a render of the exported PPTX so conversion defects remain visible.
+3. Fix the findings, rerender the affected slides, and inspect them again. A successful export or a first-pass claim of "no issues" is not completion evidence.
+4. Record the render/review artifact paths and a concise finding -> fix -> recheck result in the autonomy evidence. If a finding requires a decision outside the approved charter, checkpoint `blocked` instead of asking during the run.
+
 ## Versioning and round trip
 
 Version identity is the timestamp in the filename (generation time, for example `deck_20260615_205814.pptx`). Latest version is the highest sortable filename timestamp; never rely on filesystem created or modified dates for identity. The promoted copy in the deliverable folder is the operator's working file and may be edited in place. The same-named twin frozen in the PPT Master project's `exports/` is the agent's reference.

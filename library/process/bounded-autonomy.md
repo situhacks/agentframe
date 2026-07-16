@@ -39,6 +39,8 @@ Complete its frontmatter and body. A run is ready only when it has:
 5. iteration and subagent budgets;
 6. enough source context to avoid inventing material requirements.
 
+Verification must exercise the property named in `done_when` through the surface where it can actually fail. File creation, successful export, or static/source validation does not prove rendered, visual, interactive, or playback quality; the matching production process supplies the inspection method and evidence.
+
 If any semantic requirement is materially unclear, do not implement. Perform a read-only briefing pass, use existing sources first, then ask the single most decision-blocking question or propose a completed contract for approval. Do not interrogate once the goal is safely executable.
 
 Run the deterministic readiness check, then start:

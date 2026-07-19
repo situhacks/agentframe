@@ -63,9 +63,19 @@ class InstructionTopologyCharacterizationTests(unittest.TestCase):
             content = text(rel)
             sizes[rel] = {"words": len(content.split()), "characters": len(content)}
         self.assertGreater(sizes["AGENTS.operator.md"]["words"], 1000)
+        self.assertLessEqual(sizes["AGENTS.operator.md"]["words"], 1700)
         self.assertGreater(sizes["AGENTS.builder.md"]["words"], 1000)
         for rel in ("AGENTS.operator.md", "AGENTS.builder.md"):
             self.assertIn("task-local", text(rel), rel)
+
+    def test_operator_context_routes_stay_conditional(self):
+        operator = text("AGENTS.operator.md")
+        self.assertIn("Project formation (no folder yet)", operator)
+        self.assertNotIn("OR loading an existing one", operator)
+        self.assertIn("only for state creation/mutation, schema questions, or reported drift", operator)
+        self.assertIn("represent the operator to another person", operator)
+        self.assertIn("skip voice for private working text", operator)
+        self.assertNotIn("voice/anti-patterns.md", operator)
 
     def test_pilot_skills_have_discoverable_positive_and_near_miss_descriptions(self):
         for rel in (

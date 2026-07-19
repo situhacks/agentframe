@@ -50,8 +50,8 @@ Domain-agnostic. The left column is intent; domain-specific destinations resolve
 | Situation | Load First | Also Load If Needed | Do Not Load |
 |---|---|---|---|
 | State or continuity request | `project.md` frontmatter + `af doctor` | the project body for fresh-context onboarding or when the index cannot explain the next action; the relevant head only when its content matters | unrelated deliverables, prior versions, completed projects |
-| New project (no folder yet) OR loading an existing one | [research-and-signals](library/process/research-and-signals.md), the [flow registry](library/process/flows/README.md), the selected `flow` from `project.md`, [positioning](library/context/operator/positioning.md), [voice](library/context/operator/voice/README.md), and any global channel/person profiles the project references | topic research or operator profile when needed | completed projects unless referenced; brainstorming skill or ad-hoc web-research subagents |
-| Deliverable drafting or iteration | **the template resolved for this deliverable** — pack `library/domains/{domain}/deliverables/{type}/template.md` ▸ shared `library/deliverables/{type}/template.md` ▸ `_local/{type}/` ▸ the generic [`_meta` shape](library/deliverables/_meta/deliverable-shape.md) — plus [deliverable-versioning](library/process/deliverable-versioning.md), the project tracker, upstream deps the template names | [voice](library/context/operator/voice/README.md) when the template marks it user-voiced; [positioning](library/context/operator/positioning.md) for strategic work | unrelated deliverables |
+| Project formation (no folder yet) | the operator's brief and named inputs | [research guidance](library/process/research-and-signals.md) or the [flow registry](library/process/flows/README.md) only when they help resolve the shape; scaffold once enough is known | completed projects unless referenced |
+| Deliverable drafting or iteration | **the template resolved for this deliverable** — pack `library/domains/{domain}/deliverables/{type}/template.md` ▸ shared `library/deliverables/{type}/template.md` ▸ `_local/{type}/` ▸ the generic [`_meta` shape](library/deliverables/_meta/deliverable-shape.md) — plus [deliverable-versioning](library/process/deliverable-versioning.md), the project tracker, upstream deps the template names | [voice](library/context/operator/voice/README.md) for outward-facing operator prose; [positioning](library/context/operator/positioning.md) for strategic work | unrelated deliverables |
 | **Domain production / delivery work** (the active deliverable set's own workflow) | **the active pack's `library/domains/{domain}/production.md`** (if the pack declares one) | — | — |
 | Technical build (`build_repo`; ungraduated) | [`technical-build.md`](library/process/technical-build.md) | — | SDK docs/plans in build repo |
 | Bounded autonomy | [`bounded-autonomy.md`](library/process/bounded-autonomy.md) | caller process | unready execution |
@@ -72,13 +72,13 @@ Infer the situation from the operator's goal and current project state, not phra
 
 ### State And Continuity
 
-For project state or continuity, read frontmatter and run the [schema-drift check](library/process/project-frontmatter.md). In a fresh context, read the `project.md` body for thesis/plan, then follow only the relevant deliverable head pointer; load the selected flow only when phase rules are needed. Report status, last-activity age, next useful action, and drift.
+For continuity, read frontmatter and run `af doctor`. Load [project-frontmatter](library/process/project-frontmatter.md) only for state creation/mutation, schema questions, or reported drift. In a fresh context, read the `project.md` body for thesis/plan, then follow only the relevant deliverable head pointer; load the selected flow only when phase rules are needed. Report status, last-activity age, next useful action, and drift.
 
 ### Deliverable Drafting
 
 Before the first write or rewrite, classify the operation as first draft, surgical edit, replacement, lock, or delivered-copy reconciliation. Resolve the template and run its `Before Writing` gate: load the tracker, [deliverable-versioning](library/process/deliverable-versioning.md), and every named input, then run the matching `af draft`/`af version` mechanism before content mutation. A named input is read from its owner; memory and nearby deliverables are not substitutes. Repeat this gate after compaction or in every resumed drafting context.
 
-Load [positioning](library/context/operator/positioning.md) for strategic work and [voice](library/context/operator/voice/README.md) for user-voiced work. Surface the obvious risk, gap, or assumption; if none is visible, say so and proceed.
+Load [positioning](library/context/operator/positioning.md) for strategic work and [voice](library/context/operator/voice/README.md) for text that will represent the operator to another person; skip voice for private working text. Surface the obvious risk, gap, or assumption; if none is visible, say so and proceed.
 
 Scratchpads are throwaway, unversioned, and named `scratchpad`; never read prior ones. A kept project-only type lives at `_local/<slug>/<slug>-v1.md`, is tracked/versioned/locked normally, and may be promoted at retro.
 
@@ -127,7 +127,6 @@ Surface these; do not silently fix them:
 - Specific over generic.
 - Every section must help a human or renderer decide, approve, execute, compare, or reuse.
 - Follow the loaded template's hard constraints.
-- No banned words from [voice anti-patterns](library/context/operator/voice/anti-patterns.md) unless the operator explicitly overrides.
 - Cite sources for factual claims from the research corpus.
 - Do not surface a draft before required quality gates pass.
 

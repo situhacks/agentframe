@@ -342,7 +342,7 @@ agentframe/
 │   ├── audit/                   # append-only system-change audit
 │   ├── browser/                 # browser runtime and recipes
 │   ├── daemon/                  # local managed-automation host and queue protocol
-│   ├── harnesses/               # native skill projection manifest and contract
+│   ├── harnesses/               # native skill projections and hook-wiring contract
 │   ├── hooks/                   # deterministic production guards
 │   ├── research/                # Gemini deep-research runtime
 │   ├── server/                  # Workspace Dashboard and preview server

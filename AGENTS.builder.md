@@ -117,7 +117,7 @@ Modes are task-local ownership boundaries, not mutable repository state. The roo
 | `system/daemon/` | Multi-queue managed-run host, deployment contract, and kickoff prompt |
 | `system/skills/` | Builder + Operator skills; catalog of what each does + when to load at `system/skills/README.md` |
 | `system/audit/` | SQLite audit/telemetry exception |
-| `system/hooks/` | Deterministic guard hooks (ppt-master staging / paragraph lint / export promotion), wired via the tracked `.claude/settings.json` |
+| `system/hooks/` | Shared deterministic guard logic (version safety, ppt-master staging / paragraph lint / export promotion), wired natively through tracked Claude, Cursor, and Codex project configs; contract: `system/harnesses/README.md` |
 | `system/browser/` | Browser automation runtime |
 | `system/research/` | Deep-research runtime (`gemini_deep_research`) |
 | `system/server/` | Preview server |

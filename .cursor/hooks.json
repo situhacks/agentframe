@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "matcher": "Write|Delete",
+        "command": "python system/hooks/version_guard.py --cursor-native",
+        "timeout": 15
+      }
+    ],
+    "beforeShellExecution": [
+      {
+        "matcher": "project_manager\\.py|svg_to_pptx\\.py",
+        "command": "python system/hooks/ppt_master_guard.py --cursor-native",
+        "timeout": 15
+      }
+    ],
+    "postToolUse": [
+      {
+        "matcher": "Shell",
+        "command": "python system/hooks/ppt_master_guard.py --cursor-native",
+        "timeout": 15
+      }
+    ]
+  }
+}

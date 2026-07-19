@@ -1,0 +1,45 @@
+{
+  "description": "AgentFrame project guards for versioned artifacts and PPT Master workflows.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/system/hooks/version_guard.py\"",
+            "commandWindows": "python \"$(git rev-parse --show-toplevel)/system/hooks/version_guard.py\"",
+            "timeout": 15,
+            "statusMessage": "Checking AgentFrame version safety"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/system/hooks/ppt_master_guard.py\"",
+            "commandWindows": "python \"$(git rev-parse --show-toplevel)/system/hooks/ppt_master_guard.py\"",
+            "timeout": 15,
+            "statusMessage": "Checking AgentFrame PPT safety"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/system/hooks/ppt_master_guard.py\"",
+            "commandWindows": "python \"$(git rev-parse --show-toplevel)/system/hooks/ppt_master_guard.py\"",
+            "timeout": 15,
+            "statusMessage": "Checking AgentFrame PPT follow-through"
+          }
+        ]
+      }
+    ]
+  }
+}

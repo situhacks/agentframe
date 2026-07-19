@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Deterministic guards around the vendored ppt-master skill.
+"""Cross-harness deterministic guards around the vendored ppt-master skill.
 
 The overlay rules in system/skills/ppt-master/AGENTS.md are read once at run
 start and decay out of context over a long deck session. These hooks re-inject
 each rule at the exact moment it is violated, so they hold regardless of
 compaction. All guard logic lives here — vendored files are never patched
-(refresh procedure: VENDOR.md). Wired via .claude/settings.json (tracked,
-ships with the repo); command shapes matched here are pinned by
+(refresh procedure: VENDOR.md). Native wiring lives in the tracked Claude,
+Cursor, and Codex project configs; command shapes matched here are pinned by
 system/tests/test_ppt_master_guard.py — re-run after every vendor refresh.
 
 PreToolUse (Bash|PowerShell):
@@ -38,6 +38,15 @@ import svg_paragraph_lint as lint  # noqa: E402
 
 LINT_OFF = re.compile(r"AF_PPT_LINT\s*=\s*['\"]?off", re.IGNORECASE)
 MAX_REASON_FINDINGS = 6
+
+EVENT_ALIASES = {
+    "PreToolUse": "PreToolUse",
+    "preToolUse": "PreToolUse",
+    "beforeShellExecution": "PreToolUse",
+    "PostToolUse": "PostToolUse",
+    "postToolUse": "PostToolUse",
+    "afterShellExecution": "PostToolUse",
+}
 
 STAGING_REASON = (
     "PPT Master staging guard: this init would create the deck project at {target} - "
@@ -154,11 +163,15 @@ def _export_lint(command: str, tokens: list[str], cwd: Path) -> dict | None:
 
 
 def decide(payload: dict) -> dict | None:
-    command = (payload.get("tool_input") or {}).get("command") or ""
+    command = (
+        (payload.get("tool_input") or {}).get("command")
+        or payload.get("command")
+        or ""
+    )
     if "project_manager.py" not in command and "svg_to_pptx.py" not in command:
         return None
     cwd = Path(payload.get("cwd") or ".")
-    event = payload.get("hook_event_name") or "PreToolUse"
+    event = EVENT_ALIASES.get(payload.get("hook_event_name") or "PreToolUse")
     tokens = _tokens(command)
 
     if event == "PreToolUse":
@@ -174,19 +187,55 @@ def decide(payload: dict) -> dict | None:
     return None
 
 
+def _cursor_payload(payload: dict) -> bool:
+    return bool(payload.get("cursor_version")) or payload.get("hook_event_name") in {
+        "preToolUse",
+        "postToolUse",
+        "beforeShellExecution",
+        "afterShellExecution",
+    }
+
+
+def _adapt_result(payload: dict, result: dict | None) -> dict | None:
+    if not result or not _cursor_payload(payload):
+        return result
+    output = result.get("hookSpecificOutput") or {}
+    decision = output.get("permissionDecision")
+    if decision:
+        reason = output.get("permissionDecisionReason") or "Blocked by AgentFrame policy."
+        return {
+            "permission": decision,
+            "user_message": reason,
+            "agent_message": reason,
+        }
+    context = output.get("additionalContext")
+    if context:
+        return {"additional_context": context}
+    return result
+
+
 def run(stdin_text: str) -> str | None:
     try:
         payload = json.loads(stdin_text)
     except Exception:
         return None
     try:
-        result = decide(payload)
+        result = _adapt_result(payload, decide(payload))
     except Exception:
         return None  # fail open, never block unrelated work on a guard bug
     return json.dumps(result) if result else None
 
 
+def dispatch(stdin_text: str, argv: list[str]) -> str:
+    """Render one process response and suppress Cursor's imported Claude twin."""
+    try:
+        payload = json.loads(stdin_text)
+    except Exception:
+        return "{}"
+    if _cursor_payload(payload) and "--cursor-native" not in argv:
+        return "{}"
+    return run(stdin_text) or "{}"
+
+
 if __name__ == "__main__":
-    out = run(sys.stdin.read())
-    if out:
-        sys.stdout.write(out)
+    sys.stdout.write(dispatch(sys.stdin.read(), sys.argv[1:]))

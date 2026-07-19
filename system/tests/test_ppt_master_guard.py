@@ -106,6 +106,15 @@ def payload(command, cwd, event="PreToolUse"):
     }
 
 
+def cursor_shell_payload(command, cwd, event="beforeShellExecution"):
+    return {
+        "hook_event_name": event,
+        "cursor_version": "test",
+        "command": command,
+        "cwd": cwd,
+    }
+
+
 class TestStagingGuard(unittest.TestCase):
     def setUp(self):
         self.skill_dir = os.path.join(guard.ROOT, "system", "skills", "ppt-master")
@@ -139,6 +148,25 @@ class TestStagingGuard(unittest.TestCase):
 
     def test_unrelated_command_ignored(self):
         self.assertIsNone(guard.decide(payload("git status", guard.ROOT)))
+
+    def test_cursor_before_shell_uses_native_deny_envelope(self):
+        p = cursor_shell_payload(
+            "python scripts/project_manager.py init demo",
+            self.skill_dir,
+        )
+        out = json.loads(guard.run(json.dumps(p)))
+        self.assertEqual(out["permission"], "deny")
+        self.assertIn("--dir", out["agent_message"])
+
+    def test_cursor_imported_claude_twin_is_suppressed(self):
+        p = cursor_shell_payload(
+            "python scripts/project_manager.py init demo",
+            self.skill_dir,
+        )
+        raw = json.dumps(p)
+        self.assertEqual(json.loads(guard.dispatch(raw, [])), {})
+        native = json.loads(guard.dispatch(raw, ["--cursor-native"]))
+        self.assertEqual(native["permission"], "deny")
 
 
 class TestExportGuard(unittest.TestCase):
@@ -198,6 +226,12 @@ class TestExportGuard(unittest.TestCase):
 
     def test_post_unrelated_command_ignored(self):
         self.assertIsNone(guard.decide(payload("git status", guard.ROOT, event="PostToolUse")))
+
+    def test_cursor_post_tool_uses_native_context_envelope(self):
+        p = self.export_payload(event="postToolUse")
+        p["cursor_version"] = "test"
+        out = json.loads(guard.run(json.dumps(p)))
+        self.assertIn("promote", out["additional_context"].lower())
 
 
 class TestGuardMain(unittest.TestCase):

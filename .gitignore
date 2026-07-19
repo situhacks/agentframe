@@ -76,14 +76,19 @@ __pycache__/
 *.pyc
 *.pyo
 
-# === Operator-local config: Claude Code + Codex ===
-# `.claude/*` (not `.claude/`) so the tracked settings.json can be re-included;
-# git cannot re-include a file whose parent dir is excluded.
+# === Harness-local config with narrow tracked AgentFrame integrations ===
+# Ignore each directory's local plans/settings while re-including only the
+# shared hook wiring and generated skill projections AgentFrame owns.
 .claude/*
 !.claude/settings.json
 !.claude/skills/
 !.claude/skills/**
-.codex/
+.cursor/*
+!.cursor/hooks.json
+!.cursor/skills/
+!.cursor/skills/**
+.codex/*
+!.codex/hooks.json
 
 # === Plugin scratch (brainstorming / writing-plans design specs) ===
 docs/

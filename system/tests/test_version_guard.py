@@ -16,6 +16,25 @@ def payload(path, tool="Edit"):
     }
 
 
+def cursor_payload(path, tool="Write", **tool_input):
+    return {
+        "hook_event_name": "preToolUse",
+        "cursor_version": "test",
+        "tool_name": tool,
+        "tool_input": {"file_path": str(path), **tool_input},
+        "cwd": str(guard.ROOT),
+    }
+
+
+def codex_payload(patch_text, cwd):
+    return {
+        "hook_event_name": "PreToolUse",
+        "tool_name": "apply_patch",
+        "tool_input": {"command": patch_text},
+        "cwd": str(cwd),
+    }
+
+
 class VersionGuardTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -79,6 +98,57 @@ class VersionGuardTests(unittest.TestCase):
         out = guard.decide(payload(self.folder / "copy-v1.md", tool="Write"))
         self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "deny")
         self.assertIn("af.py draft", out["hookSpecificOutput"]["permissionDecisionReason"])
+
+    def test_delete_of_versioned_head_is_denied(self):
+        head = self.write_version(1)
+        out = guard.decide(payload(head, tool="Delete"))
+        self.assertIn("Do not delete", out["hookSpecificOutput"]["permissionDecisionReason"])
+
+    def test_cursor_native_deny_uses_cursor_envelope(self):
+        head = self.write_version(1, status="locked")
+        out = json.loads(guard.run(json.dumps(cursor_payload(head))))
+        self.assertEqual(out["permission"], "deny")
+        self.assertIn("locked", out["agent_message"])
+
+    def test_cursor_imported_claude_twin_is_suppressed(self):
+        head = self.write_version(1, status="locked")
+        raw = json.dumps(cursor_payload(head))
+        self.assertEqual(json.loads(guard.dispatch(raw, [])), {})
+        native = json.loads(guard.dispatch(raw, ["--cursor-native"]))
+        self.assertEqual(native["permission"], "deny")
+
+    def test_cursor_edit_shaped_write_allows_drafting_head(self):
+        head = self.write_version(1)
+        p = cursor_payload(head, old_string="old", new_string="new")
+        self.assertIsNone(guard.decide(p))
+
+    def test_codex_patch_allows_current_drafting_head_update(self):
+        head = self.write_version(1)
+        rel = head.relative_to(self.root).as_posix()
+        patch_text = f"*** Begin Patch\n*** Update File: {rel}\n@@\n-old\n+new\n*** End Patch"
+        self.assertIsNone(guard.decide(codex_payload(patch_text, self.root)))
+
+    def test_codex_patch_denies_prior_version_update(self):
+        prior = self.write_version(1)
+        self.write_version(2)
+        rel = prior.relative_to(self.root).as_posix()
+        patch_text = f"*** Begin Patch\n*** Update File: {rel}\n@@\n-old\n+new\n*** End Patch"
+        out = guard.decide(codex_payload(patch_text, self.root))
+        self.assertIn("immutable prior version", out["hookSpecificOutput"]["permissionDecisionReason"])
+
+    def test_codex_patch_denies_direct_add(self):
+        target = self.folder / "copy-v1.md"
+        rel = target.relative_to(self.root).as_posix()
+        patch_text = f"*** Begin Patch\n*** Add File: {rel}\n+body\n*** End Patch"
+        out = guard.decide(codex_payload(patch_text, self.root))
+        self.assertIn("af.py draft", out["hookSpecificOutput"]["permissionDecisionReason"])
+
+    def test_codex_patch_denies_version_delete(self):
+        head = self.write_version(1)
+        rel = head.relative_to(self.root).as_posix()
+        patch_text = f"*** Begin Patch\n*** Delete File: {rel}\n*** End Patch"
+        out = guard.decide(codex_payload(patch_text, self.root))
+        self.assertIn("Do not delete", out["hookSpecificOutput"]["permissionDecisionReason"])
 
     def test_non_versioned_and_non_project_files_pass(self):
         self.assertIsNone(guard.decide(payload(self.folder / "post-FINAL.md")))

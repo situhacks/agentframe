@@ -96,7 +96,7 @@ Run these checks, in order, before writing any agent-facing file:
 | Mode | Owns | Does Not Own |
 |---|---|---|
 | **Builder** | `system/`, `library/` system/process/template structure, `AGENTS.*.md`, specs, schema, hooks, runtime machinery | Drafting deliverables, delivering work, project retros, project frontmatter content updates |
-| **Operator** | `workspace/projects/` + `workspace/pipeline/`, deliverable drafting/review/lock/publish, project state, project retros | System architecture, schema, hooks, persona edits, runtime machinery (except retro-driven `deliverable-harvest` promotion into packs) |
+| **Operator** | `workspace/projects/` + `workspace/pipeline/`, deliverable drafting/feedback/ready/publish, project state, project retros | System architecture, schema, hooks, persona edits, runtime machinery (except retro-driven `deliverable-harvest` promotion into packs) |
 
 Modes are task-local ownership boundaries, not mutable repository state. The root `AGENTS.md` is a stable classifier and is never replaced by a mode file. This router governs system construction; [`AGENTS.operator.md`](AGENTS.operator.md) governs project execution. If ownership changes mid-task, read the other router before acting. Routine router changes are not audit events.
 
@@ -113,7 +113,7 @@ Modes are task-local ownership boundaries, not mutable repository state. The roo
 | `library/domains/` | Domain packs (`marketing`, `project-mgmt`, `careers`): per-domain `skeleton.md`, `pack.md`, `deliverables/`, optional `production.md` |
 | `library/context/` | Operator positioning/profile/voice (`operator/`), plus shared `channels/`, `people/`, `_meta/` |
 | `library/assets/` | Reusable deck assets: flat `logos/` inventory + ppt-master `deck-templates/` packages (schema: `library/assets/README.md`) |
-| `system/af.py` | Deterministic CLI (lock, publish, version, draft, new-project, automation, autonomy, doctor, pipe, harness projection sync) |
+| `system/af.py` | Deterministic CLI (ready, publish, version, draft, new-project, automation, autonomy, doctor, pipe, harness projection sync) |
 | `system/daemon/` | Multi-queue managed-run host, deployment contract, and kickoff prompt |
 | `system/skills/` | Builder + Operator skills; catalog of what each does + when to load at `system/skills/README.md` |
 | `system/audit/` | SQLite audit/telemetry exception |

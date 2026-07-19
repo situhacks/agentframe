@@ -1,6 +1,6 @@
 # Companion: Design Storybook
 
-An **optional** single-file HTML catalog of a project's design language — a browsable visual reference rendered from the locked language. Offer it when the operator wants to *visualize* the language or *compare* candidate directions; skip it for rudimentary languages that don't earn the generation cost.
+An **optional** single-file HTML catalog of a project's design language — a browsable visual reference rendered from the ready language. Offer it when the operator wants to *visualize* the language or *compare* candidate directions; skip it for rudimentary languages that don't earn the generation cost.
 
 One storybook per design language. It is a companion to `design-language-v{N}.md`, not a replacement — the `.md` is the source of truth; the storybook is the visual view of it.
 
@@ -10,7 +10,7 @@ One storybook per design language. It is a companion to `design-language-v{N}.md
 
 - The operator asks to see the design language rendered, not just read it.
 - During direction selection, to compare candidates richly (an upgrade of `preview/directions-compare.html`).
-- As the pinned reference for a locked language (surfaces at the top of the preview server's Design section).
+- As the pinned reference for a ready language (surfaces at the top of the preview server's Design section).
 
 A language with no storybook is normal and fully valid. Absence is never an error.
 
@@ -47,6 +47,6 @@ The script and any parser read the canonical `tokens.yaml` schema documented in 
 
 ## Not In This Companion
 
-- No lock procedure — the storybook follows its language's lifecycle.
+- No separate readiness procedure—the storybook follows its language's lifecycle.
 - No component library or motion specs (design languages rarely need them; out unless a project earns it, in which case it lives in the language `.md`).
 - No provenance/changelog prose — the `v{N}` chain is the changelog.

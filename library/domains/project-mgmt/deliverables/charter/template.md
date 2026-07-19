@@ -29,16 +29,16 @@ The engagement's seed: scope, objectives, stakeholders, and success criteria. Ev
 
 ```yaml
 ---
-status: <drafting | locked>
+status: <drafting | ready>
 last_updated: <ISO-8601 timestamp>
 ---
 ```
 
 `status` + `last_updated` per [`deliverable-versioning.md`](../../../../process/deliverable-versioning.md).
 
-## Lock Criteria
+## Readiness Criteria
 
 - Scope, objectives, stakeholders, success criteria, and out-of-scope all present.
 - Success criteria are binary/measurable.
 - Operator confirms the charter reflects the engagement.
-- Lock-event mechanics per [`lock-event.md`](../../../../process/lock-event.md). Once locked, the four living governance docs are derived from it.
+- Ready-event mechanics per [`ready-event.md`](../../../../process/ready-event.md). Once ready, the four living governance docs are derived from it.

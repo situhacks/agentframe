@@ -1,6 +1,6 @@
 # Deck Production
 
-Available deck and presentation paths for AgentFrame. Load this whenever a deliverable needs a `.pptx` or deck-shaped output, and whenever a follow-up pass is requested on an already-delivered deck. Deliverable templates call this file instead of naming individual deck tools directly.
+Available deck and presentation paths for AgentFrame. Load this whenever a deliverable needs a `.pptx` or deck-shaped output, and whenever a follow-up pass is requested on an already-shared deck. Deliverable templates call this file instead of naming individual deck tools directly.
 
 Default: use **PPT Master** for new PowerPoint creation and exports. Use another path only when the input state below requires it or the operator explicitly asks for it.
 
@@ -28,7 +28,7 @@ Before the run can checkpoint for review:
 1. Run the selected route's static and structural checks.
 2. Render and inspect the complete current deck through its actual viewing surface. For PPT Master, invoke its visual-review workflow after the SVG checker, then inspect a render of the exported PPTX so conversion defects remain visible.
 3. Fix the findings, rerender the affected slides, and inspect them again. A successful export or a first-pass claim of "no issues" is not completion evidence.
-4. Record the render/review artifact paths and a concise finding -> fix -> recheck result in the autonomy evidence. If a finding requires a decision outside the approved charter, checkpoint `blocked` instead of asking during the run.
+4. Record the render/review artifact paths and a concise finding -> fix -> recheck result in the autonomy evidence. If a finding requires a decision outside the approved charter, checkpoint `bready` instead of asking during the run.
 
 ## Versioning and round trip
 

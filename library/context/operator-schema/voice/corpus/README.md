@@ -8,9 +8,9 @@ Full-length finished pieces in the operator's voice, stored verbatim and grouped
 
 - **3–5 pieces per register.** Below 3 the register is thin (say so when drafting); above 5, adding a piece means replacing the weakest — name the replaced piece when you swap.
 - **Topical and channel diversity beat count.** Five pieces on one subject or platform teach a template, not a reusable voice. Prefer new topics and shapes; cross-channel examples are especially useful.
-- **Verbatim, operator-approved finals only.** Published text or operator-locked finals. No agent drafts, no cleaned-up intermediates. One provenance line at the top of each file (source + date); nothing else added.
+- **Verbatim, operator-approved finals only.** Published text or operator-approved ready finals. No agent drafts, no cleaned-up intermediates. One provenance line at the top of each file (source + date); nothing else added.
 - **Recency-weighted.** Newest shipped work best represents where the voice is. When pruning, the oldest or most topic-redundant piece goes first.
-- **New pieces arrive via `voice-harvest`** (corpus-promotion step at publish/lock), not by hand-copying mid-draft.
+- **New pieces arrive via `voice-harvest`** (corpus-promotion step at publish/ready), not by hand-copying mid-draft.
 
 ## Folders
 

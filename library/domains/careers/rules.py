@@ -3,7 +3,7 @@
 Hosted by system/af.py's plugin host (never imports af.py; receives ctx).
 Two hooks:
   check_application(ctx, adir, afm) -> (issues, notes)   # pipeline doctor
-  on_lock(ctx, cdir, dpath, rel, cfm) -> (cfm, notes)    # verification gate
+  on_ready(ctx, cdir, dpath, rel, cfm) -> (cfm, notes)   # verification gate
 """
 
 import os
@@ -90,8 +90,8 @@ def _verification_filled(ctx, cdir):
     return bool(m and m.group(1).strip())
 
 
-def on_lock(ctx, cdir, dpath, rel, cfm):
-    """Lock gate for submission materials: verification recorded; text materials also hazard-clean."""
+def on_ready(ctx, cdir, dpath, rel, cfm):
+    """Readiness gate for submission materials: verification recorded; text materials also hazard-clean."""
     m = re.fullmatch(r"(.+)-v\d+\.md", os.path.basename(dpath))
     if not m:
         return cfm, []
@@ -100,11 +100,11 @@ def on_lock(ctx, cdir, dpath, rel, cfm):
     if name not in materials:
         return cfm, []
     if not _verification_filled(ctx, cdir):
-        ctx.die(f"{rel}: lock refused — jd-map.md '## Verification' is missing or empty. "
+        ctx.die(f"{rel}: ready refused — jd-map.md '## Verification' is missing or empty. "
                 "Run the verification pass (criteria/requirements mapped, materials reviewed) "
                 "and record it, then rerun.")
     if name in TEXT_MATERIALS:
         hazards = _lint(rel, _body(ctx, dpath, rel), is_resume=(name == "resume"))
         if hazards:
-            ctx.die(f"{rel}: lock refused — parse hazards present: {'; '.join(hazards)}")
+            ctx.die(f"{rel}: ready refused — parse hazards present: {'; '.join(hazards)}")
     return cfm, ["verification gate passed"]

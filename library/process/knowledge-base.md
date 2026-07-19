@@ -49,4 +49,4 @@ When the operator pastes a new transcript, brief, or document:
 1. **`knowledge/raid-log.md`:** Holds open risks, assumptions, issues, and dependencies. Every entry has exactly one named owner. Stale entries are flagged during weekly reviews. Replaces separate risk registries.
 2. **`knowledge/decision-log.md`:** Dated append-only log: `Decision` · `Rationale` · `Owner`.
 3. **`knowledge/stakeholder-map.md`:** Cross-references global person profiles and links roles to their per-project stakeholder overlay pages at `knowledge/people/{person-slug}.md`.
-4. **`knowledge/workback-schedule.md`:** Milestones/tasks planned backward from deadlines. Updated continuously; does not lock.
+4. **`knowledge/workback-schedule.md`:** Milestones/tasks planned backward from deadlines. Updated continuously; does not use deliverable readiness state.

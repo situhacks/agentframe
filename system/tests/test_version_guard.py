@@ -82,11 +82,31 @@ class VersionGuardTests(unittest.TestCase):
         self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "deny")
         self.assertIn("immutable prior version", out["hookSpecificOutput"]["permissionDecisionReason"])
 
-    def test_locked_head_is_denied(self):
-        head = self.write_version(1, status="locked")
+    def test_ready_head_full_write_is_denied_as_clobber(self):
+        head = self.write_version(1, status="ready")
         out = guard.decide(payload(head, tool="Write"))
         self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "deny")
-        self.assertIn("unlock/version", out["hookSpecificOutput"]["permissionDecisionReason"])
+        self.assertIn("Full-file Write would clobber", out["hookSpecificOutput"]["permissionDecisionReason"])
+
+    def test_ready_head_allows_surgical_edit(self):
+        head = self.write_version(1, status="ready")
+        self.assertIsNone(guard.decide(payload(head, tool="Edit")))
+
+    def test_published_head_denies_surgical_edit(self):
+        head = self.write_version(1, status="published")
+        out = guard.decide(payload(head, tool="Edit"))
+        self.assertIn("published and immutable", out["hookSpecificOutput"]["permissionDecisionReason"])
+
+    def test_unversioned_published_assembly_denies_surgical_edit(self):
+        assembly = self.folder / "post-FINAL.md"
+        assembly.write_text(
+            "---\nstatus: published\nlast_updated: 2026-07-19\n---\n\nbody\n",
+            encoding="utf-8",
+        )
+        out = guard.decide(payload(assembly, tool="Edit"))
+        reason = out["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertIn("published and immutable", reason)
+        self.assertIn("new tracked edition", reason)
 
     def test_direct_new_version_is_denied(self):
         self.write_version(1)
@@ -105,13 +125,13 @@ class VersionGuardTests(unittest.TestCase):
         self.assertIn("Do not delete", out["hookSpecificOutput"]["permissionDecisionReason"])
 
     def test_cursor_native_deny_uses_cursor_envelope(self):
-        head = self.write_version(1, status="locked")
+        head = self.write_version(1, status="published")
         out = json.loads(guard.run(json.dumps(cursor_payload(head))))
         self.assertEqual(out["permission"], "deny")
-        self.assertIn("locked", out["agent_message"])
+        self.assertIn("published", out["agent_message"])
 
     def test_cursor_imported_claude_twin_is_suppressed(self):
-        head = self.write_version(1, status="locked")
+        head = self.write_version(1, status="published")
         raw = json.dumps(cursor_payload(head))
         self.assertEqual(json.loads(guard.dispatch(raw, [])), {})
         native = json.loads(guard.dispatch(raw, ["--cursor-native"]))

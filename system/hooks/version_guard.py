@@ -2,7 +2,7 @@
 """Cross-harness guard for mechanically unsafe versioned-file writes.
 
 The guard is intentionally narrow. It denies direct edits to immutable lower
-versions and locked/delivered heads, and denies hand-creating version files
+versions and published heads, and denies hand-creating version files
 that must go through ``af draft`` or ``af version``. It allows Edit calls on
 the current drafting head because surgical edits are a valid workflow and
 prose judgment, not a hook, decides surgical versus replacement. A full-file
@@ -138,6 +138,18 @@ def _decide_target(path: Path, operation: str) -> dict | None:
     if not _within_managed_work(path):
         return None
 
+    if path.exists() and _status(path) == "published":
+        if VERSION_RE.fullmatch(path.name):
+            exit_path = (
+                "run `python system/af.py version` with the row or nested-artifact address; "
+                "the command creates a new drafting head while preserving the published version."
+            )
+        else:
+            exit_path = "create a new tracked edition; this unversioned published record cannot be reopened."
+        return _deny(
+            f"{path.name} is published and immutable. Direct edits are not allowed. {exit_path}"
+        )
+
     m = VERSION_RE.fullmatch(path.name)
     if not m:
         return None
@@ -161,14 +173,6 @@ def _decide_target(path: Path, operation: str) -> dict | None:
         return _deny(
             f"{path.name} is an immutable prior version; {name}-v{max(versions)}.md is the head. "
             "Restore by creating a new version, never by editing history."
-        )
-
-    status = _status(path)
-    if status in {"locked", "delivered"}:
-        return _deny(
-            f"{path.name} is {status}. Direct edits are not allowed. After operator confirmation, "
-            "run `python system/af.py version` with the row or nested-artifact address; the command "
-            "creates a drafting head and records the unlock/version event."
         )
 
     if operation == "delete":

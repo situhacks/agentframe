@@ -1,4 +1,4 @@
-﻿---
+---
 name: deliverable-scaffolding
 version: 0.1.0
 description: |
@@ -31,7 +31,7 @@ This skill carries the discipline. Run every step in order. Refuse to proceed pa
 Load when the operator (or forker) wants to add a new deliverable type. Concrete signals:
 
 - "I want to add a [thing] deliverable type" / "let's create a template for [thing]".
-- An audit-history gap: an artifact has delivered 2+ times without a template (each instance was bespoke). The friction earns a template.
+- An audit-history gap: an artifact has reached ready/published in 2+ instances without a template (each instance was bespoke). The friction earns a template.
 - A forker setting up AgentFrame for a different marketing process and asking "where do I put my own deliverable definitions?" — this skill is their entry point.
 
 Do NOT load this skill for:
@@ -95,7 +95,7 @@ Identify and surface all upstream files that need updating to wire the new deliv
 | Add letter (i+) to System Retro smart-routing options | If patches to this new deliverable will need their own routing letter (rare — most new deliverable types use existing route (c) "deliverables/{type}/template.md hard constraints") | `system/skills/system-improvement/SKILL.md` (since it's a template patch to `system-retro/template.md`) |
 | Add deliverable to a campaign flow | If this deliverable belongs in one or more named flows | `system/skills/agentframe-structure/SKILL.md` (flow change, then `system-improvement` for the file patch if needed) |
 | Add `current_phase` enum value to `library/process/project-frontmatter.md` | Only if this deliverable triggers a brand-new campaign phase (very rare; almost always slots into existing phases) | `system/skills/system-improvement/SKILL.md` |
-| Confirm `status` enum on the new deliverable matches the canonical vocabulary in `library/process/project-frontmatter.md` | Always (no-op when scaffold uses the default `drafting | locked | deferred` from Step 3) — surface only if the operator wants a different enum (e.g. adding `delivered` for a deliverable that publishes externally, or proposing a brand-new value) | `system/skills/system-improvement/SKILL.md` (any new value is a `library/process/project-frontmatter.md` schema change and must pass the prior-patch shape-failure check when prior history exists) |
+| Confirm `status` enum on the new deliverable matches the canonical vocabulary in `library/process/project-frontmatter.md` | Always (no-op when scaffold uses the default `drafting | ready | deferred`; `published` is already available when the artifact is issued immutably) — surface only if the operator proposes a brand-new value | `system/skills/system-improvement/SKILL.md` (any new value is a `library/process/project-frontmatter.md` schema change and must pass the prior-patch shape-failure check when prior history exists) |
 | Add campaign-local export template convention at `workspace/projects/{slug}/exports/templates/{new-type}.{docx,pptx}` | If this deliverable exports to Word/PPT | Surface to user; they create optional templates (this skill does not author binary export templates) |
 
 For each wire-up: ask user "do this now, or defer?" Defer is fine — the deliverable can exist without being wired into a campaign flow. Many deliverables are situational and shouldn't be in the default flow.
@@ -146,7 +146,7 @@ If the new deliverable was wired into a campaign flow or `project-frontmatter.md
 - **Does not author the new template's content.** The skill provides the canonical shape (sections in order, conventions, format). The user fills in Purpose, POV specifics, Section descriptions, Hard constraints, Tone notes, Edge cases — that is the domain knowledge that earns the deliverable's place.
 - **Does not author binary export templates.** If the deliverable exports to Word or PPT, the user owns any optional campaign template files at `workspace/projects/{slug}/exports/templates/{new-type}.{docx,pptx}`. This skill notes the wire-up; the user owns the visual design.
 - **Does not own routing taxonomy.** Whether the new deliverable needs a new smart-routing letter in the System Retro template is a System Retro template patch — routes through `system/skills/system-improvement/SKILL.md`.
-- **Does not own the deliverable's lifecycle in a campaign.** When the deliverable is drafted, who reviews it, when it locks — that lives in the template the user fills in (Lock criteria section). This skill installs the slot; the user fills the slot.
+- **Does not own the deliverable's lifecycle in a campaign.** When the deliverable is drafted, how feedback works, and when it becomes ready live in the template the user fills in (Readiness Criteria). This skill installs the slot; the user fills the slot.
 - **Does not decommission deliverable types.** Removing a deliverable type is bespoke under Builder; no skill earns its place yet. When the first removal-with-friction surfaces, `system/skills/deliverable-decommission/SKILL.md` lands alongside this one.
 
 ## Edge cases

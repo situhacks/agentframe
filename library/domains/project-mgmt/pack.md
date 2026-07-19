@@ -2,13 +2,13 @@
 domain: project-mgmt
 prefix: pm
 extension_fields: []
-verbs: [lock, version, doctor]
+verbs: [ready, publish, version, doctor]
 flows: [open-flow, project-mgmt-open-flow]
 ---
 
 # Project-management domain pack
 
-Consulting / PM engagements. `domain: project-mgmt`. No posts, no publish, no assembly record. A long-horizon engagement derives a governance spine from a charter via the `project-mgmt-open-flow` flow; a one-off PM deliverable (a single deck, memo, or redesign) uses plain `open-flow` and derives nothing.
+Consulting / PM engagements. `domain: project-mgmt`. No posts, no domain-specific publish hook, and no assembly record. The shared publish transition remains available when a produced artifact is issued immutably. A long-horizon engagement derives a governance spine from a charter via the `project-mgmt-open-flow` flow; a one-off PM deliverable (a single deck, memo, or redesign) uses plain `open-flow` and derives nothing.
 
 ## What this pack declares
 
@@ -17,7 +17,7 @@ Consulting / PM engagements. `domain: project-mgmt`. No posts, no publish, no as
 | Frontmatter extension | `extension_fields: []` + `prefix: pm` | this domain adds **no** fields to the neutral core (no MANIFEST, no post counters); the folder prefix is `pm-`. |
 | Scaffold skeleton | [`skeleton.md`](skeleton.md) | the neutral `project.md` body — IDENTITY + LIFECYCLE + DELIVERABLES + the two retro counters, nothing marketing. |
 | Deliverable templates | [`deliverables/`](deliverables/) | the governance template set: `charter` (the seed source) + the four living governance docs (`raid-log`, `stakeholder-map`, `decision-log`, `workback-schedule`). Available, not auto-spawned — instantiation is flow-driven (see below). |
-| Verb applicability | `verbs` above | `lock`, `version`, `doctor` apply; **`publish` is not declared** (an engagement delivers, it does not publish a post). |
+| Verb applicability | `verbs` above | `ready`, `publish`, `version`, and `doctor` use the shared lifecycle; no project-management-specific hook is needed. |
 | Doctor rules | none | no `rules.py` — the generic core checks suffice; a PM-specific check is added only when real PM work earns one. |
 
 ## The governance template set

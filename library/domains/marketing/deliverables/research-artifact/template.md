@@ -1,4 +1,4 @@
-﻿# Template: Research Artifact
+# Template: Research Artifact
 
 ## Purpose
 
@@ -19,7 +19,7 @@ Use these as directional headings, not a rigid schema. The same section block is
 - **Audience Signals** — who seems to care, what they are trying to do, and what pressures or objections matter.
 - **Messaging Territory** — useful themes, claims, tensions, whitespace, and angles to test.
 - **Evidence And Sources** — cited sources and what each contributes.
-- **Open Questions** — what needs validation before strategy locks.
+- **Open Questions** — what needs validation before strategy is ready.
 
 ## Hard Constraints
 
@@ -33,7 +33,7 @@ Use these as directional headings, not a rigid schema. The same section block is
 
 ```yaml
 ---
-status: <drafting | locked>
+status: <drafting | ready>
 last_updated: <ISO-8601 timestamp>
 current_version: <integer>
 version_history:
@@ -48,7 +48,7 @@ source_material:
 
 For API runs, preserve Gemini's native interaction JSON under `source-material/` and use `system/research/gemini_deep_research.py` to extract the Markdown handoff. If extraction fails, keep the raw JSON and ask for Builder help; do not fabricate a research artifact from an unknown response shape.
 
-## Lock Criteria
+## Readiness Criteria
 
 - Operator accepts the campaign direction as worth taking into Phase 2.
 - Research artifact is saved at `phase-1-research/research-artifact-v{N}.md`.

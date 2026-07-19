@@ -1,11 +1,11 @@
 # Template: Design Language
 
-A project's locked visual language. One per project. Record what, not why unless historical breakage matters.
+A project's ready visual language. One per project. Record what, not why unless historical breakage matters.
 
 ## Required Frontmatter
 
 ```yaml
-status: <drafting | locked>
+status: <drafting | ready>
 last_updated: <ISO-8601>
 preview: preview/directions-compare.html
 tokens: tokens.yaml
@@ -31,16 +31,16 @@ Divergence-first. When this deliverable opens, offer the starting points — don
 
 1. **Offer the on-ramps:** (a) agent ideates directions from project context, (b) operator drops inspo references — when a reference is a live-site URL, run the token extraction on it (`system/skills/extract-design/`, rules in its `AGENTS.md`) and distill; images stay the eyeball path, (c) optional Gemini Deep Research style pass — keep the DR prompt agnostic: visual-trend research any project could use, not this project's narrative baked in.
 2. **Propose 3–5 named taste directions**, each as a STANDALONE FULL PROMPT — copy-paste ready for any generator. Pick the generation path with the operator per [`image-production.md`](../../process/image-production.md); record the project-wide generation preference in the active pack's settings, if it declares any.
-3. **Render and narrow.** Render the directions on the chosen path (side-by-side `preview/directions-compare.html` for the HTML path — one file, no per-direction subfiles), then keep offering variations until the operator picks. Never one-shot the lock.
-4. **Lock.** The picked direction becomes `design-language-v{N}.md` with its treatment block, plus `tokens.yaml`/`tokens.css` when surfaces will render as HTML.
+3. **Render and narrow.** Render the directions on the chosen path (side-by-side `preview/directions-compare.html` for the HTML path—one file, no per-direction subfiles), then keep offering variations until the operator picks. Never one-shot the decision.
+4. **Ready.** The picked direction becomes `design-language-v{N}.md` with its treatment block, plus `tokens.yaml`/`tokens.css` when surfaces will render as HTML.
 
-The project-level base locks here; per-deliverable evolution is allowed when needed — version this deliverable, don't fork it.
+The project-level base becomes ready here; per-deliverable evolution is allowed when needed—version this deliverable, don't fork it.
 
 **Storybook (optional):** offer a rendered HTML storybook when the operator wants to *visualize* the language or *compare* candidate directions — it costs generation time, so skip it for rudimentary languages. Shape and generation paths (script or agent-authored) are in the [`storybook.md`](storybook.md) companion. When one exists, set the `storybook:` frontmatter field so the preview server pins it atop the Design section.
 
 Single-direction authoring is allowed only when the operator explicitly says "skip the directions, pick one" or chooses text-only defer. Do not invent the single-direction path silently.
 
-No `decisions.md` companion. Reasoning that survives lock lives in `design-language-v{N}.md` itself; sub-session reasoning is throwaway.
+No `decisions.md` companion. Reasoning that must survive readiness lives in `design-language-v{N}.md` itself; sub-session reasoning is throwaway.
 
 ## Artifact Shape
 
@@ -81,13 +81,13 @@ Sections without earned content can stay short ("none for this project") rather 
 - `tokens.yaml` — machine-readable token export for render pipelines.
 - `tokens.css` — CSS variables for browser preview and render. All tokens go inside a `:root {}` block (and `[data-theme="dark"]` block when a dark variant exists). Keeps the file drop-in-compatible with Open Design's parser.
 - When a project renders slides or pages as HTML, this deliverable is the renderer's source: surfaces render per the Layout & Composition section and `tokens.css`, then screenshot to PNG for delivery.
-- `preview/directions-compare.html` — side-by-side render of the proposed directions during authoring; the locked direction's preview lives in this same file with non-picked columns dimmed or removed.
+- `preview/directions-compare.html` — side-by-side render of the proposed directions during authoring; the ready direction's preview lives in this same file with non-picked columns dimmed or removed.
 - `preview/storybook.html` — optional browsable HTML catalog of the language; shape in [`storybook.md`](storybook.md). Present only when generated.
 - [`transfer-to-open-design.md`](transfer-to-open-design.md) — sibling child resource documenting the field-by-field mapping from this template into Open Design's 9-section design-system schema. Read on demand only when the operator wants to use the project DL inside Open Design.
 
 ## Not In This Template
 
-- No lock procedure. Lock-event mechanics live in [`library/process/lock-event.md`](../../process/lock-event.md) and the active flow.
+- No extra readiness procedure. Ready-event mechanics live in [`library/process/ready-event.md`](../../process/ready-event.md) and the active flow.
 - No review, humanizer, or publish/export sections.
 - No `decisions.md` companion and no `hero_mock` field.
 - No Components or Motion specs by default. Projects rarely need full app-style component libraries; if one earns those, they live in this template's artifact body or in `transfer-to-open-design.md` as overrides.

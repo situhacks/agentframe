@@ -1,4 +1,4 @@
-﻿# Template: Closeout Retro
+# Template: Closeout Retro
 
 ## Purpose
 
@@ -10,13 +10,13 @@ It is not a Builder patch queue and it does not run performance capture. System 
 
 - **Read only:**
   - `phase-2-strategy/business-brief/draft-v{N}.md` for the canonical success criteria.
-  - `project.md` frontmatter for delivered count, lifecycle state, and deliverable pointers.
+  - `project.md` frontmatter for ready/published coverage, lifecycle state, and deliverable pointers.
   - `phase-5-launch-and-learn/performance-data.csv` (captured first, same step).
   - `activity.md` only for ship dates, scope changes, back-fill/override evidence, and completion events.
   - Public comment/reply evidence or operator-provided qualitative notes when needed to score a project brief criterion.
   - `feedback-log.md` for project-scoped observations that bear on the Worked / Did Not Work notes.
 - **Dependencies:**
-  - Final active deliverable delivered, cancelled, or removed from scope.
+  - Final active deliverable ready, published, cancelled, or removed from scope.
   - `system-retro-v{N}.md` is complete or intentionally deferred.
   - Performance capture (same step, runs first) has either produced `performance-data.csv` or the operator chose to close with partial data.
 - **Context Loading:**
@@ -65,7 +65,7 @@ Keep this short. Include time/cost/quarterly-goal notes only when they change th
 
 State one of:
 
-- `lock and complete project`
+- `ready and complete project`
 - `route back to 5.3 performance capture`
 - `defer project retro until {date/event}`
 - `close with partial-data caveat`
@@ -73,7 +73,7 @@ State one of:
 ## Hard Constraints
 
 - **Boundary Rules:** Do not patch system, template, voice, positioning, or process files from Closeout Retro. If outcome evidence suggests future Builder work, mention it only as an outcome note. Route actual changes through the harvest retro / `system-improvement` later. Do not restate project history. Use only facts needed to score the project brief and close the project.
-- **Criterion Honesty:** Attach compact caveats to the relevant scorecard item when the project brief was back-filled after the work was underway, the project scope changed after criteria were set, evidence is operator-reported rather than externally observable, or the metric is unavailable through Phase 5.3 capture. External review `not_required` is not a caveat by itself for solo work.
+- **Criterion Honesty:** Attach compact caveats to the relevant scorecard item when the project brief was back-filled after the work was underway, the project scope changed after criteria were set, evidence is operator-reported rather than externally observable, or the metric is unavailable through Phase 5.3 capture. The absence of optional stakeholder feedback is not a caveat by itself.
 - **Analytics Collection:** Closeout Retro does not run connector discovery, Composio/Rube tools, exports, or manual analytics collection. See `library/process/composio-notes.md`. Treat missing metrics as `unknown`, not `0`. For operator-only qualitative criteria, ask only for the criterion evidence needed to score the project brief item. Do not turn this into an analytics collection step.
 
 ## Draft Frontmatter Convention
@@ -82,22 +82,22 @@ Canonical file: `phase-5-launch-and-learn/closeout-retro-v{N}.md`. Reference the
 
 ```yaml
 ---
-status: <drafting | locked>
+status: <drafting | ready>
 last_updated: <ISO-8601 timestamp>
 ---
 ```
 
 See `library/process/project-frontmatter.md` for schema details.
 
-## Lock Criteria
+## Readiness Criteria
 
 - Retro uses the exact output shape above.
 - Every project brief success criterion has a status and basis.
 - Unknown evidence is marked `UNKNOWN`, not guessed.
 - Performance data is referenced from `performance-data.csv` or explicitly marked partial/unknown by operator choice.
 - User approved the closeout decision.
-- `closeout-retro-v{N}.md` frontmatter set to `status: locked`.
-- Follow `library/process/lock-event.md` and the selected project flow for tracker updates, lifecycle completion, and folder moving.
+- `closeout-retro-v{N}.md` frontmatter set to `status: ready`.
+- Follow `library/process/ready-event.md` and the selected project flow for tracker updates, lifecycle completion, and folder moving.
 
 ## Exceptions / Branches
 

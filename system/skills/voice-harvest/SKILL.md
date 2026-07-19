@@ -8,11 +8,11 @@ description: |
   (article/post/email), or the live chat — any material that shows how the
   person actually writes or how they corrected AI drafts into their voice.
   Use when the operator says "update/harvest the voice", "do a voice pass",
-  "fold this into the voice system", or when a lock-event / voice-mini-retro
+  "fold this into the voice system", or when a ready-event / voice-mini-retro
   delegates a harvest. Asks the operator how deep to mine (diffs-only vs.
   transcript vs. full) up front, because transcript deep-dives are token-heavy.
   Proposes pairs (first-pass-then-approve), writes approved ones to
-  library/context/operator/voice/pairs/, promotes published/locked user-voiced
+  library/context/operator/voice/pairs/, promotes published/ready user-voiced
   finals into library/context/operator/voice/corpus/ (full-piece exemplars),
   and logs a recurrence-watch entry to the builder backlog when a voice issue
   recurs despite an existing rule/pair. Scope is harvest→pairs+corpus+backlog-
@@ -45,7 +45,7 @@ Out of scope: patching `anti-patterns.md` / `voice-profile.md` / `identity.md` (
 | In scope | Routes elsewhere |
 |---|---|
 | Read sources → extract voice deltas → propose/write **pairs** | Patching anti-patterns / profile / identity / registers → `system-improvement` |
-| Propose/write **corpus promotion** of published/locked finals | Structure/content/strategy learnings → System Retro / Campaign Retro |
+| Propose/write **corpus promotion** of published/ready finals | Structure/content/strategy learnings → System Retro / Campaign Retro |
 | Log a **recurrence-watch** to `builder-backlog.md` | The pairs-format spec → `pairs/README.md`; the corpus rules → `corpus/README.md` (read them, don't redefine them) |
 
 ## The procedure
@@ -62,7 +62,7 @@ Identify what material exists for this harvest, then **ask the operator how deep
 
 Ask with `AskUserQuestion`: *"How deep should I mine — diffs only (cheap), + transcript (rich, token-heavy), or full (chat too)?"* Default to Tier 1 if the operator doesn't care. **If the invocation already scopes sources and depth** ("do the diffs, in depth"), skip the ask and run at that scope — re-asking blocks the session for nothing.
 
-**Mode note (fidelity guard):** if invoked by lock-event / voice-mini-retro in a possibly-fresh session, **Tier 1 (disk diffs) is the safe default** — do not rely on chat memory that may be gone after compaction. The "use memory/chat" tiers are opt-in and only valid when the session actually holds the drafting context. Reconstruct from disk when in doubt.
+**Mode note (fidelity guard):** if invoked by ready-event / voice-mini-retro in a possibly-fresh session, **Tier 1 (disk diffs) is the safe default** — do not rely on chat memory that may be gone after compaction. The "use memory/chat" tiers are opt-in and only valid when the session actually holds the drafting context. Reconstruct from disk when in doubt.
 
 ### Step 2 — Read the sources
 
@@ -105,13 +105,13 @@ context: builder-pov | market-signal | slide | cover | email | long-form | <othe
 
 ### Step 6 — Corpus promotion (full-piece exemplars)
 
-When the harvested source includes a **published or operator-locked user-voiced final** (an essay that went live, a locked LinkedIn body + carousel copy), propose promoting it into the register's corpus:
+When the harvested source includes a **published or operator-approved ready user-voiced final** (an essay that went live, a ready LinkedIn body + carousel copy), propose promoting it into the register's corpus:
 
 1. Read `library/context/operator/voice/corpus/README.md` (the rules: 3–5 per register, topical diversity, verbatim finals only, one provenance line, recency-weighted pruning) and the target register folder.
-2. Propose: the piece verbatim (reader-facing prose only — strip production notes, char targets, changelogs) + one provenance line (source path/URL + lock/publish date). If the register is at cap, name the piece it replaces and why (oldest / most topic-redundant).
+2. Propose: the piece verbatim (reader-facing prose only—strip production notes, char targets, changelogs) + one provenance line (source path/URL + ready/publish date). If the register is at cap, name the piece it replaces and why (oldest / most topic-redundant).
 3. Operator approves → write to `corpus/{register}/`. Declined → note it in the harvest log; don't re-propose the same piece next run.
 
-Agent drafts and cleaned intermediates never promote — only text the operator wrote or explicitly locked as final.
+Agent drafts and cleaned intermediates never promote—only text the operator wrote or explicitly marked ready as final.
 
 ### Step 7 — Recurrence-watch (the cross-retro memory)
 
@@ -137,7 +137,7 @@ Append a `system_changes` row via `system/audit/writer.py` recording: pairs adde
 
 - **No version trail and no transcript** (a hand-written one-off, a back-fill): only a fresh-artifact harvest is possible — mine the artifact as a positive exemplar. If there's nothing to diff against, harvest a pair only if the operator asks or the move repeats across 3+ pieces (no reject→accept delta means weaker evidence).
 - **Operator is low on tokens:** stay Tier 1 (diffs only). Surface that a deeper transcript mine is available later if the diff pass looks thin.
-- **Fresh session, lock-event invocation:** Tier 1 disk-only is the default; do not claim chat-derived pairs you can't reconstruct from disk.
+- **Fresh session, ready-event invocation:** Tier 1 disk-only is the default; do not claim chat-derived pairs you can't reconstruct from disk.
 - **Over the pairs cap with several strong candidates:** propose the swaps (new replaces weakest, named) rather than growing past ~30. If the operator wants them all, that's a signal the cap should move — surface it, don't silently exceed.
 - **The same move shows up as both a new-pair candidate AND a recurrence:** it recurred → treat as recurrence (Step 7), not a fresh pair. A duplicate pair is the wrong fix.
 

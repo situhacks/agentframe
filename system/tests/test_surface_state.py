@@ -32,7 +32,6 @@ deliverables:
     status: drafting
     file: phase-2-architecture/build-brief/build-brief-v2.md
     last_updated: 2026-07-04
-    review: not_required
 """
 
 

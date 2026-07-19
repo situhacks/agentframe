@@ -133,7 +133,7 @@ class TestSnapshot(SnapshotFixture):
             last_updated: 2026-07-01
             job: current work
           shipped:
-            status: delivered
+            status: published
             file: shipped/final.md
             last_updated: 2026-07-08
         """

@@ -40,7 +40,7 @@ Identify the material (which deliverables, which trails), then ask the operator 
 
 ### Step 2 — Read and extract shape deltas
 
-Walk the sources for **structure changes**: sections added/removed/reordered, format conversions (prose→table, list→prose), weight/length corrections, content-placement rules ("X doesn't belong in this deliverable/version"), sequencing feedback ("lock skeleton before prose"), and any operator statement about what the deliverable SHOULD contain. Also scan the project directory for the presence of any `_local/` directories indicating project-local ad-hoc deliverables. Discard voice-level deltas (route those to voice-harvest) and one-off content fixes (typos, facts).
+Walk the sources for **structure changes**: sections added/removed/reordered, format conversions (prose→table, list→prose), weight/length corrections, content-placement rules ("X doesn't belong in this deliverable/version"), sequencing feedback ("settle the skeleton before prose"), and any operator statement about what the deliverable SHOULD contain. Also scan the project directory for the presence of any `_local/` directories indicating project-local ad-hoc deliverables. Discard voice-level deltas (route those to voice-harvest) and one-off content fixes (typos, facts).
 
 ### Step 3 — Cluster and classify
 
@@ -55,7 +55,7 @@ Collapse repeats into one candidate each. Per distinct finding:
 
 Surface all candidates grouped by destination: template-patch candidates (with target file + section), promotion candidates, backlog watches, feedback-log lines. The operator approves, edits, or drops each. 
 - **Approved template patches** route to `system/skills/system-improvement/SKILL.md` (which owns the patch discipline).
-- **Approved local promotions** write directly to the domain's pack directory (`library/domains/{domain}/deliverables/`) and are logged. This Operator-owned exception **must** still apply the `agentframe-structure` authoring standard (correct sections, purpose, lock criteria, etc.).
+- **Approved local promotions** write directly to the domain's pack directory (`library/domains/{domain}/deliverables/`) and are logged. This Operator-owned exception **must** still apply the `agentframe-structure` authoring standard (correct sections, purpose, readiness criteria, etc.).
 
 ### Step 5 — Log
 

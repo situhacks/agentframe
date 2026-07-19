@@ -5,7 +5,7 @@ Freeform flow for projects that don't fit a fixed phase ladder. Open flow is com
 ## Read Once
 
 - Every artifact is a versioned deliverable instance per [`deliverable-versioning.md`](../deliverable-versioning.md): `{name}-v{N}.md`, head named by the tracker. Revisions bump the head (`python system/af.py version`) — they never spawn a new differently-named v1. Only scratchpads are throwaway, and they carry `scratchpad` in the filename.
-- State transitions are button-owned: `python system/af.py` (`draft`, `adopt`, `lock`, `publish`, `version`, `new-project`, `doctor`); lock triggers per [`lock-event.md`](../lock-event.md). Never hand-edit tracker `status:`.
+- State transitions are button-owned: `python system/af.py` (`draft`, `adopt`, `ready`, `publish`, `version`, `new-project`, `doctor`); readiness triggers per [`ready-event.md`](../ready-event.md). Never hand-edit tracker `status:`.
 - Tracker schema: [`project-frontmatter.md`](../project-frontmatter.md). Apply file edits and `project.md` updates in the same turn.
 
 ## Kickoff — propose the plan
@@ -30,7 +30,7 @@ Short and current:
 ## The Loop
 
 1. Work the runway's first item using its deliverable template (or for ad-hoc artifacts, create the directory `_local/<slug>/` and the file `_local/<slug>/<slug>-v1.md` following the generic shape).
-2. On lock: run lock-event, sync the tracker, refresh the plan section, and PROPOSE the next 1–2 runway steps — don't make the operator plan from scratch each turn. Note that `_local` deliverables version (`af version`) and lock (`af lock`) identically to library-backed deliverables.
+2. When an item is ready: run ready-event, sync the tracker, refresh the plan section, and PROPOSE the next 1–2 runway steps—don't make the operator plan from scratch each turn. `_local` deliverables use `af version` and `af ready` identically to library-backed deliverables.
 3. Recalibrate when scope moves: phases can be added, merged, or dropped. Log plan changes to `activity.md` as `plan_revised` events using one event per material state change; the first clause names the result, then only the useful consequence/reason.
 
 When a runway item becomes standing recurring or event-driven execution, load [`project-automation.md`](../project-automation.md). Keep the project on open flow; managed execution is an attached capability, not a new phase ladder.
@@ -42,10 +42,10 @@ When a runway item becomes standing recurring or event-driven execution, load [`
 
 ## Tracker Updates
 
-- New open projects scaffold via `python system/af.py new-project <slug> --flow open-flow`; set `current_phase` to the plan's first phase id once the plan locks (`active` when single-phase).
+- New open projects scaffold via `python system/af.py new-project <slug> --flow open-flow`; set `current_phase` to the plan's first phase id once the plan is agreed (`active` when single-phase).
 - `current_phase` values come from the plan section; the schema-drift check validates against that list.
-- Deliverables move `not_started -> drafting -> locked -> delivered` in the same turn as their files change; the active pack owns any domain-specific assembly step.
+- Deliverables move `not_started -> drafting -> ready` in the same turn as their files change. `ready -> published` is optional and only applies when the artifact is issued as an immutable record; the active pack owns any domain-specific assembly step.
 
 ## Closeout
 
-Same two-step learning close as the structured flows: harvest retro (`system-retro-v{N}.md`, both harvest skills with a shared source-read) → performance capture + project retro + completion. `LIFECYCLE.status: complete` only after the project retro locks or the operator records a closeout override in `activity.md`.
+Same two-step learning close as the structured flows: harvest retro (`system-retro-v{N}.md`, both harvest skills with a shared source-read) → performance capture + project retro + completion. `LIFECYCLE.status: complete` only after the project retro is ready or the operator records a closeout override in `activity.md`.

@@ -368,8 +368,8 @@ td.nowrap { white-space: nowrap; }
 .state.ungoverned, .state.untracked { color: var(--meta); }
 .state.attention { color: var(--accent-pink); }
 .state.drafting { color: var(--accent-teal); }
-.state.locked { color: var(--ink-soft); }
-.state.delivered, .state.deferred, .state.not_started { color: var(--meta); }
+.state.ready { color: var(--ink-soft); }
+.state.published, .state.deferred, .state.not_started { color: var(--meta); }
 .count-pink { color: var(--accent-pink); font-family: var(--mono); font-size: 11px; }
 #view-dashboard .count-pink { font-size: var(--dash-mono-font); }
 

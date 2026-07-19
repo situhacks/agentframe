@@ -103,7 +103,7 @@ class TestSaveAndStart(PipeBase):
 
 
 class TestStageMachine(PipeBase):
-    def test_applied_stamps_dates_and_warns_on_unlocked_resume(self):
+    def test_applied_stamps_dates_and_warns_on_unready_resume(self):
         slug = self.save()
         self.start(slug)
         self.stage(slug, "applied")
@@ -111,7 +111,7 @@ class TestStageMachine(PipeBase):
         self.assertEqual(af.row_get(fm, slug, "applied"), af.today())
         expected = (datetime.date.today() + datetime.timedelta(days=af.PIPE_NUDGE_DAYS)).isoformat()
         self.assertEqual(af.row_get(fm, slug, "next_nudge"), expected)
-        self.assertIsNone(af.row_get(fm, slug, "shipped"))  # resume never locked
+        self.assertIsNone(af.row_get(fm, slug, "shipped"))  # resume never ready
 
     def test_illegal_transition_refused(self):
         slug = self.save()
@@ -133,12 +133,12 @@ class TestStageMachine(PipeBase):
         self.start(slug)
         adir = af.app_dir(slug)
         write(os.path.join(adir, "deck", "deck-v2.md"),
-              "---\nstatus: locked\nlast_updated: 2026-07-10\nexports: [media/deck-v2.pptx]\n---\n# Deck\n")
+              "---\nstatus: ready\nlast_updated: 2026-07-10\nexports: [media/deck-v2.pptx]\n---\n# Deck\n")
         write(os.path.join(adir, "deck", "media", "deck-v2.pptx"), "pptx")
         ap = os.path.join(adir, "application.md")
         afm, abody = af.split_fm(af.read(ap), "application.md")
         afm = af.set_scalar(afm, "materials", "[deck]")
-        afm = afm.replace("deliverables:", "deliverables:\n  deck:\n    file: deck/deck-v2.md\n    status: locked")
+        afm = afm.replace("deliverables:", "deliverables:\n  deck:\n    file: deck/deck-v2.md\n    status: ready")
         af.write(ap, af.join_fm(afm, abody))
         self.stage(slug, "applied")
         self.assertEqual(af.row_get(self.board_fm(), slug, "shipped"), "v2")
@@ -205,7 +205,7 @@ class TestPipelineDoctor(PipeBase):
         self.assertTrue(any("materials" in i and "deck" in i for i in issues))
 
 
-class TestLockGates(PipeBase):
+class TestReadyGates(PipeBase):
     def _prep_application(self, verification=True):
         slug = self.save()
         write(af.jd_cache_path(slug), "jd")
@@ -225,16 +225,16 @@ class TestLockGates(PipeBase):
         af.write(ap, af.join_fm(afm, abody))
         return slug, adir
 
-    def test_lock_refused_without_verification(self):
+    def test_ready_refused_without_verification(self):
         slug, _ = self._prep_application(verification=False)
         with self.assertRaises(SystemExit):
-            quiet(af.cmd_lock, SimpleNamespace(project=slug, deliverable="resume", allow_missing_exports=False))
+            quiet(af.cmd_ready, SimpleNamespace(project=slug, deliverable="resume", allow_missing_exports=False))
 
-    def test_lock_refused_without_exports(self):
+    def test_ready_refused_without_exports(self):
         slug, adir = self._prep_application()
         os.remove(os.path.join(adir, "resume", "media", "resume-v1.pdf"))
         with self.assertRaises(SystemExit):
-            quiet(af.cmd_lock, SimpleNamespace(project=slug, deliverable="resume", allow_missing_exports=False))
+            quiet(af.cmd_ready, SimpleNamespace(project=slug, deliverable="resume", allow_missing_exports=False))
 
     def test_deck_material_is_export_gated_via_pack(self):
         slug, adir = self._prep_application()
@@ -245,9 +245,9 @@ class TestLockGates(PipeBase):
         afm = afm.replace("deliverables:", "deliverables:\n  deck:\n    file: deck/deck-v1.md\n    status: drafting")
         af.write(ap, af.join_fm(afm, abody))
         with self.assertRaises(SystemExit):
-            quiet(af.cmd_lock, SimpleNamespace(project=slug, deliverable="deck", allow_missing_exports=False))
+            quiet(af.cmd_ready, SimpleNamespace(project=slug, deliverable="deck", allow_missing_exports=False))
 
-    def test_deck_lock_needs_verification_but_skips_ats_lint(self):
+    def test_deck_ready_needs_verification_but_skips_ats_lint(self):
         slug, adir = self._prep_application(verification=False)
         write(os.path.join(adir, "deck", "deck-v1.md"),
               "---\nstatus: drafting\nlast_updated: 2026-07-10\nexports: [media/deck-v1.pptx]\n---\n"
@@ -259,20 +259,20 @@ class TestLockGates(PipeBase):
         afm = afm.replace("deliverables:", "deliverables:\n  deck:\n    file: deck/deck-v1.md\n    status: drafting")
         af.write(ap, af.join_fm(afm, abody))
         with self.assertRaises(SystemExit):
-            quiet(af.cmd_lock, SimpleNamespace(project=slug, deliverable="deck", allow_missing_exports=False))
+            quiet(af.cmd_ready, SimpleNamespace(project=slug, deliverable="deck", allow_missing_exports=False))
         deck_fm, _ = af.split_fm(af.read(os.path.join(adir, "deck", "deck-v1.md")), "deck-v1.md")
         self.assertEqual(af.get_scalar(deck_fm, "status"), "drafting")
         jm = os.path.join(adir, "jd-map.md")
         af.write(jm, af.read(jm) + "## Verification\n- criteria mapped; deck reviewed\n")
-        quiet(af.cmd_lock, SimpleNamespace(project=slug, deliverable="deck", allow_missing_exports=False))
+        quiet(af.cmd_ready, SimpleNamespace(project=slug, deliverable="deck", allow_missing_exports=False))
         afm2, _ = af.split_fm(af.read(ap), "application.md")
-        self.assertEqual(af.row_get(afm2, "deck", "status"), "locked")
+        self.assertEqual(af.row_get(afm2, "deck", "status"), "ready")
 
-    def test_lock_succeeds_and_applied_records_shipped(self):
+    def test_ready_succeeds_and_applied_records_shipped(self):
         slug, adir = self._prep_application()
-        quiet(af.cmd_lock, SimpleNamespace(project=slug, deliverable="resume", allow_missing_exports=False))
+        quiet(af.cmd_ready, SimpleNamespace(project=slug, deliverable="resume", allow_missing_exports=False))
         afm, _ = af.split_fm(af.read(os.path.join(adir, "application.md")), "application.md")
-        self.assertEqual(af.row_get(afm, "resume", "status"), "locked")
+        self.assertEqual(af.row_get(afm, "resume", "status"), "ready")
         self.stage(slug, "applied")
         self.assertEqual(af.row_get(self.board_fm(), slug, "shipped"), "v1")
 

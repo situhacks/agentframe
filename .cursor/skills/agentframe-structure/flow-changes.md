@@ -27,4 +27,4 @@ Use this when adding, renaming, retiring, or changing the default campaign flow.
 
 - Do not define a new flow from a single one-off campaign unless the operator explicitly wants it as a product surface.
 - Do not duplicate deliverable template details inside a flow. Link to templates.
-- Do not duplicate shared procedures such as lock events, frontmatter schema, Composio notes, or voice mini-retros. Link to process files.
+- Do not duplicate shared procedures such as ready events, frontmatter schema, Composio notes, or voice mini-retros. Link to process files.

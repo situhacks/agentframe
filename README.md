@@ -67,13 +67,13 @@ AgentFrame keeps its context, working rules, and project state in files that any
 
 ### 3. Keep state and automation deterministic
 
-- **Run project state changes through commands.** Models are good at research, synthesis, and drafting; deterministic commands handle the exact bookkeeping. The `system/af.py` script manages creation, versioning, locking, publishing, and doctor checks without using model tokens. If anything is out of order, it flags the problem for the agent to reason over.
+- **Run project state changes through commands.** Models are good at research, synthesis, and drafting; deterministic commands handle the exact bookkeeping. The `system/af.py` script manages creation, versioning, readiness, publishing, and doctor checks without using model tokens. If anything is out of order, it flags the problem for the agent to reason over.
 
-- **Keep a version trail for every deliverable.** Replacement-shaped revisions become immutable snapshots, the tracker or artifact folder identifies the current numeric head, and lock gates run before delivery. When the deliverable needs a real file (e.g., PPTX, DOCX), the export is tracked too.
+- **Keep a version trail for every deliverable.** Replacement-shaped revisions become immutable snapshots, the tracker or artifact folder identifies the current numeric head, and readiness gates run before use or sharing. When the deliverable needs a real file (e.g., PPTX, DOCX), the export is tracked too.
 
 - **Record what happened as part of the work.** Activity logs and version notes cover projects, while an append-only audit database records system changes. `af doctor` reports drift without silently fixing it.
 
-- **Run standing project work through managed automations.** A project can define a job, receive queued tasks, and run them through a bounded local agent that returns a `done`, `blocked`, or `failed` receipt. The included deployment path uses Power Automate, OneDrive, and a single-flight Cursor host. This part of the system is early and currently being tested in real use.
+- **Run standing project work through managed automations.** A project can define a job, receive queued tasks, and run them through a bounded local agent that returns a `done`, `bready`, or `failed` receipt. The included deployment path uses Power Automate, OneDrive, and a single-flight Cursor host. This part of the system is early and currently being tested in real use.
 
 ### 4. Learn deliberately from finished work
 
@@ -165,7 +165,7 @@ The project-management pack takes a charter and turns it into living context the
 <td width="50%" valign="top"><img src=".github/readme-assets/pm-walkthrough-04.jpg" alt="A current deliverable with its immutable v3/v2/v1 snapshot stack" /><br/><sub><b>4 · Draft deliverables.</b> Findings, memos, and decks are drafted in your voice from the deliverable library, and every replacement-shaped revision becomes an immutable <code>-v{N}</code> snapshot.</sub></td>
 </tr>
 <tr>
-<td width="50%" valign="top"><img src=".github/readme-assets/pm-walkthrough-05.jpg" alt="A locked deliverable passing a gate and exporting to a PowerPoint deck" /><br/><sub><b>5 · Deliver.</b> Deliverables pass lock criteria before delivery is recorded, including deck exports in your own PowerPoint template when the destination needs a file.</sub></td>
+<td width="50%" valign="top"><img src=".github/readme-assets/pm-walkthrough-05.jpg" alt="A ready deliverable passing a gate and exporting to a PowerPoint deck" /><br/><sub><b>5 · Deliver.</b> Deliverables pass readiness criteria before delivery is recorded, including deck exports in your own PowerPoint template when the destination needs a file.</sub></td>
 <td width="50%" valign="top"><img src=".github/readme-assets/pm-walkthrough-06.jpg" alt="A closed project harvested into proposed template, process, and voice updates" /><br/><sub><b>6 · Learn.</b> Closeout harvests your manual edits and workflow friction into proposed template, process, and voice improvements.</sub></td>
 </tr>
 </table>
@@ -184,7 +184,7 @@ The marketing pack has the most visual production because it is where this works
 <td width="50%" valign="top"><img src=".github/readme-assets/walkthrough-04-image-production.png" alt="Media production" /><br/><sub><b>4 · Produce.</b> Route images, diagrams, decks, carousels, or video through the appropriate production process.</sub></td>
 </tr>
 <tr>
-<td width="50%" valign="top"><img src=".github/readme-assets/walkthrough-05-published.png" alt="Publish" /><br/><sub><b>5 · Deliver.</b> Deterministic gates verify locked copy and landed exports before publishing is recorded.</sub></td>
+<td width="50%" valign="top"><img src=".github/readme-assets/walkthrough-05-published.png" alt="Publish" /><br/><sub><b>5 · Deliver.</b> Deterministic gates verify ready copy and landed exports before publishing is recorded.</sub></td>
 <td width="50%" valign="top"><img src=".github/readme-assets/walkthrough-06-retro.png" alt="Harvest retro" /><br/><sub><b>6 · Learn.</b> Harvest real edits and workflow friction into proposed voice, template, and process improvements.</sub></td>
 </tr>
 </table>
@@ -255,7 +255,7 @@ All AgentFrame-owned. Each loads on demand when the work reaches it.
 | `humanizer-integration` | A calibrated humanization pass where a template calls for it |
 | `image-production` | Path selection across generated imagery, HTML visuals, and Open Design |
 | `knowledge-base` | Source ingestion, living knowledge files, archives, and consolidation rules |
-| `lock-event` | Lock mechanics and the post-lock judgment checklist |
+| `ready-event` | Readiness mechanics and the post-ready judgment checklist |
 | `operator-context-setup` | First-run generation of positioning, profile, career, and voice surfaces |
 | `preview-server` | Start-or-open behaviour, deep links, and preview hygiene for the dashboard |
 | `process-authoring` | The standard for reusable process files |
@@ -265,7 +265,7 @@ All AgentFrame-owned. Each loads on demand when the work reaches it.
 | `substack-publishing` | Draft preparation, editor handoff, and live-result reconciliation |
 | `technical-build` | External-repository orchestration and graduation |
 | `video-production` | Talking-head, HyperFrames, generated-asset, and hybrid video routes |
-| `voice-mini-retro` | The lock-time eligibility gate for harvesting meaningful voice edits |
+| `voice-mini-retro` | The ready-time eligibility gate for harvesting meaningful voice edits |
 | `voice-setup` | Corpus mining, taste interview, and initial voice-system setup |
 
 The live catalog with load triggers is [`library/process/README.md`](library/process/README.md).
@@ -284,7 +284,7 @@ All AgentFrame-owned, shaped by real use.
 ## Architecture
 
 <p align="center">
-  <img src=".github/readme-assets/architecture-flow.svg" alt="AgentFrame architecture: a coding agent opens a conversation and takes the Operator or Builder persona. In Operator, project.md holds state alongside activity.md and the sources/knowledge substrate; the selected flow loads a process per step, which pulls skills on demand and produces deliverables in your voice, gated by a lock before delivery. Finished work harvests back into the Builder surface (templates, processes, domain packs, personas, voice corpus, builder backlog), which shapes future runs. The Workspace Dashboard reads the same files and never writes." width="760" />
+  <img src=".github/readme-assets/architecture-flow.svg" alt="AgentFrame architecture: a coding agent opens a conversation and takes the Operator or Builder persona. In Operator, project.md holds state alongside activity.md and the sources/knowledge substrate; the selected flow loads a process per step, which pulls skills on demand and produces deliverables in your voice, gated for readiness before use or sharing. Finished work harvests back into the Builder surface (templates, processes, domain packs, personas, voice corpus, builder backlog), which shapes future runs. The Workspace Dashboard reads the same files and never writes." width="760" />
 </p>
 
 The structure follows a few rules that have kept it from turning into a second job to maintain:

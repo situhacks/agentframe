@@ -33,9 +33,9 @@ Section order is the operator's real format: contact header → **Work Experienc
 
 ```yaml
 ---
-status: <drafting | locked | deferred>
+status: <drafting | ready | deferred>
 last_updated: <ISO date>
-exports: []   # filed export paths under resume/media/ — required before lock
+exports: []   # filed export paths under resume/media/—required before readiness
 ---
 ```
 
@@ -43,7 +43,7 @@ exports: []   # filed export paths under resume/media/ — required before lock
 
 Mandatory before verification — resume prose is public-facing and recruiters auto-reject on AI tells. Scope: every rewritten bullet and any positioning line.
 
-## Lock Criteria
+## Readiness Criteria
 
 - jd-map `## Verification` complete and current for this head version (pack-rules enforced).
 - Exports filed under `resume/media/` and recorded in `exports[]`, format per target ATS: **DOCX** for Workday/Taleo/iCIMS/SuccessFactors/unknown-legacy; **PDF** (text-layer, browser-printed) for Greenhouse/Lever/Ashby/direct email; both when unsure.

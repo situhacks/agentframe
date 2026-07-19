@@ -12,13 +12,13 @@ Operator-mode routing for `domain: careers` work. The board (`workspace/pipeline
 | 3 Research | `company-brief.md` per its template; depth matches stakes | template |
 | 4 Map | `jd-map.md`: honeypot scan → 3-tier requirements → experience map → **gap stop** → operator coverage choice | template |
 | 5 Tailor | Draft the materials the application declares: `resume/resume-v1.md` (+ `cover-letter/` only if required) via their templates; `deck/` or `demo/` per the material routes below; humanizer pass on all user-voiced prose | templates |
-| 6 Verify | fill jd-map `## Verification`; fix findings before export or lock | template |
+| 6 Verify | fill jd-map `## Verification`; fix findings before export or readiness | template |
 | 7 Export | `doc-export` skill → format by ATS (table below), file under the deliverable's `media/`, record in `exports[]` | `system/skills/doc-export/` |
-| 8 Lock | `af lock <slug> resume` (and `cover-letter`) — refuses without verification + filed exports | spine |
+| 8 Ready | `af ready <slug> resume` (and `cover-letter`)—refuses without verification + filed exports | spine |
 | 9 Submit | **The human submits** in a normal browser, on the company career site (never a bot; never Easy Apply when direct apply exists) → `af pipe stage <slug> applied` stamps the date, sets the nudge, records `shipped` | operator |
 | 10 Track | `af doctor` surfaces nudges (7-day silence) and stale rows; interview notes accrete in `application.md` body | spine |
 
-**Material rule:** Steps 5-8 apply to every `materials:` row; this extends the resume/cover-letter examples in the sprint table. Use the route below, file finals only for pack-declared exportables, and lock each submission material before the human submits.
+**Material rule:** Steps 5-8 apply to every `materials:` row; this extends the resume/cover-letter examples in the sprint table. Use the route below, file finals only for pack-declared exportables, and mark each submission material ready before the human submits.
 
 ## Material routes and export formats
 

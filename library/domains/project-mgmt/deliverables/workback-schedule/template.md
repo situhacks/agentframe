@@ -2,11 +2,11 @@
 
 ## Purpose
 
-Milestones and the work breakdown planned **backward from the deadlines** — so the engagement knows what must be true by when, and the weekly/standup status is a *view* of this plus the RAID, not a separately maintained artifact. A **living doc** in the project's `knowledge/`; ever-evolving, so it is not a locked deliverable.
+Milestones and the work breakdown planned **backward from the deadlines** — so the engagement knows what must be true by when, and the weekly/standup status is a *view* of this plus the RAID, not a separately maintained artifact. A **living doc** in the project's `knowledge/`; ever-evolving, so it is not a ready deliverable.
 
 ## Inputs
 
-- The locked `charter` (fixed dates, constraints, objectives).
+- The ready `charter` (fixed dates, constraints, objectives).
 - The `raid-log` dependencies (what gates what).
 
 ## Sections
@@ -31,6 +31,6 @@ last_updated: <ISO-8601 timestamp>
 ---
 ```
 
-## Lock Criteria
+## Readiness Criteria
 
-Living — does not lock. Current when every milestone has an owner, a date, and a status, and the critical path is named. The status cadence reads from it.
+Living—does not use deliverable readiness state. Current when every milestone has an owner, a date, and a status, and the critical path is named. The status cadence reads from it.

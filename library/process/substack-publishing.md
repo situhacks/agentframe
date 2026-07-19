@@ -8,20 +8,20 @@ Prepare Substack drafts from canonical project copy, hand off editor-only action
 
 Load when a project targets Substack and:
 
-- locked copy and selected media are ready for a draft;
+- ready copy and selected media are ready for a draft;
 - an existing Substack draft needs a substantive update; or
-- a delivered post is being back-published to Substack.
+- a published post is being back-published to Substack.
 
 Also load the canonical source named by the project tracker and the Substack channel profile. When copy is adapted rather than transferred verbatim, resolve its voice recipe independently from the platform; Substack does not imply the informal register.
 
 ## Procedure
 
-1. **Resolve the source.** Use the tracker-named locked head: `post-FINAL.md` for an assembled marketing post, or the locked `substack-essay-v{N}.md` for a native essay. Do not reconstruct copy from a PDF, a live LinkedIn post, or an obsolete draft.
+1. **Resolve the source.** Use the tracker-named ready head: `post-FINAL.md` for an assembled marketing post, or the ready `substack-essay-v{N}.md` for a native essay. Do not reconstruct copy from a PDF, a live LinkedIn post, or an obsolete draft.
 2. **Prepare the Substack payload.** Set title, subtitle, and body from the source plus the channel-profile conventions. For a back-published post, include the LinkedIn permalink footer and recover the original date from project state; decode an activity ID only when the stored date is missing. If prose changes, run the full Substack voice sequence and its humanizer gate before surfacing the draft.
 3. **Prepare media.** Convert carousel PDFs to ordered per-slide PNGs and place the publish candidates under the post's `media/substack/` directory. In the Substack body, stack slides full-width above a `* * *` divider. Use the MCP's `upload_image` only when its returned CDN URL can be placed in the draft reliably; otherwise hand image placement to the editor. Use the native Subscribe button, never an in-body subscribe link.
 4. **Create or update the draft.** Use `create_draft` for a new draft and `update_draft` for an existing one. Do not use `list_drafts` while its `drafts.map is not a function` failure persists; use the known draft identifier, `list_published_posts`, or the editor. `create_note` and `create_note_with_link` publish immediately, so never call them without explicit per-note operator approval.
 5. **Hand off editor-only actions.** The operator publishes and sets displayed date, cover image, tags, section, native Subscribe button, settings, or video in the Substack editor. For backdating, publish first, then use **Settings → Displayed Publication Date**. Treat a one-day UTC display shift as a date check, not a reason to rewrite project history.
-6. **Reconcile the live result.** After the operator provides the live URL, displayed date, and media that actually shipped, follow the source deliverable's publish mechanics. For `post-FINAL.md`, use `python system/af.py publish` so the URL, platform, posted date, shipped media, tracker, counters, and activity event update atomically. For a standalone Substack essay, record `published_url` in its locked head as its template requires. If shipped copy differs materially, version and re-lock the owning copy before reconciliation.
+6. **Reconcile the live result.** Before publishing state is recorded, compare the live copy with the ready source. If it differs materially, create a new version/edition and reconcile there. Then run `python system/af.py publish <project> <row> --url <url>`. For `post-FINAL.md`, the marketing hook also records platform, posted date, shipped media, derived post totals, and the `post_published` event. For a standalone essay, the shared transition records `published_url`, marks artifact and tracker immutable, and writes the generic publish event.
 
 ## Verification Or Logging
 
@@ -35,7 +35,7 @@ Before calling the publication reconciled, verify:
 
 ## Boundaries
 
-- Content shape and lock criteria belong to the calling deliverable template, especially [`substack-essay`](../domains/marketing/deliverables/substack-essay/template.md) and [`post-final`](../domains/marketing/deliverables/post-final/template.md).
+- Content shape and readiness criteria belong to the calling deliverable template, especially [`substack-essay`](../domains/marketing/deliverables/substack-essay/template.md) and [`post-final`](../domains/marketing/deliverables/post-final/template.md).
 - Publication URL, credentials, session rotation, series labels, footer wording, and CTA conventions belong to the Substack channel profile.
 - Generic post state transitions belong to `system/af.py` and the `post-final` template.
 - Performance capture belongs to [`composio-notes.md`](composio-notes.md).

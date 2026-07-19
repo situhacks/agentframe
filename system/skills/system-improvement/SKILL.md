@@ -106,7 +106,7 @@ If "current target says" matches "friction observed" closely (i.e. the rule alre
 
 Draft the patch as before/after, with internal branching by target class:
 
-- **Deliverable template patch**: name which section is affected (Sections / Hard constraints / Critique-before-draft prompts / Tone notes / Lock criteria / Edge cases / etc.).
+- **Deliverable template patch**: name which section is affected (Sections / Hard constraints / Critique-before-draft prompts / Tone notes / Readiness criteria / Edge cases / etc.).
 - **Voice patch**: specify Writing Style Examples vs mechanical rules vs banned-words section.
 - **Positioning patch (outward-stance)**: specify Narrative / Content Pillars / Audience / POV Stances / Angles / Current Quarter Goals. If Narrative or Audience (campaign-spanning structural anchors), surface that the patch reshapes every upcoming user-voiced or strategic deliverable and ask for extra confirmation.
 - **Profile patch (operator-self)**: rare-cadence — Identity / Primary source of truth / Active Projects. Profile patches usually fire from Second Brain sync events or operator-stated identity changes, NOT from campaign pattern-scan. If a pattern-scan surfaces a profile.md candidate, surface explicitly: *"Profile is the slowest-cadence operator file. This patch is firing from pattern-scan rather than a sync event — confirm this is an actual identity change vs an outward-stance refinement (which would route to positioning.md instead)."*

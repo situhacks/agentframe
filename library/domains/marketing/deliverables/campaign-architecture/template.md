@@ -6,7 +6,7 @@ The full execution plan, post by post. Lives where the rubber meets the road: ev
 
 ## Depends On
 
-- **Standard Flow:** Campaign Brief locked + Research Artifact locked
+- **Standard Flow:** Campaign Brief ready + Research Artifact ready
 - **Solo Flow:** Concurrent Research Artifact (`phase-1-research/research-artifact-v{N}.md`)
 - `positioning.md` loaded (POV anchoring)
 - the `voice/pairs/` examples NOT loaded yet (this is structure, not output copy)
@@ -25,12 +25,12 @@ The full execution plan, post by post. Lives where the rubber meets the road: ev
 - **Per-post breakdown**, in order:
   - **Post N: [working title]**
   - **Job in the arc** — one line: hook / build / payoff / CTA / callback.
-  - **Hook angle** — locked direction in 1-2 lines, plus a one-line rationale (why this angle, not the alternate from Campaign Brief).
+  - **Hook angle** — ready direction in 1-2 lines, plus a one-line rationale (why this angle, not the alternate from Campaign Brief).
   - **Core message** — one sentence
   - **CTA** — one line; matches the post's role.
   - **Callbacks** — 1-2 lines naming prior post(s) and how.
   - **Risks** — 1-3 bullets specific to this post.
-- **Post manifest** — which ingredient deliverables this series' posts assemble from (e.g. `slide-copy`, `body-copy`, `image-prompts`, `video-spec`), plus any campaign-wide generation preference. One or two lines; recorded into `project.md` `post_manifest` when this deliverable locks (schema in [`project-frontmatter.md`](../../../../process/project-frontmatter.md)). Name per-post deviations here when a post needs a different ingredient set.
+- **Post manifest** — which ingredient deliverables this series' posts assemble from (e.g. `slide-copy`, `body-copy`, `image-prompts`, `video-spec`), plus any campaign-wide generation preference. One or two lines; recorded into `project.md` `post_manifest` when this deliverable becomes ready (schema in [`project-frontmatter.md`](../../../../process/project-frontmatter.md)). Name per-post deviations here when a post needs a different ingredient set.
 
 ## Hard Constraints
 
@@ -38,7 +38,7 @@ The full execution plan, post by post. Lives where the rubber meets the road: ev
 - Every post has a "job in the arc" stated
 - CTAs are context-appropriate (no "follow me!" on a problem-statement post)
 - Callbacks reference specific prior posts when claimed
-- Hook angle for each post is locked, with 1-line rationale (why this angle, not an alternate)
+- Hook angle for each post is ready, with 1-line rationale (why this angle, not an alternate)
 - No two posts have the same job (no two "hooks," no two "payoffs")
 - Risks per post are not empty
 - Audience extraction language tells and objections are grounded in `research-artifact-v{N}.md` citations or quoted source material, not LLM-prior assumptions.
@@ -52,9 +52,9 @@ Standard deliverable frontmatter per `library/process/project-frontmatter.md`. C
 - Standard Flow: `phase-3-planning/campaign-architecture/draft-v{N}.md`
 - Solo Flow: `phase-1-research/campaign-architecture/draft-v{N}.md`
 
-## Lock Criteria
+## Readiness Criteria
 
 - User-approved
-- `post_manifest` recorded into `project.md` in the lock turn
-- Lock event mechanics per `library/process/lock-event.md`
+- `post_manifest` recorded into `project.md` in the ready turn
+- Ready-event mechanics per `library/process/ready-event.md`
 

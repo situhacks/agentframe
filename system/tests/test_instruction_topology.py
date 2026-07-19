@@ -54,7 +54,7 @@ class InstructionTopologyCharacterizationTests(unittest.TestCase):
         process = text("library/process/humanizer-integration.md")
         self.assertIn("Initial agent-authored prose", process)
         self.assertIn("Operator hand-tuning", process)
-        self.assertIn("Lock with no new agent-authored prose", process)
+        self.assertIn("Ready transition with no new agent-authored prose", process)
         self.assertNotIn("Append one `humanizer_pass` event", process)
 
     def test_task_routers_remain_lazy_loaded_diagnostics(self):

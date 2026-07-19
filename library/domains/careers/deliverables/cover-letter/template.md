@@ -29,7 +29,7 @@ Segment escalations, only when the posting or segment mandates:
 
 ```yaml
 ---
-status: <drafting | locked | deferred>
+status: <drafting | ready | deferred>
 last_updated: <ISO date>
 exports: []
 ---
@@ -39,7 +39,7 @@ exports: []
 
 Mandatory — recruiters treat an AI-scented letter as a stronger negative signal than no letter at all.
 
-## Lock Criteria
+## Readiness Criteria
 
 - jd-map `## Verification` covers the letter (pack-rules enforced).
 - Word count inside the chosen shape's band.

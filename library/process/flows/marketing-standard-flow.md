@@ -6,9 +6,9 @@ Each deliverable's full template lives in `library/deliverables/{type}/template.
 
 ## Read Once
 
-- State transitions are button-owned: `python system/af.py` (`lock`, `publish`, `version`, `new-campaign`, `doctor`) does the mechanics atomically and prints the judgment checklist. Never hand-edit a terminal `status:`.
-- Versioning conventions and the surgical-vs-replacement judgment are owned by [`deliverable-versioning.md`](../deliverable-versioning.md); lock triggers by [`lock-event.md`](../lock-event.md).
-- Campaign tracker schema and review-state enums are owned by [`library/process/project-frontmatter.md`](../project-frontmatter.md).
+- State transitions are button-owned: `python system/af.py` (`ready`, `publish`, `version`, `new-project`, `doctor`) does the mechanics atomically and prints the judgment checklist. Never hand-edit `ready` or `published` state.
+- Versioning conventions and the surgical-vs-replacement judgment are owned by [`deliverable-versioning.md`](../deliverable-versioning.md); readiness triggers by [`ready-event.md`](../ready-event.md).
+- Campaign tracker schema is owned by [`library/process/project-frontmatter.md`](../project-frontmatter.md).
 - In every phase, apply file edits and `project.md` tracker updates in the same turn.
 
 ## Phase 1 — Research
@@ -26,12 +26,12 @@ Load [`library/process/research-and-signals.md`](../research-and-signals.md) for
 
 Idea-bank shape (keep tight): a candidate list plus the selected pick, nothing more. Per candidate: title, 1-3 sentence thesis, and one provenance line. Name the selected pick in one line. Do not add per-candidate Risk, Research Questions, Workspace Signal Summary, or Next Research Step sections.
 
-Save research output as `phase-1-research/research-artifact-v{N}.md` at `status: drafting`; only operator acceptance locks it. Scaffold the campaign folder with `python system/af.py new-campaign <slug> --flow marketing-standard-flow` (schema-true `project.md`, `activity.md`, `feedback-log.md`).
+Save research output as `phase-1-research/research-artifact-v{N}.md` at `status: drafting`; only operator acceptance marks it ready. Scaffold the campaign folder with `python system/af.py new-project <slug> --domain marketing --flow marketing-standard-flow`.
 
 **Tracker update at end of Phase 1:** `current_phase: 2-strategy`. Add to `deliverables`:
 ```yaml
 research-artifact:
-  status: locked
+  status: ready
   file: phase-1-research/research-artifact-v{N}.md
   last_updated: {date accepted}
 ```
@@ -39,31 +39,27 @@ This transition happens only after the operator approves the research artifact.
 
 ## Phase 2 — Strategy
 
-Two deliverables. Both can be reviewed externally OR drafted-through-to-lock — neither path is "exception-handling." Default behavior depends on whether a stakeholder exists for this campaign (see "Review path defaults" below).
+Two deliverables. Both may receive external feedback when a stakeholder exists, but feedback is not a tracker sub-state: they remain drafting until the useful revisions land, then become ready.
 
 | Step | Deliverable | Produces | Review path | Blocks |
 |---|---|---|---|---|
-| 2.1 | Business Brief | `phase-2-strategy/business-brief/draft-v{N}.md` | External when a stakeholder exists; otherwise drafting → lock | 2.2 cannot start until 2.1 is locked (with or without review) |
-| 2.2 | Campaign Brief | `phase-2-strategy/campaign-brief/draft-v{N}.md` | External when a stakeholder exists; otherwise drafting → lock | Phase 3 cannot start until 2.2 is locked (with or without review) |
+| 2.1 | Business Brief | `phase-2-strategy/business-brief/draft-v{N}.md` | Optional stakeholder feedback while drafting | 2.2 cannot start until 2.1 is ready |
+| 2.2 | Campaign Brief | `phase-2-strategy/campaign-brief/draft-v{N}.md` | Optional stakeholder feedback while drafting | Phase 3 cannot start until 2.2 is ready |
 
-When external review is the path: agent offers Gmail + Calendar coordination at export; `review: pending` while in flight; record `expected_feedback_by` when known. User sends, pastes feedback, agent applies revisions, then flips `review: complete`; operator locks. If the reviewer kills it, follow [`project-frontmatter.md`](../project-frontmatter.md) cancellation.
-
-When external review is NOT the path: brief drafts, gets locked, downstream unblocks. No `phase_override` log — review never being expected is not an override.
+When stakeholder feedback is useful, the agent may offer coordination after export. Keep the deliverable drafting while feedback is in flight; apply material changes through `af version`, then mark the accepted head ready. Track a due response only as an `activity.md` Attention item when the operator needs the reminder. No generic review fields or review button are used.
 
 **Tracker update at end of Phase 2:** `current_phase: 3-planning`. Add to `deliverables`:
 ```yaml
 business-brief:
-  status: locked
+  status: ready
   file: phase-2-strategy/business-brief/draft-v{N}.md
-  last_updated: {date locked}
-  review: {not_required | complete | waived}
+  last_updated: {date ready}
 campaign-brief:
-  status: locked
+  status: ready
   file: phase-2-strategy/campaign-brief/draft-v{N}.md
-  last_updated: {date locked}
-  review: {not_required | complete | waived}
+  last_updated: {date ready}
 ```
-Success criteria from the locked Business Brief stay IN the brief (the brief is the canonical source). `project.md` does not duplicate them.
+Success criteria from the ready Business Brief stay IN the brief (the brief is the canonical source). `project.md` does not duplicate them.
 
 ## Phase 3 — Planning
 
@@ -71,25 +67,25 @@ Three deliverables. Internal — not stakeholder-facing. Outputs prep for produc
 
 | Step | Deliverable | Produces | Depends on |
 |---|---|---|---|
-| 3.1 | Campaign Architecture | `phase-3-planning/campaign-architecture/draft-v{N}.md` | 2.2 locked |
-| 3.2 | Design Language ([template](../../deliverables/design-language/template.md)) | `phase-3-planning/design-language/design-language-v{N}.md` (+ `tokens.yaml`, `tokens.css`, `preview/`) | 2.2 locked |
+| 3.1 | Campaign Architecture | `phase-3-planning/campaign-architecture/draft-v{N}.md` | 2.2 ready |
+| 3.2 | Design Language ([template](../../deliverables/design-language/template.md)) | `phase-3-planning/design-language/design-language-v{N}.md` (+ `tokens.yaml`, `tokens.css`, `preview/`) | 2.2 ready |
 
-3.1 and 3.2 can run in parallel after 2.2 locks.
+3.1 and 3.2 can run in parallel after 2.2 is ready.
 
 Hard rule for multi-post campaigns: the per-post breakdown in Campaign Architecture (3.1) must cover ALL posts BEFORE Phase 4 begins. Posts in a series talk to each other; copywriter can't honor cross-post callbacks if it can't see them.
 
 **Tracker update at end of Phase 3:** `current_phase: 4-production`. Add (or update) in `deliverables`:
 ```yaml
 campaign-architecture:
-  status: locked
+  status: ready
   file: phase-3-planning/campaign-architecture/draft-v{N}.md
-  last_updated: {date locked}
+  last_updated: {date ready}
 design-language:
-  status: locked
+  status: ready
   file: phase-3-planning/design-language/design-language-v{N}.md
-  last_updated: {date locked}
+  last_updated: {date ready}
 ```
-Record `post_manifest` (ingredients + generation preferences from the locked Campaign Architecture) in `project.md` in the same turn — schema in [`project-frontmatter.md`](../project-frontmatter.md). Also add one row per planned post (`post-1`, `post-2`, …) at `status: not_started` with a folder pointer. The Phase 4 work fills the per-post ingredient files in.
+Record `post_manifest` (ingredients + generation preferences from the ready Campaign Architecture) in `project.md` in the same turn — schema in [`project-frontmatter.md`](../project-frontmatter.md). Also add one row per planned post (`post-1`, `post-2`, …) at `status: not_started` with a folder pointer. The Phase 4 work fills the per-post ingredient files in.
 
 ## Phase 4 — Production and Launch
 
@@ -99,25 +95,25 @@ When a production deliverable has unresolved directions, multi-session scope, or
 
 | Step | Deliverable | Produces | Depends on |
 |---|---|---|---|
-| 4.1 | Post ingredients (per post) — each ingredient named by `project.md` `post_manifest` (e.g. slide-copy, body-copy, image-prompts, video-spec), each with its own version trail and lock | `phase-4-production/posts/post-{n}/{ingredient}-v{N}.md` | 3.1 locked, 3.2 locked |
-| 4.2 | Post assembly — `post-FINAL.md` accumulates each ingredient as it locks, per [`post-final/template.md`](../../domains/marketing/deliverables/post-final/template.md) | `phase-4-production/posts/post-{n}/post-FINAL.md` | created when the post's first ingredient starts drafting |
-| 4.3 | Publish coordination + media reconciliation (per post) | publish block in `post-FINAL.md` frontmatter + `activity.md` `post_published` entry | all manifest ingredients locked and operator confirms the live URL |
+| 4.1 | Post ingredients (per post)—each ingredient named by `project.md` `post_manifest` (e.g. slide-copy, body-copy, image-prompts, video-spec), each with its own version trail | `phase-4-production/posts/post-{n}/{ingredient}-v{N}.md` | 3.1 ready, 3.2 ready |
+| 4.2 | Post assembly—`post-FINAL.md` accumulates each ingredient as it becomes ready, per [`post-final/template.md`](../../domains/marketing/deliverables/post-final/template.md) | `phase-4-production/posts/post-{n}/post-FINAL.md` | created when the post's first ingredient starts drafting |
+| 4.3 | Publish coordination + media reconciliation (per post) | publish block in `post-FINAL.md` frontmatter + `activity.md` `post_published` entry | all manifest ingredients ready and operator confirms the live URL |
 
-Ingredient order within a post: slide copy locks before body copy drafts (the body diverges from the deck, so the deck has to exist first); image prompts consume the design language's treatment block and the locked slide text.
+Ingredient order within a post: slide copy becomes ready before body copy drafts (the body diverges from the deck, so the deck has to exist first); image prompts consume the design language's treatment block and the ready slide text.
 
 External review (only when the post goes to a leadership stakeholder before publish — same default rule as Phase 2): agent offers to coordinate. Per-post.
 
-The cross-ingredient coherence check (body doesn't retell the slides, cover aligns with the hook, CTA placement) runs at `post-FINAL.md` lock per [`post-final/template.md`](../../domains/marketing/deliverables/post-final/template.md); video posts also run the cross-check in [`video-spec/template.md`](../../deliverables/video-spec/template.md).
+The cross-ingredient coherence check (body doesn't retell the slides, cover aligns with the hook, CTA placement) runs when `post-FINAL.md` becomes ready per [`post-final/template.md`](../../domains/marketing/deliverables/post-final/template.md); video posts also run the cross-check in [`video-spec/template.md`](../../deliverables/video-spec/template.md).
 
-When all ingredients are locked and publish media exists or has been selected, follow the publish-prep procedure in [`composio-notes.md`](../composio-notes.md).
+When all ingredients are ready and publish media exists or has been selected, follow the publish-prep procedure in [`composio-notes.md`](../composio-notes.md).
 
 **Tracker update during Phase 4** (per post, in the same turn as the file edit):
 - Post starts drafting: `deliverables.post-{n}.status: drafting` + `file: phase-4-production/posts/post-{n}/post-FINAL.md` + `last_updated`, creating the `post-FINAL.md` stub in the same turn.
-- An ingredient locks: its content lands in `post-FINAL.md` per [`lock-event.md`](../lock-event.md). The post row stays `drafting` until every manifest ingredient is in, then flips `locked`.
-- Post publishes (Phase 4.3): `af publish` owns the delivered state — publish block in `post-FINAL.md`, tracker, derived delivered-post receipt, and project `shipped_at` — per [`post-final/template.md`](../../domains/marketing/deliverables/post-final/template.md) "Publish / Export Mechanics".
+- An ingredient becomes ready: its content lands in `post-FINAL.md` per [`ready-event.md`](../ready-event.md). The post row stays `drafting` until every manifest ingredient is in, then flips `ready`.
+- Post publishes (Phase 4.3): `af publish` owns the published state — publish block in `post-FINAL.md`, tracker, derived published-post receipt, and project `shipped_at` — per [`post-final/template.md`](../../domains/marketing/deliverables/post-final/template.md) "Publish / Export Mechanics".
 - Arc changes mid-campaign (post added, dropped, or renumbered): update the affected `post-{n}` rows in the same turn. If a post's role changed, update its short `job`; put rationale in the head file or project plan.
 
-**Tracker update at end of Phase 4:** `current_phase: 5-launch-and-learn`. Set when every active post is `delivered`, `cancelled`, or explicitly removed from active campaign scope. Do not advance the whole campaign to Phase 5 on first ship; multi-post campaigns can publish early posts while later posts remain in production.
+**Tracker update at end of Phase 4:** `current_phase: 5-launch-and-learn`. Set when every active post is `published`, `cancelled`, or explicitly removed from active campaign scope. Do not advance the whole campaign to Phase 5 on first ship; multi-post campaigns can publish early posts while later posts remain in production.
 
 ## Phase 5 — Post-Launch Learning
 
@@ -129,8 +125,8 @@ Two steps, run in order after the active arc ends.
 | 5.2 Performance + campaign retro + completion | One closeout motion: capture `phase-5-launch-and-learn/performance-data.csv` per [`composio-notes.md`](../composio-notes.md) (connector-first MCP scan, manual gap-fill; metrics are meaningful ~14 days after each post's `published.posted_at`), then score the campaign in `phase-5-launch-and-learn/campaign-retro-v{N}.md`, then completion/archive when approved. |
 
 **Tracker update during Phase 5:**
-- Harvest retro lands: add `system-retro` row to `deliverables` at `status: locked`.
-- Campaign retro lands: add `campaign-retro` row at `status: locked`, then set `status: complete` + `completed_at: {date}`.
+- Harvest retro lands: add `system-retro` row to `deliverables` at `status: ready`.
+- Campaign retro lands: add `campaign-retro` row at `status: ready`, then set `status: complete` + `completed_at: {date}`.
 - Move folder to `workspace/projects/completed/{slug}/` (folder location is a side-effect of `LIFECYCLE.status: complete | cancelled`, not its own status value).
 
 Retro shapes: harvest retro = the two harvest skills + `system-retro` template for the summary; campaign retro = the `campaign-retro` template (performance capture is its input — capture first, then score).

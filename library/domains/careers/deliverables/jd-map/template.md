@@ -30,11 +30,11 @@ Turn a captured posting into an evidence-backed tailoring plan: what the JD dema
 
 ```yaml
 ---
-status: <drafting | locked | deferred>
+status: <drafting | ready | deferred>
 last_updated: <ISO date>
 ---
 ```
 
-## Lock Criteria
+## Readiness Criteria
 
-The jd-map is a working file and is not locked itself. Its `## Verification` section gates the resume/cover-letter lock: pack rules refuse `af lock` on those deliverables while Verification is missing or empty.
+The jd-map is a working file and is not ready itself. Its `## Verification` section gates resume/cover-letter readiness: pack rules refuse `af ready` on those deliverables while Verification is missing or empty.

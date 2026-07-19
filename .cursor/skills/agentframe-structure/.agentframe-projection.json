@@ -1,10 +1,10 @@
 {
-  "bundle_sha256": "7a4c2403ee7b948ac079a6313228817c2d9c1ad03d6c9fe10dacc3f0d3fc00fa",
+  "bundle_sha256": "c69d1ec935e343d6137d991aa6c92f5e53e17c9eff9dcb01faf9164210f9a885",
   "do_not_edit": true,
   "files": {
     "SKILL.md": "8a22cf54dd266a389a3bb54eb441f111a07d59d0f5c800d932ca7d37b570dcd8",
     "deliverable-template-changes.md": "be9cc8513fa39f51dcde8921def99382738aecf4bcd21962df1640db9dedc11d",
-    "flow-changes.md": "ee6de99b063abc265ab11b2db077a5b4bec81b1e8a742db26b048356a6af1a7f",
+    "flow-changes.md": "1ec299cc6bd3c35c9a8a0252f6544e63d8ca9034f6a94a26adf8b8e6f2897893",
     "process-file-changes.md": "461d6969141f212b46f990ddeca2152cd199e9993dc7104a5ff1ad7bf2e691ac"
   },
   "generated_by": "AgentFrame af sync-harnesses",

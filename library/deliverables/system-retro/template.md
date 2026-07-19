@@ -1,4 +1,4 @@
-﻿# Template: System Behavior Retro
+# Template: System Behavior Retro
 
 ## Purpose
 
@@ -9,7 +9,7 @@ The artifact is a mini plan file. It should let the operator approve immediate e
 ## Inputs
 
 - Project reached Phase 5 per the selected `flow` in `project.md`.
-- Final active deliverable is delivered, cancelled, or removed from project scope.
+- Final active deliverable is ready, published, cancelled, or removed from project scope.
 - Project `feedback-log.md` and `activity.md` exist, even if sparse.
 - Operator has not chosen to skip or defer Builder closeout.
 
@@ -78,7 +78,7 @@ End the artifact with this exact prompt:
 - If an approved deferred item has no existing `BB-*`, append one to `system/builder-backlog.md` in the same turn.
 - Log applied system behavior changes to `system/audit/agentframe.db` when they affect system behavior, schema, process files, templates, personas, or runtime machinery.
 
-## Review Path
+## Feedback / Handoff
 
 - **Reviewer:** operator approves, edits, defers, or rejects recommended changes inline.
 
@@ -88,19 +88,19 @@ Target file: `phase-5-launch-and-learn/system-retro-v{N}.md`
 
 ```yaml
 ---
-status: <drafting | locked>
+status: <drafting | ready>
 last_updated: <ISO-8601 timestamp>
 ---
 ```
 
-Follow standard versioning conventions for snapshots. See `library/process/lock-event.md` for lock mechanics and project tracker updates.
+Follow standard versioning conventions for snapshots. See `library/process/ready-event.md` for readiness mechanics and project tracker updates.
 
-## Lock Criteria
+## Readiness Criteria
 
 - The artifact uses exactly the three bucket sections.
 - Every item uses the `Action` / `Why` / `Target change` / `Current state` bullet shape.
 - Every item in `Recommended Changes` has a user decision or explicit deferred state.
 - Approved immediate patches have been applied and logged.
 - Approved deferred patches have an existing or newly appended active Builder backlog entry.
-- `system-retro-v{N}.md` is saved to `phase-5-launch-and-learn/system-retro-v{N}.md` with frontmatter `status: locked`.
-- Project tracker updated per `library/process/lock-event.md`.
+- `system-retro-v{N}.md` is saved to `phase-5-launch-and-learn/system-retro-v{N}.md` with frontmatter `status: ready`.
+- Project tracker updated per `library/process/ready-event.md`.

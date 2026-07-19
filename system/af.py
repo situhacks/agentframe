@@ -12,8 +12,8 @@ trail (activity.md) as a side effect, and prints back the JUDGMENT checklist
 the agent must still run. Stdlib only.
 
 Commands:
-  python system/af.py lock <project> <deliverable-slug-or-path>
-  python system/af.py publish <project> <target> --url URL [--posted-at ISO] [--platform P] [--media PATH ...]
+  python system/af.py ready <project> <deliverable-slug-or-path>
+  python system/af.py publish <project> <deliverable-slug-or-path> [--url URL] [--posted-at ISO] [--platform P] [--media PATH ...]
   python system/af.py version <project> <deliverable-slug> [--artifact <artifact-name>]
   python system/af.py draft <project> <deliverable-slug> (--file <project-relative-v1.md> | --artifact <artifact-name>)
   python system/af.py adopt <project> <deliverable-slug> --file <existing-project-relative.md>
@@ -30,7 +30,7 @@ Commands:
 `pipe` verbs drive the pipeline-topology surface (workspace/pipeline/): a
 stage-based funnel whose board (pipeline.md `applications:` rows) is the single
 owner of stage state. Application folders reuse the generic deliverable
-machinery — lock/version/doctor work on application.md exactly as on
+machinery — ready/version/doctor work on application.md exactly as on
 project.md. The spine still names no domain; a pack opts into the pipeline
 topology by declaring `topology: pipeline`.
 """
@@ -54,9 +54,9 @@ PROJECTS = os.path.join(ROOT, "workspace", "projects")
 DOMAINS = os.path.join(ROOT, "library", "domains")
 PIPELINE = os.path.join(ROOT, "workspace", "pipeline")
 
-STATUS_ENUM = {"not_started", "drafting", "locked", "delivered", "deferred"}
+STATUS_ENUM = {"not_started", "drafting", "ready", "published", "deferred"}
 LIFECYCLE_ENUM = {"active", "complete", "cancelled"}
-PROJECT_SCHEMA_VERSION = "2026-07-19"
+PROJECT_SCHEMA_VERSION = "2026-07-19-v2"
 EXPORTABLE_INGREDIENTS = ("image-prompts",)  # cross-domain names; packs add their own via pack.md `exportable:`
 
 # Pipeline stage machine (pipeline-topology packs; board = pipeline.md).
@@ -125,7 +125,7 @@ def write(path, text):
 def project_dir(arg):
     """Find a project by folder name, else by its `slug` frontmatter field.
     Pipeline application folders (application.md) resolve here too, so
-    lock/version/doctor work on them unchanged."""
+    ready/version/doctor work on them unchanged."""
     for base in (PROJECTS, os.path.join(PROJECTS, "completed")):
         d = os.path.join(base, arg)
         if os.path.isfile(os.path.join(d, "project.md")):
@@ -173,6 +173,18 @@ def set_scalar(fm, key, value, path="frontmatter"):
     if not pat.search(fm):
         die(f"{path}: field '{key}' not found — fix the file or the schema first")
     return pat.sub(rf"\g<1> {value}", fm, count=1)
+
+
+def upsert_scalar(fm, key, value, before="deliverables"):
+    """Set an optional top-level scalar, or insert it before a known owner block."""
+    if has_field(fm, key):
+        return set_scalar(fm, key, value)
+    if before is None:
+        return fm.rstrip("\n") + f"\n{key}: {value}\n"
+    marker = re.search(rf"^{re.escape(before)}:", fm, re.M)
+    if not marker:
+        die(f"frontmatter: cannot add optional field '{key}' before missing '{before}' block")
+    return fm[:marker.start()] + f"{key}: {value}\n" + fm[marker.start():]
 
 
 def clean_value(v):
@@ -290,6 +302,15 @@ def all_rows(fm):
     return re.findall(r"^  ([A-Za-z0-9_-]+):\s*$", block, re.M)
 
 
+def resolve_deliverable_target(fm, target):
+    """Return (tracker row, project-relative file) for a row slug or direct path."""
+    norm = target.replace("\\", "/")
+    if "/" not in norm:
+        return target, row_get(fm, target, "file") or die(f"row '{target}' has no file pointer")
+    matches = [row for row in all_rows(fm) if row_get(fm, row, "file") == norm]
+    return (matches[0] if len(matches) == 1 else None), norm
+
+
 def versions_in(folder, name):
     """All strictly-versioned {name}-v{N}.md numbers in a folder (ignores -v12-FINAL.md style names)."""
     out = []
@@ -362,12 +383,12 @@ def make_ctx():
     """The host helpers a domain rules module is handed (it never imports af.py)."""
     return types.SimpleNamespace(
         ROOT=ROOT, read=read, write=write, split_fm=split_fm, join_fm=join_fm,
-        set_scalar=set_scalar, get_scalar=get_scalar, row_set=row_set, row_get=row_get,
+        set_scalar=set_scalar, upsert_scalar=upsert_scalar, get_scalar=get_scalar, row_set=row_set, row_get=row_get,
         row_span=row_span, all_rows=all_rows, fm_list=fm_list, versions_in=versions_in, today=today,
         now_iso=now_iso, append_activity=append_activity, touch_lifecycle=touch_lifecycle, die=die)
 
 
-# ---------------------------------------------------------------- lock
+# ---------------------------------------------------------------- ready
 
 def pack_exportables(cfm):
     """Deliverable basenames the owning pack gates behind filed exports (pack.md `exportable:` list)."""
@@ -391,16 +412,12 @@ def export_gate_issues(cdir, rel, dfm, extra=()):
             for v in values for status in [manifest_path_status(cdir, rel, v)] if status]
 
 
-def cmd_lock(args):
+def cmd_ready(args):
     cdir = project_dir(args.project)
     sdoc = state_doc(cdir)
     cfm, cbody = split_fm(read(os.path.join(cdir, sdoc)), sdoc)
 
-    slug, rel = args.deliverable, None
-    if "/" in slug.replace("\\", "/"):
-        rel, slug = slug.replace("\\", "/"), None
-    else:
-        rel = row_get(cfm, slug, "file") or die(f"row '{slug}' has no file pointer")
+    slug, rel = resolve_deliverable_target(cfm, args.deliverable)
 
     dpath = os.path.join(cdir, rel)
     os.path.isfile(dpath) or die(f"deliverable file not found: {rel}")
@@ -416,48 +433,71 @@ def cmd_lock(args):
                 f"Land the approved finals under {folder}/media/ and record each path in exports[] "
                 f"frontmatter, then rerun. Override (rare): --allow-missing-exports - doctor flags "
                 f"the row until exports land.")
-        override_note = f"LOCKED WITHOUT EXPORTS (override): {'; '.join(gate)}"
-    dfm = set_scalar(dfm, "status", "locked", rel)
+        override_note = f"READY WITHOUT EXPORTS (override): {'; '.join(gate)}"
+    dfm = set_scalar(dfm, "status", "ready", rel)
     dfm = set_scalar(dfm, "last_updated", today(), rel)
 
     notes = []
     rules = load_rules(load_pack(project_domain(cfm))[1])
-    if rules and hasattr(rules, "on_lock"):
-        cfm, notes = rules.on_lock(make_ctx(), cdir, dpath, rel, cfm)
+    if rules and hasattr(rules, "on_ready"):
+        cfm, notes = rules.on_ready(make_ctx(), cdir, dpath, rel, cfm)
     if override_note:
         notes.append(override_note)
 
     write(dpath, join_fm(dfm, dbody))
     if slug:
-        cfm = row_set(cfm, slug, "status", "locked")
+        cfm = row_set(cfm, slug, "status", "ready")
         cfm = row_set(cfm, slug, "last_updated", today())
     cfm = touch_lifecycle(cfm)
     write(os.path.join(cdir, sdoc), join_fm(cfm, cbody))
-    append_activity(cdir, f"lock: {slug or os.path.basename(rel)} locked; artifact={rel}"
+    append_activity(cdir, f"ready: {slug or os.path.basename(rel)} ready; artifact={rel}"
                     + (f"; {'; '.join(notes)}" if notes else ""))
 
-    print(f"af lock: {rel} -> locked" + (f" ({'; '.join(notes)})" if notes else ""))
+    print(f"af ready: {rel} -> ready" + (f" ({'; '.join(notes)})" if notes else ""))
     print("\nJudgment checklist (agent + operator):")
-    print("  [ ] Template lock criteria verified (the deliverable's template)")
+    print("  [ ] Template readiness criteria verified (the deliverable's template)")
     print("  [ ] Humanizer pass run, when the template declares it (public-facing prose)")
     print("  [ ] Voice was loaded for this deliverable's drafting (confirm if session resumed)")
     print("  [ ] Voice mini-retro eligibility checked (library/process/voice-mini-retro.md)")
-    print("  [ ] Remaining follow-ups surfaced (review, export, deliver)")
+    print("  [ ] Remaining follow-ups surfaced (feedback, export, publish)")
 
 
 # ---------------------------------------------------------------- publish
 
 def cmd_publish(args):
     cdir = project_dir(args.project)
-    cfm, _ = split_fm(read(os.path.join(cdir, "project.md")), "project.md")
+    sdoc = state_doc(cdir)
+    cpath = os.path.join(cdir, sdoc)
+    cfm, cbody = split_fm(read(cpath), sdoc)
     domain = project_domain(cfm)
-    desc, pack_dir = load_pack(domain)
-    if not desc or "publish" not in fm_list(desc, "verbs"):
-        die(f"publish is not a verb the '{domain}' domain declares — see library/domains/{domain}/pack.md")
+    _, pack_dir = load_pack(domain)
     rules = load_rules(pack_dir)
-    if not rules or not hasattr(rules, "publish"):
-        die(f"the '{domain}' domain declares publish but ships no rules.publish")
-    rules.publish(make_ctx(), cdir, args)
+    if (rules and hasattr(rules, "publish") and hasattr(rules, "handles_publish")
+            and rules.handles_publish(make_ctx(), cdir, args)):
+        rules.publish(make_ctx(), cdir, args)
+        return
+
+    slug, rel = resolve_deliverable_target(cfm, args.deliverable)
+    dpath = os.path.join(cdir, rel)
+    os.path.isfile(dpath) or die(f"deliverable file not found: {rel}")
+    dfm, dbody = split_fm(read(dpath), rel)
+    status = get_scalar(dfm, "status")
+    if status != "ready":
+        die(f"{rel}: publish requires status ready (found {status or 'missing'}); run af ready first")
+    if args.url:
+        dfm = upsert_scalar(dfm, "published_url", yaml_quote(args.url), before=None)
+    dfm = set_scalar(dfm, "status", "published", rel)
+    dfm = set_scalar(dfm, "last_updated", today(), rel)
+    write(dpath, join_fm(dfm, dbody))
+    if slug:
+        cfm = row_set(cfm, slug, "status", "published")
+        cfm = row_set(cfm, slug, "last_updated", today())
+    cfm = touch_lifecycle(cfm)
+    write(cpath, join_fm(cfm, cbody))
+    label = slug or os.path.basename(rel)
+    detail = f"; url={args.url}" if args.url else ""
+    append_activity(cdir, f"publish: {label} published; artifact={rel}{detail}")
+    print(f"af publish: {rel} -> published" + (f" ({args.url})" if args.url else ""))
 
 
 # ---------------------------------------------------------------- version
@@ -508,6 +548,10 @@ def cmd_version(args):
     dpath = os.path.join(cdir, rel)
     name, n = head_of(dpath)
 
+    if not move_pointer and row_get(cfm, args.deliverable, "status") == "published":
+        die(f"tracker row '{args.deliverable}' points at a published unversioned assembly. "
+            "Published records are immutable; create a new tracked edition before revising its ingredients.")
+
     new_rel = os.path.join(os.path.dirname(rel), f"{name}-v{n + 1}.md").replace("\\", "/")
     new_path = os.path.join(cdir, new_rel)
     if os.path.exists(new_path):
@@ -521,20 +565,22 @@ def cmd_version(args):
 
     if move_pointer:
         cfm = row_set(cfm, args.deliverable, "file", new_rel)
+    else:
+        parent_rel = row_get(cfm, args.deliverable, "file")
+        parent_path = os.path.join(cdir, parent_rel)
+        if os.path.isfile(parent_path):
+            pfm, pbody = split_fm(read(parent_path), parent_rel)
+            pfm = set_scalar(pfm, "status", "drafting", parent_rel)
+            pfm = set_scalar(pfm, "last_updated", today(), parent_rel)
+            write(parent_path, join_fm(pfm, pbody))
     cfm = row_set(cfm, args.deliverable, "status", "drafting")
     cfm = row_set(cfm, args.deliverable, "last_updated", today())
     cfm = touch_lifecycle(cfm)
     write(cpath, join_fm(cfm, cbody))
 
-    if source_status in {"locked", "delivered"}:
-        append_activity(
-            cdir,
-            f"unlock_version: {args.deliverable} {rel} -> {new_rel}; "
-            f"source_status={source_status}; tracker_pointer_moved={str(move_pointer).lower()}",
-        )
-    else:
-        label = getattr(args, "artifact", None) or args.deliverable
-        append_activity(cdir, f"artifact_versioned: {label} v{n} -> v{n + 1}; {new_rel}")
+    label = getattr(args, "artifact", None) or args.deliverable
+    source_note = f"; source_status={source_status}" if source_status in {"ready", "published"} else ""
+    append_activity(cdir, f"artifact_versioned: {label} v{n} -> v{n + 1}; {new_rel}{source_note}")
 
     pointer_note = "tracker pointer moved" if move_pointer else "parent tracker pointer unchanged"
     print(f"af version: {rel} -> {new_rel} (head; {pointer_note}; prior version untouched as the snapshot)")
@@ -1454,13 +1500,13 @@ def cmd_pipe_stage(args):
             mats = app_materials(afm)
             rel, st = row_get(afm, mats[0], "file"), row_get(afm, mats[0], "status")
             m = re.search(r"-v(\d+)\.md$", rel or "")
-            if m and st in ("locked", "delivered"):
+            if m and st in ("ready", "published"):
                 fm = row_set(fm, slug, "shipped", f"v{m.group(1)}")
             else:
-                notes.append(f"primary material '{mats[0]}' is '{st}' — shipped left unset (lock + export before submitting next time)")
+                notes.append(f"primary material '{mats[0]}' is '{st}' — shipped left unset (ready + export before submitting next time)")
             for mat in mats[1:]:
                 mst = row_get(afm, mat, "status")
-                if mst not in ("locked", "delivered"):
+                if mst not in ("ready", "published"):
                     notes.append(f"material '{mat}' is '{mst}'")
     elif new == "interviewing":
         fm = row_set(fm, slug, "next_nudge", (datetime.date.today() + datetime.timedelta(days=PIPE_NUDGE_DAYS)).isoformat())
@@ -1669,7 +1715,7 @@ def media_manifest_issues_for_fm(cdir, cfm, source_label="project.md"):
     extra = pack_exportables(cfm)
     for slug in all_rows(cfm):
         st, f = row_get(cfm, slug, "status"), row_get(cfm, slug, "file")
-        if st not in ("locked", "delivered") or not f or not os.path.isfile(os.path.join(cdir, f)):
+        if st not in ("ready", "published") or not f or not os.path.isfile(os.path.join(cdir, f)):
             continue
         if not f.lower().endswith(".md"):
             continue
@@ -1727,7 +1773,7 @@ def media_manifest_notes(cdir):
         return notes
     project_ingredients = project_manifest_ingredients(cfm)
     for slug in all_rows(cfm):
-        if not re.match(r"post-\d+$", slug) or row_get(cfm, slug, "status") != "delivered":
+        if not re.match(r"post-\d+$", slug) or row_get(cfm, slug, "status") != "published":
             continue
         f = row_get(cfm, slug, "file")
         if not f or not os.path.isfile(os.path.join(cdir, f)):
@@ -1744,7 +1790,7 @@ def media_manifest_notes(cdir):
             or has_previewable_file(os.path.join(post_dir, "media"))
         )
         if image_bearing:
-            notes.append(f"{rel}: delivered {slug} has imagery signals but empty shipped_media[] - land shipped media in the post folder and record it on post-FINAL.md")
+            notes.append(f"{rel}: published {slug} has imagery signals but empty shipped_media[] - land shipped media in the post folder and record it on post-FINAL.md")
     return notes
 
 
@@ -2290,10 +2336,9 @@ def cmd_doctor(args):
     elif args.project:
         dirs = [project_dir(args.project)]
     else:
-        for base in (PROJECTS, os.path.join(PROJECTS, "completed")):
-            if os.path.isdir(base):
-                dirs += [os.path.join(base, d) for d in sorted(os.listdir(base))
-                         if os.path.isfile(os.path.join(base, d, "project.md"))]
+        if os.path.isdir(PROJECTS):
+            dirs = [os.path.join(PROJECTS, d) for d in sorted(os.listdir(PROJECTS))
+                    if d != "completed" and os.path.isfile(os.path.join(PROJECTS, d, "project.md"))]
     all_issues, notes = [], []
     for d in dirs:
         all_issues += check_project(d)
@@ -2329,7 +2374,7 @@ def cmd_doctor(args):
 
 # Verbs that mutate project state are Operator actions. `doctor` is read-only
 # and allowed in any mode; so is `pipe board`.
-OPERATOR_VERBS = {"lock", "publish", "version", "draft", "adopt", "new-project"}
+OPERATOR_VERBS = {"ready", "publish", "version", "draft", "adopt", "new-project"}
 OPERATOR_PIPE_VERBS = {"save", "start", "stage"}
 OPERATOR_AUTONOMY_VERBS = {"init", "start", "checkpoint", "finish"}
 OPERATOR_AUTOMATION_VERBS = {"init", "ready", "activate", "pause", "retire"}
@@ -2342,7 +2387,7 @@ def check_mode_gate(cmd, args=None):
     task-local routers, not by mutable repository mode state.
     """
     if os.environ.get("AGENTFRAME_MANAGED_RUN") == "1":
-        if cmd in {"lock", "publish", "automation", "sync-harnesses"}:
+        if cmd in {"ready", "publish", "automation", "sync-harnesses"}:
             die(f"'af {cmd}' is outside the managed-run charter; report blocked and exit")
         return
     return
@@ -2357,10 +2402,10 @@ def main():
     p = argparse.ArgumentParser(prog="af", description="AgentFrame state-transition CLI")
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    s = sub.add_parser("lock");            s.add_argument("project"); s.add_argument("deliverable")
-    s.add_argument("--allow-missing-exports", action="store_true"); s.set_defaults(fn=cmd_lock)
-    s = sub.add_parser("publish");         s.add_argument("project"); s.add_argument("post")
-    s.add_argument("--url", required=True); s.add_argument("--posted-at"); s.add_argument("--platform")
+    s = sub.add_parser("ready");           s.add_argument("project"); s.add_argument("deliverable")
+    s.add_argument("--allow-missing-exports", action="store_true"); s.set_defaults(fn=cmd_ready)
+    s = sub.add_parser("publish");         s.add_argument("project"); s.add_argument("deliverable")
+    s.add_argument("--url"); s.add_argument("--posted-at"); s.add_argument("--platform")
     s.add_argument("--media", nargs="*", default=[]); s.set_defaults(fn=cmd_publish)
     s = sub.add_parser("version");         s.add_argument("project"); s.add_argument("deliverable")
     s.add_argument("--artifact"); s.set_defaults(fn=cmd_version)

@@ -44,7 +44,7 @@ VALID_TOKENS = textwrap.dedent(
 VALID_MD = textwrap.dedent(
     """\
     ---
-    status: locked
+    status: ready
     storybook_samples: []
     ---
 
@@ -114,7 +114,7 @@ def test_missing_mood_fails_loudly(tmp_path):
     md = textwrap.dedent(
         """\
         ---
-        status: locked
+        status: ready
         ---
 
         # Design Language — Demo

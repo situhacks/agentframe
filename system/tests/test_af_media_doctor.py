@@ -15,7 +15,7 @@ def write(path, text):
 PROJECT_FM = """\
 name: Test
 slug: test
-schema_version: 2026-07-19
+schema_version: 2026-07-19-v2
 created_at: 2026-07-07
 domain: marketing
 status: active
@@ -26,7 +26,7 @@ post_manifest:
   ingredients: [body-copy, image-prompts]
 deliverables:
   post-1:
-    status: delivered
+    status: published
     file: posts/post-1/post-FINAL.md
     last_updated: 2026-07-07
 """
@@ -49,7 +49,7 @@ class TestMediaDoctor(unittest.TestCase):
             os.path.join(self.cdir, "posts/post-1/post-FINAL.md"),
             textwrap.dedent("""\
                 ---
-                status: delivered
+                status: published
                 last_updated: 2026-07-07
                 shipped_media:
                   - posts/post-1/media/final.png
@@ -65,7 +65,7 @@ class TestMediaDoctor(unittest.TestCase):
             os.path.join(self.cdir, "posts/post-1/post-FINAL.md"),
             textwrap.dedent("""\
                 ---
-                status: delivered
+                status: published
                 last_updated: 2026-07-07
                 shipped_media:
                   - media/final.png
@@ -74,13 +74,13 @@ class TestMediaDoctor(unittest.TestCase):
         )
         self.assertEqual(af.media_manifest_issues(self.cdir, self.project_fm()), [])
 
-    def test_delivered_image_post_without_shipped_media_is_note(self):
+    def test_published_image_post_without_shipped_media_is_note(self):
         write(os.path.join(self.cdir, "posts/post-1/visuals/draft.png"), "x")
         write(
             os.path.join(self.cdir, "posts/post-1/post-FINAL.md"),
             textwrap.dedent("""\
                 ---
-                status: delivered
+                status: published
                 last_updated: 2026-07-07
                 ---
                 """),
@@ -96,14 +96,14 @@ domain: marketing
 status: active
 deliverables:
   post-1-carousel:
-    status: locked
+    status: ready
     file: post-1-carousel/image-prompts-v1.md
     last_updated: 2026-07-09
 """
 
 
-class TestLockedExportableDoctor(unittest.TestCase):
-    """Doctor flags locked/delivered exportable deliverables with empty exports[]."""
+class TestReadyExportableDoctor(unittest.TestCase):
+    """Doctor flags ready/published exportable deliverables with empty exports[]."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -112,12 +112,12 @@ class TestLockedExportableDoctor(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def test_locked_image_prompts_without_exports_is_issue(self):
+    def test_ready_image_prompts_without_exports_is_issue(self):
         write(
             os.path.join(self.cdir, "post-1-carousel/image-prompts-v1.md"),
             textwrap.dedent("""\
                 ---
-                status: locked
+                status: ready
                 last_updated: 2026-07-09
                 ---
                 """),
@@ -125,13 +125,13 @@ class TestLockedExportableDoctor(unittest.TestCase):
         issues = af.media_manifest_issues(self.cdir, CAROUSEL_PROJECT_FM)
         self.assertTrue(any("empty exports[]" in issue for issue in issues))
 
-    def test_locked_image_prompts_with_filed_exports_passes(self):
+    def test_ready_image_prompts_with_filed_exports_passes(self):
         write(os.path.join(self.cdir, "post-1-carousel/media/final.pdf"), "x")
         write(
             os.path.join(self.cdir, "post-1-carousel/image-prompts-v1.md"),
             textwrap.dedent("""\
                 ---
-                status: locked
+                status: ready
                 last_updated: 2026-07-09
                 exports:
                   - media/final.pdf
@@ -140,7 +140,7 @@ class TestLockedExportableDoctor(unittest.TestCase):
         )
         self.assertEqual(af.media_manifest_issues(self.cdir, CAROUSEL_PROJECT_FM), [])
 
-    def test_frontmatterless_locked_file_is_reported_without_abort(self):
+    def test_frontmatterless_ready_file_is_reported_without_abort(self):
         write(os.path.join(self.cdir, "post-1-carousel/image-prompts-v1.md"), "# legacy file\n")
 
         issues = af.media_manifest_issues(self.cdir, CAROUSEL_PROJECT_FM)

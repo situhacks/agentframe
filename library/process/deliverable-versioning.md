@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Own the iteration shape for versioned deliverables under `workspace/projects/{slug}/`: first-draft scaffolding, surgical edits, replacement versions, editable copies, and lock reconciliation. The CLI owns file and tracker mechanics; the agent and operator own change judgment and content.
+Own the iteration shape for versioned deliverables under `workspace/projects/{slug}/`: first-draft scaffolding, surgical edits, replacement versions, editable copies, readiness, and immutable publication. The CLI owns file and tracker mechanics; the agent and operator own change judgment and content.
 
 ## When To Load
 
@@ -14,11 +14,11 @@ Before mutation, classify the operation:
 |---|---:|---|
 | First draft | Create v1 | `af draft` |
 | Existing authored draft | Register existing file | `af adopt` |
-| Surgical edit | No | Edit current drafting head; update `last_updated` |
+| Surgical edit | No | Edit current drafting or ready head; update `last_updated` |
 | Replacement | Yes | `af version` before editing |
 | Editable operator copy | Yes | `af version`, then hand off the new head |
-| Lock after replacement | Yes, then lock | `af version` -> edit -> `af lock` |
-| Delivered copy materially differs | Yes | Version the named row/artifact -> reconcile -> re-lock |
+| Ready after replacement | Yes, then ready | `af version` -> edit -> `af ready` |
+| Published copy needs change | Yes | Open a new version/edition; never edit the published artifact |
 
 ## Address Model
 
@@ -61,7 +61,7 @@ python system/af.py adopt <project> <row> --file <project-relative-name-v1.md>
 
 ### 2. Surgical edit
 
-Edit the current drafting head in place only when the change is bounded and does not move the deliverable's shape or claims:
+Edit the current drafting or ready head in place only when the change is bounded and does not move the deliverable's shape or claims:
 
 - typo, copyedit, or small wording swap inside a paragraph;
 - CTA wording swap that keeps the same CTA role;
@@ -100,15 +100,15 @@ Replacement-shaped changes include:
 
 When the operator requests an editable copy, version first and identify the new head. The snapshot they are protecting remains untouched.
 
-### 4. Locked or delivered head
+### 4. Ready or published head
 
-Direct edits to a locked or delivered head are not allowed. After the operator confirms substantive revision, `af version` is the explicit unlock/version event: it creates a drafting head and records the material event in `activity.md`. Re-lock or republish through the owning process after reconciliation.
+A ready head can take small corrections in place. Meaningful feedback uses `af version`, which preserves the ready snapshot and creates a drafting head. A published head is immutable: `af version` creates a new drafting head for ordinary versioned deliverables. An unversioned published assembly record cannot be reopened; create a new tracked edition.
 
 If the operator explicitly overrides versioning and asks for a substantive in-place edit, surface the snapshot risk first. Record the override in `activity.md` when downstream work depends on the prior shape.
 
-### 5. Lock
+### 5. Ready and publish
 
-When the operator approves the current head, follow [`lock-event.md`](lock-event.md). If approval includes replacement-shaped changes, version and edit first, then lock. For post ingredients, lock assembly updates `post-FINAL.md`; publish state belongs to that assembly record.
+When the current head is good enough to use or share, follow [`ready-event.md`](ready-event.md). If approval includes replacement-shaped changes, version and edit first, then mark ready. For post ingredients, readiness updates `post-FINAL.md`. Run `af publish` only when the artifact is being issued as an immutable record.
 
 ## Verification Or Logging
 
@@ -121,7 +121,7 @@ After `af draft` or `af version`, verify the command receipt and filesystem:
 - any template-specific frontmatter is present before content drafting;
 - no lower-numbered version was edited.
 
-Routine iteration narration does not go to `activity.md`; the commands themselves append one terse work pulse per run (`artifact_drafted` on draft, `artifact_versioned` on a drafting-to-drafting version) so the calendar can derive worked time — never add pulse lines by hand. Per-version change narration belongs only in a template-declared `changes_from_v{N}` field. Lock is the ordinary activity roll-up; an unlock/version event from a locked or delivered source is material and is logged by the command.
+Routine iteration narration does not go to `activity.md`; the commands themselves append one terse work pulse per run (`artifact_drafted` on draft, `artifact_versioned` on version) so the calendar can derive worked time—never add pulse lines by hand. Per-version change narration belongs only in a template-declared `changes_from_v{N}` field. `ready` and `publish` each write their own transition receipt.
 
 ## Boundaries
 

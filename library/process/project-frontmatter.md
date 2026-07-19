@@ -6,7 +6,7 @@
 
 The index is not a history log or a substitute for deliverable content. A small amount of duplication is deliberate: tracker `status` and `file` let an agent reconstruct the working set without scanning folders, and `af doctor` keeps that cache synchronized with each head file.
 
-**Schema version:** `2026-07-19` (v4). Projects migrate forward; `af doctor` rejects older live shapes.
+**Schema version:** `2026-07-19-v2` (v5). Active projects migrate forward; completed project snapshots keep the schema and vocabulary they closed with and are read as historical context, not validated as current live books.
 
 ## When To Load
 
@@ -61,23 +61,23 @@ Do not seed optional fields with empty lists or `null`. Absence means the state 
 ```yaml
 deliverables:
   {deliverable-slug}:
-    status: {not_started | drafting | locked | delivered | deferred}
+    status: {not_started | drafting | ready | published | deferred}
     file: {path-from-project-root}
     last_updated: {ISO date}
     job: {short current role}
-    review: {not_required | pending | complete | waived}
-    expected_feedback_by: {ISO date}
 ```
 
-`status` and `file` are required. A `not_started` row may point at the planned numeric-v1 path before the file exists. Once work begins, `last_updated` is required and the pointed head file must exist with the same status. `job` is optional and stays short: it explains the deliverable's current role, not its revision history. Review fields appear only when external review applies.
+`status` and `file` are required. A `not_started` row may point at the planned numeric-v1 path before the file exists. Once work begins, `last_updated` is required and the pointed head file must exist with the same status. `job` is optional and stays short: it explains the deliverable's current role, not its revision history.
+
+`ready` means good enough to use or share and is the ordinary completion state; small corrections may still land in place. Meaningful feedback creates a new drafting head with `af version`. `published` means issued outside the working loop and immutable; future changes require a new version or edition. Feedback coordination stays in conversation, `activity.md` Attention items, or the deliverable itself only when it materially affects the work—never as a generic tracker sub-state.
 
 Working directives, open questions, deferral reasons, publish data, exports, and version history live in the head deliverable or its prior versions. Do not add those to the tracker.
 
-Delivered rows older than 30 days may move to `knowledge/_archive/deliverables-archive.md` through `project-consolidate`. The archive preserves row shape so domain code can derive all-time facts without frontmatter counters.
+Published rows older than 30 days may move to `knowledge/_archive/deliverables-archive.md` through `project-consolidate`. The archive preserves row shape so domain code can derive all-time facts without frontmatter counters.
 
 ## Verification Or Logging
 
-`af doctor` validates schema version, required fields, lifecycle timestamps, domain/flow resolution, tracker rows, numeric head pointers, artifact status, optional channel/stakeholder pointers, and domain extensions. It reports drift and never auto-fixes.
+`af doctor` validates active projects plus the live pipeline: schema version, required fields, lifecycle timestamps, domain/flow resolution, tracker rows, numeric head pointers, artifact status, optional channel/stakeholder pointers, and domain extensions. It reports drift and never auto-fixes. Completed snapshots are excluded from the default scan.
 
 An approved manual correction appends `frontmatter_manual_edit` using [`project-activity.md`](project-activity.md). Button-owned transitions write their own state and activity receipts.
 

@@ -304,7 +304,7 @@ def write_research_artifact(
         f"{_frontmatter_source_rows(raw_rel, metadata_rel, extracted.generated_media_paths)}\n"
         "---\n\n"
         f"# {title}\n\n"
-        "> Gemini Deep Research API output. Review before locking or moving to Phase 2.\n\n"
+        "> Gemini Deep Research API output. Review before marking ready or moving to Phase 2.\n\n"
         f"{extracted.report_text}\n"
     )
     artifact_path.write_text(artifact, encoding="utf-8")

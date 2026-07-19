@@ -2,11 +2,11 @@
 
 ## Purpose
 
-Frame the business case for THIS opportunity. Sets the bar for everything that follows: if the business goal isn't measurable, no downstream deliverable can claim success. If the audience isn't named, the copywriter can't write to them. Stakeholder-facing when a stakeholder exists — exports to Word + PPT for external review in that case; otherwise drafts to lock without review.
+Frame the business case for THIS opportunity. Sets the bar for everything that follows: if the business goal isn't measurable, no downstream deliverable can claim success. If the audience isn't named, the copywriter can't write to them. Stakeholder-facing when a stakeholder exists—exports to Word + PPT when feedback needs a shareable file; otherwise it can move directly from drafting to ready.
 
 ## Inputs
 
-- Locked Research Artifact at `phase-1-research/research-artifact-v{N}.md`
+- Ready Research Artifact at `phase-1-research/research-artifact-v{N}.md`
 - `positioning.md` (for POV anchoring)
 - **Note:** Do not load the `voice/pairs/` examples (would push tone too casual for stakeholders).
 
@@ -41,36 +41,35 @@ The `phase-2-strategy/business-brief/draft-v{N}.md` file carries this YAML front
 
 ```yaml
 ---
-status: <drafting | locked | deferred>
+status: <drafting | ready | deferred>
 last_updated: <ISO-8601 timestamp>
 exports:
   - {path: <relative path to exported file>, generated_at: <ISO-8601 timestamp>}
 ---
 ```
 
-State transitions: `drafting` → `locked` (or `drafting` → `deferred`). When external review is the path, the deliverable stays at `status: drafting` while `review` advances `pending → complete`; the operator locks once `review: complete`. See [`library/process/lock-event.md`](../../../../process/lock-event.md) for lock-event mechanics.
+State transitions: `drafting` → `ready` (or `drafting` → `deferred`). Stakeholder feedback, when used, happens while drafting and does not create tracker fields. See [`library/process/ready-event.md`](../../../../process/ready-event.md) for readiness mechanics.
 
-## Lock Criteria
+## Readiness Criteria
 
 - Internal draft approved by operator
-- Frontmatter `status` set to `locked`
+- Frontmatter `status` set to `ready`
 - Campaign tracker updated per selected `flow`
-- Word + PPT exports generated to `phase-2-strategy/business-brief/exports/`
-- **If external review is the path:** reviewer feedback applied so `review: complete`, OR explicitly `waived` with reason logged to `activity.md` + `phase_override` entry in the campaign's `activity.md`. **If review is `not_required`**: no review step — drafting → lock is the path; no override log needed.
+- When stakeholder feedback or handoff needs them, Word + PPT exports generated to `phase-2-strategy/business-brief/exports/`
+- Any stakeholder feedback the operator chose to seek has been applied or consciously left for a later version.
 - Final markdown saved with `last_updated` frontmatter set
 - Unblocks Campaign Brief
 
-## Review Path
+## Feedback / Handoff
 
-- **Path**: external **when a stakeholder exists** (manager, team lead, leadership review the brief). Otherwise the brief drafts to lock with no review. See the selected `flow` in `project.md` for flow-specific review defaults.
+- **Path**: optional stakeholder feedback when it improves the decision. Otherwise move directly to ready.
 - **Reviewer**: typically manager or business stakeholder (when external is the path).
 - **Export format**: Word (`.docx`) + PowerPoint (`.pptx`).
-- **Tracker signal**: See [`library/process/project-frontmatter.md`](../../../../process/project-frontmatter.md) for the `deliverables.business-brief.review` enum.
-- **Coordination**: when external review IS the path, agent offers to draft the email + calendar invite on export (see `runtime/review-coordination.md`).
+- **Coordination**: when feedback is requested, the agent may offer to draft the email or meeting note after export. Use an Attention item only if a response date matters.
 
 ## Publish / Export Mechanics
 
-When this deliverable locks, export to Word + PowerPoint:
+When this deliverable becomes ready, export to Word + PowerPoint when those formats are needed:
 
 - **Supported formats**: `.docx`, `.pptx`
 - **Template source**: campaign-local templates are optional at `workspace/projects/{slug}/exports/templates/business-brief.{docx,pptx}`

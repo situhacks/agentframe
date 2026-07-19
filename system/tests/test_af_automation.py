@@ -12,7 +12,7 @@ from system import af
 PROJECT_MD = """---
 name: Automation Test
 slug: automation-test
-schema_version: 2026-07-19
+schema_version: 2026-07-19-v2
 created_at: 2026-07-12
 domain: project-mgmt
 status: active
@@ -126,7 +126,7 @@ class AutomationTests(unittest.TestCase):
             af.check_mode_gate("version", args)
             af.check_mode_gate("draft", args)
             with self.assertRaises(SystemExit):
-                af.check_mode_gate("lock", args)
+                af.check_mode_gate("ready", args)
             with self.assertRaises(SystemExit):
                 af.check_mode_gate("automation", args)
             with self.assertRaises(SystemExit):

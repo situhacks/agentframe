@@ -29,9 +29,9 @@ Use one line per event:
 
 `{YYYY-MM-DD HH:MM} — {event_type}: {short result lead}; {resume-useful consequence, path, state change, or reason}`
 
-Use a snake_case `event_type` and keep the line under about 200 characters. Log locks, deliveries, overrides, plan changes, retros, cancellations, consolidations, and structural decisions. Do not log chat turns or pre-lock iteration; version files own `changes_from_v{N}`.
+Use a snake_case `event_type` and keep the line under about 200 characters. Log readiness, publication, overrides, plan changes, retros, cancellations, consolidations, and structural decisions. Do not log chat turns or ordinary drafting iteration; version files own `changes_from_v{N}`.
 
-Buttons write `artifact_drafted`, `artifact_versioned`, lock, publish, and other mechanical receipts. Agents do not duplicate them.
+Buttons write `artifact_drafted`, `artifact_versioned`, `ready`, `publish`, and other mechanical receipts. Agents do not duplicate them.
 
 Canonical agent-written shapes:
 

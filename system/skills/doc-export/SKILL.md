@@ -5,7 +5,7 @@ description: Render a finished resume/cover-letter markdown head into ATS-safe s
 
 # doc-export
 
-**The markdown is where the content gets right; this skill only makes it submission-shaped.** Iterate `resume/resume-v{N}.md` / `cover-letter/cover-letter-v{N}.md` until the jd-map verification passes — that is the work. Then export, file, record, lock.
+**The markdown is where the content gets right; this skill only makes it submission-shaped.** Iterate `resume/resume-v{N}.md` / `cover-letter/cover-letter-v{N}.md` until the jd-map verification passes—that is the work. Then export, file, record, and mark ready.
 
 ## 1. Pick the format from the board's `ats` value
 
@@ -27,14 +27,14 @@ description: Render a finished resume/cover-letter markdown head into ATS-safe s
 
 Use the vendored [`docx`](../docx/) skill to build the document; [`docx-generator-reference.js`](docx-generator-reference.js) in this folder is a runnable layout reference matching the resume template's structure (Calibri, section rules, right-tab dates, round bullets). Write to `{deliverable}/media/{name}-v{N}.docx`.
 
-## 4. File, validate, lock
+## 4. File, validate, ready
 
-1. Exports land under the deliverable's `media/` and each path goes into the head file's `exports[]` frontmatter — `af lock` refuses without them.
+1. Exports land under the deliverable's `media/` and each path goes into the head file's `exports[]` frontmatter — `af ready` refuses without them.
 2. **Plain-text paste test** (mandatory): open the PDF/DOCX, select-all, copy, paste into a plain-text editor. Reading order intact, headings present, dates intact, no garbled glyphs. Consumer "ATS score" sites are lead-gen theater — this test plus the jd-map verification is the gate.
-3. `af lock <slug> resume` (and `cover-letter`) — the pack rules re-check verification + parse hazards.
+3. `af ready <slug> resume` (and `cover-letter`) — the pack rules re-check verification + parse hazards.
 
 ## Boundaries
 
-- Never export from a draft that hasn't passed the jd-map `## Verification` — the lock will refuse it anyway.
+- Never export from a draft that hasn't passed the jd-map `## Verification`—the readiness gate will refuse it anyway.
 - Exported binaries under `workspace/` are personal (gitignored); nothing here publishes anywhere.
 - Submission itself is always the human, in a normal browser, on the company career site.

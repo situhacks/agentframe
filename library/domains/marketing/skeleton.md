@@ -2,7 +2,7 @@
 # IDENTITY
 name: "{name}"
 slug: {slug}
-schema_version: 2026-07-19
+schema_version: 2026-07-19-v2
 created_at: {date}
 domain: {domain}
 
@@ -21,4 +21,4 @@ deliverables: {{}}
 
 ## Thesis
 
-(one paragraph once the direction locks)
+(one paragraph once the direction is agreed)

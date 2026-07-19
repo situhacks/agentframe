@@ -101,7 +101,7 @@ A run in `review` finishes through:
 python system/af.py autonomy finish <project> <run-id> --approved-by operator
 ```
 
-If `completion_gate: human`, only `operator` approval is valid. If it is `independent-review`, `reviewer` is valid after evidence is recorded. Completion closes the run only; it never locks, publishes, merges, transmits, overwrites an operator-edited artifact, or completes the project.
+If `completion_gate: human`, only `operator` approval is valid. If it is `independent-review`, `reviewer` is valid after evidence is recorded. Completion closes the run only; it never marks a deliverable ready, publishes, merges, transmits, overwrites an operator-edited artifact, or completes the project.
 
 ## Verification Or Logging
 
@@ -113,6 +113,6 @@ At handoff, report the run path, status, iterations used, requested versus actua
 
 - This process does not schedule recurring loops, invoke model APIs, choose vendor model names, or estimate prices.
 - It does not replace the calling flow, deliverable template, BDR, production process, or their quality criteria.
-- It does not authorize external messages, publishing, locking, merging, purchases, permission changes, or scope expansion.
+- It does not authorize external messages, deliverable readiness/publication, merging, purchases, permission changes, or scope expansion.
 - It does not write routine run telemetry to `system/audit/agentframe.db`.
 - Parallel runs and shared-state coordination are out of scope until dogfooding demonstrates a real need.

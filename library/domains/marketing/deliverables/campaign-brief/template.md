@@ -2,11 +2,11 @@
 
 ## Purpose
 
-Where the Business Brief framed the opportunity, the Campaign Brief frames the campaign that delivers on it. At a level the marketing team can react to and steer. NOT the full execution plan — that lives in Campaign Architecture. The sweet spot here is "here's the story we'd tell, here are 2 angle options per post, react before we go build." Stakeholder-facing when a stakeholder exists; exports to Word + PPT in that case. Otherwise drafts to lock without review.
+Where the Business Brief framed the opportunity, the Campaign Brief frames the campaign that acts on it. At a level the marketing team can react to and steer. NOT the full execution plan—that lives in Campaign Architecture. The sweet spot here is "here's the story we'd tell, here are 2 angle options per post, react before we go build." Export to Word or PPT only when stakeholder feedback needs a shareable file; otherwise move directly from drafting to ready.
 
 ## Depends On
 
-- Business Brief locked (audience direction + success criteria become inputs; do NOT re-derive them)
+- Business Brief ready (audience direction + success criteria become inputs; do NOT re-derive them)
 - `library/context/operator/positioning.md` loaded (for Key message anchoring)
 
 ## Output Shape
@@ -23,16 +23,16 @@ Author: a marketer drafting this for review. Reader: the same stakeholder who ap
 - **Timeline** — milestones, not a Gantt
 - **Success metrics** — binary or quantified
 - **Light narrative arc** — 3-5 sentences (the STORY, not the post list)
-- **Light post list with 2 angle options per post** — explicitly NOT a locked plan; leaves room for stakeholder direction
+- **Light post list with 2 angle options per post** — explicitly NOT a fixed plan; leaves room for stakeholder direction
 
 ## Hard Constraints
 
 - Stakeholder-facing. Story-led. Treat the reader as someone who'll react with "I'd lean toward angle B for post 3" — give them something to react to, not a plan to approve. Keep it tight; if it's longer than 2 pages of Word, you've drifted into Campaign Architecture territory.
 - Theme stated in one sentence
 - Channel hypothesis names specific channels with reasoning
-- Design direction lists 2-3 light hypotheses, not locked picks — room for Phase 3 to develop
+- Design direction lists 2-3 light hypotheses, not final picks—room for Phase 3 to develop
 - Light arc has beginning, middle, end (a STORY, not a list)
-- Post list shows angle options, not locked picks — room for stakeholder direction
+- Post list shows angle options, not final picks—room for stakeholder direction
 - Success metrics binary or quantified
 - Every post has a clear role (hook/build/payoff/CTA), no filler
 - Key message anchored in `positioning.md`
@@ -43,32 +43,32 @@ The `phase-2-strategy/campaign-brief/draft-v{N}.md` file carries this YAML front
 
 ```yaml
 ---
-status: <drafting | locked | deferred>
+status: <drafting | ready | deferred>
 last_updated: <ISO-8601 timestamp>
 exports:
   - {path: <relative path to exported file>, generated_at: <ISO-8601 timestamp>}
 ---
 ```
 
-## Lock Criteria
+## Readiness Criteria
 
 - Internal draft approved by operator
-- Frontmatter `status` set to `locked`
-- Campaign tracker `deliverables.campaign-brief.status` set to `locked` in the same turn
-- Word + PPT exports generated to `phase-2-strategy/campaign-brief/exports/` (per Publish / Export Mechanics below)
-- **If external review is the path**: reviewer feedback applied OR explicitly `waived` with reason logged + `phase_override` entry in the campaign's `activity.md`. **If review is `not_required`**: no review step — drafting → lock is the path; no override log needed.
+- Frontmatter `status` set to `ready`
+- Campaign tracker `deliverables.campaign-brief.status` set to `ready` in the same turn
+- When stakeholder feedback or handoff needs them, Word + PPT exports generated to `phase-2-strategy/campaign-brief/exports/` (per Publish / Export Mechanics below)
+- Any stakeholder feedback the operator chose to seek has been applied or consciously left for a later version.
 - Final markdown saved with `last_updated` frontmatter set
 - Unblocks Phase 3
 
-## Review Path
+## Feedback / Handoff
 
-- **Path**: external **when a stakeholder exists** (typically the same reviewer as the Business Brief). Otherwise the brief drafts to lock with no review — that is the normal path for solo work, not exception-handling. See the selected `flow` in `project.md` for flow-specific review defaults.
+- **Path**: optional stakeholder feedback, usually from the same reader as the Business Brief. Otherwise move directly to ready.
 - **Reviewer**: typically manager or business stakeholder (when external is the path); same reviewer as Business Brief by default.
 - **Coordination**: when external review IS the path, agent offers to draft the email + calendar invite on export. Often combined with Business Brief review in one meeting.
 
 ## Publish / Export Mechanics
 
-When this deliverable locks, the agent exports it to Word + PowerPoint per the agent-first export pipeline:
+When this deliverable becomes ready, the agent exports it to Word + PowerPoint when those formats are needed:
 
 - **Supported formats**: `.docx`, `.pptx`
 - **Template source**: campaign-local templates are optional at `workspace/projects/{slug}/exports/templates/campaign-brief.{docx,pptx}`

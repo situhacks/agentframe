@@ -2,11 +2,11 @@
 
 ## Purpose
 
-Risks, Assumptions, Issues, and Dependencies in one living document — the engagement's standing record of what could go wrong, what's being taken for granted, what's actively blocking, and what it waits on. A **living doc**: continuously updated, never lock-and-shipped. Lives in the project's `knowledge/`.
+Risks, Assumptions, Issues, and Dependencies in one living document—the engagement's standing record of what could go wrong, what's being taken for granted, what's actively blocking, and what it waits on. A **living doc**: continuously updated, never terminal. Lives in the project's `knowledge/`.
 
 ## Inputs
 
-- The locked `charter` (scope, constraints, stakeholders).
+- The ready `charter` (scope, constraints, stakeholders).
 - Meeting notes and status updates as the engagement runs.
 
 ## Sections
@@ -29,11 +29,11 @@ Four tables. Every entry carries **one named owner** and a date.
 
 ```yaml
 ---
-status: drafting   # living doc — stays drafting through the engagement, never locks
+status: drafting   # living doc—stays drafting through the engagement
 last_updated: <ISO-8601 timestamp>
 ---
 ```
 
-## Lock Criteria
+## Readiness Criteria
 
-Living — does not lock. It is current when every open entry has an owner and a status, and the weekly review ran. The closeout retro reads its final state.
+Living—does not use deliverable readiness state. It is current when every open entry has an owner and a status, and the weekly review ran. The closeout retro reads its final state.

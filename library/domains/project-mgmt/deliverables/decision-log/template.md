@@ -32,6 +32,6 @@ last_updated: <ISO-8601 timestamp>
 ---
 ```
 
-## Lock Criteria
+## Readiness Criteria
 
-Living — does not lock. Current when every material decision taken to date has an entry with date, rationale, and owner. Read at closeout for the decision trail.
+Living—does not use deliverable readiness state. Current when every material decision taken to date has an entry with date, rationale, and owner. Read at closeout for the decision trail.

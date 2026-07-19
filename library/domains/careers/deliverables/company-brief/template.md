@@ -27,11 +27,11 @@ Enough cited, current company knowledge to tailor honestly and interview credibl
 
 ```yaml
 ---
-status: <drafting | locked | deferred>
+status: <drafting | ready | deferred>
 last_updated: <ISO date>
 ---
 ```
 
-## Lock Criteria
+## Readiness Criteria
 
-Not locked — it feeds the letter and interview prep. Refresh `## Now` if the application reaches interviews more than ~30 days after drafting.
+Not ready — it feeds the letter and interview prep. Refresh `## Now` if the application reaches interviews more than ~30 days after drafting.

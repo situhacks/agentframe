@@ -12,7 +12,7 @@ from system import af
 PROJECT_MD = """---
 name: Autonomy Test
 slug: auto-test
-schema_version: 2026-07-19
+schema_version: 2026-07-19-v2
 created_at: 2026-07-10
 domain: marketing
 status: active

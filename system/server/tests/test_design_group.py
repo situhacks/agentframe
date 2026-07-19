@@ -9,7 +9,7 @@ from system.server.lib.surface import artifacts
 
 DL_MD = """\
 ---
-status: locked
+status: ready
 storybook: preview/storybook.html
 ---
 
@@ -59,7 +59,7 @@ class DesignGroupTests(unittest.TestCase):
     def test_group_is_pinned_first_in_artifact_groups(self):
         with tempfile.TemporaryDirectory() as tmp:
             pdir = _project(Path(tmp))
-            rows = {"messaging": {"file": "phase-2/messaging-v1.md", "status": "locked"}}
+            rows = {"messaging": {"file": "phase-2/messaging-v1.md", "status": "ready"}}
             groups = artifacts.artifact_groups(pdir, rows)
             self.assertEqual(groups[0]["kind"], "design")
 

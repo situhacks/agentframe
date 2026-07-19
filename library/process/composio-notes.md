@@ -1,20 +1,20 @@
-﻿# Composio Notes
+# Composio Notes
 
 Canonical Composio/Rube behavior for AgentFrame. Owns publish-prep and performance-capture procedures plus durable platform quirks. Loaded by any flow phase that wants to coordinate with connected tools.
 
 ## Publish Prep
 
-When a post's copy is locked and publish media exists or has been selected, offer to prepare the draft/post through connected tools. If the operator accepts, ask the live Composio/Rube MCP surface what publishing tools are connected for the target platform and use the smallest tool that produces a draft.
+When a post's copy is ready and publish media exists or has been selected, offer to prepare the draft/post through connected tools. If the operator accepts, ask the live Composio/Rube MCP surface what publishing tools are connected for the target platform and use the smallest tool that produces a draft.
 
-Publish coordination is manual in POC (no auto-publishing). Connected tools can prepare drafts when available, but draft prep is not delivered state. When the operator publishes and provides the live URL plus the media that actually went out, reconcile the post's canonical `-v{N}.md` per the relevant deliverable template; `af publish` updates the tracker, derives the delivered-post total, and appends `post_published` to `activity.md`.
+Publish coordination is manual in POC (no auto-publishing). Connected tools can prepare drafts when available, but draft prep is not published state. When the operator publishes and provides the live URL plus the media that actually went out, reconcile the post's canonical `-v{N}.md` per the relevant deliverable template; `af publish` updates the tracker, derives the published-post total, and appends `post_published` to `activity.md`.
 
 LinkedIn via Composio can prepare text/image drafts; PDF/document carousels stay manual: prepare the text, then have the operator upload the PDF in LinkedIn.
 
 ## Performance Capture
 
-Performance capture is connector-first, then manual gap-fill. Nudge around 14 days after each post's `published.posted_at`; for multi-post projects, capture can happen for early delivered posts while later posts are still in production, before system retro, or between system retro and project retro.
+Performance capture is connector-first, then manual gap-fill. Nudge around 14 days after each post's `published.posted_at`; for multi-post projects, capture can happen for early published posts while later posts are still in production, before system retro, or between system retro and project retro.
 
-For each platform named in delivered frontmatter:
+For each platform named in published frontmatter:
 
 1. Ask the live Composio/Rube MCP surface what tools are connected for that platform and try the smallest read-only analytics/content tools available.
 2. If the connector returns only partial metrics, write the partial row and mark unsupported fields blank with a note such as `unknown, not zero`.

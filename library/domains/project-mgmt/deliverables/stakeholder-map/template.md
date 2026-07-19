@@ -6,7 +6,7 @@ The engagement-level relationship view: who matters, where they sit, how to work
 
 ## Inputs
 
-- The locked `charter` (named stakeholders).
+- The ready `charter` (named stakeholders).
 - The global people entities (`library/context/people/{slug}/`) where they exist — referenced by slug, not copied.
 
 ## Sections
@@ -29,6 +29,6 @@ last_updated: <ISO-8601 timestamp>
 ---
 ```
 
-## Lock Criteria
+## Readiness Criteria
 
-Living — does not lock. Current when every charter-named stakeholder has a row with influence, interest, and a strategy. Feeds the engagement's status cadence.
+Living—does not use deliverable readiness state. Current when every charter-named stakeholder has a row with influence, interest, and a strategy. Feeds the engagement's status cadence.

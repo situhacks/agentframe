@@ -41,7 +41,7 @@ Two layers, kept separate:
     [`domains/project-mgmt/deliverables/`](../../domains/project-mgmt/deliverables/).
 - **Produced deliverables (build-as-you-go, tracked + versioned).** Findings,
   recommendations, decks, memos — instances of the generic deliverable shape or any pack
-  template, versioned and locked exactly as in open flow
+  template, versioned and ready exactly as in open flow
   ([`deliverable-versioning.md`](../deliverable-versioning.md)).
 
 ## Tracker Updates
@@ -49,11 +49,12 @@ Two layers, kept separate:
 - Scaffold via `python system/af.py new-project <slug> --domain project-mgmt --flow project-mgmt-open-flow`; `current_phase` starts `active`.
 - The four governance docs are **knowledge substrate, not tracker rows** — they live in
   `knowledge/` and do not appear in `project.md` `deliverables`. Only produced
-  deliverables get tracker rows, moving `not_started → drafting → locked → delivered` in
-  the same turn their files change.
+  deliverables get tracker rows, moving `not_started → drafting → ready` in the same turn
+  their files change. `ready → published` is optional and only applies when the artifact
+  is issued as an immutable record.
 - Schema and drift checks: [`project-frontmatter.md`](../project-frontmatter.md). State
-  transitions are button-owned (`python system/af.py`); lock triggers per
-  [`lock-event.md`](../lock-event.md).
+  transitions are button-owned (`python system/af.py`); readiness triggers per
+  [`ready-event.md`](../ready-event.md).
 
 ## Overrides And Skips
 
@@ -72,7 +73,7 @@ Two layers, kept separate:
 
 Same two-step learning close as open flow — harvest retro (`system-retro`) → performance
 capture + project retro → completion. `LIFECYCLE.status: complete` only after the project
-retro locks or the operator records a closeout override in `activity.md`. At closeout,
+retro is ready or the operator records a closeout override in `activity.md`. At closeout,
 run [`project-consolidate`](../../../system/skills/project-consolidate/SKILL.md) to
 archive stale governance entries from `knowledge/`.
 

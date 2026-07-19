@@ -1,4 +1,4 @@
-﻿# Deliverable Template Authoring
+# Deliverable Template Authoring
 
 Use this when creating or materially reshaping `library/deliverables/{type}/template.md`.
 
@@ -11,20 +11,20 @@ Deliverable templates define reusable artifact shape: what the agent must produc
 Use this order unless a specific deliverable earns a different shape:
 
 1. `Purpose` — what decision, output, or handoff this deliverable exists to create.
-2. `Inputs` or `Depends On` — what must be loaded or locked before drafting. Include context-loading choices here only when the template must load, partially load, or deliberately skip a file/process to draft or lock correctly. Name the source; do not restate its content.
+2. `Inputs` or `Depends On` — what must be loaded or ready before drafting. Include context-loading choices here only when the template must load, partially load, or deliberately skip a file/process to draft or become ready correctly. Name the source; do not restate its content.
 3. `Output Shape` or `Sections` — the artifact the agent writes. Include author, reader, stance, or register only when that changes the shape of the artifact.
 4. `Hard Constraints` — non-negotiable rules earned by observed failure or explicit product need.
 5. `Draft Frontmatter Convention` — only fields this deliverable file carries.
-6. `Lock Criteria` — what must be true before `status: locked`.
+6. `Readiness Criteria` — what must be true before `status: ready`.
 
 ## Optional Sections
 
 Optional sections are not headings to copy into every template. Add one only when the section itself changes what a future agent loads, writes, verifies, routes, exports, or asks the operator to decide.
 
-- `Review Path` — reviewer state, approval sequence, or downstream unlock rules that differ from ordinary operator approval. Do not restate the selected campaign flow's normal review cadence.
+- `Feedback / Handoff` — only when this deliverable needs a specific external feedback or handoff path beyond ordinary operator iteration. Do not add generic tracker state.
 - `Humanizer Pass` — only for public-facing deliverables where prose is likely to ship (typically Phase 4 production artifacts). Name the trigger surface and scope. If the deliverable is internal, omit the section.
-- `Publish / Export Mechanics` — non-trivial format generation, delivered-state reconciliation, or publish records owned by this deliverable. Keep simple export formats in `Review Path`; keep reusable mechanics in process or export files.
-- `Exceptions / Branches` — state-changing branches that alter the normal path, such as stop, route upstream, waive, cancel, or defer. Not examples. If the item is always true, make it a hard constraint. If it is source loading, put it in `Inputs`. If it is required before lock, put it in `Lock Criteria`.
+- `Publish / Export Mechanics` — non-trivial format generation, published-state reconciliation, or publish records owned by this deliverable. Keep simple format notes in `Feedback / Handoff`; keep reusable mechanics in process or export files.
+- `Exceptions / Branches` — state-changing branches that alter the normal path, such as stop, route upstream, waive, cancel, or defer. Not examples. If the item is always true, make it a hard constraint. If it is source loading, put it in `Inputs`. If it is required before readiness, put it in `Readiness Criteria`.
 
 Do not create placeholder sections to say a thing does not apply.
 
@@ -54,7 +54,7 @@ Default deliverable frontmatter:
 
 ```yaml
 ---
-status: <drafting | locked | deferred>
+status: <drafting | ready | deferred>
 last_updated: <ISO-8601 timestamp>
 ---
 ```

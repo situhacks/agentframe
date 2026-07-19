@@ -22,7 +22,7 @@ def make_project(root, slug, *, status="active", created_at, last_activity,
     fm = [
         f"name: {slug}",
         f"slug: {slug}",
-        "schema_version: 2026-07-19",
+        "schema_version: 2026-07-19-v2",
         f"created_at: {created_at}",
         "domain: marketing",
         f"status: {status}",
@@ -72,7 +72,7 @@ class ProjectStateContractTests(unittest.TestCase):
             "---\n"
             "name: Minimal\n"
             "slug: minimal\n"
-            "schema_version: 2026-07-19\n"
+            "schema_version: 2026-07-19-v2\n"
             "created_at: 2026-07-19\n"
             "domain: project-mgmt\n"
             f"status: {status}\n"
@@ -157,7 +157,7 @@ domain: marketing
 status: active
 deliverables:
   post-1:
-    status: delivered
+    status: published
     file: posts/post-1/post-FINAL.md
     last_updated: 2026-06-01
   post-2:
@@ -168,7 +168,7 @@ deliverables:
 ARCHIVE_FM = """---
 deliverables:
   post-0:
-    status: delivered
+    status: published
     file: posts/post-0/post-FINAL.md
     last_updated: 2026-05-01
 ---
@@ -178,7 +178,7 @@ deliverables:
 
 
 class ArchivedRowDerivedTotalTests(unittest.TestCase):
-    """Marketing receipts derive delivered totals across tracker + archive."""
+    """Marketing receipts derive published totals across tracker + archive."""
 
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -192,7 +192,7 @@ class ArchivedRowDerivedTotalTests(unittest.TestCase):
         os.makedirs(os.path.join(self.cdir, "knowledge", "_archive"))
 
     def total(self):
-        return self.rules._delivered_posts(af.make_ctx(), PROJECT_FM) + self.rules._archived_delivered_posts(
+        return self.rules._published_posts(af.make_ctx(), PROJECT_FM) + self.rules._archived_published_posts(
             af.make_ctx(), self.cdir
         )
 
@@ -216,8 +216,8 @@ deliverables:
     last_updated: 2026-07-01"""
 
 
-class LockExportGateTests(unittest.TestCase):
-    """af lock refuses exportable deliverables whose exports[] are empty or dangling."""
+class ReadyExportGateTests(unittest.TestCase):
+    """af ready refuses exportable deliverables whose exports[] are empty or dangling."""
 
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -241,53 +241,59 @@ class LockExportGateTests(unittest.TestCase):
         af.write(os.path.join(self.cdir, rel), f"---\n{dfm}\n---\n\nbody\n")
         return rel
 
-    def run_lock(self, slug, allow_missing_exports=False):
+    def run_ready(self, slug, allow_missing_exports=False):
         args = types.SimpleNamespace(project="carousel-proj", deliverable=slug,
                                      allow_missing_exports=allow_missing_exports)
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            af.cmd_lock(args)
+            af.cmd_ready(args)
 
     def deliverable_status(self, rel):
         dfm, _ = af.split_fm(af.read(os.path.join(self.cdir, rel)), rel)
         return af.get_scalar(dfm, "status")
 
-    def test_lock_refuses_image_prompts_with_no_exports(self):
+    def test_ready_refuses_image_prompts_with_no_exports(self):
         rel = self.make_deliverable("post-1-carousel", "image-prompts-v1.md")
         with self.assertRaises(SystemExit):
-            self.run_lock("post-1-carousel")
+            self.run_ready("post-1-carousel")
         self.assertEqual(self.deliverable_status(rel), "drafting")
 
-    def test_lock_refuses_dangling_exports_path(self):
+    def test_ready_refuses_dangling_exports_path(self):
         rel = self.make_deliverable("post-1-carousel", "image-prompts-v1.md",
                                     "exports:\n  - media/missing.png")
         with self.assertRaises(SystemExit):
-            self.run_lock("post-1-carousel")
+            self.run_ready("post-1-carousel")
         self.assertEqual(self.deliverable_status(rel), "drafting")
 
-    def test_lock_locks_image_prompts_with_filed_exports(self):
+    def test_ready_accepts_image_prompts_with_filed_exports(self):
         rel = self.make_deliverable("post-1-carousel", "image-prompts-v1.md",
                                     "exports:\n  - media/final.pdf")
         os.makedirs(os.path.join(self.cdir, "post-1-carousel", "media"))
         af.write(os.path.join(self.cdir, "post-1-carousel", "media", "final.pdf"), "x")
-        self.run_lock("post-1-carousel")
-        self.assertEqual(self.deliverable_status(rel), "locked")
+        self.run_ready("post-1-carousel")
+        self.assertEqual(self.deliverable_status(rel), "ready")
 
-    def test_override_locks_and_marks_activity(self):
+    def test_override_marks_ready_and_activity(self):
         rel = self.make_deliverable("post-1-carousel", "image-prompts-v1.md")
-        self.run_lock("post-1-carousel", allow_missing_exports=True)
-        self.assertEqual(self.deliverable_status(rel), "locked")
+        self.run_ready("post-1-carousel", allow_missing_exports=True)
+        self.assertEqual(self.deliverable_status(rel), "ready")
         self.assertIn("WITHOUT EXPORTS", af.read(os.path.join(self.cdir, "activity.md")))
 
-    def test_non_exportable_deliverable_locks_without_exports(self):
+    def test_non_exportable_deliverable_becomes_ready_without_exports(self):
         rel = self.make_deliverable("post-1-body", "body-copy-v1.md")
-        self.run_lock("post-1-body")
-        self.assertEqual(self.deliverable_status(rel), "locked")
+        self.run_ready("post-1-body")
+        self.assertEqual(self.deliverable_status(rel), "ready")
+
+    def test_direct_path_synchronizes_matching_tracker_row(self):
+        rel = self.make_deliverable("post-1-body", "body-copy-v1.md")
+        self.run_ready(rel)
+        cfm, _ = af.split_fm(af.read(os.path.join(self.cdir, "project.md")))
+        self.assertEqual(af.row_get(cfm, "post-1-body", "status"), "ready")
 
 
 VERSION_PROJECT_FM = """---
 name: Version Project
 slug: version-project
-schema_version: 2026-07-19
+schema_version: 2026-07-19-v2
 created_at: 2026-07-01
 domain: marketing
 status: active
@@ -358,8 +364,8 @@ class VersionCommandCharacterizationTests(unittest.TestCase):
 
     def test_tracker_owned_new_head_resets_drafting_fields(self):
         rel = "brief/brief-v1.md"
-        self.make_state("brief", rel, status="locked")
-        self.make_artifact(rel, status="locked")
+        self.make_state("brief", rel, status="ready")
+        self.make_artifact(rel, status="ready")
 
         self.run_version("brief")
 
@@ -394,9 +400,9 @@ class VersionCommandCharacterizationTests(unittest.TestCase):
 
     def test_nested_artifact_updates_parent_status_but_not_pointer(self):
         rel = "posts/post-8/post-FINAL.md"
-        self.make_state("post-8", rel, status="locked")
-        self.make_artifact(rel, status="locked")
-        self.make_artifact("posts/post-8/body-copy-v1.md", status="locked")
+        self.make_state("post-8", rel, status="ready")
+        self.make_artifact(rel, status="ready")
+        self.make_artifact("posts/post-8/body-copy-v1.md", status="ready")
 
         self.run_version("post-8", artifact="body-copy")
 
@@ -404,18 +410,18 @@ class VersionCommandCharacterizationTests(unittest.TestCase):
         self.assertEqual(af.row_get(fm, "post-8", "file"), rel)
         self.assertEqual(af.row_get(fm, "post-8", "status"), "drafting")
 
-    def test_versioning_locked_head_records_explicit_unlock_version_event(self):
+    def test_versioning_ready_head_records_source_status_without_unlock_ceremony(self):
         rel = "brief/brief-v1.md"
-        self.make_state("brief", rel, status="locked")
-        self.make_artifact(rel, status="locked")
+        self.make_state("brief", rel, status="ready")
+        self.make_artifact(rel, status="ready")
 
         self.run_version("brief")
 
         self.assertTrue(os.path.isfile(os.path.join(self.cdir, "brief", "brief-v2.md")))
         activity = af.read(os.path.join(self.cdir, "activity.md"))
-        self.assertIn("unlock_version: brief", activity)
-        self.assertIn("source_status=locked", activity)
-        self.assertNotIn("artifact_versioned", activity)
+        self.assertIn("artifact_versioned: brief", activity)
+        self.assertIn("source_status=ready", activity)
+        self.assertNotIn("unlock_version", activity)
 
     def test_routine_version_appends_artifact_versioned_pulse(self):
         rel = "brief/brief-v1.md"
@@ -633,6 +639,180 @@ class DraftCommandTests(unittest.TestCase):
             af.cmd_adopt(args)
 
         self.assertIn("keep", af.read(os.path.join(self.cdir, "brief/current-v1.md")))
+
+
+class MarketingReadyAssemblyTests(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.projects = os.path.join(self._tmp.name, "workspace", "projects")
+        self._patch_projects = patch.object(af, "PROJECTS", self.projects)
+        self._patch_projects.start()
+        self.addCleanup(self._patch_projects.stop)
+        self.addCleanup(self._tmp.cleanup)
+        self.cdir = os.path.join(self.projects, "campaign")
+        post_dir = os.path.join(self.cdir, "posts", "post-1")
+        os.makedirs(os.path.join(post_dir, "media"), exist_ok=True)
+        af.write(
+            os.path.join(self.cdir, "project.md"),
+            "---\nname: campaign\nslug: campaign\ndomain: marketing\nstatus: active\n"
+            "last_activity: 2026-07-19T10:00:00-07:00\n"
+            "post_manifest:\n  ingredients: [body-copy, image-prompts]\n"
+            "deliverables:\n  post-1:\n    status: drafting\n"
+            "    file: posts/post-1/post-FINAL.md\n    last_updated: 2026-07-19\n---\n",
+        )
+        af.write(
+            os.path.join(post_dir, "post-FINAL.md"),
+            "---\nstatus: drafting\nlast_updated: 2026-07-19\n---\n\n# Post\n",
+        )
+        af.write(
+            os.path.join(post_dir, "body-copy-v1.md"),
+            "---\nstatus: ready\nlast_updated: 2026-07-19\n---\n\nBody\n",
+        )
+        af.write(os.path.join(post_dir, "media", "final.png"), "png")
+        af.write(
+            os.path.join(post_dir, "image-prompts-v1.md"),
+            "---\nstatus: drafting\nlast_updated: 2026-07-19\n"
+            "exports:\n  - media/final.png\n---\n\nPrompts\n",
+        )
+
+    def test_last_ready_ingredient_marks_assembly_and_tracker_ready(self):
+        args = types.SimpleNamespace(
+            project="campaign", deliverable="posts/post-1/image-prompts-v1.md",
+            allow_missing_exports=False,
+        )
+        with contextlib.redirect_stdout(io.StringIO()):
+            af.cmd_ready(args)
+
+        cfm, _ = af.split_fm(af.read(os.path.join(self.cdir, "project.md")))
+        pfm, pbody = af.split_fm(
+            af.read(os.path.join(self.cdir, "posts/post-1/post-FINAL.md"))
+        )
+        self.assertEqual(af.row_get(cfm, "post-1", "status"), "ready")
+        self.assertEqual(af.get_scalar(pfm, "status"), "ready")
+        self.assertIn("Image Prompts (ready from image-prompts-v1.md)", pbody)
+
+    def test_post_assembly_cannot_be_ready_before_its_ingredients(self):
+        args = types.SimpleNamespace(
+            project="campaign", deliverable="post-1", allow_missing_exports=False,
+        )
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            af.cmd_ready(args)
+
+        cfm, _ = af.split_fm(af.read(os.path.join(self.cdir, "project.md")))
+        self.assertEqual(af.row_get(cfm, "post-1", "status"), "drafting")
+
+
+class PublishCommandTests(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.projects = os.path.join(self._tmp.name, "workspace", "projects")
+        self._patch_projects = patch.object(af, "PROJECTS", self.projects)
+        self._patch_projects.start()
+        self.addCleanup(self._patch_projects.stop)
+        self.addCleanup(self._tmp.cleanup)
+
+    def make_project(self, slug, domain, row, rel, status="ready"):
+        cdir = os.path.join(self.projects, slug)
+        os.makedirs(os.path.dirname(os.path.join(cdir, rel)), exist_ok=True)
+        af.write(
+            os.path.join(cdir, "project.md"),
+            "---\n"
+            f"name: {slug}\nslug: {slug}\nschema_version: {af.PROJECT_SCHEMA_VERSION}\n"
+            f"created_at: 2026-07-19\ndomain: {domain}\nstatus: active\n"
+            "current_phase: active\nflow: open-flow\nlast_activity: 2026-07-19T10:00:00-07:00\n"
+            f"deliverables:\n  {row}:\n    status: {status}\n    file: {rel}\n"
+            "    last_updated: 2026-07-19\n---\n",
+        )
+        af.write(
+            os.path.join(cdir, rel),
+            f"---\nstatus: {status}\nlast_updated: 2026-07-19\n---\n\nbody\n",
+        )
+        return cdir
+
+    def args(self, project, deliverable, url=None):
+        return types.SimpleNamespace(
+            project=project, deliverable=deliverable, url=url,
+            posted_at=None, platform=None, media=[],
+        )
+
+    def test_generic_publish_moves_ready_artifact_and_tracker_to_published(self):
+        cdir = self.make_project("generic", "project-mgmt", "brief", "brief/brief-v1.md")
+        with contextlib.redirect_stdout(io.StringIO()):
+            af.cmd_publish(self.args("generic", "brief"))
+
+        cfm, _ = af.split_fm(af.read(os.path.join(cdir, "project.md")))
+        dfm, _ = af.split_fm(af.read(os.path.join(cdir, "brief/brief-v1.md")))
+        self.assertEqual(af.row_get(cfm, "brief", "status"), "published")
+        self.assertEqual(af.get_scalar(dfm, "status"), "published")
+        self.assertIsNone(af.get_scalar(dfm, "published_url"))
+        self.assertIn("publish: brief published", af.read(os.path.join(cdir, "activity.md")))
+
+    def test_generic_publish_records_url_only_when_supplied(self):
+        cdir = self.make_project("generic", "project-mgmt", "brief", "brief/brief-v1.md")
+        with contextlib.redirect_stdout(io.StringIO()):
+            af.cmd_publish(self.args("generic", "brief", "https://example.com/brief"))
+
+        dfm, _ = af.split_fm(af.read(os.path.join(cdir, "brief/brief-v1.md")))
+        self.assertEqual(af.get_scalar(dfm, "published_url"), "https://example.com/brief")
+
+    def test_generic_publish_refuses_drafting_artifact(self):
+        cdir = self.make_project(
+            "generic", "project-mgmt", "brief", "brief/brief-v1.md", status="drafting"
+        )
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            af.cmd_publish(self.args("generic", "brief"))
+        cfm, _ = af.split_fm(af.read(os.path.join(cdir, "project.md")))
+        self.assertEqual(af.row_get(cfm, "brief", "status"), "drafting")
+
+    def test_marketing_publish_records_receipt_and_adds_optional_ship_date(self):
+        cdir = self.make_project(
+            "campaign", "marketing", "post-1", "posts/post-1/post-FINAL.md"
+        )
+        args = self.args("campaign", "post-1", "https://example.com/post-1")
+        with contextlib.redirect_stdout(io.StringIO()):
+            af.cmd_publish(args)
+
+        cfm, _ = af.split_fm(af.read(os.path.join(cdir, "project.md")))
+        pfm, _ = af.split_fm(af.read(os.path.join(cdir, "posts/post-1/post-FINAL.md")))
+        self.assertEqual(af.row_get(cfm, "post-1", "status"), "published")
+        self.assertEqual(af.get_scalar(pfm, "status"), "published")
+        self.assertEqual(af.get_scalar(cfm, "shipped_at"), af.today())
+        self.assertIn("url: https://example.com/post-1", pfm)
+
+    def test_non_post_marketing_deliverable_uses_generic_publish(self):
+        cdir = self.make_project(
+            "campaign", "marketing", "essay", "essay/substack-essay-v1.md"
+        )
+        with contextlib.redirect_stdout(io.StringIO()):
+            af.cmd_publish(self.args("campaign", "essay"))
+
+        cfm, _ = af.split_fm(af.read(os.path.join(cdir, "project.md")))
+        self.assertEqual(af.row_get(cfm, "essay", "status"), "published")
+
+    def test_marketing_post_path_keeps_receipt_aware_publish(self):
+        rel = "posts/post-1/post-FINAL.md"
+        cdir = self.make_project("campaign", "marketing", "post-1", rel)
+        with contextlib.redirect_stdout(io.StringIO()):
+            af.cmd_publish(self.args("campaign", rel, "https://example.com/by-path"))
+
+        cfm, _ = af.split_fm(af.read(os.path.join(cdir, "project.md")))
+        pfm, _ = af.split_fm(af.read(os.path.join(cdir, rel)))
+        self.assertEqual(af.row_get(cfm, "post-1", "status"), "published")
+        self.assertIn("url: https://example.com/by-path", pfm)
+
+
+class LifecycleCliParserTests(unittest.TestCase):
+    def test_ready_is_the_quality_gate_command(self):
+        with patch.object(af, "cmd_ready") as command, \
+             patch.object(af, "check_mode_gate"), \
+             patch.object(sys, "argv", ["af", "ready", "project", "brief"]):
+            af.main()
+        self.assertEqual(command.call_args.args[0].deliverable, "brief")
+
+    def test_retired_lock_command_is_not_parsed(self):
+        with patch.object(sys, "argv", ["af", "lock", "project", "brief"]), \
+             contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            af.main()
 
 
 if __name__ == "__main__":

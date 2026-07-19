@@ -1,6 +1,6 @@
-﻿# Transfer To Open Design
+# Transfer To Open Design
 
-Bridge resource for the design-language deliverable. Read on demand when the operator wants to take a campaign's locked design language into Open Design.
+Bridge resource for the design-language deliverable. Read on demand when the operator wants to take a campaign's ready design language into Open Design.
 
 This file documents the field-by-field mapping from `design-language-v{N}.md` (plus its `tokens.yaml` and `tokens.css`) into Open Design's canonical 9-section design-system schema. The mapping is one-way (DL ? OD); Open Design changes do not flow back automatically.
 

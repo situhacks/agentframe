@@ -32,7 +32,7 @@ Planning and production tracker for a video deliverable. It gives the agent enou
 
 ```yaml
 ---
-status: <drafting | locked | deferred>
+status: <drafting | ready | deferred>
 last_updated: <ISO-8601 timestamp>
 video_method: <hyperframes | video_use | manual_flow_veo_nano | hybrid>
 ---
@@ -41,7 +41,7 @@ video_method: <hyperframes | video_use | manual_flow_veo_nano | hybrid>
 Follow standard deliverable versioning (reference `library/process/project-frontmatter.md` for schema).
 Generated media files, `video/renders/scenes/`, `video/renders/final/`, `edit/preview.mp4`, and `edit/final.mp4` are not versioned via v{N}. They are media outputs with their own paths and provenance.
 
-## Lock Criteria
+## Readiness Criteria
 
 - Video job and CTA align with the project objective.
 - Intended project structure exists or any missing part is explicitly waived as unnecessary for this video.
@@ -52,20 +52,20 @@ Generated media files, `video/renders/scenes/`, `video/renders/final/`, `edit/pr
 - Known issues are fixed or explicitly accepted by the operator.
 - The active pack's delivery flow knows which video file will ship, when the deliverable feeds one.
 
-## Review Path
+## Feedback / Handoff
 
 - **Reviewer**: operator.
 - **Export format**: final video file (`.mp4` by default; `.webm` if transparency or platform needs it).
-- **Required before downstream**: a video-using deliverable cannot lock until the final or publish-candidate render is reviewed or review is explicitly waived.
+- **Required before downstream**: a video-using deliverable cannot become ready until the final or publish-candidate render is reviewed or the operator explicitly skips that check.
 
 ## Humanizer Pass
 
 Partial. Run only when the upstream HyperFrames `SCRIPT.md` is authored or substantively revised. Scope to public-facing script prose: narration, captions, and on-screen editorial text.
 
-Do not run this gate at `video-spec-v{N}.md` lock time. Skip the upstream `STORYBOARD.md`, structured production fields, commands, frontmatter, code, and model prompt text.
+Do not run this gate again when `video-spec-v{N}.md` becomes ready. Skip the upstream `STORYBOARD.md`, structured production fields, commands, frontmatter, code, and model prompt text.
 
 When needed, follow `library/process/humanizer-integration.md`.
 
 ## Exceptions / Branches
 
-- **Final polish outside the harness**: allowed. Record the actually delivered file in the active pack's delivery record (e.g. marketing's `post-FINAL.md` `shipped_media[]`) during reconciliation.
+- **Final polish outside the harness**: allowed. Record the file that actually shipped in the active pack's delivery record (e.g. marketing's `post-FINAL.md` `shipped_media[]`) during reconciliation.

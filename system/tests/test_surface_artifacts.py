@@ -52,7 +52,7 @@ class TestArtifactGroups(ArtifactFixture):
         write(self.pdir / "posts/post-1/slide-copy-v1.md")
         write(self.pdir / "posts/post-1/slide-copy-v2.md")
         rows = {
-            "post-1": {"status": "delivered", "file": "posts/post-1/post-FINAL.md", "last_updated": "2026-07-01"}
+            "post-1": {"status": "published", "file": "posts/post-1/post-FINAL.md", "last_updated": "2026-07-01"}
         }
         g = artifacts.artifact_groups(self.pdir, rows)[0]
         self.assertEqual(g["version_count"], 1)  # ingredient trails not absorbed
@@ -83,7 +83,7 @@ class TestArtifactGroups(ArtifactFixture):
                 ---
                 deliverables:
                   old-report:
-                    status: delivered
+                    status: published
                     file: old/old-v1.md
                     last_updated: 2026-05-01
                 ---
@@ -115,7 +115,7 @@ class TestGroupDetail(ArtifactFixture):
             self.pdir / "posts/post-1/post-FINAL.md",
             textwrap.dedent("""\
                 ---
-                status: delivered
+                status: published
                 last_updated: 2026-07-07
                 shipped_media:
                   - posts/post-1/media/final.png
@@ -167,7 +167,7 @@ class TestProjectFiles(ArtifactFixture):
         write(self.pdir / "phase-2/hidden/secret.png")
         rows = {
             "brief": {
-                "status": "locked",
+                "status": "ready",
                 "file": "phase-1/brief/brief-v2.md",
                 "last_updated": "2026-07-07",
             }

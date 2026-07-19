@@ -52,7 +52,7 @@ class SurfaceCalendarTests(unittest.TestCase):
                 created_at=created_at,
                 last_activity=last_activity,
                 completed_at=completed_at,
-                deliverable_status="locked" if status == "active" else "delivered",
+                deliverable_status="ready" if status == "active" else "published",
                 deliverable_date=last_activity[:10],
             ),
             encoding="utf-8",
@@ -145,7 +145,7 @@ class SurfaceCalendarTests(unittest.TestCase):
             )
             (project / "activity.md").write_text(
                 "# Activity\n\n"
-                "2026-06-10 10:00 — deliverable_locked: brief locked; brief/brief-v1.md\n"
+                "2026-06-10 10:00 — deliverable_ready: brief ready; brief/brief-v1.md\n"
                 "2026-06-12 14:30 — export: deck exported\n",
                 encoding="utf-8",
             )
@@ -165,7 +165,7 @@ class SurfaceCalendarTests(unittest.TestCase):
                 "# Activity\n\n"
                 "2026-06-10 12:00 — plan_revised: a\n"
                 "2026-06-10 13:10 — export: b\n"       # 70 min gap -> same block
-                "2026-06-10 21:00 — lock: c\n"          # 470 min gap -> new block
+                "2026-06-10 21:00 — ready: c\n"         # 470 min gap -> new block
                 "2026-06-11 09:00 — export: d\n",       # different day -> new block
                 encoding="utf-8",
             )
@@ -205,7 +205,7 @@ class SurfaceCalendarTests(unittest.TestCase):
         )
         (project / "activity.md").write_text(
             "# Activity\n\n"
-            "2026-06-10 10:00 — lock: brief locked; brief/brief-v1.md\n"
+            "2026-06-10 10:00 — ready: brief ready; brief/brief-v1.md\n"
             "2026-06-12 09:15 — artifact_drafted: redesign created; redesign/redesign-v1.md\n"
             "2026-06-13 14:40 — artifact_versioned: redesign v1 -> v2; redesign/redesign-v2.md\n",
             encoding="utf-8",
@@ -221,14 +221,14 @@ class SurfaceCalendarTests(unittest.TestCase):
             block_dates = {b["date"] for b in timeline["work_blocks"]}
             self.assertIn("2026-06-12", block_dates)
             self.assertIn("2026-06-13", block_dates)
-            self.assertEqual({e["event"] for e in timeline["activity"]}, {"lock"})
+            self.assertEqual({e["event"] for e in timeline["activity"]}, {"ready"})
 
     def test_pulse_events_excluded_from_recent_activity(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             self._pulse_project(root)
             events = [i["event"] for i in snapshot.build_snapshot(root)["recent_activity"]["items"]]
-            self.assertIn("lock", events)
+            self.assertIn("ready", events)
             self.assertNotIn("artifact_drafted", events)
             self.assertNotIn("artifact_versioned", events)
 
@@ -249,7 +249,7 @@ class SurfaceCalendarTests(unittest.TestCase):
 
 - [ ] 2026-07-15 | review | Coach review of [brief](brief/brief-v1.md)
 
-2026-06-10 10:00 — deliverable_locked: brief locked; brief/brief-v1.md
+2026-06-10 10:00 — deliverable_ready: brief ready; brief/brief-v1.md
 """,
                 encoding="utf-8",
             )
@@ -260,7 +260,7 @@ class SurfaceCalendarTests(unittest.TestCase):
             self.assertEqual(len(timeline), 1)
             self.assertEqual(timeline[0]["created_at"], "2026-06-01")
             self.assertEqual(timeline[0]["deliverables"][0]["slug"], "brief")
-            self.assertEqual(timeline[0]["activity"][0]["event"], "deliverable_locked")
+            self.assertEqual(timeline[0]["activity"][0]["event"], "deliverable_ready")
             self.assertEqual(timeline[0]["activity"][0]["file"], "brief/brief-v1.md")
             self.assertEqual(timeline[0]["attention"][0]["date"], "2026-07-15")
             self.assertEqual(timeline[0]["attention"][0]["file"], "brief/brief-v1.md")

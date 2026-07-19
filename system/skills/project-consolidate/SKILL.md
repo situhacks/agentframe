@@ -51,7 +51,7 @@ Mechanical work (Step 3's archive splits, line moves, header drafts) goes to sub
 3. **Workback schedule:** move completed milestones/tasks to `knowledge/_archive/schedule-{YYYY-MM}.md`.
 4. **Activity trail:** if `activity.md` exceeds 200 lines, retain the most recent 50 and move the rest to `knowledge/_archive/activity-{YYYY-MM}.md`.
 5. **Entity pages** (`knowledge/people/`, `knowledge/meetings/`): merge duplicates; re-synthesize stale compiled-truth headers.
-6. **Tracker rows (`project.md` DELIVERABLES):** move rows with `status: delivered` and `last_updated` older than 30 days to `knowledge/_archive/deliverables-archive.md` — one rolling file whose frontmatter is a top-level `deliverables:` map holding the rows **verbatim** (same shape as project.md; `af.py` counts delivered post rows there for `posts_published`, so never reshape or summarize them; create the file with that frontmatter on first use). Rows that stay: `locked` (they are the canonical-content pointers), `deferred` (back-fill obligation), and anything in flight. Counters stay all-time — do not decrement `posts_published` or `post_count`. Touch nothing else in IDENTITY / LIFECYCLE / MANIFEST / COUNTERS except the Step 6 stamp.
+6. **Tracker rows (`project.md` DELIVERABLES):** move rows with `status: delivered` and `last_updated` older than 30 days to `knowledge/_archive/deliverables-archive.md` — one rolling file whose frontmatter is a top-level `deliverables:` map holding the rows **verbatim** (same shape as project.md; marketing publish receipts derive all-time totals across tracker + archive, so never reshape or summarize archived rows; create the file with that frontmatter on first use). Rows that stay: `locked` (they are the canonical-content pointers), `deferred` (back-fill obligation), and anything in flight. Touch no other current project state except the Step 6 stamp.
 7. **`project.md` body:** collapse completed-phase plan detail to one line per phase, moving the detail to `knowledge/_archive/project-body-{YYYY-MM}.md` with a link note. Keep every declared phase id — the open-flow drift check reads them — and keep the thesis and anything still steering current work.
 
 **Re-synthesis rule:** rebuild each compiled-truth header from the page's full dated timeline plus the relevant `_archive/` files — never by rewording the previous header. Compressing a summary from a summary strips nuance each pass until the page goes generic.
@@ -75,7 +75,7 @@ Apply the Step 3 treatment to whatever tripped: archive resolved/stale material 
 
 ## Step 6 — Stamp & verify
 
-1. Set the schema-required `last_consolidated: {today}` in `project.md` LIFECYCLE.
+1. Set optional `last_consolidated: {today}` in `project.md` after the first completed pass.
 2. Append to `activity.md`: `{YYYY-MM-DD HH:MM} — knowledge_consolidation: dream pass; archived {what}; pruned {n} lines; promoted {slugs|none}.`
 3. Run `python system/af.py doctor {slug}` — the pass must not have introduced issues.
 

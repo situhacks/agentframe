@@ -30,7 +30,7 @@ last_updated: <ISO-8601 date>
 When the operator confirms the live URL ("posted post-1, here's the link"):
 
 1. **Land shipped media.** Copy every asset that actually shipped into the post folder's `media/` directory before the state flips.
-2. **Run the button.** `python system/af.py publish <campaign> <post> --url <url> [--posted-at <iso>] [--media <path> ...]` — it owns the mechanics atomically: publish block in this file's frontmatter (`shipped_at`, `published.{platform,url,posted_at}`, `shipped_media[]`), tracker row to `delivered`, `posts_published` recount, lifecycle `shipped_at` on first publish, `post_published` activity event.
+2. **Run the button.** `python system/af.py publish <campaign> <post> --url <url> [--posted-at <iso>] [--media <path> ...]` — it owns the mechanics atomically: publish block in this file's frontmatter (`shipped_at`, `published.{platform,url,posted_at}`, `shipped_media[]`), tracker row to `delivered`, derived delivered-post receipt across tracker + archive, project `shipped_at` on first publish, and the `post_published` activity event.
 3. **Reconcile delivered copy** (judgment, from the button's checklist). If what delivered differs materially from the locked ingredient, `af version` the ingredient with the as-delivered text, re-lock it (refreshing its section here), and run the publish/back-fill fallback per [`library/process/voice-mini-retro.md`](../../../../process/voice-mini-retro.md).
 
 ## Lock Criteria

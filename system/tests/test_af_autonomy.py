@@ -12,21 +12,14 @@ from system import af
 PROJECT_MD = """---
 name: Autonomy Test
 slug: auto-test
-schema_version: 2026-04-23
+schema_version: 2026-07-19
 created_at: 2026-07-10
 domain: marketing
 status: active
 current_phase: active
 flow: open-flow
 last_activity: 2026-07-10T10:00:00+00:00
-last_consolidated: null
-channels: []
-stakeholders: []
 deliverables:
-post_count: 0
-posts_published: 0
-system_retro_completed: null
-closeout_retro_completed: null
 ---
 
 # Autonomy Test

@@ -11,7 +11,7 @@ The domain-specific production/delivery routing the Operator lazy-loads when doi
 
 ## Publishing
 
-When the operator provides a published post link, follow the Publish / Export Mechanics procedure in [`deliverables/post-final/template.md`](deliverables/post-final/template.md). State transitions are button-owned: `python system/af.py publish` does the mechanics (delivered-state record on `post-FINAL.md`, tracker, `posts_published`, lifecycle `shipped_at`) and prints the judgment checklist.
+When the operator provides a published post link, follow the Publish / Export Mechanics procedure in [`deliverables/post-final/template.md`](deliverables/post-final/template.md). State transitions are button-owned: `python system/af.py publish` does the mechanics (delivered-state record on `post-FINAL.md`, tracker, derived delivered-post receipt, project `shipped_at`) and prints the judgment checklist.
 
 ## Output rule
 

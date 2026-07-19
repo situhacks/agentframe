@@ -17,11 +17,11 @@ This pack is the only artifact that knows marketing. The generic spine (`af.py`)
 
 | Slot | Artifact | What it is |
 |---|---|---|
-| Frontmatter extension | `extension_fields` (none hard-required) + `prefix` | the post fields a marketing project adds **when it runs a post campaign** (`post_manifest`, `post_count`, `posts_published`, `shipped_at`/`shipped_media`) — optional, since a case study or workshop ships no posts — plus the `mkt-` folder prefix. The skeleton seeds them; `doctor` does not require them. |
-| Scaffold skeleton | [`skeleton.md`](skeleton.md) | the `project.md` body `new-project` writes for this domain (carries the MANIFEST block + counters). |
+| Frontmatter extension | `extension_fields` (none hard-required) + `prefix` | `post_manifest` appears at a real manifest moment and project-level `shipped_at` appears on first publish; both stay absent for marketing work that does not use them. The prefix is `mkt-`. |
+| Scaffold skeleton | [`skeleton.md`](skeleton.md) | the minimal `project.md` index and body `new-project` writes for this domain. |
 | Deliverable templates | [`deliverables/`](deliverables/) | post-final, body-copy, slide-copy, substack-essay, campaign-brief, campaign-architecture, research-artifact, business-brief. |
 | Verb applicability + hooks | `verbs` above + [`rules.py`](rules.py) | `publish` is marketing-only (a domain that omits it from `verbs` has `publish` rejected); `lock` runs the post-FINAL assembly hook; `assembly_record` names the unversioned accumulator. |
-| Doctor rules | [`rules.py`](rules.py) `check()` | the post-counting reconciliation (`posts_published` = count of delivered `post-*` rows). |
+| Derived post totals | [`rules.py`](rules.py) | Publish receipts count delivered `post-*` rows across the working tracker and archive without persisting a second counter. |
 | Persona routing | [`production.md`](production.md) | the post-production / carousel / publish / performance routing the Operator lazy-loads for marketing production work. |
 
 ## Flows this domain offers

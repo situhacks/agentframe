@@ -11,7 +11,7 @@ from system.server.lib.surface import automations
 PROJECT = """---
 name: Demo Project
 slug: demo
-schema_version: 2026-04-23
+schema_version: 2026-07-19
 created_at: 2026-07-12
 domain: project-mgmt
 status: active

@@ -114,8 +114,8 @@ When all ingredients are locked and publish media exists or has been selected, f
 **Tracker update during Phase 4** (per post, in the same turn as the file edit):
 - Post starts drafting: `deliverables.post-{n}.status: drafting` + `file: phase-4-production/posts/post-{n}/post-FINAL.md` + `last_updated`, creating the `post-FINAL.md` stub in the same turn.
 - An ingredient locks: its content lands in `post-FINAL.md` per [`lock-event.md`](../lock-event.md). The post row stays `drafting` until every manifest ingredient is in, then flips `locked`.
-- Post publishes (Phase 4.3): `af publish` owns the delivered state — publish block in `post-FINAL.md`, tracker, `posts_published`, lifecycle `shipped_at` — per [`post-final/template.md`](../../domains/marketing/deliverables/post-final/template.md) "Publish / Export Mechanics".
-- Arc changes mid-campaign (post added, post dropped, post renumbered): update `post_count` AND the affected `post-{n}` rows in the same turn. Optional: add `framing_note` if the post's job in the arc shifted.
+- Post publishes (Phase 4.3): `af publish` owns the delivered state — publish block in `post-FINAL.md`, tracker, derived delivered-post receipt, and project `shipped_at` — per [`post-final/template.md`](../../domains/marketing/deliverables/post-final/template.md) "Publish / Export Mechanics".
+- Arc changes mid-campaign (post added, dropped, or renumbered): update the affected `post-{n}` rows in the same turn. If a post's role changed, update its short `job`; put rationale in the head file or project plan.
 
 **Tracker update at end of Phase 4:** `current_phase: 5-launch-and-learn`. Set when every active post is `delivered`, `cancelled`, or explicitly removed from active campaign scope. Do not advance the whole campaign to Phase 5 on first ship; multi-post campaigns can publish early posts while later posts remain in production.
 
@@ -129,8 +129,8 @@ Two steps, run in order after the active arc ends.
 | 5.2 Performance + campaign retro + completion | One closeout motion: capture `phase-5-launch-and-learn/performance-data.csv` per [`composio-notes.md`](../composio-notes.md) (connector-first MCP scan, manual gap-fill; metrics are meaningful ~14 days after each post's `published.posted_at`), then score the campaign in `phase-5-launch-and-learn/campaign-retro-v{N}.md`, then completion/archive when approved. |
 
 **Tracker update during Phase 5:**
-- Harvest retro lands: add `system-retro` row to `deliverables` at `status: locked` + set top-level `system_retro_completed: {date}`.
-- Campaign retro lands: add `campaign-retro` row at `status: locked` + set `closeout_retro_completed: {date}` + LIFECYCLE `status: complete` + `completed_at: {date}`.
+- Harvest retro lands: add `system-retro` row to `deliverables` at `status: locked`.
+- Campaign retro lands: add `campaign-retro` row at `status: locked`, then set `status: complete` + `completed_at: {date}`.
 - Move folder to `workspace/projects/completed/{slug}/` (folder location is a side-effect of `LIFECYCLE.status: complete | cancelled`, not its own status value).
 
 Retro shapes: harvest retro = the two harvest skills + `system-retro` template for the summary; campaign retro = the `campaign-retro` template (performance capture is its input — capture first, then score).
@@ -142,7 +142,7 @@ All retros run before the campaign moves to `workspace/projects/completed/{slug}
 The user can override sequence at any time. When they do:
 
 1. Agent flags the missing prereq specifically and offers the cleaner path.
-2. If user insists on skipping, agent appends a `phase_override` entry to `workspace/projects/{slug}/activity.md` using the canonical shape in [`project-frontmatter.md`](../project-frontmatter.md) "Activity event line shapes."
+2. If user insists on skipping, agent appends a `phase_override` entry to `workspace/projects/{slug}/activity.md` using the canonical shape in [`project-activity.md`](../project-activity.md).
 3. Agent proceeds. No moralizing.
 
 Pattern of overrides surfaces at quarterly self-review or when an override repeats: "The operator overrode campaign-architecture in 4 of 5 last campaigns — is that step worth less than we think, or are they leaving money on the table?"

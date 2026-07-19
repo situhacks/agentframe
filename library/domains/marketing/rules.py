@@ -8,7 +8,6 @@ via ctx). Stdlib only.
 Hooks the host calls:
   on_draft(ctx, cdir, dpath, rel, cfm, parent_row) -> (cfm, notes)
   on_lock(ctx, cdir, dpath, rel, cfm) -> (cfm, notes)   # post-FINAL assembly
-  check(ctx, cdir, cfm)               -> [issue, ...]    # post-counting reconciliation
   publish(ctx, cdir, args)            -> None            # the publish verb (marketing-only)
 """
 import os
@@ -23,8 +22,7 @@ def _manifest_ingredients(cfm):
 
 
 # Tracker rows the dream pass moved out of project.md. Same row shape as the
-# DELIVERABLES block; delivered post rows there still count toward
-# posts_published (counters are all-time, the tracker is the working set).
+# DELIVERABLES block; publish receipts derive totals across both locations.
 ARCHIVE_REL = os.path.join("knowledge", "_archive", "deliverables-archive.md")
 
 
@@ -127,17 +125,6 @@ def on_lock(ctx, cdir, dpath, rel, cfm):
     return cfm, notes
 
 
-def check(ctx, cdir, cfm):
-    """Domain doctor checks: posts_published reconciliation."""
-    issues = []
-    rel = os.path.relpath(cdir, ctx.ROOT).replace("\\", "/")
-    delivered_posts = _delivered_posts(ctx, cfm) + _archived_delivered_posts(ctx, cdir)
-    declared = ctx.get_scalar(cfm, "posts_published")
-    if declared is not None and declared.isdigit() and int(declared) != delivered_posts:
-        issues.append(f"{rel}: posts_published={declared} but {delivered_posts} post rows are delivered (tracker + archive)")
-    return issues
-
-
 def publish(ctx, cdir, args):
     """The publish verb (marketing-only): record a post's delivered state."""
     cpath = os.path.join(cdir, "project.md")
@@ -164,14 +151,13 @@ def publish(ctx, cdir, args):
     cfm = ctx.row_set(cfm, args.post, "status", "delivered")
     cfm = ctx.row_set(cfm, args.post, "last_updated", ctx.today())
     delivered = _delivered_posts(ctx, cfm) + _archived_delivered_posts(ctx, cdir)
-    cfm = ctx.set_scalar(cfm, "posts_published", str(delivered), "project.md")
     if ctx.get_scalar(cfm, "shipped_at") in (None, "null", ""):
         cfm = ctx.set_scalar(cfm, "shipped_at", ctx.today(), "project.md")
     cfm = ctx.touch_lifecycle(cfm)
     ctx.write(cpath, ctx.join_fm(cfm, cbody))
     ctx.append_activity(cdir, f"post_published: {args.post} → {args.url}")
 
-    print(f"af publish: {args.post} -> delivered ({args.url}); posts_published={delivered}")
+    print(f"af publish: {args.post} -> delivered ({args.url}); delivered posts={delivered}")
     print("\nJudgment checklist (agent + operator):")
     print("  [ ] Shipped copy reconciled: if the live post differs materially from the locked")
     print("      ingredient, write the next ingredient version with the as-shipped text, re-lock,")

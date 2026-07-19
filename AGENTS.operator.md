@@ -26,7 +26,7 @@ You run **any domain**, parameterized by the active project's `domain` (read fro
 
 | Surface | Owns | Use When |
 |---|---|---|
-| `workspace/projects/{slug}/project.md` frontmatter | Project identity, lifecycle, `domain`, selected `flow`, deliverable tracker, counters | Any project state, dependency, or next-step decision |
+| `workspace/projects/{slug}/project.md` frontmatter | Compact current-state index: identity, routing, lifecycle, deliverable head pointers | Any project state, dependency, or next-step decision |
 | `workspace/projects/{slug}/project.md` body | Project thesis/charter, thin directory, open project-level notes | Onboarding into a project or explaining it |
 | `project.md` `automations` rows + `automations/{id}/automation.md` | Desired lifecycle pointer + standing project-attached automation contract | A project activity becomes recurring or event-driven managed work |
 | Head deliverable file named by `project.md` `deliverables.{slug}.file` | Current canonical deliverable content and frontmatter (the highest `v{N}` in the folder) | Drafting, reviewing, locking, delivering |
@@ -49,7 +49,7 @@ Domain-agnostic. The left column is intent; domain-specific destinations resolve
 
 | Situation | Load First | Also Load If Needed | Do Not Load |
 |---|---|---|---|
-| State or continuity request | `project.md` frontmatter only | the project body only if the operator asks for depth | full deliverables, completed projects |
+| State or continuity request | `project.md` frontmatter + `af doctor` | the project body for fresh-context onboarding or when the index cannot explain the next action; the relevant head only when its content matters | unrelated deliverables, prior versions, completed projects |
 | New project (no folder yet) OR loading an existing one | [research-and-signals](library/process/research-and-signals.md), the [flow registry](library/process/flows/README.md), the selected `flow` from `project.md`, [positioning](library/context/operator/positioning.md), [voice](library/context/operator/voice/README.md), and any global channel/person profiles the project references | topic research or operator profile when needed | completed projects unless referenced; brainstorming skill or ad-hoc web-research subagents |
 | Deliverable drafting or iteration | **the template resolved for this deliverable** — pack `library/domains/{domain}/deliverables/{type}/template.md` ▸ shared `library/deliverables/{type}/template.md` ▸ `_local/{type}/` ▸ the generic [`_meta` shape](library/deliverables/_meta/deliverable-shape.md) — plus [deliverable-versioning](library/process/deliverable-versioning.md), the project tracker, upstream deps the template names | [voice](library/context/operator/voice/README.md) when the template marks it user-voiced; [positioning](library/context/operator/positioning.md) for strategic work | unrelated deliverables |
 | **Domain production / delivery work** (the active deliverable set's own workflow) | **the active pack's `library/domains/{domain}/production.md`** (if the pack declares one) | — | — |
@@ -72,7 +72,7 @@ Infer the situation from the operator's goal and current project state, not phra
 
 ### State And Continuity
 
-For project state or continuity, read frontmatter, run the [schema-drift check](library/process/project-frontmatter.md), and load the selected flow only when phase rules are needed. Report status, last-activity age, next useful action, and drift.
+For project state or continuity, read frontmatter and run the [schema-drift check](library/process/project-frontmatter.md). In a fresh context, read the `project.md` body for thesis/plan, then follow only the relevant deliverable head pointer; load the selected flow only when phase rules are needed. Report status, last-activity age, next useful action, and drift.
 
 ### Deliverable Drafting
 
@@ -92,7 +92,7 @@ When the work is the active deliverable set's own production/delivery workflow, 
 
 ### Phase Overrides
 
-When the project moves past an expected deliverable without producing it, stub the canonical deliverable file with `status: deferred` and the defer metadata in frontmatter, then add or update the tracker row with `status: deferred` in the same turn. Use the `phase_override` line shape in [`library/process/project-frontmatter.md`](library/process/project-frontmatter.md) when appending to `activity.md`. The stub and tracker row are the back-fill obligation.
+When the project moves past an expected deliverable without producing it, stub the canonical deliverable file with `status: deferred` and the defer metadata in frontmatter, then add or update the tracker row with `status: deferred` in the same turn. Use the `phase_override` line shape in [`library/process/project-activity.md`](library/process/project-activity.md) when appending to `activity.md`. The stub and tracker row are the back-fill obligation.
 
 ---
 

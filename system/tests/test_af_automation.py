@@ -12,19 +12,14 @@ from system import af
 PROJECT_MD = """---
 name: Automation Test
 slug: automation-test
-schema_version: 2026-04-23
+schema_version: 2026-07-19
 created_at: 2026-07-12
 domain: project-mgmt
 status: active
 current_phase: active
 flow: open-flow
 last_activity: 2026-07-12T10:00:00+00:00
-last_consolidated: null
-channels: []
-stakeholders: []
 deliverables: {}
-system_retro_completed: null
-closeout_retro_completed: null
 ---
 
 # Automation Test

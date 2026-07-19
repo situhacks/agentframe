@@ -15,7 +15,7 @@ def write(path, text):
 PROJECT_FM = """\
 name: Test
 slug: test
-schema_version: 2026-04-23
+schema_version: 2026-07-19
 created_at: 2026-07-07
 domain: marketing
 status: active

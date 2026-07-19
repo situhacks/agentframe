@@ -13,7 +13,7 @@ A phase turns technical. Create the external repo at an idiomatic location outsi
 1. Set `build_repo: <absolute path>` in `project.md` frontmatter (LIFECYCLE block). Its presence is the routing trigger that re-loads this file every session.
 2. Write the **umbilical stub** — a minimal `CLAUDE.md` at the repo root (template below). No plans, no duplicated context.
 3. Create `knowledge/build-log.md` in the project (status, decision notes, BDR register).
-4. Append `build_started` to `activity.md` (shape in [`project-frontmatter.md`](project-frontmatter.md)).
+4. Append `build_started` to `activity.md` (shape in [`project-activity.md`](project-activity.md)).
 
 ### Umbilical stub template
 

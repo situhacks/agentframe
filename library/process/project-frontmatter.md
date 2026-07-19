@@ -1,181 +1,90 @@
-# Project Frontmatter Schema
+# Project State Index
 
-`workspace/projects/{slug}/project.md` frontmatter is canonical project state. State-loads read it first, so keep it cheap and queryable.
+## Purpose
 
-**Schema version:** `2026-07-15` (v3). `schema_version` names the current format, not the project's creation date. Projects migrate forward with schema changes; `af doctor` rejects older shapes.
+`workspace/projects/{slug}/project.md` frontmatter is the compact index a fresh agent reads before opening project detail. It answers four questions: what project is this, which domain and flow route it, what state is current, and which file is the current head of each deliverable.
 
-## Blocks
+The index is not a history log or a substitute for deliverable content. A small amount of duplication is deliberate: tracker `status` and `file` let an agent reconstruct the working set without scanning folders, and `af doctor` keeps that cache synchronized with each head file.
 
-Each frontmatter block has one job:
+**Schema version:** `2026-07-19` (v4). Projects migrate forward; `af doctor` rejects older live shapes.
 
-| Block | Owns |
+## When To Load
+
+Load for project state, continuity, dependency, routing, and next-action decisions, and before changing project frontmatter. Do not load prior versions or full activity history unless the task asks what changed, why a decision was made, or how an artifact evolved.
+
+## Procedure
+
+1. Read `project.md` frontmatter and run `python system/af.py doctor <project-slug>`.
+2. Use `domain`, `flow`, `current_phase`, and the deliverable tracker to route the task.
+3. Read the `project.md` body when onboarding into the project or when its thesis, plan, or open project-level notes affect the decision.
+4. Follow only the relevant `deliverables.{slug}.file` pointer. That head is canonical content; lower-numbered versions are history.
+5. Read [`project-activity.md`](project-activity.md) only for event rationale, unresolved Attention items, or an activity write.
+
+## Schema
+
+### Required core
+
+| Field | Job |
 |---|---|
-| `IDENTITY` | Project identity set at scaffold. |
-| `LIFECYCLE` | Project state, active phase, activity timestamps, terminal state. |
-| `MANIFEST` | Which post ingredients this project uses by default. |
-| `DELIVERABLES` | Per-deliverable tracker; the primary state-discovery surface. |
-| `AUTOMATIONS` | Optional pointers to standing project-attached automation contracts; absent until first use. |
-| `COUNTERS` | Cheap rollups derived from deliverable rows. |
+| `name` | Human-readable project identity used by agents and surfaces. |
+| `slug` | Stable CLI/folder identity; must match the folder. |
+| `schema_version` | Deterministic migration and doctor contract. |
+| `created_at` | Stable creation date used for age and ordering. |
+| `domain` | Resolves the domain pack and deliverable templates. |
+| `status` | Project lifecycle: `active`, `complete`, or `cancelled`. |
+| `current_phase` | Current position in the selected flow; `open-flow` may use a project-defined phase id from the body plan. |
+| `flow` | Resolves the phase map under [`flows/`](flows/README.md). |
+| `last_activity` | Cheap project-freshness signal; buttons update it with state/content work. |
+| `deliverables` | Current working-set map; `{}` is valid before the first deliverable exists. |
 
-Pointers live inside the relevant block, not in a catch-all section. Do not move deliverable content into `project.md`.
+`status: complete` requires `completed_at`. `status: cancelled` requires `cancelled_at`. Active projects carry neither terminal timestamp. Cancellation reason belongs in the `cancellation` event, not a second frontmatter copy.
 
-## Required Fields
+### Optional only when used
 
-### Identity
+| Field | Add when |
+|---|---|
+| `channels` | The project names global channel profiles that future work should load. |
+| `stakeholders` | The project names global people profiles with project overlays. |
+| `last_consolidated` | The first [`project-consolidate`](../../system/skills/project-consolidate/SKILL.md) pass runs. |
+| `shipped_at` | A domain needs the project's first ship date as a summary/index value. |
+| `completed_at` / `cancelled_at` | The matching terminal transition occurs. |
+| `quarterly_goals_advanced` | The project actively references current positioning goals. |
+| `build_repo` / `build_graduated_at` | [`technical-build.md`](technical-build.md) owns an external build. |
+| `automations` | `af automation init` creates the first project-attached automation pointer. |
 
-| Field | Type / values | Notes |
-|---|---|---|
-| `name` | string | Human-readable project name. |
-| `slug` | folder-safe slug | Must match the folder name. |
-| `schema_version` | ISO date | Must equal the current schema version above. |
-| `created_at` | ISO date | Scaffold date. |
-| `supersedes` | string or `null` | Prior project this replaces, if any. |
-| `domain` | `marketing`, `project-mgmt` | Active domain pack. |
-| `parent` | project slug or `null` | Optional parent project. |
-| `channels` | list of channel slugs | Must resolve under `library/context/channels/`. |
-| `stakeholders` | list of person slugs | Must resolve under `library/context/people/`; project overlays live in `knowledge/people/`. |
+Domain packs may add current routing or state fields through `pack.md`. Marketing adds `post_manifest` when a real manifest moment occurs; it is absent for marketing work with no post manifest.
 
-Domain packs may require extra fields through `pack.md` `extension_fields`; `af doctor` validates them.
+Do not seed optional fields with empty lists or `null`. Absence means the state has not occurred or the capability is not in use.
 
-### Lifecycle
-
-| Field | Type / values | Notes |
-|---|---|---|
-| `status` | `active`, `complete`, `cancelled` | Folder location is a side effect, not a status value. |
-| `current_phase` | selected-flow phase id | `open-flow` may use project-defined phase ids from the body plan. |
-| `flow` | `marketing-solo-flow`, `marketing-standard-flow`, `open-flow`, `project-mgmt-open-flow` | Flow selector; definitions live in `library/process/flows/`. |
-| `last_activity` | ISO datetime | Touched whenever a deliverable changes state or content. |
-| `last_consolidated` | ISO date or `null` | Stamped by [`project-consolidate`](../../system/skills/project-consolidate/SKILL.md); `af doctor` nudges when stale or logs bloat. |
-| `shipped_at` | ISO date or `null` | First publish date, sourced from the delivered post. |
-| `completed_at` | ISO date or `null` | Set when closeout completes. |
-| `cancelled_at` | ISO date or `null` | Mutually exclusive with `completed_at`. |
-| `cancelled_reason` | string or `null` | One-line reason. |
-| `quarterly_goals_advanced` | list | References goals in `library/context/operator/positioning.md`. |
-| `build_repo` | absolute path or `null` | Set when a phase turns technical and code lives in a separate external repo. Its presence routes to [`technical-build.md`](technical-build.md). Optional; absent on non-technical projects. |
-| `build_graduated_at` | ISO date or `null` | Stamped when the external repo graduates to self-sufficiency and AgentFrame stops orchestrating it. `null` while the build is active. Optional. |
-
-Cancellation sets `status: cancelled`, `cancelled_at`, `cancelled_reason`, appends a `cancellation` activity event, and offers to move the folder under `workspace/projects/completed/`. Cancelled projects still run system retro; project retro is skipped.
-
-`build_repo` / `build_graduated_at` are optional and only appear on projects with a technical-build phase; `af doctor` tolerates their absence. Lifecycle and mechanics live in [`technical-build.md`](technical-build.md).
-
-### Manifest
-
-`post_manifest` is set when a project reaches a manifest moment: campaign architecture lock in structured marketing flows, or the open-flow plan revision that puts posts in scope.
-
-```yaml
-post_manifest:
-  ingredients: [slide-copy, body-copy, image-prompts]
-  notes: "prompts only - operator renders in Gemini"
-```
-
-A post can override the default with `ingredients: [...]` on its tracker row.
-
-### Deliverables
-
-Each row is one deliverable:
+### Deliverable tracker rows
 
 ```yaml
 deliverables:
   {deliverable-slug}:
-    status: {enum}
+    status: {not_started | drafting | locked | delivered | deferred}
     file: {path-from-project-root}
     last_updated: {ISO date}
-    review: {enum}
-    expected_feedback_by: {ISO date or null}
-    job: {short-string}
-    framing_note: {short-string}
+    job: {short current role}
+    review: {not_required | pending | complete | waived}
+    expected_feedback_by: {ISO date}
 ```
 
-`status` is required. `file` is required and may point at a folder only while `status: not_started`. `last_updated` is required once work begins.
+`status` and `file` are required. A `not_started` row may point at the planned numeric-v1 path before the file exists. Once work begins, `last_updated` is required and the pointed head file must exist with the same status. `job` is optional and stays short: it explains the deliverable's current role, not its revision history. Review fields appear only when external review applies.
 
-`job` is the row's stable role description: written at row creation and changed only when the role or status changes. Working state, directives, and open questions live in the head file.
+Working directives, open questions, deferral reasons, publish data, exports, and version history live in the head deliverable or its prior versions. Do not add those to the tracker.
 
-| `status` | Meaning |
-|---|---|
-| `not_started` | Tracker-only placeholder; no deliverable file exists yet. |
-| `drafting` | Work exists and is not locked; includes in-flight external review. |
-| `locked` | Substantive edits require an explicit unlock/version event. |
-| `delivered` | Post is published; publish data lives in `post-FINAL.md`. |
-| `deferred` | Intentionally skipped or postponed; reason lives in the deliverable frontmatter. |
+Delivered rows older than 30 days may move to `knowledge/_archive/deliverables-archive.md` through `project-consolidate`. The archive preserves row shape so domain code can derive all-time facts without frontmatter counters.
 
-`review` is orthogonal to `status` and is required only when a template declares external review:
+## Verification Or Logging
 
-| `review` | Meaning |
-|---|---|
-| `not_required` | No external review was expected; no override log. |
-| `pending` | Review is expected or in flight; use `expected_feedback_by` when known. |
-| `complete` | Reviewer feedback applied or explicitly returned clean. |
-| `waived` | Expected review was skipped; log a `phase_override`. |
+`af doctor` validates schema version, required fields, lifecycle timestamps, domain/flow resolution, tracker rows, numeric head pointers, artifact status, optional channel/stakeholder pointers, and domain extensions. It reports drift and never auto-fixes.
 
-Do not add `status: in_review`; use `status: drafting` + `review: pending`.
+An approved manual correction appends `frontmatter_manual_edit` using [`project-activity.md`](project-activity.md). Button-owned transitions write their own state and activity receipts.
 
-**Row archiving.** The tracker is the working set. [`project-consolidate`](../../system/skills/project-consolidate/SKILL.md) may move delivered rows older than 30 days to `knowledge/_archive/deliverables-archive.md`, whose frontmatter is a top-level `deliverables:` map holding the rows verbatim. `af doctor` and `af publish` count tracker + archive. `locked` and `deferred` rows never archive.
+## Boundaries
 
-### Automations
-
-The optional `automations` mapping appears only after `af automation init`. Each row points to one living operational bundle:
-
-```yaml
-automations:
-  email-intake:
-    status: active
-    file: automations/email-intake/automation.md
-    deployment_id: client-email-intake-work
-    last_updated: 2026-07-12T15:10:00-07:00
-    job: "Route approved client emails into project intake"
-```
-
-`status` is `proposed | ready | active | paused | retired`. Project state records desired lifecycle; deployment heartbeat and run outcomes remain observed runtime state. Create and transition rows only through `python system/af.py automation`. Existing projects require no backfill.
-
-### Counters
-
-| Field | Notes |
-|---|---|
-| `post_count` | Planned post rows. |
-| `posts_published` | Delivered post rows across tracker + archive. |
-| `system_retro_completed` | Date the harvest/system retro locked, or `null`. |
-| `closeout_retro_completed` | Date the campaign/project retro locked, or `null`. |
-
-Counters are derived. Update them in the same turn as the source deliverable rows.
-
-## Schema Drift Check
-
-Every project-frontmatter load runs `python system/af.py doctor <project-slug>` first. It verifies the current schema version, required fields, enums, tracker rows, numeric head pointers, artifact frontmatter/status, counters, channels, stakeholders, and domain-pack extensions. Completed projects may not retain `not_started` or `drafting` rows. It surfaces issues and never auto-fixes.
-
-Judgment that stays with the agent: peek locked rows for `back_filled: true`; for `open-flow`, sanity-check `current_phase` against the body plan; report drift with last-activity age and ask before fixing. Approved frontmatter fixes append `frontmatter_manual_edit` to `activity.md`.
-
-## Activity Events
-
-`activity.md` is the material-event audit trail — locks, deliveries, overrides, plan changes, retros, cancellations, and structural decisions — plus terse button-generated work pulses. It is a tracker, not a work journal.
-
-Line shape (`af doctor` lints shape, never vocabulary): `{YYYY-MM-DD HH:MM} — {event_type}: {short result lead}; {resume-useful consequence, path, state change, or reason}`. `event_type` is a snake_case token; keep a line under ~200 characters. One line means one material event, not one chat turn. Split unrelated state changes into separate lines; do not split just to polish prose.
-
-Self-check before appending: name the event type first. If the moment is not a lock, delivery, override, plan change, retro, cancellation, or structural decision, it gets no line.
-
-Never log pre-lock iteration prose — draft feedback, prompt/copy/render churn. That trail lives in each version file's `changes_from_v{N}` per [deliverable-versioning](deliverable-versioning.md); the `af lock` activity line is the loop's one roll-up. The one mechanical exception: `af draft` and `af version` themselves append a single `artifact_drafted` / `artifact_versioned` pulse line so the calendar can derive worked days and work blocks. Buttons write pulses; agents never add pulse lines by hand.
-
-### Attention Block
-
-`activity.md` may open with an `## Attention` block directly under the title — the dashboard-facing shortlist the Workspace Dashboard reads. One checkbox bullet per open item:
-
-```md
-## Attention
-
-- [ ] 2026-07-15 | due | Finish workshop preread
-- [ ] 2026-07-18 | waiting | Client reply on [deck](phase-4-demo/demo-deck-v1.md)
-```
-
-`kind` is one of `due`, `waiting`, `meeting`, `decision`, `review`. The dashboard shows unchecked items only; check an item off when it resolves and log the resolution as a normal activity line. Waiting-on / next-action state that must survive a session gap belongs here as one bullet, not as an activity line. Governed projects keep the full record in `knowledge/raid-log.md` / `decision-log.md` / `workback-schedule.md` — Attention is only the shortlist.
-
-Canonical event shapes:
-
-- `phase_override: {deliverable} skipped; {what happened}. Reason: "{reason}"`
-- `post_published: post-{n} shipped; {url}`
-- `cancellation: project cancelled; reason "{one-line cancellation reason}"`
-- `frontmatter_manual_edit: {field} corrected from {old} to {new}; {reason}.`
-- `plan_revised: {short result lead}; {minimum useful consequence}. Reason: "{reason}"`
-- `knowledge_consolidation: dream pass completed; {what changed}.`
-- `build_started: {repo path}; stub written, build-log created.`
-- `build_graduated: {repo path}; context compiled into repo; {one-line what shipped}.`
-
-When a flow file says to append an event, use these shapes. Skipping a required retro is a `phase_override`; repeated overrides surface in quarterly self-review.
+- `project.md` body owns thesis, plan, directory, and open project-level notes.
+- Deliverable heads own current work; prior versions own their evolution trail.
+- `activity.md` owns material events and unresolved Attention items.
+- `knowledge/` owns distilled operational detail.
+- Frontmatter does not store historical tombstones or counters derivable from deliverable rows.

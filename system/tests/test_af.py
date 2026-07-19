@@ -22,7 +22,7 @@ def make_project(root, slug, *, status="active", created_at, last_activity,
     fm = [
         f"name: {slug}",
         f"slug: {slug}",
-        "schema_version: 2026-04-23",
+        "schema_version: 2026-07-19",
         f"created_at: {created_at}",
         "domain: marketing",
         f"status: {status}",
@@ -48,6 +48,53 @@ class NewProjectDefaultTests(unittest.TestCase):
         args = command.call_args.args[0]
         self.assertEqual(args.domain, "project-mgmt")
         self.assertEqual(args.flow, "open-flow")
+
+
+class ProjectStateContractTests(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = self._tmp.name
+        self.cdir = os.path.join(self.root, "workspace", "projects", "minimal")
+        os.makedirs(self.cdir, exist_ok=True)
+        self._root_patch = patch.object(af, "ROOT", self.root)
+        self._domains_patch = patch.object(
+            af, "DOMAINS", os.path.join(REPO_ROOT, "library", "domains")
+        )
+        self._root_patch.start()
+        self._domains_patch.start()
+        self.addCleanup(self._root_patch.stop)
+        self.addCleanup(self._domains_patch.stop)
+        self.addCleanup(self._tmp.cleanup)
+
+    def write_project(self, *, status="active", terminal=""):
+        af.write(
+            os.path.join(self.cdir, "project.md"),
+            "---\n"
+            "name: Minimal\n"
+            "slug: minimal\n"
+            "schema_version: 2026-07-19\n"
+            "created_at: 2026-07-19\n"
+            "domain: project-mgmt\n"
+            f"status: {status}\n"
+            "current_phase: active\n"
+            "flow: open-flow\n"
+            "last_activity: 2026-07-19T10:00:00-07:00\n"
+            f"{terminal}"
+            "deliverables: {}\n"
+            "---\n\n# Minimal\n",
+        )
+
+    def test_minimal_active_index_needs_no_null_placeholders(self):
+        self.write_project()
+        self.assertEqual(af.check_project(self.cdir), [])
+
+    def test_complete_requires_completed_at(self):
+        self.write_project(status="complete")
+        self.assertTrue(any("complete requires completed_at" in i for i in af.check_project(self.cdir)))
+
+    def test_terminal_timestamp_must_match_lifecycle(self):
+        self.write_project(terminal="completed_at: 2026-07-19\n")
+        self.assertTrue(any("completed_at is present but status is active" in i for i in af.check_project(self.cdir)))
 
 
 class DreamNoteTests(unittest.TestCase):
@@ -108,7 +155,6 @@ PROJECT_FM = """name: arch
 slug: arch
 domain: marketing
 status: active
-posts_published: {declared}
 deliverables:
   post-1:
     status: delivered
@@ -131,8 +177,8 @@ deliverables:
 """
 
 
-class ArchivedRowCounterTests(unittest.TestCase):
-    """Marketing rules count delivered posts across tracker + dream-pass archive."""
+class ArchivedRowDerivedTotalTests(unittest.TestCase):
+    """Marketing receipts derive delivered totals across tracker + archive."""
 
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -145,20 +191,17 @@ class ArchivedRowCounterTests(unittest.TestCase):
         self.cdir = os.path.join(self.root, "workspace", "projects", "arch")
         os.makedirs(os.path.join(self.cdir, "knowledge", "_archive"))
 
-    def test_counter_reconciles_across_tracker_and_archive(self):
-        af.write(os.path.join(self.cdir, "knowledge", "_archive", "deliverables-archive.md"), ARCHIVE_FM)
-        issues = self.rules.check(af.make_ctx(), self.cdir, PROJECT_FM.format(declared=2))
-        self.assertEqual(issues, [])
+    def total(self):
+        return self.rules._delivered_posts(af.make_ctx(), PROJECT_FM) + self.rules._archived_delivered_posts(
+            af.make_ctx(), self.cdir
+        )
 
-    def test_counter_mismatch_still_caught_with_archive(self):
+    def test_derived_total_includes_archive(self):
         af.write(os.path.join(self.cdir, "knowledge", "_archive", "deliverables-archive.md"), ARCHIVE_FM)
-        issues = self.rules.check(af.make_ctx(), self.cdir, PROJECT_FM.format(declared=1))
-        self.assertEqual(len(issues), 1)
-        self.assertIn("posts_published=1 but 2 post rows are delivered", issues[0])
+        self.assertEqual(self.total(), 2)
 
-    def test_no_archive_file_counts_tracker_only(self):
-        issues = self.rules.check(af.make_ctx(), self.cdir, PROJECT_FM.format(declared=1))
-        self.assertEqual(issues, [])
+    def test_derived_total_without_archive_counts_tracker_only(self):
+        self.assertEqual(self.total(), 1)
 
 
 LOCK_PROJECT_FM = """name: carousel-proj
@@ -244,7 +287,7 @@ class LockExportGateTests(unittest.TestCase):
 VERSION_PROJECT_FM = """---
 name: Version Project
 slug: version-project
-schema_version: 2026-04-23
+schema_version: 2026-07-19
 created_at: 2026-07-01
 domain: marketing
 status: active

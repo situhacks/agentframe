@@ -26,7 +26,7 @@ Use this order:
 2. `Phase Sequence` — phase names and order, plus the gate that moves the project to the next phase. Keep phase-specific procedures out; link to the process file or deliverable template that owns the work.
 3. `Deliverables By Phase` — deliverable names, file targets, and template links. Do not restate deliverable output shapes, hard constraints, lock criteria, voice/context rules, or export mechanics.
 4. `Tracker Updates` — flow-specific project frontmatter transition points: phase advancement, expected deliverable rows, and required status changes. Link to `project-frontmatter.md` for schema, allowed values, and drift checks.
-5. `Overrides And Skips` — state-changing departures from the expected path, such as skipping an expected deliverable, moving ahead with a deferred artifact, cancelling a project, or closing with partial Phase 5 data. Define when something counts as an override and where to record it; reusable mechanics stay in `project-frontmatter.md`, `activity.md` conventions, or the relevant process file.
+5. `Overrides And Skips` — state-changing departures from the expected path, such as skipping an expected deliverable, moving ahead with a deferred artifact, cancelling a project, or closing with partial Phase 5 data. Define when something counts as an override and where to record it; reusable mechanics stay in `project-frontmatter.md`, [`project-activity.md`](project-activity.md), or the relevant process file.
 6. `Completion Criteria` — project-level terminal gates only. This is not deliverable lock criteria. Say what makes this flow complete, cancelled, or ready to archive, then point to the templates/process files that own the details.
 
 ## Optional Sections

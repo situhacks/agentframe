@@ -6,7 +6,7 @@ Canonical Composio/Rube behavior for AgentFrame. Owns publish-prep and performan
 
 When a post's copy is locked and publish media exists or has been selected, offer to prepare the draft/post through connected tools. If the operator accepts, ask the live Composio/Rube MCP surface what publishing tools are connected for the target platform and use the smallest tool that produces a draft.
 
-Publish coordination is manual in POC (no auto-publishing). Connected tools can prepare drafts when available, but draft prep is not delivered state. When the operator publishes and provides the live URL plus the media that actually went out, reconcile the post's canonical `-v{N}.md` per the relevant deliverable template, increment `posts_published`, and append a `post_published` entry to `activity.md`.
+Publish coordination is manual in POC (no auto-publishing). Connected tools can prepare drafts when available, but draft prep is not delivered state. When the operator publishes and provides the live URL plus the media that actually went out, reconcile the post's canonical `-v{N}.md` per the relevant deliverable template; `af publish` updates the tracker, derives the delivered-post total, and appends `post_published` to `activity.md`.
 
 LinkedIn via Composio can prepare text/image drafts; PDF/document carousels stay manual: prepare the text, then have the operator upload the PDF in LinkedIn.
 

@@ -46,7 +46,7 @@ Load-on-demand procedures by phase. Solo flow is the same shape as standard flow
 | `3-produce-ship` | All manifest ingredients locked for a post | Cross-ingredient coherence check at `post-FINAL.md` lock per [`post-final/template.md`](../../domains/marketing/deliverables/post-final/template.md); video posts also run the cross-check in [`video-spec/template.md`](../../deliverables/video-spec/template.md). |
 | `3-produce-ship` | Ingredients locked and publish media selected | [`composio-notes.md`](../composio-notes.md) "Publish Prep" for the connected-tools draft offer; PDF/document carousels stay manual. |
 | `4-learn-close` | ~14 days after each post's `posted_at` | [`composio-notes.md`](../composio-notes.md) "Performance Capture" for the per-platform live MCP scan, canonical CSV columns, and partial-data rule. |
-| Any phase | Operator overrides sequence | Activity event line shape in [`project-frontmatter.md`](../project-frontmatter.md) "Activity event line shapes." |
+| Any phase | Operator overrides sequence | Activity event line shape in [`project-activity.md`](../project-activity.md). |
 
 ## Tracker Updates
 
@@ -55,22 +55,22 @@ Use [`project-frontmatter.md`](../project-frontmatter.md) for schema and allowed
 - New solo campaigns scaffold via `python system/af.py new-campaign <slug> --flow marketing-solo-flow`.
 - Phase 1 idea selected: add/update `idea-bank` at `status: locked` (or bypass if direct input).
 - Phase 1 concurrent work: add/update `research-artifact` and `campaign-architecture` at `status: drafting`.
-- Phase 1 locked: `campaign-architecture` locks, record `post_manifest` in `project.md`, add planned `post-{n}` rows as `not_started`, update `post_count`, then set `current_phase: 2-design-language`.
+- Phase 1 locked: `campaign-architecture` locks, record `post_manifest` in `project.md`, add planned `post-{n}` rows as `not_started`, then set `current_phase: 2-design-language`.
 - Phase 2 locked or deferred: add/update `design-language`, then set `current_phase: 3-produce-ship`.
 - Phase 3 production starts: each post row points at its `post-FINAL.md` (created when the first ingredient starts drafting) and moves `not_started -> drafting -> locked -> delivered` in the same turn as its files change; ingredient locks land in `post-FINAL.md` per [`lock-event.md`](../lock-event.md).
 - Phase 3 complete: when every active post is `delivered`, `cancelled`, or removed from scope, set `current_phase: 4-learn-close`.
-- Phase 4 lands system/template retros, performance data, and campaign retro as deliverable rows. Campaign Retro lock sets `closeout_retro_completed`, `LIFECYCLE.status: complete`, and `completed_at`.
+- Phase 4 lands system/template retros, performance data, and campaign retro as deliverable rows. Campaign Retro lock sets `status: complete` and `completed_at`.
 
 ## Overrides And Skips
 
-An override is a state-changing departure from the expected solo path. Record the event in `activity.md` using the canonical line shape in [`project-frontmatter.md`](../project-frontmatter.md) "Activity event line shapes," and keep the durable reason in the lowest owning file.
+An override is a state-changing departure from the expected solo path. Record the event in `activity.md` using the canonical line shape in [`project-activity.md`](../project-activity.md), and keep the durable reason in the lowest owning file.
 
 - Research can be deferred only when the operator supplies enough source context to draft the Campaign Architecture. The deferred Research Artifact owns the reason.
 - Design Language can be deferred for text-only work. The deferred design artifact owns the reason; production may proceed without visual assets.
-- A planned post can be removed from scope before shipping. Update `post_count`, the affected `post-{n}` row, and `activity.md`.
+- A planned post can be removed from scope before shipping. Mark the affected `post-{n}` row `deferred` with the reason in its file, then append the override to `activity.md`.
 - Performance capture can be partial. Unsupported metrics stay unknown, not zero; Campaign Retro carries the partial-data caveat.
 - The Harvest Retro or Campaign Retro can be explicitly deferred, but the campaign cannot move to `complete` until Campaign Retro is locked or the operator records a closeout override.
-- Cancellation can happen from any phase. Set `LIFECYCLE.status: cancelled`, `cancelled_at`, `cancelled_reason`, and append the cancellation event to `activity.md`.
+- Cancellation can happen from any phase. Set `status: cancelled` and `cancelled_at`, then put the reason in the `cancellation` event in `activity.md`.
 
 ## Completion Criteria
 
@@ -80,6 +80,6 @@ A solo campaign is complete when:
 - The Harvest Retro is locked or explicitly deferred;
 - Performance Data exists or the operator chose to close with partial/unknown data;
 - Campaign Retro is locked and has applied the closeout decision;
-- `project.md` has `status: complete`, `completed_at`, and `closeout_retro_completed` set.
+- `project.md` has `status: complete` and `completed_at`; the campaign-retro row is locked or explicitly deferred with an override.
 
 Folder movement to `workspace/projects/completed/{slug}/` is a side effect of terminal lifecycle state, not its own status.

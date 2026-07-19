@@ -56,7 +56,7 @@ PIPELINE = os.path.join(ROOT, "workspace", "pipeline")
 
 STATUS_ENUM = {"not_started", "drafting", "locked", "delivered", "deferred"}
 LIFECYCLE_ENUM = {"active", "complete", "cancelled"}
-PROJECT_SCHEMA_VERSION = "2026-07-15"
+PROJECT_SCHEMA_VERSION = "2026-07-19"
 EXPORTABLE_INGREDIENTS = ("image-prompts",)  # cross-domain names; packs add their own via pack.md `exportable:`
 
 # Pipeline stage machine (pipeline-topology packs; board = pipeline.md).
@@ -1581,7 +1581,7 @@ def check_pipeline():
 
 # Dream-pass nudge thresholds. Doctor owns WHEN to nudge (deterministic
 # mechanics); the project-consolidate skill owns what a dream pass does.
-DREAM_AGE_DAYS = 30            # active project this long past last_consolidated → nudge
+DREAM_AGE_DAYS = 30            # once consolidated, active project this far past the stamp → nudge
 DREAM_ACTIVE_WINDOW_DAYS = 14  # ...but only if it saw activity this recently
 ACTIVITY_LINE_CAP = 200        # chars; longer reads as narration, not an event line
 ACTIVITY_LINE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}( \d{2}:\d{2})?\s*[—-]\s*[a-z][a-z0-9_]*:\s")
@@ -1827,20 +1827,31 @@ def check_project(cdir):
         return [f"{rel}: project.md missing or has no frontmatter"]
 
     required = (
-        "name", "slug", "schema_version", "created_at", "supersedes", "domain", "parent",
-        "channels", "stakeholders", "status", "current_phase", "flow", "last_activity",
-        "last_consolidated", "completed_at", "cancelled_at", "cancelled_reason",
-        "quarterly_goals_advanced", "system_retro_completed", "closeout_retro_completed",
+        "name", "slug", "schema_version", "created_at", "domain",
+        "status", "current_phase", "flow", "last_activity",
     )
     for field in required:
         if get_scalar(cfm, field) in (None, ""):
             issues.append(f"{rel}: required field '{field}' missing")
+    if not has_field(cfm, "deliverables"):
+        issues.append(f"{rel}: required field 'deliverables' missing")
     if get_scalar(cfm, "schema_version") != PROJECT_SCHEMA_VERSION:
         issues.append(f"{rel}: schema_version must be {PROJECT_SCHEMA_VERSION}; migrate the project forward")
     if get_scalar(cfm, "slug") not in (None, os.path.basename(cdir)):
         issues.append(f"{rel}: slug '{get_scalar(cfm, 'slug')}' != folder name")
-    if get_scalar(cfm, "status") not in LIFECYCLE_ENUM:
-        issues.append(f"{rel}: lifecycle status '{get_scalar(cfm, 'status')}' not in {sorted(LIFECYCLE_ENUM)}")
+    lifecycle = get_scalar(cfm, "status")
+    if lifecycle not in LIFECYCLE_ENUM:
+        issues.append(f"{rel}: lifecycle status '{lifecycle}' not in {sorted(LIFECYCLE_ENUM)}")
+    completed_at = get_scalar(cfm, "completed_at")
+    cancelled_at = get_scalar(cfm, "cancelled_at")
+    if lifecycle == "complete" and completed_at in (None, "null", ""):
+        issues.append(f"{rel}: status complete requires completed_at")
+    if lifecycle == "cancelled" and cancelled_at in (None, "null", ""):
+        issues.append(f"{rel}: status cancelled requires cancelled_at")
+    if lifecycle != "complete" and completed_at not in (None, "null", ""):
+        issues.append(f"{rel}: completed_at is present but status is {lifecycle}")
+    if lifecycle != "cancelled" and cancelled_at not in (None, "null", ""):
+        issues.append(f"{rel}: cancelled_at is present but status is {lifecycle}")
 
     # Domain pack: core checks always; the pack's frontmatter extension + rules apply for its domain.
     domain = get_scalar(cfm, "domain")
@@ -1851,6 +1862,9 @@ def check_project(cdir):
         for f in fm_list(desc, "extension_fields"):
             if not has_field(cfm, f):
                 issues.append(f"{rel}: domain '{domain}' requires field '{f}' (missing)")
+    flow = get_scalar(cfm, "flow")
+    if flow and flow not in FLOWS:
+        issues.append(f"{rel}: flow '{flow}' is not registered in system/af.py")
 
     for slug in all_rows(cfm):
         st, f = row_get(cfm, slug, "status"), row_get(cfm, slug, "file")

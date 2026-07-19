@@ -198,6 +198,40 @@ class SurfaceCalendarTests(unittest.TestCase):
             self.assertEqual(blocks[0]["start"], 0)          # clamped, not -30
             self.assertEqual(blocks[0]["end"], 60)           # 1-hour minimum
 
+    def _pulse_project(self, root: Path) -> None:
+        project = self._project(
+            root, "pulse", status="active",
+            created_at="2026-06-01", last_activity="2026-06-10T10:00:00-07:00",
+        )
+        (project / "activity.md").write_text(
+            "# Activity\n\n"
+            "2026-06-10 10:00 — lock: brief locked; brief/brief-v1.md\n"
+            "2026-06-12 09:15 — artifact_drafted: redesign created; redesign/redesign-v1.md\n"
+            "2026-06-13 14:40 — artifact_versioned: redesign v1 -> v2; redesign/redesign-v2.md\n",
+            encoding="utf-8",
+        )
+
+    def test_pulse_events_count_as_work_but_not_material_markers(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            self._pulse_project(root)
+            timeline = snapshot.build_snapshot(root)["timeline_projects"][0]
+            self.assertIn("2026-06-12", timeline["worked_days"])
+            self.assertIn("2026-06-13", timeline["worked_days"])
+            block_dates = {b["date"] for b in timeline["work_blocks"]}
+            self.assertIn("2026-06-12", block_dates)
+            self.assertIn("2026-06-13", block_dates)
+            self.assertEqual({e["event"] for e in timeline["activity"]}, {"lock"})
+
+    def test_pulse_events_excluded_from_recent_activity(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            self._pulse_project(root)
+            events = [i["event"] for i in snapshot.build_snapshot(root)["recent_activity"]["items"]]
+            self.assertIn("lock", events)
+            self.assertNotIn("artifact_drafted", events)
+            self.assertNotIn("artifact_versioned", events)
+
     def test_snapshot_calendar_includes_milestones_events_and_future_attention(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

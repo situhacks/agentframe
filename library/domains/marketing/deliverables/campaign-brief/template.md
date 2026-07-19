@@ -75,7 +75,7 @@ When this deliverable locks, the agent exports it to Word + PowerPoint per the a
 - **PowerPoint route**: for `.pptx`, load `library/process/deck-production.md` and follow the central deck route. This template does not name individual deck tools directly.
 - **Output path**: `workspace/projects/{slug}/phase-2-strategy/campaign-brief/exports/campaign-brief-v{N}.{ext}`
 
-Mechanics: Word uses `system/skills/docx/SKILL.md`; PowerPoint uses `library/process/deck-production.md`. The agent saves the file, updates `draft-v{N}.md` frontmatter `exports:` array, and appends `lock_event` + `export_generated` events to the campaign's `activity.md`. No standalone export script exists or is needed.
+Mechanics: Word uses `system/skills/docx/SKILL.md` and validates through `python system/tools/docx_validate.py <file.docx>` (`--original` only for an edit of an existing Word file); PowerPoint uses `library/process/deck-production.md`. The agent saves the file, updates `draft-v{N}.md` frontmatter `exports:` array, and appends `lock_event` + `export_generated` events to the campaign's `activity.md`.
 
 Full architecture is defined by the deliverable template, `library/process/deck-production.md`, the relevant skill routed from that process file, and campaign state files.
 

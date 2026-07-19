@@ -87,12 +87,10 @@ class DreamNoteTests(unittest.TestCase):
                             last_activity=days_ago(1), decision_log_lines=350)
         self.assertIsNone(af.dream_note(cdir))
 
-    def test_null_last_consolidated_falls_back_to_created_at(self):
+    def test_null_last_consolidated_waits_for_first_consolidation(self):
         cdir = make_project(self.root, "neverdreamed", created_at=days_ago(60),
                             last_activity=days_ago(1))
-        note = af.dream_note(cdir)
-        self.assertIsNotNone(note)
-        self.assertIn("60d since last consolidation", note)
+        self.assertIsNone(af.dream_note(cdir))
 
     def test_bloated_project_md_fires(self):
         cdir = make_project(self.root, "trackerheavy", created_at=days_ago(3),
@@ -374,6 +372,54 @@ class VersionCommandCharacterizationTests(unittest.TestCase):
         activity = af.read(os.path.join(self.cdir, "activity.md"))
         self.assertIn("unlock_version: brief", activity)
         self.assertIn("source_status=locked", activity)
+        self.assertNotIn("artifact_versioned", activity)
+
+    def test_routine_version_appends_artifact_versioned_pulse(self):
+        rel = "brief/brief-v1.md"
+        self.make_state("brief", rel)
+        self.make_artifact(rel)
+
+        self.run_version("brief")
+
+        activity = af.read(os.path.join(self.cdir, "activity.md"))
+        self.assertIn("artifact_versioned: brief v1 -> v2; brief/brief-v2.md", activity)
+        self.assertNotIn("unlock_version", activity)
+        self.assertTrue(af.ACTIVITY_LINE_RE.match(activity.strip().splitlines()[-1]))
+
+    def test_nested_version_pulse_uses_artifact_label(self):
+        rel = "posts/post-8/post-FINAL.md"
+        self.make_state("post-8", rel)
+        self.make_artifact(rel)
+        self.make_artifact("posts/post-8/body-copy-v1.md")
+
+        self.run_version("post-8", artifact="body-copy")
+
+        activity = af.read(os.path.join(self.cdir, "activity.md"))
+        self.assertIn("artifact_versioned: body-copy v1 -> v2; posts/post-8/body-copy-v2.md", activity)
+
+    def test_failed_version_appends_no_activity(self):
+        rel = "posts/post-8/post-FINAL.md"
+        self.make_state("post-8", rel)
+        self.make_artifact(rel)
+        stderr = io.StringIO()
+
+        with contextlib.redirect_stderr(stderr), self.assertRaises(SystemExit):
+            self.run_version("post-8", artifact="body-copy")
+
+        self.assertFalse(os.path.isfile(os.path.join(self.cdir, "activity.md")))
+
+    def test_version_receipt_states_copy_forward_contract(self):
+        rel = "brief/brief-v1.md"
+        self.make_state("brief", rel)
+        self.make_artifact(rel)
+        out = io.StringIO()
+        args = types.SimpleNamespace(project="version-project", deliverable="brief", artifact=None)
+
+        with contextlib.redirect_stdout(out):
+            af.cmd_version(args)
+
+        self.assertIn("already contains", out.getvalue())
+        self.assertIn("surgical", out.getvalue())
 
     def test_cli_parser_accepts_nested_artifact_address(self):
         with patch.object(af, "cmd_version") as command, \
@@ -469,6 +515,36 @@ class DraftCommandTests(unittest.TestCase):
 
         self.assertIn("already has a version chain", stderr.getvalue())
 
+    def test_tracker_owned_draft_appends_artifact_drafted_pulse(self):
+        self.make_state("brief", "brief/placeholder.md", status="not_started")
+
+        self.run_draft("brief", file="brief/brief-v1.md")
+
+        activity = af.read(os.path.join(self.cdir, "activity.md"))
+        self.assertIn("artifact_drafted: brief created; brief/brief-v1.md", activity)
+        self.assertTrue(af.ACTIVITY_LINE_RE.match(activity.strip().splitlines()[-1]))
+
+    def test_nested_artifact_draft_appends_artifact_drafted_pulse(self):
+        parent = "phase-3-production/posts/post-8/post-FINAL.md"
+        self.make_state("post-8", parent, status="not_started")
+
+        self.run_draft("post-8", artifact="body-copy")
+
+        activity = af.read(os.path.join(self.cdir, "activity.md"))
+        self.assertIn(
+            "artifact_drafted: body-copy created; phase-3-production/posts/post-8/body-copy-v1.md",
+            activity,
+        )
+
+    def test_failed_draft_appends_no_activity(self):
+        self.make_state("brief", "brief/placeholder.md", status="not_started")
+        stderr = io.StringIO()
+
+        with contextlib.redirect_stderr(stderr), self.assertRaises(SystemExit):
+            self.run_draft("brief", file="brief/brief.md")
+
+        self.assertFalse(os.path.isfile(os.path.join(self.cdir, "activity.md")))
+
     def test_cli_parser_requires_one_draft_address(self):
         with patch.object(af, "cmd_draft") as command, \
              patch.object(af, "check_mode_gate"), \
@@ -478,6 +554,42 @@ class DraftCommandTests(unittest.TestCase):
         args = command.call_args.args[0]
         self.assertEqual(args.artifact, "body-copy")
         self.assertIsNone(args.file)
+
+    def test_adopt_creates_row_from_empty_deliverables_map(self):
+        state = VERSION_PROJECT_FM.format(
+            row="brief", status="drafting", file="brief/placeholder.md"
+        ).replace(
+            "deliverables:\n  brief:\n    status: drafting\n    file: brief/placeholder.md\n    last_updated: 2026-07-01",
+            "deliverables: {}",
+        )
+        af.write(os.path.join(self.cdir, "project.md"), state)
+        self.make_artifact("brief/brief-v1.md")
+        args = types.SimpleNamespace(
+            project="version-project", deliverable="brief", file="brief/brief-v1.md",
+            workstream=None, export=None, notes="existing renderer output",
+        )
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            af.cmd_adopt(args)
+
+        fm, _ = af.split_fm(af.read(os.path.join(self.cdir, "project.md")))
+        self.assertEqual(af.all_rows(fm), ["brief"])
+        self.assertEqual(af.row_get(fm, "brief", "file"), "brief/brief-v1.md")
+        self.assertEqual(af.row_get(fm, "brief", "status"), "drafting")
+
+    def test_adopt_never_overwrites_existing_artifact(self):
+        self.make_state("brief", "brief/current-v1.md", status="drafting")
+        self.make_artifact("brief/current-v1.md", body="keep\n")
+        self.make_artifact("brief/replacement-v1.md", body="replacement\n")
+        args = types.SimpleNamespace(
+            project="version-project", deliverable="brief", file="brief/replacement-v1.md",
+            workstream=None, export=None, notes=None,
+        )
+
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            af.cmd_adopt(args)
+
+        self.assertIn("keep", af.read(os.path.join(self.cdir, "brief/current-v1.md")))
 
 
 if __name__ == "__main__":

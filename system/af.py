@@ -16,6 +16,7 @@ Commands:
   python system/af.py publish <project> <target> --url URL [--posted-at ISO] [--platform P] [--media PATH ...]
   python system/af.py version <project> <deliverable-slug> [--artifact <artifact-name>]
   python system/af.py draft <project> <deliverable-slug> (--file <project-relative-v1.md> | --artifact <artifact-name>)
+  python system/af.py adopt <project> <deliverable-slug> --file <existing-project-relative.md>
   python system/af.py new-project <slug> [--domain project-mgmt] [--flow open-flow] [--name NAME]
   python system/af.py doctor [project|pipeline]
   python system/af.py sync-harnesses --check|--write
@@ -55,6 +56,7 @@ PIPELINE = os.path.join(ROOT, "workspace", "pipeline")
 
 STATUS_ENUM = {"not_started", "drafting", "locked", "delivered", "deferred"}
 LIFECYCLE_ENUM = {"active", "complete", "cancelled"}
+PROJECT_SCHEMA_VERSION = "2026-07-15"
 EXPORTABLE_INGREDIENTS = ("image-prompts",)  # cross-domain names; packs add their own via pack.md `exportable:`
 
 # Pipeline stage machine (pipeline-topology packs; board = pipeline.md).
@@ -147,9 +149,17 @@ def state_doc(cdir):
 
 
 def split_fm(text, path="file"):
+    parsed = split_fm_optional(text)
+    if parsed is None:
+        die(f"{path} has no frontmatter block")
+    return parsed
+
+
+def split_fm_optional(text):
+    """Return frontmatter/body without emitting a fatal CLI error."""
     m = re.match(r"\A---\r?\n(.*?)\r?\n---\r?\n?", text, re.S)
     if not m:
-        die(f"{path} has no frontmatter block")
+        return None
     return m.group(1), text[m.end():]
 
 
@@ -195,22 +205,47 @@ def fm_list(fm, key):
     return [i.strip() for i in m.group(1).split(",") if i.strip()]
 
 
-def row_span(fm, slug):
-    """Span of a 2-space-indented tracker row `  {slug}:` and its 4-space fields."""
-    m = re.search(rf"^  {re.escape(slug)}:\s*$", fm, re.M)
+def deliverables_span(fm):
+    """Span and shape of the top-level deliverables mapping."""
+    m = re.search(r"^deliverables:\s*(\{\})?\s*$", fm, re.M)
     if not m:
         return None
-    start = m.start()
+    if m.group(1):
+        return m.start(), m.end(), True
     rest = fm[m.end():]
-    nxt = re.search(r"^(  \S|\S)", rest, re.M)
+    nxt = re.search(r"^\S", rest, re.M)
     end = m.end() + (nxt.start() if nxt else len(rest))
+    return m.start(), end, False
+
+
+def row_span(fm, slug):
+    """Span of a deliverable row, or a pipeline application row on pipeline boards."""
+    dspan = deliverables_span(fm)
+    if not dspan:
+        m = re.search(r"^applications:\s*(\{\})?\s*$", fm, re.M)
+        if not m or m.group(1):
+            return None
+        rest = fm[m.end():]
+        nxt = re.search(r"^\S", rest, re.M)
+        dspan = (m.start(), m.end() + (nxt.start() if nxt else len(rest)), False)
+    if dspan[2]:
+        return None
+    ds, de, _ = dspan
+    block = fm[ds:de]
+    m = re.search(rf"^  {re.escape(slug)}:\s*$", block, re.M)
+    if not m:
+        return None
+    start = ds + m.start()
+    rest = fm[ds + m.end():de]
+    nxt = re.search(r"^(  \S|\S)", rest, re.M)
+    end = ds + m.end() + (nxt.start() if nxt else len(rest))
     return start, end
 
 
 def row_set(fm, slug, key, value):
     span = row_span(fm, slug)
     if not span:
-        die(f"project.md: tracker row '{slug}' not found in deliverables block")
+        die(f"tracker row '{slug}' not found")
     s, e = span
     block = fm[s:e]
     pat = re.compile(rf"^(    {re.escape(key)}:)[ \t]*.*$", re.M)
@@ -229,13 +264,29 @@ def row_get(fm, slug, key):
     return clean_value(m.group(1)) if m else None
 
 
+def row_add(fm, slug, fields):
+    """Append a new row to deliverables, expanding an empty inline map."""
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", slug):
+        die("deliverable slug must contain only letters, numbers, underscores, and hyphens")
+    if row_span(fm, slug):
+        die(f"project.md: tracker row '{slug}' already exists")
+    dspan = deliverables_span(fm)
+    if not dspan:
+        die("project.md: top-level deliverables mapping is missing")
+    block = "\n".join([f"  {slug}:"] + [f"    {key}: {value}" for key, value in fields])
+    ds, de, inline = dspan
+    if inline:
+        return fm[:ds] + "deliverables:\n" + block + fm[de:]
+    current = fm[ds:de].rstrip("\n")
+    return fm[:ds] + current + "\n" + block + "\n" + fm[de:].lstrip("\n")
+
+
 def all_rows(fm):
-    m = re.search(r"^deliverables:\s*$", fm, re.M)
-    if not m:
+    dspan = deliverables_span(fm)
+    if not dspan or dspan[2]:
         return []
-    rest = fm[m.end():]
-    nxt = re.search(r"^\S", rest, re.M)
-    block = rest[: nxt.start() if nxt else len(rest)]
+    ds, de, _ = dspan
+    block = fm[ds:de]
     return re.findall(r"^  ([A-Za-z0-9_-]+):\s*$", block, re.M)
 
 
@@ -481,12 +532,17 @@ def cmd_version(args):
             f"unlock_version: {args.deliverable} {rel} -> {new_rel}; "
             f"source_status={source_status}; tracker_pointer_moved={str(move_pointer).lower()}",
         )
+    else:
+        label = getattr(args, "artifact", None) or args.deliverable
+        append_activity(cdir, f"artifact_versioned: {label} v{n} -> v{n + 1}; {new_rel}")
 
     pointer_note = "tracker pointer moved" if move_pointer else "parent tracker pointer unchanged"
     print(f"af version: {rel} -> {new_rel} (head; {pointer_note}; prior version untouched as the snapshot)")
     print("\nJudgment (stays with the agent):")
     print("  - Use this for REPLACEMENT-shaped changes (deliverable-versioning.md). Surgical")
     print("    edits (typos, frontmatter, small wording) go directly into the current head.")
+    print(f"  - {new_rel} already contains v{n}'s full content — apply the replacement as surgical")
+    print("    edits to that copy; a full-file rewrite is right only when the replacement is genuinely whole-body.")
     print("  - If the operator feedback criticized SHAPE or process, append one feedback-log.md line this turn.")
 
 
@@ -555,6 +611,9 @@ def cmd_draft(args):
     cfm = touch_lifecycle(cfm)
     write(cpath, join_fm(cfm, cbody))
 
+    label = args.artifact or args.deliverable
+    append_activity(cdir, f"artifact_drafted: {label} created; {new_rel}")
+
     pointer_note = "tracker pointer moved" if move_pointer else "parent tracker pointer preserved"
     print(f"af draft: created {new_rel} ({pointer_note}" +
           (f"; {'; '.join(notes)}" if notes else "") + ")")
@@ -562,6 +621,51 @@ def cmd_draft(args):
     print("  - Load the resolved deliverable template before writing content.")
     print("  - Add any template-specific frontmatter fields before drafting; this command")
     print("    creates only the shared status/last_updated container.")
+
+
+# ---------------------------------------------------------------- adopt
+
+def cmd_adopt(args):
+    """Register an existing drafting artifact without overwriting it."""
+    cdir = project_dir(args.project)
+    sdoc = state_doc(cdir)
+    cpath = os.path.join(cdir, sdoc)
+    cfm, cbody = split_fm(read(cpath), sdoc)
+    rel, target = safe_project_rel(cdir, args.file)
+    if not rel.lower().endswith(".md") or not os.path.isfile(target):
+        die("--file must point at an existing project-relative Markdown artifact")
+    parsed = split_fm_optional(read(target))
+    if parsed is None:
+        die(f"{rel} has no frontmatter block")
+    afm, _ = parsed
+    if get_scalar(afm, "status") != "drafting":
+        die(f"{rel}: status must be drafting before adoption")
+
+    fields = [
+        ("status", "drafting"),
+        ("file", rel),
+        ("last_updated", today()),
+    ]
+    for key in ("workstream", "export", "notes"):
+        value = getattr(args, key, None)
+        if value:
+            fields.append((key, yaml_quote(value)))
+
+    if row_span(cfm, args.deliverable):
+        current = row_get(cfm, args.deliverable, "file")
+        if current not in (None, "", "null", rel) and os.path.exists(os.path.join(cdir, current)):
+            die(f"tracker row '{args.deliverable}' already has an existing artifact: {current}")
+        for key, value in fields:
+            cfm = row_set(cfm, args.deliverable, key, value)
+        action = "updated"
+    else:
+        cfm = row_add(cfm, args.deliverable, fields)
+        action = "created"
+
+    cfm = touch_lifecycle(cfm)
+    write(cpath, join_fm(cfm, cbody))
+    append_activity(cdir, f"deliverable_adopted: {args.deliverable} -> {rel}")
+    print(f"af adopt: {action} row '{args.deliverable}' -> {rel}")
 
 
 # ---------------------------------------------------------------- new-project
@@ -1480,7 +1584,6 @@ def check_pipeline():
 DREAM_AGE_DAYS = 30            # active project this long past last_consolidated → nudge
 DREAM_ACTIVE_WINDOW_DAYS = 14  # ...but only if it saw activity this recently
 ACTIVITY_LINE_CAP = 200        # chars; longer reads as narration, not an event line
-ACTIVITY_DAY_CAP = 6           # events in one day; more smells like per-turn logging
 ACTIVITY_LINE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}( \d{2}:\d{2})?\s*[—-]\s*[a-z][a-z0-9_]*:\s")
 DREAM_LINE_CAPS = (("knowledge/decision-log.md", 300),
                    ("knowledge/raid-log.md", 300),
@@ -1568,7 +1671,16 @@ def media_manifest_issues_for_fm(cdir, cfm, source_label="project.md"):
         st, f = row_get(cfm, slug, "status"), row_get(cfm, slug, "file")
         if st not in ("locked", "delivered") or not f or not os.path.isfile(os.path.join(cdir, f)):
             continue
-        dfm, _ = split_fm(read(os.path.join(cdir, f)), f)
+        if not f.lower().endswith(".md"):
+            continue
+        try:
+            parsed = split_fm_optional(read(os.path.join(cdir, f)))
+        except (UnicodeDecodeError, OSError):
+            parsed = None
+        if parsed is None:
+            issues.append(f"{rel}: {source_label} row '{slug}' file has no/invalid frontmatter or is unreadable: {f}")
+            continue
+        dfm, _ = parsed
         if exportable_ingredient(f, extra) and not fm_list_values(dfm, "exports"):
             issues.append(f"{rel}: {source_label} row '{slug}' is a {st} exportable deliverable with empty exports[] - land the finals in the deliverable's media/ folder and record them")
         for field in MEDIA_MANIFEST_FIELDS:
@@ -1661,9 +1773,7 @@ def dream_note(cdir):
             if lines > cap:
                 signals.append(f"{relpath} {lines} lines (cap {cap})")
 
-    # last_consolidated is stamped by the dream pass; projects that predate the
-    # field (or have never dreamed) fall back to created_at.
-    base = parse_iso_date(get_scalar(cfm, "last_consolidated")) or parse_iso_date(get_scalar(cfm, "created_at"))
+    base = parse_iso_date(get_scalar(cfm, "last_consolidated"))
     age = (today_d - base).days if base else None
     last_act = parse_iso_date(get_scalar(cfm, "last_activity"))
     steadily_worked = last_act is not None and (today_d - last_act).days <= DREAM_ACTIVE_WINDOW_DAYS
@@ -1677,10 +1787,10 @@ def dream_note(cdir):
 
 def activity_notes(cdir):
     """Shape lint for activity.md — drift alarms, never issues. Checks shape
-    only (timestamp/event-type prefix, line length, per-day volume), never
-    event vocabulary, so any domain can introduce event types freely. Active
-    projects only — completed history won't change, and a permanent alarm is
-    noise (same contract as dream_note)."""
+    only (timestamp/event-type prefix, line length), never event vocabulary,
+    so any domain can introduce event types freely. Active projects only —
+    completed history won't change, and a permanent alarm is noise (same
+    contract as dream_note)."""
     path = os.path.join(cdir, "activity.md")
     if not os.path.isfile(path):
         return []
@@ -1691,13 +1801,11 @@ def activity_notes(cdir):
     if get_scalar(cfm, "status") != "active":
         return []
     rel = os.path.relpath(cdir, ROOT).replace("\\", "/")
-    unshaped, overlong, per_day = 0, 0, {}
+    unshaped, overlong = 0, 0
     for raw in read(path).splitlines():
         s = raw.strip()
         if not s or s.startswith("#") or s.startswith("- ["):
             continue  # blank, heading, or Attention bullet
-        if re.match(r"^\d{4}-\d{2}-\d{2}", s):
-            per_day[s[:10]] = per_day.get(s[:10], 0) + 1
         if not ACTIVITY_LINE_RE.match(s):
             unshaped += 1
         if len(s) > ACTIVITY_LINE_CAP:
@@ -1707,9 +1815,6 @@ def activity_notes(cdir):
         notes.append(f"{rel}: activity.md {unshaped} line(s) not shaped 'YYYY-MM-DD [HH:MM] — event_type: ...' — one line per material event")
     if overlong:
         notes.append(f"{rel}: activity.md {overlong} line(s) over {ACTIVITY_LINE_CAP} chars — iteration narration belongs in the version files' changes_from_vN, not here")
-    busy = [f"{d} ({n})" for d, n in sorted(per_day.items()) if n > ACTIVITY_DAY_CAP]
-    if busy:
-        notes.append(f"{rel}: activity.md heavy day(s) {', '.join(busy)} — check for per-turn logging (material events rarely exceed {ACTIVITY_DAY_CAP}/day)")
     return notes
 
 
@@ -1721,9 +1826,17 @@ def check_project(cdir):
     except SystemExit:
         return [f"{rel}: project.md missing or has no frontmatter"]
 
-    for field in ("name", "slug", "schema_version", "created_at", "domain", "status", "current_phase", "flow", "last_activity"):
+    required = (
+        "name", "slug", "schema_version", "created_at", "supersedes", "domain", "parent",
+        "channels", "stakeholders", "status", "current_phase", "flow", "last_activity",
+        "last_consolidated", "completed_at", "cancelled_at", "cancelled_reason",
+        "quarterly_goals_advanced", "system_retro_completed", "closeout_retro_completed",
+    )
+    for field in required:
         if get_scalar(cfm, field) in (None, ""):
             issues.append(f"{rel}: required field '{field}' missing")
+    if get_scalar(cfm, "schema_version") != PROJECT_SCHEMA_VERSION:
+        issues.append(f"{rel}: schema_version must be {PROJECT_SCHEMA_VERSION}; migrate the project forward")
     if get_scalar(cfm, "slug") not in (None, os.path.basename(cdir)):
         issues.append(f"{rel}: slug '{get_scalar(cfm, 'slug')}' != folder name")
     if get_scalar(cfm, "status") not in LIFECYCLE_ENUM:
@@ -1743,20 +1856,38 @@ def check_project(cdir):
         st, f = row_get(cfm, slug, "status"), row_get(cfm, slug, "file")
         if st not in STATUS_ENUM:
             issues.append(f"{rel}: row '{slug}' status '{st}' invalid")
-        if not f:
+        if not f or f == "null":
             issues.append(f"{rel}: row '{slug}' has no file pointer")
             continue
+        assembly = domain == "marketing" and re.fullmatch(r"post-\d+", slug) and f.endswith("post-FINAL.md")
+        if not assembly and not re.fullmatch(r".+-v\d+\.md", os.path.basename(f)):
+            issues.append(f"{rel}: row '{slug}' file is not a numeric version head: {f}")
         p = os.path.join(cdir, f)
         if st == "not_started":
             pass
         elif not os.path.isfile(p):
             issues.append(f"{rel}: row '{slug}' file missing: {f}")
         else:
+            try:
+                parsed = split_fm_optional(read(p))
+            except (UnicodeDecodeError, OSError):
+                parsed = None
+            if parsed is None:
+                issues.append(f"{rel}: row '{slug}' file has no/invalid frontmatter or is unreadable: {f}")
+                continue
+            artifact_status = get_scalar(parsed[0], "status")
+            if artifact_status != st:
+                issues.append(f"{rel}: row '{slug}' status {st} != artifact status {artifact_status}: {f}")
             m = re.fullmatch(r"(.+)-v(\d+)\.md", os.path.basename(p))
             if m:
                 highest = max(versions_in(os.path.dirname(p), m.group(1)))
                 if int(m.group(2)) != highest:
                     issues.append(f"{rel}: row '{slug}' points at v{m.group(2)} but head is v{highest}")
+
+    if get_scalar(cfm, "status") == "complete":
+        unfinished = [s for s in all_rows(cfm) if row_get(cfm, s, "status") in ("not_started", "drafting")]
+        if unfinished:
+            issues.append(f"{rel}: completed project has unfinished rows: {', '.join(unfinished)}")
 
     # Channels and stakeholders validation
     channels = fm_list(cfm, "channels")
@@ -1829,6 +1960,12 @@ def dead_link_issues():
                 continue
             local = os.path.normpath(os.path.join(os.path.dirname(path), bare))
             rooted = os.path.normpath(os.path.join(ROOT, bare))
+            rel_target = os.path.relpath(local, ROOT).replace("\\", "/")
+            personal_context = rel_target.startswith("library/context/") and not rel_target.startswith(
+                ("library/context/_meta/", "library/context/operator-schema/")
+            )
+            if personal_context or rel_target.startswith("system/builder-backlog"):
+                continue
             if not (os.path.exists(local) or os.path.exists(rooted)):
                 issues.append(f"{rel}: dead link -> {target}")
     return issues
@@ -1933,7 +2070,7 @@ def _tree_hashes(folder):
     hashes = {}
     for path in sorted(p for p in folder.rglob("*") if p.is_file()):
         rel = path.relative_to(folder).as_posix()
-        hashes[rel] = _sha256(path.read_bytes())
+        hashes[rel] = _sha256(_projection_bytes(path))
     return hashes
 
 
@@ -1942,11 +2079,21 @@ def _bundle_hash(file_hashes):
     return _sha256(payload.encode("utf-8"))
 
 
+def _projection_bytes(path):
+    """Normalize UTF-8 text EOLs while leaving binary bytes exact."""
+    data = Path(path).read_bytes()
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        return data
+    return text.replace("\r\n", "\n").encode("utf-8")
+
+
 def _build_harness_projections(root, build_root):
     root, build_root = Path(root), Path(build_root)
     config_path, config = _projection_config(root)
     canonical_root = root / config["canonical_root"]
-    config_hash = _sha256(config_path.read_bytes())
+    config_hash = _sha256(_projection_bytes(config_path))
     overlays = config.get("overlays", {})
     built = {}
 
@@ -1982,7 +2129,7 @@ def _build_harness_projections(root, build_root):
                 **record,
             }
             (destination / PROJECTION_MARKER).write_text(
-                json.dumps(marker, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+                json.dumps(marker, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n"
             )
             skill_records[skill] = record
 
@@ -1996,7 +2143,7 @@ def _build_harness_projections(root, build_root):
             "skills": skill_records,
         }
         (target_build / PROJECTION_MANIFEST).write_text(
-            json.dumps(root_manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            json.dumps(root_manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n"
         )
         built[harness] = (target_build, root / target_rel)
     return built
@@ -2018,7 +2165,7 @@ def _projection_drift(expected, actual):
     for rel in sorted(actual_files.keys() - expected_files.keys()):
         issues.append(f"unexpected generated file: {actual / rel}")
     for rel in sorted(expected_files.keys() & actual_files.keys()):
-        if expected_files[rel].read_bytes() != actual_files[rel].read_bytes():
+        if _projection_bytes(expected_files[rel]) != _projection_bytes(actual_files[rel]):
             issues.append(f"drifted generated file: {actual / rel}")
     return issues
 
@@ -2168,7 +2315,7 @@ def cmd_doctor(args):
 
 # Verbs that mutate project state are Operator actions. `doctor` is read-only
 # and allowed in any mode; so is `pipe board`.
-OPERATOR_VERBS = {"lock", "publish", "version", "draft", "new-project"}
+OPERATOR_VERBS = {"lock", "publish", "version", "draft", "adopt", "new-project"}
 OPERATOR_PIPE_VERBS = {"save", "start", "stage"}
 OPERATOR_AUTONOMY_VERBS = {"init", "start", "checkpoint", "finish"}
 OPERATOR_AUTOMATION_VERBS = {"init", "ready", "activate", "pause", "retire"}
@@ -2188,6 +2335,11 @@ def check_mode_gate(cmd, args=None):
 
 
 def main():
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except (AttributeError, ValueError):
+            pass
     p = argparse.ArgumentParser(prog="af", description="AgentFrame state-transition CLI")
     sub = p.add_subparsers(dest="cmd", required=True)
 
@@ -2202,6 +2354,9 @@ def main():
     target = s.add_mutually_exclusive_group(required=True)
     target.add_argument("--artifact"); target.add_argument("--file")
     s.set_defaults(fn=cmd_draft)
+    s = sub.add_parser("adopt");           s.add_argument("project"); s.add_argument("deliverable")
+    s.add_argument("--file", required=True); s.add_argument("--workstream")
+    s.add_argument("--export"); s.add_argument("--notes"); s.set_defaults(fn=cmd_adopt)
     s = sub.add_parser("new-project");     s.add_argument("slug")
     s.add_argument("--flow", default=DEFAULT_FLOW, choices=sorted(FLOWS)); s.add_argument("--domain", default=DEFAULT_DOMAIN)
     s.add_argument("--name"); s.set_defaults(fn=cmd_new_project)

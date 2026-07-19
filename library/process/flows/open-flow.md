@@ -5,7 +5,7 @@ Freeform flow for projects that don't fit a fixed phase ladder. Open flow is com
 ## Read Once
 
 - Every artifact is a versioned deliverable instance per [`deliverable-versioning.md`](../deliverable-versioning.md): `{name}-v{N}.md`, head named by the tracker. Revisions bump the head (`python system/af.py version`) — they never spawn a new differently-named v1. Only scratchpads are throwaway, and they carry `scratchpad` in the filename.
-- State transitions are button-owned: `python system/af.py` (`lock`, `publish`, `version`, `new-project`, `doctor`); lock triggers per [`lock-event.md`](../lock-event.md). Never hand-edit a terminal `status:`.
+- State transitions are button-owned: `python system/af.py` (`draft`, `adopt`, `lock`, `publish`, `version`, `new-project`, `doctor`); lock triggers per [`lock-event.md`](../lock-event.md). Never hand-edit tracker `status:`.
 - Tracker schema: [`project-frontmatter.md`](../project-frontmatter.md). Apply file edits and `project.md` updates in the same turn.
 
 ## Kickoff — propose the plan

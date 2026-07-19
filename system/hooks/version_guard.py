@@ -3,9 +3,12 @@
 
 The guard is intentionally narrow. It denies direct edits to immutable lower
 versions and locked/delivered heads, and denies hand-creating version files
-that must go through ``af draft`` or ``af version``. It allows edits to the
-current drafting head because surgical edits are a valid workflow and prose
-judgment, not a hook, decides surgical versus replacement.
+that must go through ``af draft`` or ``af version``. It allows Edit calls on
+the current drafting head because surgical edits are a valid workflow and
+prose judgment, not a hook, decides surgical versus replacement. A full-file
+Write over a head that already has body content is denied — workspace files
+have no git history, so a clobbered draft is unrecoverable; the deny reason
+names both legitimate exits and forces the classification moment.
 
 Fail-open on malformed hook payloads. ``af doctor`` and the CLI remain the
 cross-harness backstops.
@@ -21,6 +24,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 VERSION_RE = re.compile(r"(.+)-v(\d+)\.md$")
+FRONTMATTER_RE = re.compile(r"\A---\n.*?\n---\n?", re.S)
 
 
 def _deny(reason: str) -> dict:
@@ -53,6 +57,14 @@ def _status(path: Path) -> str | None:
         return None
     m = re.search(r"^status:\s*([A-Za-z_-]+)\s*$", head, re.M)
     return m.group(1) if m else None
+
+
+def _has_drafted_body(path: Path) -> bool:
+    try:
+        text = path.read_text(encoding="utf-8-sig")
+    except OSError:
+        return False
+    return bool(FRONTMATTER_RE.sub("", text, count=1).strip())
 
 
 def _versions(path: Path, name: str) -> list[int]:
@@ -115,6 +127,15 @@ def decide(payload: dict) -> dict | None:
             f"{path.name} is {status}. Direct edits are not allowed. After operator confirmation, "
             "run `python system/af.py version` with the row or nested-artifact address; the command "
             "creates a drafting head and records the unlock/version event."
+        )
+
+    if tool == "Write" and _has_drafted_body(path):
+        return _deny(
+            f"Full-file Write would clobber {path.name}'s drafted content, and workspace files have "
+            "no git history to restore from. Iterate with surgical Edit calls on the existing copy. "
+            "For a genuine whole-body replacement, snapshot first if this head is not already the "
+            "fresh copy (`python system/af.py version <project> <row>`, `--artifact <name>` for "
+            "nested), then apply the rewrite as one Edit replacing the body."
         )
     return None
 

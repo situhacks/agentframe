@@ -1,6 +1,6 @@
 # Template: Design Language
 
-A project's locked visual language. One per project. Record what, not why unless the rule has historical breakage behind it.
+A project's locked visual language. One per project. Record what, not why unless historical breakage matters.
 
 ## Required Frontmatter
 
@@ -34,7 +34,7 @@ Divergence-first. When this deliverable opens, offer the starting points — don
 3. **Render and narrow.** Render the directions on the chosen path (side-by-side `preview/directions-compare.html` for the HTML path — one file, no per-direction subfiles), then keep offering variations until the operator picks. Never one-shot the lock.
 4. **Lock.** The picked direction becomes `design-language-v{N}.md` with its treatment block, plus `tokens.yaml`/`tokens.css` when surfaces will render as HTML.
 
-The project-level base locks here; per-deliverable evolution of the language is allowed when the work calls for it — version this deliverable, don't fork it.
+The project-level base locks here; per-deliverable evolution is allowed when needed — version this deliverable, don't fork it.
 
 **Storybook (optional):** offer a rendered HTML storybook when the operator wants to *visualize* the language or *compare* candidate directions — it costs generation time, so skip it for rudimentary languages. Shape and generation paths (script or agent-authored) are in the [`storybook.md`](storybook.md) companion. When one exists, set the `storybook:` frontmatter field so the preview server pins it atop the Design section.
 

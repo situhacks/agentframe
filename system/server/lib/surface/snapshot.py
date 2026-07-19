@@ -147,6 +147,10 @@ def _timeline_deliverables(project: dict) -> list[dict]:
 _BLOCK_GAP_MIN = 90
 _BLOCK_PAD_MIN = 30
 
+# Button-generated work pulses: they mark worked time (worked_days, work_blocks)
+# but are not material events, so they stay out of markers and Recent Activity.
+PULSE_EVENTS = {"artifact_drafted", "artifact_versioned"}
+
 
 def _minutes(timestamp: str) -> int | None:
     """Minutes-into-day for a 'YYYY-MM-DD HH:MM' timestamp, else None."""
@@ -227,6 +231,7 @@ def _timeline_project(project: dict, activity_text: str) -> dict:
             continue
         attention.append({key: item.get(key) for key in ("date", "kind", "text", "file")})
     deliverables = _timeline_deliverables(project)
+    material = [entry for entry in activity if entry.get("event") not in PULSE_EVENTS]
     return {
         "slug": project["slug"],
         "name": project.get("name"),
@@ -238,7 +243,7 @@ def _timeline_project(project: dict, activity_text: str) -> dict:
         "completed_at": project.get("completed_at"),
         "cancelled_at": project.get("cancelled_at"),
         "deliverables": deliverables,
-        "activity": activity,
+        "activity": material,
         "attention": attention,
         "worked_days": _worked_days(deliverables, activity),
         "work_blocks": _work_blocks(activity),
@@ -351,6 +356,8 @@ def build_snapshot(root: Path, activity_limit: int = 50) -> dict:
         for item in attention:
             attention_items.append({"project": project["slug"], "project_name": project["name"], **item})
         for entry in state.parse_activity(activity_text):
+            if entry.get("event") in PULSE_EVENTS:
+                continue
             entry["project"] = project["slug"]
             entry["project_name"] = project["name"]
             entry["file"] = state.detect_file_ref(entry["raw"], pdir)

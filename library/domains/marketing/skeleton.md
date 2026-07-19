@@ -2,11 +2,13 @@
 # IDENTITY
 name: "{name}"
 slug: {slug}
-schema_version: 2026-06-24
+schema_version: 2026-07-15
 created_at: {date}
 supersedes: null
 domain: {domain}
 parent: null
+channels: []
+stakeholders: []
 
 # LIFECYCLE
 status: active

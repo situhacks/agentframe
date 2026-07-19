@@ -1,12 +1,12 @@
 # Project Frontmatter Schema
 
-The frontmatter on `workspace/projects/{slug}/project.md` is the canonical state of a project. State-loads read frontmatter first, so it must stay cheap, consistent, and queryable.
+`workspace/projects/{slug}/project.md` frontmatter is canonical project state. State-loads read it first, so keep it cheap and queryable.
 
-**Schema version:** `2026-04-23` (v2).
+**Schema version:** `2026-07-15` (v3). `schema_version` names the current format, not the project's creation date. Projects migrate forward with schema changes; `af doctor` rejects older shapes.
 
 ## Blocks
 
-Each v2 frontmatter block has one job:
+Each frontmatter block has one job:
 
 | Block | Owns |
 |---|---|
@@ -27,7 +27,7 @@ Pointers live inside the relevant block, not in a catch-all section. Do not move
 |---|---|---|
 | `name` | string | Human-readable project name. |
 | `slug` | folder-safe slug | Must match the folder name. |
-| `schema_version` | ISO date | Frozen at scaffold time. |
+| `schema_version` | ISO date | Must equal the current schema version above. |
 | `created_at` | ISO date | Scaffold date. |
 | `supersedes` | string or `null` | Prior project this replaces, if any. |
 | `domain` | `marketing`, `project-mgmt` | Active domain pack. |
@@ -88,7 +88,7 @@ deliverables:
 
 `status` is required. `file` is required and may point at a folder only while `status: not_started`. `last_updated` is required once work begins.
 
-`job` is the row's stable role description: written at row creation, rewritten only when the role or status genuinely changes — never on content iteration. Current working state, standing directives, and open questions live in the head version file, not here.
+`job` is the row's stable role description: written at row creation and changed only when the role or status changes. Working state, directives, and open questions live in the head file.
 
 | `status` | Meaning |
 |---|---|
@@ -140,19 +140,19 @@ Counters are derived. Update them in the same turn as the source deliverable row
 
 ## Schema Drift Check
 
-Every project-frontmatter load runs `python system/af.py doctor <project-slug>` first. It verifies required fields, enums, tracker rows, head pointers, counters, channels, stakeholders, and domain-pack extensions. It surfaces issues and never auto-fixes.
+Every project-frontmatter load runs `python system/af.py doctor <project-slug>` first. It verifies the current schema version, required fields, enums, tracker rows, numeric head pointers, artifact frontmatter/status, counters, channels, stakeholders, and domain-pack extensions. Completed projects may not retain `not_started` or `drafting` rows. It surfaces issues and never auto-fixes.
 
 Judgment that stays with the agent: peek locked rows for `back_filled: true`; for `open-flow`, sanity-check `current_phase` against the body plan; report drift with last-activity age and ask before fixing. Approved frontmatter fixes append `frontmatter_manual_edit` to `activity.md`.
 
 ## Activity Events
 
-`activity.md` is the material-event audit trail: locks, deliveries, overrides, plan changes, retros, cancellations, and structural decisions. It is a tracker, not a work journal.
+`activity.md` is the material-event audit trail — locks, deliveries, overrides, plan changes, retros, cancellations, and structural decisions — plus terse button-generated work pulses. It is a tracker, not a work journal.
 
 Line shape (`af doctor` lints shape, never vocabulary): `{YYYY-MM-DD HH:MM} — {event_type}: {short result lead}; {resume-useful consequence, path, state change, or reason}`. `event_type` is a snake_case token; keep a line under ~200 characters. One line means one material event, not one chat turn. Split unrelated state changes into separate lines; do not split just to polish prose.
 
 Self-check before appending: name the event type first. If the moment is not a lock, delivery, override, plan change, retro, cancellation, or structural decision, it gets no line.
 
-Never log pre-lock iteration — draft feedback, prompt/copy/render churn, version bumps. That trail lives in each version file's `changes_from_v{N}` per [deliverable-versioning](deliverable-versioning.md); the `af lock` activity line is the loop's one roll-up. Pulse ("what moved when") is derived from tracker `last_updated` / `last_activity`, never written as prose.
+Never log pre-lock iteration prose — draft feedback, prompt/copy/render churn. That trail lives in each version file's `changes_from_v{N}` per [deliverable-versioning](deliverable-versioning.md); the `af lock` activity line is the loop's one roll-up. The one mechanical exception: `af draft` and `af version` themselves append a single `artifact_drafted` / `artifact_versioned` pulse line so the calendar can derive worked days and work blocks. Buttons write pulses; agents never add pulse lines by hand.
 
 ### Attention Block
 

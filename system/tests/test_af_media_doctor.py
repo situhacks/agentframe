@@ -140,6 +140,13 @@ class TestLockedExportableDoctor(unittest.TestCase):
         )
         self.assertEqual(af.media_manifest_issues(self.cdir, CAROUSEL_PROJECT_FM), [])
 
+    def test_frontmatterless_locked_file_is_reported_without_abort(self):
+        write(os.path.join(self.cdir, "post-1-carousel/image-prompts-v1.md"), "# legacy file\n")
+
+        issues = af.media_manifest_issues(self.cdir, CAROUSEL_PROJECT_FM)
+
+        self.assertTrue(any("no/invalid frontmatter" in issue for issue in issues))
+
 
 if __name__ == "__main__":
     unittest.main()

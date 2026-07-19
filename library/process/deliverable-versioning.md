@@ -13,6 +13,7 @@ Before mutation, classify the operation:
 | Operation | New version? | Mechanism |
 |---|---:|---|
 | First draft | Create v1 | `af draft` |
+| Existing authored draft | Register existing file | `af adopt` |
 | Surgical edit | No | Edit current drafting head; update `last_updated` |
 | Replacement | Yes | `af version` before editing |
 | Editable operator copy | Yes | `af version`, then hand off the new head |
@@ -50,6 +51,14 @@ The command creates a shared frontmatter container with `status: drafting` and `
 
 After scaffolding, load the resolved template and add any template-specific frontmatter fields before writing content. `af draft` does not render deliverable prose or infer template-specific fields.
 
+When a renderer or external authoring step already produced a valid `status: drafting` Markdown artifact, register it without overwriting the file:
+
+```text
+python system/af.py adopt <project> <row> --file <project-relative-name-v1.md>
+```
+
+`af adopt` creates the tracker row when absent, updates an empty placeholder row when present, and refuses an existing competing artifact.
+
 ### 2. Surgical edit
 
 Edit the current drafting head in place only when the change is bounded and does not move the deliverable's shape or claims:
@@ -77,6 +86,8 @@ python system/af.py version <project> <parent-row> --artifact <artifact-name>
 ```
 
 Run the command before changing content. It resolves the exact numeric head, creates `N+1`, resets the new head to drafting, refuses malformed/missing/colliding addresses, and leaves the prior version untouched. The nested form updates parent drafting state but does not move the parent file pointer.
+
+The new head already contains the prior version's full content. Apply the replacement as surgical edits to that copy; do not retype unchanged passages. A full-file rewrite of the new head is right only when the replacement is genuinely whole-body (new thesis, new arc).
 
 Replacement-shaped changes include:
 
@@ -110,7 +121,7 @@ After `af draft` or `af version`, verify the command receipt and filesystem:
 - any template-specific frontmatter is present before content drafting;
 - no lower-numbered version was edited.
 
-Routine iteration does not go to `activity.md`. Per-version change narration belongs only in a template-declared `changes_from_v{N}` field. Lock is the ordinary activity roll-up; an unlock/version event from a locked or delivered source is material and is logged by the command.
+Routine iteration narration does not go to `activity.md`; the commands themselves append one terse work pulse per run (`artifact_drafted` on draft, `artifact_versioned` on a drafting-to-drafting version) so the calendar can derive worked time — never add pulse lines by hand. Per-version change narration belongs only in a template-declared `changes_from_v{N}` field. Lock is the ordinary activity roll-up; an unlock/version event from a locked or delivered source is material and is logged by the command.
 
 ## Boundaries
 

@@ -65,6 +65,21 @@ class HarnessProjectionTests(unittest.TestCase):
         self.assertTrue(any("drifted generated file" in issue for issue in issues))
         self.assertEqual(drifted.read_text(encoding="utf-8"), "locally edited\n")
 
+    def test_check_ignores_utf8_text_line_ending_differences(self):
+        af.sync_harnesses(root=self.root, write=True)
+        canonical = self.root / "system" / "skills" / "humanizer" / "SKILL.md"
+        canonical.write_bytes(af._projection_bytes(canonical).replace(b"\n", b"\r\n"))
+
+        self.assertEqual(af.sync_harnesses(root=self.root, write=False), [])
+
+    def test_projection_bytes_keep_binary_differences_exact(self):
+        left = self.root / "left.bin"
+        right = self.root / "right.bin"
+        left.write_bytes(b"\xff\r\n")
+        right.write_bytes(b"\xff\n")
+
+        self.assertNotEqual(af._projection_bytes(left), af._projection_bytes(right))
+
     def test_write_rejects_foreign_skill_directory(self):
         foreign = self.root / ".cursor" / "skills" / "humanizer"
         foreign.mkdir(parents=True)

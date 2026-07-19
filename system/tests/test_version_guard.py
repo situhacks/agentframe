@@ -27,10 +27,10 @@ class VersionGuardTests(unittest.TestCase):
         self.folder = self.root / "workspace" / "projects" / "demo" / "draft"
         self.folder.mkdir(parents=True)
 
-    def write_version(self, number, status="drafting"):
+    def write_version(self, number, status="drafting", body="body\n"):
         path = self.folder / f"copy-v{number}.md"
         path.write_text(
-            f"---\nstatus: {status}\nlast_updated: 2026-07-14\n---\n\nbody\n",
+            f"---\nstatus: {status}\nlast_updated: 2026-07-14\n---\n\n{body}",
             encoding="utf-8",
         )
         return path
@@ -39,6 +39,22 @@ class VersionGuardTests(unittest.TestCase):
         head = self.write_version(2)
         self.write_version(1)
         self.assertIsNone(guard.decide(payload(head)))
+
+    def test_full_write_over_nonempty_head_body_is_denied(self):
+        head = self.write_version(1)
+        out = guard.decide(payload(head, tool="Write"))
+        self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "deny")
+        reason = out["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertIn("surgical Edit", reason)
+        self.assertIn("af.py version", reason)
+
+    def test_full_write_into_empty_scaffold_head_is_allowed(self):
+        head = self.write_version(1, body="")
+        self.assertIsNone(guard.decide(payload(head, tool="Write")))
+
+    def test_edit_to_nonempty_head_body_stays_allowed(self):
+        head = self.write_version(1)
+        self.assertIsNone(guard.decide(payload(head, tool="Edit")))
 
     def test_prior_version_is_denied(self):
         prior = self.write_version(1)

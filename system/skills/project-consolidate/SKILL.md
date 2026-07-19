@@ -75,7 +75,7 @@ Apply the Step 3 treatment to whatever tripped: archive resolved/stale material 
 
 ## Step 6 — Stamp & verify
 
-1. Set `last_consolidated: {today}` in `project.md` LIFECYCLE. If the project predates the field, add it under `last_activity`.
+1. Set the schema-required `last_consolidated: {today}` in `project.md` LIFECYCLE.
 2. Append to `activity.md`: `{YYYY-MM-DD HH:MM} — knowledge_consolidation: dream pass; archived {what}; pruned {n} lines; promoted {slugs|none}.`
 3. Run `python system/af.py doctor {slug}` — the pass must not have introduced issues.
 

@@ -815,5 +815,53 @@ class LifecycleCliParserTests(unittest.TestCase):
             af.main()
 
 
+class LifecycleCompositionSmokeTests(unittest.TestCase):
+    """Public CLI verbs compose into one valid project lifecycle."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.projects = os.path.join(self._tmp.name, "workspace", "projects")
+        self._patch_projects = patch.object(af, "PROJECTS", self.projects)
+        self._patch_projects.start()
+        self.addCleanup(self._patch_projects.stop)
+        self.addCleanup(self._tmp.cleanup)
+
+    def run_cli(self, *args):
+        stdout = io.StringIO()
+        with patch.object(sys, "argv", ["af", *args]), contextlib.redirect_stdout(stdout):
+            af.main()
+        return stdout.getvalue()
+
+    def test_new_project_through_publish_and_doctor(self):
+        self.run_cli(
+            "new-project", "lifecycle-smoke", "--domain", "project-mgmt",
+            "--flow", "open-flow",
+        )
+        self.run_cli(
+            "draft", "lifecycle-smoke", "brief", "--file", "brief/brief-v1.md",
+        )
+        self.run_cli("version", "lifecycle-smoke", "brief")
+        self.run_cli("ready", "lifecycle-smoke", "brief")
+        self.run_cli(
+            "publish", "lifecycle-smoke", "brief", "--url", "https://example.com/brief",
+        )
+        doctor = self.run_cli("doctor", "lifecycle-smoke")
+
+        cdir = os.path.join(self.projects, "lifecycle-smoke")
+        cfm, _ = af.split_fm(af.read(os.path.join(cdir, "project.md")))
+        v1fm, _ = af.split_fm(af.read(os.path.join(cdir, "brief", "brief-v1.md")))
+        v2fm, _ = af.split_fm(af.read(os.path.join(cdir, "brief", "brief-v2.md")))
+        activity = af.read(os.path.join(cdir, "activity.md"))
+
+        self.assertEqual(af.row_get(cfm, "brief", "file"), "brief/brief-v2.md")
+        self.assertEqual(af.row_get(cfm, "brief", "status"), "published")
+        self.assertEqual(af.get_scalar(v1fm, "status"), "drafting")
+        self.assertEqual(af.get_scalar(v2fm, "status"), "published")
+        self.assertEqual(af.get_scalar(v2fm, "published_url"), "https://example.com/brief")
+        for event in ("project_started", "artifact_drafted", "artifact_versioned", "ready", "publish"):
+            self.assertIn(event, activity)
+        self.assertIn("1 project(s) checked, books clean", doctor)
+
+
 if __name__ == "__main__":
     unittest.main()

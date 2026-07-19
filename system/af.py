@@ -610,10 +610,11 @@ def cmd_draft(args):
     sdoc = state_doc(cdir)
     cpath = os.path.join(cdir, sdoc)
     cfm, cbody = split_fm(read(cpath), sdoc)
-    row_span(cfm, args.deliverable) or die(f"tracker row '{args.deliverable}' not found")
+    row_exists = bool(row_span(cfm, args.deliverable))
 
     notes = []
     if args.artifact:
+        row_exists or die(f"tracker row '{args.deliverable}' not found — nested artifacts require a parent row")
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", args.artifact):
             die("artifact name must contain only letters, numbers, underscores, and hyphens")
         parent_rel = row_get(cfm, args.deliverable, "file") or die(
@@ -643,6 +644,13 @@ def cmd_draft(args):
 
     os.makedirs(os.path.dirname(new_path), exist_ok=True)
     write(new_path, f"---\nstatus: drafting\nlast_updated: {today()}\n---\n\n")
+
+    if not row_exists:
+        cfm = row_add(cfm, args.deliverable, (
+            ("status", "drafting"),
+            ("file", new_rel),
+            ("last_updated", today()),
+        ))
 
     rules = load_rules(load_pack(project_domain(cfm))[1])
     if rules and hasattr(rules, "on_draft"):

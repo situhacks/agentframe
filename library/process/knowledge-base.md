@@ -21,6 +21,7 @@ workspace/projects/{slug}/
 
 1. **Sources are Immutable:** The agent never edits or writes files inside `sources/` (except `sources/INDEX.md` when registering a new source). If a source has errors, the correction is documented in `knowledge/`, not in the source file.
 2. **Knowledge is Agent-Owned:** Distilled and written by the agent based on evidence from `sources/` or live chat. It is structured to stay lean and current.
+   - Distill durable chat or transcription signal directly into the smallest relevant knowledge file. Preserve a raw transcript only when it is supplied or explicitly requested, and create no topic structure until the material earns it.
 3. **Compiled-Truth + Timeline:** Entity pages (e.g., meeting index, stakeholder overlays) use a two-part layout:
    - A **Compiled-Truth Header** at the top summarizing what is true *now*.
    - A **Dated, Append-Only Timeline** at the bottom showing the evidence/history.

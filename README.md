@@ -139,6 +139,7 @@ Three domain packs and two work topologies ship today.
 | **Open project** | The domain-neutral starting point for research, planning, building, writing, or analysis; use it for any objective the model and its tools can handle | `project-mgmt` + `open-flow`; no fixed phase ladder, no mandatory governance files |
 | **Governed project** | Longer engagements that benefit from a charter, RAID log, stakeholder map, decision log, and workback schedule | `project-mgmt` + opt-in governance flow |
 | **Marketing project** | Research, campaign architecture, copy, visuals, video, decks, publishing, and performance capture | `marketing` + open flow or an opt-in phase ladder |
+| **Life project** | A private, ongoing project for evolving personal and career-life context, decisions, research, and work | Lazily scaffolded `project-mgmt` + `open-flow`; no separate schema |
 | **Career workspace** | Ongoing career context, internal progression, promotion evidence, and structured application cases | Career bank + calendar/pipeline + case folders |
 
 The open project is the default because most work fits inside a project shape before it needs anything more specialised. A frontier model can reason about and tailor the project for just about anything, so you do not have to design a domain pack every time. Packs are for the jobs you repeat often enough to justify a stronger shape.
@@ -228,6 +229,7 @@ This is the full capability catalog. AgentFrame does not rebuild every productio
 | `humanizer` | Detects and removes common AI-writing patterns | Vendored |
 | `hyperframes` | HTML-to-video composition: Studio, CLI, engine, and routed video skills | Vendored |
 | `job-scout` | Sweeps public ATS feeds against the career search profile, login-free | Adapted |
+| `manage-lenses` | Creates and refreshes source-backed advisory lens packages | Internal |
 | `open-design` | Local-first advanced image and deck runtime | Vendored |
 | `ppt-master` | Converts sources into designed SVG pages and native-editable PowerPoint decks | Vendored |
 | `pptx` | Inspects, validates, and performs native PowerPoint edits | Vendored |
@@ -255,6 +257,7 @@ All AgentFrame-owned. Each loads on demand when the work reaches it.
 | `humanizer-integration` | A calibrated humanization pass where a template calls for it |
 | `image-production` | Path selection across generated imagery, HTML visuals, and Open Design |
 | `knowledge-base` | Source ingestion, living knowledge files, archives, and consolidation rules |
+| `lens-use` | Explicit lens selection and application with disk-backed rehydration |
 | `ready-event` | Readiness mechanics and the post-ready judgment checklist |
 | `operator-context-setup` | First-run generation of positioning, profile, career, and voice surfaces |
 | `preview-server` | Start-or-open behaviour, deep links, and preview hygiene for the dashboard |
@@ -293,6 +296,7 @@ The structure follows a few rules that have kept it from turning into a second j
 - **Specialization is additive.** Packs declare vocabulary, templates, valid verbs, and routes; the core engine stays blind to what a project is about.
 - **Files own working truth.** Markdown and media hold project state, context, decisions, and outputs. SQLite is reserved for the append-only system-change audit.
 - **Sources and knowledge are different things.** Immutable inputs live in `sources/`; distilled working context lives in `knowledge/`.
+- **Operator context and advisory lenses stay distinct.** Personal truth lives in `library/context/`; source-backed external viewpoints live in `library/lenses/` and load only when selected.
 - **Prose owns judgment; mechanisms guarantee invariants.** The agent decides what good work is. The CLI and hooks protect state, exports, and repeatable gates.
 - **The dashboard is a reader.** It never becomes a competing state owner. It only shows what's already available in markdown.
 - **Templates hold the reusable knowledge.** Skills and runtimes can be replaced without rewriting the deliverable library.
@@ -335,6 +339,7 @@ agentframe/
 │   ├── context/                 # operator, people, channel, career, and voice context
 │   ├── deliverables/            # shared deliverable templates
 │   ├── domains/                 # marketing, project-mgmt, careers
+│   ├── lenses/                  # schema plus private source-backed advisory packages
 │   ├── process/                 # flows and on-demand procedures
 │   └── assets/                  # logos and reusable deck templates
 ├── system/

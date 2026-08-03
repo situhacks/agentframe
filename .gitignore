@@ -8,6 +8,10 @@ library/context/*
 !library/context/operator-schema/
 system/builder-backlog*.md
 
+# === Private source-backed lenses ===
+library/lenses/*
+!library/lenses/README.md
+
 # === Operator projects ===
 workspace/projects/*
 !workspace/projects/.gitkeep

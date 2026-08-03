@@ -1635,13 +1635,13 @@ def check_pipeline():
 
 # Dream-pass nudge thresholds. Doctor owns WHEN to nudge (deterministic
 # mechanics); the project-consolidate skill owns what a dream pass does.
-DREAM_AGE_DAYS = 30            # once consolidated, active project this far past the stamp → nudge
+DREAM_AGE_DAYS = 30            # active project this far past consolidation/creation → nudge
 DREAM_ACTIVE_WINDOW_DAYS = 14  # ...but only if it saw activity this recently
 ACTIVITY_LINE_CAP = 200        # chars; longer reads as narration, not an event line
 ACTIVITY_LINE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}( \d{2}:\d{2})?\s*[—-]\s*[a-z][a-z0-9_]*:\s")
 DREAM_LINE_CAPS = (("knowledge/decision-log.md", 300),
                    ("knowledge/raid-log.md", 300),
-                   ("activity.md", 500),
+                   ("activity.md", 200),
                    ("project.md", 250))
 MEDIA_MANIFEST_FIELDS = ("shipped_media", "exports")
 MEDIA_PREVIEW_EXTS = {".html", ".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg",
@@ -1807,8 +1807,9 @@ def dream_note(cdir):
 
     Never an issue and never affects the exit code: bloated-but-valid books
     are still valid. Fires on an active project when an append-only file
-    exceeds its cap, or when consolidation is >DREAM_AGE_DAYS old and the
-    project is still being worked (last_activity within the window).
+    exceeds its cap, or when consolidation (falling back to project creation)
+    is >=DREAM_AGE_DAYS old and the project is still being worked
+    (last_activity within the window).
     """
     rel = os.path.relpath(cdir, ROOT).replace("\\", "/")
     try:
@@ -1823,16 +1824,18 @@ def dream_note(cdir):
     for relpath, cap in DREAM_LINE_CAPS:
         p = os.path.join(cdir, relpath)
         if os.path.isfile(p):
-            lines = read(p).count("\n") + 1
+            lines = len(read(p).splitlines())
             if lines > cap:
                 signals.append(f"{relpath} {lines} lines (cap {cap})")
 
-    base = parse_iso_date(get_scalar(cfm, "last_consolidated"))
+    last_consolidated = parse_iso_date(get_scalar(cfm, "last_consolidated"))
+    base = last_consolidated or parse_iso_date(get_scalar(cfm, "created_at"))
     age = (today_d - base).days if base else None
     last_act = parse_iso_date(get_scalar(cfm, "last_activity"))
     steadily_worked = last_act is not None and (today_d - last_act).days <= DREAM_ACTIVE_WINDOW_DAYS
     if age is not None and age >= DREAM_AGE_DAYS and steadily_worked:
-        signals.insert(0, f"{age}d since last consolidation")
+        age_label = "last consolidation" if last_consolidated else "project creation"
+        signals.insert(0, f"{age}d since {age_label}")
 
     if not signals:
         return None

@@ -18,6 +18,7 @@ Catalog of reusable process files: what each owns and when to load it. Check her
 | [`humanizer-integration.md`](humanizer-integration.md) | Authorship-aware timing and scope for humanizing public-facing agent prose | A public-facing template directly requires it before writing, during agent rewriting, or at readiness verification |
 | [`image-production.md`](image-production.md) | Image-creation path selection menu | A project or post picks an image path (design language becomes ready, imagery work starts) |
 | [`knowledge-base.md`](knowledge-base.md) | Per-project `sources/` + `knowledge/` substrate schema and workflows | Ingesting sources or maintaining governance docs / project knowledge |
+| [`lens-use.md`](lens-use.md) | Explicit lens routing, one-shot/sustained activation, and disk rehydration | An explicit lens request or an in-scope active-lens pointer is present |
 | [`ready-event.md`](ready-event.md) | Generic readiness/export gate and post-ready judgment checklist | A deliverable is being marked good enough to use or share |
 | [`operator-context-setup.md`](operator-context-setup.md) | First-time generation of operator context surfaces | Loading `library/context/operator/` finds a surface missing |
 | [`preview-server.md`](preview-server.md) | Workspace Dashboard start-or-open, preview deep links, stop, noise hygiene | The operator explicitly asks for the dashboard, calendar, or a browser preview |

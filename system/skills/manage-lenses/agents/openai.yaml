@@ -1,0 +1,7 @@
+interface:
+  display_name: "Manage Lenses"
+  short_description: "Build and refresh source-backed lenses"
+  default_prompt: "Use $manage-lenses to build or update a source-backed lens from the supplied material."
+
+policy:
+  allow_implicit_invocation: false

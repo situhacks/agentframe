@@ -112,6 +112,7 @@ Modes are task-local ownership boundaries, not mutable repository state. The roo
 | `library/process/` | On-demand workflow procedures (incl. `flows/`); catalog of what each does + when to load at `library/process/README.md` |
 | `library/domains/` | Domain packs (`marketing`, `project-mgmt`, `careers`): per-domain `skeleton.md`, `pack.md`, `deliverables/`, optional `production.md` |
 | `library/context/` | Operator positioning/profile/voice (`operator/`), plus shared `channels/`, `people/`, `_meta/` |
+| `library/lenses/` | Tracked package contract plus gitignored, source-backed advisory lens instances; kept separate from operator truth |
 | `library/assets/` | Reusable deck assets: flat `logos/` inventory + ppt-master `deck-templates/` packages (schema: `library/assets/README.md`) |
 | `system/af.py` | Deterministic CLI (ready, publish, version, draft, new-project, automation, autonomy, doctor, pipe, harness projection sync) |
 | `system/daemon/` | Multi-queue managed-run host, deployment contract, and kickoff prompt |

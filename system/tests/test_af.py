@@ -134,10 +134,35 @@ class DreamNoteTests(unittest.TestCase):
                             last_activity=days_ago(1), decision_log_lines=350)
         self.assertIsNone(af.dream_note(cdir))
 
-    def test_null_last_consolidated_waits_for_first_consolidation(self):
+    def test_null_last_consolidated_falls_back_to_creation_age(self):
         cdir = make_project(self.root, "neverdreamed", created_at=days_ago(60),
                             last_activity=days_ago(1))
+        note = af.dream_note(cdir)
+        self.assertIsNotNone(note)
+        self.assertIn("60d since project creation", note)
+
+    def test_creation_age_fallback_starts_at_30_days(self):
+        recent = make_project(self.root, "twentynine", created_at=days_ago(29),
+                              last_activity=days_ago(1))
+        due = make_project(self.root, "thirty", created_at=days_ago(30),
+                           last_activity=days_ago(1))
+        self.assertIsNone(af.dream_note(recent))
+        self.assertIn("30d since project creation", af.dream_note(due))
+
+    def test_activity_archive_threshold_is_200_lines(self):
+        cdir = make_project(self.root, "chatty", created_at=days_ago(3),
+                            last_activity=days_ago(1))
+        activity = os.path.join(cdir, "activity.md")
+        af.write(
+            activity,
+            "".join(f"2026-07-01 — note: event {i}\n" for i in range(200)),
+        )
         self.assertIsNone(af.dream_note(cdir))
+
+        af.write(activity, af.read(activity) + "2026-07-01 — note: event 200\n")
+        note = af.dream_note(cdir)
+        self.assertIsNotNone(note)
+        self.assertIn("activity.md 201 lines (cap 200)", note)
 
     def test_bloated_project_md_fires(self):
         cdir = make_project(self.root, "trackerheavy", created_at=days_ago(3),

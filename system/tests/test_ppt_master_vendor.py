@@ -1,6 +1,8 @@
 import os
+import re
 import unittest
 
+from system.tools import ppt_master_contract
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 PPT = os.path.join(ROOT, "system", "skills", "ppt-master")
@@ -12,6 +14,33 @@ def read(*parts):
 
 
 class TestPptMasterVendorContract(unittest.TestCase):
+    def test_confirmation_adapter_pin_matches_vendor_record(self):
+        vendor = read("system", "skills", "ppt-master", "VENDOR.md")
+        match = re.search(r"`([0-9a-f]{40})` \(pin the commit hash", vendor)
+        self.assertIsNotNone(match)
+        self.assertEqual(match.group(1), ppt_master_contract.VENDOR_COMMIT)
+
+    def test_confirmation_stage_canary_tracks_executable_vendor_shapes(self):
+        app = read(
+            "system", "skills", "ppt-master", "scripts", "confirm_ui",
+            "static", "app.js",
+        )
+        server = read(
+            "system", "skills", "ppt-master", "scripts", "confirm_ui", "server.py"
+        )
+        stage_functions = set(
+            re.findall(r"function (stage\dPayload|confirm)\s*\(", app)
+        )
+        self.assertEqual(stage_functions, {"stage1Payload", "stage2Payload", "confirm"})
+        self.assertRegex(app, r"JSON\.parse\(JSON\.stringify\(STATE\)\)")
+        self.assertIn("normalizeTypographyForSubmit(payload)", app)
+        self.assertIn('payload.stage = "final"', app)
+
+        server_added = set(re.findall(r"result\['([^']+)'\]\s*=", server))
+        self.assertTrue({"stage", "status", "confirmed_at"}.issubset(server_added))
+        self.assertIn("result['stage'] = 'final'", server)
+        self.assertIn("result['status'] = 'confirmed'", server)
+
     def test_upstream_documentation_dependencies_are_vendored(self):
         required = (
             ("system", "docs", "technical-design.md"),

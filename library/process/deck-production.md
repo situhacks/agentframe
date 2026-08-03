@@ -28,7 +28,34 @@ Before the run can checkpoint for review:
 1. Run the selected route's static and structural checks.
 2. Render and inspect the complete current deck through its actual viewing surface. For PPT Master, invoke its visual-review workflow after the SVG checker, then inspect a render of the exported PPTX so conversion defects remain visible.
 3. Fix the findings, rerender the affected slides, and inspect them again. A successful export or a first-pass claim of "no issues" is not completion evidence.
-4. Record the render/review artifact paths and a concise finding -> fix -> recheck result in the autonomy evidence. If a finding requires a decision outside the approved charter, checkpoint `bready` instead of asking during the run.
+4. Record the render/review artifact paths and a concise finding -> fix -> recheck result in the autonomy evidence. If a finding requires a decision outside the approved charter, checkpoint with exact outcome `blocked` instead of asking during the run.
+
+## Front-loaded PPT Master confirmation
+
+The normal vendor confirmation gate remains the default. A repo-contained PPT project may use a noninteractive gate only when an approved bounded-autonomy run front-loads the complete confirmation:
+
+1. Put every Step 4 content source, required `analysis/` identity/slide-library file, template/brand input, and the future sealed wrapper path in both the run's `context_sources` and `frozen_context`. Copy external inputs into the repo first.
+2. Restrict `allowed_paths` to the mutable PPT project. It may not equal or contain the sibling sealed wrapper.
+3. Write `<ppt-project>/agentframe-confirmation.draft.json` using the current final-result shape owned by the vendor's `scripts/docs/confirm_ui.md`. Use `mode: fixed-values` for exact operator-approved choices. Use `mode: delegate-strategist` only with exact delegation `{ "fields": "all", "constraints": {} }`; partial or constrained delegation uses the normal UI.
+4. Before starting the run, seal it:
+
+```powershell
+python system/tools/ppt_master_contract.py seal <ppt-project> `
+  --run <run-file> --draft <draft-json>
+python system/af.py autonomy start <project> <run-id> `
+  --session-binding <harness>:<session-id>
+```
+
+The run-unique sibling is `<deck-name>.<run-id>.agentframe-confirmation.json`. It records the pinned vendor commit, input hashes, approval record, and exact final result. The seal is immutable; `by: operator` is a durable record, not cryptographic authentication.
+
+On the vendor's three recognized confirmation waits, `ppt_master_guard.py` validates the wrapper, input closure, run hash, and exact session, then blocks the redundant UI launch with the materialize command. Run that command and continue after the gate:
+
+```powershell
+python system/tools/ppt_master_contract.py materialize <sealed-wrapper> `
+  --session-binding <harness>:<session-id>
+```
+
+Export revalidates the complete closure and exact materialized result. Any declared but malformed, drifted, ambiguous, or wrong-session contract blocks. No wrapper means the ordinary vendor UI proceeds. `C:\tmp`, untrusted/missing hooks, and Cursor unattended runs do not claim this guarantee.
 
 ## Versioning and round trip
 

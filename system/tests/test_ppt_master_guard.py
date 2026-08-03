@@ -169,6 +169,29 @@ class TestStagingGuard(unittest.TestCase):
         self.assertEqual(native["permission"], "deny")
 
 
+class TestConfirmationCommandShapes(unittest.TestCase):
+    def setUp(self):
+        self.cwd = os.path.join(guard.ROOT, "workspace", "projects", "demo")
+
+    def project_for(self, suffix):
+        command = f"python scripts/confirm_ui/server.py decks/demo {suffix}"
+        return guard._confirm_project_path(guard._tokens(command), guard.Path(self.cwd))
+
+    def test_all_three_vendor_wait_shapes_are_recognized(self):
+        for suffix in (
+            "--daemon --wait",
+            "--wait-only --wait-stage stage2",
+            "--wait-only",
+        ):
+            with self.subTest(suffix=suffix):
+                self.assertIsNotNone(self.project_for(suffix))
+
+    def test_shutdown_and_plain_daemon_are_not_confirmation_waits(self):
+        for suffix in ("--shutdown", "--daemon"):
+            with self.subTest(suffix=suffix):
+                self.assertIsNone(self.project_for(suffix))
+
+
 class TestExportGuard(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

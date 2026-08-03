@@ -19,8 +19,10 @@ PreToolUse (Bash|PowerShell):
 PostToolUse (Bash|PowerShell):
   - svg_to_pptx.py               -> re-inject the export promotion contract.
 
-Fail-open by design: unparseable payloads or command shapes pass through;
-`af doctor` is the backstop that catches anything these guards miss.
+Unparseable or unrelated command shapes pass through. Once a repo-contained
+project declares an active sealed confirmation, its recognized confirm/export
+commands fail closed on malformed contracts, drift, or session mismatch.
+`af doctor` remains the backstop for unrelated staging failures.
 """
 
 from __future__ import annotations
@@ -33,8 +35,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import svg_paragraph_lint as lint  # noqa: E402
+from system.tools import ppt_master_contract as contract  # noqa: E402
 
 LINT_OFF = re.compile(r"AF_PPT_LINT\s*=\s*['\"]?off", re.IGNORECASE)
 MAX_REASON_FINDINGS = 6
@@ -79,6 +83,14 @@ PROMOTE_CONTEXT = (
     "into the calling deliverable folder, keeping its timestamped filename. The "
     "exports/ twin stays frozen as the agent's reference. Versioning and round-trip "
     "rules: library/process/deck-production.md."
+)
+
+CONTRACT_VALID_CONTEXT = (
+    "AgentFrame found a valid sealed Strategist confirmation at {path}. The "
+    "interactive confirmation server is redundant and must not launch. Run "
+    "`python system/tools/ppt_master_contract.py materialize \"{path}\" "
+    "--session-binding {binding}`, read the result, and continue the vendor "
+    "workflow after the confirmation gate."
 )
 
 
@@ -142,6 +154,136 @@ def _export_project_path(tokens: list[str], cwd: Path) -> Path | None:
     return cwd / nxt
 
 
+def _confirm_project_path(tokens: list[str], cwd: Path) -> Path | None:
+    script_idx = next(
+        (
+            i for i, token in enumerate(tokens)
+            if token.replace("\\", "/").endswith("confirm_ui/server.py")
+        ),
+        None,
+    )
+    if script_idx is None or script_idx + 1 >= len(tokens):
+        return None
+    raw = tokens[script_idx + 1]
+    if raw.startswith("-"):
+        return None
+    rest = tokens[script_idx + 2:]
+    if "--shutdown" in rest:
+        return None
+    launch_stage1 = "--daemon" in rest and "--wait" in rest and "--wait-only" not in rest
+    wait_stage2 = (
+        "--wait-only" in rest
+        and "--wait-stage" in rest
+        and rest[rest.index("--wait-stage") + 1:rest.index("--wait-stage") + 2]
+        == ["stage2"]
+    )
+    wait_final = "--wait-only" in rest and "--wait-stage" not in rest
+    if not (launch_stage1 or wait_stage2 or wait_final):
+        return None
+    return cwd / raw
+
+
+def _payload_binding(payload: dict, harness: str | None) -> str | None:
+    if harness not in {"claude", "codex", "cursor"}:
+        return None
+    if harness == "cursor":
+        session_id = payload.get("session_id") or payload.get("conversation_id")
+    else:
+        session_id = payload.get("session_id")
+    if not session_id:
+        return None
+    try:
+        return contract.autonomy_contract.normalize_session_binding(
+            f"{harness}:{session_id}"
+        )
+    except ValueError:
+        return None
+
+
+def _contract_candidates(project: Path) -> list[Path]:
+    if not _is_under(project, ROOT):
+        return []
+    return sorted(project.parent.glob(f"{project.name}.*{contract.SUFFIX}"))
+
+
+def _candidate_owner(candidate: Path, project: Path) -> tuple[str | None, str | None]:
+    """Return the owning run's status and binding, even for malformed wrappers."""
+    run_id = candidate.name[
+        len(project.name) + 1:-len(contract.SUFFIX)
+    ]
+    try:
+        projects = ROOT / "workspace" / "projects"
+        project_rel = project.resolve().relative_to(projects.resolve())
+        owner = projects / project_rel.parts[0]
+        run = owner / "knowledge" / "autonomy" / f"{run_id}.md"
+        text = run.read_text(encoding="utf-8-sig")
+    except (OSError, ValueError, IndexError):
+        return None, None
+    if not text.startswith("---\n"):
+        return None, None
+    end = text.find("\n---\n", 4)
+    if end < 0:
+        return None, None
+    fm = text[4:end]
+    return (
+        contract.autonomy_contract.scalar(fm, "status"),
+        contract.autonomy_contract.scalar(fm, "bound_session"),
+    )
+
+
+def _contract_guard(
+    project: Path,
+    payload: dict,
+    harness: str | None,
+    *,
+    confirmation_launch: bool,
+) -> dict | None:
+    candidates = _contract_candidates(project)
+    if not candidates:
+        return None
+    binding = _payload_binding(payload, harness)
+    running = []
+    for candidate in candidates:
+        status, owner_binding = _candidate_owner(candidate, project)
+        if status == "running":
+            running.append((candidate, owner_binding))
+    if not running:
+        return None  # historical sealed records do not suppress the normal UI
+    if binding is None:
+        return _deny(
+            "A sealed PPT confirmation was declared, but this hook payload has no "
+            "trusted harness session id. Noninteractive confirmation is unsupported "
+            "on this surface; use the normal vendor gate."
+        )
+    active = [
+        candidate for candidate, owner_binding in running
+        if owner_binding == binding
+    ]
+    if binding is not None and not active:
+        return _deny(
+            "A sealed PPT confirmation is active for this project, but it is bound "
+            "to a different harness session. Use the owning session or the normal "
+            "vendor gate after that run is blocked/completed."
+        )
+    if len(active) != 1:
+        return _deny(
+            f"PPT confirmation contract is ambiguous: found {len(active)} active "
+            f"sealed siblings for {project} and this session."
+        )
+    path = active[0]
+    try:
+        contract.validate_contract(
+            path,
+            expected_session=binding,
+            require_materialized=not confirmation_launch,
+        )
+    except Exception as exc:
+        return _deny(f"Sealed PPT confirmation is invalid: {exc}")
+    if confirmation_launch:
+        return _deny(CONTRACT_VALID_CONTEXT.format(path=path, binding=binding))
+    return None
+
+
 def _export_lint(command: str, tokens: list[str], cwd: Path) -> dict | None:
     if LINT_OFF.search(command):
         return None
@@ -162,19 +304,43 @@ def _export_lint(command: str, tokens: list[str], cwd: Path) -> dict | None:
     )
 
 
-def decide(payload: dict) -> dict | None:
+def decide(payload: dict, harness: str | None = None) -> dict | None:
     command = (
         (payload.get("tool_input") or {}).get("command")
         or payload.get("command")
         or ""
     )
-    if "project_manager.py" not in command and "svg_to_pptx.py" not in command:
+    if (
+        "project_manager.py" not in command
+        and "svg_to_pptx.py" not in command
+        and "confirm_ui/server.py" not in command.replace("\\", "/")
+    ):
         return None
     cwd = Path(payload.get("cwd") or ".")
     event = EVENT_ALIASES.get(payload.get("hook_event_name") or "PreToolUse")
     tokens = _tokens(command)
 
     if event == "PreToolUse":
+        confirm_project = _confirm_project_path(tokens, cwd)
+        if confirm_project is not None:
+            result = _contract_guard(
+                confirm_project,
+                payload,
+                harness,
+                confirmation_launch=True,
+            )
+            if result:
+                return result
+        export_project = _export_project_path(tokens, cwd)
+        if export_project is not None:
+            result = _contract_guard(
+                export_project,
+                payload,
+                harness,
+                confirmation_launch=False,
+            )
+            if result:
+                return result
         return _staging_guard(tokens, cwd) or _export_lint(command, tokens, cwd)
 
     if event == "PostToolUse" and "svg_to_pptx.py" in command:
@@ -214,15 +380,46 @@ def _adapt_result(payload: dict, result: dict | None) -> dict | None:
     return result
 
 
-def run(stdin_text: str) -> str | None:
+def _recognized_active_contract(payload: dict) -> bool:
+    """Best-effort discriminator for the guard's narrow fail-closed surface."""
+    command = (
+        (payload.get("tool_input") or {}).get("command")
+        or payload.get("command")
+        or ""
+    )
+    tokens = _tokens(command)
+    cwd = Path(payload.get("cwd") or ".")
+    project = (
+        _confirm_project_path(tokens, cwd)
+        or _export_project_path(tokens, cwd)
+    )
+    if project is None:
+        return False
+    for candidate in _contract_candidates(project):
+        status, _ = _candidate_owner(candidate, project)
+        if status == "running":
+            return True
+    return False
+
+
+def run(stdin_text: str, harness: str | None = None) -> str | None:
     try:
         payload = json.loads(stdin_text)
     except Exception:
         return None
     try:
-        result = _adapt_result(payload, decide(payload))
-    except Exception:
-        return None  # fail open, never block unrelated work on a guard bug
+        result = _adapt_result(payload, decide(payload, harness=harness))
+    except Exception as exc:
+        try:
+            if _recognized_active_contract(payload):
+                result = _adapt_result(
+                    payload,
+                    _deny(f"Active sealed PPT confirmation guard failed: {exc}"),
+                )
+            else:
+                return None
+        except Exception:
+            return None
     return json.dumps(result) if result else None
 
 
@@ -234,7 +431,11 @@ def dispatch(stdin_text: str, argv: list[str]) -> str:
         return "{}"
     if _cursor_payload(payload) and "--cursor-native" not in argv:
         return "{}"
-    return run(stdin_text) or "{}"
+    harness = next(
+        (name for name in ("claude", "codex", "cursor") if name in argv),
+        None,
+    )
+    return run(stdin_text, harness=harness) or "{}"
 
 
 if __name__ == "__main__":

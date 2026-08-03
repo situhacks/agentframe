@@ -1,8 +1,19 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/autonomy_guard.py\" --harness claude"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
-        "matcher": "Edit|Write",
+        "matcher": "Edit|Write|Delete",
         "hooks": [
           {
             "type": "command",
@@ -15,7 +26,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/ppt_master_guard.py\""
+            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/ppt_master_guard.py\" --harness claude"
           }
         ]
       }
@@ -26,7 +37,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/ppt_master_guard.py\""
+            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/ppt_master_guard.py\" --harness claude"
           }
         ]
       }

@@ -13,7 +13,7 @@ def load_json(path):
 
 
 class HarnessHookWiringTests(unittest.TestCase):
-    def test_claude_reference_wires_both_guards(self):
+    def test_claude_reference_wires_all_guards(self):
         config = load_json(".claude/settings.json")
         commands = [
             hook["command"]
@@ -23,8 +23,10 @@ class HarnessHookWiringTests(unittest.TestCase):
         ]
         self.assertTrue(any("version_guard.py" in command for command in commands))
         self.assertTrue(any("ppt_master_guard.py" in command for command in commands))
+        self.assertTrue(any("autonomy_guard.py" in command for command in commands))
+        self.assertIn("SessionStart", config["hooks"])
 
-    def test_cursor_native_wires_both_guards(self):
+    def test_cursor_native_wires_all_guards(self):
         config = load_json(".cursor/hooks.json")
         self.assertEqual(config["version"], 1)
         commands = [
@@ -34,10 +36,16 @@ class HarnessHookWiringTests(unittest.TestCase):
         ]
         self.assertTrue(any("version_guard.py" in command for command in commands))
         self.assertTrue(any("ppt_master_guard.py" in command for command in commands))
+        self.assertTrue(any("autonomy_guard.py" in command for command in commands))
         self.assertTrue(all("--cursor-native" in command for command in commands))
         self.assertIn("beforeShellExecution", config["hooks"])
+        self.assertIn("sessionStart", config["hooks"])
+        self.assertIn(
+            "confirm_ui",
+            config["hooks"]["beforeShellExecution"][0]["matcher"],
+        )
 
-    def test_codex_native_wires_both_guards_with_windows_commands(self):
+    def test_codex_native_wires_all_guards_with_windows_commands(self):
         config = load_json(".codex/hooks.json")
         handlers = [
             hook
@@ -48,8 +56,10 @@ class HarnessHookWiringTests(unittest.TestCase):
         commands = [hook["command"] for hook in handlers]
         self.assertTrue(any("version_guard.py" in command for command in commands))
         self.assertTrue(any("ppt_master_guard.py" in command for command in commands))
+        self.assertTrue(any("autonomy_guard.py" in command for command in commands))
         self.assertTrue(all(hook.get("commandWindows") for hook in handlers))
         self.assertTrue(all("git rev-parse --show-toplevel" in command for command in commands))
+        self.assertIn("SessionStart", config["hooks"])
 
     def test_local_harness_files_stay_ignored_by_default(self):
         patterns = (ROOT / ".gitignore").read_text(encoding="utf-8")

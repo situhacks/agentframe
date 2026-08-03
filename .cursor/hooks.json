@@ -1,6 +1,12 @@
 {
   "version": 1,
   "hooks": {
+    "sessionStart": [
+      {
+        "command": "python system/hooks/autonomy_guard.py --cursor-native --harness cursor",
+        "timeout": 15
+      }
+    ],
     "preToolUse": [
       {
         "matcher": "Write|Delete",
@@ -10,15 +16,15 @@
     ],
     "beforeShellExecution": [
       {
-        "matcher": "project_manager\\.py|svg_to_pptx\\.py",
-        "command": "python system/hooks/ppt_master_guard.py --cursor-native",
+        "matcher": "project_manager\\.py|svg_to_pptx\\.py|confirm_ui[\\\\/]server\\.py",
+        "command": "python system/hooks/ppt_master_guard.py --cursor-native --harness cursor",
         "timeout": 15
       }
     ],
     "postToolUse": [
       {
         "matcher": "Shell",
-        "command": "python system/hooks/ppt_master_guard.py --cursor-native",
+        "command": "python system/hooks/ppt_master_guard.py --cursor-native --harness cursor",
         "timeout": 15
       }
     ]

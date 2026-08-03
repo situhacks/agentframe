@@ -1,9 +1,23 @@
 {
-  "description": "AgentFrame project guards for versioned artifacts and PPT Master workflows.",
+  "description": "AgentFrame guards for bounded autonomy, versioned artifacts, and PPT Master workflows.",
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/system/hooks/autonomy_guard.py\" --harness codex",
+            "commandWindows": "python \"$(git rev-parse --show-toplevel)/system/hooks/autonomy_guard.py\" --harness codex",
+            "timeout": 15,
+            "statusMessage": "Loading bounded autonomy contract"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
-        "matcher": "Edit|Write",
+        "matcher": "Edit|Write|Delete|apply_patch",
         "hooks": [
           {
             "type": "command",
@@ -19,8 +33,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$(git rev-parse --show-toplevel)/system/hooks/ppt_master_guard.py\"",
-            "commandWindows": "python \"$(git rev-parse --show-toplevel)/system/hooks/ppt_master_guard.py\"",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/system/hooks/ppt_master_guard.py\" --harness codex",
+            "commandWindows": "python \"$(git rev-parse --show-toplevel)/system/hooks/ppt_master_guard.py\" --harness codex",
             "timeout": 15,
             "statusMessage": "Checking AgentFrame PPT safety"
           }
@@ -33,8 +47,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$(git rev-parse --show-toplevel)/system/hooks/ppt_master_guard.py\"",
-            "commandWindows": "python \"$(git rev-parse --show-toplevel)/system/hooks/ppt_master_guard.py\"",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/system/hooks/ppt_master_guard.py\" --harness codex",
+            "commandWindows": "python \"$(git rev-parse --show-toplevel)/system/hooks/ppt_master_guard.py\" --harness codex",
             "timeout": 15,
             "statusMessage": "Checking AgentFrame PPT follow-through"
           }

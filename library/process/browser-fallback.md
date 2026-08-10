@@ -6,7 +6,7 @@ Lazy-load this file when Composio/Rube MCP, another approved API/MCP, or an appr
 
 Cursor is the brain. Local browser-use/browser-harness is the browser hand.
 
-Browser fallback is not an app-specific automation stack. The agent reads the workflow recipe, observes the controlled Edge Work Browser through browser-harness, executes one bounded browser action, observes again, and updates workflow memory only when something durable changes.
+Browser fallback is not an app-specific automation stack. The agent reads the workflow recipe, observes the controlled browser through browser-harness, executes one bounded browser action, observes again, and updates workflow memory only when something durable changes.
 
 Do not introduce new browser scripts by default. Improve the workflow recipe first.
 
@@ -14,12 +14,12 @@ Do not introduce new browser scripts by default. Improve the workflow recipe fir
 
 Use browser fallback only after checking that Composio/Rube or another native integration is not available or not worth wiring for the current task. Prefer approved API, MCP, or CLI when they exist.
 
-Use browser fallback for visible web-app work the operator can already do manually: Outlook, calendar, SharePoint-style browser surfaces, or similar enterprise apps where SSO/session access works in Edge.
+Use browser fallback for visible web-app work the operator can already do manually: Outlook, calendar, SharePoint-style browser surfaces, or similar apps where session access works in a controlled profile.
 
 ## Execution Loop
 
 1. Read the workflow `recipe.md`.
-2. Ensure Work Browser Mode is running for the workflow's `app_url`. If setup is unclear, load `system/browser/README.md` and run `npm run work-browser` from `system/browser`.
+2. Ensure the controlled browser the recipe's `browser:` field names is running for the workflow's `app_url` — `npm run work-browser` (Edge, work surfaces) or `npm run home-browser` (Chrome, personal surfaces) from `system/browser`. If setup is unclear, load `system/browser/README.md`.
 3. If the target app is not authenticated, stop at the human-secret boundary and ask the operator to complete sign-in in the controlled browser.
 4. Observe the page.
 5. Decide the next browser primitive from the workflow file plus live observation.

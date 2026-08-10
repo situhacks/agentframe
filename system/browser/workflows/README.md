@@ -35,6 +35,7 @@ If a workflow becomes too branchy, keep Cursor in the loop rather than turning t
 
 workflow_id: {stable-id}
 status: learning | cursor_replay
+browser: edge | chrome
 app_url: {starting URL}
 approval_mode: human_review | autonomous_when_whitelisted
 tool_routing: browser_use_only

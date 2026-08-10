@@ -5,6 +5,7 @@
   "type": "module",
   "description": "AgentFrame controlled browser wrapper for browser-harness workflows.",
   "scripts": {
-    "work-browser": "node src/work-browser.js"
+    "work-browser": "node src/work-browser.js",
+    "home-browser": "node src/work-browser.js --browser=chrome"
   }
 }

@@ -8,8 +8,45 @@ import {
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+export const DEFAULT_BROWSER = "edge";
 export const DEFAULT_DEBUGGING_PORT = 9222;
 export const DEFAULT_START_URL = "about:blank";
+
+// One controlled profile per browser, each on its own port, so the work (Edge) and
+// home (Chrome) browsers can run at the same time without fighting over DevTools.
+export const BROWSERS = {
+  edge: {
+    defaultPort: 9222,
+    executableEnvVar: "AGENTFRAME_EDGE_PATH",
+    executableName: "msedge.exe",
+    label: "Microsoft Edge",
+    markerFile: "work-browser-session.json",
+    posixCandidates: ["/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge", "/usr/bin/microsoft-edge"],
+    profileDir: "agentframe-work-profile",
+    profileEnvVar: "AGENTFRAME_WORK_PROFILE",
+    vendorPath: ["Microsoft", "Edge", "Application"],
+  },
+  chrome: {
+    defaultPort: 9223,
+    executableEnvVar: "AGENTFRAME_CHROME_PATH",
+    executableName: "chrome.exe",
+    label: "Google Chrome",
+    markerFile: "home-browser-session.json",
+    posixCandidates: ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/google-chrome"],
+    profileDir: "agentframe-home-profile",
+    profileEnvVar: "AGENTFRAME_HOME_PROFILE",
+    vendorPath: ["Google", "Chrome", "Application"],
+  },
+};
+
+export function resolveBrowser(name = DEFAULT_BROWSER) {
+  const key = String(name).toLowerCase();
+  if (!BROWSERS[key]) {
+    throw new Error(`Unknown browser "${name}". Supported: ${Object.keys(BROWSERS).join(", ")}.`);
+  }
+
+  return key;
+}
 
 export function normalizeEndpoint(portOrEndpoint) {
   if (typeof portOrEndpoint === "number") {
@@ -23,22 +60,22 @@ function getBrowserRoot() {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 }
 
-export function getDefaultProfilePath() {
-  return path.join(getBrowserRoot(), "local", "agentframe-work-profile");
+export function getDefaultProfilePath(browser = DEFAULT_BROWSER) {
+  return path.join(getBrowserRoot(), "local", BROWSERS[resolveBrowser(browser)].profileDir);
 }
 
-export function getDefaultMarkerPath() {
-  return path.join(getBrowserRoot(), "local", "runtime", "work-browser-session.json");
+export function getDefaultMarkerPath(browser = DEFAULT_BROWSER) {
+  return path.join(getBrowserRoot(), "local", "runtime", BROWSERS[resolveBrowser(browser)].markerFile);
 }
 
 function normalizePathForMarker(candidate) {
   return path.resolve(candidate).toLowerCase();
 }
 
-export function markerMatchesWorkBrowser(marker, endpoint, profilePath) {
+export function markerMatchesWorkBrowser(marker, endpoint, profilePath, browser = DEFAULT_BROWSER) {
   return Boolean(
     marker &&
-      marker.browser === "edge" &&
+      marker.browser === resolveBrowser(browser) &&
       normalizeEndpoint(marker.endpoint) === normalizeEndpoint(endpoint) &&
       normalizePathForMarker(marker.profilePath) === normalizePathForMarker(profilePath),
   );
@@ -70,27 +107,27 @@ export function toSafeWorkBrowserEvidence(result) {
   };
 }
 
-export function findEdgeExecutable(options = {}) {
+export function findBrowserExecutable(browser = DEFAULT_BROWSER, options = {}) {
+  const spec = BROWSERS[resolveBrowser(browser)];
   const env = options.env ?? process.env;
   const platform = options.platform ?? process.platform;
   const exists = options.exists ?? existsSync;
+  const windowsRoots = [env.ProgramFiles, env["ProgramFiles(x86)"], env.LOCALAPPDATA];
   const candidates = [
-    env.AGENTFRAME_EDGE_PATH,
-    platform === "win32" && env.ProgramFiles
-      ? path.join(env.ProgramFiles, "Microsoft", "Edge", "Application", "msedge.exe")
-      : undefined,
-    platform === "win32" && env["ProgramFiles(x86)"]
-      ? path.join(env["ProgramFiles(x86)"], "Microsoft", "Edge", "Application", "msedge.exe")
-      : undefined,
-    platform === "win32" && env.LOCALAPPDATA
-      ? path.join(env.LOCALAPPDATA, "Microsoft", "Edge", "Application", "msedge.exe")
-      : undefined,
+    env[spec.executableEnvVar],
+    ...(platform === "win32"
+      ? windowsRoots.map((root) => (root ? path.join(root, ...spec.vendorPath, spec.executableName) : undefined))
+      : spec.posixCandidates),
   ];
 
   return candidates.find((candidate) => Boolean(candidate && exists(candidate)));
 }
 
-export function buildEdgeArgs(options) {
+export function findEdgeExecutable(options = {}) {
+  return findBrowserExecutable("edge", options);
+}
+
+export function buildBrowserArgs(options) {
   const args = [
     `--remote-debugging-port=${options.port}`,
     `--user-data-dir=${options.profilePath}`,
@@ -106,6 +143,8 @@ export function buildEdgeArgs(options) {
 
   return args;
 }
+
+export const buildEdgeArgs = buildBrowserArgs;
 
 export async function probeDevtoolsEndpoint(endpoint, timeoutMs = 2_000) {
   const controller = new AbortController();
@@ -143,9 +182,11 @@ export async function probeDevtoolsEndpoint(endpoint, timeoutMs = 2_000) {
 }
 
 export async function ensureWorkBrowser(options = {}) {
-  const endpoint = normalizeEndpoint(options.endpoint ?? DEFAULT_DEBUGGING_PORT);
-  const profilePath = options.profilePath ?? getDefaultProfilePath();
-  const markerPath = options.markerPath ?? getDefaultMarkerPath();
+  const browser = resolveBrowser(options.browser ?? DEFAULT_BROWSER);
+  const spec = BROWSERS[browser];
+  const endpoint = normalizeEndpoint(options.endpoint ?? spec.defaultPort);
+  const profilePath = options.profilePath ?? getDefaultProfilePath(browser);
+  const markerPath = options.markerPath ?? getDefaultMarkerPath(browser);
   const probeEndpoint = options.probeEndpoint ?? probeDevtoolsEndpoint;
   const readMarker = options.readMarker ?? readWorkBrowserMarker;
   const writeMarker = options.writeMarker ?? writeWorkBrowserMarker;
@@ -154,11 +195,11 @@ export async function ensureWorkBrowser(options = {}) {
   const initialProbe = await probeEndpoint(endpoint, 2_000);
   if (initialProbe.ok && initialProbe.webSocketDebuggerUrl) {
     const marker = await readMarker(markerPath);
-    if (!markerMatchesWorkBrowser(marker, endpoint, profilePath)) {
+    if (!markerMatchesWorkBrowser(marker, endpoint, profilePath, browser)) {
       return {
-        browser: "edge",
+        browser,
         debuggingEndpoint: endpoint,
-        edgePath: options.edgePath,
+        executablePath: options.executablePath ?? options.edgePath,
         hasDebuggingWebSocket: true,
         profilePath,
         status: "externally_managed",
@@ -168,9 +209,9 @@ export async function ensureWorkBrowser(options = {}) {
     }
 
     return {
-      browser: "edge",
+      browser,
       debuggingEndpoint: endpoint,
-      edgePath: options.edgePath,
+      executablePath: options.executablePath ?? options.edgePath,
       hasDebuggingWebSocket: true,
       profilePath,
       status: "already_running",
@@ -178,23 +219,24 @@ export async function ensureWorkBrowser(options = {}) {
     };
   }
 
-  const edgePath =
+  const executablePath =
+    options.executablePath ??
     options.edgePath ??
-    findEdgeExecutable({
+    findBrowserExecutable(browser, {
       env: options.env,
       exists: options.exists,
       platform: options.platform,
     });
 
-  if (!edgePath) {
-    throw new Error("Microsoft Edge was not found. Set AGENTFRAME_EDGE_PATH to the msedge.exe path.");
+  if (!executablePath) {
+    throw new Error(`${spec.label} was not found. Set ${spec.executableEnvVar} to the ${spec.executableName} path.`);
   }
 
   const mkdir = options.mkdir ?? defaultMkdir;
   await mkdir(profilePath, { recursive: true });
 
-  const port = new URL(endpoint).port ? Number(new URL(endpoint).port) : DEFAULT_DEBUGGING_PORT;
-  const args = buildEdgeArgs({
+  const port = new URL(endpoint).port ? Number(new URL(endpoint).port) : spec.defaultPort;
+  const args = buildBrowserArgs({
     port,
     profilePath,
     startUrl: options.startUrl ?? DEFAULT_START_URL,
@@ -212,7 +254,7 @@ export async function ensureWorkBrowser(options = {}) {
       return { pid: child.pid };
     });
 
-  const launched = spawnBrowser(edgePath, args);
+  const launched = spawnBrowser(executablePath, args);
   const deadline = Date.now() + connectTimeoutMs;
   const wait = options.wait ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
 
@@ -220,7 +262,7 @@ export async function ensureWorkBrowser(options = {}) {
     const probe = await probeEndpoint(endpoint, 2_000);
     if (probe.ok && probe.webSocketDebuggerUrl) {
       await writeMarker(markerPath, {
-        browser: "edge",
+        browser,
         endpoint,
         pid: launched.pid,
         profilePath,
@@ -228,10 +270,10 @@ export async function ensureWorkBrowser(options = {}) {
       });
 
       return {
-        browser: "edge",
+        browser,
         browserPid: launched.pid,
         debuggingEndpoint: endpoint,
-        edgePath,
+        executablePath,
         hasDebuggingWebSocket: true,
         profilePath,
         status: "launched",
@@ -248,21 +290,27 @@ export async function ensureWorkBrowser(options = {}) {
 function parseCliArgs(argv) {
   const options = {};
   for (const arg of argv) {
-    if (arg.startsWith("--port=")) {
+    if (arg.startsWith("--browser=")) {
+      options.browser = arg.slice("--browser=".length);
+    } else if (arg.startsWith("--port=")) {
       options.endpoint = normalizeEndpoint(Number(arg.slice("--port=".length)));
     } else if (arg.startsWith("--profile=")) {
       options.profilePath = arg.slice("--profile=".length);
     } else if (arg.startsWith("--start-url=")) {
       options.startUrl = arg.slice("--start-url=".length);
-    } else if (arg.startsWith("--edge-path=")) {
-      options.edgePath = arg.slice("--edge-path=".length);
+    } else if (arg.startsWith("--edge-path=") || arg.startsWith("--browser-path=")) {
+      options.executablePath = arg.slice(arg.indexOf("=") + 1);
     }
   }
 
-  options.edgePath ??= process.env.AGENTFRAME_EDGE_PATH;
-  options.profilePath ??= process.env.AGENTFRAME_WORK_PROFILE;
+  const browser = resolveBrowser(options.browser ?? process.env.AGENTFRAME_BROWSER ?? DEFAULT_BROWSER);
+  const spec = BROWSERS[browser];
+
+  options.browser = browser;
+  options.executablePath ??= process.env[spec.executableEnvVar];
+  options.profilePath ??= process.env[spec.profileEnvVar];
   options.endpoint ??= normalizeEndpoint(
-    process.env.AGENTFRAME_BROWSER_PORT ? Number(process.env.AGENTFRAME_BROWSER_PORT) : DEFAULT_DEBUGGING_PORT,
+    process.env.AGENTFRAME_BROWSER_PORT ? Number(process.env.AGENTFRAME_BROWSER_PORT) : spec.defaultPort,
   );
 
   return options;

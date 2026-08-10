@@ -96,6 +96,11 @@ __pycache__/
 
 # === Plugin scratch (brainstorming / writing-plans design specs) ===
 docs/
+# system/docs/ is not scratch: it is the vendored PPT Master documentation
+# dependency (system/skills/ppt-master/VENDOR.md). Already-tracked files were
+# grandfathered in, but new ones a vendor refresh brings must not be ignored.
+!system/docs/
+!system/docs/**
 
 # === Local surface runtime state (per-machine) ===
 system/server/.surface.lock

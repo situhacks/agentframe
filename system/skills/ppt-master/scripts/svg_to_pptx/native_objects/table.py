@@ -6,9 +6,17 @@ from dataclasses import dataclass
 from typing import Any
 from xml.etree import ElementTree as ET
 
+from .marker_attributes import native_import_source
+
 from ..drawingml.context import ConvertContext, ShapeResult
 from ..drawingml.theme_colors import ThemeColorSpec, color_node_xml
-from ..drawingml.utils import _xml_escape, detect_text_lang
+from ..drawingml.utils import (
+    _xml_escape,
+    detect_text_lang,
+    font_px_to_hpt,
+    text_has_rtl_characters,
+    text_uses_rtl,
+)
 from .chart_style import _font_face_xml
 from .marker_common import (
     TABLE_URI,
@@ -18,6 +26,7 @@ from .marker_common import (
     _compact_key,
     _first_present,
     _font_size_hpt,
+    _hex_or_none,
     _normalized_fallback_text,
     _number,
     _powerpoint_emu,
@@ -34,24 +43,71 @@ def _table_text_run(
     font_size: int | None,
     font_face: str | None,
     language: str | None,
+    default_language: str | None,
     theme_color_spec: ThemeColorSpec | None,
+    italic: bool | None = None,
+    underline: bool | None = None,
+    strike: bool | None = None,
+    alt_language: str | None = None,
+    exact_font_face: bool = False,
 ) -> str:
     size_attr = f' sz="{font_size}"' if font_size is not None else ""
     bold_attr = f' b="{_bool_attr(bold)}"' if bold is not None else ""
-    resolved_language = language or detect_text_lang(text)
+    italic_attr = f' i="{_bool_attr(italic)}"' if italic is not None else ""
+    underline_attr = (
+        f' u="{"sng" if underline else "none"}"'
+        if underline is not None else ""
+    )
+    strike_attr = (
+        f' strike="{"sngStrike" if strike else "noStrike"}"'
+        if strike is not None else ""
+    )
+    resolved_language = language or detect_text_lang(text, default_language)
     language_attr = f' lang="{_xml_escape(resolved_language)}"'
+    alt_language_attr = (
+        f' altLang="{_xml_escape(alt_language)}"' if alt_language else ""
+    )
     color_xml = (
         f'<a:solidFill>{color_node_xml(color, theme_color_spec, "text")}</a:solidFill>'
         if color else ""
     )
+    if exact_font_face and font_face:
+        escaped_face = _xml_escape(font_face)
+        font_xml = (
+            f'<a:latin typeface="{escaped_face}"/>'
+            f'<a:ea typeface="{escaped_face}"/>'
+            f'<a:cs typeface="{escaped_face}"/>'
+        )
+    else:
+        font_xml = _font_face_xml(font_face)
+    rtl_xml = '<a:rtl val="1"/>' if text_has_rtl_characters(text) else ''
     space_attr = ' xml:space="preserve"' if text != text.strip() else ""
     return (
-        f'<a:r><a:rPr{language_attr}{size_attr}{bold_attr}>'
+        f'<a:r><a:rPr{language_attr}{alt_language_attr}{size_attr}{bold_attr}'
+        f'{italic_attr}{underline_attr}{strike_attr}>'
         f'{color_xml}'
-        f'{_font_face_xml(font_face)}'
+        f'{font_xml}'
+        f'{rtl_xml}'
         "</a:rPr>"
         f"<a:t{space_attr}>{_xml_escape(text)}</a:t></a:r>"
     )
+
+
+def _table_paragraph_properties(
+    align: str,
+    *,
+    emit_align: bool,
+    text: str,
+    language: str | None,
+) -> str:
+    """Build table paragraph properties with project-aware direction."""
+    attrs = []
+    if emit_align:
+        attrs.append(f'algn="{align}"')
+    if text_uses_rtl(text, language):
+        attrs.append('rtl="1"')
+    suffix = f" {' '.join(attrs)}" if attrs else ''
+    return f'<a:pPr{suffix}/>'
 
 
 def _cell_payload(value: Any) -> dict[str, Any]:
@@ -100,9 +156,24 @@ class _TableBorderSpec:
 
 
 @dataclass(frozen=True)
+class _TableRun:
+    text: str
+    bold: bool | None = None
+    italic: bool | None = None
+    underline: bool | None = None
+    strike: bool | None = None
+    color: str | None = None
+    font_size: int | None = None
+    font_family: str | None = None
+    lang: str | None = None
+    alt_lang: str | None = None
+
+
+@dataclass(frozen=True)
 class _TableParagraph:
     text: str
     align: str | None = None
+    runs: tuple[_TableRun, ...] | None = None
 
 
 def _table_rows(payload: dict[str, Any]) -> list[list[Any]]:
@@ -139,26 +210,138 @@ def _table_cell_paragraphs(
         if isinstance(value, str):
             paragraphs.append(_TableParagraph(value))
             continue
-        if not isinstance(value, dict) or "text" not in value:
+        if not isinstance(value, dict):
             raise RuntimeError(
-                f"Native PPTX table paragraph {idx} must be a string or text object"
+                f"Native PPTX table paragraph {idx} must be a string or object"
             )
-        if set(value) - {"text", "align"}:
+        if set(value) - {"text", "runs", "align"}:
             raise RuntimeError(
-                f"Native PPTX table paragraph {idx} accepts text/align only"
+                f"Native PPTX table paragraph {idx} accepts text/runs/align only"
             )
-        text = value.get("text")
-        if not isinstance(text, str):
+        has_text = "text" in value
+        has_runs = "runs" in value
+        if has_text == has_runs:
             raise RuntimeError(
-                f"Native PPTX table paragraph {idx} text must be a string"
+                f"Native PPTX table paragraph {idx} requires exactly one of text/runs"
             )
         align = value.get("align")
         if align is not None and align not in {"l", "ctr", "r"}:
             raise RuntimeError(
                 f"Native PPTX table paragraph {idx} align must be l, ctr, or r"
             )
-        paragraphs.append(_TableParagraph(text, align))
+        if has_text:
+            text = value.get("text")
+            if not isinstance(text, str):
+                raise RuntimeError(
+                    f"Native PPTX table paragraph {idx} text must be a string"
+                )
+            paragraphs.append(_TableParagraph(text, align))
+            continue
+
+        raw_runs = value.get("runs")
+        if not isinstance(raw_runs, list) or not raw_runs:
+            raise RuntimeError(
+                f"Native PPTX table paragraph {idx} runs must be a non-empty list"
+            )
+        runs = tuple(
+            _table_run(run, paragraph_idx=idx, run_idx=run_idx)
+            for run_idx, run in enumerate(raw_runs, start=1)
+        )
+        paragraphs.append(
+            _TableParagraph("".join(run.text for run in runs), align, runs)
+        )
     return tuple(paragraphs)
+
+
+def _table_run(
+    value: Any,
+    *,
+    paragraph_idx: int,
+    run_idx: int,
+) -> _TableRun:
+    label = f"paragraph {paragraph_idx} run {run_idx}"
+    if not isinstance(value, dict) or "text" not in value:
+        raise RuntimeError(f"Native PPTX table {label} must be a text object")
+    allowed = {
+        "text", "bold", "italic", "underline", "strike", "color",
+        "font_size", "font_family", "lang", "alt_lang",
+    }
+    unknown = set(value) - allowed
+    if unknown:
+        fields = ", ".join(sorted(unknown))
+        raise RuntimeError(
+            f"Native PPTX table {label} contains unsupported field(s): {fields}"
+        )
+    text = value.get("text")
+    if not isinstance(text, str):
+        raise RuntimeError(f"Native PPTX table {label} text must be a string")
+
+    booleans: dict[str, bool | None] = {}
+    for field in ("bold", "italic", "underline", "strike"):
+        raw = value.get(field)
+        if raw is not None and not isinstance(raw, bool):
+            raise RuntimeError(
+                f"Native PPTX table {label} {field} must be a JSON boolean"
+            )
+        booleans[field] = raw
+
+    color: str | None = None
+    if value.get("color") is not None:
+        if not isinstance(value["color"], str):
+            raise RuntimeError(f"Native PPTX table {label} color must be a string")
+        color = _hex_or_none(value["color"])
+        if color is None:
+            raise RuntimeError(f"Native PPTX table {label} color is unsupported")
+
+    font_size: int | None = None
+    if value.get("font_size") is not None:
+        font_size_px = _number(value["font_size"], f"table {label} font_size")
+        if not 100 / 75 <= font_size_px <= 400000 / 75:
+            raise RuntimeError(
+                f"Native PPTX table {label} font_size is outside DrawingML range"
+            )
+        font_size = font_px_to_hpt(font_size_px)
+        if not 100 <= font_size <= 400000:
+            raise RuntimeError(
+                f"Native PPTX table {label} font_size is outside DrawingML range"
+            )
+
+    font_family: str | None = None
+    if value.get("font_family") is not None:
+        if not isinstance(value["font_family"], str):
+            raise RuntimeError(
+                f"Native PPTX table {label} font_family must be a string"
+            )
+        font_family = value["font_family"].strip()
+        if not font_family or "," in font_family:
+            raise RuntimeError(
+                f"Native PPTX table {label} font_family must be one typeface"
+            )
+
+    languages: dict[str, str | None] = {}
+    for field in ("lang", "alt_lang"):
+        raw = value.get(field)
+        if raw is None:
+            languages[field] = None
+            continue
+        if not isinstance(raw, str) or not raw.strip():
+            raise RuntimeError(
+                f"Native PPTX table {label} {field} must be a non-empty string"
+            )
+        languages[field] = raw.strip()
+
+    return _TableRun(
+        text=text,
+        bold=booleans["bold"],
+        italic=booleans["italic"],
+        underline=booleans["underline"],
+        strike=booleans["strike"],
+        color=color,
+        font_size=font_size,
+        font_family=font_family,
+        lang=languages["lang"],
+        alt_lang=languages["alt_lang"],
+    )
 
 
 def _table_span_value(
@@ -402,7 +585,7 @@ def _native_table_warnings(elem: ET.Element, table_rows: list[list[Any]]) -> lis
     suffix = "" if len(missing) <= 5 else f", and {len(missing) - 5} more"
     return [
         "Native PPTX table fallback text is missing from metadata columns/rows "
-        f"and will disappear with --native-objects: {sample}{suffix}"
+        f"and will disappear with --native-charts-and-tables: {sample}{suffix}"
     ]
 
 
@@ -684,7 +867,7 @@ def _table_merge_attrs(
 def _build_native_table(elem: ET.Element, ctx: ConvertContext, payload: dict[str, Any]) -> ShapeResult:
     table_rows, col_count, merge_layout = _validate_table_payload(payload)
     header_rows = _table_header_rows(payload, len(table_rows))
-    preserve_source_style = elem.get("data-pptx-native-source") == "pptx"
+    preserve_source_style = native_import_source(elem) == "pptx"
 
     style = payload.get("style") if isinstance(payload.get("style"), dict) else {}
     header_fill = _clean_hex(style.get("header_fill"), "#1F4E79")
@@ -795,8 +978,12 @@ def _build_native_table(elem: ET.Element, ctx: ConvertContext, payload: dict[str
                     "" if cell_data.get("text") is None
                     else str(cell_data.get("text"))
                 )
-                paragraph_props = (
-                    f'<a:pPr algn="{align}"/>' if align != "l" else "<a:pPr/>"
+                default_language = language or ctx.primary_language
+                paragraph_props = _table_paragraph_properties(
+                    align,
+                    emit_align=align != "l",
+                    text=text,
+                    language=default_language,
                 )
                 text_run_xml = _table_text_run(
                     text,
@@ -805,6 +992,7 @@ def _build_native_table(elem: ET.Element, ctx: ConvertContext, payload: dict[str
                     font_size=cell_font_size,
                     font_face=font_face,
                     language=language,
+                    default_language=ctx.primary_language,
                     theme_color_spec=ctx.theme_color_spec,
                 )
                 paragraphs_xml = (
@@ -814,20 +1002,54 @@ def _build_native_table(elem: ET.Element, ctx: ConvertContext, payload: dict[str
                 paragraph_parts: list[str] = []
                 for paragraph in paragraphs:
                     paragraph_align = paragraph.align or align
-                    paragraph_props = (
-                        f'<a:pPr algn="{paragraph_align}"/>'
-                        if paragraph.align is not None or paragraph_align != "l"
-                        else "<a:pPr/>"
+                    paragraph_text = (
+                        paragraph.text
+                        if paragraph.runs is None
+                        else ''.join(run.text for run in paragraph.runs)
                     )
-                    text_run_xml = _table_text_run(
-                        paragraph.text,
-                        color=color,
-                        bold=bold,
-                        font_size=cell_font_size,
-                        font_face=font_face,
-                        language=language,
-                        theme_color_spec=ctx.theme_color_spec,
+                    paragraph_props = _table_paragraph_properties(
+                        paragraph_align,
+                        emit_align=(
+                            paragraph.align is not None
+                            or paragraph_align != "l"
+                        ),
+                        text=paragraph_text,
+                        language=language or ctx.primary_language,
                     )
+                    if paragraph.runs is None:
+                        text_run_xml = _table_text_run(
+                            paragraph.text,
+                            color=color,
+                            bold=bold,
+                            font_size=cell_font_size,
+                            font_face=font_face,
+                            language=language,
+                            default_language=ctx.primary_language,
+                            theme_color_spec=ctx.theme_color_spec,
+                        )
+                    else:
+                        text_run_xml = "".join(
+                            _table_text_run(
+                                run.text,
+                                color=run.color or color,
+                                bold=run.bold if run.bold is not None else bold,
+                                font_size=(
+                                    run.font_size
+                                    if run.font_size is not None
+                                    else cell_font_size
+                                ),
+                                font_face=run.font_family or font_face,
+                                language=run.lang or language,
+                                default_language=ctx.primary_language,
+                                theme_color_spec=ctx.theme_color_spec,
+                                italic=run.italic,
+                                underline=run.underline,
+                                strike=run.strike,
+                                alt_language=run.alt_lang,
+                                exact_font_face=run.font_family is not None,
+                            )
+                            for run in paragraph.runs
+                        )
                     paragraph_parts.append(
                         f"<a:p>{paragraph_props}{text_run_xml}</a:p>"
                     )

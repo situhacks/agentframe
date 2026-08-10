@@ -63,6 +63,7 @@ def current_result():
         "image_notes": "",
         "generation_mode": "continuous",
         "refine_spec": False,
+        "primary_language": "en",
         "stage": "final",
         "status": "confirmed",
         "confirmed_at": "2026-08-03T10:30:00",

@@ -1,5 +1,5 @@
 // Viewer adapters: markdown, HTML, image/SVG, PDF, video, Office (via
-// server-side LibreOffice conversion), and a metadata fallback.
+// server-side native Microsoft Office conversion), and a metadata fallback.
 
 import { postJSON, el } from './api.js?v=5';
 
@@ -109,7 +109,7 @@ function renderVideo(meta, body) {
 }
 
 async function renderOffice(meta, body, scale = 0.55) {
-  body.replaceChildren(note(`converting <b>${meta.file}</b> with LibreOffice&hellip;`));
+  body.replaceChildren(note(`rendering <b>${meta.file}</b> in Microsoft Office&hellip;`));
   try {
     const result = await postJSON('/api/convert', { project: meta.project, file: meta.file });
     return renderIframe({ ...meta, url: result.url, type: 'pdf' }, body, { scale, nativePdfZoom: true });

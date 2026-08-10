@@ -18,6 +18,8 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+. (Join-Path $PSScriptRoot 'office_com.ps1')
+
 function Resolve-ExistingFile([string]$PathValue, [string]$Label) {
     if ([string]::IsNullOrWhiteSpace($PathValue)) {
         throw "$Label is required."
@@ -35,11 +37,16 @@ function Release-ComObject($Value) {
     }
 }
 
+$handle = $null
 $powerPoint = $null
 $presentation = $null
 
 try {
-    $powerPoint = New-Object -ComObject PowerPoint.Application
+    # Activation goes through Get-OfficeApp: `New-Object -ComObject` returns an
+    # object whose every property reads back null on Click-to-Run installs, which
+    # surfaced here as "You cannot call a method on a null-valued expression."
+    $handle = Get-OfficeApp -ProgId 'PowerPoint.Application'
+    $powerPoint = $handle.App
 
     if ($Command -eq 'render') {
         $deckPath = Resolve-ExistingFile $Deck 'Deck'
@@ -116,10 +123,7 @@ finally {
         try { $presentation.Close() } catch { }
         Release-ComObject $presentation
     }
-    if ($null -ne $powerPoint) {
-        try { $powerPoint.Quit() } catch { }
-        Release-ComObject $powerPoint
-    }
-    [GC]::Collect()
-    [GC]::WaitForPendingFinalizers()
+    # Close-OfficeApp quits only an instance this script created, so an operator's
+    # already-open PowerPoint is never shut down underneath them.
+    Close-OfficeApp $handle
 }

@@ -35,14 +35,40 @@ class TestCacheKey(unittest.TestCase):
         target = convert.cache_path(self.src, self.cache)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(b"%PDF-cached")
-        result = convert.convert_to_pdf(self.src, self.cache, soffice="definitely-not-a-real-binary")
+        result = convert.convert_to_pdf(
+            self.src, self.cache, renderer="definitely-not-a-real-script"
+        )
         self.assertEqual(result, target)
         self.assertEqual(target.read_bytes(), b"%PDF-cached")
 
-    def test_missing_soffice_raises_clear_error(self):
+    def test_missing_renderer_raises_actionable_error(self):
         with self.assertRaises(convert.ConversionError) as ctx:
-            convert.convert_to_pdf(self.src, self.cache, soffice=None)
-        self.assertIn("LibreOffice", str(ctx.exception))
+            convert.convert_to_pdf(self.src, self.cache, renderer=None)
+        message = str(ctx.exception)
+        self.assertIn("office_render.ps1", message)
+        self.assertIn("PowerPoint", message)
+
+    def test_error_never_offers_libreoffice_as_a_fallback(self):
+        """The whole point of the native path: no silent degradation route."""
+        with self.assertRaises(convert.ConversionError) as ctx:
+            convert.convert_to_pdf(self.src, self.cache, renderer=None)
+        self.assertNotIn("soffice", str(ctx.exception).lower())
+
+    def test_unsupported_suffix_rejected_before_launching_office(self):
+        odd = Path(self.tmp.name) / "notes.txt"
+        odd.write_bytes(b"plain text")
+        with self.assertRaises(convert.ConversionError) as ctx:
+            convert.convert_to_pdf(odd, self.cache, renderer=None)
+        self.assertIn("not a PowerPoint or Word file", str(ctx.exception))
+
+    def test_converter_version_retires_libreoffice_era_cache(self):
+        """v1 keys were produced by LibreOffice; they must not be reused."""
+        self.assertGreaterEqual(convert.CONVERTER_VERSION, 2)
+
+    def test_renderer_path_points_at_the_native_tool(self):
+        self.assertTrue(
+            convert.RENDERER.is_file(), f"missing native renderer: {convert.RENDERER}"
+        )
 
 
 if __name__ == "__main__":

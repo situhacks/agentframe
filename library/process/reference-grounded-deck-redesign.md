@@ -66,7 +66,7 @@ The verifier blocks:
 - added/deleted native objects, unapproved geometry moves, or unapproved text changes on a `native` slide;
 - source text disappearing from a `rebuild` slide unless its source shape ID is explicitly exempted.
 
-After it passes, render the candidate and compare every slide against `reference_origin/`. Fix visible drift and re-run both checks. Structural verification does not replace visual review.
+After it passes, render the candidate natively per [`native-office-render.md`](native-office-render.md) and compare every slide against `reference_origin/`. Fix visible drift and re-run both checks. Structural verification does not replace visual review.
 
 ## Verification Or Logging
 
@@ -76,5 +76,5 @@ Keep `reference-redesign.json`, `reference-verification.json`, origin renders, a
 
 - This v1 procedure is a 1:1 redesign path. Add, drop, split, merge, or reorder slides through the existing deck-production route after the preservation pass.
 - It does not change vendored PPT Master behavior. AgentFrame owns the source clone, manifest, isolation, replacement, and verification contract.
-- If PowerPoint COM is unavailable, perform the same single-slide replacement manually in PowerPoint; do not fall back to regenerating the full deck.
+- PowerPoint is a hard requirement here, not a preference: origin renders and native replacement both drive it over COM. Confirm availability with `office_render.ps1 probe` before starting. If it genuinely cannot run, perform the same single-slide replacement manually in PowerPoint; never substitute LibreOffice (it corrupts the render — see [`native-office-render.md`](native-office-render.md)) and never fall back to regenerating the full deck.
 - Pixel/SSIM scoring is optional triage, not the acceptance gate; intended brand changes can create large pixel differences without geometry drift.

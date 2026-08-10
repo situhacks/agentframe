@@ -25,7 +25,7 @@ from system import autonomy_contract  # noqa: E402
 
 KIND = "agentframe-ppt-master-confirmation"
 SCHEMA_VERSION = 1
-VENDOR_COMMIT = "0ac540b175b0a08ab1dd7101db4badfdf61e6475"
+VENDOR_COMMIT = "52e85a0af8e40e61879f17f6c14664ff239bb7e3"
 SUFFIX = ".agentframe-confirmation.json"
 SOURCE_EXTENSIONS = {
     ".md", ".markdown", ".txt", ".csv", ".tsv", ".json", ".jsonl",
@@ -37,11 +37,21 @@ PALETTE_KEYS = {
 }
 FONT_KEYS = {"cjk", "latin", "css"}
 SIZE_KEYS = {"title", "subtitle", "annotation"}
+# The vendor builds its result as `result = dict(payload)` from whatever the
+# Confirm UI posts, so this set tracks one vendor version's UI shape. It is
+# verified against 52e85a0 only for keys the server sets unconditionally
+# (`primary_language` joined them there). The UI's *conditional* keys —
+# `mode_behavior` / `visual_style_behavior` when a "custom" choice is picked,
+# `template_application` on template runs — are not represented yet; a sealed
+# wrapper carrying one is rejected with the exact key diff. Finish this set from
+# a real `confirm_ui/result.json` captured from the new UI before relying on the
+# noninteractive gate. Failing closed is intended: a wrong result must never be
+# materialized for the vendor.
 BASE_RESULT_KEYS = {
     "canvas", "page_count", "audience", "content_divergence", "mode",
     "visual_style", "color", "icons", "typography", "delivery_purpose",
     "formula_policy", "image_usage", "image_notes", "generation_mode",
-    "refine_spec", "stage", "status", "confirmed_at",
+    "refine_spec", "primary_language", "stage", "status", "confirmed_at",
 }
 
 
@@ -120,8 +130,6 @@ def validate_result(result: object) -> dict:
     if not isinstance(result, dict):
         raise ContractError("result must be an object")
     keys = set(BASE_RESULT_KEYS)
-    if "template_adherence" in result:
-        keys.add("template_adherence")
     usage = result.get("image_usage")
     if isinstance(usage, list) and "ai" in usage:
         keys.update({"image_ai_path", "image_strategy"})
@@ -148,16 +156,13 @@ def validate_result(result: object) -> dict:
         raise ContractError("result.generation_mode must be continuous or split")
     if not isinstance(result["refine_spec"], bool):
         raise ContractError("result.refine_spec must be boolean")
+    _require_string(result["primary_language"], "primary_language")
     if result["stage"] != "final" or result["status"] != "confirmed":
         raise ContractError("result must have stage: final and status: confirmed")
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}", result["confirmed_at"]):
         raise ContractError(
             "result.confirmed_at must be a fixed YYYY-MM-DDTHH:MM:SS timestamp"
         )
-    if "template_adherence" in result and result["template_adherence"] not in {
-        "strict", "adaptive",
-    }:
-        raise ContractError("result.template_adherence must be strict or adaptive")
 
     color = _exact_keys(result["color"], {"name", "palette"}, "color")
     _require_string(color["name"], "color.name")

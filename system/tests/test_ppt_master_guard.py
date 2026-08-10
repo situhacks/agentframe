@@ -5,96 +5,6 @@ import unittest
 
 from system import af
 from system.hooks import ppt_master_guard as guard
-from system.hooks import svg_paragraph_lint as lint
-
-
-SVG_HEAD = '<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">'
-SVG_TAIL = "</svg>"
-
-
-def svg(body):
-    return f"{SVG_HEAD}{body}{SVG_TAIL}"
-
-
-LONG_A = "The quarterly revenue exceeded every internal forecast this year"
-LONG_B = "driven primarily by enterprise renewals and the new usage tier"
-LONG_C = "while operating costs stayed flat against the previous baseline"
-
-
-class TestParagraphLint(unittest.TestCase):
-    def test_per_line_sibling_texts_flagged(self):
-        content = svg(
-            f'<text x="80" y="200" font-size="20" fill="#333333">{LONG_A}</text>'
-            f'<text x="80" y="232" font-size="20" fill="#333333">{LONG_B}</text>'
-            f'<text x="80" y="264" font-size="20" fill="#333333">{LONG_C}</text>'
-        )
-        findings = lint.check_svg_text(content)
-        self.assertEqual(len(findings), 1)
-        self.assertIn("3 sibling", findings[0])
-
-    def test_two_long_lines_flagged(self):
-        content = svg(
-            f'<text x="80" y="200" font-size="20" fill="#333333">{LONG_A}</text>'
-            f'<text x="80" y="230" font-size="20" fill="#333333">{LONG_B}</text>'
-        )
-        self.assertEqual(len(lint.check_svg_text(content)), 1)
-
-    def test_tspan_block_paragraph_clean(self):
-        content = svg(
-            '<text x="80" y="200" font-size="20" fill="#333333">'
-            f'<tspan x="80" dy="0">{LONG_A}</tspan>'
-            f'<tspan x="80" dy="32">{LONG_B}</tspan>'
-            f'<tspan x="80" dy="32">{LONG_C}</tspan>'
-            "</text>"
-        )
-        self.assertEqual(lint.check_svg_text(content), [])
-
-    def test_kpi_label_stack_clean(self):
-        content = svg(
-            '<text x="80" y="200" font-size="16" fill="#666666">Revenue</text>'
-            '<text x="80" y="240" font-size="32" fill="#1A73E8">$1.2M</text>'
-        )
-        self.assertEqual(lint.check_svg_text(content), [])
-
-    def test_short_same_style_labels_clean(self):
-        content = svg(
-            '<text x="80" y="200" font-size="16" fill="#666666">Revenue</text>'
-            '<text x="80" y="224" font-size="16" fill="#666666">Costs</text>'
-            '<text x="80" y="248" font-size="16" fill="#666666">Margin</text>'
-        )
-        self.assertEqual(lint.check_svg_text(content), [])
-
-    def test_different_x_columns_clean(self):
-        content = svg(
-            f'<text x="80" y="200" font-size="20" fill="#333333">{LONG_A}</text>'
-            f'<text x="680" y="232" font-size="20" fill="#333333">{LONG_B}</text>'
-        )
-        self.assertEqual(lint.check_svg_text(content), [])
-
-    def test_section_break_spacing_clean(self):
-        content = svg(
-            f'<text x="80" y="200" font-size="20" fill="#333333">{LONG_A}</text>'
-            f'<text x="80" y="320" font-size="20" fill="#333333">{LONG_B}</text>'
-        )
-        self.assertEqual(lint.check_svg_text(content), [])
-
-    def test_style_mismatch_clean(self):
-        content = svg(
-            f'<text x="80" y="200" font-size="20" fill="#333333" font-weight="bold">{LONG_A}</text>'
-            f'<text x="80" y="232" font-size="20" fill="#333333">{LONG_B}</text>'
-        )
-        self.assertEqual(lint.check_svg_text(content), [])
-
-    def test_inline_tspans_still_grouped(self):
-        # Inline (non-positional) tspans are runs, not lines — the parent
-        # <text> still counts as one line of a split paragraph.
-        content = svg(
-            f'<text x="80" y="200" font-size="20" fill="#333333">{LONG_A}</text>'
-            '<text x="80" y="232" font-size="20" fill="#333333">'
-            f'growth of <tspan font-weight="bold">35%</tspan> beat the plan across all regions'
-            "</text>"
-        )
-        self.assertEqual(len(lint.check_svg_text(content)), 1)
 
 
 def payload(command, cwd, event="PreToolUse"):
@@ -177,14 +87,22 @@ class TestConfirmationCommandShapes(unittest.TestCase):
         command = f"python scripts/confirm_ui/server.py decks/demo {suffix}"
         return guard._confirm_project_path(guard._tokens(command), guard.Path(self.cwd))
 
-    def test_all_three_vendor_wait_shapes_are_recognized(self):
+    def test_vendor_wait_shapes_are_recognized(self):
+        # Vendor 52e85a0 accepts only --wait-stage {stage1, final} (default final);
+        # the pre-refresh "stage2" wait no longer exists upstream.
         for suffix in (
             "--daemon --wait",
-            "--wait-only --wait-stage stage2",
+            "--wait-only --wait-stage stage1",
+            "--wait-only --wait-stage final",
             "--wait-only",
         ):
             with self.subTest(suffix=suffix):
                 self.assertIsNotNone(self.project_for(suffix))
+
+    def test_retired_and_unknown_wait_stages_are_not_confirmation_waits(self):
+        for suffix in ("--wait-only --wait-stage stage2", "--wait-only --wait-stage bogus"):
+            with self.subTest(suffix=suffix):
+                self.assertIsNone(self.project_for(suffix))
 
     def test_shutdown_and_plain_daemon_are_not_confirmation_waits(self):
         for suffix in ("--shutdown", "--daemon"):
@@ -201,45 +119,16 @@ class TestExportGuard(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def write_svg(self, name, content):
-        path = os.path.join(self.proj, "svg_output", name)
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(content)
-
     def export_payload(self, extra="", event="PreToolUse"):
         cmd = f'python3 scripts/svg_to_pptx.py "{self.proj}" --no-notes{extra}'
         return payload(cmd, os.path.dirname(self.proj), event=event)
 
-    def test_export_with_split_paragraph_denied(self):
-        self.write_svg("01_cover.svg", svg(
-            f'<text x="80" y="200" font-size="20" fill="#333333">{LONG_A}</text>'
-            f'<text x="80" y="232" font-size="20" fill="#333333">{LONG_B}</text>'
-        ))
-        out = guard.decide(self.export_payload())
-        self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "deny")
-        reason = out["hookSpecificOutput"]["permissionDecisionReason"]
-        self.assertIn("01_cover.svg", reason)
-        self.assertIn("tspan", reason)
-
-    def test_clean_export_allowed(self):
-        self.write_svg("01_cover.svg", svg(
-            '<text x="80" y="200" font-size="20" fill="#333333">'
-            f'<tspan x="80" dy="0">{LONG_A}</tspan>'
-            f'<tspan x="80" dy="32">{LONG_B}</tspan>'
-            "</text>"
-        ))
+    def test_export_is_not_gated_at_pretooluse(self):
+        # The paragraph-split lint was retired at the 52e85a0 refresh: the vendor
+        # checker now reports those runs itself, and AgentFrame's "fix before
+        # export" stance is an overlay rule. Export must pass through untouched
+        # unless a sealed confirmation contract applies.
         self.assertIsNone(guard.decide(self.export_payload()))
-
-    def test_lint_escape_hatch(self):
-        self.write_svg("01_cover.svg", svg(
-            f'<text x="80" y="200" font-size="20" fill="#333333">{LONG_A}</text>'
-            f'<text x="80" y="232" font-size="20" fill="#333333">{LONG_B}</text>'
-        ))
-        p = payload(
-            f'AF_PPT_LINT=off python3 scripts/svg_to_pptx.py "{self.proj}" --no-notes',
-            os.path.dirname(self.proj),
-        )
-        self.assertIsNone(guard.decide(p))
 
     def test_post_export_promotion_reminder(self):
         out = guard.decide(self.export_payload(event="PostToolUse"))

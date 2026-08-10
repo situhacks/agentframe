@@ -4,7 +4,9 @@ Lazy-load this file only when the operator explicitly asks for the dashboard, hi
 
 ## Previewable Types
 
-Markdown, HTML, images (`.png`, `.jpg`, `.jpeg`, `.webp`, `.gif`, `.svg`), PDF, video (`.mp4`, `.mov`, `.webm`), and Office files (`.pptx`, `.docx` — converted server-side; requires LibreOffice installed).
+Markdown, HTML, images (`.png`, `.jpg`, `.jpeg`, `.webp`, `.gif`, `.svg`), PDF, video (`.mp4`, `.mov`, `.webm`), and Office files (`.pptx`, `.docx` — converted server-side to PDF by the installed Microsoft Office desktop app via [`native-office-render.md`](native-office-render.md)).
+
+Office preview requires PowerPoint/Word on the machine and has no LibreOffice fallback; a missing Office install surfaces the renderer's instructions in the viewer instead of a degraded render.
 
 ## Start Or Open — One Command, No Ceremony
 

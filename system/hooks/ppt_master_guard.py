@@ -13,11 +13,16 @@ PreToolUse (Bash|PowerShell):
   - project_manager.py init      -> deny when the project would land inside
                                     this repo's system/ tree (vendor default
                                     is cwd/projects, i.e. the skill folder)
-  - svg_to_pptx.py <project>     -> paragraph-split lint over svg_output/;
-                                    deny with the corrective authoring form.
-                                    Escape hatch: AF_PPT_LINT=off in command.
 PostToolUse (Bash|PowerShell):
   - svg_to_pptx.py               -> re-inject the export promotion contract.
+
+The former paragraph-split lint (svg_paragraph_lint.py) was retired at the
+52e85a0 vendor refresh: the vendor's own checker now reports the same
+sibling-<text> paragraph runs via _check_fragmented_paragraph_text, with
+exclusions ours lacked (preserved source txbody, list markers, sentence
+terminators, hidden elements). Upstream classes it advisory, so AgentFrame's
+"fix it before export" stance lives as an overlay rule in AGENTS.md rather than
+as a second, cruder detector here.
 
 Unparseable or unrelated command shapes pass through. Once a repo-contained
 project declares an active sealed confirmation, its recognized confirm/export
@@ -37,11 +42,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import svg_paragraph_lint as lint  # noqa: E402
 from system.tools import ppt_master_contract as contract  # noqa: E402
-
-LINT_OFF = re.compile(r"AF_PPT_LINT\s*=\s*['\"]?off", re.IGNORECASE)
-MAX_REASON_FINDINGS = 6
 
 EVENT_ALIASES = {
     "PreToolUse": "PreToolUse",
@@ -59,22 +60,6 @@ STAGING_REASON = (
     "campaign (workspace/projects/<slug>/phase-4-production/decks/<deck-name>/) or "
     "C:\\tmp for throwaway runs. Re-run with an explicit --dir, e.g.: "
     "python scripts/project_manager.py init <name> --dir \"<absolute path outside system/>\""
-)
-
-LINT_REASON_HEAD = (
-    "Paragraph-split lint: {n} block(s) in svg_output/ are authored as one <text> per "
-    "visual line - the converter cannot merge sibling <text> elements, so each line "
-    "exports as its own PowerPoint text box.\n"
-)
-
-LINT_REASON_TAIL = (
-    "\nRewrite each flagged block as ONE <text> with dy-stacked <tspan> lines, e.g.:\n"
-    '<text x="80" y="190" font-size="18" fill="#333333">\n'
-    '  <tspan x="80" dy="0">First line of the paragraph</tspan>\n'
-    '  <tspan x="80" dy="32">second line continues here</tspan>\n'
-    "</text>\n"
-    "Then re-run the export. If a flagged block is genuinely separate labels (not a "
-    "paragraph), prefix the command with AF_PPT_LINT=off to skip this lint once."
 )
 
 PROMOTE_CONTEXT = (
@@ -171,14 +156,15 @@ def _confirm_project_path(tokens: list[str], cwd: Path) -> Path | None:
     if "--shutdown" in rest:
         return None
     launch_stage1 = "--daemon" in rest and "--wait" in rest and "--wait-only" not in rest
-    wait_stage2 = (
-        "--wait-only" in rest
-        and "--wait-stage" in rest
-        and rest[rest.index("--wait-stage") + 1:rest.index("--wait-stage") + 2]
-        == ["stage2"]
-    )
-    wait_final = "--wait-only" in rest and "--wait-stage" not in rest
-    if not (launch_stage1 or wait_stage2 or wait_final):
+    # Vendor 52e85a0 collapsed the confirmation to two waits: --wait-stage accepts
+    # only {stage1, final} and defaults to final. The pre-refresh "stage2" wait no
+    # longer exists upstream, so treat any recognized stage as a guarded wait.
+    stage_arg = None
+    if "--wait-stage" in rest:
+        after = rest[rest.index("--wait-stage") + 1:rest.index("--wait-stage") + 2]
+        stage_arg = after[0] if after else None
+    wait_only = "--wait-only" in rest and stage_arg in (None, "stage1", "final")
+    if not (launch_stage1 or wait_only):
         return None
     return cwd / raw
 
@@ -284,26 +270,6 @@ def _contract_guard(
     return None
 
 
-def _export_lint(command: str, tokens: list[str], cwd: Path) -> dict | None:
-    if LINT_OFF.search(command):
-        return None
-    project = _export_project_path(tokens, cwd)
-    if project is None:
-        return None
-    svg_dir = project / "svg_output"
-    if not svg_dir.is_dir():
-        return None
-    findings = lint.check_paths([svg_dir])
-    if not findings:
-        return None
-    shown = findings[:MAX_REASON_FINDINGS]
-    if len(findings) > len(shown):
-        shown.append(f"... +{len(findings) - len(shown)} more")
-    return _deny(
-        LINT_REASON_HEAD.format(n=len(findings)) + "\n".join(shown) + LINT_REASON_TAIL
-    )
-
-
 def decide(payload: dict, harness: str | None = None) -> dict | None:
     command = (
         (payload.get("tool_input") or {}).get("command")
@@ -341,7 +307,7 @@ def decide(payload: dict, harness: str | None = None) -> dict | None:
             )
             if result:
                 return result
-        return _staging_guard(tokens, cwd) or _export_lint(command, tokens, cwd)
+        return _staging_guard(tokens, cwd)
 
     if event == "PostToolUse" and "svg_to_pptx.py" in command:
         return {

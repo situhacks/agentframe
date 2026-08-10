@@ -26,7 +26,7 @@ When a bounded-autonomy run's `goal` or `done_when` depends on deck appearance, 
 Before the run can checkpoint for review:
 
 1. Run the selected route's static and structural checks.
-2. Render and inspect the complete current deck through its actual viewing surface. For PPT Master, invoke its visual-review workflow after the SVG checker, then inspect a render of the exported PPTX so conversion defects remain visible.
+2. Render and inspect the complete current deck through its actual viewing surface. For PPT Master, invoke its visual-review workflow after the SVG checker, then inspect a render of the exported PPTX so conversion defects remain visible. Render the exported PPTX natively per [`native-office-render.md`](native-office-render.md) — the SVG stage is not the PPTX, and a LibreOffice render of it would invent defects that are not in the file.
 3. Fix the findings, rerender the affected slides, and inspect them again. A successful export or a first-pass claim of "no issues" is not completion evidence.
 4. Record the render/review artifact paths and a concise finding -> fix -> recheck result in the autonomy evidence. If a finding requires a decision outside the approved charter, checkpoint with exact outcome `blocked` instead of asking during the run.
 
@@ -48,7 +48,7 @@ python system/af.py autonomy start <project> <run-id> `
 
 The run-unique sibling is `<deck-name>.<run-id>.agentframe-confirmation.json`. It records the pinned vendor commit, input hashes, approval record, and exact final result. The seal is immutable; `by: operator` is a durable record, not cryptographic authentication.
 
-On the vendor's three recognized confirmation waits, `ppt_master_guard.py` validates the wrapper, input closure, run hash, and exact session, then blocks the redundant UI launch with the materialize command. Run that command and continue after the gate:
+On the vendor's recognized confirmation waits (`stage1` and `final` since vendor `52e85a0`), `ppt_master_guard.py` validates the wrapper, input closure, run hash, and exact session, then blocks the redundant UI launch with the materialize command. Run that command and continue after the gate:
 
 ```powershell
 python system/tools/ppt_master_contract.py materialize <sealed-wrapper> `

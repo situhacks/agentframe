@@ -33,7 +33,7 @@ A full-length essay for the operator's Substack publication — the long-form ho
 
 ## Humanizer Pass
 
-Required before readiness—this prose ships to the public feed. Per [`library/process/humanizer-integration.md`](../../../../process/humanizer-integration.md), run with a Brandon sample, as the separate clean pass of the voice sequence (never in the same context as the corpus exemplars).
+**Run it on the first complete draft, before the operator ever sees it — not at readiness.** A draft surfaced with the pass still owed puts the operator's line edits onto un-swept prose, and from that point the pass can no longer run without washing his wording back to generic. Per [`library/process/humanizer-integration.md`](../../../../process/humanizer-integration.md), run with a Brandon sample, as the separate clean pass of the voice sequence (never in the same context as the corpus exemplars). Readiness only verifies that it happened.
 
 ## Readiness Criteria
 

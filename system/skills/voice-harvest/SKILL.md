@@ -56,7 +56,8 @@ Identify what material exists for this harvest, then **ask the operator how deep
 
 | Tier | Sources read | Cost | When |
 |---|---|---|---|
-| **1 — Diffs only** | The deliverable's version trail: consecutive `v{n}→v{n+1}` diffs, **weighted to operator-edit transitions** (hand-edit copies, `edited_by: operator` markers) and the big early rewrites | Cheap | Default / low budget |
+| **0 — Feedback log** | `workspace/projects/{slug}/feedback-log.md`, always, at every tier. The operator's own already-distilled voice notes, including any pattern he named himself | Nearly free | Never skipped |
+| **1 — Diffs only** | Tier 0 + the deliverable's version trail: consecutive `v{n}→v{n+1}` diffs, **weighted to operator-edit transitions** (hand-edit copies, `edited_by: operator` markers) and the big early rewrites | Cheap | Default / low budget |
 | **2 — + Transcript** | Tier 1 + the session transcript(s) where this work was discussed (`~/.claude/projects/<project>/<session>.jsonl`) — the discussion, feedback, and evolution, which is often richer than the diffs | Heavy | Operator has budget + wants depth |
 | **3 — + Live chat** | Tier 2 + the current session's in-chat corrections (only valid in the live session that did the work) | Variable | Harvesting work just done this session |
 
@@ -66,6 +67,7 @@ Ask with `AskUserQuestion`: *"How deep should I mine — diffs only (cheap), + t
 
 ### Step 2 — Read the sources
 
+- **Feedback log (Tier 0, always):** `workspace/projects/{slug}/feedback-log.md`, whole. This is the richest source in the system and the one most likely to be skipped, because it reads as already-handled — it is not. Every entry there was written *during* drafting, in the operator's own words, about prose he was looking at. **An entry where he NAMED a pattern is a finished harvest that never got filed**, and it outranks anything you would derive from a diff. Two destinations: a named pattern with a stated test routes to a rule (Step 4 → `system-improvement`); a BASE/BRANDON delta routes to a pair. Log entries stay in the campaign file; the harvest is what promotes them into the voice system. If the log holds named patterns that never reached `pairs/`, `anti-patterns.md`, or a register file, that is the finding — report the count.
 - **Version trail (Tier 1):** list the chain (`{name}-v1 … {name}-v{N}`). Walk **consecutive** diffs, not just v1→v{N} — the v(n)→v(n+1) transitions are where individual moves live, and the **operator-edit handoffs** (manual rewrites) + the **final smoothing passes** are the highest-signal. Read the prose-changed diffs; skip pure frontmatter/structure/table-reorder diffs.
 - **The hand-edit-copy convention (how to isolate operator keystrokes):** operator-edit versions are created as a verbatim copy ("Operator hand-edit copy — edit directly here") and edited in place, so `diff v(N-1)→v(N)` on that copy isolates the operator's changes exactly. Typos in these diffs mark authentic operator text — signal, not noise. The operator may also edit *other* versions in place; those edits only surface inside the next agent-cleanup diff, mixed with agent changes — use the version notes ("cleanup of the operator's vN edits") to attribute. A line-level change you can't attribute from disk gets reported as unattributed, never assumed.
 - **Transcript (Tier 2):** read the session JSONL for the stretch where this work evolved — the operator's dictated direction, the "too fancy / fix it" feedback, the reject→accept exchanges. This captures corrections that never hit a version file (in-chat iteration).

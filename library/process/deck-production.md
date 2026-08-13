@@ -72,6 +72,27 @@ python system/tools/ppt_master_contract.py materialize <sealed-wrapper> `
 
 Export revalidates the complete closure and exact materialized result. Any declared but malformed, drifted, ambiguous, or wrong-session contract blocks. No wrapper means the ordinary vendor UI proceeds. `C:\tmp`, untrusted/missing hooks, and Cursor unattended runs do not claim this guarantee.
 
+## Deck rows point at a Markdown head
+
+A deck's canonical artifact is a `.pptx`, but the lifecycle buttons stamp frontmatter, so a tracker row pointing straight at the binary has no status to write. `af ready`, `af publish`, and `af version` refuse such a row and name this convention.
+
+The row points at a Markdown head beside the deck, `{deck-name}-v{N}.md`, carrying the ordinary deliverable frontmatter. The exported `.pptx` lands in the deliverable's `media/` folder and is recorded in that head's `exports[]`. This is the shape the export gate already checks, so a deck gains the same version chain, draft notes, readiness criteria, and export verification every other deliverable has, with no second lifecycle path to maintain.
+
+Keep the head short: frontmatter, one line naming the current export, and any per-version note. Slide copy lives in the deck and is not restated here.
+
+`af doctor` surfaces a row still pointing at a binary as an advisory note, so an existing project's migration list is discoverable rather than found at closeout.
+
+## Rebuilding a deck after a vendor upgrade
+
+PPT Master is vendored and under active upgrade, so a deck that exported cleanly months ago can fail at rebuild on conventions that tightened underneath it. Preflight before authoring. The same defects found at export arrive as converter errors mid-build, which invites editing project content to satisfy a shifting gate.
+
+1. **Run the SVG checker over the existing roster first:** `python system/skills/ppt-master/scripts/svg_quality_checker.py <ppt-project>/svg_output`. It reports every legacy hazard at once with the exact required value. Gradients are the common one and they hard-reject: `gradientUnits` must be `objectBoundingBox` with normalized coordinates, and `gradientTransform`, `spreadMethod`, and `href`-inherited stops are each refused outright.
+2. **Read `spec_lock.md` by hand.** No vendor tool validates it before export, so it is the gap the checker does not cover. Two legacy shapes are known: `pptx_structure.mode: baseline`, where the current values are `flat` and `structured`, and a missing `## communication` section.
+3. **Migrate the mechanical cases, never the content.** `baseline` becomes `flat`. A full-canvas `userSpaceOnUse` gradient becomes normalized `objectBoundingBox` coordinates inside the range the checker prints. If a fix appears to require cutting or restructuring slide content, stop and say so instead.
+4. **Diagnostic re-export escape hatch.** To re-export an already-approved deck without re-satisfying the release gate, name the final source directory explicitly: `python system/skills/ppt-master/scripts/svg_to_pptx.py <ppt-project> -s output/final/<name>`. The vendor's own help labels this path diagnostics-only, so treat the output as evidence rather than a release and record why the gate was bypassed.
+
+A reference or showcase deck carrying one slide per archetype also trips release-gate bookkeeping that is not maintained for that kind of deck, such as `design_spec.md` §IX slide blocks. Use the diagnostic export for those and keep the bookkeeping burden off the reference roster.
+
 ## Versioning and round trip
 
 Version identity is the timestamp in the filename (generation time, for example `deck_20260615_205814.pptx`). Latest version is the highest sortable filename timestamp; never rely on filesystem created or modified dates for identity. The promoted copy in the deliverable folder is the operator's working file and may be edited in place. The same-named twin frozen in the PPT Master project's `exports/` is the agent's reference.

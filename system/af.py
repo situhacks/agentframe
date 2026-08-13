@@ -323,6 +323,35 @@ def versions_in(folder, name):
     return out
 
 
+BINARY_HEAD_HINT = (
+    "the buttons stamp frontmatter, so a binary artifact cannot carry status. Point this row at a "
+    "Markdown head beside it and record the binary in that head's exports[] under media/ "
+    "(convention: library/process/deck-production.md)"
+)
+
+
+def require_markdown_head(rel):
+    """Refuse a tracker row pointing straight at a binary artifact, with the convention named."""
+    if not rel.lower().endswith(".md"):
+        die(f"{rel}: not a Markdown head — {BINARY_HEAD_HINT}")
+
+
+def binary_head_notes(cdir):
+    """Advisory: rows pointing at a binary artifact, so the migration list is discoverable."""
+    notes = []
+    rel_dir = os.path.relpath(cdir, ROOT).replace("\\", "/")
+    try:
+        cfm, _ = split_fm(read(os.path.join(cdir, "project.md")), "project.md")
+    except SystemExit:
+        return notes
+    for slug in all_rows(cfm):
+        f = row_get(cfm, slug, "file")
+        if f and not f.lower().endswith(".md"):
+            notes.append(f"{rel_dir}: row '{slug}' points at a binary head ({f}) — no button can stamp it; "
+                         f"{BINARY_HEAD_HINT}")
+    return notes
+
+
 def head_of(path):
     """Verify a versioned file is the highest v{N} in its folder; return (name, N)."""
     m = re.fullmatch(r"(.+)-v(\d+)\.md", os.path.basename(path))
@@ -423,6 +452,7 @@ def cmd_ready(args):
 
     dpath = os.path.join(cdir, rel)
     os.path.isfile(dpath) or die(f"deliverable file not found: {rel}")
+    require_markdown_head(rel)
     head_of(dpath)
 
     dfm, dbody = split_fm(read(dpath), rel)
@@ -482,6 +512,7 @@ def cmd_publish(args):
     slug, rel = resolve_deliverable_target(cfm, args.deliverable)
     dpath = os.path.join(cdir, rel)
     os.path.isfile(dpath) or die(f"deliverable file not found: {rel}")
+    require_markdown_head(rel)
     dfm, dbody = split_fm(read(dpath), rel)
     status = get_scalar(dfm, "status")
     if status != "ready":
@@ -515,6 +546,7 @@ def version_target(cdir, cfm, row, artifact=None):
     if not artifact:
         dpath = os.path.join(cdir, rel)
         os.path.isfile(dpath) or die(f"deliverable file not found: {rel}")
+        require_markdown_head(rel)
         head_of(dpath) or die(f"{rel} is not a versioned -v{{N}}.md file")
         return rel.replace("\\", "/"), True
 
@@ -2619,6 +2651,7 @@ def cmd_doctor(args):
         if note:
             notes.append(note)
         notes += media_manifest_notes(d)
+        notes += binary_head_notes(d)
         notes += activity_notes(d)
     if args.project in (None, "pipeline"):
         pipe_issues, pipe_notes = check_pipeline()

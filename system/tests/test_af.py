@@ -853,6 +853,89 @@ class PublishCommandTests(unittest.TestCase):
         self.assertIn("url: https://example.com/by-path", pfm)
 
 
+class BinaryHeadTests(unittest.TestCase):
+    """A deck row pointing at a .pptx used to crash the buttons with a traceback."""
+
+    REL = "phase-4-production/decks/session-deck/deck_20260812_120000.pptx"
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.projects = os.path.join(self._tmp.name, "workspace", "projects")
+        self._patch = patch.object(af, "PROJECTS", self.projects)
+        self._patch.start()
+        self.addCleanup(self._patch.stop)
+        self.addCleanup(self._tmp.cleanup)
+
+        self.cdir = os.path.join(self.projects, "deckproj")
+        target = os.path.join(self.cdir, self.REL)
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        # Real PPTX bytes: undecodable as UTF-8, which is what caused the crash.
+        with open(target, "wb") as f:
+            f.write(b"PK\x03\x04\xfe\xff\x00\x01binary")
+        af.write(
+            os.path.join(self.cdir, "project.md"),
+            "---\n"
+            f"name: deckproj\nslug: deckproj\nschema_version: {af.PROJECT_SCHEMA_VERSION}\n"
+            "created_at: 2026-08-12\ndomain: project-mgmt\nstatus: active\n"
+            "current_phase: active\nflow: open-flow\nlast_activity: 2026-08-12T10:00:00-07:00\n"
+            f"deliverables:\n  session-deck:\n    status: drafting\n    file: {self.REL}\n"
+            "    last_updated: 2026-08-12\n---\n",
+        )
+
+    def refusal(self, command, args):
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            with self.assertRaises(SystemExit):
+                command(args)
+        return err.getvalue()
+
+    def test_ready_refuses_with_the_convention_instead_of_crashing(self):
+        message = self.refusal(af.cmd_ready, types.SimpleNamespace(
+            project="deckproj", deliverable="session-deck", allow_missing_exports=True))
+        self.assertIn("not a Markdown head", message)
+        self.assertIn("exports[]", message)
+        self.assertIn("deck-production.md", message)
+
+    def test_publish_refuses_with_the_convention(self):
+        message = self.refusal(af.cmd_publish, types.SimpleNamespace(
+            project="deckproj", deliverable="session-deck", url=None,
+            posted_at=None, platform=None, media=[]))
+        self.assertIn("not a Markdown head", message)
+
+    def test_version_refuses_with_the_convention(self):
+        cfm, _ = af.split_fm(af.read(os.path.join(self.cdir, "project.md")), "project.md")
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            with self.assertRaises(SystemExit):
+                af.version_target(self.cdir, cfm, "session-deck")
+        self.assertIn("not a Markdown head", err.getvalue())
+
+    def test_doctor_surfaces_the_row_as_an_advisory_note(self):
+        notes = af.binary_head_notes(self.cdir)
+        self.assertEqual(1, len(notes))
+        self.assertIn("session-deck", notes[0])
+        self.assertIn("no button can stamp it", notes[0])
+
+    def test_a_markdown_head_beside_the_binary_is_accepted(self):
+        # The sanctioned shape: pointer head carries status, binary is an export.
+        rel = "phase-4-production/decks/session-deck/session-deck-v1.md"
+        af.write(os.path.join(self.cdir, rel),
+                 "---\nstatus: drafting\nlast_updated: 2026-08-12\n"
+                 f"exports:\n  - {os.path.basename(self.REL)}\n---\n\nPointer head.\n")
+        cpath = os.path.join(self.cdir, "project.md")
+        cfm, cbody = af.split_fm(af.read(cpath), "project.md")
+        cfm = af.row_set(cfm, "session-deck", "file", rel)
+        af.write(cpath, af.join_fm(cfm, cbody))
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            af.cmd_ready(types.SimpleNamespace(
+                project="deckproj", deliverable="session-deck", allow_missing_exports=True))
+
+        cfm, _ = af.split_fm(af.read(cpath), "project.md")
+        self.assertEqual("ready", af.row_get(cfm, "session-deck", "status"))
+        self.assertEqual([], af.binary_head_notes(self.cdir))
+
+
 class LifecycleCliParserTests(unittest.TestCase):
     def test_ready_is_the_quality_gate_command(self):
         with patch.object(af, "cmd_ready") as command, \

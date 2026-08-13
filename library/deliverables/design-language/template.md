@@ -1,6 +1,6 @@
 # Template: Design Language
 
-A project's ready visual language. One per project. Record what, not why unless historical breakage matters.
+A project's ready visual language. One per project, and a language worth reusing graduates to a shared asset (see Reuse Across Projects). Record what, not why unless historical breakage matters.
 
 ## Required Frontmatter
 
@@ -27,6 +27,8 @@ dark_variant:           # optional — populate when a dark variant is in scope
 
 ## Authoring
 
+First check `library/assets/design-languages/` for a shared language that already fits. Adopting one is a stronger result than authoring a fresh identity, because a shared language carries a replayable package and reproduces across contexts; record the adoption in `project.md` notes and skip to the treatment block. Author a new language when none fits, or when the operator wants a distinct identity.
+
 Divergence-first. When this deliverable opens, offer the starting points — don't assume one:
 
 1. **Offer the on-ramps:** (a) agent ideates directions from project context, (b) operator drops inspo references — when a reference is a live-site URL, run the token extraction on it (`system/skills/extract-design/`, rules in its `AGENTS.md`) and distill; images stay the eyeball path, (c) optional Gemini Deep Research style pass — keep the DR prompt agnostic: visual-trend research any project could use, not this project's narrative baked in.
@@ -41,6 +43,12 @@ The project-level base becomes ready here; per-deliverable evolution is allowed 
 Single-direction authoring is allowed only when the operator explicitly says "skip the directions, pick one" or chooses text-only defer. Do not invent the single-direction path silently.
 
 No `decisions.md` companion. Reasoning that must survive readiness lives in `design-language-v{N}.md` itself; sub-session reasoning is throwaway.
+
+## Reuse Across Projects
+
+This deliverable is the project's own language, and it stays here. When the same identity will serve a later project, it graduates to a shared asset at `library/assets/design-languages/<name>/` (schema: [`library/assets/README.md`](../../assets/README.md)) while this project keeps its `design-language-v{N}.md` as the record of how the language was set here.
+
+A shared language is a saved, replayable package plus its imagery manifest, never a copy of this prose. Prose does not reproduce in a fresh context: it hands the next agent a description and lets it re-derive the layouts, which is how a language returns as the right colours in the wrong shapes. Graduate as soon as real artifacts prove the language out and reuse looks likely, rather than waiting for the second project to need it. A project consuming a shared language names it in `project.md` notes, and [`library/process/deck-production.md`](../../process/deck-production.md) owns the load for deck work.
 
 ## Artifact Shape
 

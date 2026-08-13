@@ -19,6 +19,21 @@ After AgentFrame selects PPT Master, read the local overlay and then follow the 
 
 Reference-grounded redesign is selected before this handoff. It is a hybrid preservation path the vendor's rebuild-from-scratch beautify workflow does not own.
 
+## Design language handoff
+
+When the project names a design language, that identity is routed rather than remembered. A context that threads only palette and typography reproduces the colours and loses the archetypes, which is why decks built in a fresh session stop resembling the showcase they were supposed to match.
+
+Resolve the name to `library/assets/design-languages/<name>/` (schema: [`library/assets/README.md`](../assets/README.md)). Before the vendor's confirmation gate:
+
+1. **Preflight the package** from its root: `python system/skills/ppt-master/scripts/svg_quality_checker.py library/assets/design-languages/<name>/package/templates --template-mode`. Any error blocks the run. A package that passed at capture and fails now means the vendor pipeline tightened underneath it, so repair or recapture it here instead of meeting the failure mid-build with a cryptic converter error.
+2. **Supply the absolute `package/` root as an exact workspace root for the run.** The vendor records it under `explicit_workspace_roots`, opens Stage 1 in template mode with it preselected, installs it through `apply-template-workspace`, and authors new pages from the installed roster in Stage 2. That install path is what reproduces the archetypes. Never hand-copy roster SVGs into the project instead.
+3. **Read the package `README.md` and `imagery/manifest.yaml`.** Select imagery by `slots` and `theme`, and honour `restriction`: `reference-only` never reaches a rendered slide, and `project-scoped` needs this client confirmed as covered before external delivery.
+4. **Check `library/assets/logos/`** for the marks the identity's chrome expects.
+
+The language owns identity and structure. This project still owns its content, its narrative, and its own imagery; a named language is not licence to reuse another client's material. In a sealed bounded-autonomy run, put the `package/` root in both `context_sources` and `frozen_context`, because an identity the run cannot read is an identity it will invent.
+
+When no design language is named, the vendor's ordinary identity confirmation governs and none of the above applies. Capture runs the other direction and is owned by [`library/assets/README.md`](../assets/README.md): when a deck identity proves out and reuse is likely, save it as a package rather than leaving it in the chat that made it.
+
 ## Bounded visual-quality runs
 
 When a bounded-autonomy run's `goal` or `done_when` depends on deck appearance, the approved run contract counts as an explicit request for route-appropriate rendered visual QA. The operator does not need to repeat tool-specific invocation wording.

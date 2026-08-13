@@ -13,7 +13,7 @@ One submission-ready resume per application: the operator's real experience, sel
 
 ## Output Shape
 
-Section order is the operator's real format: contact header → **Work Experience** → **Projects** (when the JD values them) → **Education** (short) → **Skills / Extras**. **No Professional Summary by default** — offer a 1–2 line positioning line (exact JD-title mirror) only when the JD title doesn't match the most recent role title; the operator decides.
+Section order is the operator's real format: contact header → **Work Experience** → **Projects** (when the JD values them) → **Education** (short) → **Skills / Extras**. **No Professional Summary, profile paragraph, or positioning line.** A JD title that doesn't match the most recent role title is not a trigger; mirror the title inside the bullets instead. Add one only when the operator asks for it in the session, and never as an agent judgment call. `profile.md`'s standing style rules are binding here.
 
 - Contact header: name, phone, email, city + province/state, then full visible URLs (`linkedin.com/in/...`, `github.com/...`) — in the body, never in a document header/footer.
 - Bullets are selection, not generation: pick the master-cv bullets the jd-map names, rephrase to mirror hard-requirement phrasing honestly. CDO shape — context → the decision/trade-off → quantified outcome. One dense chained bullet beats two thin ones.

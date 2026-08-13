@@ -804,6 +804,33 @@ class PublishCommandTests(unittest.TestCase):
         self.assertEqual(af.get_scalar(cfm, "shipped_at"), af.today())
         self.assertIn("url: https://example.com/post-1", pfm)
 
+    def test_backfilled_publish_ships_on_the_posted_date_not_today(self):
+        # The post-FINAL copy is sealed in this same operation, so a wrong
+        # shipped_at is permanent. Derive it from --posted-at.
+        rel = "posts/post-1/post-FINAL.md"
+        cdir = self.make_project("campaign", "marketing", "post-1", rel)
+        args = self.args("campaign", "post-1", "https://example.com/post-1")
+        args.posted_at = "2026-07-27"
+        with contextlib.redirect_stdout(io.StringIO()):
+            af.cmd_publish(args)
+
+        cfm, _ = af.split_fm(af.read(os.path.join(cdir, "project.md")))
+        pfm, _ = af.split_fm(af.read(os.path.join(cdir, rel)))
+        self.assertIn("shipped_at: 2026-07-27", pfm)
+        self.assertIn("posted_at: 2026-07-27", pfm)
+        self.assertEqual(af.get_scalar(cfm, "shipped_at"), "2026-07-27")
+
+    def test_backfilled_publish_accepts_a_full_timestamp_posted_at(self):
+        rel = "posts/post-1/post-FINAL.md"
+        cdir = self.make_project("campaign", "marketing", "post-1", rel)
+        args = self.args("campaign", "post-1", "https://example.com/post-1")
+        args.posted_at = "2026-07-27T18:40:00-07:00"
+        with contextlib.redirect_stdout(io.StringIO()):
+            af.cmd_publish(args)
+
+        pfm, _ = af.split_fm(af.read(os.path.join(cdir, rel)))
+        self.assertIn("shipped_at: 2026-07-27", pfm)
+
     def test_non_post_marketing_deliverable_uses_generic_publish(self):
         cdir = self.make_project(
             "campaign", "marketing", "essay", "essay/substack-essay-v1.md"

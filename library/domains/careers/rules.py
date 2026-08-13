@@ -20,7 +20,20 @@ HAZARD_CHARS = (
 )
 
 # Year-only ranges zero out ATS tenure calculators ("2022 - 2023" -> 0 months).
-YEAR_ONLY_RANGE = re.compile(r"\b(19|20)\d{2}\s*[-–—]\s*((19|20)\d{2}|present)\b", re.I)
+# The left year must be bare: "September 2022 - Present" is the format the resume
+# template mandates, so a month prefix disqualifies the match.
+MONTH = (r"(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?"
+         r"|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)")
+DATE_RANGE = re.compile(
+    rf"(?:(?P<lmonth>{MONTH})\b\.?\s+)?(?P<lyear>(?:19|20)\d{{2}})"
+    rf"\s*[-–—]\s*(?:(?:{MONTH})\b\.?\s+)?(?:(?:19|20)\d{{2}}|present)\b",
+    re.I,
+)
+
+
+def year_only_ranges(text):
+    """Date ranges whose left side carries no month — the tenure-zeroing shape."""
+    return [m.group(0) for m in DATE_RANGE.finditer(text) if not m.group("lmonth")]
 
 # Canonical resume headings; anything else gets miscategorized by entity mappers.
 RESUME_HEADINGS = {"work experience", "experience", "projects", "education", "skills", "skills / extras", "extras"}
@@ -46,8 +59,10 @@ def _lint(rel, body, is_resume):
         n = body.count(ch)
         if n:
             issues.append(f"{rel}: {n}x {label} ({ch}) — parse hazard, replace before export")
-    if YEAR_ONLY_RANGE.search(body):
-        issues.append(f"{rel}: year-only date range — use 'Month YYYY - Month YYYY' (year-only zeroes tenure calculators)")
+    bare = year_only_ranges(body)
+    if bare:
+        issues.append(f"{rel}: year-only date range ({bare[0]}) — use 'Month YYYY - Month YYYY' "
+                      "(year-only zeroes tenure calculators)")
     if is_resume:
         for h in re.findall(r"^##\s+(.+?)\s*$", body, re.M):
             if h.strip().lower() not in RESUME_HEADINGS:

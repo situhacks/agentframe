@@ -168,10 +168,15 @@ def publish(ctx, cdir, args):
 
     posted = args.posted_at or ctx.now_iso()
     platform = args.platform or "linkedin"
+    # shipped_at is the ship date, not the receipt-writing date. A backfilled
+    # publish must record when the post went live, because the immutability hook
+    # seals the post-FINAL copy in this same operation.
+    _pd = re.match(r"(\d{4}-\d{2}-\d{2})", posted)
+    shipped = _pd.group(1) if _pd else ctx.today()
     pfm = ctx.set_scalar(pfm, "status", "published", rel)
     pfm = ctx.set_scalar(pfm, "last_updated", ctx.today(), rel)
     pfm = re.sub(r"\n(shipped_at:.*|published:(\n  .*)*|shipped_media:(\n  - .*)*)", "", pfm)
-    block = [f"shipped_at: {ctx.today()}", "published:", f"  platform: {platform}",
+    block = [f"shipped_at: {shipped}", "published:", f"  platform: {platform}",
              f"  url: {args.url}", f"  posted_at: {posted}"]
     if args.media:
         block.append("shipped_media:")
@@ -183,7 +188,7 @@ def publish(ctx, cdir, args):
     cfm = ctx.row_set(cfm, post, "last_updated", ctx.today())
     published = _published_posts(ctx, cfm) + _archived_published_posts(ctx, cdir)
     if ctx.get_scalar(cfm, "shipped_at") in (None, "null", ""):
-        cfm = ctx.upsert_scalar(cfm, "shipped_at", ctx.today())
+        cfm = ctx.upsert_scalar(cfm, "shipped_at", shipped)
     cfm = ctx.touch_lifecycle(cfm)
     ctx.write(cpath, ctx.join_fm(cfm, cbody))
     ctx.append_activity(cdir, f"post_published: {post} → {args.url}")

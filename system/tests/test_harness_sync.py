@@ -72,6 +72,24 @@ class HarnessProjectionTests(unittest.TestCase):
 
         self.assertEqual(af.sync_harnesses(root=self.root, write=False), [])
 
+    def test_check_ignores_crlf_in_the_root_projection_manifest(self):
+        # The per-file comparison was EOL-insensitive while the root manifest
+        # was still compared raw, so a CRLF checkout reported manifest-only drift.
+        af.sync_harnesses(root=self.root, write=True)
+        projected = self.root / ".claude" / "skills" / af.PROJECTION_MANIFEST
+        projected.write_bytes(af._projection_bytes(projected).replace(b"\n", b"\r\n"))
+
+        self.assertEqual(af.sync_harnesses(root=self.root, write=False), [])
+
+    def test_check_still_reports_a_genuinely_drifted_root_manifest(self):
+        af.sync_harnesses(root=self.root, write=True)
+        projected = self.root / ".claude" / "skills" / af.PROJECTION_MANIFEST
+        projected.write_text('{"skills": {}}\n', encoding="utf-8")
+
+        issues = af.sync_harnesses(root=self.root, write=False)
+
+        self.assertTrue(any("drifted projection manifest" in issue for issue in issues))
+
     def test_projection_bytes_keep_binary_differences_exact(self):
         left = self.root / "left.bin"
         right = self.root / "right.bin"

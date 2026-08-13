@@ -25,7 +25,7 @@ description: Render a finished resume/cover-letter markdown head into ATS-safe s
 
 ## 3. Path B — DOCX
 
-Use the vendored [`docx`](../docx/) skill to build the document; [`docx-generator-reference.js`](docx-generator-reference.js) in this folder is a runnable layout reference matching the resume template's structure (Calibri, section rules, right-tab dates, round bullets). Write to `{deliverable}/media/{name}-v{N}.docx`.
+Use the vendored [`docx`](../docx/) skill to build the document, reading its [`AGENTS.md`](../docx/AGENTS.md) first; [`docx-generator-reference.js`](docx-generator-reference.js) in this folder is a runnable layout reference matching the resume template's structure (Calibri, section rules, right-tab dates, round bullets). Write to `{deliverable}/media/{name}-v{N}.docx`.
 
 ## 4. File, validate, ready
 

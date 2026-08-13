@@ -2540,7 +2540,7 @@ def sync_harnesses(*, root=ROOT, write=False):
                 actual_manifest = actual_root / PROJECTION_MANIFEST
                 if not actual_manifest.is_file():
                     issues.append(f"missing projection manifest: {actual_manifest}")
-                elif expected_manifest.read_bytes() != actual_manifest.read_bytes():
+                elif _projection_bytes(expected_manifest) != _projection_bytes(actual_manifest):
                     issues.append(f"drifted projection manifest: {actual_manifest}")
             return issues
 

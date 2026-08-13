@@ -75,7 +75,7 @@ When this deliverable becomes ready, export to Word + PowerPoint when those form
 - **Template source**: campaign-local templates are optional at `workspace/projects/{slug}/exports/templates/business-brief.{docx,pptx}`
 - **Output path**: `workspace/projects/{slug}/phase-2-strategy/business-brief/exports/business-brief-v{N}.{ext}`
 
-For `.docx`, load `system/skills/docx/SKILL.md`, render the Word export, then validate through `python system/tools/docx_validate.py <file.docx>`. Add `--original <source.docx>` only when editing an existing Word file; new documents validate without a baseline. Update `draft-v{N}.md` `exports:` entries and append export activity events.
+For `.docx`, read `system/skills/docx/AGENTS.md` then load its `SKILL.md`, render the Word export, then validate through `python system/tools/docx_validate.py <file.docx>`. Add `--original <source.docx>` only when editing an existing Word file; new documents validate without a baseline. Update `draft-v{N}.md` `exports:` entries and append export activity events.
 
 For `.pptx`, load `library/process/deck-production.md` and follow the central deck route. This template does not name individual deck tools directly; future PowerPoint routing changes happen in the deck-production process file.
 

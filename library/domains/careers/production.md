@@ -16,9 +16,10 @@ Operator-mode routing for `domain: careers` work. The board (`workspace/pipeline
 | 7 Export | `doc-export` skill → format by ATS (table below), file under the deliverable's `media/`, record in `exports[]` | `system/skills/doc-export/` |
 | 8 Ready | `af ready <slug> resume` (and `cover-letter`)—refuses without verification + filed exports | spine |
 | 9 Submit | **The human submits** in a normal browser, on the company career site (never a bot; never Easy Apply when direct apply exists) → `af pipe stage <slug> applied` stamps the date, sets the nudge, records `shipped` | operator |
-| 10 Track | `af doctor` surfaces nudges (7-day silence) and stale rows; interview notes accrete in `application.md` body | spine |
+| 10 Interview | On a round being scheduled: read `career/interview-playbook.md` first, then draft `interview-prep/interview-prep-v{N}.md` per its template, one sheet per round. After the round, harvest what repeats back into the playbook's append block | template + [`career-harvest`](../../process/career-harvest.md) |
+| 11 Track | `af doctor` surfaces nudges (7-day silence) and stale rows; interview notes accrete in `application.md` body | spine |
 
-**Material rule:** Steps 5-8 apply to every `materials:` row; this extends the resume/cover-letter examples in the sprint table. Use the route below, file finals only for pack-declared exportables, and mark each submission material ready before the human submits.
+**Material rule:** Steps 5-8 apply to every `materials:` row; this extends the resume/cover-letter examples in the sprint table. Use the route below, file finals only for pack-declared exportables, and mark each submission material ready before the human submits. Step 10's `interview-prep` is internal and never a material: no export gate, no readiness stamp, one sheet per round.
 
 ## Material routes and export formats
 
@@ -40,7 +41,7 @@ When the watchlist names the screen: Workday Illuminate / Phenom — outcomes in
 
 ## Career sessions (internal, ongoing)
 
-Career work between cases is a session, not a project and never always-on. On career-management intent (coach prep, KPI inventory, promotion planning), load the career bank (`library/context/operator/career/`), employer page (`career/employers/{slug}.md` - rubric, KPIs, cycle calendar), and relevant coach/manager people pages (`library/context/people/`). Work the session; before closing, harvest durable output to its home: win -> career-harvest; stated expectation or rubric change -> employer-page timeline; relationship fact -> the person's page. Nothing persists in chat and no session folder exists.
+Career work between cases is a session, not a project and never always-on. On career-management intent (coach prep, KPI inventory, promotion planning), load the career bank (`library/context/operator/career/`), employer page (`career/employers/{slug}.md` - rubric, KPIs, cycle calendar), and relevant coach/manager people pages (`library/context/people/`). On interview intent specifically, `career/interview-playbook.md` is the first read, before any prep drafting. Work the session; before closing, harvest durable output to its home: win -> career-harvest; stated expectation or rubric change -> employer-page timeline; relationship fact -> the person's page. Nothing persists in chat and no session folder exists.
 
 ## Internal cases (promotion, level moves)
 

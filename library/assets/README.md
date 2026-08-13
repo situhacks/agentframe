@@ -86,7 +86,3 @@ assets:
 ```
 
 `restriction` is the field that keeps a deck shippable. `reference-only` never reaches a rendered slide. `project-scoped` requires confirming the client or project is covered before external delivery. Treat an asset that arrived without licence metadata as `licence: unknown` with `restriction: project-scoped`; never upgrade it to `none` by assumption. An asset with no manifest record is not available for selection.
-
-## `deck-templates/<name>/`
-
-Retired. A saved ppt-master package is now the `package/` half of a `design-languages/<name>/` entry, so the identity ships with its provenance, licence records, and reuse notes instead of standing alone.

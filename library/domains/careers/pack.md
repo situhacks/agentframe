@@ -22,11 +22,11 @@ This pack is the only artifact that knows careers. The generic spine (`system/af
 | Topology | `topology: pipeline` above | careers work scaffolds under `workspace/pipeline/applications/`, stage-tracked on the board (`pipeline.md`), never under `workspace/projects/` |
 | Application skeleton | [`skeleton.md`](skeleton.md) | the `application.md` an application sprint gets (`af pipe start`) |
 | Board skeleton | [`pipeline-skeleton.md`](pipeline-skeleton.md) | the `pipeline.md` created on first `af pipe save` |
-| Deliverable templates | [`deliverables/`](deliverables/) | `jd-map`, `resume`, `cover-letter`, `company-brief`; non-text materials (`deck`, `demo`) use the generic deliverable shape + the routes in [`production.md`](production.md) |
+| Deliverable templates | [`deliverables/`](deliverables/) | `jd-map`, `resume`, `cover-letter`, `company-brief`, `interview-prep` (internal, never a material); non-text materials (`deck`, `demo`) use the generic deliverable shape + the routes in [`production.md`](production.md) |
 | Verb applicability + hooks | `verbs` above + `rules.py` | every submission material becomes ready only after jd-map verification; text materials also pass the parse-hazard lint (`on_ready`) |
 | Doctor rules | `rules.py` `check_application()` | text-material parse hazards, verification freshness |
 | Persona routing | [`production.md`](production.md) | the application-sprint runbook the Operator loads for careers work |
-| Career bank schema | [`operator-schema/career/`](../../context/operator-schema/career/README.md) | shapes for profile, master-cv, proof-points, stories, tracks, search-profile — instances live gitignored under `library/context/operator/career/` |
+| Career bank schema | [`operator-schema/career/`](../../context/operator-schema/career/README.md) | shapes for profile, master-cv, proof-points, stories, tracks, search-profile, interview-playbook — instances live gitignored under `library/context/operator/career/` |
 
 ## Stage model (the board owns this)
 

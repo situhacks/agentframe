@@ -1,9 +1,9 @@
 {
-  "bundle_sha256": "a23b6b3da370901a80c0b99d38bd8565f30128cf3f0f9103ff01a9f4d947803c",
+  "bundle_sha256": "09b647ffff713c6fe201168329ed2f0a473c9cf69f8dd2270e51ebc19a07d77a",
   "do_not_edit": true,
   "files": {
     "PROVENANCE.md": "4c26f2e9f5bc11380b881d8f06a97a07696496421760b27d3a4b58e8fa171690",
-    "SKILL.md": "c5a57a39c06bee80f07fd32bd5c75643d488c5f1adaaf72afa2d9253f29a2e9c"
+    "SKILL.md": "4a8b4c9d5cadfc387d8b43073399092885dfef27bde5837efeaca9c31c6a2760"
   },
   "generated_by": "AgentFrame af sync-harnesses",
   "overlay": null,

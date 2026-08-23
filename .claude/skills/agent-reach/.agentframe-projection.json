@@ -1,0 +1,12 @@
+{
+  "bundle_sha256": "cf17204b50f28fb20644a591145072ba5e0ab4800f12891144b82138bca83f14",
+  "do_not_edit": true,
+  "files": {
+    "SKILL.md": "b7c4e0c49923e88ae7855394ab9f9b72df8a9feae0dbb2bf9ea098c54bdd641e",
+    "VENDOR.md": "af767723608f22711c7918c5067c59c6a1fb9ed3fdebe111a86dd93117bd3773"
+  },
+  "generated_by": "AgentFrame af sync-harnesses",
+  "overlay": null,
+  "regenerate": "python system/af.py sync-harnesses --write",
+  "source": "system/skills/agent-reach"
+}

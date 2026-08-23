@@ -16,6 +16,19 @@ Required capabilities: web search, page fetch, file read/write. Then check two o
 
 The role prompts, atom schema, gates, and writer rules are identical in both modes; only dispatch mechanics differ.
 
+### Blocked sources
+
+Some hosts are unreachable through the default fetch path — the fetch tool refuses the host outright,
+or the search index returns nothing from a site that demonstrably has results. Reddit is the standing
+example. When a role's required source class is blocked, load
+[`agent-reach`](../agent-reach/SKILL.md) and route that role through it.
+
+If the source is unavailable there too, the role returns a **documented gap** and the synthesis
+carries it forward as a stated limitation. Never substitute an adjacent source and present it as the
+one requested: a forum answering a different population's question produces a confidently wrong
+finding, where a named gap produces a correct one. Record which source was blocked, what was tried,
+and what the substitute cannot support.
+
 ## Tiers & cost gate
 
 | Tier | Roles | Queries/role | Full fetches/role | Atoms/role |

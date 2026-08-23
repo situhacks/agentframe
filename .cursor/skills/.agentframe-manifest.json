@@ -4,6 +4,15 @@
   "regenerate": "python system/af.py sync-harnesses --write",
   "schema_version": 1,
   "skills": {
+    "agent-reach": {
+      "bundle_sha256": "cf17204b50f28fb20644a591145072ba5e0ab4800f12891144b82138bca83f14",
+      "files": {
+        "SKILL.md": "b7c4e0c49923e88ae7855394ab9f9b72df8a9feae0dbb2bf9ea098c54bdd641e",
+        "VENDOR.md": "af767723608f22711c7918c5067c59c6a1fb9ed3fdebe111a86dd93117bd3773"
+      },
+      "overlay": null,
+      "source": "system/skills/agent-reach"
+    },
     "agentframe-structure": {
       "bundle_sha256": "c69d1ec935e343d6137d991aa6c92f5e53e17c9eff9dcb01faf9164210f9a885",
       "files": {
@@ -16,10 +25,10 @@
       "source": "system/skills/agentframe-structure"
     },
     "deep-research": {
-      "bundle_sha256": "a23b6b3da370901a80c0b99d38bd8565f30128cf3f0f9103ff01a9f4d947803c",
+      "bundle_sha256": "09b647ffff713c6fe201168329ed2f0a473c9cf69f8dd2270e51ebc19a07d77a",
       "files": {
         "PROVENANCE.md": "4c26f2e9f5bc11380b881d8f06a97a07696496421760b27d3a4b58e8fa171690",
-        "SKILL.md": "c5a57a39c06bee80f07fd32bd5c75643d488c5f1adaaf72afa2d9253f29a2e9c"
+        "SKILL.md": "4a8b4c9d5cadfc387d8b43073399092885dfef27bde5837efeaca9c31c6a2760"
       },
       "overlay": null,
       "source": "system/skills/deep-research"
@@ -38,5 +47,5 @@
     }
   },
   "source_manifest": "system/harnesses/manifest.json",
-  "source_manifest_sha256": "762ff3dae09ee8a83993316710b4354ffb31f0133f6f716868c02bcb4c834746"
+  "source_manifest_sha256": "355ef5a2f5e32dcde15b2c443914f0714a81d274a633e20e1199e80efc00e962"
 }

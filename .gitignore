@@ -32,6 +32,12 @@ system/audit/*.db
 system/audit/*.db-shm
 system/audit/*.db-wal
 
+# === Retrieval index (derived cache, per-machine; never truth) ===
+system/index/vault.db
+system/index/vault.db-shm
+system/index/vault.db-wal
+system/index/golden-set.yaml
+
 # === Browser harness runtime ===
 system/browser/runs/
 system/browser/workflows/**/runs/

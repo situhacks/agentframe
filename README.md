@@ -128,7 +128,7 @@ The root file is never rewritten to change modes. An agent reads only the task-l
 
 ### Pulling upstream changes
 
-Personal context, projects, pipeline data, and the audit database are gitignored, so your working layer never collides with updates. Ask the agent to **"pull upstream AgentFrame updates."** The root routes that system task to Builder; the sync skill walks changes commit by commit, or applies a reviewed bulk migration, without touching the personal layer.
+Personal context, projects, pipeline data, the audit database, and the per-machine retrieval index are gitignored, so your working layer never collides with updates. Ask the agent to **"pull upstream AgentFrame updates."** The root routes that system task to Builder; the sync skill walks changes commit by commit, or applies a reviewed bulk migration, without touching the personal layer.
 
 ## What it can run
 

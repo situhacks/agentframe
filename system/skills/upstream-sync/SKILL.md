@@ -5,7 +5,7 @@ description: "Pull updates from the upstream AgentFrame repository into a custom
 
 # Upstream Sync
 
-Builder-router procedure. Git required. The personal layer (`library/context/operator/`, real campaigns, builder backlog, audit DB, `.claude/`) is gitignored and untouched by every step below — only tracked system/library/template files sync.
+Builder-router procedure. Git required. The personal layer (`library/context/operator/`, real campaigns, builder backlog, audit DB, retrieval index under `system/index/`, `.claude/`) is gitignored and untouched by every step below — only tracked system/library/template files sync.
 
 ## Preflight
 

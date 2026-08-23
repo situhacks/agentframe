@@ -49,7 +49,7 @@ Load only what the task needs. If a file is historical, read it only when resear
 ### Architectural Truths
 
 1. **Agent + tools + constraints, separated.** Skills are generic capabilities. AgentFrame logic lives in personas, templates, process files, and project state, not inside generic skills.
-2. **Files as memory.** Markdown/frontmatter is the source of truth for project and system working state. SQLite is the narrow audit/telemetry exception.
+2. **Files as memory.** Markdown/frontmatter is the source of truth for project and system working state. SQLite has two sanctioned uses: append-only audit/telemetry, and the gitignored retrieval index (`system/index/`) — a derived cache, rebuildable, never truth.
 3. **State over phrases.** Triggers should be defined by state and intent, not by quoted user phrases.
 4. **Templates are the product.** Prefer changes that make deliverables clearer, more reliable, or easier to reuse across agent platforms.
 5. **Two-mode routing is real.** Builder owns system architecture; Operator owns project execution.
@@ -61,7 +61,7 @@ Load only what the task needs. If a file is historical, read it only when resear
 Run these checks, in order, before writing any agent-facing file:
 
 1. **Who loads this?** A trigger or procedure is inert unless a parent loads the file and acts on it. Name the parent and confirm it calls this file at the right moment. If nothing loads it, the file is dead — fix the load-path, don't write a self-triggering rule.
-2. **Is it earned?** Name the observed failure the rule addresses and record the evidence in the patch proposal, `system_changes` row, feedback log, or retro artifact. If current artifacts already behave correctly, that is evidence against adding the rule; remove stale or conflicting instructions before adding guidance.
+2. **Who decided?** A capability, mechanism, or rule enters on a named decision — operator direction, a plan file, or a retro action — not on accumulated incident evidence. Past-failure evidence strengthens a case but is never a prerequisite for building; what this check blocks is agent-invented rules nobody asked for. If current artifacts already behave correctly, leave them alone; remove stale or conflicting instructions before adding guidance.
 3. **Does it already exist?** Find the prior rule on this topic. If the topic has patch history, name why the prior shape failed — otherwise you are rewriting the same rule with sharper words. If the rule lives in another loaded file, patch the firing problem there; never duplicate.
 4. **Is it runtime-clean?** Cut provenance: history, dates, cluster IDs, rationale-for-future-readers, changelog sections. Runtime prose is present-tense operating instruction — situation, counter, self-check. Patch history belongs in `system/audit/agentframe.db`, a dedicated history file, or the retro/backlog artifact.
 5. **Does every line earn its tokens?** Each line must help a future agent decide, execute, compare, or verify; if it is inferable from files already loaded for the task, link or cut. Workflow steps belong to the lazy-loaded owner (`library/process/*` for procedures, `library/deliverables/*/template.md` for deliverable rules); edit `AGENTS*.md` only when the route or a cross-cutting invariant is wrong. Check the file against its class size budget in the authoring standards — over budget, cut before adding. Lean and enough beats complete.
@@ -114,10 +114,11 @@ Modes are task-local ownership boundaries, not mutable repository state. The roo
 | `library/context/` | Operator positioning/profile/voice (`operator/`), plus shared `channels/`, `people/`, `_meta/` |
 | `library/lenses/` | Tracked package contract plus gitignored, source-backed advisory lens instances; kept separate from operator truth |
 | `library/assets/` | Reusable visual assets: flat `logos/` inventory + `design-languages/` packages, each a replayable ppt-master identity plus its imagery manifest (schema: `library/assets/README.md`) |
-| `system/af.py` | Deterministic CLI (ready, publish, version, draft, new-project, automation, autonomy, doctor, pipe, harness projection sync) |
+| `system/af.py` | Deterministic CLI (ready, publish, version, draft, new-project, automation, autonomy, doctor, pipe, index/search, harness projection sync) |
 | `system/daemon/` | Multi-queue managed-run host, deployment contract, and kickoff prompt |
 | `system/skills/` | Builder + Operator skills; catalog of what each does + when to load at `system/skills/README.md` |
 | `system/audit/` | SQLite audit/telemetry exception |
+| `system/indexer.py` + `system/index/` | Cross-project retrieval substrate behind `af index` / `af search`; the index DB is a gitignored derived cache, rebuildable, never truth |
 | `system/hooks/` | Shared deterministic guard logic (version safety, ppt-master staging / paragraph lint / export promotion), wired natively through tracked Claude, Cursor, and Codex project configs; contract: `system/harnesses/README.md` |
 | `system/browser/` | Browser automation runtime |
 | `system/research/` | Deep-research runtime (`gemini_deep_research`) |

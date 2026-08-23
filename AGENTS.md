@@ -18,7 +18,7 @@ The selected router governs that task. If the task class materially changes, sto
 
 ## Universal Invariants
 
-- **Files are memory.** Project Markdown/frontmatter is the source of truth for project state. SQLite is the narrow append-only system audit exception.
+- **Files are memory.** Project Markdown/frontmatter is the source of truth for project state. SQLite has exactly two sanctioned uses: the append-only system audit, and the gitignored retrieval index (`system/index/`) — a derived cache, rebuildable, never truth.
 - **Buttons own mechanics.** Use `python system/af.py` for state transitions it owns. Do not recreate those transitions with hand edits.
 - **Named inputs must be read.** When a router, template, process, task, or user names an input, read it before relying on it. A link is a route, not loaded context.
 - **Lazy-load deliberately.** Read the smallest file set that resolves the task. Follow the selected router to catalogs and owners; do not load whole directories or historical material by default.

@@ -1,6 +1,7 @@
 # AgentFrame System Change Audit
 
-`system/audit/` is the narrow SQLite exception in AgentFrame.
+SQLite appears in exactly two sanctioned places in AgentFrame: this append-only audit, and the
+gitignored retrieval index (`system/index/`) — a derived cache, rebuildable, never truth.
 
 - Markdown remains canonical for campaign state, campaign activity, content, and operator-facing work.
 - SQLite is canonical only for append-only `system_changes` audit rows.

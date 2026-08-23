@@ -19,6 +19,8 @@ Commands:
   python system/af.py adopt <project> <deliverable-slug> --file <existing-project-relative.md>
   python system/af.py new-project <slug> [--domain project-mgmt] [--flow open-flow] [--name NAME]
   python system/af.py doctor [project|pipeline]
+  python system/af.py index update [--rebuild]|status|eval [--k N]
+  python system/af.py search "<query>" [-n LIMIT] [--json]
   python system/af.py sync-harnesses --check|--write
   python system/af.py automation init|ready|activate|pause|retire ...
   python system/af.py autonomy init|check|start|checkpoint|finish|migrate ...
@@ -53,6 +55,11 @@ try:
     from system import autonomy_contract
 except ModuleNotFoundError:  # direct ``python system/af.py`` execution
     import autonomy_contract
+
+try:
+    from system import indexer
+except ModuleNotFoundError:  # direct ``python system/af.py`` execution
+    import indexer
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROJECTS = os.path.join(ROOT, "workspace", "projects")
@@ -2676,6 +2683,21 @@ def cmd_doctor(args):
     print(f"af doctor: {len(dirs)} project(s){system_scope} checked, books clean")
 
 
+# ------------------------------------------------------- retrieval (indexer)
+
+def cmd_index(args):
+    if args.index_cmd == "update":
+        indexer.cmd_update(ROOT, rebuild=args.rebuild)
+    elif args.index_cmd == "status":
+        indexer.cmd_status(ROOT)
+    elif args.index_cmd == "eval":
+        indexer.cmd_eval(ROOT, k=args.k)
+
+
+def cmd_search(args):
+    indexer.cmd_search_cli(ROOT, args.query, limit=args.limit, as_json=args.json)
+
+
 # ---------------------------------------------------------------- main
 
 # Verbs that mutate project state are Operator actions. `doctor` is read-only
@@ -2726,6 +2748,14 @@ def main():
     s.add_argument("--flow", default=DEFAULT_FLOW, choices=sorted(FLOWS)); s.add_argument("--domain", default=DEFAULT_DOMAIN)
     s.add_argument("--name"); s.set_defaults(fn=cmd_new_project)
     s = sub.add_parser("doctor");          s.add_argument("project", nargs="?"); s.set_defaults(fn=cmd_doctor)
+    s = sub.add_parser("index")
+    isub = s.add_subparsers(dest="index_cmd", required=True)
+    iu = isub.add_parser("update"); iu.add_argument("--rebuild", action="store_true"); iu.set_defaults(fn=cmd_index)
+    ist = isub.add_parser("status"); ist.set_defaults(fn=cmd_index)
+    iev = isub.add_parser("eval"); iev.add_argument("--k", type=int, default=5); iev.set_defaults(fn=cmd_index)
+    s = sub.add_parser("search")
+    s.add_argument("query"); s.add_argument("-n", "--limit", type=int, default=8)
+    s.add_argument("--json", action="store_true"); s.set_defaults(fn=cmd_search)
     s = sub.add_parser("sync-harnesses")
     action = s.add_mutually_exclusive_group(required=True)
     action.add_argument("--check", action="store_true")

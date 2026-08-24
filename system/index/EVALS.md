@@ -1,10 +1,30 @@
-# Retrieval Eval Numbers
+# Retrieval Eval Record
 
-> Owner of record for `af index eval` results. This file is tracked; the
-> golden-set data behind it is per-instance and gitignored (`golden-set.yaml`
-> beside this file), because each instance's corpus differs.
-> Method: recall@k over voice-register question→expected-path pairs, MRR on the
-> first expected hit. A pass means ANY expected path lands in the top-k.
+> Two layers, deliberately split:
+>
+> - **Tracked (this file):** the repeatable eval method, the bake-off lessons,
+>   and one instance's results as a worked example.
+> - **Per-instance (gitignored):** `golden-set.yaml` beside this file holds the
+>   actual question→path pairs. Every AgentFrame instance harvests its own set
+>   from its own history — another instance will have different projects, a
+>   different corpus, and different numbers. The results below are a record of
+>   *this* corpus, not a benchmark anyone should expect to reproduce.
+
+## Method — repeatable on any instance
+
+1. **Harvest** ~30 question→expected-path pairs phrased the way you actually ask
+   (voice register, not filenames), pulled from real history: material you went
+   looking for again, projects you revisited, facts you re-checked. Store them
+   in `golden-set.yaml` (gitignored — your queries describe your life).
+2. **Score** with `af index eval --k 5`: recall@k over the pairs (a pass = any
+   expected path lands in the top-k), MRR on the first expected hit.
+3. **Classify every miss** into exactly one bucket, because each has a different
+   fix: vocabulary mismatch (right document, wrong words) → embeddings
+   territory; ranking competition (document found, outranked) → fusion/boost
+   territory; intent-shaped query hunting fact-shaped documents → query
+   rewriting territory, not another model.
+4. **Gate every ranking, chunking, or model change** against the same set. A
+   change ships only if the number holds or improves.
 
 ## Baseline — keyword-only (FTS5 trigram + domain boosts)
 
@@ -20,12 +40,12 @@ Excluded by operator decision: `library/context/*/voice/` — routed context,
 not searched content; a curated snapshot whose sources live in projects.
 Route loading still reaches it; only `af search` skips it.
 
-## Hybrid bake-off (2026-08-23, all runs on this instance's golden set)
+## Hybrid bake-off (all runs on this instance's golden set)
 
 | Configuration | recall@5 | MRR | Notes |
 |---|---|---|---|
 | Keyword only (no embeddings) | 83% | 0.563 | reference |
-| nomic-embed-text · bare queries · RRF 1:1 | 83% | 0.579 | fixed ranking-competition misses (master-cv, interview-playbook, bounded-autonomy) but regressed two others; did **not** fix the vocabulary-mismatch pair |
+| nomic-embed-text · bare queries · RRF 1:1 | 83% | 0.579 | fixed ranking-competition misses but regressed two others; did **not** fix the vocabulary-mismatch pair |
 | qwen3-embedding:0.6b · bare queries | 62% | 0.457 | leaderboard favorite looked 21 points worse |
 | qwen3-embedding:0.6b + documented query instruction | **86%** | **0.598** | Qwen's asymmetric usage (instruct prefix on queries only) flipped it — no rebuild needed, query-side fix |
 | Fusion weight sweep (qwen+instruct): semantic 1.4 / 0.7 / 0.5 | 83% / 86% / 86% | 0.574 / 0.601 / 0.604 | recall plateaus at ≤1.0 and degrades above; kept equal weights — not fine-tuning further on n=29 |
@@ -33,31 +53,40 @@ Route loading still reaches it; only `af search` skips it.
 **Decision:** adopt `qwen3-embedding:0.6b` with query-side instruction prefix,
 equal RRF weights. Swap is one constant (`EMBED_MODEL`) + rebuild; dimension
 mismatches are refused, never silently mixed. nomic-embed-text stays installed
-as the fallback. Lesson recorded for every future retrieval build here:
-**leaderboard rank did not predict corpus fit, and usage format outweighed
-model choice entirely** (62→86 from using the model per its own docs).
+as the fallback.
 
-## Error analysis — final 4 misses
+**Lessons that transfer to any corpus:**
 
-All four sit in one application folder and share a shape: intent-shaped queries
-("how do I pitch measurement literacy," "why Banyan specifically, what's my
-angle," "my background maps to their JD") hunting documents that store facts,
-theses, or requirement tables under different framing. The Duffy transcript miss
-(q03) remains ranking competition against denser secondary discussion. Embeddings
-did not fix the original two vocabulary-mismatch cases even after winning — the
-similarity exists but competing surfaces outrank it. Next earned upgrade for
-this family is query rewriting, not another embedding model.
+- Leaderboard rank did not predict corpus fit — the ranked-favorite embedding
+  scored 21 points *below* plain keyword search on this corpus, bare.
+- Usage format outweighed model choice entirely: 62→86 came from using the
+  model per its own model card (query-side instruction prefix), not from
+  shopping for a different model. Read the card before the bake-off, not after.
+- Recognize plateaus: the fusion-weight sweep was flat within noise at n=29;
+  further tuning would have been fitting the golden set.
+
+## Error analysis — final 4 misses (this instance)
+
+All four sit in one application-prep folder and share a shape: intent-shaped
+queries ("how do I pitch measurement literacy," "why this company specifically,
+what's my angle," "my background maps to their JD") hunting documents that store
+facts, theses, or requirement tables under different framing. One recruiter-
+screen transcript miss remains ranking competition against denser secondary
+discussion. Embeddings did not fix the original two vocabulary-mismatch cases
+even after winning — the similarity exists but competing surfaces outrank it.
+Next earned upgrade for this family is query rewriting, not another embedding
+model.
 
 ## Corrections
 
 - Earlier backend decision record said CPU-sufficient / GPU deliberately unused:
-  wrong in mechanism, right in effort. Ollama used the RX 6900 XT at 100% GPU
-  with zero configuration; full-corpus builds ran ~17 min (nomic) / ~29 min
-  (qwen 0.6B). The lazy incremental cadence makes embedding cost near-idle
-  day-to-day regardless of processor.
+  wrong in mechanism, right in effort. Ollama used the operator's RX 6900 XT at
+  100% GPU with zero configuration; full-corpus builds ran ~17 min (nomic) /
+  ~29 min (qwen 0.6B). The lazy incremental cadence makes embedding cost
+  near-idle day-to-day regardless of processor.
 
 ## Known corpus defects surfaced by the eval (Builder follow-up)
 
 - Career bank exists twice: `library/context/operator/career/` and
   `library/context/operator-schema/career/` hold near-identical files; both
-  rank and split relevance. Backlogged as BB-2026-08-23-01/-02 (local backlog).
+  rank and split relevance. Backlogged locally (BB-2026-08-23-01/-02).

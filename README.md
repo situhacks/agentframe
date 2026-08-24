@@ -79,7 +79,7 @@ AgentFrame keeps its context, working rules, and project state in files that any
 
 - **Feed finished work back into the system.** When a project closes, harvest passes compare agent drafts with the operator's manual edits and the friction logged along the way. They propose changes to templates, processes, or the voice corpus, but nothing updates itself automatically; at least one short human review step remains.
 
-- **Bound experiments before they run unattended.** A bounded run defines its goal, evidence of completion, iteration budget, and review points before the agent starts. The contract currently lives in one process file, [`bounded-autonomy.md`](library/process/bounded-autonomy.md), and remains an evolving part of the system.
+- **Bound experiments before they run unattended.** A bounded run defines its goal, evidence of completion, write surface, iteration budget, and review points before the agent starts. The contract lives in [`bounded-autonomy.md`](library/process/bounded-autonomy.md); `python system/af.py autonomy` makes it mechanical: a run starts sealed to its charter, records checkpoints as it goes, and ends in a receipt.
 
 ### 5. See the workspace without another database
 
@@ -88,6 +88,16 @@ AgentFrame keeps its context, working rules, and project state in files that any
 - **See what the automation runtime is doing.** The read-only Automations tab shows waiting requests, terminal receipts, exceptions, and mismatches between a project's declared lifecycle and the local runtime. It reports problems without starting, retrying, or changing an automation.
 
 More detail is in [The Workspace Dashboard](#the-workspace-dashboard).
+
+### 6. Find anything you've ever written
+
+- **Search every project at once.** `python system/af.py search "<whatever you half-remember>"` retrieves across projects, plans, templates, and system docs, phrased the way you'd ask rather than the filename you forgot. Ranking fuses exact-match trigram search with an embedding model run locally through Ollama, so exact identifiers and fuzzy meaning both land.
+
+- **A cache, never a second truth.** The index is a gitignored SQLite database rebuilt with one command; your files stay the only source of truth. Search returns pointers, and the agent opens the cited files before relying on them. Without the optional embedding backend, search degrades to keyword-only and says so.
+
+<p align="center">
+  <img src=".github/readme-assets/retrieval-flow.svg" alt="How cross-project retrieval works. The corpus stays plain markdown files under projects, library, plans, and system docs. af index update chunks by heading with breadcrumbs into FTS5 trigram tokens and local Ollama embeddings inside a gitignored vault.db derived cache. af search runs lexical BM25 and semantic cosine through reciprocal-rank fusion with domain boosts and most-specific-path-wins precedence, returning ranked pointers whose files the agent opens before relying on them. A golden-set eval gates every change, and without Ollama search degrades to keyword-only." width="720" />
+</p>
 
 ## Quick start
 
@@ -217,6 +227,7 @@ This is the full capability catalog. AgentFrame does not rebuild every productio
 
 | Skill | What it does | Provenance |
 |---|---|---|
+| `agent-reach` | Read-only reach for sources the default toolchain can't fetch: Reddit, LinkedIn, X, YouTube transcripts, RSS, semantic search | Vendored |
 | `agentframe-structure` | Safely changes flows, deliverable types, defaults, and ownership boundaries | Internal |
 | `browser-harness` | Runs local CDP-driven browser workflows | Vendored |
 | `d2-diagrams` | Renders deterministic SVG diagrams | Internal (pinned D2 binary vendored) |
@@ -258,12 +269,15 @@ All AgentFrame-owned. Each loads on demand when the work reaches it.
 | `image-production` | Path selection across generated imagery, HTML visuals, and Open Design |
 | `knowledge-base` | Source ingestion, living knowledge files, archives, and consolidation rules |
 | `lens-use` | Explicit lens selection and application with disk-backed rehydration |
+| `native-office-render` | Renders PPTX/DOCX to pixels or PDF through installed Microsoft Office — the only sanctioned renderer |
 | `ready-event` | Readiness mechanics and the post-ready judgment checklist |
 | `operator-context-setup` | First-run generation of positioning, profile, career, and voice surfaces |
 | `preview-server` | Start-or-open behaviour, deep links, and preview hygiene for the dashboard |
 | `process-authoring` | The standard for reusable process files |
+| `project-activity` | The material-event trail and Attention items behind every project |
 | `project-automation` | Project-owned contracts, lifecycle, deployment joins, and result verification for standing work |
 | `project-frontmatter` | Canonical project state, tracker schema, overrides, and drift checks |
+| `reference-grounded-deck-redesign` | Preserves an existing deck's geometry and native objects while applying named redesign deltas |
 | `research-and-signals` | Kickoff context scans and research-method selection |
 | `substack-publishing` | Draft preparation, editor handoff, and live-result reconciliation |
 | `technical-build` | External-repository orchestration and graduation |
@@ -282,7 +296,7 @@ All AgentFrame-owned, shaped by real use.
 | Shared (`library/deliverables/`) | design-language · image-prompts · video-spec · closeout-retro · system-retro · the generic `_meta` deliverable shape |
 | Marketing pack | body-copy · business-brief · campaign-architecture · campaign-brief · post-final · research-artifact · slide-copy · substack-essay |
 | Project-mgmt pack | charter · raid-log · decision-log · stakeholder-map · workback-schedule |
-| Careers pack | resume · cover-letter · jd-map · company-brief |
+| Careers pack | resume · cover-letter · jd-map · company-brief · interview-prep |
 
 ## Architecture
 
@@ -294,7 +308,7 @@ The structure follows a few rules that have kept it from turning into a second j
 
 - **The default project is domain-neutral.** `project-mgmt/open-flow` contributes no domain fields and no mandatory governance ceremony.
 - **Specialization is additive.** Packs declare vocabulary, templates, valid verbs, and routes; the core engine stays blind to what a project is about.
-- **Files own working truth.** Markdown and media hold project state, context, decisions, and outputs. SQLite is reserved for the append-only system-change audit.
+- **Files own working truth.** Markdown and media hold project state, context, decisions, and outputs. SQLite has exactly two sanctioned jobs: the append-only system-change audit, and a rebuildable search index that stays a derived cache, never truth.
 - **Sources and knowledge are different things.** Immutable inputs live in `sources/`; distilled working context lives in `knowledge/`.
 - **Operator context and advisory lenses stay distinct.** Personal truth lives in `library/context/`; source-backed external viewpoints live in `library/lenses/` and load only when selected.
 - **Prose owns judgment; mechanisms guarantee invariants.** The agent decides what good work is. The CLI and hooks protect state, exports, and repeatable gates.
@@ -341,7 +355,7 @@ agentframe/
 │   ├── domains/                 # marketing, project-mgmt, careers
 │   ├── lenses/                  # schema plus private source-backed advisory packages
 │   ├── process/                 # flows and on-demand procedures
-│   └── assets/                  # logos and reusable deck templates
+│   └── assets/                  # logos and replayable design-language packages
 ├── system/
 │   ├── af.py                    # deterministic state-transition CLI
 │   ├── audit/                   # append-only system-change audit
@@ -349,6 +363,7 @@ agentframe/
 │   ├── daemon/                  # local managed-automation host and queue protocol
 │   ├── harnesses/               # native skill projections and hook-wiring contract
 │   ├── hooks/                   # deterministic production guards
+│   ├── indexer.py               # hybrid cross-project retrieval behind af index / af search
 │   ├── research/                # Gemini deep-research runtime
 │   ├── server/                  # Workspace Dashboard and preview server
 │   ├── skills/                  # owned and vendored capabilities
@@ -370,6 +385,7 @@ AgentFrame runs locally, and the coding agent you already use provides the model
 | Open Design | Local-first advanced visual and deck production |
 | PPT Master | Native-editable deck generation from source material and SVG |
 | HyperFrames | HTML-to-video composition and rendering |
+| Ollama | Optional local embedding model for cross-project search; without it, search runs keyword-only |
 
 ## Auditability
 
@@ -381,6 +397,7 @@ Every trail has one owner:
 | Material project events | `activity.md` |
 | What changed between versions | the version files themselves |
 | Low-volume system changes (template patches, runtime changes, migrations) | `system/audit/agentframe.db` |
+| Cross-project search hits | the underlying files themselves — results are pointers; the index is never cited as truth |
 | Schema, file, export, and pack-rule checks | `python system/af.py doctor`; it reports drift and never silently fixes it |
 
 Git carries the version history of the reusable system; personal work stays local and gitignored.
@@ -398,6 +415,7 @@ PRs for templates, process improvements, domain packs, skills, and runtime fixes
 - [HyperFrames](https://github.com/heygen-com/hyperframes)
 - [design-extract](https://github.com/Manavarya09/design-extract)
 - [humanizer](https://github.com/blader/humanizer)
+- [Agent Reach](https://github.com/Panniantong/Agent-Reach)
 - [DeepResearch Bench](https://huggingface.co/spaces/muset-ai/DeepResearch-Bench-Leaderboard)
 - [LunonAI deep research](https://github.com/LunonAI/lunon-deep-research)
 - [deer-flow](https://github.com/bytedance/deer-flow)

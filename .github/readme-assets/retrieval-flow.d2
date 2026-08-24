@@ -1,0 +1,76 @@
+# AgentFrame retrieval flow — how af search finds anything across every project.
+# Companion to architecture-flow.d2; same rules apply there as here.
+# Palette: Agent Architecture POV design language.
+#   teal #87c7c0 = system / structure   pink #e58a9b = entry / human moment
+#   ink #1a1a1a = type   white canvas   grey accents only   NO blue
+
+direction: down
+
+classes: {
+  entry:   { style: { fill: "#fbeef1"; stroke: "#e58a9b"; font-color: "#1a1a1a"; bold: true; stroke-width: 2 } }
+  persona: { style: { fill: "#e9f4f2"; stroke: "#87c7c0"; font-color: "#1a1a1a"; bold: true; stroke-width: 2 } }
+  node:    { style: { fill: "#ffffff"; stroke: "#b5b6b1"; font-color: "#2a2a2a"; stroke-width: 1 } }
+  state:   { style: { fill: "#ffffff"; stroke: "#87c7c0"; font-color: "#1a1a1a"; stroke-width: 2 } }
+  gate:    { shape: diamond; style: { fill: "#e9f4f2"; stroke: "#87c7c0"; font-color: "#1a1a1a"; bold: true } }
+  reader:  { style: { fill: "#f0f0f0"; stroke: "#b5b6b1"; font-color: "#6d6e6a"; italic: true } }
+  grp:     { style: { fill: "#fcfcfb"; stroke: "#d1d1cc"; font-color: "#6d6e6a"; stroke-dash: 3; bold: true; font-size: 22 } }
+  link:    { style: { stroke: "#2a2a2a"; font-color: "#6d6e6a" } }
+  soft:    { style: { stroke: "#b5b6b1"; font-color: "#6d6e6a"; stroke-dash: 4 } }
+}
+
+# ---- corpus column ----
+corpus: "THE CORPUS · files stay the memory" {
+  class: grp
+  direction: down
+
+  files: "projects · library · plans · system docs\nplain markdown and text" { class: state }
+  skip: "generated projections skipped\narchives ranked down, not hidden\nvoice corpus routed, not searched" { class: reader }
+  files -> skip: exclusions { class: soft }
+}
+
+# ---- build column ----
+build: "INDEX BUILD · af index update" {
+  class: grp
+  direction: down
+
+  chunk: "fence-aware heading split\nchunks carry their breadcrumb" { class: node }
+  lex: "FTS5 trigram tokens\nexact identifiers and filenames" { class: node }
+  sem: "local embeddings via Ollama\nvocabulary mismatch covered\ncorpus never leaves the machine" { class: node }
+
+  chunk -> lex: { class: link }
+  chunk -> sem: { class: link }
+}
+
+# ---- the derived cache ----
+db: "system/index/vault.db\n\nderived cache · gitignored · rebuildable\nnever truth" { class: state }
+
+# ---- query column ----
+search: "QUERY TIME · af search \"your question\"" {
+  class: grp
+  direction: down
+
+  q: ask the way you remember it { class: entry }
+  fuse: "hybrid retrieval\nlexical BM25 + semantic cosine\nreciprocal-rank fusion, equal weights" { class: node }
+  rank: "domain boosts\nmost-specific path wins" { class: node }
+  out: "ranked pointers into files" { class: state }
+  fallback: "Ollama unreachable?\nkeyword-only — and it says so" { class: reader }
+
+  q -> fuse: { class: link }
+  fuse -> rank: { class: link }
+  rank -> out: { class: link }
+  fuse -> fallback: no embeddings { class: soft }
+}
+
+# ---- the payoff ----
+open: "the agent opens the cited files\nbefore relying on them\nresults are pointers, never answers" { class: entry }
+
+# ---- measurement keeps it honest ----
+eval: "golden-set eval · af index eval\nrecall@k and MRR on your own questions\na change ships only if the number holds" { class: reader }
+
+# ---- cross-zone wiring (kept minimal) ----
+corpus.files -> build.chunk: indexed { class: link }
+build -> db: writes { class: link }
+db -> search.fuse: reads both indexes { class: link }
+search.out -> open: { class: link }
+eval -> build: gates changes { class: soft }
+eval -> search.fuse: gates changes { class: soft }

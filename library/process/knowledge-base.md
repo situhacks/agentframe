@@ -38,6 +38,13 @@ When the operator pastes a new transcript, brief, or document:
    - `description`: 1-sentence summary
 3. Extract new decisions, risks, stakeholders, or milestones and update the corresponding `knowledge/` files. Reference the source ID for all extractions (e.g., `[src-2026-06-25-01]`).
 
+### Pulling MeetCap transcripts
+
+MeetCap (`~/Documents/MeetCap` by default; the meetcap project's `build_repo` app is authoritative) drops speaker-attributed transcripts into a rolling folder — oldest deleted beyond `keep_last`, so an unpulled transcript can disappear. When the operator references recent meetings ("check my recent transcripts", "from today's call"):
+1. List that folder newest-first and confirm which transcript(s) match the meeting in question.
+2. File each through the standard ingest workflow above: copy into `sources/meeting-{date}-{slug}.md`, register in `sources/INDEX.md`, set frontmatter `project:` from `unassigned` to this project's slug.
+3. Distill decisions/actions into `knowledge/` as usual. Do not edit the MeetCap folder itself; copying is the durability act.
+
 **Person facts route project-first, always.** New facts about a person land in this project's `knowledge/people/{person-slug}.md` overlay — never directly in `library/context/people/`. Promotion to the global layer is a judgment call that happens only inside the dream pass ([`project-consolidate`](../../system/skills/project-consolidate/SKILL.md)), where cross-project evidence is visible.
 
 ## Living Governance Docs

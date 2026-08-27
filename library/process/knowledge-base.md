@@ -40,7 +40,7 @@ When the operator pastes a new transcript, brief, or document:
 
 ### Pulling MeetCap transcripts
 
-MeetCap (`~/Documents/MeetCap` by default; the meetcap project's `build_repo` app is authoritative) drops speaker-attributed transcripts into a rolling folder — oldest deleted beyond `keep_last`, so an unpulled transcript can disappear. When the operator references recent meetings ("check my recent transcripts", "from today's call"):
+MeetCap (`~/Documents/MeetCap` by default; the meetcap project's `build_repo` app is authoritative) drops speaker-attributed transcripts into a rolling folder — oldest deleted beyond `keep_last`, so an unpulled transcript can disappear. Speakers read `Me` / `Them` by default and `SPEAKER_NN` when clustering was switched on; the transcript's `diarized:` frontmatter says which, so `Them` is never silently assumed to be one person. When the operator references recent meetings ("check my recent transcripts", "from today's call"):
 1. List that folder newest-first and confirm which transcript(s) match the meeting in question.
 2. File each through the standard ingest workflow above: copy into `sources/meeting-{date}-{slug}.md`, register in `sources/INDEX.md`, set frontmatter `project:` from `unassigned` to this project's slug.
 3. Distill decisions/actions into `knowledge/` as usual. Do not edit the MeetCap folder itself; copying is the durability act.

@@ -74,8 +74,16 @@ Operator's. Nothing to do here except have step 6 finished in time to be read.
 
 ## 8. Same day: file the record
 
-Recording or transcript into `sources/`, registered in `sources/INDEX.md` with an id and a one-line
-description. MeetCap rotates `keep_last` transcripts out by design — an unfiled recording expires.
+Recording or transcript into `sources/`, registered in `sources/INDEX.md` with an id, a one-line
+description, and where it came from.
+
+**How it was produced is provenance, not procedure.** A transcript pasted in chat, a Teams export, a
+local recorder, a paid service — all file identically, and no tool is assumed or reached for on the
+operator's behalf. What matters is that the record stops living somewhere temporary.
+
+Speaker attribution is worth having when the debrief will quote someone, since an unlabelled
+transcript cannot support "David, verbatim". It is worth nothing on a solo dictation. That is a
+judgment about the round, not a default.
 
 Where no recording exists, the operator's account is the record and the debrief says so.
 

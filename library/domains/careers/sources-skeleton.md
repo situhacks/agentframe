@@ -15,7 +15,7 @@ Row id: `src-YYYY-MM-DD-NN`. Name files `YYYY-MM-DD-{{what}}.{{ext}}` so the fol
 ## Not yet filed
 
 Anything supplied in chat, sitting in a recordings folder, or living only in a mailbox. A row here is
-a debt, not a note: MeetCap rotates transcripts out of `keep_last` by design, so an unfiled recording
-expires. Clear this list before the next round.
+a debt, not a note: chat context ends, recorders overwrite their rolling folders, and a mailbox is not
+this system. Clear the list before the next round.
 
 Folder created {date} by `af pipe start`.

@@ -23,7 +23,7 @@ Move real wins into the career bank while the evidence is fresh. The bank (`libr
 
 A separate, smaller pass with its own destination: `career/interview-playbook.md`. Run it while the call is fresh, because this is the step whose absence lets two rounds derive the same failure independently.
 
-1. **Keep the per-call detail in the application folder.** The post-mortem belongs beside that application's `interview-prep`, not in the bank.
+1. **Keep the per-call detail in the application folder.** The debrief belongs in that round's folder (`round-{N}-{name}/debrief.md`), not in the bank.
 2. **Append one dated block to the playbook** in the shape its "After every round" section defines: the pattern that repeated, any new do-not-say phrase in the operator's verbatim words, and which drill-set row worked or was missing.
 3. **Only what repeats is promoted.** A one-off stumble stays in the application folder. A pattern seen in two rounds becomes a numbered playbook entry with a `Fix:` line.
 4. **Promote a new drill-set opener** when the round surfaced a question theme the playbook had no opener for, citing the `pp-NNN` it rests on. Bank the underlying number through the main procedure above first if it is not already there.

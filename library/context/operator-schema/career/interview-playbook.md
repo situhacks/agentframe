@@ -4,7 +4,7 @@ Copy to `library/context/operator/career/interview-playbook.md` and fill from re
 
 This file exists because interview lessons decay. Two rounds weeks apart will derive the same failure independently unless one durable surface carries the first one forward.
 
-**Read before every round. Append after every round.** Routes that load it: the careers pack's `production.md` interview step, the `interview-prep` deliverable template's Before Writing gate, and [`career-harvest`](../../../process/career-harvest.md) after a round.
+**Read before every round. Append after every round.** Routes that load it: the careers pack's `interview-arc.md` (every round, step 0), the `round-sheet` and `round-debrief` deliverable templates, and [`career-harvest`](../../../process/career-harvest.md) after a round.
 
 ## Evidence base
 

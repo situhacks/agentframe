@@ -296,7 +296,7 @@ All AgentFrame-owned, shaped by real use.
 | Shared (`library/deliverables/`) | design-language · image-prompts · video-spec · closeout-retro · system-retro · the generic `_meta` deliverable shape |
 | Marketing pack | body-copy · business-brief · campaign-architecture · campaign-brief · post-final · research-artifact · slide-copy · substack-essay |
 | Project-mgmt pack | charter · raid-log · decision-log · stakeholder-map · workback-schedule |
-| Careers pack | resume · cover-letter · jd-map · company-brief · interview-prep |
+| Careers pack | resume · cover-letter · jd-map · company-brief · correspondence · interviewer-brief · round-sheet · round-debrief |
 
 ## Architecture
 

@@ -21,11 +21,14 @@ This pack is the only artifact that knows careers. The generic spine (`system/af
 |---|---|---|
 | Topology | `topology: pipeline` above | careers work scaffolds under `workspace/pipeline/applications/`, stage-tracked on the board (`pipeline.md`), never under `workspace/projects/` |
 | Application skeleton | [`skeleton.md`](skeleton.md) | the `application.md` an application sprint gets (`af pipe start`) |
+| Sources skeleton | [`sources-skeleton.md`](sources-skeleton.md) | the `sources/INDEX.md` scaffolded alongside `sources/`, `correspondence/`, `people/` on `af pipe start` |
+| Round skeleton | [`round-skeleton.md`](round-skeleton.md) | the round folder's `README.md` scaffolded by `af pipe round` |
 | Board skeleton | [`pipeline-skeleton.md`](pipeline-skeleton.md) | the `pipeline.md` created on first `af pipe save` |
-| Deliverable templates | [`deliverables/`](deliverables/) | `jd-map`, `resume`, `cover-letter`, `company-brief`, `interview-prep` (internal, never a material); non-text materials (`deck`, `demo`) use the generic deliverable shape + the routes in [`production.md`](production.md) |
+| Deliverable templates | [`deliverables/`](deliverables/) | `jd-map`, `resume`, `cover-letter`, `company-brief` (materials + research); `correspondence`, `interviewer-brief`, `round-sheet`, `round-debrief` (internal, never materials); non-text materials (`deck`, `demo`) use the generic deliverable shape + the routes in [`production.md`](production.md) |
 | Verb applicability + hooks | `verbs` above + `rules.py` | every submission material becomes ready only after jd-map verification; text materials also pass the parse-hazard lint (`on_ready`) |
 | Doctor rules | `rules.py` `check_application()` | text-material parse hazards, verification freshness |
 | Persona routing | [`production.md`](production.md) | the application-sprint runbook the Operator loads for careers work |
+| Interview loop | [`interview-arc.md`](interview-arc.md) | the per-round procedure, lazy-loaded from `production.md` step 11 when a round is scheduled |
 | Career bank schema | [`operator-schema/career/`](../../context/operator-schema/career/README.md) | shapes for profile, master-cv, proof-points, stories, tracks, search-profile, interview-playbook — instances live gitignored under `library/context/operator/career/` |
 
 ## Stage model (the board owns this)
@@ -37,4 +40,4 @@ This pack is the only artifact that knows careers. The generic spine (`system/af
 **Internal cases ride the same funnel.** A promotion case is an internal application: `af pipe save --company {employer} --role "{level} promotion {cycle}" --ats internal`, the leveling rubric cached as `jd.md`, the jd-map read as a rubric-map (criteria to bank evidence; the gap stop is the career-planning conversation). Stages map: applied = submitted, interviewing = committee/calibration, offer = promoted, rejected = deferred (re-run next cycle).
 `saved → preparing → applied → interviewing → offer | rejected | ghosted | dropped`
 
-Transitions are enforced by `af pipe stage` (`ghosted` may return to `interviewing`—late replies happen). Stage lives only on the board; `application.md` holds fixed posting facts plus the resume/cover-letter tracker rows. Deliverables reuse the generic shape and the ordinary `ready`/`version` mechanics; the board's `shipped` value maps to the ready, exported version that was actually submitted.
+Transitions are enforced by `af pipe stage` (`ghosted` may return to `interviewing`—late replies happen). Inbound rows skip `applied` entirely: `preparing → interviewing` is legal because an agency or referral submits, leaving no self-submission to stamp and no `shipped` material — record `submitted_by:` in `application.md` instead. At a terminal stage `af pipe archive` moves the folder to `applications/completed/` so the active list stays browsable; the board row stays put and `af pipe unarchive` reverses it. Stage lives only on the board; `application.md` holds fixed posting facts plus the resume/cover-letter tracker rows. Deliverables reuse the generic shape and the ordinary `ready`/`version` mechanics; the board's `shipped` value maps to the ready, exported version that was actually submitted.

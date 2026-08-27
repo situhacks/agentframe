@@ -6,20 +6,56 @@ Operator-mode routing for `domain: careers` work. The board (`workspace/pipeline
 
 | Step | Do | Owner |
 |---|---|---|
-| 0 Find | `job-scout` skill (operator-invoked, never scheduled) sweeps the watchlist → triage report in `pipeline/scout/`, newest posting first, <72h flagged apply-now | `system/skills/job-scout/` |
-| 1 Save | `af pipe save` — board row at stage `saved`; a fetched JD parks in `scout/jd-cache/{slug}.jd.md` | spine |
-| 2 Start | `af pipe start <slug>` — scaffolds `applications/{slug}/`, moves the cached JD in as `jd.md`, stage → `preparing` | spine |
+| 0 Arrive | **Inbound is the default entry point** (see below). Outbound: the `job-scout` skill (operator-invoked, never scheduled) sweeps the watchlist → triage report in `pipeline/scout/` | operator / `system/skills/job-scout/` |
+| 1 Save | `af pipe save` — board row at stage `saved`; a fetched JD parks in `scout/jd-cache/{slug}.jd.md`. On an inbound contact, **sweep the whole board first** (see below) | spine |
+| 2 Start | `af pipe start <slug>` — scaffolds `applications/{slug}/` with `sources/`, `correspondence/`, `people/`; moves the cached JD in as `jd.md`; stage → `preparing` | spine |
 | 3 Research | `company-brief.md` per its template; depth matches stakes | template |
 | 4 Map | `jd-map.md`: honeypot scan → 3-tier requirements → experience map → **gap stop** → operator coverage choice | template |
-| 5 Tailor | Draft the materials the application declares: `resume/resume-v1.md` (+ `cover-letter/` only if required) via their templates; `deck/` or `demo/` per the material routes below; humanizer pass on all user-voiced prose | templates |
-| 6 Verify | fill jd-map `## Verification`; fix findings before export or readiness | template |
-| 7 Export | `doc-export` skill → format by ATS (table below), file under the deliverable's `media/`, record in `exports[]` | `system/skills/doc-export/` |
-| 8 Ready | `af ready <slug> resume` (and `cover-letter`)—refuses without verification + filed exports | spine |
-| 9 Submit | **The human submits** in a normal browser, on the company career site (never a bot; never Easy Apply when direct apply exists) → `af pipe stage <slug> applied` stamps the date, sets the nudge, records `shipped` | operator |
-| 10 Interview | On a round being scheduled: read `career/interview-playbook.md` first, then draft `interview-prep/interview-prep-v{N}.md` per its template, one sheet per round. After the round, harvest what repeats back into the playbook's append block | template + [`career-harvest`](../../process/career-harvest.md) |
-| 11 Track | `af doctor` surfaces nudges (7-day silence) and stale rows; interview notes accrete in `application.md` body | spine |
+| 5 Reply | On an inbound contact, `correspondence/reply-to-{name}-{date}.md` per its template — declared inputs, five moves, call-questions block | template |
+| 6 Tailor | Draft the materials the application declares: `resume/resume-v1.md` (+ `cover-letter/` only if required) via their templates; `deck/` or `demo/` per the material routes below; humanizer pass on all user-voiced prose | templates |
+| 7 Verify | fill jd-map `## Verification`; fix findings before export or readiness | template |
+| 8 Export | `doc-export` skill → format by ATS (table below), file under the deliverable's `media/`, record in `exports[]` | `system/skills/doc-export/` |
+| 9 Ready | `af ready <slug> resume` (and `cover-letter`) — refuses without verification + filed exports | spine |
+| 10 Submit | **The human submits** in a normal browser, on the company career site (never a bot; never Easy Apply when direct apply exists) → `af pipe stage <slug> applied`. **Agency or referral submits instead:** go straight to `af pipe stage <slug> interviewing` and record `submitted_by:` in `application.md` — there is no self-submission to stamp and no `shipped` material | operator |
+| 11 Interview | Per round, run the arc in [`interview-arc.md`](interview-arc.md) | process + templates |
+| 12 Track | `af doctor` surfaces nudges (7-day silence) and stale rows | spine |
+| 13 Close | Terminal stage → `af pipe archive <slug>` moves the folder to `applications/completed/`. Run [`career-harvest`](../../process/career-harvest.md) first, while the detail is fresh | spine + process |
 
-**Material rule:** Steps 5-8 apply to every `materials:` row; this extends the resume/cover-letter examples in the sprint table. Use the route below, file finals only for pack-declared exportables, and mark each submission material ready before the human submits. Step 10's `interview-prep` is internal and never a material: no export gate, no readiness stamp, one sheet per round.
+**Material rule:** Steps 6-9 apply to every `materials:` row; this extends the resume/cover-letter examples in the sprint table. Use the route below, file finals only for pack-declared exportables, and mark each submission material ready before the human submits. `correspondence`, `round-sheet`, `interviewer-brief` and `round-debrief` are internal and never materials: no export gate, no readiness stamp, no `materials:` row.
+
+## Inbound contact (the default entry point)
+
+`search-profile.md` declares inbound-first as the strategy and the board bears it out. A recruiter DM or referral, not a posting, is how most rows start. Two things follow.
+
+**The named req is a hypothesis, not the target.** Sweep the whole board before replying (below) — a better-fitting req at the same company is common and is usually the reason the reply is worth sending.
+
+**The funnel skips `applied`.** An agency-submitted candidate never self-applies. `preparing → interviewing` is legal for exactly this; do not fake an `applied` event to reach it.
+
+## Whole-board capture
+
+On an inbound contact, hit the target's ATS posting API once for every open req. It returns full JD text, locations, publish dates, and comp where published — none of which a single posting URL gives you. The board row's `ats` field says which endpoint to use.
+
+```
+Ashby:      https://api.ashbyhq.com/posting-api/job-board/{org}?includeCompensation=true
+Greenhouse: https://boards-api.greenhouse.io/v1/boards/{org}/jobs?content=true
+Lever:      https://api.lever.co/v0/postings/{org}?mode=json
+```
+
+Read for: a better-fitting req than the one named; contradictions between a posting's structured fields and its body text (a `"Remote": true` req whose body demands relocation); and publish dates, since a req open eight months is either a high bar or evergreen — a real call question. On Windows, pipe these through Python with explicit `encoding='utf-8'` and `sys.stdout.reconfigure(encoding='utf-8')`; default cp1252 raises `UnicodeDecodeError` on curly quotes.
+
+This is scoped to one company already in play, triggered by an inbound contact. It is not a watchlist sweep and does not revive `job-scout`.
+
+## Where files live
+
+Three tiers. The rule that keeps them honest: **a round folder cites the living dossiers; it never restates them.**
+
+| Tier | Where | Rule |
+|---|---|---|
+| Living dossiers | `company-brief.md`, `jd-map.md`, `role-thesis.md`, `people/`, `application.md` | Edited in place, always current, never versioned. A declared set — root is not a spawn zone |
+| Raw | `sources/` (+ `INDEX.md`), `research/{date}-{topic}/` | Immutable, registered, mined once. **Never prep from here** |
+| Round snapshots | `round-{N}-{name}/` | One conversation's judgment. Carries only the delta; its `debrief.md` promotes durable facts back to tier 1 |
+
+Freeform careers files are **not versioned**. No `-v{N}` filename on a brief, sheet, dossier or debrief — that shape belongs to tracked deliverables (resume, cover-letter, deck) and hands the file to the version guard. Everything else is edited in place.
 
 ## Material routes and export formats
 

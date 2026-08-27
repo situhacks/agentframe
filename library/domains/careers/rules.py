@@ -78,10 +78,66 @@ def _tell_notes(rel, body):
     return []
 
 
+ROUND_DIR = re.compile(r"^round-(\d+)-[a-z0-9-]+$")
+ISO_DAY = re.compile(r"^\d{4}-\d{2}-\d{2}")
+
+
+def _fm_of(ctx, path, rel):
+    """Frontmatter of a freeform round file, or None when it carries none."""
+    if not os.path.isfile(path):
+        return None
+    text = ctx.read(path)
+    if not text.startswith("---"):
+        return None
+    fm, _ = ctx.split_fm(text, rel)
+    return fm
+
+
+def _round_notes(ctx, adir, rel_dir):
+    """Interview-round drift: a held round with no debrief, or a debrief that never promoted.
+
+    Notes, never issues — the operator judges these. The promote check is the one that matters:
+    an unpromoted debrief means the living dossiers are stale and the next round preps against
+    an old picture, which is the debt this structure exists to prevent.
+    """
+    notes = []
+    today_s = ctx.today()
+    for name in sorted(os.listdir(adir)):
+        m = ROUND_DIR.fullmatch(name)
+        rdir = os.path.join(adir, name)
+        if not m or not os.path.isdir(rdir):
+            continue
+        n = m.group(1)
+        rfm = _fm_of(ctx, os.path.join(rdir, "README.md"), f"{name}/README.md")
+        held = (ctx.get_scalar(rfm, "held_at") or "").strip() if rfm else ""
+        was_held = bool(ISO_DAY.match(held)) and held[:10] <= today_s
+
+        dpath = os.path.join(rdir, "debrief.md")
+        if not os.path.isfile(dpath):
+            if was_held:
+                notes.append(f"{rel_dir}/{name}: round {n} was held {held[:10]} and has no debrief.md — "
+                             "write it today; from memory a week later is the failure mode")
+            continue
+
+        dfm = _fm_of(ctx, dpath, f"{name}/debrief.md")
+        if dfm is None:
+            continue
+        completeness = (ctx.get_scalar(dfm, "completeness") or "").strip()
+        promoted = (ctx.get_scalar(dfm, "promoted") or "").strip().lower()
+        if completeness.lower().startswith("partial"):
+            notes.append(f"{rel_dir}/{name}/debrief.md: completeness is partial — "
+                         "the open questions need the operator before the next round preps against it")
+        if promoted != "true":
+            notes.append(f"{rel_dir}/{name}/debrief.md: promoted is '{promoted or 'unset'}' — "
+                         "company-brief.md / people/ / jd-map.md have not received this round's facts")
+    return notes
+
+
 def check_application(ctx, adir, afm):
     """Doctor pass over the application's material deliverables."""
     issues, notes = [], []
     rel_dir = os.path.relpath(adir, ctx.ROOT).replace("\\", "/")
+    notes += _round_notes(ctx, adir, rel_dir)
     for slug in TEXT_MATERIALS:
         st, frel = ctx.row_get(afm, slug, "status"), ctx.row_get(afm, slug, "file")
         if not frel or st in (None, "not_started"):

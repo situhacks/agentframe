@@ -75,7 +75,9 @@ EXPORTABLE_INGREDIENTS = ("image-prompts",)  # cross-domain names; packs add the
 PIPE_STAGES = ("saved", "preparing", "applied", "interviewing", "offer", "rejected", "ghosted", "dropped")
 PIPE_TRANSITIONS = {
     "saved": {"preparing", "dropped"},
-    "preparing": {"applied", "dropped"},
+    # Inbound rows skip `applied`: an agency or referral submits, so no self-submission event
+    # and no shipped material ever exist. Provenance lives on `submitted_by` in application.md.
+    "preparing": {"applied", "interviewing", "rejected", "ghosted", "dropped"},
     "applied": {"interviewing", "rejected", "ghosted", "dropped"},
     "interviewing": {"offer", "rejected", "ghosted", "dropped"},
     "ghosted": {"interviewing", "rejected", "dropped"},  # late replies happen
@@ -1717,8 +1719,23 @@ def yaml_str(v):
     return f'"{v}"' if v else None
 
 
+APPS_ARCHIVE = "completed"   # applications/completed/{slug}/ - mirrors workspace/projects/completed/
+
+
+def apps_root():
+    return os.path.join(PIPELINE, "applications")
+
+
 def app_dir(slug):
-    return os.path.join(PIPELINE, "applications", slug)
+    """Active application folder, falling back to the archived one once the row is retired."""
+    active = os.path.join(apps_root(), slug)
+    if not os.path.isdir(active) and os.path.isdir(os.path.join(apps_root(), APPS_ARCHIVE, slug)):
+        return os.path.join(apps_root(), APPS_ARCHIVE, slug)
+    return active
+
+
+def app_is_archived(slug):
+    return os.path.isdir(os.path.join(apps_root(), APPS_ARCHIVE, slug))
 
 
 def jd_cache_path(slug):
@@ -1752,7 +1769,8 @@ def cmd_pipe_start(args):
     cur = row_get(fm, slug, "stage")
     if cur != "saved":
         die(f"'{slug}' is at stage '{cur}' — start applies to 'saved' rows only")
-    adir = app_dir(slug)
+    app_is_archived(slug) and die(f"'{slug}' is archived - 'af pipe unarchive {slug}' to reopen it")
+    adir = os.path.join(apps_root(), slug)
     if os.path.exists(adir):
         die(f"{adir} already exists")
     skel = os.path.join(pack_dir, "skeleton.md")
@@ -1772,6 +1790,14 @@ def cmd_pipe_start(args):
     if os.path.isfile(jd_cache_path(slug)):
         shutil.move(jd_cache_path(slug), os.path.join(adir, "jd.md"))
         jd_note = "cached JD moved in as jd.md"
+    # Raw-input landing zones. Without these an interview recording, a recruiter mail, or a
+    # second JD survives only in chat context; the pack's skeleton owns the index shape.
+    for sub_dir in ("sources", "correspondence", "people"):
+        os.makedirs(os.path.join(adir, sub_dir), exist_ok=True)
+    src_skel = os.path.join(pack_dir, "sources-skeleton.md")
+    if os.path.isfile(src_skel):
+        write(os.path.join(adir, "sources", "INDEX.md"), read(src_skel).format(name=name, date=today()))
+
     fm = row_set(fm, slug, "stage", "preparing")
     write_board(fm, body)
     append_activity(adir, f"application_started: {name} scaffolded ({domain}); {jd_note}")
@@ -1780,6 +1806,7 @@ def cmd_pipe_start(args):
     print("\nJudgment (stays with the agent):")
     print(f"  - Load the runbook: library/domains/{domain}/production.md (brief -> map -> tailor -> verify -> export).")
     print("  - The jd-map's gap stop and coverage choice are operator conversations, not drafting problems.")
+    print("  - Every raw input (recording, recruiter mail, second JD) lands in sources/ with an INDEX.md row.")
 
 
 def cmd_pipe_stage(args):
@@ -1814,6 +1841,8 @@ def cmd_pipe_stage(args):
                     notes.append(f"material '{mat}' is '{mst}'")
     elif new == "interviewing":
         fm = row_set(fm, slug, "next_nudge", (datetime.date.today() + datetime.timedelta(days=PIPE_NUDGE_DAYS)).isoformat())
+        if cur == "preparing":
+            notes.append("skipped 'applied' - inbound/agency-submitted; record `submitted_by:` in application.md")
     else:
         fm = row_set(fm, slug, "next_nudge", "null")
     write_board(fm, body)
@@ -1828,6 +1857,100 @@ def cmd_pipe_stage(args):
         print("  - Anything worth banking? Run career-harvest while the evidence is fresh (library/process/career-harvest.md).")
     if new == "interviewing":
         print("  - Prep from the jd-map + stories, not the resume; refresh company-brief '## Now' if it is >30 days old.")
+
+
+PIPE_TERMINAL = ("offer", "rejected", "ghosted", "dropped")
+
+
+def cmd_pipe_round(args):
+    """Scaffold one interview round's folder. The button makes the folder and its index;
+    the pack's templates own what goes inside it."""
+    domain, desc, pack_dir = pipe_pack()
+    fm, body = load_board()
+    slug = args.slug
+    row_span(fm, slug) or die(f"no board row '{slug}'")
+    stage = row_get(fm, slug, "stage")
+    stage in ("preparing", "applied", "interviewing") or die(
+        f"'{slug}' is at '{stage}' - rounds belong to preparing/applied/interviewing rows")
+    adir = app_dir(slug)
+    os.path.isfile(os.path.join(adir, "application.md")) or die(
+        f"no application folder for '{slug}' - 'af pipe start {slug}' first")
+
+    n = args.number
+    people = [w.strip() for w in (args.person or []) if w.strip()]
+    if args.folder:
+        fslug = args.folder
+    elif people:
+        fslug = re.sub(r"[^a-z0-9]+", "-", people[0].split(",")[0].strip().split()[0].lower()).strip("-")
+    else:
+        fslug = args.type or "round"
+    re.match(r"^[a-z0-9][a-z0-9-]*$", fslug) or die(
+        f"derived folder name '{fslug}' is not folder-safe - pass --folder")
+
+    rdir = os.path.join(adir, f"round-{n}-{fslug}")
+    os.path.exists(rdir) and die(f"{os.path.relpath(rdir, ROOT)} already exists")
+    os.makedirs(rdir)
+
+    if people:
+        people_block = "\n".join(
+            f"- **{w}** - dossier `../people/`, read for this room in `interviewer-brief.md`" for w in people)
+    else:
+        people_block = "- _No interviewer named yet. Find out who is in the room before drafting anything else._"
+    skel = os.path.join(pack_dir, "round-skeleton.md")
+    if os.path.isfile(skel):
+        write(os.path.join(rdir, "README.md"), read(skel).format(
+            slug=slug, round=n, round_type=args.type or "unknown", held_at=args.at or "TBD",
+            people=people_block, date=today(),
+            prev=(f"round {n - 1}" if n > 1 else "the application root")))
+    append_activity(adir, f"round_scaffolded: round {n} ({args.type or 'unknown'})"
+                          + (f" with {', '.join(people)}" if people else ""))
+
+    print(f"af pipe round: {os.path.relpath(rdir, ROOT)}/ scaffolded")
+    print("\nJudgment (stays with the agent):")
+    print("  - README.md is the folder map. Author round-sheet.md + interviewer-brief.md per the pack templates.")
+    print("  - Research the room properly; a recruiter screen is the only round that earns a thin brief.")
+    print("  - Cite the living dossiers (company-brief.md, jd-map.md, people/) - never restate them here.")
+    print("  - After the round: transcript into sources/, then debrief.md, then promote its facts back out.")
+
+
+def cmd_pipe_archive(args):
+    pipe_pack()
+    fm, body = load_board()
+    slug = args.slug
+    row_span(fm, slug) or die(f"no board row '{slug}'")
+    stage = row_get(fm, slug, "stage")
+    if stage not in PIPE_TERMINAL:
+        die(f"'{slug}' is at '{stage}' - archive applies to {', '.join(PIPE_TERMINAL)}. "
+            f"Walking away from a live row is 'af pipe stage {slug} dropped', which is the honest record.")
+    src = os.path.join(apps_root(), slug)
+    os.path.isdir(src) or die(f"no active application folder for '{slug}'")
+    dest_root = os.path.join(apps_root(), APPS_ARCHIVE)
+    os.makedirs(dest_root, exist_ok=True)
+    dest = os.path.join(dest_root, slug)
+    os.path.exists(dest) and die(f"{os.path.relpath(dest, ROOT)} already exists")
+    shutil.move(src, dest)
+    append_activity(dest, f"archived: stage '{stage}'; folder moved to applications/{APPS_ARCHIVE}/")
+    print(f"af pipe archive: {slug} -> workspace/pipeline/applications/{APPS_ARCHIVE}/{slug}/ (stage '{stage}')")
+    print("\nJudgment (stays with the agent):")
+    print("  - The board row stays put. Archiving moves the folder out of the browsing list, nothing else.")
+    print("  - Anything worth banking? Run career-harvest before the detail goes cold.")
+
+
+def cmd_pipe_unarchive(args):
+    pipe_pack()
+    fm, body = load_board()
+    slug = args.slug
+    row_span(fm, slug) or die(f"no board row '{slug}'")
+    src = os.path.join(apps_root(), APPS_ARCHIVE, slug)
+    os.path.isdir(src) or die(f"'{slug}' is not archived")
+    dest = os.path.join(apps_root(), slug)
+    os.path.exists(dest) and die(f"{os.path.relpath(dest, ROOT)} already exists")
+    shutil.move(src, dest)
+    append_activity(dest, "unarchived: folder returned to the active application list")
+    print(f"af pipe unarchive: {slug} -> workspace/pipeline/applications/{slug}/")
+    print("\nJudgment (stays with the agent):")
+    print(f"  - Stage is '{row_get(fm, slug, 'stage')}'; a revived row usually wants "
+          f"'af pipe stage {slug} interviewing'.")
 
 
 def cmd_pipe_board(args):
@@ -1858,12 +1981,15 @@ def check_pipeline():
     today_d = datetime.date.today()
     rows = pipe_rows(fm)
 
-    apps_root = os.path.join(PIPELINE, "applications")
-    folders = sorted(d for d in (os.listdir(apps_root) if os.path.isdir(apps_root) else [])
-                     if os.path.isfile(os.path.join(apps_root, d, "application.md")))
-    for d in folders:
+    root_dir = apps_root()
+    arch_dir = os.path.join(root_dir, APPS_ARCHIVE)
+    folders = [(d, "") for d in (sorted(os.listdir(root_dir)) if os.path.isdir(root_dir) else [])
+               if os.path.isfile(os.path.join(root_dir, d, "application.md"))]
+    folders += [(d, APPS_ARCHIVE + "/") for d in (sorted(os.listdir(arch_dir)) if os.path.isdir(arch_dir) else [])
+                if os.path.isfile(os.path.join(arch_dir, d, "application.md"))]
+    for d, where in folders:
         if d not in rows:
-            issues.append(f"workspace/pipeline/applications/{d}: folder has no board row")
+            issues.append(f"workspace/pipeline/applications/{where}{d}: folder has no board row")
 
     rules = None
     if os.path.isdir(DOMAINS):
@@ -2803,6 +2929,13 @@ def main():
     ps = psub.add_parser("start");  ps.add_argument("slug"); ps.set_defaults(fn=cmd_pipe_start)
     ps = psub.add_parser("stage");  ps.add_argument("slug"); ps.add_argument("stage"); ps.set_defaults(fn=cmd_pipe_stage)
     ps = psub.add_parser("board");  ps.set_defaults(fn=cmd_pipe_board)
+    ps = psub.add_parser("round");  ps.add_argument("slug"); ps.add_argument("number", type=int)
+    ps.add_argument("--with", dest="person", action="append")
+    ps.add_argument("--type", choices=("recruiter-screen", "hiring-manager", "panel",
+                                       "technical", "partner", "client"))
+    ps.add_argument("--at"); ps.add_argument("--folder"); ps.set_defaults(fn=cmd_pipe_round)
+    ps = psub.add_parser("archive");   ps.add_argument("slug"); ps.set_defaults(fn=cmd_pipe_archive)
+    ps = psub.add_parser("unarchive"); ps.add_argument("slug"); ps.set_defaults(fn=cmd_pipe_unarchive)
 
     args = p.parse_args()
     check_mode_gate(args.cmd, args)

@@ -12,6 +12,13 @@ system/builder-backlog*.md
 library/lenses/*
 !library/lenses/README.md
 
+# === Operator visual assets (client logos, brand design languages) ===
+# The schema (README.md) travels; the instances are client-identifiable and never do.
+library/assets/design-languages/*
+!library/assets/design-languages/.gitkeep
+library/assets/logos/*
+!library/assets/logos/.gitkeep
+
 # === Operator projects ===
 workspace/projects/*
 !workspace/projects/.gitkeep

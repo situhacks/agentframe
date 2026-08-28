@@ -636,10 +636,10 @@ def cmd_version(args):
     pointer_note = "tracker pointer moved" if move_pointer else "parent tracker pointer unchanged"
     print(f"af version: {rel} -> {new_rel} (head; {pointer_note}; prior version untouched as the snapshot)")
     print("\nJudgment (stays with the agent):")
-    print("  - Use this for REPLACEMENT-shaped changes (deliverable-versioning.md). Surgical")
-    print("    edits (typos, frontmatter, small wording) go directly into the current head.")
-    print(f"  - {new_rel} already contains v{n}'s full content — apply the replacement as surgical")
-    print("    edits to that copy; a full-file rewrite is right only when the replacement is genuinely whole-body.")
+    print(f"  - {new_rel} already contains v{n}'s full content — write the change as targeted")
+    print("    edits to that copy rather than retyping; a full-file rewrite is right only when")
+    print("    the change is genuinely whole-body.")
+    print("  - Every content change to a head versions first, copyedits included (deliverable-versioning.md).")
     print("  - If the operator feedback criticized SHAPE or process, append one feedback-log.md line this turn.")
 
 
@@ -2600,6 +2600,83 @@ def voice_mirror_notes():
     return notes
 
 
+DESIGN_LANGUAGES = os.path.join(ROOT, "library", "assets", "design-languages")
+
+# One manifest record starts at `- path:` and runs to the next one. Tolerant by
+# design: this reports drift, so a shape it cannot read is skipped, never guessed at.
+MANIFEST_RECORD_RE = re.compile(r"^\s*-\s+path:\s*(\S.*?)\s*$", re.M)
+
+
+def manifest_records(path):
+    """Yield (path_value, fields) per record in an imagery manifest."""
+    text = read(path)
+    starts = [(m.start(), m.group(1).strip().strip('"\'')) for m in MANIFEST_RECORD_RE.finditer(text)]
+    for i, (pos, asset) in enumerate(starts):
+        end = starts[i + 1][0] if i + 1 < len(starts) else len(text)
+        fields = dict(re.findall(r"^\s+([a-z_]+):\s*(\S.*?)\s*$", text[pos:end], re.M))
+        yield asset, {k: clean_value(v) for k, v in fields.items()}
+
+
+def design_language_notes():
+    """Conformance drift in shared design-language packages.
+
+    Structural only. The vendor SVG checker is NOT run here: `deck-production.md`
+    already preflights `--template-mode` at consumption, where a failure can block
+    the run, and repeating it on every doctor pass would cost seconds per package
+    to reach the same answer later.
+
+    Licence hygiene follows `library/assets/README.md`: an asset that arrived
+    without licence metadata stays `project-scoped`, and a record pointing at a
+    file that is not there cannot be selected.
+    """
+    notes = []
+    if not os.path.isdir(DESIGN_LANGUAGES):
+        return notes
+    for entry in sorted(os.listdir(DESIGN_LANGUAGES)):
+        base = os.path.join(DESIGN_LANGUAGES, entry)
+        if not os.path.isdir(base):
+            continue
+        rel = f"library/assets/design-languages/{entry}"
+        readme = os.path.join(base, "README.md")
+        if not os.path.isfile(readme):
+            notes.append(f"design language: {rel} has no README.md — provenance, reuse notes, "
+                         "and what a new project swaps have no owner")
+        manifest = os.path.join(base, "imagery", "manifest.yaml")
+        if not os.path.isfile(manifest):
+            notes.append(f"design language: {rel} has no imagery/manifest.yaml — an asset with no "
+                         "record is not available for selection, so the pool is unusable")
+
+        templates = os.path.join(base, "package", "templates")
+        if os.path.isdir(templates):
+            if not os.path.isfile(os.path.join(templates, "design_spec.md")):
+                notes.append(f"design language: {rel}/package/templates has no design_spec.md — "
+                             "the vendor refuses a library template without one")
+            if not glob.glob(os.path.join(templates, "*.svg")):
+                notes.append(f"design language: {rel}/package/templates has no SVG prototypes — "
+                             "the roster is the half that reproduces archetypes")
+            if os.path.isdir(os.path.join(base, "package", "exports")):
+                notes.append(f"design language: {rel}/package/exports was promoted — exports are "
+                             "review evidence and stay in the capture workspace")
+        elif os.path.isfile(readme):
+            text = read(readme).lower()
+            if "reference-grade" not in text or not re.search(r"bb-\d{4}-\d{2}-\d{2}", text):
+                notes.append(f"design language: {rel} has no package/ and its README does not "
+                             "declare reference-grade with the BB-* row tracking promotion — "
+                             "package-less is a documented waypoint, not a second asset class")
+
+        if not os.path.isfile(manifest):
+            continue
+        for asset, fields in manifest_records(manifest):
+            target = os.path.normpath(os.path.join(base, "imagery", asset))
+            if not os.path.exists(target):
+                notes.append(f"design language: {rel} manifest names {asset}, which is not on disk")
+            if fields.get("licence") == "unknown" and fields.get("restriction") == "none":
+                notes.append(f"design language: {rel} asset {asset} has licence: unknown but "
+                             "restriction: none — unknown licence stays project-scoped, never "
+                             "upgraded by assumption")
+    return notes
+
+
 def ppt_master_stray_issues(base=None):
     """Deck artifacts inside the vendored ppt-master tree are strays: the
     vendor refresh procedure wipes the tree and .gitignore hides them.
@@ -2847,7 +2924,8 @@ def cmd_sync_harnesses(args):
 
 
 def check_system():
-    return dead_link_issues() + ppt_master_stray_issues(), budget_notes() + voice_mirror_notes()
+    return (dead_link_issues() + ppt_master_stray_issues(),
+            budget_notes() + voice_mirror_notes() + design_language_notes())
 
 
 def cmd_doctor(args):

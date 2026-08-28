@@ -2,23 +2,24 @@
 
 ## Purpose
 
-Own the iteration shape for versioned deliverables under `workspace/projects/{slug}/`: first-draft scaffolding, surgical edits, replacement versions, editable copies, readiness, and immutable publication. The CLI owns file and tracker mechanics; the agent and operator own change judgment and content.
+Own the iteration shape for versioned deliverables under `workspace/projects/{slug}/`: first-draft scaffolding, versioned changes, editable copies, readiness, and immutable publication. The CLI owns file and tracker mechanics; the agent and operator own content.
 
 ## When To Load
 
 Load before the first write or rewrite to a kept deliverable. Reload after context compaction or when resuming a drafting task in a new conversation.
 
-Before mutation, classify the operation:
+**Every content change to a head cuts a new version first.** There is no size threshold and no in-place exception: a typo fix versions, a copyedit versions, a full rewrite versions. Workspace files have no git history, so an in-place edit destroys the only snapshot of what the head said before, and the judgment call about which changes are "small enough" is the thing that keeps going wrong. A spare version costs nothing; a lost snapshot is unrecoverable.
 
-| Operation | New version? | Mechanism |
-|---|---:|---|
-| First draft | Create v1 | `af draft` |
-| Existing authored draft | Register existing file | `af adopt` |
-| Surgical edit | No | Edit current drafting or ready head; update `last_updated` |
-| Replacement | Yes | `af version` before editing |
-| Editable operator copy | Yes | `af version`, then hand off the new head |
-| Ready after replacement | Yes, then ready | `af version` -> edit -> `af ready` |
-| Published copy needs change | Yes | Open a new version/edition; never edit the published artifact |
+| Operation | Mechanism |
+|---|---|
+| First draft | `af draft` |
+| Existing authored draft | `af adopt` |
+| Any content change to a head | `af version` before editing |
+| Editable operator copy | `af version`, then hand off the new head |
+| Ready after a change | `af version` -> edit -> `af ready` |
+| Published copy needs change | Open a new version/edition; never edit the published artifact |
+
+Frontmatter bookkeeping is not a content change: `status`, `last_updated`, and export/tracker fields are stamped in place, usually by a button.
 
 ## Address Model
 
@@ -59,19 +60,7 @@ python system/af.py adopt <project> <row> --file <project-relative-name-v1.md>
 
 `af adopt` creates the tracker row when absent, updates an empty placeholder row when present, and refuses an existing competing artifact.
 
-### 2. Surgical edit
-
-Edit the current drafting or ready head in place only when the change is bounded and does not move the deliverable's shape or claims:
-
-- typo, copyedit, or small wording swap inside a paragraph;
-- CTA wording swap that keeps the same CTA role;
-- one citation, link, or reference with the surrounding claim unchanged;
-- formatting-only change;
-- ordinary frontmatter maintenance.
-
-Update `last_updated`. Do not create a cosmetic version.
-
-### 3. Replacement or editable copy
+### 2. Any content change, and editable copies
 
 For a tracker-owned head:
 
@@ -87,28 +76,19 @@ python system/af.py version <project> <parent-row> --artifact <artifact-name>
 
 Run the command before changing content. It resolves the exact numeric head, creates `N+1`, resets the new head to drafting, refuses malformed/missing/colliding addresses, and leaves the prior version untouched. The nested form updates parent drafting state but does not move the parent file pointer.
 
-The new head already contains the prior version's full content. Apply the replacement as surgical edits to that copy; do not retype unchanged passages. A full-file rewrite of the new head is right only when the replacement is genuinely whole-body (new thesis, new arc).
+The new head already contains the prior version's full content. Write the change as targeted `Edit` calls against that copy rather than retyping unchanged passages; that is the cheap path, and it is now editing a fresh snapshot rather than the only one. A full-file rewrite is right only when the change is genuinely whole-body (new thesis, new arc).
 
-Replacement-shaped changes include:
+An operator asking for "a copy to edit" or "a hand copy" is making this request, not a judgment call: version, then hand off the new head. The snapshot they are protecting stays untouched.
 
-- full-body rewrite, new angle, or new thesis;
-- adding, removing, reordering, or materially rewriting sections;
-- new audience framing, goal, hook, or arc;
-- changing the recommended option among variants;
-- operator pushback that requires a fresh working copy;
-- an explicit request to save the current state and make a copy.
+### 3. Ready or published head
 
-When the operator requests an editable copy, version first and identify the new head. The snapshot they are protecting remains untouched.
+A ready head takes changes the same way: `af version` preserves the ready snapshot and creates a drafting head. A published head is immutable, and `af version` opens a new drafting head for ordinary versioned deliverables. An unversioned published assembly record cannot be reopened; create a new tracked edition.
 
-### 4. Ready or published head
+If the operator explicitly overrides versioning and asks for an in-place edit, surface the snapshot risk first, then do as asked. Record the override in `activity.md` when downstream work depends on the prior shape.
 
-A ready head can take small corrections in place. Meaningful feedback uses `af version`, which preserves the ready snapshot and creates a drafting head. A published head is immutable: `af version` creates a new drafting head for ordinary versioned deliverables. An unversioned published assembly record cannot be reopened; create a new tracked edition.
+### 4. Ready and publish
 
-If the operator explicitly overrides versioning and asks for a substantive in-place edit, surface the snapshot risk first. Record the override in `activity.md` when downstream work depends on the prior shape.
-
-### 5. Ready and publish
-
-When the current head is good enough to use or share, follow [`ready-event.md`](ready-event.md). If approval includes replacement-shaped changes, version and edit first, then mark ready. For post ingredients, readiness updates `post-FINAL.md`. Run `af publish` only when the artifact is being issued as an immutable record.
+When the current head is good enough to use or share, follow [`ready-event.md`](ready-event.md). If approval includes any content change, version and edit first, then mark ready. For post ingredients, readiness updates `post-FINAL.md`. Run `af publish` only when the artifact is being issued as an immutable record.
 
 ## Verification Or Logging
 
@@ -125,7 +105,7 @@ Routine iteration narration does not go to `activity.md`; the commands themselve
 
 ## Boundaries
 
-- The CLI does not decide surgical versus replacement.
+- The CLI does not decide what a change means; it only makes the snapshot safe.
 - The CLI does not generate content, run voice/humanizer passes, or encode domain phase order.
 - Templates own type-specific content and frontmatter requirements.
 - Domain packs own assembly behavior.

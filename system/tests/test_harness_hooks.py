@@ -24,7 +24,11 @@ class HarnessHookWiringTests(unittest.TestCase):
         self.assertTrue(any("version_guard.py" in command for command in commands))
         self.assertTrue(any("ppt_master_guard.py" in command for command in commands))
         self.assertTrue(any("autonomy_guard.py" in command for command in commands))
+        self.assertTrue(any("publish_guard.py" in command for command in commands))
         self.assertIn("SessionStart", config["hooks"])
+        # The publish gate is useless unless it sits on the MCP call that ships copy.
+        matchers = [group["matcher"] for group in config["hooks"]["PreToolUse"]]
+        self.assertIn("mcp__substack__update_draft", matchers)
 
     def test_cursor_native_wires_all_guards(self):
         config = load_json(".cursor/hooks.json")
@@ -37,6 +41,7 @@ class HarnessHookWiringTests(unittest.TestCase):
         self.assertTrue(any("version_guard.py" in command for command in commands))
         self.assertTrue(any("ppt_master_guard.py" in command for command in commands))
         self.assertTrue(any("autonomy_guard.py" in command for command in commands))
+        self.assertTrue(any("publish_guard.py" in command for command in commands))
         self.assertTrue(all("--cursor-native" in command for command in commands))
         self.assertIn("beforeShellExecution", config["hooks"])
         self.assertIn("sessionStart", config["hooks"])
@@ -78,7 +83,7 @@ class HarnessHookWiringTests(unittest.TestCase):
                 "cwd": str(ROOT),
             }
         )
-        for script in ("version_guard.py", "ppt_master_guard.py"):
+        for script in ("version_guard.py", "ppt_master_guard.py", "publish_guard.py"):
             result = subprocess.run(
                 [sys.executable, str(ROOT / "system" / "hooks" / script)],
                 input=payload,

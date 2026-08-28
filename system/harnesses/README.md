@@ -21,6 +21,8 @@ Expose selected canonical AgentFrame skills and deterministic guards through eac
 | 2 | Cursor | `.cursor/hooks.json` provides native project hooks, so guard coverage does not depend on the optional Claude-compatibility toggle. Native commands pass `--cursor-native`; if the toggle also imports `.claude/settings.json`, those imported twins no-op instead of running each guard twice. |
 | 3 | Codex | `.codex/hooks.json` provides trusted-project hooks. Codex edits arrive as `apply_patch`, so `version_guard.py` extracts every patch target before applying the shared rule. Review changed project hooks when Codex asks for trust. |
 
+`publish_guard.py` is wired on Claude and Cursor only: it matches an MCP tool name, and the Substack server is not mounted on the Codex surface. Coverage there is `af doctor`'s state-truth check, which is the backstop everywhere anyway, since a push made from a vendor's web UI is invisible to every hook.
+
 `.agents/skills/` remains the portable skill-discovery projection. It is not a fourth hook configuration.
 
 ## Commands
@@ -37,7 +39,7 @@ Run `--write` after changing a selected canonical skill or the projection manife
 Run the hook smoke matrix after changing shared guard logic or any native hook file:
 
 ```text
-python -m unittest system.tests.test_harness_hooks system.tests.test_version_guard system.tests.test_ppt_master_guard
+python -m unittest system.tests.test_harness_hooks system.tests.test_version_guard system.tests.test_ppt_master_guard system.tests.test_publish_guard
 ```
 
 ## Discovery And Fallback

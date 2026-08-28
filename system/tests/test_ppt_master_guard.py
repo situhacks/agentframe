@@ -1,6 +1,7 @@
 import json
 import os
 import tempfile
+import time
 import unittest
 
 from system import af
@@ -123,6 +124,18 @@ class TestExportGuard(unittest.TestCase):
         cmd = f'python3 scripts/svg_to_pptx.py "{self.proj}" --no-notes{extra}'
         return payload(cmd, os.path.dirname(self.proj), event=event)
 
+    def write_export(self, age_s=0):
+        """Put a .pptx in exports/ as a real run would, optionally aged."""
+        exports = os.path.join(self.proj, "exports")
+        os.makedirs(exports, exist_ok=True)
+        deck = os.path.join(exports, "deck_20260827_120000.pptx")
+        with open(deck, "wb") as fh:
+            fh.write(b"pptx")
+        if age_s:
+            stamp = time.time() - age_s
+            os.utime(deck, (stamp, stamp))
+        return deck
+
     def test_export_is_not_gated_at_pretooluse(self):
         # The paragraph-split lint was retired at the 52e85a0 refresh: the vendor
         # checker now reports those runs itself, and AgentFrame's "fix before
@@ -131,6 +144,7 @@ class TestExportGuard(unittest.TestCase):
         self.assertIsNone(guard.decide(self.export_payload()))
 
     def test_post_export_promotion_reminder(self):
+        self.write_export()
         out = guard.decide(self.export_payload(event="PostToolUse"))
         ctx = out["hookSpecificOutput"]["additionalContext"]
         self.assertIn("promote", ctx.lower())
@@ -139,7 +153,45 @@ class TestExportGuard(unittest.TestCase):
     def test_post_unrelated_command_ignored(self):
         self.assertIsNone(guard.decide(payload("git status", guard.ROOT, event="PostToolUse")))
 
+    def test_post_crash_produces_no_promotion_claim(self):
+        # A ModuleNotFoundError or a hard release-gate refusal writes no file. The
+        # hook used to announce "Deck export finished" anyway, aiming a false success
+        # signal straight at the agent.
+        self.assertIsNone(guard.decide(self.export_payload(event="PostToolUse")))
+
+    def test_post_help_produces_no_promotion_claim(self):
+        p = payload(
+            "python3 scripts/svg_to_pptx.py --help",
+            os.path.dirname(self.proj),
+            event="PostToolUse",
+        )
+        self.assertIsNone(guard.decide(p))
+
+    def test_post_command_that_only_names_the_script_is_ignored(self):
+        # Observed live: a grep whose PATTERN ARGUMENT was the script path fired the
+        # export contract. Naming the exporter is not running it.
+        self.write_export()
+        p = payload(
+            f'grep -rn spec_lock {self.proj}/scripts/svg_to_pptx.py',
+            os.path.dirname(self.proj),
+            event="PostToolUse",
+        )
+        self.assertIsNone(guard.decide(p))
+
+    def test_post_stale_export_does_not_count(self):
+        # A twin from an earlier run must not certify this run's failure as a success.
+        self.write_export(age_s=guard.EXPORT_FRESH_WINDOW_S + 60)
+        self.assertIsNone(guard.decide(self.export_payload(event="PostToolUse")))
+
+    def test_post_export_with_flags_before_the_project_resolves(self):
+        self.write_export()
+        cmd = f'python3 scripts/svg_to_pptx.py --quick-generate "{self.proj}"'
+        p = payload(cmd, os.path.dirname(self.proj), event="PostToolUse")
+        out = guard.decide(p)
+        self.assertIn("promote", out["hookSpecificOutput"]["additionalContext"].lower())
+
     def test_cursor_post_tool_uses_native_context_envelope(self):
+        self.write_export()
         p = self.export_payload(event="postToolUse")
         p["cursor_version"] = "test"
         out = json.loads(guard.run(json.dumps(p)))

@@ -4,11 +4,13 @@
 The guard is intentionally narrow. It denies direct edits to immutable lower
 versions and published heads, and denies hand-creating version files
 that must go through ``af draft`` or ``af version``. It allows Edit calls on
-the current drafting head because surgical edits are a valid workflow and
-prose judgment, not a hook, decides surgical versus replacement. A full-file
-Write over a head that already has body content is denied — workspace files
-have no git history, so a clobbered draft is unrecoverable; the deny reason
-names both legitimate exits and forces the classification moment.
+the current drafting head, because that is how the new head gets written after
+``af version`` cuts it; the rule that a content change versions FIRST is prose
+(``deliverable-versioning.md``), since a hook cannot see whether the head it is
+being asked to edit is a fresh snapshot or the only one. A full-file Write over
+a head that already has body content is denied — workspace files have no git
+history, so a clobbered draft is unrecoverable; the deny reason names both
+legitimate exits.
 
 Claude and Cursor expose direct file-write payloads. Codex exposes file edits
 as an ``apply_patch`` command, so the guard extracts every patch target before
@@ -202,10 +204,10 @@ def _decide_target(path: Path, operation: str) -> dict | None:
     if operation == "write" and _has_drafted_body(path):
         return _deny(
             f"Full-file Write would clobber {path.name}'s drafted content, and workspace files have "
-            "no git history to restore from. Iterate with surgical Edit calls on the existing copy. "
-            "For a genuine whole-body replacement, snapshot first if this head is not already the "
-            "fresh copy (`python system/af.py version <project> <row>`, `--artifact <name>` for "
-            "nested), then apply the rewrite as one Edit replacing the body."
+            "no git history to restore from. If this head is already the fresh copy from "
+            "`af version`, write the change as targeted Edit calls on it. Otherwise snapshot first "
+            "(`python system/af.py version <project> <row>`, `--artifact <name>` for nested), then "
+            "apply the rewrite as one Edit replacing the new head's body."
         )
     return None
 

@@ -493,7 +493,10 @@ class VersionCommandCharacterizationTests(unittest.TestCase):
             af.cmd_version(args)
 
         self.assertIn("already contains", out.getvalue())
-        self.assertIn("surgical", out.getvalue())
+        # The receipt must not teach an in-place exception: every content change versions
+        # first, copyedits included. It once printed the opposite on every run.
+        self.assertIn("versions first", out.getvalue())
+        self.assertNotIn("surgical", out.getvalue())
 
     def test_cli_parser_accepts_nested_artifact_address(self):
         with patch.object(af, "cmd_version") as command, \

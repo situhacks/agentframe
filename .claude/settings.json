@@ -29,6 +29,15 @@
             "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/ppt_master_guard.py\" --harness claude"
           }
         ]
+      },
+      {
+        "matcher": "mcp__substack__update_draft",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/publish_guard.py\""
+          }
+        ]
       }
     ],
     "PostToolUse": [

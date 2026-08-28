@@ -78,7 +78,7 @@ For continuity, read frontmatter and run `af doctor`. Load [project-frontmatter]
 
 ### Deliverable Drafting
 
-Before the first write or rewrite, classify the operation as first draft, surgical edit, replacement, readiness, or published-edition work. Resolve the template and run its `Before Writing` gate: load the tracker, [deliverable-versioning](library/process/deliverable-versioning.md), and every named input, then run the matching `af draft`/`af version` mechanism before content mutation. A named input is read from its owner; memory and nearby deliverables are not substitutes. Repeat this gate after compaction or in every resumed drafting context.
+Before the first write or rewrite, classify the operation as first draft, content change, readiness, or published-edition work; every content change to an existing head runs `af version` first, copyedits included. Resolve the template and run its `Before Writing` gate: load the tracker, [deliverable-versioning](library/process/deliverable-versioning.md), and every named input, then run the matching `af draft`/`af version` mechanism before content mutation. A named input is read from its owner; memory and nearby deliverables are not substitutes. Repeat this gate after compaction or in every resumed drafting context.
 
 Load [positioning](library/context/operator/positioning.md) for strategic work and [voice](library/context/operator/voice/README.md) for text that will represent the operator to another person; skip voice for private working text. Surface the obvious risk, gap, or assumption; if none is visible, say so and proceed.
 

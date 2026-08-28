@@ -12,6 +12,11 @@
         "matcher": "Write|Delete",
         "command": "python system/hooks/version_guard.py --cursor-native",
         "timeout": 15
+      },
+      {
+        "matcher": "update_draft",
+        "command": "python system/hooks/publish_guard.py --cursor-native",
+        "timeout": 15
       }
     ],
     "beforeShellExecution": [

@@ -7,7 +7,7 @@ Each deliverable's full template lives in `library/deliverables/{type}/template.
 ## Read Once
 
 - State transitions are button-owned: `python system/af.py` (`ready`, `publish`, `version`, `new-project`, `doctor`) does the mechanics atomically and prints the judgment checklist. Never hand-edit `ready` or `published` state.
-- Versioning conventions and the surgical-vs-replacement judgment are owned by [`deliverable-versioning.md`](../deliverable-versioning.md); readiness triggers by [`ready-event.md`](../ready-event.md).
+- Versioning conventions are owned by [`deliverable-versioning.md`](../deliverable-versioning.md); readiness triggers by [`ready-event.md`](../ready-event.md).
 - Campaign tracker schema is owned by [`library/process/project-frontmatter.md`](../project-frontmatter.md).
 - In every phase, apply file edits and `project.md` tracker updates in the same turn.
 

@@ -53,7 +53,7 @@ Ownership split, so palette and type have exactly one source of truth:
 
 A language may land here package-less when it arrives from another AgentFrame instance or predates the current vendor contract. This is a documented waypoint, not a second asset class, and never the target state.
 
-It qualifies only when the archetypes exist as real ppt-master prototypes — SVGs carrying `data-pptx-page-role`, clone-able structure and coordinates — with a roster index mapping each one to its archetype. Prose plus a palette does not qualify and does not belong in this directory at all.
+It qualifies only when the archetypes exist as real ppt-master prototypes with clone-able structure and coordinates, and a roster index mapping each one to its archetype. A structured roster declares its Master and Layout keys with PowerPoint picker names and omits `data-pptx-page-role`; that marker belongs to flat free-design pages, so its presence on a deck prototype is a legacy tell rather than a credential. Prose plus a palette does not qualify and does not belong in this directory at all.
 
 Such a language still carries `README.md` and `imagery/manifest.yaml`. Its README declares reference-grade status in its own first section, names what blocks promotion, and cites the `BB-*` row tracking it. Consumers clone exemplars by hand; [`deck-production.md`](../process/deck-production.md) routes around the preflight on that declaration. Promote by running Capture below with the roster as the reference — the missing `design_spec.md` is authored by the vendor's Template_Designer, never by hand.
 
@@ -92,5 +92,7 @@ assets:
     slots: [hero, divider]            # archetype slots this asset suits
     dimensions: "2400x1350"
 ```
+
+`af doctor` reports conformance drift across this shelf as notes: a missing `README.md` or `imagery/manifest.yaml`, a `package/` without `design_spec.md` or an SVG roster, a promoted `exports/`, a package-less language whose README does not declare reference-grade with its `BB-*` row, a manifest record naming a file that is not on disk, and an `unknown` licence marked `restriction: none`. It does not run the vendor SVG checker — [`deck-production.md`](../process/deck-production.md) preflights that at consumption, where a failure can still block the run.
 
 `restriction` is the field that keeps a deck shippable. `reference-only` never reaches a rendered slide. `project-scoped` requires confirming the client or project is covered before external delivery. Treat an asset that arrived without licence metadata as `licence: unknown` with `restriction: project-scoped`; never upgrade it to `none` by assumption. An asset with no manifest record is not available for selection.

@@ -54,7 +54,7 @@ class VersionGuardTests(unittest.TestCase):
         )
         return path
 
-    def test_current_drafting_head_allows_surgical_edit(self):
+    def test_current_drafting_head_allows_edit(self):
         head = self.write_version(2)
         self.write_version(1)
         self.assertIsNone(guard.decide(payload(head)))
@@ -64,7 +64,7 @@ class VersionGuardTests(unittest.TestCase):
         out = guard.decide(payload(head, tool="Write"))
         self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "deny")
         reason = out["hookSpecificOutput"]["permissionDecisionReason"]
-        self.assertIn("surgical Edit", reason)
+        self.assertIn("targeted Edit calls", reason)
         self.assertIn("af.py version", reason)
 
     def test_full_write_into_empty_scaffold_head_is_allowed(self):
@@ -88,16 +88,16 @@ class VersionGuardTests(unittest.TestCase):
         self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "deny")
         self.assertIn("Full-file Write would clobber", out["hookSpecificOutput"]["permissionDecisionReason"])
 
-    def test_ready_head_allows_surgical_edit(self):
+    def test_ready_head_allows_edit(self):
         head = self.write_version(1, status="ready")
         self.assertIsNone(guard.decide(payload(head, tool="Edit")))
 
-    def test_published_head_denies_surgical_edit(self):
+    def test_published_head_denies_edit(self):
         head = self.write_version(1, status="published")
         out = guard.decide(payload(head, tool="Edit"))
         self.assertIn("published and immutable", out["hookSpecificOutput"]["permissionDecisionReason"])
 
-    def test_unversioned_published_assembly_denies_surgical_edit(self):
+    def test_unversioned_published_assembly_denies_edit(self):
         assembly = self.folder / "post-FINAL.md"
         assembly.write_text(
             "---\nstatus: published\nlast_updated: 2026-07-19\n---\n\nbody\n",

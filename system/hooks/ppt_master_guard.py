@@ -14,7 +14,12 @@ PreToolUse (Bash|PowerShell):
                                     this repo's system/ tree (vendor default
                                     is cwd/projects, i.e. the skill folder)
 PostToolUse (Bash|PowerShell):
-  - svg_to_pptx.py               -> re-inject the export promotion contract.
+  - svg_to_pptx.py               -> re-inject the export promotion contract, but only
+                                    when the command actually invoked the exporter AND
+                                    a fresh .pptx is on disk. A crash, a --help, or a
+                                    grep that merely names the script produces no file,
+                                    so the hook says nothing rather than asserting an
+                                    export that did not happen.
 
 The former paragraph-split lint (svg_paragraph_lint.py) was retired at the
 52e85a0 vendor refresh: the vendor's own checker now reports the same
@@ -36,6 +41,7 @@ import json
 import re
 import shlex
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -86,6 +92,63 @@ def _tokens(command: str) -> list[str]:
         return command.split()
 
 
+INTERPRETERS = {"python", "python3", "py", "python.exe", "python3.exe", "py.exe"}
+
+# A completed export writes its .pptx into the project's exports/ folder. A long deck
+# can take minutes, so the window is generous; it only has to exclude stale twins from
+# an earlier run.
+EXPORT_FRESH_WINDOW_S = 1800
+
+
+def _script_index(tokens: list[str], name: str) -> int | None:
+    """Index of a token that actually INVOKES `name`, not one that merely names it.
+
+    `grep -rn spec_lock .../svg_to_pptx.py` carries the script name as data. Treating
+    that as an export made the PostToolUse hook assert a finished deck on a search.
+    A real invocation is either argv[0] or immediately preceded by an interpreter.
+    """
+    for i, token in enumerate(tokens):
+        if not token.replace("\\", "/").endswith(name):
+            continue
+        if i == 0:
+            return i
+        prev = Path(tokens[i - 1].replace("\\", "/")).name.lower()
+        if prev in INTERPRETERS:
+            return i
+    return None
+
+
+def _fresh_export(project: Path) -> bool:
+    """True when the project's exports/ holds a .pptx written by this run."""
+    try:
+        newest = max(
+            (p.stat().st_mtime for p in (project / "exports").glob("*.pptx")),
+            default=None,
+        )
+    except OSError:
+        return False
+    return newest is not None and (time.time() - newest) <= EXPORT_FRESH_WINDOW_S
+
+
+def _exported_project(tokens: list[str], cwd: Path) -> Path | None:
+    """Project directory for a command that ran the exporter, else None.
+
+    Stricter than `_export_project_path`, which fails open for the PreToolUse contract
+    guard. Here a path we cannot resolve means we cannot observe the outcome, and the
+    hook must stay silent rather than guess.
+    """
+    idx = _script_index(tokens, "svg_to_pptx.py")
+    if idx is None:
+        return None
+    for token in tokens[idx + 1:]:
+        if token.startswith("-"):
+            continue
+        candidate = cwd / token
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
 def _is_under(path: Path, ancestor: Path) -> bool:
     try:
         path.resolve().relative_to(ancestor.resolve())
@@ -105,10 +168,7 @@ def _deny(reason: str) -> dict:
 
 
 def _staging_guard(tokens: list[str], cwd: Path) -> dict | None:
-    script_idx = next(
-        (i for i, t in enumerate(tokens) if t.replace("\\", "/").endswith("project_manager.py")),
-        None,
-    )
+    script_idx = _script_index(tokens, "project_manager.py")
     if script_idx is None or "init" not in tokens[script_idx + 1:]:
         return None
 
@@ -127,10 +187,7 @@ def _staging_guard(tokens: list[str], cwd: Path) -> dict | None:
 
 
 def _export_project_path(tokens: list[str], cwd: Path) -> Path | None:
-    script_idx = next(
-        (i for i, t in enumerate(tokens) if t.replace("\\", "/").endswith("svg_to_pptx.py")),
-        None,
-    )
+    script_idx = _script_index(tokens, "svg_to_pptx.py")
     if script_idx is None:
         return None
     nxt = tokens[script_idx + 1] if script_idx + 1 < len(tokens) else None
@@ -140,13 +197,7 @@ def _export_project_path(tokens: list[str], cwd: Path) -> Path | None:
 
 
 def _confirm_project_path(tokens: list[str], cwd: Path) -> Path | None:
-    script_idx = next(
-        (
-            i for i, token in enumerate(tokens)
-            if token.replace("\\", "/").endswith("confirm_ui/server.py")
-        ),
-        None,
-    )
+    script_idx = _script_index(tokens, "confirm_ui/server.py")
     if script_idx is None or script_idx + 1 >= len(tokens):
         return None
     raw = tokens[script_idx + 1]
@@ -309,7 +360,10 @@ def decide(payload: dict, harness: str | None = None) -> dict | None:
                 return result
         return _staging_guard(tokens, cwd)
 
-    if event == "PostToolUse" and "svg_to_pptx.py" in command:
+    if event == "PostToolUse":
+        project = _exported_project(tokens, cwd)
+        if project is None or not _fresh_export(project):
+            return None  # no observable export: say nothing rather than claim one
         return {
             "hookSpecificOutput": {
                 "hookEventName": "PostToolUse",

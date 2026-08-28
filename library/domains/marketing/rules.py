@@ -114,7 +114,17 @@ def on_ready(ctx, cdir, dpath, rel, cfm):
         if os.path.basename(dpath) == "post-FINAL.md":
             ings = _manifest_ingredients(cfm)
             if ings and not _post_complete(ctx, post_dir, ings):
-                ctx.die(f"{rel}: ready requires every manifest ingredient to be ready")
+                # Name the exact next command. The row slug is the address an agent has in
+                # working context, so "ready the ingredients" without saying how is what
+                # left a published post stuck at drafting for a week.
+                pending = [i for i in ings if not _post_complete(ctx, post_dir, [i])]
+                # The tracker slug is not the folder name (post-11-5 vs post-11.5-vitamix),
+                # so resolve it from the row that points at this assembly record.
+                row = next((r for r in ctx.all_rows(cfm) if ctx.row_get(cfm, r, 'file') == norm),
+                           os.path.basename(post_dir))
+                how = " ; ".join(f"af ready <project> {row} --artifact {i}" for i in pending)
+                ctx.die(f"{rel}: ready requires every manifest ingredient to be ready. "
+                        f"Still drafting: {', '.join(pending)}. Ready each one first: {how}")
         return cfm, notes
     ing = match.group(1)
     _assemble_post_final(ctx, post_dir, dpath, ing)
@@ -126,7 +136,13 @@ def on_ready(ctx, cdir, dpath, rel, cfm):
         pfm = ctx.set_scalar(pfm, "status", "ready", "post-FINAL.md")
         pfm = ctx.set_scalar(pfm, "last_updated", ctx.today(), "post-FINAL.md")
         ctx.write(pf, ctx.join_fm(pfm, pbody))
-        post_slug = os.path.basename(post_dir)
+        # Resolve the row from the assembly-record pointer, never from the folder name: a
+        # post folder is named for the reader (post-11.5-vitamix) and its row for the funnel
+        # (post-11-5). Keying on basename silently skipped the promotion on every post where
+        # those differ, leaving a ready artifact under a drafting row.
+        pf_rel = os.path.relpath(pf, cdir).replace("\\", "/")
+        post_slug = next((r for r in ctx.all_rows(cfm) if ctx.row_get(cfm, r, "file") == pf_rel),
+                         os.path.basename(post_dir))
         if ctx.row_span(cfm, post_slug):
             cfm = ctx.row_set(cfm, post_slug, "status", "ready")
             cfm = ctx.row_set(cfm, post_slug, "last_updated", ctx.today())

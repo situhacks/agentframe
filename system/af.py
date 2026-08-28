@@ -457,7 +457,15 @@ def cmd_ready(args):
     sdoc = state_doc(cdir)
     cfm, cbody = split_fm(read(os.path.join(cdir, sdoc)), sdoc)
 
-    slug, rel = resolve_deliverable_target(cfm, args.deliverable)
+    artifact = getattr(args, "artifact", None)
+    if artifact:
+        # A nested manifest ingredient. The parent row is NOT force-readied here: the pack's
+        # on_ready promotes it once every ingredient is ready, which is the rule that makes
+        # an assembly record mean something.
+        rel, _ = version_target(cdir, cfm, args.deliverable, artifact)
+        slug = None
+    else:
+        slug, rel = resolve_deliverable_target(cfm, args.deliverable)
 
     dpath = os.path.join(cdir, rel)
     os.path.isfile(dpath) or die(f"deliverable file not found: {rel}")
@@ -642,6 +650,15 @@ def safe_project_rel(cdir, value):
     value = (value or "").replace("\\", "/").strip()
     if not value or os.path.isabs(value) or value == ".." or value.startswith("../") or "/../" in value:
         die("file path must stay inside the project and be project-relative")
+    # A repo-root-relative value re-enters the project from above and silently builds a
+    # doubled tree (workspace/projects/x/workspace/projects/x/...). Nothing errors, because
+    # the tracker pointer and the file it names stay consistent with each other - just both
+    # wrong. Tracker rows, doctor output and router tables all display the repo-root form,
+    # so that is the form an agent has in working context; a real deliverable path never has it.
+    if value.startswith("workspace/"):
+        die(f"'{value}' is repo-root-relative. --file takes a PROJECT-relative path: drop the "
+            f"leading workspace/projects/<slug>/ (or workspace/pipeline/applications/<slug>/) "
+            f"and pass only the part below it.")
     target = os.path.abspath(os.path.join(cdir, value))
     if os.path.commonpath((os.path.abspath(cdir), target)) != os.path.abspath(cdir):
         die("file path resolves outside the project")
@@ -2167,6 +2184,71 @@ def media_manifest_issues_for_fm(cdir, cfm, source_label="project.md"):
     return issues
 
 
+# Row fields naming an external publication. Matched by shape rather than by vendor so a
+# new channel is covered without a code change.
+PUBLISHED_FIELD_RE = re.compile(r"^    ([A-Za-z0-9_]*(?:_url|_draft))\s*:\s*(\S.*?)\s*$", re.M)
+
+
+def row_field_names(fm, slug, pattern):
+    span = row_span(fm, slug)
+    if not span:
+        return []
+    return [(m.group(1), m.group(2)) for m in pattern.finditer(fm[span[0]:span[1]])
+            if clean_value(m.group(2)) not in (None, "", "null")]
+
+
+def state_truth_issues(cdir, cfm, source_label="project.md"):
+    """Rows that record a thing as published and not ready at the same time.
+
+    `af publish` refuses a non-ready head, but the actual publish path for a channel is
+    often an MCP call or a web UI that never touches af. This catches the drift after the
+    fact, which is the only thing that works when the push happens somewhere af cannot see.
+    """
+    issues = []
+    rel = os.path.relpath(cdir, ROOT).replace("\\", "/")
+    for slug in all_rows(cfm):
+        if row_get(cfm, slug, "status") in ("ready", "published"):
+            continue
+        st = row_get(cfm, slug, "status")
+        for field, value in row_field_names(cfm, slug, PUBLISHED_FIELD_RE):
+            issues.append(f"{rel}: {source_label} row '{slug}' is '{st}' but carries {field} "
+                          f"({clean_value(value)}) - the row records the thing as published and not "
+                          f"ready at once. Publishing off-button skips every gate hanging off readiness.")
+    return issues
+
+
+def empty_head_notes(cdir):
+    """Tracked heads with nothing in the body.
+
+    A note, not an issue: `af draft` creates exactly this and the agent fills it in the same
+    turn. It earns a line because a mis-addressed `af draft --file` leaves the identical
+    shape permanently, with the tracker pointer and the file agreeing with each other and
+    both wrong, which is invisible to every other check.
+    """
+    notes = []
+    rel = os.path.relpath(cdir, ROOT).replace("\\", "/")
+    try:
+        cfm, _ = split_fm(read(os.path.join(cdir, "project.md")), "project.md")
+    except SystemExit:
+        return notes
+    for slug in all_rows(cfm):
+        st, f = row_get(cfm, slug, "status"), row_get(cfm, slug, "file")
+        if st in (None, "", "not_started") or not f or not f.lower().endswith(".md"):
+            continue
+        path = os.path.join(cdir, f)
+        if not os.path.isfile(path):
+            continue
+        try:
+            parsed = split_fm_optional(read(path))
+        except (UnicodeDecodeError, OSError):
+            continue
+        if parsed and not parsed[1].strip():
+            notes.append(f"{rel}: row '{slug}' points at an empty head ({f}) - fill it, or check "
+                         f"the address if you did not just create it ('af draft --file' takes a "
+                         f"PROJECT-relative path)")
+    return notes
+
+
 def media_manifest_issues(cdir, cfm):
     issues = media_manifest_issues_for_fm(cdir, cfm)
     archive = os.path.join(cdir, "knowledge", "_archive", "deliverables-archive.md")
@@ -2402,6 +2484,7 @@ def check_project(cdir):
     if rules and hasattr(rules, "check"):
         issues += rules.check(make_ctx(), cdir, cfm)
     issues += media_manifest_issues(cdir, cfm)
+    issues += state_truth_issues(cdir, cfm)
     autonomy_dir = os.path.join(cdir, "knowledge", "autonomy")
     if os.path.isdir(autonomy_dir):
         for path in sorted(glob.glob(os.path.join(autonomy_dir, "*.md"))):
@@ -2784,6 +2867,7 @@ def cmd_doctor(args):
         if note:
             notes.append(note)
         notes += media_manifest_notes(d)
+        notes += empty_head_notes(d)
         notes += binary_head_notes(d)
         notes += activity_notes(d)
     if args.project in (None, "pipeline"):
@@ -2857,6 +2941,7 @@ def main():
     sub = p.add_subparsers(dest="cmd", required=True)
 
     s = sub.add_parser("ready");           s.add_argument("project"); s.add_argument("deliverable")
+    s.add_argument("--artifact", help="ready a nested manifest ingredient under the row's folder")
     s.add_argument("--allow-missing-exports", action="store_true"); s.set_defaults(fn=cmd_ready)
     s = sub.add_parser("publish");         s.add_argument("project"); s.add_argument("deliverable")
     s.add_argument("--url"); s.add_argument("--posted-at"); s.add_argument("--platform")

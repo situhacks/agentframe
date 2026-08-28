@@ -8,8 +8,8 @@ profile library is treated as a **derived cache**: the repo is truth, the home
 directory is rebuildable, and nothing about a design language is maintained in
 two places.
 
-    python system/tools/diagram_profile.py editorial-deloitte-digital
-    python system/tools/diagram_profile.py editorial-deloitte-digital \
+    python system/tools/diagram_profile.py <design-language>
+    python system/tools/diagram_profile.py <design-language> \
         --marker workspace/projects/<project>
 
 Without this projection a diagram authored for a branded deck arrives in the

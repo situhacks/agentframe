@@ -7,7 +7,7 @@ Reusable visual assets shared across projects. Three areas, different weights.
 Flat brand marks. The filename is the inventory - no metadata files, no per-logo notes.
 
 - Naming: `<brand>-<variant>.<ext>`, lowercase kebab. Variants: `white`, `black`, `color`, `icon`, `wordmark`.
-  Examples: `deloitte-white.svg`, `cibc-color.png`, `sfu-wordmark.svg`.
+  Examples: `acme-white.svg`, `northwind-color.png`, `contoso-wordmark.svg`.
 - Prefer SVG; recolorable monochrome marks are the most reusable.
 - A logo lands here whenever a run fetches a credible official/open-source asset and reuse is likely, or the second time a project needs it.
 
@@ -48,6 +48,14 @@ Ownership split, so palette and type have exactly one source of truth:
 | Where this identity came from, which projects ran it, what to swap | `README.md` |
 
 `README.md` never restates palette or type values. When it disagrees with `design_spec.md`, the spec wins.
+
+### Reference-grade — a language without a package
+
+A language may land here package-less when it arrives from another AgentFrame instance or predates the current vendor contract. This is a documented waypoint, not a second asset class, and never the target state.
+
+It qualifies only when the archetypes exist as real ppt-master prototypes — SVGs carrying `data-pptx-page-role`, clone-able structure and coordinates — with a roster index mapping each one to its archetype. Prose plus a palette does not qualify and does not belong in this directory at all.
+
+Such a language still carries `README.md` and `imagery/manifest.yaml`. Its README declares reference-grade status in its own first section, names what blocks promotion, and cites the `BB-*` row tracking it. Consumers clone exemplars by hand; [`deck-production.md`](../process/deck-production.md) routes around the preflight on that declaration. Promote by running Capture below with the roster as the reference — the missing `design_spec.md` is authored by the vendor's Template_Designer, never by hand.
 
 ### Capture — how one gets created
 

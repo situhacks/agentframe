@@ -25,7 +25,10 @@ from diagram_profile import (  # noqa: E402
     invert_roles,
 )
 
-LANGUAGE = "editorial-deloitte-digital"
+# Design languages live in the gitignored personal layer, so this suite never
+# names one. The fixture below is the contract; TestRealLanguage discovers
+# whatever language the local instance actually carries.
+LANGUAGE = "example-language"
 
 TOKENS = {
     "meta": {"summary": "Test identity"},
@@ -172,22 +175,34 @@ class TestProfileDocument(unittest.TestCase):
 
 
 class TestRealLanguage(unittest.TestCase):
-    """The repo's own design language must project without hand-holding."""
+    """Every design language on this instance must project without hand-holding.
 
-    def test_shipped_language_projects(self):
-        language_dir = ROOT / "library" / "assets" / "design-languages" / LANGUAGE
-        if not (language_dir / "tokens.yaml").exists():
-            self.skipTest(f"{LANGUAGE} not present in this instance")
+    Languages are personal-layer assets and are not in the repo, so this
+    discovers whatever is on disk rather than naming one. On a clean clone it
+    skips; on an instance carrying languages it is the only check that runs the
+    projection against real token files rather than the fixture.
+    """
+
+    def test_local_languages_project(self):
+        root = ROOT / "library" / "assets" / "design-languages"
+        if not root.is_dir():
+            self.skipTest("no design-languages directory on this instance")
+        languages = sorted(d for d in root.iterdir() if (d / "tokens.yaml").exists())
+        if not languages:
+            self.skipTest("no design language with tokens.yaml on this instance")
+
         import yaml
 
-        tokens = yaml.safe_load((language_dir / "tokens.yaml").read_text(encoding="utf-8"))
-        profile = build_profile(LANGUAGE, tokens, SHIPPED_GUIDE.read_text(encoding="utf-8"), "real")
-        skinned = skinned_sections(profile)
-        for token in SHIPPED_TOKENS:
-            self.assertNotIn(token, skinned)
-        for font in SHIPPED_FONTS:
-            self.assertNotIn(font, skinned)
-        self.assertIn("#F6FAEC", profile)
+        guide = SHIPPED_GUIDE.read_text(encoding="utf-8")
+        for language in languages:
+            with self.subTest(language=language.name):
+                tokens = yaml.safe_load((language / "tokens.yaml").read_text(encoding="utf-8"))
+                profile = build_profile(language.name, tokens, guide, "real")
+                skinned = skinned_sections(profile)
+                for token in SHIPPED_TOKENS:
+                    self.assertNotIn(token, skinned)
+                for font in SHIPPED_FONTS:
+                    self.assertNotIn(font, skinned)
 
 
 if __name__ == "__main__":

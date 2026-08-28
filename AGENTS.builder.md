@@ -54,7 +54,7 @@ Load only what the task needs. If a file is historical, read it only when resear
 4. **Templates are the product.** Prefer changes that make deliverables clearer, more reliable, or easier to reuse across agent platforms.
 5. **Two-mode routing is real.** Builder owns system architecture; Operator owns project execution.
 6. **Buttons own mechanics; prose owns judgment.** Project state transitions go through `system/af.py` (schema-bound, flow-agnostic). Scripts never encode flow logic, template knowledge, or creative decisions; the CLI and the frontmatter schema change together in one commit, with a `MIGRATION:` line.
-7. **Prose requests; mechanisms guarantee.** A gate that must never be skipped is unfinished until something deterministic enforces it — a hook, an `af doctor` check, or a lint that blocks the step. When you catch yourself sharpening the wording of a mandatory step instead of building its check, build the check.
+7. **Prose requests; mechanisms guarantee — for gates.** A step that must never be skipped is unfinished until something deterministic enforces it: a hook, an `af doctor` check, a lint that blocks. Calibration is not a gate: a threshold on how long a sentence runs only teaches the agent to aim at the number. Gate what must not be skipped; teach what must be judged.
 
 ### Rule-Design Discipline — the pre-write gate
 
@@ -73,6 +73,7 @@ Run these checks, in order, before writing any agent-facing file:
 - Make surgical changes. Every changed line should trace to the task.
 - Prefer state-shaped rules over phrase lists.
 - Prefer inline agent work over scripts unless determinism, auth, or repeatability makes code the smaller system.
+- Prose for a reader (README, docs, templates) follows the operator's punctuation and cadence: one em dash a sentence at most, never a matched pair, fuse when choppy.
 - Verify with evidence before claiming success.
 
 ---

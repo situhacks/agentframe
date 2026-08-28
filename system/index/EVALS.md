@@ -87,6 +87,33 @@ model.
 
 ## Known corpus defects surfaced by the eval (Builder follow-up)
 
-- Career bank exists twice: `library/context/operator/career/` and
-  `library/context/operator-schema/career/` hold near-identical files; both
-  rank and split relevance. Backlogged locally (BB-2026-08-23-01/-02).
+- RESOLVED 2026-08-27. Career-bank template layer competed with the content
+  layer: `library/context/operator-schema/career/` holds 0.5-3KB skeletons of
+  the same documents `library/context/operator/career/` holds populated at
+  4-35KB, so a template could outrank the content it templates. These are NOT
+  duplicates and were never to be consolidated - operator-schema is the tracked
+  public skeleton downstream copies need. Fixed as an indexer scope exclusion
+  matching the voice exclusion: route loads the schema, search skips it.
+  q19-q22 (proof-points, master-cv, interview-playbook, search-profile) all
+  pass now; they were the queries the defect was reported from.
+
+- RESOLVED 2026-08-27. Golden set carried pre-archive paths after the careers
+  rebuild moved magical / rbc / eliseai under `applications/completed/`.
+  Five expectations repointed; q10-q13 recovered.
+
+## Current standing
+
+**2026-08-27: recall@5 = 24/29 = 83%, MRR 0.623** (index excludes
+operator-schema; golden paths current; 10454/10730 chunks embedded).
+
+Against the recorded 86% baseline this is one query down, and it is q16 rather
+than a ranking regression: `applications/completed/rbc-agentic-ai-portfolio-lead/
+application.md` is a 1.3KB bare scaffold with no body - RBC was dropped right
+after `af pipe start`, so there is nothing beyond frontmatter to match. Corpus
+thinness, not retrieval. Either accept it as a standing miss or retire the
+expectation; do not tune ranking against it.
+
+The four genuine misses are unchanged and remain the real work: q02
+(measurement literacy to Kazmier), q03 (Mike Duffy recruiter screen), q05
+(background-to-JD mapping), q06 (Banyan angle). All four are synthesis queries
+whose answer is spread across several documents rather than sitting in one.

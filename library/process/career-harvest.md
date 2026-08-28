@@ -2,6 +2,10 @@
 
 Move real wins into the career bank while the evidence is fresh. The bank (`library/context/operator/career/`, schema at `library/context/operator-schema/career/`) feeds resumes, promotion cases, and "recent wins" writeups; a win that never lands there is lost to the next application.
 
+Raw material that arrives from elsewhere and is not distilled yet (work-instance exports, review
+PDFs, a rubric an employer sent) stages in `career/harvests/` until this procedure reads it. It is a
+staging area, never a cited layer.
+
 ## When to load
 
 - A project closeout or system retro runs — harvest is a closing step, sibling of `deliverable-harvest`.

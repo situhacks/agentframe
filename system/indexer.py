@@ -104,6 +104,14 @@ def iter_corpus(root):
                 # decision 2026-08-23). Route loads it; the index skips it.
                 if top == "library" and d == "voice" and rel_dir.startswith("library/context"):
                     continue
+                # Schema mirrors are FILL-ME skeletons of the documents the operator layer
+                # holds populated (proof-points.md: 0.5KB of placeholders against 13KB of
+                # real content). Both indexed, a template can outrank the thing it templates
+                # on a title match. Not duplicates and never consolidate them - the schema is
+                # the tracked public shape downstream copies need. Route loads it; search
+                # skips it, same contract as the voice corpus above.
+                if top == "library" and d == "operator-schema" and rel_dir == "library/context":
+                    continue
                 pruned.append(d)
             dirnames[:] = pruned
             for name in sorted(filenames):

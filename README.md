@@ -230,7 +230,8 @@ This is the full capability catalog. AgentFrame does not rebuild every productio
 | `agent-reach` | Read-only reach for sources the default toolchain can't fetch: Reddit, LinkedIn, X, YouTube transcripts, RSS, semantic search | Vendored |
 | `agentframe-structure` | Safely changes flows, deliverable types, defaults, and ownership boundaries | Internal |
 | `browser-harness` | Runs local CDP-driven browser workflows | Vendored |
-| `d2-diagrams` | Renders deterministic SVG diagrams | Internal (pinned D2 binary vendored) |
+| `d2-diagrams` | Auto-laid-out graphs for regenerated topologies | Internal (pinned D2 binary vendored) |
+| `diagram-design` | 39 editorial diagram grammars as self-contained HTML/SVG; flattens to native PowerPoint shapes | Vendored |
 | `deep-research` | Architect → specialist → synthesis research on the agent's own tools | Internal (prompts adapted from upstream) |
 | `deliverable-harvest` | Mines finished projects for earned template and process improvements | Internal |
 | `deliverable-scaffolding` | Creates deliverable instances with the correct shape and frontmatter | Internal |
@@ -263,7 +264,7 @@ All AgentFrame-owned. Each loads on demand when the work reaches it.
 | `composio-notes` | Connected-workspace publishing and performance-capture conventions |
 | `deck-production` | Central deck routing with PPT Master as the default for new PowerPoint work |
 | `deliverable-versioning` | Head pointers, immutable snapshots, and revision judgment |
-| `diagram-production` | Static graph-shaped explainers through D2 |
+| `diagram-production` | Diagram route selection, the native-shape deck handoff, and design-language brand projection |
 | `flow-authoring` | The standard for adding or reshaping project flows |
 | `humanizer-integration` | A calibrated humanization pass where a template calls for it |
 | `image-production` | Path selection across generated imagery, HTML visuals, and Open Design |

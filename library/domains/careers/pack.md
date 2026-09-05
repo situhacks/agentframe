@@ -24,7 +24,7 @@ This pack is the only artifact that knows careers. The generic spine (`system/af
 | Sources skeleton | [`sources-skeleton.md`](sources-skeleton.md) | the `sources/INDEX.md` scaffolded alongside `sources/`, `correspondence/`, `people/` on `af pipe start` |
 | Round skeleton | [`round-skeleton.md`](round-skeleton.md) | the round folder's `README.md` scaffolded by `af pipe round` |
 | Board skeleton | [`pipeline-skeleton.md`](pipeline-skeleton.md) | the `pipeline.md` created on first `af pipe save` |
-| Deliverable templates | [`deliverables/`](deliverables/) | `jd-map`, `resume`, `cover-letter`, `company-brief` (materials + research); `correspondence`, `interviewer-brief`, `round-sheet`, `round-debrief` (internal, never materials); non-text materials (`deck`, `demo`) use the generic deliverable shape + the routes in [`production.md`](production.md) |
+| Deliverable templates | [`deliverables/`](deliverables/) | `jd-map`, `resume`, `cover-letter`, `company-brief` (materials + research); `correspondence`, `interviewer-brief`, `round-sheet`, `round-debrief`, `comp-case` (internal, never materials); non-text materials (`deck`, `demo`) use the generic deliverable shape + the routes in [`production.md`](production.md) |
 | Verb applicability + hooks | `verbs` above + `rules.py` | every submission material becomes ready only after jd-map verification; text materials also pass the parse-hazard lint (`on_ready`) |
 | Doctor rules | `rules.py` `check_application()` | text-material parse hazards, verification freshness |
 | Persona routing | [`production.md`](production.md) | the application-sprint runbook the Operator loads for careers work |

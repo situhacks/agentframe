@@ -12,16 +12,17 @@ Operator-mode routing for `domain: careers` work. The board (`workspace/pipeline
 | 3 Research | `company-brief.md` per its template; depth matches stakes | template |
 | 4 Map | `jd-map.md`: honeypot scan → 3-tier requirements → experience map → **gap stop** → operator coverage choice | template |
 | 5 Reply | On an inbound contact, `correspondence/reply-to-{name}-{date}.md` per its template — declared inputs, five moves, call-questions block | template |
-| 6 Tailor | Draft the materials the application declares: `resume/resume-v1.md` (+ `cover-letter/` only if required) via their templates; `deck/` or `demo/` per the material routes below; humanizer pass on all user-voiced prose | templates |
+| 6 Tailor | Draft materials declared in `materials:` (`resume/resume-v1.md`, `cover-letter/` only if required); offer to scaffold a proof-of-concept repo (`demo/`) via [`technical-build`](../../process/technical-build.md); humanizer pass on all user-voiced prose | templates + process |
 | 7 Verify | fill jd-map `## Verification`; fix findings before export or readiness | template |
 | 8 Export | `doc-export` skill → format by ATS (table below), file under the deliverable's `media/`, record in `exports[]` | `system/skills/doc-export/` |
 | 9 Ready | `af ready <slug> resume` (and `cover-letter`) — refuses without verification + filed exports | spine |
 | 10 Submit | **The human submits** in a normal browser, on the company career site (never a bot; never Easy Apply when direct apply exists) → `af pipe stage <slug> applied`. **Agency or referral submits instead:** go straight to `af pipe stage <slug> interviewing` and record `submitted_by:` in `application.md` — there is no self-submission to stamp and no `shipped` material | operator |
 | 11 Interview | Per round, run the arc in [`interview-arc.md`](interview-arc.md) | process + templates |
-| 12 Track | `af doctor` surfaces nudges (7-day silence) and stale rows | spine |
-| 13 Close | Terminal stage → `af pipe archive <slug>` moves the folder to `applications/completed/`. Run [`career-harvest`](../../process/career-harvest.md) first, while the detail is fresh | spine + process |
+| 12 Offer | `comp-case.md` at the application root per its template — assembled from each round's confirmed-evidence section, worked before the first comp call, and the ask itself goes out through `correspondence/` | template |
+| 13 Track | `af doctor` surfaces nudges (7-day silence) and stale rows | spine |
+| 14 Close | Terminal stage → `af pipe archive <slug>` moves the folder to `applications/completed/`. Run [`career-harvest`](../../process/career-harvest.md) first, while the detail is fresh | spine + process |
 
-**Material rule:** Steps 6-9 apply to every `materials:` row; this extends the resume/cover-letter examples in the sprint table. Use the route below, file finals only for pack-declared exportables, and mark each submission material ready before the human submits. `correspondence`, `round-sheet`, `interviewer-brief` and `round-debrief` are internal and never materials: no export gate, no readiness stamp, no `materials:` row.
+**Material rule:** Steps 6-9 apply to every `materials:` row; this extends the resume/cover-letter examples in the sprint table. Use the route below, file finals only for pack-declared exportables, and mark each submission material ready before the human submits. `correspondence`, `round-sheet`, `interviewer-brief`, `round-debrief` and `comp-case` are internal and never materials: no export gate, no readiness stamp, no `materials:` row.
 
 ## Inbound contact (the default entry point)
 
@@ -51,7 +52,7 @@ Three tiers. The rule that keeps them honest: **a round folder cites the living 
 
 | Tier | Where | Rule |
 |---|---|---|
-| Living dossiers | `company-brief.md`, `jd-map.md`, `role-thesis.md`, `people/`, `application.md` | Edited in place, always current, never versioned. A declared set — root is not a spawn zone |
+| Living dossiers | `company-brief.md`, `jd-map.md`, `role-thesis.md`, `people/`, `application.md`, `comp-case.md` once an offer is live | Edited in place, always current, never versioned. A declared set — root is not a spawn zone |
 | Raw | `sources/` (+ `INDEX.md`), `research/{date}-{topic}/` | Immutable, registered, mined once. **Never prep from here** |
 | Round snapshots | `round-{N}-{name}/` | One conversation's judgment. Carries only the delta; its `debrief.md` promotes durable facts back to tier 1 |
 

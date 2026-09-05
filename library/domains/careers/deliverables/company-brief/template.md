@@ -7,7 +7,11 @@ Enough cited, current company knowledge to tailor honestly and interview credibl
 ## Inputs
 
 - `jd.md` — what the posting itself reveals about the team and mandate.
-- Grounding: light web search for ordinary targets; the `gemini_deep_research` runtime (`system/research/`) for serious targets worth a deep pass. Every factual claim cited and dated.
+- Grounding: light web search for ordinary targets. A target worth a full pass routes to the standard
+  [`deep-research`](../../../../../system/skills/deep-research/SKILL.md) skill, which runs natively or
+  drives the `gemini_deep_research` runtime (`system/research/`); its output files under
+  `research/{date}-{topic}/` and is mined into this brief. There is no careers-specific research
+  path. Every factual claim cited and dated.
 
 ## Output Shape
 

@@ -28,5 +28,6 @@ Use the upstream project's own file formats. `SCRIPT.md` and `STORYBOARD.md` exi
 ## Boundaries
 
 - AgentFrame does not maintain a parallel video craft guide, demo project, script format, storyboard format, or GSAP reference.
+- Raw talking-head footage that needs a cut rather than a spec routes through [`short-form-edit.md`](short-form-edit.md).
 - Use another production tool only when the selected HyperFrames route does not fit the material.
 - Do not modify vendored HyperFrames files during a project; refresh the pinned source intentionally.

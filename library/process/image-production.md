@@ -9,7 +9,7 @@ Available image-creation paths for AgentFrame. Load this when a project or post 
 | Gemini Nano Banana 2 (`gemini-3.1-flash-image-preview`) | Default raster generation for standard illustrations and fast A/B/C variants. | `image-prompts` | `image-variant-{a|b|c}.png` via `system/server/lib/image_generate.py` |
 | Gemini Nano Banana Pro (`gemini-3-pro-image-preview`) | Prompt fidelity and text-in-image quality matter more than speed (hero or leadership-facing visuals). | `image-prompts` | `image-variant-{a|b|c}.png` via `system/server/lib/image_generate.py` |
 | Open Design (bundled) | You want higher-fidelity designed outputs, or you want to render a whole social carousel as a single design pass. | `image-prompts` | Exported files (HTML / PNG / PDF / PPTX / ZIP) saved to the calling post's `visuals/imports/`; use `system/skills/open-design/SKILL.md` |
-| External / stock / operator-provided | Existing assets are already the right fit; no model generation needed. | calling deliverable | Referenced asset path(s) in the post folder |
+| External / stock / operator-provided | Existing assets are already the right fit; no model generation needed. The operator's own captures live on the shared media shelf (`library/assets/media/`, schema in [`library/assets/README.md`](../assets/README.md)) and are found with `python system/af.py search "<scene>"`; reference the card's path, never copy the file. | calling deliverable | Referenced asset path(s) in the post folder |
 
 ### Open Design mode + skill defaults
 

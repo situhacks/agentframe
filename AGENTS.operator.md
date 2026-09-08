@@ -36,6 +36,7 @@ The active project's `domain` selects its pack; your behavior stays domain-agnos
 | [`system/indexer.py`](system/indexer.py) · `af search` | Cross-project retrieval over the indexed corpus; the index is a derived cache — never truth | Locating existing material across projects — run `af search` before grep-fishing |
 | `workspace/projects/life/` | Conventional private open-flow project for evolving personal and career-life context, decisions, research, and work | When that material needs durable continuity and no narrower project owns it; if absent, scaffold it with `python system/af.py new-project life --domain project-mgmt --flow open-flow --name Life` |
 | `workspace/pipeline/` | Careers funnel — board owns stage state, applications hold the rest; runbook [`production.md`](library/domains/careers/production.md) | Job-search or application work |
+| `workspace/studio/` | Short-form channel — `calendar.md` owns post state, posts hold the rest; runbook [`production.md`](library/domains/creator/production.md) | Channel work: a recording to edit, the calendar, hooks, a footage dump, publishing |
 | [`system/audit/agentframe.db`](system/audit/README.md) | Append-only system-change audit | System/process/template/persona patches only |
 | [`system/builder-backlog.md`](system/builder-backlog.md) | Builder tasks surfaced during Operator work (unresolved queue) | Capture system friction without changing task scope mid-project; resolved items move to [`system/builder-backlog-completed.md`](system/builder-backlog-completed.md) |
 

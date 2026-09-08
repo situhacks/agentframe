@@ -108,13 +108,13 @@ Modes are task-local ownership boundaries, not mutable repository state. The roo
 | Area | Job |
 |---|---|
 | `workspace/projects/` | Project work and state, incl. per-project `sources/` + `knowledge/` substrate (schema: `library/process/knowledge-base.md`); Operator-owned except schema migrations |
-| `workspace/pipeline/` | Careers pipeline surface: board (`pipeline.md`) + flat application sprints (pack: `library/domains/careers/`); Operator-owned except schema migrations |
+| `workspace/pipeline/`, `workspace/studio/` | Careers board (`pipeline.md`) + application sprints; creator board (`calendar.md`) + post folders; packs `library/domains/careers/`, `creator/`; Operator-owned |
 | `library/deliverables/` | Deliverable templates; main product surface |
 | `library/process/` | On-demand workflow procedures (incl. `flows/`); catalog of what each does + when to load at `library/process/README.md` |
-| `library/domains/` | Domain packs (`marketing`, `project-mgmt`, `careers`): per-domain `skeleton.md`, `pack.md`, `deliverables/`, optional `production.md` |
+| `library/domains/` | Domain packs (`marketing`, `project-mgmt`, `careers`, `creator`): skeletons, `pack.md`, optional `deliverables/`, `production.md` |
 | `library/context/` | Operator positioning/profile/voice (`operator/`), plus shared `channels/`, `people/`, `_meta/` |
 | `library/lenses/` | Tracked package contract plus gitignored, source-backed advisory lens instances; kept separate from operator truth |
-| `library/assets/` | Reusable visual assets: flat `logos/` inventory + `design-languages/` packages, each a replayable ppt-master identity plus its imagery manifest (schema: `library/assets/README.md`) |
+| `library/assets/` | Reusable assets: `logos/`, `design-languages/` packages (ppt-master identity + imagery manifest, optional `video/`), the operator's `media/` shelf, third-party `audio/` (schema: `library/assets/README.md`) |
 | `system/af.py` | Deterministic CLI (ready, publish, version, draft, new-project, automation, autonomy, doctor, pipe, index/search, harness projection sync) |
 | `system/daemon/` | Multi-queue managed-run host, deployment contract, and kickoff prompt |
 | `system/skills/` | Builder + Operator skills; catalog of what each does + when to load at `system/skills/README.md` |

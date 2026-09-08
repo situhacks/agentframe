@@ -18,6 +18,15 @@ library/assets/design-languages/*
 !library/assets/design-languages/.gitkeep
 library/assets/logos/*
 !library/assets/logos/.gitkeep
+# The operator's own captures and licensed audio: card schema travels, instances never do.
+library/assets/media/*
+!library/assets/media/.gitkeep
+library/assets/audio/*
+!library/assets/audio/.gitkeep
+
+# === Local model weights (fetched on first use; never committed) ===
+system/models/*
+!system/models/README.md
 
 # === Operator projects ===
 workspace/projects/*
@@ -29,6 +38,10 @@ workspace/projects/completed/*
 # === Operator pipeline (careers) ===
 workspace/pipeline/*
 !workspace/pipeline/.gitkeep
+
+# === Operator studio (creator) ===
+workspace/studio/*
+!workspace/studio/.gitkeep
 
 # === Operator research ===
 workspace/research/

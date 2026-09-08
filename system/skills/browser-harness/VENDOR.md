@@ -1,8 +1,8 @@
 # Browser Harness vendor record
 
 - Upstream: `https://github.com/browser-use/browser-harness`
-- Source ref: `67e3852d2fc33af46344e6fd7b3ac12930420a67`
-- Snapshot date (UTC): `2026-07-11`
+- Source ref: `afbcc381b963040c19627d788e40c7e7663171ee`
+- Snapshot date (UTC): `2026-09-08`
 - Source location: `system/skills/browser-harness/`
 - License: MIT (`LICENSE`)
 

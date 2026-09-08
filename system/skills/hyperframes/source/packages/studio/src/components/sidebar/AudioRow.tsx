@@ -1,7 +1,16 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { classifyWebAudioMediaRoute } from "@hyperframes/core/runtime/web-audio-route";
 import { ContextMenu } from "./AssetContextMenu";
-import { basename, getAudioSubtype } from "./assetHelpers";
+import { basename, getAudioSubtype, type CopyFeedback } from "./assetHelpers";
 import { TIMELINE_ASSET_MIME } from "../../utils/timelineAssetDrop";
+import { usePlayerStore } from "../../player/store/playerStore";
+import { useAssetPreviewStore } from "../../utils/assetPreviewStore";
+import { findClipForAsset, isPointerClick } from "../../utils/assetClickBehavior";
+import { resolveMediaPreviewUrl } from "../../player/components/thumbnailUtils";
+import { timelineClipFocusId } from "../../player/components/timelineNavigationIdentity";
+
+// Only one preview should play at a time; starting a row stops the previous one.
+let stopCurrentPreview: (() => void) | null = null;
 
 export function AudioRow({
   projectId,
@@ -9,18 +18,20 @@ export function AudioRow({
   used,
   meta,
   onCopy,
-  isCopied,
+  copyFeedback,
   onDelete,
   onRename,
+  onAddAssetToTimeline,
 }: {
   projectId: string;
   asset: string;
   used: boolean;
   meta?: { description?: string; duration?: number };
   onCopy: (path: string) => void;
-  isCopied: boolean;
+  copyFeedback: CopyFeedback;
   onDelete?: (path: string) => void;
   onRename?: (oldPath: string, newPath: string) => void;
+  onAddAssetToTimeline?: (path: string) => void;
 }) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [playing, setPlaying] = useState(false);
@@ -32,15 +43,77 @@ export function AudioRow({
   const animRef = useRef<number>(0);
   const name = basename(asset);
   const subtype = getAudioSubtype(asset);
-  const serveUrl = `/api/projects/${projectId}/preview/${asset}`;
+  const serveUrl = resolveMediaPreviewUrl(asset, projectId);
+  const isCopied = copyFeedback?.path === asset && copyFeedback.ok;
+  const copyFailed = copyFeedback?.path === asset && !copyFeedback.ok;
+
+  const stopPlayback = useCallback(() => {
+    audioRef.current?.pause();
+    setPlaying(false);
+    cancelAnimationFrame(animRef.current);
+  }, []);
+
+  // CapCut-style click behavior: drag-threshold gate.
+  const pointerDownRef = useRef<{ x: number; y: number } | null>(null);
+  const setSelectedElementId = usePlayerStore((s) => s.setSelectedElementId);
+  const requestTimelineFocus = usePlayerStore((s) => s.requestTimelineFocus);
+  const elements = usePlayerStore((s) => s.elements);
+  const setPreviewAsset = useAssetPreviewStore((s) => s.setPreviewAsset);
+  const clearPreviewAsset = useAssetPreviewStore((s) => s.clearPreviewAsset);
+
+  // Reveal the clip when the asset is already on the timeline, otherwise open
+  // the preview overlay. Shared by pointer-up and keyboard activation so the
+  // row does the same thing however it is operated.
+  const activateRow = useCallback(() => {
+    if (used) {
+      const clip = findClipForAsset(elements, asset);
+      if (clip) {
+        // Dismiss any open preview overlay (from another asset) — the reveal
+        // must not leave a stale preview card floating over the canvas.
+        clearPreviewAsset();
+        const clipKey = clip.key ?? clip.id;
+        setSelectedElementId(clipKey);
+        // Scroll the timeline so the selected clip is actually visible.
+        requestTimelineFocus(timelineClipFocusId(clipKey));
+        return;
+      }
+    }
+    // Not added → preview overlay (audio player)
+    setPreviewAsset(asset, projectId);
+  }, [
+    used,
+    elements,
+    asset,
+    projectId,
+    setSelectedElementId,
+    requestTimelineFocus,
+    setPreviewAsset,
+    clearPreviewAsset,
+  ]);
+
+  const handlePointerDown = useCallback((e: React.PointerEvent) => {
+    pointerDownRef.current = { x: e.clientX, y: e.clientY };
+  }, []);
+
+  const handlePointerUp = useCallback(
+    (e: React.PointerEvent) => {
+      const origin = pointerDownRef.current;
+      pointerDownRef.current = null;
+      if (!origin) return;
+      if (!isPointerClick(e.clientX - origin.x, e.clientY - origin.y)) return;
+      activateRow();
+    },
+    [activateRow],
+  );
 
   useEffect(() => {
     return () => {
       cancelAnimationFrame(animRef.current);
       audioRef.current?.pause();
       actxRef.current?.close();
+      if (stopCurrentPreview === stopPlayback) stopCurrentPreview = null;
     };
-  }, []);
+  }, [stopPlayback]);
 
   useEffect(() => {
     if (playing) {
@@ -73,11 +146,14 @@ export function AudioRow({
 
   const togglePlay = useCallback(async () => {
     if (playing) {
-      audioRef.current?.pause();
-      setPlaying(false);
-      cancelAnimationFrame(animRef.current);
+      stopPlayback();
+      if (stopCurrentPreview === stopPlayback) stopCurrentPreview = null;
       return;
     }
+
+    // Stop whichever other row is currently previewing.
+    if (stopCurrentPreview && stopCurrentPreview !== stopPlayback) stopCurrentPreview();
+    stopCurrentPreview = stopPlayback;
 
     if (!actxRef.current) {
       actxRef.current = new AudioContext();
@@ -92,24 +168,56 @@ export function AudioRow({
         setPlaying(false);
         cancelAnimationFrame(animRef.current);
       };
-      audioRef.current = el;
-      sourceRef.current = actxRef.current.createMediaElementSource(el);
-      sourceRef.current.connect(analyserRef.current!);
-      analyserRef.current!.connect(actxRef.current.destination);
+      // `src` must be set BEFORE classifying: the check reads `currentSrc`/
+      // `src`, and a same-origin `serveUrl` mustn't be judged from a blank
+      // element.
       el.src = serveUrl;
+      audioRef.current = el;
+      const analyser = analyserRef.current;
+      // Same hazard `webAudioRoute.ts` documents for the timeline runtime
+      // (#3458): `createMediaElementSource` on a cross-origin element without
+      // a `crossorigin` opt-in permanently reroutes it to a node that outputs
+      // SILENCE per the Web Audio spec, without throwing. Classify first so
+      // this preview player can't reintroduce that bug — skipping the Web
+      // Audio graph here only costs the frequency-bar visualizer; native
+      // `<audio>` playback below stays audible either way.
+      if (analyser && classifyWebAudioMediaRoute(el).kind === "web-audio") {
+        sourceRef.current = actxRef.current.createMediaElementSource(el);
+        sourceRef.current.connect(analyser);
+        analyser.connect(actxRef.current.destination);
+      }
     }
 
     if (actxRef.current.state === "suspended") await actxRef.current.resume();
     audioRef.current.currentTime = 0;
-    await audioRef.current.play();
-    setPlaying(true);
-  }, [serveUrl, playing]);
+    try {
+      await audioRef.current.play();
+      setPlaying(true);
+    } catch {
+      // Playback refused (e.g. decode failure) — reset instead of a stuck state.
+      setPlaying(false);
+      if (stopCurrentPreview === stopPlayback) stopCurrentPreview = null;
+    }
+  }, [serveUrl, playing, stopPlayback]);
 
   return (
     <>
       <div
         draggable
-        onClick={() => onCopy(asset)}
+        onPointerDown={handlePointerDown}
+        onPointerUp={handlePointerUp}
+        role="button"
+        tabIndex={0}
+        aria-label={`${name} — open, drag to timeline, right-click for actions`}
+        onKeyDown={(e) => {
+          // Only when the row itself is focused — keydowns bubbling from the
+          // inner controls (play button) must keep their native activation.
+          if (e.target !== e.currentTarget) return;
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            activateRow();
+          }
+        }}
         onDragStart={(e) => {
           e.dataTransfer.effectAllowed = "copy";
           e.dataTransfer.setData(TIMELINE_ASSET_MIME, JSON.stringify({ path: asset }));
@@ -119,7 +227,7 @@ export function AudioRow({
           e.preventDefault();
           setContextMenu({ x: e.clientX, y: e.clientY });
         }}
-        className={`group w-full text-left px-4 py-1.5 flex items-center gap-2.5 transition-all cursor-pointer ${
+        className={`group w-full text-left px-4 py-1.5 flex items-center gap-2.5 transition-colors cursor-pointer outline-none focus-visible:bg-neutral-800/60 ${
           playing
             ? "bg-panel-accent/[0.06]"
             : isCopied
@@ -128,7 +236,9 @@ export function AudioRow({
         }`}
       >
         <button
-          className={`w-7 h-7 rounded-md flex-shrink-0 flex items-center justify-center transition-all ${
+          aria-label={playing ? `Pause preview of ${name}` : `Play preview of ${name}`}
+          aria-pressed={playing}
+          className={`w-7 h-7 rounded-md flex-shrink-0 flex items-center justify-center transition-colors active:scale-[0.95] ${
             playing
               ? "bg-panel-accent/15 text-panel-accent"
               : "text-panel-text-5 group-hover:text-panel-text-3"
@@ -167,6 +277,16 @@ export function AudioRow({
                 in use
               </span>
             )}
+            {(isCopied || copyFailed) && (
+              <span
+                role="status"
+                className={`flex-shrink-0 text-[9px] font-medium px-1.5 py-px rounded ${
+                  copyFailed ? "text-red-400 bg-red-500/10" : "text-panel-accent bg-panel-accent/10"
+                }`}
+              >
+                {copyFailed ? "Copy failed" : "Copied"}
+              </span>
+            )}
           </div>
           {bars.length > 0 && (
             <div className="flex items-end gap-[2px] h-[14px] mt-0.5">
@@ -195,6 +315,7 @@ export function AudioRow({
           onCopy={onCopy}
           onDelete={onDelete}
           onRename={onRename}
+          onAddAtPlayhead={onAddAssetToTimeline}
         />
       )}
     </>

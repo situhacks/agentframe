@@ -137,8 +137,9 @@ function scopeSelector(
     // caused the parent-body clobber, which is what this remap targets.
     return scopeRootSelectors ? compositionBoxSelector(scope) : selector;
   }
+  // Authored-root patterns must follow the renamed instance, not require a nested root.
   const compositionIdPattern = new RegExp(
-    `\\[\\s*data-composition-id\\s*=\\s*(["'])${escapeRegExp(compositionId)}\\1\\s*\\]`,
+    `\\[\\s*data-composition-id\\s*[\\^\\*\\$]?=\\s*(["'])${escapeRegExp(compositionId)}\\1\\s*\\]`,
     "g",
   );
   if (compositionIdPattern.test(trimmed)) {
@@ -200,6 +201,24 @@ function isInsideGlobalAtRule(rule: Rule): boolean {
   return false;
 }
 
+/**
+ * A Rule nested inside another Rule (CSS Nesting Module Level 1) already
+ * inherits scope from its parent's `&` prefix at match time — re-applying
+ * the composition scope to the nested selector produces
+ * `<scope> <scope> .child`, which matches nothing when the composition
+ * root only appears once in the DOM. Only top-level rules get scoped;
+ * their nested descendants inherit the scope naturally via CSS nesting.
+ * See #2721 for the reproducer that motivated this.
+ */
+function isNestedInsideAnotherRule(rule: Rule): boolean {
+  let current: Node["parent"] = rule.parent;
+  while (current) {
+    if (current.type === "rule") return true;
+    current = current.parent;
+  }
+  return false;
+}
+
 export function scopeCssToComposition(
   css: string,
   compositionId: string,
@@ -212,10 +231,16 @@ export function scopeCssToComposition(
   const scope =
     scopeSelectorOverride ||
     `[data-composition-id="${escapeCssAttributeValue(trimmedCompositionId)}"]`;
-  const root = postcss.parse(css);
+  let root: postcss.Root;
+  try {
+    root = postcss.parse(css);
+  } catch {
+    return "";
+  }
 
   root.walkRules((rule) => {
     if (isInsideGlobalAtRule(rule)) return;
+    if (isNestedInsideAnotherRule(rule)) return;
     rule.selectors = rule.selectors.map((selector) =>
       scopeSelector(
         selector,
@@ -231,6 +256,26 @@ export function scopeCssToComposition(
   return root.toResult({ map: false }).css;
 }
 
+/**
+ * Serialize a value as a JS literal safe to emit inside a `<script>` element.
+ *
+ * `<script>` is a RAW TEXT element: HTML serialization does not escape its
+ * content, and the tokenizer ends the element at the first `</script` — in any
+ * string, comment or regex context. `JSON.stringify` escapes `"` and `\` but
+ * neither `<` nor `/`, so any dynamic literal carrying `</script>` would close
+ * the element early and have the remainder parsed as markup. Rewriting every
+ * `<` to `<` removes the only byte that can start a closing tag, and is
+ * transparent to both `JSON.parse` and the JS string grammar, so the value the
+ * runtime reads is unchanged.
+ *
+ * Every dynamic literal in an emitted script body must go through here: a
+ * per-value guard on this surface has already been missed once, since the
+ * composition id reaches the emitted script through four separate literals.
+ */
+function jsonScriptLiteral(value: unknown): string {
+  return JSON.stringify(value).replace(/</g, "\\u003c");
+}
+
 export function wrapScopedCompositionScript(
   source: string,
   compositionId: string,
@@ -239,19 +284,19 @@ export function wrapScopedCompositionScript(
   timelineCompositionId = compositionId,
   authoredRootId?: string | null,
 ): string {
-  const compositionIdLiteral = JSON.stringify(compositionId);
-  const timelineCompositionIdLiteral = JSON.stringify(timelineCompositionId);
-  const errorLabelLiteral = JSON.stringify(errorLabel);
+  const compositionIdLiteral = jsonScriptLiteral(compositionId);
+  const timelineCompositionIdLiteral = jsonScriptLiteral(timelineCompositionId);
+  const errorLabelLiteral = jsonScriptLiteral(errorLabel);
   const escapedCompositionId = escapeRegExp(compositionId);
-  const authoredRootIdLiteral = JSON.stringify(authoredRootId?.trim() || null);
-  const scopeSelectorLiteral = JSON.stringify(scopeSelectorOverride ?? null);
-  const rootSelectorPatternLiteral = JSON.stringify(
+  const authoredRootIdLiteral = jsonScriptLiteral(authoredRootId?.trim() || null);
+  const scopeSelectorLiteral = jsonScriptLiteral(scopeSelectorOverride ?? null);
+  const rootSelectorPatternLiteral = jsonScriptLiteral(
     String.raw`\[\s*data-composition-id\s*=\s*(?:"${escapedCompositionId}"|'${escapedCompositionId}')\s*\]`,
   );
-  const timingSelectorPatternLiteral = JSON.stringify(
+  const timingSelectorPatternLiteral = jsonScriptLiteral(
     String.raw`\s*\[\s*data-(?:start|duration)\s*=\s*(?:"[^"]*"|'[^']*')\s*\]`,
   );
-  const authoredRootIdFormsLiteral = JSON.stringify(
+  const authoredRootIdFormsLiteral = jsonScriptLiteral(
     getAuthoredRootIdSelectorForms(authoredRootId?.trim() || ""),
   );
   return `(function(){
@@ -259,7 +304,7 @@ export function wrapScopedCompositionScript(
   var __hfTimelineCompId = ${timelineCompositionIdLiteral};
   var __hfErrorLabel = ${errorLabelLiteral};
   var __hfAuthoredRootId = ${authoredRootIdLiteral};
-  var __hfAuthoredRootAttr = ${JSON.stringify(AUTHORED_ROOT_ID_ATTR)};
+  var __hfAuthoredRootAttr = ${jsonScriptLiteral(AUTHORED_ROOT_ID_ATTR)};
   var __hfEscapeAttr = function(value) {
     return (value + "").replace(/\\\\/g, "\\\\\\\\").replace(/"/g, "\\\\\\"");
   };
@@ -408,10 +453,25 @@ export function wrapScopedCompositionScript(
     if (!__hfTimelineRegistryProxy) {
       __hfTimelineRegistryProxy = new Proxy(window.__timelines, {
         get: function(target, prop, receiver) {
-          return Reflect.get(target, prop === __hfCompId ? __hfTimelineCompId : prop, target);
+          if (prop !== __hfCompId) {
+            return Reflect.get(target, prop, target);
+          }
+          var authoredValue = Reflect.get(target, prop, target);
+          return authoredValue === undefined
+            ? Reflect.get(target, __hfTimelineCompId, target)
+            : authoredValue;
         },
         set: function(target, prop, value, receiver) {
-          return Reflect.set(target, prop === __hfCompId ? __hfTimelineCompId : prop, value, target);
+          if (prop !== __hfCompId) {
+            return Reflect.set(target, prop, value, target);
+          }
+          // The authored node remains in the compiled DOM when its local id
+          // differs from the runtime mount id, so readiness legitimately sees
+          // both compositions. Publish the same timeline under both identities
+          // instead of replacing one with the other.
+          var authoredSet = Reflect.set(target, __hfCompId, value, target);
+          var runtimeSet = Reflect.set(target, __hfTimelineCompId, value, target);
+          return authoredSet && runtimeSet;
         },
       });
     }
@@ -431,10 +491,30 @@ export function wrapScopedCompositionScript(
           // (__hfScopedHyperframes is a hoisted var assigned below, before any
           // sub-comp script -- the only code that reads this -- runs.)
           if (prop === "__hyperframes") return __hfScopedHyperframes;
-          return Reflect.get(target, prop, target);
+          // Native window methods must stay bound to the real window. Handed
+          // back unbound, "this" at call time is this Proxy and Chrome rejects
+          // it with "Illegal invocation", which broke window.addEventListener,
+          // setTimeout, matchMedia and getComputedStyle inside every
+          // sub-composition -- including the window.addEventListener("hf-seek",
+          // ...) form the Three.js and TypeGPU adapters document. The sibling
+          // document and gsap proxies here already bind.
+          //
+          // Only bind non-constructors. Function.prototype.bind drops static
+          // members, so binding a class exposed on window (window.Texts and
+          // friends) would silently strip its statics. Built-in methods have
+          // no .prototype; classes and constructor functions do.
+          var value = Reflect.get(target, prop, target);
+          return typeof value === "function" && value.prototype === undefined
+            ? value.bind(target)
+            : value;
         },
         set: function(target, prop, value, receiver) {
           if (prop === "__timelines") {
+            // Common authoring boilerplate assigns the registry back to
+            // itself (window.__timelines = window.__timelines || {}). The
+            // getter above returns our proxy; do not replace the canonical
+            // registry with that proxy or later wrappers will stack proxies.
+            if (value === __hfTimelineRegistryProxy) return true;
             target.__timelines = value || {};
             __hfTimelineRegistryProxy = null;
             return true;
@@ -546,7 +626,7 @@ ${source.replace(/<\/(script)/gi, "<\\/$1")}
 }
 
 export function wrapInlineScriptWithErrorBoundary(source: string, errorLabel: string): string {
-  return `(function(){ try { Function(${JSON.stringify(source)}).call(window); } catch (_err) { console.error(${JSON.stringify(errorLabel)}, _err); } })();`;
+  return `(function(){ try { Function(${jsonScriptLiteral(source)}).call(window); } catch (_err) { console.error(${jsonScriptLiteral(errorLabel)}, _err); } })();`;
 }
 
 /**
@@ -562,10 +642,14 @@ export function wrapInlineScriptWithErrorBoundary(source: string, errorLabel: st
  * `getVariables()` returned `{}` only during render — parametrized sub-comps
  * silently shipped blank/default text in the final MP4 while snapshot QA passed
  * (issue #2064). Both callers now share this one builder so they can't drift.
+ *
+ * Values, keys and composition ids are all attacker-reachable, so the whole
+ * table goes through `jsonScriptLiteral` — see there for why.
  */
 export function buildVariablesByCompScript(
   variablesByComp: Record<string, Record<string, unknown>>,
 ): string | null {
   if (!variablesByComp || Object.keys(variablesByComp).length === 0) return null;
-  return `window.__hfVariablesByComp = Object.assign({}, window.__hfVariablesByComp || {}, ${JSON.stringify(variablesByComp)});`;
+  const json = jsonScriptLiteral(variablesByComp);
+  return `window.__hfVariablesByComp = Object.assign({}, window.__hfVariablesByComp || {}, ${json});`;
 }

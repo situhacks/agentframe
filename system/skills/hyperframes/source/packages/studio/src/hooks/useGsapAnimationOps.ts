@@ -7,6 +7,7 @@ import {
   sdkGsapDeleteAllForSelectorPersist,
   sdkAddWithKeyframesPersist,
   sdkReplaceWithKeyframesPersist,
+  cutoverCommittedOrThrow,
   type CutoverDeps,
 } from "../utils/sdkCutover";
 import {
@@ -52,9 +53,9 @@ export function useGsapAnimationOps({
           sdkDeps,
           { label: "Edit GSAP animation", coalesceKey: `gsap:${animationId}:meta` },
         );
-        if (handled) return;
+        if (cutoverCommittedOrThrow(handled)) return;
       }
-      commitMutationSafely(
+      return commitMutationSafely(
         selection,
         { type: "update-meta", animationId, updates },
         { label: "Edit GSAP animation", coalesceKey: `gsap:${animationId}:meta`, softReload: true },
@@ -74,12 +75,12 @@ export function useGsapAnimationOps({
           sdkDeps,
           { label: "Delete GSAP animation" },
         );
-        if (handled) return;
+        if (cutoverCommittedOrThrow(handled)) return;
       }
-      commitMutationSafely(
+      return commitMutationSafely(
         selection,
         { type: "delete", animationId, stripStudioEdits: true },
-        { label: "Delete GSAP animation" },
+        { label: "Delete GSAP animation", softReload: true },
       );
     },
     [commitMutationSafely, activeCompPath, sdkSession, sdkDeps],
@@ -96,7 +97,7 @@ export function useGsapAnimationOps({
           sdkDeps,
           { label: "Delete all animations for element" },
         );
-        if (handled) return;
+        if (cutoverCommittedOrThrow(handled)) return;
       }
       void commitMutation(
         selection,
@@ -162,7 +163,7 @@ export function useGsapAnimationOps({
           sdkDeps,
           { label: `Add GSAP ${method} animation` },
         );
-        if (handled) return;
+        if (cutoverCommittedOrThrow(handled)) return;
       }
 
       await commitMutation(
@@ -177,7 +178,7 @@ export function useGsapAnimationOps({
           properties: toDefaults[method] ?? { opacity: 1 },
           fromProperties: method === "fromTo" ? { opacity: 0 } : undefined,
         },
-        { label: `Add GSAP ${method} animation` },
+        { label: `Add GSAP ${method} animation`, softReload: true },
       );
     },
     [activeCompPath, commitMutation, projectIdRef, showToast, sdkSession, sdkDeps],
@@ -213,7 +214,7 @@ export function useGsapAnimationOps({
           sdkDeps,
           { label },
         );
-        if (handled) return;
+        if (cutoverCommittedOrThrow(handled)) return;
       }
       void commitMutation(
         selection,
@@ -256,7 +257,7 @@ export function useGsapAnimationOps({
           sdkDeps,
           { label },
         );
-        if (handled) return;
+        if (cutoverCommittedOrThrow(handled)) return;
       }
       void commitMutation(
         selection,

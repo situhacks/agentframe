@@ -37,6 +37,29 @@ describe("parseHtml", () => {
     expect(result.elements[1].duration).toBe(5);
   });
 
+  it("prefers canonical duration/track attributes over conflicting legacy values", () => {
+    const result = parseHtml(`
+      <html><body><div id="stage">
+        <div id="clip" data-start="1" data-duration="2.5" data-end="99" data-track-index="3" data-layer="8"><div>Clip</div></div>
+      </div></body></html>
+    `);
+
+    expect(result.elements[0]).toMatchObject({ startTime: 1, duration: 2.5, zIndex: 3 });
+  });
+
+  it("resolves chained start references with the shared grammar", () => {
+    const result = parseHtml(`
+      <html><body><div id="stage">
+        <div id="intro" data-start="0" data-duration="2"><div>Intro</div></div>
+        <div id="body" data-start="intro + .5" data-duration="3"><div>Body</div></div>
+        <div id="outro" data-start="body" data-duration="1"><div>Outro</div></div>
+      </div></body></html>
+    `);
+
+    expect(result.elements.find(({ name }) => name === "Body")?.startTime).toBe(2.5);
+    expect(result.elements.find(({ name }) => name === "Outro")?.startTime).toBe(5.5);
+  });
+
   it("handles nested compositions", () => {
     const html = `
       <html>
@@ -464,7 +487,8 @@ describe("updateElementInHtml", () => {
     const updated = updateElementInHtml(html, "el1", { startTime: 2, duration: 3 });
 
     expect(updated).toContain('data-start="2"');
-    expect(updated).toContain('data-end="5"'); // data-end gets set to start + duration
+    expect(updated).toContain('data-duration="3"');
+    expect(updated).not.toContain('data-end="');
   });
 
   it("updates element name", () => {
@@ -511,7 +535,10 @@ describe("addElementToHtml", () => {
     expect(id).toBeDefined();
     expect(updated).toContain(`id="${id}"`);
     expect(updated).toContain('data-start="1"');
-    expect(updated).toContain('data-end="4"');
+    expect(updated).toContain('data-duration="3"');
+    expect(updated).toContain('data-track-index="1"');
+    expect(updated).not.toContain('data-end="');
+    expect(updated).not.toContain('data-layer="');
     expect(updated).toContain("Hello!");
   });
 
@@ -551,6 +578,19 @@ describe("removeElementFromHtml", () => {
 
     expect(updated).not.toContain('id="el1"');
     expect(updated).toContain('id="el2"');
+  });
+
+  it("cascades DOM and stable ids for every descendant", () => {
+    const html = `<!doctype html><html><body>
+      <div id="parent"><div id="box" data-hf-id="hf-box"></div></div>
+      <script>const tl = gsap.timeline();
+        tl.to("#parent", { x: 10 }); tl.to("#box", { x: 20 });
+        tl.to('[data-hf-id="hf-box"]', { x: 30 });
+      </script></body></html>`;
+    const updated = removeElementFromHtml(html, "parent");
+    expect(updated).not.toContain("#parent");
+    expect(updated).not.toContain("#box");
+    expect(updated).not.toContain("hf-box");
   });
 
   it("strips ALL gsap tweens for the removed element, not just the first", () => {

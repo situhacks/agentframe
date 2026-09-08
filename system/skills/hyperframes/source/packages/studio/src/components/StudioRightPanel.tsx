@@ -1,70 +1,34 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type MutableRefObject,
-  type PointerEvent as ReactPointerEvent,
-} from "react";
+import { useCallback } from "react";
+import type { StudioRightPanelProps } from "./StudioRightPanel.types";
+
+export type { StudioRightPanelProps };
 import { PropertyPanel } from "./editor/PropertyPanel";
 import { LayersPanel } from "./editor/LayersPanel";
 import { CaptionPropertyPanel } from "../captions/components/CaptionPropertyPanel";
 import { BlockParamsPanel } from "./editor/BlockParamsPanel";
-import { RenderQueue } from "./renders/RenderQueue";
+import { RenderQueuePanel } from "./renders/RenderQueuePanel";
 import { SlideshowPanel } from "./panels/SlideshowPanel";
-import type { SceneInfo } from "./panels/SlideshowPanel";
 import { VariablesPanel } from "./panels/VariablesPanel";
 import { PanelTabButton } from "./PanelTabButton";
-import { usePreviewVariablesStore } from "../hooks/previewVariablesStore";
 import type { RenderJob } from "./renders/useRenderQueue";
-import type { BlockParam } from "@hyperframes/core/registry";
-import type { IframeWindow } from "../player/lib/playbackTypes";
-import { STUDIO_INSPECTOR_PANELS_ENABLED } from "./editor/manualEditingAvailability";
-import type { Composition } from "@hyperframes/sdk";
-import type { EditHistoryKind } from "../utils/editHistory";
+import { STUDIO_FLAT_INSPECTOR_ENABLED } from "./editor/manualEditingAvailability";
 import { useSlideshowPersist } from "../hooks/useSlideshowPersist";
+import { useSlideshowTabState } from "../hooks/useSlideshowTabState";
 import { DesignPanelPromoteProvider } from "./DesignPanelPromoteProvider";
-
 import { useStudioPlaybackContext, useStudioShellContext } from "../contexts/StudioContext";
 import { usePanelLayoutContext } from "../contexts/PanelLayoutContext";
 import { useFileManagerContext } from "../contexts/FileManagerContext";
 import { useDomEditContext } from "../contexts/DomEditContext";
 import { usePlayerStore } from "../player";
-import { waitForMediaJob } from "./studioMediaJobs";
 import {
   applyColorGradingScopeUpdate,
   EMPTY_COLOR_GRADING_SCOPE_RESULT,
   type ColorGradingScope,
 } from "./studioColorGradingScope";
-import type { BackgroundRemovalProgress } from "./editor/propertyPanelTypes";
-
-const MIN_INSPECTOR_SPLIT_PERCENT = 20;
-const MAX_INSPECTOR_SPLIT_PERCENT = 75;
-
-export interface StudioRightPanelProps {
-  designPanelActive: boolean;
-  activeBlockParams?: {
-    blockName: string;
-    blockTitle: string;
-    params: BlockParam[];
-    compositionPath: string;
-  } | null;
-  onCloseBlockParams?: () => void;
-  recordingState?: "idle" | "recording" | "preview";
-  recordingDuration?: number;
-  onToggleRecording?: () => void;
-  /** Dependencies for the Slideshow persist callback, threaded from App.tsx. */
-  sdkSession: Composition | null;
-  reloadPreview: () => void;
-  domEditSaveTimestampRef: MutableRefObject<number>;
-  recordEdit: (entry: {
-    label: string;
-    kind: EditHistoryKind;
-    files: Record<string, { before: string; after: string }>;
-  }) => Promise<void>;
-  onToggleElementHidden?: (elementKey: string, hidden: boolean) => Promise<void> | void;
-}
+import { timelineKeysForSelections } from "../utils/studioHelpers";
+import { canHideSelections } from "../utils/timelineInspector";
+import { useInspectorSplitResize } from "../hooks/useInspectorSplitResize";
+import { useRemoveBackground } from "../hooks/useRemoveBackground";
 
 // fallow-ignore-next-line complexity
 export function StudioRightPanel({
@@ -75,18 +39,23 @@ export function StudioRightPanel({
   recordingDuration,
   onToggleRecording,
   sdkSession,
+  publishSdkSession,
+  forceReloadSdkSession,
   reloadPreview,
   domEditSaveTimestampRef,
   recordEdit,
   onToggleElementHidden,
+  onAutoGroupCarveSources,
+  onAddMediaOverlay,
 }: StudioRightPanelProps) {
   const {
     rightWidth,
-    setRightWidth,
+    adjustPanelWidth,
     rightPanelTab,
     setRightPanelTab,
     rightInspectorPanes,
     toggleRightInspectorPane,
+    setExclusiveRightInspectorPane,
     handlePanelResizeStart,
     handlePanelResizeMove,
     handlePanelResizeEnd,
@@ -97,7 +66,6 @@ export function StudioRightPanel({
     projectId,
     activeCompPath,
     showToast,
-    compositionDimensions,
     waitForPendingDomEditSaves,
     renderQueue,
   } = useStudioShellContext();
@@ -109,10 +77,13 @@ export function StudioRightPanel({
     copiedAgentPrompt,
     clearDomSelection,
     handleUngroupSelection,
+    handleGroupSelection,
     handleDomStyleCommit,
     handleDomAttributeCommit,
     handleDomAttributeLiveCommit,
+    handleDomAttributeQuietCommit,
     handleDomHtmlAttributeCommit,
+    handleDomAttributesCommit,
     handleDomPathOffsetCommit,
     handleDomBoxSizeCommit,
     handleDomRotationCommit,
@@ -139,6 +110,7 @@ export function StudioRightPanel({
     handleUpdateArcSegment,
     handleUnroll,
     handleUpdateKeyframeEase,
+    handleUpdateSegmentEase,
     handleSetAllKeyframeEases,
     handleGsapAddKeyframe,
     handleGsapRemoveKeyframe,
@@ -155,6 +127,7 @@ export function StudioRightPanel({
     readProjectFile,
     writeProjectFile,
     fileTree,
+    editingFile,
   } = useFileManagerContext();
 
   // Discrete ops (toggle, reorder, add/delete, hotspot): persist immediately,
@@ -167,6 +140,7 @@ export function StudioRightPanel({
     recordEdit,
     reloadPreview,
     domEditSaveTimestampRef,
+    publishSdkSession,
   });
 
   // Notes path: persists are debounced in SlideshowPanel; coalesceKey ensures
@@ -179,84 +153,45 @@ export function StudioRightPanel({
     recordEdit,
     reloadPreview,
     domEditSaveTimestampRef,
+    publishSdkSession,
     coalesceKey: activeCompPath ? `slideshow-notes:${activeCompPath}` : "slideshow-notes",
   });
 
-  const [layersPanePercent, setLayersPanePercent] = useState(40);
-  const splitContainerRef = useRef<HTMLDivElement>(null);
-  const splitDragRef = useRef<{
-    startY: number;
-    startPercent: number;
-    height: number;
-  } | null>(null);
-  const backgroundRemovalAbortRef = useRef<AbortController | null>(null);
-
-  useEffect(
-    () => () => {
-      backgroundRemovalAbortRef.current?.abort();
-    },
-    [],
-  );
+  const {
+    layersPanePercent,
+    splitContainerRef,
+    handleInspectorSplitResizeStart,
+    handleInspectorSplitResizeMove,
+    handleInspectorSplitResizeEnd,
+  } = useInspectorSplitResize();
 
   const renderJobs = renderQueue.jobs as RenderJob[];
   const inspectorTabActive = rightPanelTab === "design" || rightPanelTab === "layers";
 
-  // Derive scene list from the live clip manifest in the preview iframe.
-  // fallow-ignore-next-line complexity
-  const slideshowScenes = useMemo<SceneInfo[]>(() => {
-    try {
-      const win = previewIframeRef.current?.contentWindow as IframeWindow | null;
-      return (win?.__clipManifest?.scenes ?? []).map((s) => ({
-        id: s.id,
-        label: s.label,
-        start: s.start,
-        duration: s.duration,
-      }));
-    } catch {
-      return [];
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewIframeRef, rightPanelTab, refreshKey]);
+  const { isSlideshowComposition, slideshowScenes } = useSlideshowTabState({
+    editingFileContent: editingFile?.content,
+    previewIframeRef,
+    refreshKey,
+    rightPanelTab,
+    setRightPanelTab,
+  });
   const designPaneOpen = inspectorTabActive && rightInspectorPanes.design && designPanelActive;
-  const layersPaneOpen =
-    inspectorTabActive && rightInspectorPanes.layers && STUDIO_INSPECTOR_PANELS_ENABLED;
+  const layersPaneOpen = inspectorTabActive && rightInspectorPanes.layers;
 
   const handleInspectorPaneButtonClick = (pane: "design" | "layers") => {
     if (!inspectorTabActive) {
       setRightPanelTab(pane);
       return;
     }
+    // Flat inspector: Layers always renders full-height by itself (see the
+    // render branch below), so the two panes are mutually exclusive here —
+    // otherwise both tabs could show "active" while only one actually shows.
+    if (STUDIO_FLAT_INSPECTOR_ENABLED) {
+      setExclusiveRightInspectorPane(pane);
+      return;
+    }
     toggleRightInspectorPane(pane);
   };
-
-  const handleInspectorSplitResizeStart = useCallback(
-    (event: ReactPointerEvent<HTMLDivElement>) => {
-      event.preventDefault();
-      event.currentTarget.setPointerCapture(event.pointerId);
-      const height = splitContainerRef.current?.getBoundingClientRect().height ?? 0;
-      splitDragRef.current = {
-        startY: event.clientY,
-        startPercent: layersPanePercent,
-        height,
-      };
-    },
-    [layersPanePercent],
-  );
-
-  const handleInspectorSplitResizeMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    const drag = splitDragRef.current;
-    if (!drag || drag.height <= 0) return;
-    const deltaPercent = ((event.clientY - drag.startY) / drag.height) * 100;
-    const next = Math.min(
-      MAX_INSPECTOR_SPLIT_PERCENT,
-      Math.max(MIN_INSPECTOR_SPLIT_PERCENT, drag.startPercent + deltaPercent),
-    );
-    setLayersPanePercent(next);
-  }, []);
-
-  const handleInspectorSplitResizeEnd = useCallback(() => {
-    splitDragRef.current = null;
-  }, []);
 
   const handleApplyColorGradingScope = useCallback(
     async (scope: ColorGradingScope, value: string | null) =>
@@ -295,63 +230,50 @@ export function StudioRightPanel({
     ],
   );
 
-  const handleRemoveBackground = useCallback(
-    // fallow-ignore-next-line complexity
-    async (
-      inputPath: string,
-      options: {
-        createBackgroundPlate?: boolean;
-        quality?: "fast" | "balanced" | "best";
-        onProgress?: (progress: BackgroundRemovalProgress) => void;
-      },
-    ) => {
-      const response = await fetch(
-        `/api/projects/${encodeURIComponent(projectId)}/media/remove-background`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            inputPath,
-            createBackgroundPlate: options.createBackgroundPlate === true,
-            quality: options.quality ?? "balanced",
-          }),
-        },
-      );
-      const data = (await response.json().catch(() => ({}))) as {
-        jobId?: string;
-        error?: string;
-      };
-      if (!response.ok || !data.jobId) {
-        throw new Error(data.error || `Background removal failed (${response.status})`);
-      }
-      showToast("Removing background...", "info");
-      backgroundRemovalAbortRef.current?.abort();
-      const controller = new AbortController();
-      backgroundRemovalAbortRef.current = controller;
-      try {
-        const result = await waitForMediaJob(data.jobId, options.onProgress, controller.signal);
-        await refreshFileTree();
-        showToast(`Created transparent asset: ${result.outputPath.split("/").pop()}`, "info");
-        return result;
-      } finally {
-        if (backgroundRemovalAbortRef.current === controller) {
-          backgroundRemovalAbortRef.current = null;
-        }
-      }
-    },
-    [projectId, refreshFileTree, showToast],
-  );
+  const handleRemoveBackground = useRemoveBackground(projectId, refreshFileTree, showToast);
 
+  /**
+   * A dial being dragged writes to the preview and stops there.
+   *
+   * Every one of these panels previews on each pointermove and commits on
+   * release. Persisting the moves too put a fragment of the drag in the undo
+   * stack — and since those writes race, history could not coalesce them
+   * reliably, so undo took back a sliver of the gesture rather than the gesture.
+   * The release's own commit is what reaches the file and the undo stack.
+   */
+  const setAttributeWhileDragging = useCallback(
+    (attr: string, value: string | null) =>
+      handleDomAttributeLiveCommit(attr, value, undefined, { previewOnly: true }),
+    [handleDomAttributeLiveCommit],
+  );
+  const handleHideAllSelected = () => {
+    // Audio has no visual to hide, and `data-hidden` on an audio element is what
+    // MUTES it — preview silences it and the render drops it from the mix. The
+    // timeline withholds the eye on an audio track for that reason
+    // (`visible={!isAudioTrack}`), and the single-selection panel gates the same
+    // write on `audioSelection`; this multi-selection path was the way back to
+    // it. Checked here as well as in the panel because the button is not the
+    // only caller.
+    if (!canHideSelections(domEditGroupSelections)) {
+      showToast("Audio can't be hidden — use the group's own controls", "info");
+      return;
+    }
+    const { elements } = usePlayerStore.getState();
+    const keys = timelineKeysForSelections(domEditGroupSelections, elements, activeCompPath);
+    if (keys.length > 0) void onToggleElementHidden?.(keys, true);
+  };
   const propertyPanel = (
     <DesignPanelPromoteProvider
       selection={domEditGroupSelections.length > 1 ? null : domEditSelection}
       projectId={projectId}
       activeCompPath={activeCompPath}
+      showToast={showToast}
       readProjectFile={readProjectFile}
       writeProjectFile={writeProjectFile}
       recordEdit={recordEdit}
       reloadPreview={reloadPreview}
       domEditSaveTimestampRef={domEditSaveTimestampRef}
+      forceReloadSharedSdkSession={forceReloadSdkSession}
     >
       <PropertyPanel
         projectId={projectId}
@@ -359,13 +281,19 @@ export function StudioRightPanel({
         assets={assets}
         element={domEditGroupSelections.length > 1 ? null : domEditSelection}
         multiSelectCount={domEditGroupSelections.length}
+        multiSelectedElements={domEditGroupSelections}
+        onGroupSelection={handleGroupSelection}
+        onHideAllSelected={handleHideAllSelected}
         copiedAgentPrompt={copiedAgentPrompt}
         onClearSelection={clearDomSelection}
         onToggleElementHidden={onToggleElementHidden}
+        onAutoGroupCarveSources={onAutoGroupCarveSources}
         onUngroup={handleUngroupSelection}
         onSetStyle={handleDomStyleCommit}
         onSetAttribute={handleDomAttributeCommit}
-        onSetAttributeLive={handleDomAttributeLiveCommit}
+        onSetAttributes={handleDomAttributesCommit}
+        onSetAttributeLive={setAttributeWhileDragging}
+        onSetAttributeQuiet={handleDomAttributeQuietCommit}
         onApplyColorGradingScope={handleApplyColorGradingScope}
         onSetHtmlAttribute={handleDomHtmlAttributeCommit}
         onRemoveBackground={handleRemoveBackground}
@@ -378,6 +306,7 @@ export function StudioRightPanel({
         onRemoveTextField={handleDomRemoveTextField}
         onAskAgent={handleAskAgent}
         onImportAssets={handleImportFiles}
+        onAddMediaOverlay={onAddMediaOverlay}
         fontAssets={fontAssets}
         onImportFonts={handleImportFonts}
         previewIframeRef={previewIframeRef}
@@ -405,6 +334,7 @@ export function StudioRightPanel({
         onUpdateArcSegment={handleUpdateArcSegment}
         onUnroll={handleUnroll}
         onUpdateKeyframeEase={handleUpdateKeyframeEase}
+        onUpdateSegmentEase={handleUpdateSegmentEase}
         onSetAllKeyframeEases={handleSetAllKeyframeEases}
         recordingState={recordingState}
         recordingDuration={recordingDuration}
@@ -413,45 +343,17 @@ export function StudioRightPanel({
     </DesignPanelPromoteProvider>
   );
 
-  const renderQueuePanel = (
-    <RenderQueue
-      jobs={renderJobs}
-      projectId={projectId}
-      onDelete={renderQueue.deleteRender}
-      onCancel={renderQueue.cancelRender}
-      loadError={renderQueue.loadError}
-      onRetryLoad={renderQueue.reloadRenders}
-      actionError={renderQueue.actionError}
-      onDismissActionError={renderQueue.dismissActionError}
-      onClearCompleted={renderQueue.clearCompleted}
-      onStartRender={async (format, quality, resolution, fps) => {
-        await waitForPendingDomEditSaves();
-        const composition =
-          activeCompPath && activeCompPath !== "index.html" ? activeCompPath : undefined;
-        await renderQueue.startRender({
-          fps,
-          quality,
-          format,
-          resolution,
-          composition,
-          // Render what the user is previewing: active variable overrides
-          // from the Variables panel ride along (undefined = defaults).
-          variables: usePreviewVariablesStore.getState().values ?? undefined,
-        });
-      }}
-      compositionDimensions={compositionDimensions}
-      isRendering={renderQueue.isRendering}
-    />
-  );
+  const renderQueuePanel = <RenderQueuePanel />;
 
   return (
     <>
+      {/* Vertical resize divider: 3px visible seam, 13px hit zone via the inner div. */}
       <div
         role="separator"
         aria-label="Resize inspector panel"
         aria-orientation="vertical"
         tabIndex={0}
-        className="group w-2 flex-shrink-0 cursor-col-resize flex items-center justify-center outline-none focus-visible:bg-studio-accent/20"
+        className="group relative w-[3px] flex-shrink-0 cursor-col-resize outline-none focus-visible:bg-studio-accent/20"
         style={{ touchAction: "none" }}
         onPointerDown={(e) => handlePanelResizeStart("right", e)}
         onPointerMove={handlePanelResizeMove}
@@ -462,13 +364,18 @@ export function StudioRightPanel({
           e.preventDefault();
           // Panel is right-anchored: ArrowLeft grows it, ArrowRight shrinks it.
           const delta = e.key === "ArrowLeft" ? 16 : -16;
-          setRightWidth(Math.max(160, Math.min(600, rightWidth + delta)));
+          adjustPanelWidth("right", delta);
         }}
       >
-        <div className="h-[52px] w-px bg-white/12 transition-colors group-hover:bg-white/18 group-active:bg-white/24" />
+        {/* Asymmetric hit zone: 8px into the preview's p-2 gutter (the only dead
+            space), the 3px seam, 2px into the card. Stops short of the 24px WCAG
+            2.5.8 target because the next pixel each way is live. */}
+        <div className="absolute inset-y-0 -left-[8px] w-[13px]" />
+        {/* Visible hairline */}
+        <div className="absolute top-1/2 left-0 h-[52px] w-[3px] -translate-y-1/2 bg-white/12 transition-colors group-hover:bg-white/18 group-active:bg-white/24" />
       </div>
       <div
-        className="flex min-w-0 flex-shrink-0 flex-col overflow-hidden border-l border-neutral-800 bg-neutral-900"
+        className="flex min-w-0 flex-shrink-0 flex-col overflow-hidden rounded-lg border border-neutral-800 bg-neutral-950"
         style={{ width: rightWidth }}
       >
         {captionEditMode ? (
@@ -476,34 +383,32 @@ export function StudioRightPanel({
         ) : (
           <>
             <div className="flex min-w-0 items-center gap-1 overflow-hidden border-b border-neutral-800 px-3 py-2">
-              {STUDIO_INSPECTOR_PANELS_ENABLED && (
-                <>
-                  <PanelTabButton
-                    label="Design"
-                    tooltip="Element styles and properties"
-                    active={designPaneOpen}
-                    onClick={() => handleInspectorPaneButtonClick("design")}
-                  />
-                  <PanelTabButton
-                    label="Layers"
-                    tooltip="Composition layer stack"
-                    active={layersPaneOpen}
-                    onClick={() => handleInspectorPaneButtonClick("layers")}
-                  />
-                </>
-              )}
+              <PanelTabButton
+                label="Design"
+                tooltip="Element styles and properties"
+                active={designPaneOpen}
+                onClick={() => handleInspectorPaneButtonClick("design")}
+              />
+              <PanelTabButton
+                label="Layers"
+                tooltip="Composition layer stack"
+                active={layersPaneOpen}
+                onClick={() => handleInspectorPaneButtonClick("layers")}
+              />
               <PanelTabButton
                 label={renderJobs.length > 0 ? `Renders (${renderJobs.length})` : "Renders"}
                 tooltip="Render queue and exports"
                 active={rightPanelTab === "renders"}
                 onClick={() => setRightPanelTab("renders")}
               />
-              <PanelTabButton
-                label="Slideshow"
-                tooltip="Slideshow branching editor"
-                active={rightPanelTab === "slideshow"}
-                onClick={() => setRightPanelTab("slideshow")}
-              />
+              {isSlideshowComposition && (
+                <PanelTabButton
+                  label="Slideshow"
+                  tooltip="Slideshow branching editor"
+                  active={rightPanelTab === "slideshow"}
+                  onClick={() => setRightPanelTab("slideshow")}
+                />
+              )}
               <PanelTabButton
                 label="Variables"
                 tooltip="Template variables — declare, preview with values"
@@ -520,7 +425,7 @@ export function StudioRightPanel({
                   compositionPath={activeBlockParams.compositionPath}
                   onClose={onCloseBlockParams ?? (() => {})}
                 />
-              ) : rightPanelTab === "slideshow" ? (
+              ) : rightPanelTab === "slideshow" && isSlideshowComposition ? (
                 <SlideshowPanel
                   scenes={slideshowScenes}
                   onPersist={onPersistSlideshow}
@@ -529,11 +434,12 @@ export function StudioRightPanel({
               ) : rightPanelTab === "variables" ? (
                 <VariablesPanel
                   sdkSession={sdkSession}
+                  publishSdkSession={publishSdkSession}
                   reloadPreview={reloadPreview}
                   domEditSaveTimestampRef={domEditSaveTimestampRef}
                   recordEdit={recordEdit}
                 />
-              ) : layersPaneOpen && designPaneOpen ? (
+              ) : layersPaneOpen && designPaneOpen && !STUDIO_FLAT_INSPECTOR_ENABLED ? (
                 <div ref={splitContainerRef} className="flex h-full min-h-0 min-w-0 flex-col">
                   <div
                     className="min-h-[120px] overflow-hidden"

@@ -1,6 +1,5 @@
 // fallow-ignore-file complexity
 import { createHash } from "node:crypto";
-import { spawn } from "node:child_process";
 import {
   copyFileSync,
   existsSync,
@@ -13,8 +12,9 @@ import {
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { parseHTML } from "linkedom";
 import { parseAnimatedGifMetadata, type AnimatedGifMetadata } from "@hyperframes/core";
-import { DEFAULT_VP9_CPU_USED, getFfmpegBinary } from "@hyperframes/engine";
+import { DEFAULT_VP9_CPU_USED, runFfmpeg } from "@hyperframes/engine";
 import { isHttpUrl } from "../utils/urlDownloader.js";
+import { encoderFailureError } from "./render/encoderInterruption.js";
 
 const PREPARED_GIF_SUBDIR = "_animated_gif";
 const CACHE_SCHEMA = "hfgif-v1";
@@ -247,30 +247,22 @@ export function buildAnimatedGifTranscodeArgs(input: {
 }
 
 async function runAnimatedGifTranscode(request: AnimatedGifTranscodeRequest): Promise<void> {
-  await new Promise<void>((resolvePromise, reject) => {
-    const proc = spawn(getFfmpegBinary(), request.args);
-    let stderr = "";
-    const timeout = request.timeoutMs ?? 300_000;
-    const timer = setTimeout(() => {
-      proc.kill("SIGTERM");
-      reject(new Error(`Animated GIF transcode timed out after ${timeout}ms`));
-    }, timeout);
-    proc.stderr.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString();
+  const timeout = request.timeoutMs ?? 300_000;
+  const result = await runFfmpeg(request.args, { timeout });
+  if (result.success) return;
+  if (result.failureReason === "external_interruption") {
+    throw encoderFailureError("Animated GIF transcode failed", {
+      error: `exit ${result.exitCode}: ${result.stderr.slice(-500)}`,
+      failureReason: result.failureReason,
     });
-    proc.on("close", (code) => {
-      clearTimeout(timer);
-      if (code === 0) {
-        resolvePromise();
-        return;
-      }
-      reject(new Error(`Animated GIF transcode failed (${code}): ${stderr.slice(-500)}`));
-    });
-    proc.on("error", (error) => {
-      clearTimeout(timer);
-      reject(error);
-    });
-  });
+  }
+  if (result.terminationReason === "deadline") {
+    throw new Error(`Animated GIF transcode timed out after ${timeout}ms`);
+  }
+  throw (
+    result.error ??
+    new Error(`Animated GIF transcode failed (${result.exitCode}): ${result.stderr.slice(-500)}`)
+  );
 }
 
 async function ensurePreparedWebm(input: {

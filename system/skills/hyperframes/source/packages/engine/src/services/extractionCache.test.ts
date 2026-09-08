@@ -25,6 +25,7 @@ import {
   partialCacheEntryDir,
   publishCacheEntry,
   readKeyStat,
+  rehydrateCacheEntry,
   type CacheKeyInput,
 } from "./extractionCache.js";
 
@@ -37,7 +38,7 @@ const keyFor = (videoPath: string, overrides: Partial<CacheKeyInput> = {}): Cach
     size: stat.size,
     mediaStart: 0,
     duration: 3,
-    fps: 30,
+    fps: "30",
     format: "jpg",
     ...overrides,
   };
@@ -63,8 +64,8 @@ function seedPartialDir(entry: { dir: string; keyHash: string }, frameContent: s
 }
 
 describe("extractionCache constants", () => {
-  it("exposes the v2 schema prefix", () => {
-    expect(SCHEMA_PREFIX).toBe("hfcache-v3-");
+  it("exposes the v4 schema prefix", () => {
+    expect(SCHEMA_PREFIX).toBe("hfcache-v4-");
   });
 
   it("exposes the frame filename prefix shared with the extractor", () => {
@@ -73,6 +74,42 @@ describe("extractionCache constants", () => {
 
   it("uses a dotfile sentinel so ls-without-A hides it", () => {
     expect(COMPLETE_SENTINEL.startsWith(".")).toBe(true);
+  });
+});
+
+describe("rehydrateCacheEntry frame identity", () => {
+  it("fails loudly when a complete cache has a frame-number gap", () => {
+    const { tmpRoot } = makeCacheRoot();
+    try {
+      writeFileSync(join(tmpRoot, "frame_00001.jpg"), "one");
+      writeFileSync(join(tmpRoot, "frame_00003.jpg"), "three");
+
+      expect(() =>
+        rehydrateCacheEntry(
+          { dir: tmpRoot, keyHash: "a".repeat(64) },
+          {
+            videoId: "video-gap",
+            srcPath: "/video.mp4",
+            fps: 30,
+            format: "jpg",
+            metadata: {
+              durationSeconds: 1,
+              videoStreamDurationSeconds: 1,
+              width: 1920,
+              height: 1080,
+              fps: 30,
+              videoCodec: "h264",
+              hasAudio: false,
+              isVFR: false,
+              hasAlpha: false,
+              colorSpace: null,
+            },
+          },
+        ),
+      ).toThrow(/missing.*frame index 1/i);
+    } finally {
+      removeCacheRoot(tmpRoot);
+    }
   });
 });
 
@@ -123,8 +160,14 @@ describe("computeCacheKey", () => {
 
   it("changes when fps changes (different frame count invalidates key)", () => {
     const a = computeCacheKey(base(sourceFile));
-    const b = computeCacheKey({ ...base(sourceFile), fps: 60 });
+    const b = computeCacheKey({ ...base(sourceFile), fps: "60" });
     expect(a).not.toBe(b);
+  });
+
+  it("keeps exact rational rates distinct from their JavaScript decimal", () => {
+    const rational = computeCacheKey({ ...base(sourceFile), fps: "30000/1001" });
+    const decimal = computeCacheKey({ ...base(sourceFile), fps: String(30000 / 1001) });
+    expect(rational).not.toBe(decimal);
   });
 
   it("changes when format changes", () => {
@@ -200,6 +243,18 @@ describe("lookupCacheEntry / markCacheEntryComplete", () => {
 
   const base = (videoPath: string): CacheKeyInput => keyFor(videoPath);
 
+  it("does not reuse a complete entry from the v3 numeric-fps namespace", () => {
+    const input = base(sourceFile);
+    const keyHash = computeCacheKey(input);
+    const staleV3Dir = join(tmpRoot, `hfcache-v3-${keyHash.slice(0, 16)}`);
+    mkdirSync(staleV3Dir, { recursive: true });
+    writeFileSync(join(staleV3Dir, COMPLETE_SENTINEL), "", "utf-8");
+
+    const lookup = lookupCacheEntry(tmpRoot, input);
+    expect(lookup.hit).toBe(false);
+    expect(lookup.entry.dir).toBe(join(tmpRoot, `${SCHEMA_PREFIX}${keyHash.slice(0, 16)}`));
+  });
+
   it("misses on an empty cache root", () => {
     const lookup = lookupCacheEntry(tmpRoot, base(sourceFile));
     expect(lookup.hit).toBe(false);
@@ -209,11 +264,36 @@ describe("lookupCacheEntry / markCacheEntryComplete", () => {
   it("hits after ensureCacheEntryDir + markCacheEntryComplete", () => {
     const first = lookupCacheEntry(tmpRoot, base(sourceFile));
     ensureCacheEntryDir(first.entry);
+    writeFileSync(join(first.entry.dir, "frame_00001.jpg"), "x", "utf-8");
     markCacheEntryComplete(first.entry);
 
     const second = lookupCacheEntry(tmpRoot, base(sourceFile));
     expect(second.hit).toBe(true);
     expect(second.entry.dir).toBe(first.entry.dir);
+  });
+
+  it("treats a sentineled entry with no frames as a miss", () => {
+    const first = lookupCacheEntry(tmpRoot, base(sourceFile));
+    ensureCacheEntryDir(first.entry);
+    writeFileSync(join(first.entry.dir, "frame_00001.jpg"), "x", "utf-8");
+    markCacheEntryComplete(first.entry);
+    expect(lookupCacheEntry(tmpRoot, base(sourceFile)).hit).toBe(true);
+
+    // Any per-file cleanup can empty the directory while leaving the sentinel.
+    // Serving that as a hit rehydrates zero frames, so every later render of
+    // the project fails identically at the coverage gate.
+    rmSync(join(first.entry.dir, "frame_00001.jpg"));
+
+    expect(lookupCacheEntry(tmpRoot, base(sourceFile)).hit).toBe(false);
+  });
+
+  it("counts frames of any format when deciding a hit", () => {
+    const first = lookupCacheEntry(tmpRoot, base(sourceFile));
+    ensureCacheEntryDir(first.entry);
+    writeFileSync(join(first.entry.dir, "frame_00001.png"), "x", "utf-8");
+    markCacheEntryComplete(first.entry);
+
+    expect(lookupCacheEntry(tmpRoot, base(sourceFile)).hit).toBe(true);
   });
 
   it("treats an in-progress dir without the sentinel as a miss", () => {

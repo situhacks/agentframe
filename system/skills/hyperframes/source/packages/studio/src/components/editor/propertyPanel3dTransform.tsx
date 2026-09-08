@@ -1,10 +1,10 @@
 import { useState } from "react";
 import type { DomEditSelection } from "./domEditingTypes";
-import { STUDIO_KEYFRAMES_ENABLED } from "./manualEditingAvailability";
 import { MetricField } from "./propertyPanelPrimitives";
 import { KeyframeNavigation } from "./KeyframeNavigation";
 import { formatPxMetricValue, parsePxMetricValue, RESPONSIVE_GRID } from "./propertyPanelHelpers";
 import { Transform3DCube, type CubePose } from "./Transform3DCube";
+import { useTrackDesignInput } from "../../contexts/DesignPanelInputContext";
 
 // translateZ only foreshortens under a perspective lens. Rather than hardcode one
 // (an arbitrary px value reads wrong at different canvas sizes), derive it from the
@@ -71,6 +71,7 @@ function Cube3dControl({
   onKeyframe?: () => void;
   keyframed?: boolean;
 }) {
+  const track = useTrackDesignInput();
   const pose: CubePose = {
     rotationX: gsapRuntimeValues.rotationX ?? 0,
     rotationY: gsapRuntimeValues.rotationY ?? 0,
@@ -96,6 +97,7 @@ function Cube3dControl({
     }
     const axes = Object.keys(changedProps);
     if (axes.length === 0) return;
+    track("slider", "3D rotation pose");
     // ONE keyframe for the whole pose change — avoids per-axis commits racing into
     // adjacent duplicate keyframes.
     void onCommitAnimatedProperties(element, changedProps);
@@ -111,6 +113,7 @@ function Cube3dControl({
       scale: 1,
       transformPerspective: 0,
     };
+    track("button", "Reset 3D transform");
     void onCommitAnimatedProperties(element, identity);
   };
   // Immediate element feedback while dragging — set the live transform without a
@@ -168,6 +171,7 @@ function Cube3dControl({
             }
             // One commit for all props so the writes can't race read-modify-write on
             // the same script (which dropped a prop and reverted after a seek).
+            track("slider", "3D depth");
             void onCommitAnimatedProperties(element, props);
           }}
           onRecenter={recenter}
@@ -249,12 +253,12 @@ function Transform3dField({
           onCommit={(next) => {
             const v = parse(next);
             if (v != null && onCommitAnimatedProperty) {
-              void onCommitAnimatedProperty(ctx.element, prop, v);
+              return onCommitAnimatedProperty(ctx.element, prop, v);
             }
           }}
         />
       </div>
-      {STUDIO_KEYFRAMES_ENABLED && (gsapAnimId || onCommitAnimatedProperty) && (
+      {(gsapAnimId || onCommitAnimatedProperty) && (
         <KeyframeNavigation
           property={prop}
           keyframes={ctx.gsapKeyframes}
@@ -318,11 +322,19 @@ export function PropertyPanel3dTransform({
       <button
         type="button"
         onClick={() => setCollapsed((v) => !v)}
-        className="mb-2 flex w-full items-center justify-between text-[10px] font-medium uppercase tracking-wider text-neutral-600 hover:text-neutral-400"
+        aria-expanded={!collapsed}
+        className="mb-2 flex w-full items-center justify-between text-[10px] font-medium uppercase tracking-wider text-neutral-600 hover:text-neutral-400 active:scale-[0.99]"
       >
         <span>3D Transform</span>
-        <svg width="9" height="9" viewBox="0 0 10 10" fill="currentColor" aria-hidden>
-          {collapsed ? <path d="M3 2l4 3-4 3z" /> : <path d="M2 3l3 4 3-4z" />}
+        <svg
+          width="9"
+          height="9"
+          viewBox="0 0 10 10"
+          fill="currentColor"
+          aria-hidden
+          className={`transition-transform duration-150 ${collapsed ? "-rotate-90" : ""}`}
+        >
+          <path d="M2 3l3 4 3-4z" />
         </svg>
       </button>
       {collapsed ? null : (

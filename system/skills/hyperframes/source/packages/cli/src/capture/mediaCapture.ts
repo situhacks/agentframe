@@ -11,6 +11,7 @@ import type { Browser, Page } from "puppeteer-core";
 import { mkdirSync, writeFileSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, extname } from "node:path";
 import { isPrivateUrl, safeFetch } from "./assetDownloader.js";
+import { CAPTURE_USER_AGENT } from "./userAgent.js";
 
 /** Discovered Lottie item from network interception or DOM scan. */
 export interface DiscoveredLottie {
@@ -18,6 +19,14 @@ export interface DiscoveredLottie {
   data?: unknown;
   dimensions?: { w: number; h: number };
   frameRate?: number;
+}
+
+interface RemainingBudget {
+  remainingMs?: () => number;
+}
+
+function liveRemainingMs(budget: RemainingBudget, fallbackMs: number): number {
+  return budget.remainingMs?.() ?? fallbackMs;
 }
 
 /**
@@ -30,11 +39,13 @@ export interface DiscoveredLottie {
 export async function saveLottieAnimations(
   discoveredLotties: DiscoveredLottie[],
   lottieDir: string,
+  budget: RemainingBudget = {},
 ): Promise<number> {
   let savedCount = 0;
   const savedHashes = new Set<string>(); // Deduplicate by content
 
   for (let li = 0; li < discoveredLotties.length && li < 10; li++) {
+    if (liveRemainingMs(budget, 10_000) <= 0) break;
     const lottieItem = discoveredLotties[li]!;
     try {
       let jsonData: string | undefined;
@@ -43,10 +54,12 @@ export async function saveLottieAnimations(
         // Already have the JSON data from network interception
         jsonData = JSON.stringify(lottieItem.data);
       } else if (lottieItem.url) {
+        const requestTimeoutMs = Math.min(10_000, liveRemainingMs(budget, 10_000));
+        if (requestTimeoutMs <= 0) break;
         // SSRF guard — safeFetch re-checks the denylist on every redirect hop
         const res = await safeFetch(lottieItem.url, {
-          signal: AbortSignal.timeout(10000),
-          headers: { "User-Agent": "HyperFrames/1.0" },
+          signal: AbortSignal.timeout(requestTimeoutMs),
+          headers: { "User-Agent": CAPTURE_USER_AGENT },
         });
         if (!res || !res.ok) continue;
         const buf = Buffer.from(await res.arrayBuffer());
@@ -110,17 +123,18 @@ export async function saveLottieAnimations(
  *
  * Opens each Lottie JSON in a headless Chrome page via lottie-web,
  * seeks to ~30% through the animation, and takes a transparent screenshot.
- * Writes a lottie-manifest.json with metadata + preview paths.
+ * Writes a lottie-manifest.json with metadata and successfully rendered preview paths.
  */
 // fallow-ignore-next-line complexity
 export async function renderLottiePreviews(
   chromeBrowser: Browser,
   lottieDir: string,
   outputDir: string,
+  budget: RemainingBudget = {},
 ): Promise<void> {
   const manifest: Array<{
     file: string;
-    preview: string;
+    preview?: string;
     name: string;
     width: number;
     height: number;
@@ -133,11 +147,13 @@ export async function renderLottiePreviews(
 
   for (const file of readdirSync(lottieDir)) {
     if (!file.endsWith(".json")) continue;
+    if (liveRemainingMs(budget, 1) <= 0) break;
     try {
       const raw = JSON.parse(readFileSync(join(lottieDir, file), "utf-8"));
       const fr = raw.fr || 30;
       const dur = ((raw.op || 0) - (raw.ip || 0)) / fr;
       const previewName = file.replace(".json", "-preview.png");
+      let preview: string | undefined;
 
       // Render a mid-frame thumbnail using Puppeteer + lottie-web
       // Skip huge Lottie files for preview (CDP has a ~256MB message limit)
@@ -146,7 +162,9 @@ export async function renderLottiePreviews(
 
       let previewPage;
       try {
+        if (liveRemainingMs(budget, 1) <= 0) break;
         previewPage = await chromeBrowser.newPage();
+        if (liveRemainingMs(budget, 1) <= 0) break;
         await previewPage.setViewport({ width: 400, height: 400 });
         const animData = JSON.parse(readFileSync(join(lottieDir, file), "utf-8"));
         const midFrame = Math.floor(((raw.op || 0) - (raw.ip || 0)) * 0.3);
@@ -180,11 +198,14 @@ export async function renderLottiePreviews(
         await previewPage
           .waitForFunction(() => (window as any).__READY === true, { timeout: 5000 })
           .catch(() => {});
-        await previewPage.screenshot({
-          path: join(previewDir, previewName),
-          type: "png",
-          omitBackground: true,
-        });
+        if (liveRemainingMs(budget, 1) > 0) {
+          await previewPage.screenshot({
+            path: join(previewDir, previewName),
+            type: "png",
+            omitBackground: true,
+          });
+          preview = `assets/lottie/previews/${previewName}`;
+        }
       } catch {
         /* preview rendering failed — non-critical */
       } finally {
@@ -193,7 +214,7 @@ export async function renderLottiePreviews(
 
       manifest.push({
         file: `assets/lottie/${file}`,
-        preview: `assets/lottie/previews/${previewName}`,
+        ...(preview ? { preview } : {}),
         name: raw.nm || file,
         width: raw.w || 0,
         height: raw.h || 0,
@@ -216,6 +237,15 @@ export async function renderLottiePreviews(
 
 const MAX_VIDEO_BYTES = 75 * 1024 * 1024; // 75 MB — hero/demo clips, not full films
 const DOWNLOADABLE_VIDEO_EXTS = new Set([".mp4", ".webm", ".mov", ".m4v"]);
+const VIDEO_DOWNLOAD_TIMEOUT_MS = 120_000;
+
+export function remainingVideoDownloadTimeoutMs(
+  budgetStartedAt: number,
+  budgetMs: number,
+  now = Date.now(),
+): number {
+  return Math.max(0, Math.min(VIDEO_DOWNLOAD_TIMEOUT_MS, budgetMs - (now - budgetStartedAt)));
+}
 
 /**
  * Download a <video> body to assets/videos/<file>, returning the
@@ -234,6 +264,7 @@ async function downloadVideoBody(
   srcUrl: string,
   filename: string,
   videosDir: string,
+  timeoutMs: number,
 ): Promise<string | null> {
   if (isPrivateUrl(srcUrl)) return null; // cheap pre-check; safeFetch re-checks every hop
   let ext = "";
@@ -247,8 +278,8 @@ async function downloadVideoBody(
     // safeFetch resolves redirects manually and re-runs isPrivateUrl on each
     // Location hop, so a public URL cannot 30x to an internal/metadata host.
     const res = await safeFetch(srcUrl, {
-      signal: AbortSignal.timeout(120000), // up to ~75 MB on a slow link; aborts cleanly → still-frame fallback
-      headers: { "User-Agent": "HyperFrames/1.0" },
+      signal: AbortSignal.timeout(timeoutMs), // bounded by both per-request and aggregate capture budgets
+      headers: { "User-Agent": CAPTURE_USER_AGENT },
     });
     if (!res || !res.ok || !res.body) return null;
     const ct = (res.headers.get("content-type") || "").toLowerCase();
@@ -352,11 +383,12 @@ async function sampleVideoDom(
   page: Page,
   budgetMs: number,
   netSet: Set<string>,
+  budget: RemainingBudget,
 ): Promise<VideoDescriptor[]> {
   const seen = new Map<string, VideoDescriptor>();
   const start = Date.now();
   let stale = 0;
-  while (Date.now() - start < budgetMs && stale < 3) {
+  while (Date.now() - start < budgetMs && stale < 3 && liveRemainingMs(budget, 1) > 0) {
     let grew = false;
     const netBefore = netSet.size;
     for (const d of await scanVideoDom(page)) {
@@ -367,7 +399,12 @@ async function sampleVideoDom(
     }
     if (netSet.size > netBefore) grew = true;
     stale = grew ? 0 : stale + 1;
-    await new Promise((r) => setTimeout(r, 2000));
+    const waitMs = Math.min(
+      2000,
+      Math.max(0, budgetMs - (Date.now() - start)),
+      Math.max(0, liveRemainingMs(budget, 2000)),
+    );
+    if (waitMs > 0) await new Promise((r) => setTimeout(r, waitMs));
   }
   return [...seen.values()];
 }
@@ -397,7 +434,12 @@ export async function captureVideoManifest(
   page: Page,
   outputDir: string,
   progress: (stage: string, detail?: string) => void,
-  opts?: { networkVideoUrls?: Set<string>; sampleMs?: number; downloadBudgetMs?: number },
+  opts?: {
+    networkVideoUrls?: Set<string>;
+    sampleMs?: number;
+    downloadBudgetMs?: number;
+    remainingMs?: () => number;
+  },
 ): Promise<void> {
   const netSet = opts?.networkVideoUrls ?? new Set<string>();
   const sampleMs = opts?.sampleMs ?? 0;
@@ -406,7 +448,9 @@ export async function captureVideoManifest(
   // DOM scan, optionally sampled over time (Layer 2) when videos are present.
   const initial = await scanVideoDom(page);
   const domVideos =
-    initial.length > 0 && sampleMs > 0 ? await sampleVideoDom(page, sampleMs, netSet) : initial;
+    initial.length > 0 && sampleMs > 0
+      ? await sampleVideoDom(page, sampleMs, netSet, opts ?? {})
+      : initial;
 
   // Merge DOM (rich) + network-only (thin, Layer 1), deduped by download
   // filename so a clip seen in both lands once. netSet is read here — AFTER
@@ -462,6 +506,11 @@ export async function captureVideoManifest(
 
   const dlStart = Date.now();
   for (let vi = 0; vi < merged.length && vi < 20; vi++) {
+    const iterationRemainingMs = liveRemainingMs(
+      opts ?? {},
+      remainingVideoDownloadTimeoutMs(dlStart, downloadBudgetMs),
+    );
+    if (iterationRemainingMs <= 0) break;
     const v = merged[vi]!;
     let preview: string | undefined;
 
@@ -485,16 +534,18 @@ export async function captureVideoManifest(
         }, v.filename)) as { x: number; y: number; width: number; height: number } | null;
         if (rect && rect.width >= 10) {
           await new Promise((r) => setTimeout(r, 200)); // let decoder settle
-          await page.screenshot({
-            path: join(previewDir, previewName),
-            clip: {
-              x: Math.max(0, rect.x),
-              y: Math.max(0, rect.y),
-              width: Math.min(rect.width, 1920),
-              height: Math.min(rect.height, 1080),
-            },
-          });
-          preview = `assets/videos/previews/${previewName}`;
+          if (liveRemainingMs(opts ?? {}, 1) > 0) {
+            await page.screenshot({
+              path: join(previewDir, previewName),
+              clip: {
+                x: Math.max(0, rect.x),
+                y: Math.max(0, rect.y),
+                width: Math.min(rect.width, 1920),
+                height: Math.min(rect.height, 1080),
+              },
+            });
+            preview = `assets/videos/previews/${previewName}`;
+          }
         }
       } catch {
         /* preview failed — non-critical */
@@ -505,9 +556,13 @@ export async function captureVideoManifest(
     // direct file. Cumulative budget caps total download time so a throttled
     // host or many large clips can't stall capture — over budget, keep the
     // preview (if any) and stop fetching bodies.
+    const downloadTimeoutMs = Math.min(
+      remainingVideoDownloadTimeoutMs(dlStart, downloadBudgetMs),
+      liveRemainingMs(opts ?? {}, VIDEO_DOWNLOAD_TIMEOUT_MS),
+    );
     const savedPath =
-      Date.now() - dlStart < downloadBudgetMs
-        ? await downloadVideoBody(v.src, v.filename, videoManifestDir)
+      downloadTimeoutMs > 0
+        ? await downloadVideoBody(v.src, v.filename, videoManifestDir, downloadTimeoutMs)
         : null;
 
     // A network-only video with neither a preview nor a downloaded body carries

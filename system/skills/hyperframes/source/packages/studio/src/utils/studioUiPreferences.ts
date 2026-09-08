@@ -4,12 +4,18 @@ export interface StoredPreviewZoomState {
   panY: number;
 }
 
+export type TimelineTimeDisplayMode = "time" | "frame";
+
 export interface StudioUiPreferences {
   leftCollapsed?: boolean;
+  leftWidth?: number;
+  rightWidth?: number;
   timelineVisible?: boolean;
   timelineHeight?: number;
   playbackRate?: number;
   audioMuted?: boolean;
+  audioVolume?: number;
+  thumbnailMode?: "adaptive" | "hidden";
   previewZoom?: StoredPreviewZoomState;
   recentBlocks?: string[];
   snapEnabled?: boolean;
@@ -19,7 +25,7 @@ export interface StudioUiPreferences {
   /** Timeline magnet: snap clip drags/trims/drops to playhead, clip edges, and beats. */
   timelineSnapEnabled?: boolean;
   /** Transport + ruler readout mode: timecode or frame number. */
-  timeDisplayMode?: "time" | "frame";
+  timeDisplayMode?: TimelineTimeDisplayMode;
   /**
    * Timeline zoom mode. Persisted so a zoom PINNED on the first edit survives the
    * post-edit iframe reload — otherwise the store reset to "fit" and the duration
@@ -28,6 +34,14 @@ export interface StudioUiPreferences {
   timelineZoomMode?: "fit" | "manual";
   /** Manual timeline zoom percent, paired with `timelineZoomMode: "manual"`. */
   timelineManualZoomPercent?: number;
+  /**
+   * Expose Studio's editing capabilities to an agentic browser as WebMCP tools.
+   * Absent means on: the browser still gates every actual call behind its own
+   * permission prompt, so "registered" is not "reachable without consent".
+   * Changes take effect on the next Studio reload because registration is
+   * intentionally scoped to one mount.
+   */
+  agentToolsEnabled?: boolean;
 }
 
 const STUDIO_UI_PREFERENCES_KEY = "hf-studio-ui-preferences";
@@ -58,6 +72,12 @@ function readStorage(storage: Storage | null): StudioUiPreferences {
     if (typeof parsed.leftCollapsed === "boolean") {
       preferences.leftCollapsed = parsed.leftCollapsed;
     }
+    if (typeof parsed.leftWidth === "number" && Number.isFinite(parsed.leftWidth)) {
+      preferences.leftWidth = parsed.leftWidth;
+    }
+    if (typeof parsed.rightWidth === "number" && Number.isFinite(parsed.rightWidth)) {
+      preferences.rightWidth = parsed.rightWidth;
+    }
     if (typeof parsed.timelineVisible === "boolean") {
       preferences.timelineVisible = parsed.timelineVisible;
     }
@@ -69,6 +89,19 @@ function readStorage(storage: Storage | null): StudioUiPreferences {
     }
     if (typeof parsed.audioMuted === "boolean") {
       preferences.audioMuted = parsed.audioMuted;
+    }
+    if (
+      typeof parsed.audioVolume === "number" &&
+      Number.isFinite(parsed.audioVolume) &&
+      parsed.audioVolume >= 0 &&
+      parsed.audioVolume <= 1
+    ) {
+      preferences.audioVolume = parsed.audioVolume;
+    }
+    if (parsed.thumbnailMode === "adaptive" || parsed.thumbnailMode === "hidden") {
+      preferences.thumbnailMode = parsed.thumbnailMode;
+    } else if (typeof parsed.thumbnailsEnabled === "boolean") {
+      preferences.thumbnailMode = parsed.thumbnailsEnabled ? "adaptive" : "hidden";
     }
     if (isRecord(parsed.previewZoom)) {
       const { zoomPercent, panX, panY } = parsed.previewZoom;
@@ -114,6 +147,9 @@ function readStorage(storage: Storage | null): StudioUiPreferences {
       Number.isFinite(parsed.timelineManualZoomPercent)
     ) {
       preferences.timelineManualZoomPercent = parsed.timelineManualZoomPercent;
+    }
+    if (typeof parsed.agentToolsEnabled === "boolean") {
+      preferences.agentToolsEnabled = parsed.agentToolsEnabled;
     }
     return preferences;
   } catch {

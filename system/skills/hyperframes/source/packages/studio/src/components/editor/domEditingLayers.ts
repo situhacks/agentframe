@@ -281,10 +281,6 @@ export function resolveDomEditCapabilities(args: {
   ).capabilities;
 }
 
-// ─── Element label ────────────────────────────────────────────────────────────
-
-// ─── Source probe ────────────────────────────────────────────────────────────
-
 async function probeSourceElement(
   projectId: string,
   sourceFile: string,
@@ -310,17 +306,21 @@ async function probeSourceElement(
   }
 }
 
-// ─── Selection resolution ────────────────────────────────────────────────────
-
 // fallow-ignore-next-line complexity
 export async function resolveDomEditSelection(
   startEl: HTMLElement | null,
-  options: DomEditContextOptions & { projectId?: string | null; skipSourceProbe?: boolean },
+  options: DomEditContextOptions & {
+    projectId?: string | null;
+    skipSourceProbe?: boolean;
+    exactTarget?: boolean;
+  },
 ): Promise<DomEditSelection | null> {
   if (!startEl) return null;
   const doc = startEl.ownerDocument;
 
-  let capture = resolveGroupCapture(startEl, options.activeGroupElement ?? null);
+  let capture = options.exactTarget
+    ? ({ kind: "unit", element: startEl } as const)
+    : resolveGroupCapture(startEl, options.activeGroupElement ?? null);
   if (capture.kind === "out-of-scope") {
     // Drill-in is non-sticky: clicking/hovering OUTSIDE the drilled-into group
     // exits it and resolves the target normally, rather than selecting nothing
@@ -458,10 +458,14 @@ export function countDomEditChildLayers(
   return count;
 }
 
+// Every editable element under `root`, in document order. `maxItems` is a
+// caller's rendering budget, not a property of the document: hit-testing
+// callers (marquee, off-canvas indicators) must see all of it, and sharing a
+// truncated list left everything past the cut unselectable however far you drag.
 export function collectDomEditLayerItems(
   root: HTMLElement | null | undefined,
   options: DomEditContextOptions,
-  maxItems = 80,
+  maxItems = Number.POSITIVE_INFINITY,
 ): DomEditLayerItem[] {
   if (!root) return [];
 
@@ -519,12 +523,13 @@ export function buildDomEditTextPatchOperation(
   value: string,
   childLocator?: DomEditChildLocator,
 ): PatchOperation {
-  return {
-    type: "text-content",
-    property: "text",
-    value,
-    ...childLocator,
-  };
+  return { type: "text-content", property: "text", value, ...childLocator };
+}
+
+/** Replace an element's contents with markup, for a change no per-child operation
+ * can express (a text layer added, removed or reordered). Sanitized at both ends. */
+export function buildDomEditRichTextPatchOperation(value: string): PatchOperation {
+  return { type: "rich-text", property: "", value };
 }
 
 // ─── Non-editable reason ─────────────────────────────────────────────────────

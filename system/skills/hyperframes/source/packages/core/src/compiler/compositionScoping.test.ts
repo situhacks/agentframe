@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { parseHTML } from "linkedom";
 import {
+  buildVariablesByCompScript,
   scopeCssToComposition,
   wrapInlineScriptWithErrorBoundary,
   wrapScopedCompositionScript,
@@ -105,6 +106,31 @@ body { margin: 0; }
     expect(wrapped).not.toContain("requestAnimationFrame");
   });
 
+  it.each(["=", "^=", "*=", "$="])(
+    "scopes %s authored-root selectors to the duplicate instance and its box",
+    (operator) => {
+      const scope = '[data-composition-id="scene__hf2"]';
+      const scoped = scopeCssToComposition(
+        `[data-composition-id${operator}"scene"] { padding: 13px; }
+[data-composition-id${operator}"scene"] .item { border-width: 3px; }`,
+        "scene",
+        scope,
+      );
+
+      expect(scoped).toContain(
+        `${scope}:not(:has([data-hf-inner-root])), ${scope} > [data-hf-inner-root] { padding: 13px; }`,
+      );
+      expect(scoped).toContain(`${scope} .item { border-width: 3px; }`);
+      expect(scoped).not.toContain(`[data-composition-id${operator}"scene"]`);
+    },
+  );
+
+  it("preserves pattern selectors for a different nested composition", () => {
+    const scope = '[data-composition-id="scene__hf2"]';
+    const css = '[data-composition-id^="nested"] .item { color: red; }';
+    expect(scopeCssToComposition(css, "scene", scope)).toBe(`${scope} ${css}`);
+  });
+
   it("normalizes root timing attributes when scoping selectors", () => {
     const scoped = scopeCssToComposition(
       '[data-composition-id="scene"][data-start="0"] .title { opacity: 0; }',
@@ -166,6 +192,40 @@ body { margin: 0; }
     new Function("window", wrapped)(fakeWindow);
 
     expect(fakeWindow.__captured).toEqual({ title: "Pro", price: "$29" });
+  });
+
+  it("hands native window methods back bound to the real window", () => {
+    // Regression: the scoped `window` proxy returned natives UNBOUND, so `this`
+    // at call time was the Proxy itself and Chrome rejected it with
+    // "Illegal invocation" — breaking window.addEventListener, setTimeout,
+    // matchMedia, getComputedStyle and requestAnimationFrame in every
+    // sub-composition, including the window.addEventListener("hf-seek", ...)
+    // form the Three.js and TypeGPU adapters document. The sibling document
+    // and gsap proxies in this file always bound; this one did not.
+    const { document } = parseHTML(`<div data-composition-id="scene"></div>`);
+    const fakeWindow: Record<string, unknown> = { document, __timelines: {} };
+    let boundToWindow = false;
+    // Method shorthand, not `function () {}`: like a real native method it has
+    // no `.prototype`, which is the property the proxy uses to tell a method
+    // apart from a class. Stands in for the native brand check, which throws
+    // when the method is invoked with anything else as `this`.
+    const natives = {
+      addEventListener(this: unknown) {
+        if (this !== fakeWindow) throw new TypeError("Illegal invocation");
+        boundToWindow = true;
+      },
+    };
+    fakeWindow.addEventListener = natives.addEventListener;
+
+    const wrapped = wrapScopedCompositionScript(
+      `window.addEventListener("hf-seek", function () {});`,
+      "scene",
+    );
+    new Function("window", wrapped)(fakeWindow);
+
+    // Asserted on the call landing, not on throwing: the wrapper's error
+    // boundary swallows the TypeError, which is why this shipped unnoticed.
+    expect(boundToWindow).toBe(true);
   });
 
   it("preserves non-getVariables members on window.__hyperframes (only getVariables is rescoped)", () => {
@@ -582,7 +642,7 @@ window.__utilsMarker = gsap.utils.marker;
     expect(errorSpy).not.toHaveBeenCalled();
   });
 
-  it("reads remapped timeline registry accessors with the original target receiver", () => {
+  it("reads and dual-publishes remapped timelines without replacing the registry", () => {
     let timeline = "initial";
     const timelineRegistry = {
       get host() {
@@ -633,6 +693,8 @@ window.__afterTimeline = window.__timelines.scene;
 
     expect(fakeWindow.__beforeTimeline).toBe("initial");
     expect(fakeWindow.__afterTimeline).toBe("updated");
+    expect(Reflect.get(timelineRegistry, "scene")).toBe("updated");
+    expect(fakeWindow.__timelines).toBe(timelineRegistry);
     expect(errorSpy).not.toHaveBeenCalled();
   });
 
@@ -697,13 +759,18 @@ window.__afterTimeline = window.__timelines.scene;
   });
 
   it("wraps unscoped composition script source as a string literal", () => {
+    const source = 'window.payload = "</script><script>window.pwned = true;</script>";';
     const wrapped = wrapInlineScriptWithErrorBoundary(
-      'window.payload = "</script><script>window.pwned = true;</script>";',
+      source,
       "[HyperFrames] composition script error:",
     );
 
     expect(wrapped).toContain("Function(");
-    expect(wrapped).toContain('\\"</script><script>window.pwned = true;</script>\\"');
+    // The literal carries the source verbatim, with `<` escaped so it cannot end the
+    // raw-text `<script>` this is emitted into.
+    expect(wrapped).not.toContain("</script");
+    const literal = /Function\((".*")\)/.exec(wrapped)?.[1];
+    expect(JSON.parse(literal ?? "")).toBe(source);
   });
 
   it("rewrites #id CSS selectors to [data-hf-authored-id] when authoredRootId is provided", () => {
@@ -798,6 +865,51 @@ window.__afterTimeline = window.__timelines.scene;
     expect(result).toContain('[id="intro"]');
   });
 
+  it("preserves nested-rule selectors so CSS Nesting inheritance works (#2721)", () => {
+    // Chrome 112+ / Firefox 117+ / Safari 16.5+ support native CSS Nesting.
+    // A nested rule like `.title { … }` inside `[data-composition-id="intro"] { … }`
+    // resolves at match time to `<parent> .title` via the implicit `&` prefix.
+    // The scoper must NOT re-apply the composition scope to the nested selector —
+    // that produces `<scope> <scope> .title`, which matches nothing because the
+    // composition root only appears once in the DOM.
+    const scoped = scopeCssToComposition(
+      `
+        [data-composition-id="intro"] h1 { color: red; }
+        [data-composition-id="intro"] {
+          .title { color: brown; }
+          h2 { color: blue; }
+        }
+      `,
+      "intro",
+    );
+    // Top-level rules still get scoped.
+    expect(scoped).toContain('[data-composition-id="intro"] h1');
+    // Nested rules keep their author-original selectors verbatim so CSS Nesting
+    // can prepend the parent's `&` at match time.
+    expect(scoped).toMatch(/\.title\s*\{/);
+    expect(scoped).toMatch(/h2\s*\{/);
+    // The pre-fix bug re-scoped nested rules to `[…] .title`, which never matched.
+    expect(scoped).not.toContain('[data-composition-id="intro"] .title');
+    expect(scoped).not.toContain('[data-composition-id="intro"] h2');
+  });
+
+  it("preserves deeply-nested CSS Nesting rules (#2721)", () => {
+    const scoped = scopeCssToComposition(
+      `
+        [data-composition-id="intro"] {
+          .card {
+            .header { font-weight: bold; }
+          }
+        }
+      `,
+      "intro",
+    );
+    expect(scoped).toMatch(/\.card\s*\{/);
+    expect(scoped).toMatch(/\.header\s*\{/);
+    expect(scoped).not.toContain('[data-composition-id="intro"] .card');
+    expect(scoped).not.toContain('[data-composition-id="intro"] .header');
+  });
+
   it("wraps scripts with authored root id normalization for #id GSAP selectors", () => {
     const { document } = parseHTML(`
       <div data-composition-id="intro">
@@ -837,5 +949,143 @@ window.__timelines['intro'] = tl;
     // The scoped script should resolve '#intro .title' against the
     // data-hf-authored-id="intro" element, finding the .title child.
     expect(gsapTargets).toEqual([["HELLO"]]);
+  });
+});
+
+/**
+ * The emitted statement is placed inside a `<script>` element, and `<script>` is a
+ * RAW TEXT element: HTML serialization does not escape its content and the tokenizer
+ * closes it at the first `</script`. `JSON.stringify` escapes `"` and `\` but not `/`,
+ * so an unescaped variable value could close the element and have the remainder parsed
+ * as markup — turning composition data into executable script.
+ */
+/**
+ * Every payload leads with a benign `<` before its `</script`, so escaping only the
+ * first `<` is not enough to pass: that pins the `/g` flag on the escape rather than
+ * merely "an escape ran". A lone `<` in a value is the common case (`a < b`, `<em>`),
+ * so a payload whose breakout is not the first `<` is the realistic one.
+ */
+const SCRIPT_BREAKOUT = "x<y</script><script>window.__pwned=1//";
+
+/** Serialize into a document the way the compilers do, then re-parse it. */
+function scriptsAfterRoundTrip(body: string): string[] {
+  const { document } = parseHTML("<!doctype html><html><head></head><body></body></html>");
+  const el = document.createElement("script");
+  el.textContent = body;
+  document.body.appendChild(el);
+  const { document: reparsed } = parseHTML(document.toString());
+  return [...reparsed.querySelectorAll("script")].map((s) => s.textContent ?? "");
+}
+
+describe("buildVariablesByCompScript — <script> breakout", () => {
+  it("does not let a variable VALUE close the script element", () => {
+    const body = buildVariablesByCompScript({
+      "comp-a": { greeting: SCRIPT_BREAKOUT },
+    });
+    expect(body).not.toBeNull();
+    expect(body).not.toContain("</script");
+    expect(scriptsAfterRoundTrip(body ?? "")).toHaveLength(1);
+  });
+
+  it("does not let a variable KEY close the script element", () => {
+    const body = buildVariablesByCompScript({
+      "comp-a": { [SCRIPT_BREAKOUT]: "x" },
+    });
+    expect(body).not.toContain("</script");
+    expect(scriptsAfterRoundTrip(body ?? "")).toHaveLength(1);
+  });
+
+  it("does not let a COMP ID close the script element", () => {
+    const body = buildVariablesByCompScript({
+      [SCRIPT_BREAKOUT]: { a: "x" },
+    });
+    expect(body).not.toContain("</script");
+    expect(scriptsAfterRoundTrip(body ?? "")).toHaveLength(1);
+  });
+
+  it("keeps the value byte-identical once executed — the escape is transparent", () => {
+    // Run the statement the way the browser does rather than string-slicing it.
+    const variables = { "comp-a": { greeting: "a </script> b <em>c</em>" } };
+    const body = buildVariablesByCompScript(variables) ?? "";
+    const fakeWindow: Record<string, unknown> = {};
+    new Function("window", body)(fakeWindow);
+    expect(fakeWindow.__hfVariablesByComp).toEqual(variables);
+  });
+
+  it("returns null when there are no per-instance values", () => {
+    expect(buildVariablesByCompScript({})).toBeNull();
+  });
+});
+
+/**
+ * The variables table is not the only attacker-reachable literal emitted into a
+ * `<script>`: the wrapper the sub-composition scripts run inside embeds the
+ * composition id four times over (directly, as the timeline id, and inside two
+ * derived selector patterns), plus the authored root id, the scope-selector
+ * override and the error label. All of them are emitted into the same raw-text
+ * element, so each has to survive a serialize/reparse round trip.
+ */
+describe("wrapScopedCompositionScript — <script> breakout via the wrapper literals", () => {
+  const LABEL = "[HyperFrames] composition script error:";
+
+  it("does not let a COMP ID close the script element", () => {
+    const body = wrapScopedCompositionScript("console.log(1);", SCRIPT_BREAKOUT);
+    expect(body).not.toContain("</script");
+    expect(scriptsAfterRoundTrip(body)).toHaveLength(1);
+  });
+
+  it("keeps the comp id byte-identical — the escape is transparent", () => {
+    const body = wrapScopedCompositionScript("console.log(1);", SCRIPT_BREAKOUT);
+    const literal = /var __hfCompId = (.*);/.exec(body)?.[1];
+    expect(literal).toBeDefined();
+    expect(JSON.parse(literal ?? "")).toBe(SCRIPT_BREAKOUT);
+  });
+
+  it("does not let the AUTHORED ROOT ID close the script element", () => {
+    const body = wrapScopedCompositionScript(
+      "console.log(1);",
+      "comp-a",
+      LABEL,
+      undefined,
+      "comp-a",
+      SCRIPT_BREAKOUT,
+    );
+    expect(body).not.toContain("</script");
+    expect(scriptsAfterRoundTrip(body)).toHaveLength(1);
+  });
+
+  it("does not let the SCOPE SELECTOR override close the script element", () => {
+    const body = wrapScopedCompositionScript("console.log(1);", "comp-a", LABEL, SCRIPT_BREAKOUT);
+    expect(body).not.toContain("</script");
+    expect(scriptsAfterRoundTrip(body)).toHaveLength(1);
+  });
+
+  it("does not let the ERROR LABEL close the script element", () => {
+    const body = wrapScopedCompositionScript("console.log(1);", "comp-a", SCRIPT_BREAKOUT);
+    expect(body).not.toContain("</script");
+    expect(scriptsAfterRoundTrip(body)).toHaveLength(1);
+  });
+});
+
+describe("wrapInlineScriptWithErrorBoundary — <script> breakout", () => {
+  it("does not let the wrapped SOURCE close the script element", () => {
+    const body = wrapInlineScriptWithErrorBoundary(`var a = "${SCRIPT_BREAKOUT}";`, "[err]");
+    expect(body).not.toContain("</script");
+    expect(scriptsAfterRoundTrip(body)).toHaveLength(1);
+  });
+
+  it("does not let the ERROR LABEL close the script element", () => {
+    const body = wrapInlineScriptWithErrorBoundary("var a = 1;", SCRIPT_BREAKOUT);
+    expect(body).not.toContain("</script");
+    expect(scriptsAfterRoundTrip(body)).toHaveLength(1);
+  });
+
+  it("drops the entire stylesheet when PostCSS cannot parse it", () => {
+    const malformedCss = `body { margin: 0; overflow: hidden; }
+:root { --accent: #5ef17c; }
+.stage { position: absolute; inset: 0; }
+.broken { transform: xPercent: -10; }`;
+    const result = scopeCssToComposition(malformedCss, "scene-bad");
+    expect(result).toBe("");
   });
 });

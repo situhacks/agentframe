@@ -1,7 +1,31 @@
 import { redactTelemetryString, type OutputResolutionIssueKind } from "@hyperframes/core";
 import type { SubTimelineWaitOutcome } from "@hyperframes/engine";
-import { trackEvent } from "./client.js";
+import { FEEDBACK_RATING_SCALE } from "../utils/feedbackRating.js";
+import type { CatalogUsage } from "../utils/catalogUsage.js";
+import { flush, shouldTrack, trackEvent } from "./client.js";
 import { readConfig } from "./config.js";
+import { getPowerState } from "./system.js";
+
+// Power state is volatile (a laptop docks/undocks mid-session), so it is
+// sampled per render event rather than cached with SystemMeta. Attached to
+// render_complete AND render_error: the DE fleet is macOS laptops whose
+// power management shifts render perf ~1.8x with no other telemetry signal,
+// and perf/soak analysis needs to segment by it (see getPowerState).
+//
+// shouldTrack() is checked HERE, not just inside trackEvent: this helper is
+// spread into the properties object at the CALL SITE, so it runs before
+// trackEvent's own `if (!shouldTrack()) return` guard. Without this an
+// opted-out install would still pay two blocking `pmset` subprocess spawns
+// per render for an event that is then discarded (review finding).
+// shouldTrack() memoizes, so this costs nothing on the tracked path.
+function powerStateFields(): { on_battery?: boolean; low_power_mode?: boolean } {
+  if (!shouldTrack()) return {};
+  const power = getPowerState();
+  return {
+    on_battery: power.on_battery ?? undefined,
+    low_power_mode: power.low_power_mode ?? undefined,
+  };
+}
 
 // run_id is attached only when the orchestrator set HYPERFRAMES_RUN_ID — an
 // absent property, never null/"" (PostHog treats those as real values).
@@ -49,10 +73,17 @@ export interface RenderObservabilityTelemetryPayload {
   // the more authoritative perfSummary value wins when both are present.
   captureDeWorkerInversion?: string;
   captureDePreInversionWorkers?: number;
+  captureCompositionElementCount?: number;
+  captureCompositionElementCountSource?: string;
+  captureDeShortBand?: string;
   captureDeParallelRouter?: string;
+  captureDeGpuRenderer?: string;
   captureDePreRouterWorkers?: number;
   captureDeSelfVerifyFallback?: boolean;
   captureDeFallbackReason?: string;
+  captureDeFallbackFailedDb?: number;
+  captureDeFallbackFrameIndex?: number;
+  captureDeFallbackThresholdDb?: number;
   /** Non-DE parallel-streaming router outcome ("screenshot" | "beginframe" —
    * routed; "eligible_off" — would route but the kill switch is off). */
   captureParallelStream?: string;
@@ -68,6 +99,7 @@ export interface RenderObservabilityTelemetryPayload {
   observabilityExtractCacheMisses?: number;
   observabilityInitDurationMs?: number;
   observabilityInitTweenCount?: number;
+  observabilityInitElementCount?: number;
 }
 
 function renderObservabilityEventProperties(props: RenderObservabilityTelemetryPayload) {
@@ -103,10 +135,17 @@ function renderObservabilityEventProperties(props: RenderObservabilityTelemetryP
     capture_memory_exhaustion_detected: props.captureMemoryExhaustionDetected,
     de_worker_inversion: props.captureDeWorkerInversion,
     de_pre_inversion_workers: props.captureDePreInversionWorkers,
+    composition_element_count: props.captureCompositionElementCount,
+    composition_element_count_source: props.captureCompositionElementCountSource,
+    de_short_band: props.captureDeShortBand,
     de_parallel_router: props.captureDeParallelRouter,
+    gpu_renderer: props.captureDeGpuRenderer,
     de_pre_router_workers: props.captureDePreRouterWorkers,
     de_self_verify_fallback: props.captureDeSelfVerifyFallback,
     de_fallback_reason: props.captureDeFallbackReason,
+    de_fallback_failed_db: props.captureDeFallbackFailedDb,
+    de_fallback_frame_index: props.captureDeFallbackFrameIndex,
+    de_fallback_threshold_db: props.captureDeFallbackThresholdDb,
     capture_parallel_stream: props.captureParallelStream,
     observability_extract_video_count: props.observabilityExtractVideoCount,
     observability_extracted_video_count: props.observabilityExtractedVideoCount,
@@ -120,6 +159,7 @@ function renderObservabilityEventProperties(props: RenderObservabilityTelemetryP
     observability_extract_cache_misses: props.observabilityExtractCacheMisses,
     observability_init_duration_ms: props.observabilityInitDurationMs,
     observability_init_tween_count: props.observabilityInitTweenCount,
+    observability_init_element_count: props.observabilityInitElementCount,
   };
 }
 
@@ -134,6 +174,60 @@ export function trackCommand(command: string, runId?: string): void {
   });
 }
 
+/**
+ * Cap on item names in one event. Registry names are low-cardinality slugs, but
+ * a project with a hundred blocks should not push a hundred-name string into
+ * every render. The cap belongs at the boundary that builds the string, and
+ * deliberately NOT on the counts: a count is one integer with no cardinality
+ * risk, and a saturated one loses the real number with no way downstream to
+ * tell 40 installs from 400.
+ */
+const MAX_REPORTED_ITEM_NAMES = 40;
+
+/**
+ * Catalog half of `render_complete`.
+ *
+ * Counts are emitted even when zero: the no-catalog cohort is exactly what the
+ * with-catalog cohort gets compared against, and a property that is simply
+ * absent is indistinguishable from an older CLI that never sent one. Names ride
+ * as a comma-joined string because event property values are scalars only (same
+ * shape as `recent_render_ids` on `cli_render_feedback`).
+ *
+ * The used names are narrowed to the reported installed names, so
+ * `registry_blocks_used` stays a subset of `registry_items` even when the cap
+ * bites. Sliced independently, the two lists can come out disjoint, breaking
+ * the one relationship a drop-off query relies on. When the cap does bite,
+ * `registry_items_truncated` says so: the counts still carry the truth, but the
+ * names are a window, and a query that joins on names must not read the
+ * difference as abandonment.
+ *
+ * An unreadable manifest reports itself and omits the counts rather than
+ * sending zeros, so a failed read cannot pose as a project that never used the
+ * catalog. Undefined usage means the caller built render options by hand rather
+ * than through the render plan, so it makes no catalog claim at all.
+ */
+function catalogEventProperties(
+  usage: CatalogUsage | undefined,
+): Record<string, string | number | boolean> {
+  if (!usage) return {};
+  if (usage.manifestUnreadable) return { registry_manifest_unreadable: true };
+  const names = usage.installed.slice(0, MAX_REPORTED_ITEM_NAMES);
+  const reportedNames = new Set(names);
+  const used = usage.usedBlocks.filter((name) => reportedNames.has(name));
+  const truncated = names.length < usage.installed.length;
+  return {
+    registry_item_count: usage.installed.length,
+    registry_blocks_used_count: usage.usedBlocks.length,
+    // Say when the name lists are a window rather than the whole set. Without
+    // it a name-joining drop-off query silently reads a truncated project as
+    // all-abandoned: the used blocks can all sit past the cap, leaving an empty
+    // `registry_blocks_used` against a non-zero count.
+    ...(truncated ? { registry_items_truncated: true } : {}),
+    ...(names.length > 0 ? { registry_items: names.join(",") } : {}),
+    ...(used.length > 0 ? { registry_blocks_used: used.join(",") } : {}),
+  };
+}
+
 export function trackRenderComplete(
   props: {
     durationMs: number;
@@ -141,7 +235,25 @@ export function trackRenderComplete(
     quality: string;
     /** Authoring workflow skill that drove this render (e.g. "product-launch-video"). */
     authoringSkill?: string;
+    /**
+     * Catalog items installed in this project, and those the rendered
+     * composition reaches. The pair is what joins `registry_item_added` to a
+     * finished video: an installed item missing from the used set was tried
+     * and dropped, which no add-time event can express.
+     */
+    catalogUsage?: CatalogUsage;
     workers?: number;
+    // Worker auto-sizing provenance (RenderPerfSummary.workerSizing). Answers
+    // "why N workers?" fleet-wide, and validates the advisory per-worker heap
+    // budget before it's enforced (field OOM: 6 auto workers on a 24GB/4GB-heap
+    // machine — see computeWorkerSizing in @hyperframes/engine).
+    workersBoundBy?: string;
+    workersCpuBased?: number;
+    workersMemoryBased?: number;
+    workersHeapBased?: number;
+    workersFrameBased?: number;
+    workersHeapLimitMb?: number;
+    workersExceedHeapAdvisory?: boolean;
     docker: boolean;
     gpu: boolean;
     // Static-frame dedup outcome (opt-out HF_STATIC_DEDUP=false). Undefined on
@@ -162,9 +274,14 @@ export function trackRenderComplete(
     deClampReason?: string;
     deWorkerInversion?: string;
     dePreInversionWorkers?: number;
+    compositionElementCount?: number;
+    compositionElementCountSource?: string;
+    deShortBand?: string;
     deParallelRouter?: string;
     dePreRouterWorkers?: number;
     deGateReason?: string;
+    /** Low-cardinality GPU bucket from DE session init (`<backend>/<vendor>`, e.g. `d3d11/nvidia`). */
+    gpuRenderer?: string;
     deWorkerEncode?: boolean;
     deVerifyArmed?: number;
     deVerifyChecked?: number;
@@ -172,6 +289,9 @@ export function trackRenderComplete(
     deVerifyInitMs?: number;
     deSelfVerifyFallback?: boolean;
     deFallbackReason?: string;
+    deFallbackFailedDb?: number;
+    deFallbackFrameIndex?: number;
+    deFallbackThresholdDb?: number;
     deBlankSuspects?: number;
     deBlankDeterministicAccepts?: number;
     deBlankRecaptures?: number;
@@ -234,7 +354,15 @@ export function trackRenderComplete(
       fps: props.fps,
       quality: props.quality,
       authoring_skill: props.authoringSkill,
+      ...catalogEventProperties(props.catalogUsage),
       workers: props.workers,
+      workers_bound_by: props.workersBoundBy,
+      workers_cpu_based: props.workersCpuBased,
+      workers_memory_based: props.workersMemoryBased,
+      workers_heap_based: props.workersHeapBased,
+      workers_frame_based: props.workersFrameBased,
+      workers_heap_limit_mb: props.workersHeapLimitMb,
+      workers_exceed_heap_advisory: props.workersExceedHeapAdvisory,
       docker: props.docker,
       gpu: props.gpu,
       static_dedup_enabled: props.staticDedupEnabled,
@@ -249,9 +377,13 @@ export function trackRenderComplete(
       de_clamp_reason: props.deClampReason,
       de_worker_inversion: props.deWorkerInversion,
       de_pre_inversion_workers: props.dePreInversionWorkers,
+      composition_element_count: props.compositionElementCount,
+      composition_element_count_source: props.compositionElementCountSource,
+      de_short_band: props.deShortBand,
       de_parallel_router: props.deParallelRouter,
       de_pre_router_workers: props.dePreRouterWorkers,
       de_gate_reason: props.deGateReason,
+      gpu_renderer: props.gpuRenderer,
       de_worker_encode: props.deWorkerEncode,
       de_verify_armed: props.deVerifyArmed,
       de_verify_checked: props.deVerifyChecked,
@@ -259,11 +391,15 @@ export function trackRenderComplete(
       de_verify_init_ms: props.deVerifyInitMs,
       de_self_verify_fallback: props.deSelfVerifyFallback,
       de_fallback_reason: props.deFallbackReason,
+      de_fallback_failed_db: props.deFallbackFailedDb,
+      de_fallback_frame_index: props.deFallbackFrameIndex,
+      de_fallback_threshold_db: props.deFallbackThresholdDb,
       de_blank_suspects: props.deBlankSuspects,
       de_blank_deterministic_accepts: props.deBlankDeterministicAccepts,
       de_blank_recaptures: props.deBlankRecaptures,
       de_boundary_frames: props.deBoundaryFrames,
       de_ncpr_fallbacks: props.deNcprFallbacks,
+      ...powerStateFields(),
       source: props.source ?? "cli",
       composition_duration_ms: props.compositionDurationMs,
       composition_width: props.compositionWidth,
@@ -298,6 +434,14 @@ export function trackRenderComplete(
     },
     props.distinctId,
   );
+  // Send immediately instead of waiting for the exit-time flush. The render
+  // command's normal teardown (agent-pipe EPIPE → process.exit(0), or an
+  // explicit process.exit) kills the lazy beforeExit flush mid-flight, which
+  // is why only ~10-15% of successful renders ever produced a render_complete
+  // — and the survivors skewed toward users with low RTT to PostHog. The
+  // process is alive and idle here; if it still dies mid-request, the queue
+  // keeps the event for the exit-time flushSync() fallback.
+  void flush();
 }
 
 export function trackRenderError(
@@ -335,10 +479,18 @@ export function trackRenderError(
       elapsed_ms: props.elapsedMs,
       peak_memory_mb: props.peakMemoryMb,
       memory_free_mb: props.memoryFreeMb,
+      ...powerStateFields(),
+      // gpu_renderer arrives via renderObservabilityEventProperties below:
+      // on the failure path perfSummary is never built, so live capture
+      // observability is the only source. Backend attribution matters MOST
+      // here — a win32 D3D11 crash is what the rollout is watching for.
       ...renderObservabilityEventProperties(props),
     },
     props.distinctId,
   );
+  // Same rationale as trackRenderComplete: error paths process.exit(1) before
+  // the lazy flush can win its race — send now, exit-time fallback covers the rest.
+  void flush();
 }
 
 export function trackRenderObservation(props: {
@@ -409,6 +561,37 @@ export function trackInitTemplate(templateId: string, props?: { tailwind?: boole
   trackEvent("init_template", { template: templateId, tailwind: props?.tailwind });
 }
 
+/**
+ * One event per registry item written into a project.
+ *
+ * `cli_command` records that `add` ran, never what it installed, so the
+ * catalog cannot be ranked by what people actually pull — and the registry is
+ * served from raw.githubusercontent.com, which gives us no per-item counter
+ * either. `add` is the only place an item lands in a project, so this is the
+ * one signal that answers "which block is worth building more of".
+ *
+ * `requested` separates the item the user named from the transitive
+ * `registryDependencies` dragged in behind it. A dependency installed
+ * alongside something else is not a vote for itself, and collapsing the two
+ * would rank a popular dependency above everything that depends on it.
+ *
+ * Item names are public registry identifiers, never user content or project
+ * data. This routes through `trackEvent`, so an install that opted out
+ * (`hyperframes telemetry disable`, `HYPERFRAMES_NO_TELEMETRY`, `DO_NOT_TRACK`)
+ * emits nothing.
+ */
+export function trackRegistryItemAdded(props: {
+  item: string;
+  itemType: string;
+  requested: boolean;
+}): void {
+  trackEvent("registry_item_added", {
+    item: props.item,
+    item_type: props.itemType,
+    requested: props.requested,
+  });
+}
+
 export function trackBrowserInstall(): void {
   trackEvent("browser_install", {});
 }
@@ -418,7 +601,8 @@ export function trackBrowserInstall(): void {
 // dashboards — a completed sign-in, a browser flow the user abandoned, and a
 // rejected key all look identical (i.e. absent). These three events close that
 // gap so the sign-in funnel is measurable like the render funnel already is.
-// `method` is "oauth" (the default browser PKCE flow) or "api_key". No token,
+// `method` is "oauth" (the default browser PKCE flow), "device" (attended
+// RFC 8628 flow), or "api_key". No token,
 // key, identity, email, or free text is ever attached — only the method and a
 // low-cardinality outcome/reason.
 //
@@ -427,7 +611,7 @@ export function trackBrowserInstall(): void {
 // today (events attribute to the install's anonymousId), but pre-plumbing it
 // makes attributing a completed sign-in to a resolved identity later a one-line
 // change at the callsite rather than a signature sweep.
-export type AuthLoginMethod = "oauth" | "api_key";
+export type AuthLoginMethod = "oauth" | "device" | "api_key";
 export type AuthLoginFailureReason =
   | "flow_error" // OAuth authorization/exchange threw a real error
   | "flow_timeout" // OAuth callback wait elapsed (user closed the tab / walked away)
@@ -464,10 +648,10 @@ export function identifyUser(distinctId: string): void {
   trackEvent("$identify", { $anon_distinct_id: readConfig().anonymousId }, distinctId);
 }
 
-// A render was rejected by the output-resolution/alpha/HDR pre-flight (P1-3)
+// A render was rejected by the output-resolution/HDR pre-flight (P1-3)
 // before any browser/ffmpeg work. Counts the "caught early" saves on dashboard
 // 1783183, distinct from deep render failures. `kind` is the low-cardinality
-// `OutputResolutionIssueKind` (aspect-mismatch / alpha-incompatible / etc.),
+// `OutputResolutionIssueKind` (aspect-mismatch / hdr-incompatible / etc.),
 // typed to the union so the metric can never carry free text.
 export function trackRenderPreflightRejected(props: { kind: OutputResolutionIssueKind }): void {
   trackEvent("render_preflight_rejected", { kind: props.kind });
@@ -479,6 +663,9 @@ export function trackCliError(props: {
   stack_trace?: string;
   command?: string;
   kind: "uncaught_exception" | "unhandled_rejection" | "command_error";
+  /** Low-cardinality figma REST call label (e.g. "images", "files_nodes") —
+   *  which endpoint failed, for FigmaClientError-backed failures only. */
+  endpoint?: string;
 }): void {
   trackEvent("cli_error", {
     error_name: props.error_name,
@@ -491,6 +678,7 @@ export function trackCliError(props: {
       : undefined,
     command: props.command,
     kind: props.kind,
+    endpoint: props.endpoint,
   });
 }
 
@@ -581,13 +769,49 @@ export function trackRenderFeedback(props: {
   renderDurationMs?: number;
   comment?: string;
   doctorSummary?: string;
+  /**
+   * Join key shared with the forwarded feedback report (Slack/backend): the
+   * same uuid rides in the report's env string as `fid=…`, so a wild report
+   * resolves to exactly one PostHog `cli_render_feedback` event and vice versa.
+   */
+  feedbackId?: string;
+  /** render_job_id values of this install's recent renders (newest last). */
+  recentRenderIds?: string[];
 }): void {
-  trackEvent("survey sent", {
-    $survey_id: "render_satisfaction",
-    $survey_response: props.rating,
-    ...(props.comment ? { $survey_response_2: props.comment } : {}),
+  // Plain product event, not a PostHog survey response: nothing here is served
+  // by the surveys product (no survey definition, no targeting, no popover).
+  trackEvent("cli_render_feedback", {
+    rating: props.rating,
+    rating_scale: FEEDBACK_RATING_SCALE,
+    ...(props.comment ? { comment: props.comment } : {}),
     ...(props.renderDurationMs !== undefined ? { render_duration_ms: props.renderDurationMs } : {}),
     ...(props.doctorSummary ? { doctor_summary: props.doctorSummary } : {}),
+    ...(props.feedbackId ? { feedback_id: props.feedbackId } : {}),
+    // Comma-joined: EventProperties values are scalars only.
+    ...(props.recentRenderIds?.length
+      ? { recent_render_ids: props.recentRenderIds.join(",") }
+      : {}),
+  });
+}
+
+/**
+ * A catalog search that found nothing worth installing.
+ *
+ * This is the only path that ever sends a query anywhere, and it is a separate
+ * deliberate command rather than something `catalog --query` does on its own:
+ * plain search stays entirely local, which is what the CLI promises. The query
+ * is the point of the report — it names a move the catalog does not have yet,
+ * so the gaps can be read directly rather than guessed from install counts.
+ */
+export function trackCatalogSearchMiss(props: {
+  query: string;
+  wanted?: string;
+  tier?: string;
+}): void {
+  trackEvent("cli_catalog_search_miss", {
+    query: props.query,
+    ...(props.wanted ? { wanted: props.wanted } : {}),
+    ...(props.tier ? { tier: props.tier } : {}),
   });
 }
 
@@ -655,6 +879,79 @@ export function trackCheckReport(props: {
     contrast_points: props.contrastPoints,
     ok: props.ok,
     exit_code: props.exitCode,
+    ...runIdField(props.runId),
+  });
+}
+
+/**
+ * One lint pass over a project. `code_counts` is what makes "which rules
+ * actually fire" answerable; `rule_group_ms` and `slowest_rule` are what make
+ * "which rules are expensive" answerable. Only lint rule codes and timings are
+ * sent — never file paths, project names, or composition source.
+ */
+export function trackLintReport(props: {
+  /** The command that ran the lint: "lint" or "check". */
+  command: string;
+  durationMs: number;
+  filesScanned: number;
+  errorCount: number;
+  warningCount: number;
+  infoCount: number;
+  /** Finding count keyed by lint rule code. */
+  codeCounts: Record<string, number>;
+  /** Milliseconds spent per rule-source module, summed across files. */
+  ruleGroupMs: Record<string, number>;
+  /** Slowest single rule as `<group>#<index>`, across every file in the run. */
+  slowestRule: string;
+  slowestRuleMs: number;
+  /** How many rules this build ran, so a ruleset change is visible in the data. */
+  ruleCount: number;
+  /**
+   * Rule count per group. `slowest_rule` is positional, so a group that changed
+   * size between two builds has indices that no longer mean the same thing.
+   */
+  ruleGroupCounts: Record<string, number>;
+  runId?: string;
+}): void {
+  trackEvent("lint_report", {
+    command: props.command,
+    duration_ms: Math.round(props.durationMs),
+    files_scanned: props.filesScanned,
+    error_count: props.errorCount,
+    warning_count: props.warningCount,
+    info_count: props.infoCount,
+    codes: Object.keys(props.codeCounts).sort(),
+    code_counts: props.codeCounts,
+    rule_group_ms: props.ruleGroupMs,
+    slowest_rule: props.slowestRule,
+    slowest_rule_ms: Math.round(props.slowestRuleMs),
+    rule_count: props.ruleCount,
+    rule_group_counts: props.ruleGroupCounts,
+    ...runIdField(props.runId),
+  });
+}
+
+/**
+ * A finding that survived one or more edits to the file it was reported on.
+ *
+ * `cleared: false` with a high `edits` is the signal that matters most: a rule
+ * an agent kept trying and failing to satisfy. `cleared: true` gives the
+ * distribution to compare it against — how many edits a normal finding costs.
+ */
+export function trackLintRuleStreak(props: {
+  code: string;
+  severity: string;
+  edits: number;
+  cleared: boolean;
+  command: string;
+  runId?: string;
+}): void {
+  trackEvent("lint_rule_streak", {
+    code: props.code,
+    severity: props.severity,
+    edits: props.edits,
+    cleared: props.cleared,
+    command: props.command,
     ...runIdField(props.runId),
   });
 }

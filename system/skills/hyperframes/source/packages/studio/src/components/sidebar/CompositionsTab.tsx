@@ -1,4 +1,9 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { buildCompositionThumbnailUrl } from "../../player/components/CompositionThumbnail";
+import { setPreviewMediaMuted } from "../../player/lib/timelineIframeHelpers";
+import { usePlayerStore } from "../../player/store/playerStore";
+import { TIMELINE_COMPOSITION_MIME } from "../../utils/timelineCompositionDrop";
+import { Tooltip } from "../ui/Tooltip";
 
 interface CompositionsTabProps {
   projectId: string;
@@ -6,6 +11,7 @@ interface CompositionsTabProps {
   activeComposition: string | null;
   onSelect: (comp: string) => void;
   onRenderComposition?: (comp: string) => void;
+  onAddToTimeline?: (comp: string) => void;
   isRendering?: boolean;
   lintFindingsByFile?: Map<string, { count: number; messages: string[] }>;
 }
@@ -87,12 +93,13 @@ function resolveIframeDuration(iframe: HTMLIFrameElement | null): number | null 
   }
 }
 
-function syncIframePlayback(iframe: HTMLIFrameElement | null, shouldPlay: boolean): boolean {
+export function syncIframePlayback(iframe: HTMLIFrameElement | null, shouldPlay: boolean): boolean {
   try {
     const player = (iframe?.contentWindow as PreviewWindow | null)?.__player;
     if (!player) return false;
 
     if (shouldPlay) {
+      setPreviewMediaMuted(iframe, true);
       player.play?.();
       return true;
     }
@@ -113,6 +120,8 @@ function CompCard({
   onRender,
   isRendering,
   lintInfo,
+  onAddToTimeline,
+  contentRevision,
 }: {
   projectId: string;
   comp: string;
@@ -121,12 +130,17 @@ function CompCard({
   onRender?: () => void;
   isRendering?: boolean;
   lintInfo?: { count: number; messages: string[] };
+  onAddToTimeline?: () => void;
+  contentRevision: number;
 }) {
   const [hovered, setHovered] = useState(false);
   const [stageSize, setStageSize] = useState(DEFAULT_PREVIEW_STAGE);
+  const [livePreviewLoaded, setLivePreviewLoaded] = useState(false);
+  const [failedThumbnailUrl, setFailedThumbnailUrl] = useState<string | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const draggedRef = useRef(false);
 
   const requestIframePlaybackSync = useCallback((shouldPlay: boolean) => {
     if (syncTimer.current) {
@@ -151,10 +165,23 @@ function CompCard({
       clearTimeout(hoverTimer.current);
       hoverTimer.current = null;
     }
+    if (syncTimer.current) {
+      clearTimeout(syncTimer.current);
+      syncTimer.current = null;
+    }
     setHovered(false);
+    setLivePreviewLoaded(false);
   };
   const name = comp.replace(/^compositions\//, "").replace(/\.html$/, "");
   const previewUrl = `/api/projects/${projectId}/preview/comp/${comp}`;
+  const thumbnailUrl = buildCompositionThumbnailUrl({
+    previewUrl,
+    seekTime: THUMBNAIL_SEEK_TIME_SECONDS,
+    duration: 0,
+    origin: window.location.origin,
+    contentRevision,
+  });
+  const thumbnailFailed = failedThumbnailUrl === thumbnailUrl;
   const previewScale = resolveCompositionPreviewScale({
     cardWidth: CARD_W,
     cardHeight: CARD_H,
@@ -165,7 +192,7 @@ function CompCard({
   const thumbnailOffsetY = (CARD_H - stageSize.height * previewScale) / 2;
 
   useEffect(() => {
-    requestIframePlaybackSync(hovered);
+    if (hovered) requestIframePlaybackSync(true);
   }, [hovered, requestIframePlaybackSync]);
 
   useEffect(() => {
@@ -177,46 +204,92 @@ function CompCard({
 
   return (
     <div
-      onClick={onSelect}
+      role="button"
+      tabIndex={0}
+      draggable
+      aria-label={`Open composition ${name}`}
+      aria-pressed={isActive}
+      onDragStart={(event) => {
+        draggedRef.current = true;
+        event.dataTransfer.effectAllowed = "copy";
+        event.dataTransfer.setData(TIMELINE_COMPOSITION_MIME, JSON.stringify({ sourcePath: comp }));
+      }}
+      onDragEnd={() => {
+        window.setTimeout(() => {
+          draggedRef.current = false;
+        }, 0);
+      }}
+      onClick={() => {
+        if (!draggedRef.current) onSelect();
+      }}
+      onKeyDown={(event) => {
+        // Only when the row itself is focused — keydowns bubbling from the
+        // inner controls (play button) must keep their native activation.
+        if (event.target !== event.currentTarget) return;
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect();
+        }
+      }}
       onPointerEnter={handleEnter}
       onPointerLeave={handleLeave}
-      className={`group/card w-full text-left px-2 py-1.5 flex items-center gap-2.5 transition-colors cursor-pointer ${
+      className={`group/card w-full select-none text-left px-2 py-1.5 flex items-center gap-2.5 transition-colors cursor-grab active:cursor-grabbing outline-none focus-visible:bg-neutral-800/60 ${
         isActive
           ? "bg-studio-accent/10 border-l-2 border-studio-accent"
           : "border-l-2 border-transparent hover:bg-neutral-800/50"
       }`}
     >
       <div className="w-20 h-[45px] rounded overflow-hidden bg-neutral-900 flex-shrink-0 relative">
-        <iframe
-          ref={iframeRef}
-          src={previewUrl}
-          sandbox="allow-scripts allow-same-origin"
-          loading="lazy"
-          className="absolute border-none pointer-events-none"
-          style={{
-            transformOrigin: "0 0",
-            width: stageSize.width,
-            height: stageSize.height,
-            left: thumbnailOffsetX,
-            top: thumbnailOffsetY,
-            transform: `scale(${previewScale})`,
-          }}
-          onLoad={(e) => {
-            try {
-              const iframe = e.currentTarget;
-              const root = iframe.contentDocument?.querySelector("[data-composition-id]");
-              const width = Number(root?.getAttribute("data-width")) || DEFAULT_PREVIEW_STAGE.width;
-              const height =
-                Number(root?.getAttribute("data-height")) || DEFAULT_PREVIEW_STAGE.height;
-              setStageSize({ width, height });
-              requestIframePlaybackSync(hovered);
-            } catch {
-              setStageSize(DEFAULT_PREVIEW_STAGE);
-            }
-          }}
-          title={`${name} preview`}
-          tabIndex={-1}
-        />
+        {thumbnailFailed ? (
+          <div className="absolute inset-0 flex items-center justify-center px-1 text-center text-[8px] leading-tight text-neutral-600">
+            Preview unavailable
+          </div>
+        ) : (
+          <img
+            src={thumbnailUrl}
+            alt=""
+            draggable={false}
+            loading="lazy"
+            decoding="async"
+            onError={() => setFailedThumbnailUrl(thumbnailUrl)}
+            className={`absolute inset-0 h-full w-full object-contain transition-opacity ${
+              livePreviewLoaded ? "opacity-0" : "opacity-100"
+            }`}
+          />
+        )}
+        {hovered && (
+          <iframe
+            ref={iframeRef}
+            src={previewUrl}
+            sandbox="allow-scripts allow-same-origin"
+            className="absolute border-none pointer-events-none"
+            style={{
+              transformOrigin: "0 0",
+              width: stageSize.width,
+              height: stageSize.height,
+              left: thumbnailOffsetX,
+              top: thumbnailOffsetY,
+              transform: `scale(${previewScale})`,
+            }}
+            onLoad={(e) => {
+              try {
+                const iframe = e.currentTarget;
+                const root = iframe.contentDocument?.querySelector("[data-composition-id]");
+                const width =
+                  Number(root?.getAttribute("data-width")) || DEFAULT_PREVIEW_STAGE.width;
+                const height =
+                  Number(root?.getAttribute("data-height")) || DEFAULT_PREVIEW_STAGE.height;
+                setStageSize({ width, height });
+                setLivePreviewLoaded(true);
+                requestIframePlaybackSync(true);
+              } catch {
+                setStageSize(DEFAULT_PREVIEW_STAGE);
+              }
+            }}
+            title={`${name} preview`}
+            tabIndex={-1}
+          />
+        )}
       </div>
       <div
         className="min-w-0 flex-1"
@@ -225,42 +298,66 @@ function CompCard({
         <div className="flex items-center gap-1">
           <span className="text-[11px] font-medium text-neutral-300 truncate">{name}</span>
           {lintInfo && lintInfo.count > 0 && (
-            <span className="flex-shrink-0 w-2 h-2 rounded-full bg-amber-400" />
+            <span
+              aria-label={`${lintInfo.count} lint finding${lintInfo.count === 1 ? "" : "s"}`}
+              className="flex-shrink-0 min-w-[16px] text-center rounded-full bg-amber-500/20 px-1 text-[8px] font-bold text-amber-400"
+            >
+              {lintInfo.count}
+            </span>
           )}
         </div>
         <span className="text-[9px] text-neutral-600 truncate block">{comp}</span>
       </div>
-      {onRender && (
+      {onAddToTimeline && (
         <button
           type="button"
-          title={isRendering ? "Rendering..." : `Render ${name}`}
-          aria-label={isRendering ? "Rendering..." : `Render ${name}`}
-          disabled={isRendering}
-          onClick={(e) => {
-            e.stopPropagation();
-            onRender();
+          title={`Add ${name} to timeline at playhead`}
+          aria-label={`Add ${name} to timeline at playhead`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onAddToTimeline();
           }}
-          className={`flex-shrink-0 p-1 rounded transition-colors ${
-            isRendering
-              ? "text-neutral-600 cursor-not-allowed"
-              : "text-neutral-600 hover:text-studio-accent hover:bg-neutral-800"
-          }`}
+          className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded text-neutral-600 opacity-0 transition-[color,background-color,opacity] hover:bg-neutral-800 hover:text-studio-accent group-hover/card:opacity-100 group-focus-within/card:opacity-100 focus:opacity-100"
         >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
-            <polyline points="7 10 12 15 17 10" />
-            <line x1="12" y1="15" x2="12" y2="3" />
-          </svg>
+          <span aria-hidden="true">+</span>
         </button>
+      )}
+      {onRender && (
+        <Tooltip label={isRendering ? "A render is already in progress" : `Render ${name}`}>
+          <button
+            type="button"
+            aria-label={isRendering ? "A render is already in progress" : `Render ${name}`}
+            disabled={isRendering}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRender();
+            }}
+            // h-6 w-6 = the 24x24 WCAG 2.2 (2.5.8) minimum target; the 14px glyph
+            // is unchanged, only the box grows. The sibling "+" button is h-8 w-8,
+            // so the card row already has the room.
+            className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded transition-colors ${
+              isRendering
+                ? "text-neutral-600 cursor-not-allowed"
+                : "text-neutral-600 hover:text-studio-accent hover:bg-neutral-800"
+            }`}
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+          </button>
+        </Tooltip>
       )}
     </div>
   );
@@ -272,9 +369,11 @@ export const CompositionsTab = memo(function CompositionsTab({
   activeComposition,
   onSelect,
   onRenderComposition,
+  onAddToTimeline,
   isRendering,
   lintFindingsByFile,
 }: CompositionsTabProps) {
+  const contentRevision = usePlayerStore((state) => state.thumbnailContentRevision);
   if (compositions.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center px-4">
@@ -287,14 +386,16 @@ export const CompositionsTab = memo(function CompositionsTab({
     <div className="flex-1 overflow-y-auto">
       {compositions.map((comp) => (
         <CompCard
-          key={comp}
+          key={`${projectId}:${comp}`}
           projectId={projectId}
           comp={comp}
           isActive={activeComposition === comp}
           onSelect={() => onSelect(comp)}
           onRender={onRenderComposition ? () => onRenderComposition(comp) : undefined}
+          onAddToTimeline={onAddToTimeline ? () => onAddToTimeline(comp) : undefined}
           isRendering={isRendering}
           lintInfo={lintFindingsByFile?.get(comp)}
+          contentRevision={contentRevision}
         />
       ))}
     </div>

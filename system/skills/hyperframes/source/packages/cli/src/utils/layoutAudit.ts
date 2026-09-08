@@ -19,6 +19,16 @@ export type LayoutIssueCode =
   | "text_not_painted"
   | "caption_zone_collision"
   | "frame_out_of_frame"
+  // Coordinate-frame findings — geometry computed in one frame, rendered in another.
+  | "escaped_container"
+  | "panel_out_of_canvas"
+  | "connector_detached"
+  // Cross-sample rotation finding — a spinning element whose bbox center drifts
+  // because it pivots about the wrong point (bad transformOrigin/svgOrigin).
+  | "rotation_pivot_drift"
+  // Hub-referenced rotation finding — a gauge/clock/radar pointer whose recovered
+  // center-of-rotation sits far from the dial's static hub (wrong pivot point).
+  | "off_pivot_rotation"
   // Frozen-sweep guard (#U10) — a whole-run meta-finding, not a per-sample
   // geometry observation; never persistence-tiered (see `applyPersistenceTier`).
   | "sweep_static"
@@ -39,6 +49,7 @@ export interface LayoutIssue {
   firstSeen?: number;
   lastSeen?: number;
   occurrences?: number;
+  heldMs?: number;
   selector: string;
   containerSelector?: string;
   text?: string;
@@ -171,21 +182,7 @@ export function dedupeLayoutIssues(issues: LayoutIssue[]): LayoutIssue[] {
   return result;
 }
 
-// Persistence-tier thresholds (#U10, adapted from Adam Rosler's visual-linter
-// design). The approach doc frames these as held-duration floors — ignore
-// under ~250ms, re-promote content_overlap at >= ~500ms — measured against
-// the SAME firstSeen/lastSeen span this collapse step already tracks. At the
-// default 9-sample grid over a multi-second composition, a single collapsed
-// occurrence is held 0ms (one entrance/exit transient sample) and two
-// collapsed occurrences are already >= one sample-to-sample gap, which is
-// well past 500ms — so "held under 250ms" reduces to `occurrences <= 1` and
-// "held >= 500ms" reduces to `occurrences >= 2`. Tiering below is written in
-// those sample-count terms (the mapping the approach doc asks to document),
-// with the literal ms span (CONTENT_OVERLAP_HELD_ERROR_MS) kept as a fallback
-// for callers whose samples really are spaced close enough together for the
-// ms floor to matter on its own (dense `--at`/`--at-transitions` runs). The
-// ~250ms ignore floor needs no separate constant — see the occurrences <= 1
-// branch below.
+// Persistence-tier thresholds (#U10): occurrences>=2 alone can't imply the 500ms floor under dense 8fps sampling, so content_overlap promotion requires a literal firstSeen..lastSeen span >= 500ms — stricter for sparse callers too.
 const CONTENT_OVERLAP_HELD_ERROR_MS = 500;
 const HELD_ACROSS_SAMPLES_MIN_OCCURRENCES = 2;
 
@@ -203,6 +200,16 @@ const PERSISTENCE_TIERED_CODES: ReadonlySet<LayoutIssueCode> = new Set([
   "container_overflow",
   "content_overlap",
   "text_occluded",
+  "escaped_container",
+  "panel_out_of_canvas",
+  "connector_detached",
+]);
+
+const CONTIGUOUS_SAMPLE_GAP_MS = CONTENT_OVERLAP_HELD_ERROR_MS * 2;
+
+const TEXT_AGNOSTIC_KEY_CODES: ReadonlySet<LayoutIssueCode> = new Set([
+  "content_overlap",
+  "text_occluded",
 ]);
 
 export function collapseStaticLayoutIssues(
@@ -216,6 +223,7 @@ export function collapseStaticLayoutIssues(
       firstSeen: number;
       lastSeen: number;
       occurrences: number;
+      times: number[];
     }
   >();
 
@@ -228,6 +236,7 @@ export function collapseStaticLayoutIssues(
         firstSeen: issue.time,
         lastSeen: issue.time,
         occurrences: 1,
+        times: [issue.time],
       });
       continue;
     }
@@ -235,6 +244,7 @@ export function collapseStaticLayoutIssues(
     existing.firstSeen = Math.min(existing.firstSeen, issue.time);
     existing.lastSeen = Math.max(existing.lastSeen, issue.time);
     existing.occurrences += 1;
+    existing.times.push(issue.time);
   }
 
   // A run that only ever sampled one point in time can't distinguish a
@@ -243,24 +253,50 @@ export function collapseStaticLayoutIssues(
   const sampleCount = totalSampleCount ?? new Set(issues.map((issue) => issue.time)).size;
   const multiSampleRun = sampleCount > 1;
 
-  return [...groups.values()].map(({ issue, firstSeen, lastSeen, occurrences }) =>
+  return [...groups.values()].map(({ issue, firstSeen, lastSeen, occurrences, times }) =>
     applyPersistenceTier(
-      { ...issue, time: firstSeen, firstSeen, lastSeen, occurrences },
+      {
+        ...issue,
+        time: firstSeen,
+        firstSeen,
+        lastSeen,
+        occurrences,
+        heldMs: longestContiguousRunMs(times),
+      },
       multiSampleRun,
     ),
   );
+}
+
+function longestContiguousRunMs(times: number[]): number {
+  const sorted = [...new Set(times)].sort((a, b) => a - b);
+  const first = sorted[0];
+  const last = sorted.at(-1);
+  if (first === undefined || last === undefined) return 0;
+  let longest = 0;
+  let runStart = first;
+  let previous = first;
+  for (const current of sorted) {
+    if ((current - previous) * 1000 > CONTIGUOUS_SAMPLE_GAP_MS) {
+      longest = Math.max(longest, previous - runStart);
+      runStart = current;
+    }
+    previous = current;
+  }
+  return Math.max(longest, last - runStart) * 1000;
 }
 
 /**
  * Held-duration severity tiering (#U10). A finding observed at only one
  * sample among several (held 0ms) is an entrance/exit transient, not a held
  * defect — demote to info so it stays in the data (verbose/--json output)
- * without gating the run. `content_overlap` specifically re-promotes from
- * warning to error once it's held long enough to be a real, sustained
- * collision rather than a crossfade/transition blip (resolves the TODO in
- * layout-audit.browser.js's `overlapIssue`). A finding held at every sample
- * (a genuinely static defect) is well past both thresholds and is left
- * untouched either way — persistence, not the code, decides the tier.
+ * without gating the run. Two codes re-promote once held: `content_overlap`
+ * warning->error when the collision is sustained rather than a crossfade blip
+ * (resolves the TODO in layout-audit.browser.js's `overlapIssue`), and
+ * `canvas_overflow` info->warning when the breach is held, canvas-scale
+ * (>= 5% of the short edge) AND partially visible — a fully off-canvas rect
+ * is a parked entrance, not drift. Codes without a promotion rule are left
+ * untouched when held — persistence, not the code, decides their tier.
  */
 function applyPersistenceTier(issue: LayoutIssue, multiSampleRun: boolean): LayoutIssue {
   if (!multiSampleRun) return issue;
@@ -276,17 +312,40 @@ function applyPersistenceTier(issue: LayoutIssue, multiSampleRun: boolean): Layo
   if (issue.code === "content_overlap" && isContentOverlapHeldLongEnough(issue, occurrences)) {
     return { ...issue, severity: "error" };
   }
+  if (issue.code === "canvas_overflow" && isCanvasBreachHeldLarge(issue, occurrences)) {
+    return { ...issue, severity: "warning" };
+  }
   return issue;
 }
 
-// Split out of applyPersistenceTier so the two independent "held long enough"
-// signals (sample count vs. wall-clock span) read as one boolean question
-// instead of adding a third compound branch to the tiering ladder above.
+// A held, canvas-scale, PARTIALLY visible breach is drift; a fully off-canvas rect is a parked entrance.
+function isCanvasBreachHeldLarge(issue: LayoutIssue, occurrences: number): boolean {
+  if (
+    occurrences < HELD_ACROSS_SAMPLES_MIN_OCCURRENCES ||
+    !issue.overflow ||
+    !issue.containerRect
+  ) {
+    return false;
+  }
+  const breach = Math.max(
+    ...Object.values(issue.overflow).filter((value) => typeof value === "number"),
+  );
+  if (breach < Math.min(issue.containerRect.width, issue.containerRect.height) * 0.05) return false;
+  const container = issue.containerRect;
+  const overlapX =
+    Math.min(issue.rect.right, container.right) - Math.max(issue.rect.left, container.left);
+  const overlapY =
+    Math.min(issue.rect.bottom, container.bottom) - Math.max(issue.rect.top, container.top);
+  return overlapX > 0 && overlapY > 0;
+}
+
+// Split out of applyPersistenceTier so the compound "held long enough" test reads as one boolean question.
 function isContentOverlapHeldLongEnough(issue: LayoutIssue, occurrences: number): boolean {
-  if (occurrences >= HELD_ACROSS_SAMPLES_MIN_OCCURRENCES) return true;
+  // Two samples measure a span, but under dense 8fps sampling that span must still clear the wall-clock floor.
+  if (occurrences < HELD_ACROSS_SAMPLES_MIN_OCCURRENCES) return false;
   const firstSeen = issue.firstSeen ?? issue.time;
   const lastSeen = issue.lastSeen ?? issue.time;
-  const heldMs = (lastSeen - firstSeen) * 1000;
+  const heldMs = issue.heldMs ?? (lastSeen - firstSeen) * 1000;
   return heldMs >= CONTENT_OVERLAP_HELD_ERROR_MS;
 }
 
@@ -319,14 +378,15 @@ function staticIssueKey(issue: LayoutIssue): string {
     issue.severity,
     issue.selector,
     issue.containerSelector ?? "",
-    issue.text ?? "",
+    TEXT_AGNOSTIC_KEY_CODES.has(issue.code) ? "" : (issue.text ?? ""),
     issue.overflow ? formatOverflow(issue.overflow) : "",
     framePositionKey(issue),
   ].join("|");
 }
 
 function framePositionKey(issue: LayoutIssue): string {
-  return issue.code === "frame_out_of_frame"
+  // connector_detached shares it: id-less paths collapse to one selector, so distinct lines need geometry in the key.
+  return issue.code === "frame_out_of_frame" || issue.code === "connector_detached"
     ? `${Math.round(issue.rect.left)},${Math.round(issue.rect.top)}`
     : "";
 }

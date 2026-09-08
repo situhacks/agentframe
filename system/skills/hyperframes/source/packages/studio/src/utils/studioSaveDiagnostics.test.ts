@@ -1,13 +1,36 @@
 import { describe, expect, it, vi } from "vitest";
+
+const trackStudioEvent = vi.hoisted(() => vi.fn());
+vi.mock("./studioTelemetry", () => ({ trackStudioEvent }));
+
 import {
+  StudioFileConflictError,
   StudioSaveHttpError,
   StudioSaveNetworkError,
   buildStudioSaveFailureProperties,
   getStudioSaveStatusCode,
   retryStudioSave,
+  trackStudioEditBlocked,
 } from "./studioSaveDiagnostics";
 
 describe("studio save diagnostics", () => {
+  it("preserves conflict versions and both sides for explicit recovery UI", () => {
+    const error = new StudioFileConflictError({
+      filePath: "index.html",
+      currentVersion: '"sha256:new"',
+      currentContent: "external",
+      attemptedContent: "local",
+    });
+
+    expect(getStudioSaveStatusCode(error)).toBe(409);
+    expect(error).toMatchObject({
+      filePath: "index.html",
+      currentVersion: '"sha256:new"',
+      currentContent: "external",
+      attemptedContent: "local",
+    });
+  });
+
   it("builds save_failure properties with stable diagnostics", () => {
     const error = new StudioSaveHttpError("Failed to save index.html (503)", 503);
 
@@ -26,6 +49,30 @@ describe("studio save diagnostics", () => {
       file_path: "index.html",
       mutation_type: "put",
       attempt: 3,
+      label: undefined,
+      target_id: undefined,
+      target_selector: undefined,
+      target_source_file: undefined,
+    });
+  });
+
+  it("emits expected direct-edit refusals on edit_blocked", () => {
+    const error = new Error("This animation is computed at runtime");
+
+    trackStudioEditBlocked({
+      source: "gsap_commit",
+      error,
+      filePath: "index.html",
+      mutationType: "drag",
+    });
+
+    expect(trackStudioEvent).toHaveBeenCalledWith("edit_blocked", {
+      source: "gsap_commit",
+      error_message: error.message,
+      status_code: null,
+      file_path: "index.html",
+      mutation_type: "drag",
+      attempt: undefined,
       label: undefined,
       target_id: undefined,
       target_selector: undefined,

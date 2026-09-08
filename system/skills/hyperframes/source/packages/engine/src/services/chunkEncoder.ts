@@ -6,10 +6,16 @@
  * Supports CPU (libx264) and GPU encoding.
  */
 
-import { spawn } from "child_process";
-import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  statSync,
+  writeFileSync,
+} from "fs";
 import { join, dirname, extname } from "path";
-import { trackChildProcess } from "../utils/processTracker.js";
 import { DEFAULT_CONFIG, type EngineConfig } from "../config.js";
 import {
   type GpuEncoder,
@@ -19,12 +25,12 @@ import {
 } from "../utils/gpuEncoder.js";
 import { type HdrTransfer, getHdrEncoderColorParams } from "../utils/hdr.js";
 import { withEvenDimensionPad } from "../utils/evenDimensions.js";
-import { formatFfmpegError, runFfmpeg } from "../utils/runFfmpeg.js";
-import { getFfmpegBinary } from "../utils/ffmpegBinaries.js";
+import { formatFfmpegError, isExternalFfmpegInterruption, runFfmpeg } from "../utils/runFfmpeg.js";
 import { extractAudioMetadata } from "../utils/ffprobe.js";
 import { type Fps, fpsToFfmpegArg } from "@hyperframes/core";
 import type { EncoderOptions, EncodeResult, MuxResult } from "./chunkEncoder.types.js";
 import { appendVp9CpuUsedArg } from "./vp9Options.js";
+import { appendRenderProvenanceArgs } from "../utils/renderProvenance.js";
 
 export type { EncoderOptions, EncodeResult, MuxResult } from "./chunkEncoder.types.js";
 
@@ -80,6 +86,15 @@ export interface MuxVideoWithAudioOptions extends Partial<
    * depend on the file extension alone.
    */
   audioCodec?: "aac";
+  /**
+   * @deprecated No longer used. `-avoid_negative_ts` is never passed for
+   * mp4/mov muxing (ffmpeg's `auto` default already resolves to `disabled`
+   * for those containers), so the AAC priming edit list is preserved
+   * unconditionally and this flag has no effect. See issue #3487. Kept for
+   * source compatibility; it will be removed in a future major.
+   */
+  preserveAudioPrimingEditList?: boolean;
+  /** Hard cap copied audio to the already-encoded video's exact duration. */
 }
 
 async function shouldCopyAacSidecar(
@@ -361,6 +376,7 @@ export function buildEncoderArgs(
   } else if (codec === "prores") {
     args.push("-c:v", "prores_ks", "-profile:v", preset, "-vendor", "apl0");
     args.push("-pix_fmt", pixelFormat);
+    appendRenderProvenanceArgs(args, outputPath);
     return [...args, "-y", outputPath];
   }
 
@@ -417,14 +433,22 @@ export function buildEncoderArgs(
       // encoder with no `-vf`. They hit the same "height not divisible by 2"
       // abort as libx264 on an odd-sized 4:2:0 canvas, so pad odd dimensions
       // up to even on the software side before the encode.
-      const vf = withEvenDimensionPad("", pixelFormat);
+      const vf = withEvenDimensionPad("", pixelFormat, options.width, options.height);
       if (vf) args.push("-vf", vf);
     } else {
       // Range conversion: Chrome screenshots are full-range RGB.
       // The scale filter handles both 8-bit and 10-bit correctly. Pad odd
       // dimensions up to even so libx264/libx265 (4:2:0) don't abort with
       // "height not divisible by 2" on an odd-sized composition canvas.
-      args.push("-vf", withEvenDimensionPad("scale=in_range=pc:out_range=tv", pixelFormat));
+      args.push(
+        "-vf",
+        withEvenDimensionPad(
+          "scale=in_range=pc:out_range=tv",
+          pixelFormat,
+          options.width,
+          options.height,
+        ),
+      );
     }
 
     // Fixed timescale for consistent A/V timing across platforms.
@@ -436,6 +460,8 @@ export function buildEncoderArgs(
   }
 
   args.push("-avoid_negative_ts", "make_zero");
+
+  appendRenderProvenanceArgs(args, outputPath);
 
   args.push("-y", outputPath);
   return args;
@@ -476,82 +502,41 @@ export async function encodeFramesFromDir(
   const inputPath = join(framesDir, framePattern);
   const inputArgs = ["-framerate", fpsToFfmpegArg(options.fps), "-i", inputPath];
   const args = buildEncoderArgs(options, inputArgs, outputPath, gpuEncoder);
-
-  return new Promise((resolve) => {
-    const ffmpeg = spawn(getFfmpegBinary(), args);
-    trackChildProcess(ffmpeg);
-    let stderr = "";
-    const onAbort = () => {
-      ffmpeg.kill("SIGTERM");
+  const encodeTimeout = config?.ffmpegEncodeTimeout ?? DEFAULT_CONFIG.ffmpegEncodeTimeout;
+  const result = await runFfmpeg(args, { signal, timeout: encodeTimeout });
+  if (result.terminationReason === "abort") {
+    return {
+      success: false,
+      outputPath,
+      durationMs: result.durationMs,
+      framesEncoded: 0,
+      fileSize: 0,
+      error: "FFmpeg encode cancelled",
     };
-    if (signal) {
-      if (signal.aborted) {
-        ffmpeg.kill("SIGTERM");
-      } else {
-        signal.addEventListener("abort", onAbort, { once: true });
-      }
-    }
-
-    const encodeTimeout = config?.ffmpegEncodeTimeout ?? DEFAULT_CONFIG.ffmpegEncodeTimeout;
-    let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      ffmpeg.kill("SIGTERM");
-    }, encodeTimeout);
-
-    ffmpeg.stderr.on("data", (data) => {
-      stderr += data.toString();
-    });
-
-    ffmpeg.on("close", (code) => {
-      clearTimeout(timer);
-      if (signal) signal.removeEventListener("abort", onAbort);
-      const durationMs = Date.now() - startTime;
-      if (signal?.aborted && !timedOut) {
-        resolve({
-          success: false,
-          outputPath,
-          durationMs,
-          framesEncoded: 0,
-          fileSize: 0,
-          error: "FFmpeg encode cancelled",
-        });
-        return;
-      }
-
-      if (code !== 0 || timedOut) {
-        resolve({
-          success: false,
-          outputPath,
-          durationMs,
-          framesEncoded: 0,
-          fileSize: 0,
-          error: appendEncodeTimeoutMessage(
-            formatFfmpegError(code, stderr),
-            timedOut,
-            encodeTimeout,
-          ),
-        });
-        return;
-      }
-
-      const fileSize = existsSync(outputPath) ? statSync(outputPath).size : 0;
-      resolve({ success: true, outputPath, durationMs, framesEncoded: frameCount, fileSize });
-    });
-
-    ffmpeg.on("error", (err) => {
-      clearTimeout(timer);
-      if (signal) signal.removeEventListener("abort", onAbort);
-      resolve({
-        success: false,
-        outputPath,
-        durationMs: Date.now() - startTime,
-        framesEncoded: 0,
-        fileSize: 0,
-        error: appendEncodeTimeoutMessage(`[FFmpeg] ${err.message}`, timedOut, encodeTimeout),
-      });
-    });
-  });
+  }
+  if (!result.success) {
+    return {
+      success: false,
+      outputPath,
+      durationMs: result.durationMs,
+      framesEncoded: 0,
+      fileSize: 0,
+      error: appendEncodeTimeoutMessage(
+        formatFfmpegError(result.exitCode, result.stderr),
+        result.terminationReason === "deadline",
+        encodeTimeout,
+      ),
+      failureReason: isExternalFfmpegInterruption(result) ? "external_interruption" : undefined,
+    };
+  }
+  const fileSize = existsSync(outputPath) ? statSync(outputPath).size : 0;
+  return {
+    success: true,
+    outputPath,
+    durationMs: Date.now() - startTime,
+    framesEncoded: frameCount,
+    fileSize,
+  };
 }
 
 export async function encodeFramesChunkedConcat(
@@ -579,8 +564,10 @@ export async function encodeFramesChunkedConcat(
   }
   const chunkSize = Math.max(30, Math.floor(chunkSizeFrames));
   const chunkCount = Math.ceil(files.length / chunkSize);
-  const chunkDir = join(dirname(outputPath), "chunk-encode");
-  if (!existsSync(chunkDir)) mkdirSync(chunkDir, { recursive: true });
+  mkdirSync(dirname(outputPath), { recursive: true });
+  // Keep intermediates under the caller-owned output directory for its existing
+  // cleanup/debug policy, but never reuse another invocation's chunk files.
+  const chunkDir = mkdtempSync(join(dirname(outputPath), "chunk-encode-"));
   const chunkPaths: string[] = [];
 
   for (let i = 0; i < chunkCount; i++) {
@@ -616,45 +603,18 @@ export async function encodeFramesChunkedConcat(
     let gpuEncoder: GpuEncoder = null;
     if (options.useGpu) gpuEncoder = await getCachedGpuEncoder();
     const args = buildEncoderArgs(options, inputArgs, chunkPath, gpuEncoder);
-    const chunkResult = await new Promise<{ success: boolean; error?: string }>((resolve) => {
-      const ffmpeg = spawn(getFfmpegBinary(), args);
-      trackChildProcess(ffmpeg);
-      let stderr = "";
-      const encodeTimeout = config?.ffmpegEncodeTimeout ?? DEFAULT_CONFIG.ffmpegEncodeTimeout;
-      let timedOut = false;
-      const timer = setTimeout(() => {
-        timedOut = true;
-        ffmpeg.kill("SIGTERM");
-      }, encodeTimeout);
-      ffmpeg.stderr.on("data", (d) => {
-        stderr += d.toString();
-      });
-      ffmpeg.on("close", (code) => {
-        clearTimeout(timer);
-        if (code === 0 && !timedOut) resolve({ success: true });
-        else {
-          resolve({
-            success: false,
-            error: appendEncodeTimeoutMessage(
-              `Chunk ${i} encode failed: ${stderr.slice(-400)}`,
-              timedOut,
-              encodeTimeout,
-            ),
-          });
-        }
-      });
-      ffmpeg.on("error", (err) => {
-        clearTimeout(timer);
-        resolve({
-          success: false,
-          error: appendEncodeTimeoutMessage(
-            `Chunk ${i} encode error: ${err.message}`,
-            timedOut,
+    const encodeTimeout = config?.ffmpegEncodeTimeout ?? DEFAULT_CONFIG.ffmpegEncodeTimeout;
+    const processResult = await runFfmpeg(args, { signal, timeout: encodeTimeout });
+    const chunkResult = {
+      success: processResult.success,
+      error: processResult.success
+        ? undefined
+        : appendEncodeTimeoutMessage(
+            `Chunk ${i} encode failed: ${processResult.stderr.slice(-400)}`,
+            processResult.terminationReason === "deadline",
             encodeTimeout,
           ),
-        });
-      });
-    });
+    };
     if (!chunkResult.success) {
       return {
         success: false,
@@ -663,6 +623,9 @@ export async function encodeFramesChunkedConcat(
         framesEncoded: 0,
         fileSize: 0,
         error: chunkResult.error,
+        failureReason: isExternalFfmpegInterruption(processResult)
+          ? "external_interruption"
+          : undefined,
       };
     }
     chunkPaths.push(chunkPath);
@@ -672,57 +635,26 @@ export async function encodeFramesChunkedConcat(
   const concatInput = chunkPaths.map((path) => `file '${path.replace(/'/g, "'\\''")}'`).join("\n");
   writeFileSync(concatListPath, concatInput, "utf-8");
 
-  const concatArgs = [
-    "-f",
-    "concat",
-    "-safe",
-    "0",
-    "-i",
-    concatListPath,
-    "-c",
-    "copy",
-    "-y",
-    outputPath,
-  ];
-  const concatResult = await new Promise<{ success: boolean; error?: string }>((resolve) => {
-    const ffmpeg = spawn(getFfmpegBinary(), concatArgs);
-    trackChildProcess(ffmpeg);
-    let stderr = "";
-    const encodeTimeout = config?.ffmpegEncodeTimeout ?? DEFAULT_CONFIG.ffmpegEncodeTimeout;
-    let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      ffmpeg.kill("SIGTERM");
-    }, encodeTimeout);
-    ffmpeg.stderr.on("data", (d) => {
-      stderr += d.toString();
-    });
-    ffmpeg.on("close", (code) => {
-      clearTimeout(timer);
-      if (code === 0 && !timedOut) resolve({ success: true });
-      else {
-        resolve({
-          success: false,
-          error: appendEncodeTimeoutMessage(
-            `Chunk concat failed: ${stderr.slice(-400)}`,
-            timedOut,
-            encodeTimeout,
-          ),
-        });
-      }
-    });
-    ffmpeg.on("error", (err) => {
-      clearTimeout(timer);
-      resolve({
-        success: false,
-        error: appendEncodeTimeoutMessage(
-          `Chunk concat error: ${err.message}`,
-          timedOut,
+  const concatArgs = ["-f", "concat", "-safe", "0", "-i", concatListPath, "-c", "copy"];
+  // The concat demuxer does not carry per-chunk container metadata into the
+  // output, so the chunks' provenance is dropped here even though every chunk
+  // carries it. Re-assert on the concatenated file: for a no-audio mov/webm
+  // this is the last container write, since mux is skipped and applyFaststart
+  // only copies those two formats.
+  appendRenderProvenanceArgs(concatArgs, outputPath);
+  concatArgs.push("-y", outputPath);
+  const encodeTimeout = config?.ffmpegEncodeTimeout ?? DEFAULT_CONFIG.ffmpegEncodeTimeout;
+  const concatProcessResult = await runFfmpeg(concatArgs, { signal, timeout: encodeTimeout });
+  const concatResult = {
+    success: concatProcessResult.success,
+    error: concatProcessResult.success
+      ? undefined
+      : appendEncodeTimeoutMessage(
+          `Chunk concat failed: ${concatProcessResult.stderr.slice(-400)}`,
+          concatProcessResult.terminationReason === "deadline",
           encodeTimeout,
         ),
-      });
-    });
-  });
+  };
 
   if (!concatResult.success) {
     return {
@@ -732,6 +664,9 @@ export async function encodeFramesChunkedConcat(
       framesEncoded: 0,
       fileSize: 0,
       error: concatResult.error,
+      failureReason: isExternalFfmpegInterruption(concatProcessResult)
+        ? "external_interruption"
+        : undefined,
     };
   }
 
@@ -781,9 +716,22 @@ export async function muxVideoWithAudio(
       args.push("-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart");
     }
   }
-  // PTS bases can diverge during mux and reintroduce negative DTS. See
-  // buildEncoderArgs for the full reasoning on why that breaks playback.
-  args.push("-avoid_negative_ts", "make_zero");
+  // No `-avoid_negative_ts` here, in any mode. ffmpeg's default is `auto`,
+  // which the mp4/mov muxers (AVFMT_TS_NEGATIVE) already resolve to
+  // `disabled` — the correct behavior for the containers this function
+  // writes. Passing `make_zero` explicitly overrides that default and, on the
+  // dominant audio-copy path, discards the AAC priming edit list the sidecar
+  // encode created: the video start_time shifts forward one AAC frame
+  // (~21ms) and the muxer writes an empty video edit at t=0, which
+  // edit-list-honoring players (QuickTime/Safari) show as a black first
+  // frame. See issue #3487. The video-only encoder args (buildEncoderArgs)
+  // still pass the flag deliberately — those chunks are consumed as raw
+  // elementary output, not as a delivered mp4/mov.
+  //
+  // Re-assert provenance here: this stage re-muxes into the delivered
+  // container, and the mp4 muxer drops the encode stage's tags without the
+  // use_metadata_tags flag that appendRenderProvenanceArgs adds.
+  appendRenderProvenanceArgs(args, outputPath);
   if (fps !== undefined) {
     // Set the exact output framerate so the muxer doesn't PTS-average a
     // fractional rational like `360000/12001` instead of `30/1` into the
@@ -808,6 +756,7 @@ export async function muxVideoWithAudio(
     outputPath,
     durationMs: result.durationMs,
     error: !result.success ? formatFfmpegError(result.exitCode, result.stderr) : undefined,
+    failureReason: result.failureReason,
   };
 }
 
@@ -825,6 +774,7 @@ export async function applyFaststart(
     return { success: true, outputPath, durationMs: 0 };
   }
   const args = ["-i", inputPath, "-c", "copy", "-movflags", "+faststart"];
+  appendRenderProvenanceArgs(args, outputPath);
   if (fps !== undefined) {
     // Set the exact output framerate so the final remux doesn't PTS-average
     // a fractional rational like `360000/12001` instead of `30/1` into the
@@ -849,5 +799,6 @@ export async function applyFaststart(
     outputPath,
     durationMs: result.durationMs,
     error: !result.success ? formatFfmpegError(result.exitCode, result.stderr) : undefined,
+    failureReason: result.failureReason,
   };
 }

@@ -1,76 +1,76 @@
 import type { RuntimeTimelineLike } from "./types";
 import { swallow } from "./diagnostics";
+import { resolveAuthoredTimingWindow } from "./authoredTiming";
 import { readElementPlaybackRate } from "./media";
-import { parseNumeric, parseStartExpression } from "./startExpression";
-
-const AUTHORED_DURATION_ATTR = "data-hf-authored-duration";
-const AUTHORED_END_ATTR = "data-hf-authored-end";
-
-function parseDurationAttr(element: Element): number | null {
-  return parseNumeric(element.getAttribute("data-duration"));
-}
-
-function parseEndAttr(element: Element): number | null {
-  return parseNumeric(element.getAttribute("data-end"));
-}
-
-function parseAuthoredDurationAttr(element: Element): number | null {
-  return parseNumeric(element.getAttribute(AUTHORED_DURATION_ATTR));
-}
-
-function parseAuthoredEndAttr(element: Element): number | null {
-  return parseNumeric(element.getAttribute(AUTHORED_END_ATTR));
-}
+import { readMediaStart } from "./playbackRate";
+import { parseStartExpression } from "./startExpression";
 
 export function createRuntimeStartTimeResolver(params: {
   timelineRegistry?: Record<string, RuntimeTimelineLike | undefined>;
   includeAuthoredTimingAttrs?: boolean;
+  /**
+   * The document that reference lookups (`data-start="intro + 2"`) resolve
+   * against. Defaults to the global `document` — the runtime bundle's own
+   * realm. Hosts driving a composition in an IFRAME must pass that iframe's
+   * document, or every reference silently resolves against the host page.
+   */
+  documentRef?: Document;
 }): {
   resolveStartForElement: (element: Element, fallback?: number) => number;
   resolveDurationForElement: (element: Element) => number | null;
 } {
   const timelineRegistry = params.timelineRegistry ?? {};
   const includeAuthoredTimingAttrs = params.includeAuthoredTimingAttrs ?? false;
+  const doc = params.documentRef ?? document;
   const startCache = new WeakMap<Element, number | null>();
   const durationCache = new WeakMap<Element, number | null>();
   const visiting = new Set<Element>();
 
   const findReferenceTarget = (refId: string): Element | null => {
-    const byId = document.getElementById(refId);
+    const byId = doc.getElementById(refId);
     if (byId) return byId;
     return (
-      (document.querySelector(`[data-composition-id="${CSS.escape(refId)}"]`) as Element | null) ??
-      null
+      (doc.querySelector(`[data-composition-id="${CSS.escape(refId)}"]`) as Element | null) ?? null
     );
+  };
+
+  // Realm-safe: an iframe document's media elements are instances of THAT
+  // frame's HTMLMediaElement, never this module's global one.
+  const isMediaElement = (el: Element): el is HTMLMediaElement => {
+    const RealmMedia = el.ownerDocument.defaultView?.HTMLMediaElement;
+    if (RealmMedia) return el instanceof RealmMedia;
+    return typeof HTMLMediaElement !== "undefined" && el instanceof HTMLMediaElement;
   };
 
   const resolveDurationForElement = (element: Element): number | null => {
     const cached = durationCache.get(element);
     if (cached !== undefined) return cached;
     let resolved: number | null = null;
-    const durationAttr =
-      parseDurationAttr(element) ??
-      (includeAuthoredTimingAttrs ? parseAuthoredDurationAttr(element) : null);
-    if (durationAttr != null && durationAttr > 0) {
-      resolved = durationAttr;
+    const durationTiming = resolveAuthoredTimingWindow({
+      start: 0,
+      duration: element.getAttribute("data-duration"),
+      authoredDuration: includeAuthoredTimingAttrs
+        ? element.getAttribute("data-hf-authored-duration")
+        : null,
+    });
+    if (durationTiming?.duration != null && durationTiming.duration > 0) {
+      resolved = durationTiming.duration;
     }
     if (resolved == null || resolved <= 0) {
-      const endAttr =
-        parseEndAttr(element) ??
-        (includeAuthoredTimingAttrs ? parseAuthoredEndAttr(element) : null);
-      if (endAttr != null) {
-        const start = resolveStartForElementInternal(element, 0);
-        const delta = endAttr - start;
-        if (Number.isFinite(delta) && delta > 0) {
-          resolved = delta;
-        }
+      const start = resolveStartForElementInternal(element, 0);
+      const endTiming = resolveAuthoredTimingWindow({
+        start,
+        end: element.getAttribute("data-end"),
+        authoredEnd: includeAuthoredTimingAttrs
+          ? element.getAttribute("data-hf-authored-end")
+          : null,
+      });
+      if (endTiming?.duration != null && endTiming.duration > 0) {
+        resolved = endTiming.duration;
       }
     }
-    if ((resolved == null || resolved <= 0) && element instanceof HTMLMediaElement) {
-      const playbackStart =
-        parseNumeric(element.getAttribute("data-playback-start")) ??
-        parseNumeric(element.getAttribute("data-media-start")) ??
-        0;
+    if ((resolved == null || resolved <= 0) && isMediaElement(element)) {
+      const playbackStart = readMediaStart(element);
       if (Number.isFinite(element.duration) && element.duration > playbackStart) {
         resolved = (element.duration - playbackStart) / readElementPlaybackRate(element);
       }
@@ -181,3 +181,5 @@ export function createRuntimeStartTimeResolver(params: {
     resolveDurationForElement: (element: Element) => resolveDurationForElement(element),
   };
 }
+
+export type { RuntimeTimelineLike } from "./types";

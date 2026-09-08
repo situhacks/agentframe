@@ -1,7 +1,11 @@
-import { createContext, useContext, useMemo, type ReactNode } from "react";
+import { useContext, useMemo, type ReactNode } from "react";
+import { createStableContext } from "../utils/hmrStableContext";
 import type { TimelineEditCallbacks } from "../player/components/timelineCallbacks";
 
-const TimelineEditContext = createContext<TimelineEditCallbacks | null>(null);
+const TimelineEditContext = createStableContext<TimelineEditCallbacks | null>(
+  "TimelineEditContext",
+  null,
+);
 
 export function useTimelineEditContext(): TimelineEditCallbacks {
   const ctx = useContext(TimelineEditContext);
@@ -10,7 +14,7 @@ export function useTimelineEditContext(): TimelineEditCallbacks {
 }
 
 /**
- * Optional access, returns an empty object when outside a provider.
+ * Optional access — returns an empty object when outside a provider.
  * Useful in components that can render both inside and outside the NLE.
  */
 export function useTimelineEditContextOptional(): TimelineEditCallbacks {
@@ -26,28 +30,29 @@ export function TimelineEditProvider({
 }) {
   const memoized = useMemo(
     () => value,
-    // Each callback is a stable reference from the parent, memoize the bag
+    // Each callback is a stable reference from the parent — memoize the bag
     // so consumers don't re-render when unrelated parent state changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       value.onMoveElement,
-      value.onResizeElement,
       value.onMoveElements,
-      value.onResizeElements,
-      value.onPreviewMoveElements,
-      value.onPreviewResizeElements,
+      value.onResizeElement,
       value.onToggleTrackHidden,
-      value.onToggleElementHidden,
+      value.onSetAudioGroupAttributeLive,
+      value.onSetAudioGroupAttributeQuiet,
+      value.onGroupClips,
+      value.onSetElementAttributeLive,
+      value.onSetElementAttributeQuiet,
       value.onBlockedEditAttempt,
       value.onSplitElement,
       value.onRazorSplit,
       value.onRazorSplitAll,
       value.onDeleteKeyframe,
       value.onDeleteAllKeyframes,
-      value.onChangeKeyframeEase,
       value.onMoveKeyframeToPlayhead,
       value.onMoveKeyframe,
       value.onToggleKeyframeAtPlayhead,
+      value.onTogglePropertyGroupKeyframe,
     ],
   );
   return <TimelineEditContext.Provider value={memoized}>{children}</TimelineEditContext.Provider>;

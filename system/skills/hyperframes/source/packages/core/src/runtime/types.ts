@@ -1,4 +1,5 @@
 import type { HfColorGradingTarget } from "../colorGrading";
+import type { RuntimeAnalyticsEvent } from "./analytics";
 
 export type RuntimeJson =
   | string
@@ -10,8 +11,9 @@ export type RuntimeJson =
 
 import type { HyperframeControlAction } from "../inline-scripts/runtimeContract.js";
 import type { HyperframePickerElementInfo } from "../inline-scripts/pickerApi.js";
+import type { RuntimeProtocolV1 } from "./protocol.js";
 
-export type RuntimeBridgeControlAction =
+type RuntimeBridgeControlActionBase =
   | HyperframeControlAction
   | "tick"
   | "set-volume"
@@ -22,11 +24,12 @@ export type RuntimeBridgeControlAction =
   | "stop-media"
   | "flash-elements";
 
-export type RuntimeBridgeControlMessage = {
+type RuntimeBridgeControlMessageBase = {
   source: "hf-parent";
   type: "control";
   action: RuntimeBridgeControlAction;
   frame?: number;
+  timeSeconds?: number;
   muted?: boolean;
   volume?: number;
   durationSeconds?: number;
@@ -47,22 +50,27 @@ export type RuntimeStateMessage = {
   playbackRate: number;
 };
 
-export type RuntimeTimelineClip = {
+export type RuntimeTimelineClipIdentity = {
   id: string | null;
   label: string;
   start: number;
   duration: number;
   track: number;
-  zIndex: number;
-  stackingContextId: string | null;
   kind: "video" | "audio" | "image" | "element" | "composition";
   tagName: string | null;
   compositionId: string | null;
-  compositionAncestors: string[];
   parentCompositionId: string | null;
-  nodePath: string | null;
   compositionSrc: string | null;
   assetUrl: string | null;
+};
+
+export type RuntimeTimelineClip = RuntimeTimelineClipIdentity & {
+  zIndex: number;
+  stackingContextId: string | null;
+  compositionAncestors: string[];
+  nodePath: string | null;
+  playbackStart: number;
+  playbackRate: number;
   timelineRole: string | null;
   timelineLabel: string | null;
   timelineGroup: string | null;
@@ -78,9 +86,11 @@ export type RuntimeTimelineScene = {
   avatarName: string | null;
 };
 
-export type RuntimeTimelineMessage = {
+export type RuntimeTimelineMessage = RuntimeProtocolV1 & {
   source: "hf-preview";
   type: "timeline";
+  compositionContractVersion: 1;
+  durationSeconds: number;
   durationInFrames: number;
   clips: RuntimeTimelineClip[];
   scenes: RuntimeTimelineScene[];
@@ -161,6 +171,21 @@ export type RuntimeReadyMessage = {
   type: "ready";
 };
 
+export type RuntimeDataErrorMessage = {
+  source: "hf-preview";
+  type: "runtime-data-error";
+  channel: string;
+  requestId: number;
+  message: string;
+};
+
+export type RuntimeDataAppliedMessage = {
+  source: "hf-preview";
+  type: "runtime-data-applied";
+  channel: string;
+  requestId: number;
+};
+
 /**
  * Analytics events emitted by the runtime.
  *
@@ -171,13 +196,7 @@ export type RuntimeReadyMessage = {
 export type RuntimeAnalyticsMessage = {
   source: "hf-preview";
   type: "analytics";
-  event:
-    | "composition_loaded"
-    | "composition_played"
-    | "composition_paused"
-    | "composition_seeked"
-    | "composition_ended"
-    | "element_picked";
+  event: RuntimeAnalyticsEvent;
   properties: Record<string, string | number | boolean | null>;
 };
 
@@ -196,6 +215,15 @@ export type RuntimePerformanceMessage = {
   tags: Record<string, string | number | boolean | null>;
 };
 
+/** One audio group's live meter reading, polled from the transport each tick
+ *  while playing. A group id absent from `levels` is idle/unknown (no active
+ *  member) — the studio side treats that as "no reading", not zero. */
+export type RuntimeGroupLevelsMessage = {
+  source: "hf-preview";
+  type: "group-levels";
+  levels: Array<{ groupId: string; level: number; clipped: boolean }>;
+};
+
 export type RuntimeOutboundMessage =
   | RuntimeStateMessage
   | RuntimeTimelineMessage
@@ -208,8 +236,11 @@ export type RuntimeOutboundMessage =
   | RuntimeStageSizeMessage
   | RuntimeMediaAutoplayBlockedMessage
   | RuntimeReadyMessage
+  | RuntimeDataErrorMessage
+  | RuntimeDataAppliedMessage
   | RuntimeAnalyticsMessage
-  | RuntimePerformanceMessage;
+  | RuntimePerformanceMessage
+  | RuntimeGroupLevelsMessage;
 
 export type RuntimePlayer = {
   _timeline: RuntimeTimelineLike | null;
@@ -228,17 +259,32 @@ export type RuntimeSeekOptions = {
   suppressEvents?: boolean;
 };
 
+export type RuntimeTimelineChildLike = {
+  targets?: () => unknown[];
+  vars?: unknown;
+  startTime?: () => number;
+  duration?: () => number;
+  parent?: RuntimeTimelineChildLike;
+};
+
 export type RuntimeTimelineLike = {
   play: () => void;
   pause: () => void;
-  seek: (timeSeconds: number, suppressEvents?: boolean) => void;
-  totalTime?: (timeSeconds: number, suppressEvents?: boolean) => void;
+  seek: (timeSeconds?: number, suppressEvents?: boolean) => unknown;
+  totalTime?: (timeSeconds?: number, suppressEvents?: boolean) => unknown;
+  progress?: (value?: number, suppressEvents?: boolean) => unknown;
   time: () => number;
   duration: () => number;
   add: (timeline: RuntimeTimelineLike, startAtSeconds: number) => void;
   paused: (paused?: boolean) => void;
   timeScale?: (rate: number) => void;
   set: (target: RuntimeGsapSetTarget, vars: RuntimeGsapSetVars, atSeconds?: number) => void;
+  getChildren?: (
+    nested?: boolean,
+    tweens?: boolean,
+    timelines?: boolean,
+    ignoreBeforeTime?: number,
+  ) => RuntimeTimelineChildLike[];
 };
 
 export type RuntimeDeterministicAdapter = {
@@ -291,3 +337,17 @@ export type RuntimeDeterministicAdapter = {
 export type RuntimeGsapSetTarget = string | Element | Element[] | null;
 
 export type RuntimeGsapSetVars = Record<string, string | number | boolean | null | undefined>;
+
+type RuntimeDataControlFields = {
+  channel?: string;
+  payload?: unknown;
+  requestId?: number;
+};
+
+type RuntimeBridgeControlAction =
+  | RuntimeBridgeControlActionBase
+  | "set-runtime-data"
+  | "clear-runtime-data";
+
+export type RuntimeBridgeControlMessage = RuntimeBridgeControlMessageBase &
+  RuntimeDataControlFields;

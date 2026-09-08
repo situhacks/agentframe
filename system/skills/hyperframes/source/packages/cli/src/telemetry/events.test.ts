@@ -1,8 +1,21 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
 const trackEvent = vi.fn();
+const flush = vi.fn(() => Promise.resolve());
+const shouldTrack = vi.fn(() => true);
 vi.mock("./client.js", () => ({
   trackEvent: (...args: unknown[]) => trackEvent(...args),
+  flush: () => flush(),
+  shouldTrack: () => shouldTrack(),
+}));
+
+// Power state shells out to `pmset`; spy so tests can assert it is NOT
+// sampled for opted-out installs (the fields are built at the call site,
+// before trackEvent's own shouldTrack guard).
+const getPowerState = vi.fn(() => ({ on_battery: true, low_power_mode: false }));
+vi.mock("./system.js", async () => ({
+  ...(await vi.importActual<typeof import("./system.js")>("./system.js")),
+  getPowerState: () => getPowerState(),
 }));
 
 // identifyUser reads the install anonymousId; pin it so the $identify alias is
@@ -174,6 +187,189 @@ describe("trackCheckReport", () => {
 describe("render telemetry events", () => {
   beforeEach(() => {
     trackEvent.mockClear();
+    flush.mockClear();
+  });
+
+  // The catalog join. Counts must be present at zero: the no-catalog cohort is
+  // what the with-catalog cohort is compared against, and an absent property is
+  // indistinguishable from an older CLI that never sent one.
+  it("reports zero catalog counts for a project with no registry items", () => {
+    trackRenderComplete({
+      durationMs: 1000,
+      fps: 30,
+      quality: "draft",
+      docker: false,
+      gpu: false,
+      catalogUsage: { installed: [], usedBlocks: [], manifestUnreadable: false },
+    });
+    const props = trackEvent.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(props.registry_item_count).toBe(0);
+    expect(props.registry_blocks_used_count).toBe(0);
+    expect(props.registry_items).toBeUndefined();
+  });
+
+  it("names the installed items and the subset the render reached", () => {
+    trackRenderComplete({
+      durationMs: 1000,
+      fps: 30,
+      quality: "draft",
+      docker: false,
+      gpu: false,
+      catalogUsage: {
+        installed: ["bar-chart-race", "data-chart"],
+        usedBlocks: ["data-chart"],
+        manifestUnreadable: false,
+      },
+    });
+    const props = trackEvent.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(props.registry_items).toBe("bar-chart-race,data-chart");
+    expect(props.registry_item_count).toBe(2);
+    expect(props.registry_blocks_used).toBe("data-chart");
+    expect(props.registry_blocks_used_count).toBe(1);
+  });
+
+  // A count is one integer with no cardinality risk. Capping it would lose the
+  // real number with no way downstream to tell 40 installs from 400.
+  it("caps the item names but reports the true counts past the cap", () => {
+    const installed = Array.from({ length: 45 }, (_, i) => `b${String(i + 1).padStart(2, "0")}`);
+    trackRenderComplete({
+      durationMs: 1000,
+      fps: 30,
+      quality: "draft",
+      docker: false,
+      gpu: false,
+      catalogUsage: { installed, usedBlocks: installed.slice(-5), manifestUnreadable: false },
+    });
+    const props = trackEvent.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(props.registry_item_count).toBe(45);
+    expect(props.registry_blocks_used_count).toBe(5);
+    expect(String(props.registry_items).split(",")).toHaveLength(40);
+    // The names are a window, and a query joining on them would otherwise read
+    // this project as 45 abandoned items: every used block sits past the cap,
+    // so `registry_blocks_used` is absent against a count of 5.
+    expect(props.registry_items_truncated).toBe(true);
+    expect(props.registry_blocks_used).toBeUndefined();
+  });
+
+  it("does not claim truncation when every name fits", () => {
+    trackRenderComplete({
+      durationMs: 1000,
+      fps: 30,
+      quality: "draft",
+      docker: false,
+      gpu: false,
+      catalogUsage: {
+        installed: ["bar-chart-race", "data-chart"],
+        usedBlocks: ["data-chart"],
+        manifestUnreadable: false,
+      },
+    });
+    const props = trackEvent.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(props.registry_items_truncated).toBeUndefined();
+  });
+
+  // Sliced independently the two lists come out disjoint, which breaks the one
+  // relationship any drop-off query relies on.
+  it("keeps the used names a subset of the reported installed names", () => {
+    const installed = Array.from({ length: 45 }, (_, i) => `b${String(i + 1).padStart(2, "0")}`);
+    trackRenderComplete({
+      durationMs: 1000,
+      fps: 30,
+      quality: "draft",
+      docker: false,
+      gpu: false,
+      catalogUsage: { installed, usedBlocks: installed.slice(-5), manifestUnreadable: false },
+    });
+    const props = trackEvent.mock.calls[0]?.[1] as Record<string, unknown>;
+    const reported = new Set(String(props.registry_items).split(","));
+    const used =
+      props.registry_blocks_used === undefined ? [] : String(props.registry_blocks_used).split(",");
+    expect(used.every((name) => reported.has(name))).toBe(true);
+  });
+
+  // The control cohort is the one that must not silently absorb failures: a
+  // project whose manifest cannot be read is not a project without a catalog.
+  it("flags an unreadable manifest instead of reporting it as zero catalog items", () => {
+    trackRenderComplete({
+      durationMs: 1000,
+      fps: 30,
+      quality: "draft",
+      docker: false,
+      gpu: false,
+      catalogUsage: { installed: [], usedBlocks: [], manifestUnreadable: true },
+    });
+    const props = trackEvent.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(props.registry_manifest_unreadable).toBe(true);
+    expect(props.registry_item_count).toBeUndefined();
+  });
+
+  // A caller that built render options by hand makes no catalog claim, rather
+  // than claiming zero items.
+  it("omits the catalog props entirely when usage was never resolved", () => {
+    trackRenderComplete({ durationMs: 1, fps: 30, quality: "draft", docker: false, gpu: false });
+    const props = trackEvent.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(props.registry_item_count).toBeUndefined();
+    expect(props.registry_blocks_used_count).toBeUndefined();
+  });
+
+  it("flushes immediately after render_complete and render_error (exit races the lazy flush)", () => {
+    trackRenderComplete({ durationMs: 1000, fps: 30, quality: "draft", docker: false, gpu: false });
+    expect(flush).toHaveBeenCalledTimes(1);
+    trackRenderError({ fps: 30, quality: "draft", docker: false });
+    expect(flush).toHaveBeenCalledTimes(2);
+  });
+
+  // The enforcement decision for the advisory heap budget reads these fleet
+  // props (see computeWorkerSizing) — a silent drop in the summary→event hop
+  // would invalidate that decision without anyone noticing.
+  it("carries every worker-sizing provenance prop on render_complete", () => {
+    trackRenderComplete({
+      durationMs: 1000,
+      fps: 30,
+      quality: "high",
+      docker: false,
+      gpu: false,
+      workers: 6,
+      workersBoundBy: "max_workers",
+      workersCpuBased: 16,
+      workersMemoryBased: 8,
+      workersHeapBased: 4,
+      workersFrameBased: 24,
+      workersHeapLimitMb: 4096,
+      workersExceedHeapAdvisory: true,
+    });
+
+    expect(trackEvent).toHaveBeenCalledWith(
+      "render_complete",
+      expect.objectContaining({
+        workers: 6,
+        workers_bound_by: "max_workers",
+        workers_cpu_based: 16,
+        workers_memory_based: 8,
+        workers_heap_based: 4,
+        workers_frame_based: 24,
+        workers_heap_limit_mb: 4096,
+        workers_exceed_heap_advisory: true,
+      }),
+      undefined,
+    );
+  });
+
+  it("ties feedback to its report and recent renders via feedback_id + recent_render_ids", () => {
+    trackRenderFeedback({
+      rating: 3,
+      comment: "hook scene blank",
+      feedbackId: "feedback-uuid",
+      recentRenderIds: ["render-a", "render-b"],
+    });
+
+    expect(trackEvent).toHaveBeenCalledWith(
+      "cli_render_feedback",
+      expect.objectContaining({
+        feedback_id: "feedback-uuid",
+        recent_render_ids: "render-a,render-b",
+      }),
+    );
   });
 
   it("redacts paths and URL query strings from render error messages", () => {
@@ -242,6 +438,32 @@ describe("render telemetry events", () => {
     );
   });
 
+  it("carries the failing dB, frame index, and threshold on render_error for a psnr fallback that failed hard afterward", () => {
+    trackRenderError({
+      fps: 30,
+      quality: "standard",
+      docker: false,
+      errorMessage: "worker crashed after a psnr fallback",
+      captureDeParallelRouter: "reverted",
+      captureDeSelfVerifyFallback: true,
+      captureDeFallbackReason: "psnr",
+      captureDeFallbackFailedDb: 28.4,
+      captureDeFallbackFrameIndex: 649,
+      captureDeFallbackThresholdDb: 32,
+    });
+
+    expect(trackEvent).toHaveBeenCalledWith(
+      "render_error",
+      expect.objectContaining({
+        de_fallback_reason: "psnr",
+        de_fallback_failed_db: 28.4,
+        de_fallback_frame_index: 649,
+        de_fallback_threshold_db: 32,
+      }),
+      undefined,
+    );
+  });
+
   it("prefers the explicit perfSummary-sourced de_worker_inversion over the capture-observability fallback on render_complete", () => {
     trackRenderComplete({
       durationMs: 1000,
@@ -258,6 +480,32 @@ describe("render telemetry events", () => {
     expect(trackEvent).toHaveBeenCalledWith(
       "render_complete",
       expect.objectContaining({ de_worker_inversion: "inverted" }),
+      undefined,
+    );
+  });
+
+  it("carries the perfSummary-sourced failing dB, frame index, and threshold on render_complete", () => {
+    trackRenderComplete({
+      durationMs: 1000,
+      fps: 30,
+      quality: "standard",
+      docker: false,
+      gpu: false,
+      deParallelRouter: "reverted",
+      deFallbackReason: "psnr",
+      deFallbackFailedDb: 28.4,
+      deFallbackFrameIndex: 649,
+      deFallbackThresholdDb: 32,
+    });
+
+    expect(trackEvent).toHaveBeenCalledWith(
+      "render_complete",
+      expect.objectContaining({
+        de_fallback_reason: "psnr",
+        de_fallback_failed_db: 28.4,
+        de_fallback_frame_index: 649,
+        de_fallback_threshold_db: 32,
+      }),
       undefined,
     );
   });
@@ -389,14 +637,15 @@ describe("trackRenderFeedback", () => {
 
     const [, props] = trackEvent.mock.calls[0] as [string, Record<string, unknown>];
     expect(props).not.toHaveProperty("render_duration_ms");
-    expect(props.$survey_response).toBe(4);
+    expect(props.rating).toBe(4);
+    expect(props.rating_scale).toBe(10);
   });
 
   it("includes render_duration_ms when a real duration is supplied", () => {
     trackRenderFeedback({ rating: 5, renderDurationMs: 6000 });
 
     expect(trackEvent).toHaveBeenCalledWith(
-      "survey sent",
+      "cli_render_feedback",
       expect.objectContaining({ render_duration_ms: 6000 }),
     );
   });
@@ -420,6 +669,21 @@ describe("trackCliError", () => {
     expect(props.error_message).not.toContain("/Users/alice");
     expect(props.error_message).toContain("[path]");
     expect(props.stack_trace).not.toContain("/Users/alice");
+  });
+
+  it("forwards the figma endpoint label when supplied", () => {
+    trackCliError({
+      error_name: "RATE_LIMITED",
+      error_message: "figma rate limit hit (429)",
+      command: "figma asset",
+      kind: "command_error",
+      endpoint: "images",
+    });
+
+    expect(trackEvent).toHaveBeenCalledWith(
+      "cli_error",
+      expect.objectContaining({ endpoint: "images" }),
+    );
   });
 });
 
@@ -573,5 +837,30 @@ describe("auth login telemetry events", () => {
   it("identifyUser is a no-op when there is no identity to attach", () => {
     identifyUser("");
     expect(trackEvent).not.toHaveBeenCalled();
+  });
+});
+
+describe("power-state sampling respects the telemetry opt-out", () => {
+  beforeEach(() => {
+    getPowerState.mockClear();
+    shouldTrack.mockReturnValue(true);
+  });
+
+  it("samples power state for a tracked render", () => {
+    trackRenderComplete({ durationMs: 1, fps: 30, quality: "high", docker: false, gpu: false });
+    expect(getPowerState).toHaveBeenCalled();
+    const props = trackEvent.mock.calls.at(-1)?.[1] as Record<string, unknown>;
+    expect(props.on_battery).toBe(true);
+    expect(props.low_power_mode).toBe(false);
+  });
+
+  it("does NOT spawn pmset when telemetry is disabled", () => {
+    // Regression: powerStateFields() is spread into the properties object at
+    // the call site, so it runs BEFORE trackEvent's `if (!shouldTrack())`
+    // guard — an opted-out install would otherwise pay two blocking
+    // subprocess spawns per render for an event that is then discarded.
+    shouldTrack.mockReturnValue(false);
+    trackRenderComplete({ durationMs: 1, fps: 30, quality: "high", docker: false, gpu: false });
+    expect(getPowerState).not.toHaveBeenCalled();
   });
 });

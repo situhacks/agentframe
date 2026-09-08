@@ -28,6 +28,55 @@ describe("removeElementFromHtml", () => {
     expect(updated).toContain(`data-composition-id="scene-b"`);
   });
 
+  it("removes tweens for both DOM ids and stable ids throughout the deleted subtree", () => {
+    const html = `<!doctype html><html><body>
+      <div id="parent"><div id="box" data-hf-id="hf-box"><span id="leaf"></span></div></div>
+      <div id="keep"></div>
+      <script>
+        const tl = gsap.timeline({ paused: true });
+        tl.to("#parent", { x: 10 });
+        tl.to("#box", { x: 20 });
+        tl.to('[data-hf-id="hf-box"]', { x: 30 });
+        tl.to("#leaf", { x: 40 });
+        tl.to("#box", { x: 50 });
+        tl.to("#keep", { x: 60 });
+      </script></body></html>`;
+    const updated = removeElementFromHtml(html, { id: "parent" });
+    expect(updated).not.toContain("#parent");
+    expect(updated).not.toContain("#box");
+    expect(updated).not.toContain("hf-box");
+    expect(updated).not.toContain("#leaf");
+    expect(updated).toContain('tl.to("#keep", { x: 60 })');
+  });
+
+  it("cascades a stable-id deletion into nested composition template scripts", () => {
+    const html = `<div id="box" data-hf-id="hf-box"></div>
+      <template data-composition-id="outer"><template data-composition-id="inner">
+        <script>const tl = gsap.timeline(); tl.to("#box", { x: 10 });</script>
+      </template></template>`;
+    const updated = removeElementFromHtml(html, { hfId: "hf-box" });
+    expect(updated).not.toContain("#box");
+    expect(updated).not.toContain('id="box"');
+  });
+
+  it("retains shared selectors used by a surviving composition instance", () => {
+    const html = `<div data-hf-id="remove"><span id="box" data-hf-id="hf-box"></span></div>
+      <template data-composition-id="keep"><div id="box" data-hf-id="hf-box"></div>
+        <script>const tl = gsap.timeline();
+          tl.to("#box", { x: 10 }); tl.to('[data-hf-id="hf-box"]', { x: 20 });
+        </script>
+      </template>`;
+    const updated = removeElementFromHtml(html, { hfId: "remove" });
+    expect(updated).not.toContain('data-hf-id="remove"');
+    expect(updated).toContain('tl.to("#box", { x: 10 })');
+    expect(updated).toContain(`tl.to('[data-hf-id="hf-box"]', { x: 20 })`);
+  });
+
+  it("does not strip scripts when the requested element is absent", () => {
+    const html = `<script>const tl = gsap.timeline(); tl.to("#missing", { x: 10 });</script>`;
+    expect(removeElementFromHtml(html, { id: "missing" })).toBe(html);
+  });
+
   it("supports fragment html by returning updated body markup", () => {
     const html = `<div id="photo"></div><div id="rest"></div>`;
 
@@ -540,5 +589,48 @@ describe("T7 — data-hf-id targeting (spec for R1)", () => {
     expect(matched).toBe(true);
     expect(html).toContain("New");
     expect(html).toContain('data-hf-id="hf-a1b2"');
+  });
+});
+
+/**
+ * A rich-text operation adds elements, so it has to give them their stable ids
+ * here, in the bytes it writes and returns.
+ *
+ * Otherwise the next preview request mints them and writes the file a second
+ * time, after Studio has recorded the edit. The recorded "after" stops matching
+ * disk, the content check refuses, and undo reports the file as changed outside
+ * Studio — for every colour applied to a run of characters.
+ */
+describe("patchElementInHtml stamps the ids a rich-text patch introduces", () => {
+  it("gives each new span its id in the same write", () => {
+    const source = '<div data-hf-id="hf-a" id="t">plain</div>';
+    const { html, matched } = patchElementInHtml(source, { id: "t" }, [
+      { type: "rich-text", property: "", value: 'a<span style="color: red">b</span>c' },
+    ]);
+
+    expect(matched).toBe(true);
+    expect(html).toContain("color: red");
+    expect((html.match(/data-hf-id=/g) ?? []).length).toBe(2);
+  });
+
+  it("leaves an id a rich-text patch carried in alone", () => {
+    const source = '<div data-hf-id="hf-a" id="t">plain</div>';
+    const { html } = patchElementInHtml(source, { id: "t" }, [
+      { type: "rich-text", property: "", value: '<span data-hf-id="hf-keep">b</span>' },
+    ]);
+
+    expect(html).toContain('data-hf-id="hf-keep"');
+  });
+
+  it("does not collide with an id inside a composition template", () => {
+    const source = `<!doctype html><html><body><template data-composition-id="nested"><p data-hf-id="hf-3x72">nested</p></template><h1 id="title">plain</h1></body></html>`;
+    const { html } = patchElementInHtml(source, { id: "title" }, [
+      { type: "rich-text", property: "", value: '<span style="color: red">b</span>' },
+    ]);
+
+    expect(html.match(/data-hf-id="hf-3x72"/g)).toHaveLength(1);
+    const introducedId = /<span[^>]*data-hf-id="([^"]+)"/.exec(html)?.[1];
+    expect(introducedId).toBeDefined();
+    expect(introducedId).not.toBe("hf-3x72");
   });
 });

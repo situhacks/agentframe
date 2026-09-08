@@ -17,7 +17,10 @@
  */
 
 import { applyFaststart, muxVideoWithAudio } from "@hyperframes/engine";
+import { extname } from "node:path";
 import type { ProgressCallback, RenderJob } from "../../renderOrchestrator.js";
+import { padOrTrimAudioToVideoFrameCount } from "../audioPadTrim.js";
+import { encoderFailureError } from "../encoderInterruption.js";
 import { updateJobStatus } from "../shared.js";
 
 export interface AssembleStageInput {
@@ -55,17 +58,34 @@ export async function runAssembleStage(input: AssembleStageInput): Promise<Assem
   updateJobStatus(job, "assembling", "Assembling final video", 90, onProgress);
 
   if (hasAudio) {
+    const audioExtension = extname(audioOutputPath);
+    const audioStem = audioExtension
+      ? audioOutputPath.slice(0, -audioExtension.length)
+      : audioOutputPath;
+    const normalizedAudioPath = `${audioStem}.duration-normalized.m4a`;
+    const normalizeResult = await padOrTrimAudioToVideoFrameCount({
+      videoPath: videoOnlyPath,
+      audioPath: audioOutputPath,
+      outputPath: normalizedAudioPath,
+      signal: abortSignal,
+    });
+    assertNotAborted();
+    if (!normalizeResult.success) {
+      throw encoderFailureError("Audio duration normalization failed", normalizeResult);
+    }
     const muxResult = await muxVideoWithAudio(
       videoOnlyPath,
-      audioOutputPath,
+      normalizeResult.outputPath,
       outputPath,
       abortSignal,
-      { audioCodec: "aac" },
+      {
+        audioCodec: "aac",
+      },
       job.config.fps,
     );
     assertNotAborted();
     if (!muxResult.success) {
-      throw new Error(`Audio muxing failed: ${muxResult.error}`);
+      throw encoderFailureError("Audio muxing failed", muxResult);
     }
   } else {
     const faststartResult = await applyFaststart(
@@ -77,7 +97,7 @@ export async function runAssembleStage(input: AssembleStageInput): Promise<Assem
     );
     assertNotAborted();
     if (!faststartResult.success) {
-      throw new Error(`Faststart failed: ${faststartResult.error}`);
+      throw encoderFailureError("Faststart failed", faststartResult);
     }
   }
 

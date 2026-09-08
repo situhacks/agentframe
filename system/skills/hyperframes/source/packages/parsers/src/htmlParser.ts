@@ -17,6 +17,7 @@ import { ensureHfIds, walkCompositionDescendants } from "./hfIds.js";
 import { parseGsapScriptAcornForWrite } from "./gsapParserAcorn.js";
 import { queryByAttr } from "./utils/cssSelector.js";
 import { removeAnimationFromScript } from "./gsapWriterAcorn.js";
+import { readClipTiming, writeClipTiming } from "./compositionContract.js";
 
 const MEDIA_TYPES = new Set<string>(["video", "image", "audio"]);
 
@@ -88,8 +89,10 @@ function getElementName(el: Element): string {
 }
 
 function getZIndex(el: Element): number {
-  const dataLayer = el.getAttribute("data-layer");
-  if (dataLayer) return parseInt(dataLayer, 10) || 0;
+  const timing = readClipTiming(el);
+  if (timing.trackSource !== "default" && timing.trackSource !== "invalid") {
+    return timing.trackIndex;
+  }
 
   const style = (el as HTMLElement).style?.zIndex;
   if (style) return parseInt(style, 10) || 0;
@@ -197,21 +200,35 @@ export function parseHtml(html: string): ParsedHtml {
     }
   }
 
-  const timedElements = doc.querySelectorAll("[data-start]");
+  const timedElements = Array.from(doc.querySelectorAll("[data-start]"));
+  const timedById = new Map<string, Element>();
+  for (const element of timedElements) {
+    for (const id of [element.id, element.getAttribute("data-hf-id")]) {
+      if (id) timedById.set(id, element);
+    }
+  }
+
+  const resolveEnd = (refId: string, visiting: ReadonlySet<string>): number | null => {
+    if (visiting.has(refId)) return null;
+    const referenced = timedById.get(refId);
+    if (!referenced) return null;
+    const next = new Set(visiting);
+    next.add(refId);
+    return readClipTiming(referenced, {
+      resolveReferenceEnd: (nestedId) => resolveEnd(nestedId, next),
+    }).end;
+  };
 
   timedElements.forEach((el) => {
     const type = getElementType(el);
     if (!type) return;
 
-    const start = parseFloat(el.getAttribute("data-start") || "0");
-    const dataEnd = el.getAttribute("data-end");
-
-    let duration: number;
-    if (dataEnd) {
-      duration = Math.max(0, parseFloat(dataEnd) - start);
-    } else {
-      duration = 5;
-    }
+    const ownId = el.id || el.getAttribute("data-hf-id");
+    const timing = readClipTiming(el, {
+      resolveReferenceEnd: (refId) => resolveEnd(refId, new Set(ownId ? [ownId] : [])),
+    });
+    const start = timing.start ?? 0;
+    const duration = timing.duration ?? 5;
 
     // R1: stable hf- id minted by ensureHfIds above; clips just read it.
     // Legacy/migration note: ensureHfIds pins a pre-existing `data-hf-id`, and
@@ -544,25 +561,20 @@ export function updateElementInHtml(
   const el = doc.getElementById(elementId) || queryByAttr(doc, "data-name", elementId);
   if (!el) return html;
 
-  if (updates.startTime !== undefined) {
-    el.setAttribute("data-start", String(updates.startTime));
-    if (el.hasAttribute("data-end") && updates.duration !== undefined) {
-      el.setAttribute("data-end", String(updates.startTime + updates.duration));
-    }
-  }
-
-  if (updates.duration !== undefined) {
-    const start = parseFloat(el.getAttribute("data-start") || "0");
-    el.setAttribute("data-end", String(start + updates.duration));
-    el.removeAttribute("data-duration"); // Clean up legacy
+  if (
+    updates.startTime !== undefined ||
+    updates.duration !== undefined ||
+    updates.zIndex !== undefined
+  ) {
+    writeClipTiming(el, {
+      start: updates.startTime,
+      duration: updates.duration,
+      trackIndex: updates.zIndex,
+    });
   }
 
   if (updates.name !== undefined) {
     el.setAttribute("data-name", updates.name);
-  }
-
-  if (updates.zIndex !== undefined) {
-    el.setAttribute("data-layer", String(updates.zIndex));
   }
 
   // Handle media-specific property
@@ -698,9 +710,11 @@ export function addElementToHtml(
   }
 
   newEl.id = id;
-  newEl.setAttribute("data-start", String(element.startTime));
-  newEl.setAttribute("data-end", String(element.startTime + element.duration));
-  newEl.setAttribute("data-layer", String(element.zIndex));
+  writeClipTiming(newEl, {
+    start: element.startTime,
+    duration: element.duration,
+    trackIndex: element.zIndex,
+  });
   newEl.setAttribute("data-name", element.name);
 
   container.appendChild(newEl);
@@ -711,41 +725,47 @@ export function addElementToHtml(
   };
 }
 
-function selectorTargetsId(selector: string, id: string): boolean {
-  return (
-    selector === `#${id}` ||
-    selector === `[data-hf-id="${id}"]` ||
-    selector === `[data-hf-id='${id}']`
-  );
+function elementSelectors(element: Element): string[] {
+  const selectors: string[] = [];
+  const id = element.getAttribute("id");
+  const hfId = element.getAttribute("data-hf-id");
+  if (id) selectors.push(`#${id}`);
+  if (hfId) selectors.push(`[data-hf-id="${hfId}"]`, `[data-hf-id='${hfId}']`);
+  return selectors;
 }
 
-function stripGsapForId(script: string, elementId: string): string {
-  // Re-parse after every removal. Animation ids are count-based (positional), so
-  // removing one tween renumbers the survivors — ids captured from a single
-  // up-front parse go stale and silently no-op, orphaning later tweens on the
-  // now-deleted element. Always remove the FIRST still-matching animation in a
-  // freshly-parsed script until none remain.
-  let current = script;
-  for (;;) {
-    const parsed = parseGsapScriptAcornForWrite(current);
-    if (!parsed) return current;
-    const match = parsed.located.find((l) =>
-      selectorTargetsId(l.animation.targetSelector, elementId),
-    );
-    if (!match) return current;
-    const updated = removeAnimationFromScript(current, match.id);
-    // Guard against a non-removing match (would otherwise loop forever).
-    if (updated === current) return current;
-    current = updated;
-  }
-}
+/** Remove a source subtree and its unambiguous, directly targeted GSAP tweens. */
+export function removeElementWithGsapCascade(doc: Document, element: Element): void {
+  const removedSelectors = new Set(elementSelectors(element));
+  walkCompositionDescendants(element, (child) => {
+    for (const selector of elementSelectors(child)) removedSelectors.add(selector);
+  });
+  element.remove();
 
-function cascadeRemoveGsapById(doc: Document, elementId: string): void {
+  // Bare selectors can target repeated sub-composition instances. Keep a tween
+  // if any surviving element still uses its selector rather than erasing the
+  // surviving instance's animation along with the deleted subtree.
+  walkCompositionDescendants(doc, (survivor) => {
+    for (const selector of elementSelectors(survivor)) removedSelectors.delete(selector);
+  });
+  if (removedSelectors.size === 0) return;
+
   for (const script of findScriptElementsDeep(doc)) {
-    const text = script.textContent ?? "";
-    if (!text.includes("gsap") && !text.includes("ScrollTrigger")) continue;
-    const updated = stripGsapForId(text, elementId);
-    if (updated !== text) script.textContent = updated;
+    let current = script.textContent ?? "";
+    if (!current.includes("gsap") && !current.includes("ScrollTrigger")) continue;
+    // Writer ids are positional: reparse after each removal so later tweens
+    // cannot be skipped after an earlier deletion renumbers them.
+    for (;;) {
+      const parsed = parseGsapScriptAcornForWrite(current);
+      const match = parsed?.located.find((located) =>
+        removedSelectors.has(located.animation.targetSelector),
+      );
+      if (!match) break;
+      const updated = removeAnimationFromScript(current, match.id);
+      if (updated === current) break;
+      current = updated;
+    }
+    if (current !== script.textContent) script.textContent = current;
   }
 }
 
@@ -757,8 +777,8 @@ export function removeElementFromHtml(html: string, elementId: string): string {
       "removeElementFromHtml: input HTML is empty or could not be parsed",
     );
   }
-  doc.getElementById(elementId)?.remove();
-  cascadeRemoveGsapById(doc, elementId);
+  const element = doc.getElementById(elementId);
+  if (element) removeElementWithGsapCascade(doc, element);
   return "<!DOCTYPE html>\n" + doc.documentElement.outerHTML;
 }
 

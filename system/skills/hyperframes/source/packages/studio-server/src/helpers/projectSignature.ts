@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { lstatSync, readFileSync, readdirSync } from "node:fs";
-import { extname, isAbsolute, relative, resolve } from "node:path";
+import { extname, isAbsolute, relative, resolve, sep } from "node:path";
+import type { ResolvedProject, StudioApiAdapter } from "../types.js";
 
 const SIGNATURE_TEXT_EXTENSIONS = new Set([
   ".cjs",
@@ -19,7 +20,10 @@ const SIGNATURE_EXCLUDED_DIRS = new Set([
   ".git",
   ".hyperframes",
   ".next",
+  ".thumbnails",
+  ".transcode-cache",
   ".vite",
+  ".waveform-cache",
   "build",
   "coverage",
   "dist",
@@ -33,9 +37,40 @@ const STUDIO_SIGNATURE_MANIFEST_PATHS = [
   ".hyperframes/studio-motion.json",
 ] as const;
 
+/**
+ * Whether a write at `changedPath` can change `createProjectSignature(projectDir)`.
+ *
+ * Owned here because it is the exact complement of what the walk below collects,
+ * and a second copy of that reasoning drifts the moment either set changes. A
+ * watcher that invalidates on everything is not merely wasteful: `.thumbnails/`
+ * is written by the thumbnail route on every capture, and each capture reads the
+ * preview, so an unfiltered watcher discards the memo on roughly every request of
+ * the one workload the memo exists for.
+ *
+ * Note this is not `WATCHER_EXCLUDED_DIRS`, which is character-identical but
+ * excludes all of `.hyperframes/` — the signature deliberately reads two manifest
+ * files from inside it, so filtering with that set would stop motion-state saves
+ * from ever invalidating.
+ *
+ * Every segment is tested, not just the parents, so a directory event on an
+ * excluded dir itself (`unlinkDir .thumbnails`) is filtered too. The cost is that
+ * a *file* literally named `dist` at the project root reads as excluded; the walk
+ * would collect it, so it is a false negative, and no real project has one.
+ */
+export function affectsProjectSignature(projectDir: string, changedPath: string): boolean {
+  const relativePath = relative(resolve(projectDir), resolve(changedPath));
+  if (relativePath === "" || relativePath.startsWith("..") || isAbsolute(relativePath)) {
+    return false;
+  }
+  const segments = relativePath.split(sep);
+  if (STUDIO_SIGNATURE_MANIFEST_PATHS.includes(segments.join("/") as never)) return true;
+  return !segments.some((segment) => SIGNATURE_EXCLUDED_DIRS.has(segment));
+}
+
 interface ProjectSignatureFile {
   file: string;
   mtimeMs: number;
+  ctimeMs: number;
   size: number;
   textContentEligible: boolean;
 }
@@ -90,6 +125,7 @@ function collectProjectSignatureFiles(
       files.push({
         file,
         mtimeMs: stat.mtimeMs,
+        ctimeMs: stat.ctimeMs,
         size: stat.size,
         textContentEligible: isTextContentEligible(file, stat.size),
       });
@@ -115,6 +151,7 @@ function collectProjectSignatureManifestFiles(
     files.push({
       file,
       mtimeMs: stat.mtimeMs,
+      ctimeMs: stat.ctimeMs,
       size: stat.size,
       textContentEligible: isTextContentEligible(file, stat.size),
     });
@@ -131,10 +168,31 @@ function createProjectFingerprint(projectDir: string, files: ProjectSignatureFil
     hash.update("\0");
     hash.update(String(entry.mtimeMs));
     hash.update("\0");
+    hash.update(String(entry.ctimeMs));
+    hash.update("\0");
     hash.update(entry.textContentEligible ? "text" : "binary");
     hash.update("\0");
   }
   return hash.digest("hex").slice(0, 24);
+}
+
+/**
+ * Resolve the project signature through the adapter's cached path when the host
+ * provides one (the CLI invalidates its cache from the file watcher), falling
+ * back to a direct computation.
+ */
+export function resolveProjectSignature(adapter: StudioApiAdapter, projectDir: string): string {
+  return adapter.getProjectSignature?.(projectDir) ?? createProjectSignature(projectDir);
+}
+
+/** The shared route opening: resolve the project (null → caller 404s) with its signature. */
+export async function resolveProjectAndSignature(
+  adapter: StudioApiAdapter,
+  projectId: string,
+): Promise<{ project: ResolvedProject; signature: string } | null> {
+  const project = await adapter.resolveProject(projectId);
+  if (!project) return null;
+  return { project, signature: resolveProjectSignature(adapter, project.dir) };
 }
 
 /**

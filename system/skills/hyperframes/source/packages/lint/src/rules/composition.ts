@@ -2,26 +2,68 @@ import type { LintContext, HyperframeLintFinding, ExtractedBlock, OpenTag } from
 import {
   findHtmlTag,
   readAttr,
+  readDecodedAttr,
   readJsonAttr,
+  stripCssComments,
   stripJsComments,
+  stripJsCode,
   truncateSnippet,
   WINDOW_TIMELINE_ASSIGN_PATTERN,
 } from "../utils";
-import { COMPOSITION_VARIABLE_TYPES } from "@hyperframes/parsers/composition";
+import { COMPOSITION_VARIABLE_TYPES, isSafeMediaUrl } from "@hyperframes/parsers/composition";
+import { COMPOSITION_ATTRIBUTES, readClipTiming } from "@hyperframes/parsers/composition-contract";
 
 // Agent guidance thresholds: warning-only nudges for files/tracks that become hard
 // to inspect and revise reliably in a single composition.
 const MAX_COMPOSITION_LINES = 300;
 const MAX_TIMED_ELEMENTS_PER_TRACK = 3;
 const TRACK_DENSITY_EXEMPT_TAGS = new Set(["audio", "script", "style", "video"]);
+const CAPTION_CUE_TOKEN =
+  /^(?:caption(?:[-_](?:group|word|line|block|cue|text))?|subtitle(?:[-_](?:group|line|cue|text))?|cg-.+)$/i;
 
-// `parseFloat("0.1") + parseFloat("0.2") = 0.30000000000000004`. Sub-second
-// authored adjacencies survive parse + add as a value a few ulps above the
-// next clip's start; a strict `>` fires the overlap rule on adjacencies that
-// are exact in the source HTML. 1μs sits ~11 orders of magnitude above the
-// observed drift (worst ~2e-16s across every realistic decimal pair) and 4
-// below one 60fps frame (~16.67ms), so this only ever swallows float slop.
-const OVERLAP_EPSILON_SECONDS = 1e-6;
+// composition_heavy_overlay_count_high — warn when a composition carries this
+// many or more elements whose CSS uses filter:blur, clip-path (non-none), or
+// radial-gradient. Field signal ts=1784040753 (#hyperframes-cli-feedback):
+// a composition with ~40 such elements captures solid-black for the first
+// ~half of the render, recovering near the end. Presence alone matters —
+// opacity:0 and visibility:hidden overlays still contribute — so the rule
+// counts every one that isn't display:none-hidden. Threshold sits below the
+// observed 40-element repro (25) so authors get lead time; adjust here if
+// noise/signal shifts, since a per-rule config option would also require
+// plumbing through HyperframeLinterOptions across every embedder.
+const HEAVY_OVERLAY_ELEMENT_COUNT_WARN = 25;
+const HEAVY_OVERLAY_EXEMPT_TAGS = new Set([
+  "audio",
+  "body",
+  "br",
+  "defs",
+  "head",
+  "hr",
+  "html",
+  "link",
+  "meta",
+  "script",
+  "source",
+  "style",
+  "template",
+  "title",
+  "use",
+  "video",
+]);
+// Matches any of: `filter: <...>blur(...)`, `clip-path: <non-none-value>`,
+// or `radial-gradient(...)`. Property terminator is `;` or `}`; value class
+// excludes both so we don't over-match into the next declaration. `clip-path`
+// escapes when its value starts with a CSS-wide keyword that leaves the render
+// tree unaffected (none / inherit / initial / unset) — the whitespace-eating
+// `\s*` lives *inside* the negative lookahead so the engine can't backtrack
+// `\s*` from outside to 0-width and slip past the keyword guard.
+const HEAVY_OVERLAY_CSS_PATTERN =
+  /(?:filter\s*:[^;}]*\bblur\s*\()|(?:clip-path\s*:(?!\s*(?:none|inherit|initial|unset)\b)\s*[^;}]+)|(?:radial-gradient\s*\()/i;
+const INLINE_STYLE_DISPLAY_NONE_PATTERN = /(?:^|;)\s*display\s*:\s*none\b/i;
+
+function readTagTiming(rawTag: string) {
+  return readClipTiming({ getAttribute: (name) => readAttr(rawTag, name) });
+}
 
 function countPhysicalLines(source: string): number {
   if (source.length === 0) return 0;
@@ -33,6 +75,15 @@ function countPhysicalLines(source: string): number {
 
 function countStructuralLines(source: string): number {
   return countPhysicalLines(source.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "<style></style>"));
+}
+
+function isCaptionCue(tag: OpenTag): boolean {
+  const classTokens = (readAttr(tag.raw, "class") || "").split(/\s+/).filter(Boolean);
+  const id = readAttr(tag.raw, "id");
+  return (
+    classTokens.some((token) => CAPTION_CUE_TOKEN.test(token)) ||
+    Boolean(id && CAPTION_CUE_TOKEN.test(id))
+  );
 }
 
 export function isRegistrySourceFile(filePath?: string): boolean {
@@ -48,7 +99,7 @@ export function isRegistryInstalledFile(rawSource: string): boolean {
 
 function isCompositionRootOrMount(rawTag: string): boolean {
   return Boolean(
-    readAttr(rawTag, "data-composition-id") || readAttr(rawTag, "data-composition-src"),
+    readDecodedAttr(rawTag, "data-composition-id") || readAttr(rawTag, "data-composition-src"),
   );
 }
 
@@ -92,6 +143,47 @@ function extractCssSelectors(css: string): string[] {
 function leftmostCompoundClasses(selector: string): string[] {
   const leftmost = selector.trim().split(/[\s>+~]+/)[0] ?? "";
   return (leftmost.match(/\.([\w-]+)/g) ?? []).map((c) => c.slice(1));
+}
+
+// Id token in a selector's leftmost compound. `#hero .title` → "hero";
+// `.a#b > .c` → "b"; `.a .b` → null. Companion to leftmostCompoundClasses;
+// splits on the same combinator set so the two agree on where "leftmost" ends.
+function leftmostCompoundId(selector: string): string | null {
+  const leftmost = selector.trim().split(/[\s>+~]+/)[0] ?? "";
+  return leftmost.match(/#([\w-]+)/)?.[1] ?? null;
+}
+
+// Class tokens + ids whose rule body sets a "heavy overlay" property
+// (filter:blur, clip-path non-none, or radial-gradient). Only top-level rules
+// are scanned — the flat `[^{}]*` body class naturally skips @keyframes
+// bodies (which contain nested `{...}` stops) and other @-rules, so keyframe
+// selectors like `0%`/`100%` don't leak in.
+// fallow-ignore-next-line complexity
+function collectHeavyOverlayHooks(styles: ExtractedBlock[]): {
+  classes: Set<string>;
+  ids: Set<string>;
+} {
+  const classes = new Set<string>();
+  const ids = new Set<string>();
+  for (const style of styles) {
+    const noComments = style.content.replace(/\/\*[\s\S]*?\*\//g, "");
+    const ruleWithBody = /([^{}]+)\{([^{}]*)\}/g;
+    let m: RegExpExecArray | null;
+    while ((m = ruleWithBody.exec(noComments)) !== null) {
+      const header = (m[1] ?? "").trim();
+      const body = m[2] ?? "";
+      if (!header || header.startsWith("@")) continue;
+      if (!HEAVY_OVERLAY_CSS_PATTERN.test(body)) continue;
+      for (const sel of header.split(",")) {
+        const trimmed = sel.trim();
+        if (!trimmed) continue;
+        for (const cls of leftmostCompoundClasses(trimmed)) classes.add(cls);
+        const idToken = leftmostCompoundId(trimmed);
+        if (idToken) ids.add(idToken);
+      }
+    }
+  }
+  return { classes, ids };
 }
 
 // Distinct selectors across all <style> blocks whose leftmost compound keys off one
@@ -156,7 +248,57 @@ function declaredIdsForBindingCheck(tags: readonly OpenTag[]): Set<string> | nul
   return declared;
 }
 
+function isInsideInertTemplate(tag: OpenTag, tags: readonly OpenTag[]): boolean {
+  return tags.some(
+    (candidate) =>
+      candidate.name === "template" &&
+      candidate.closeIndex != null &&
+      tag.index > candidate.index &&
+      tag.index < candidate.closeIndex,
+  );
+}
+
 export const compositionRules: Array<(ctx: LintContext) => HyperframeLintFinding[]> = [
+  // duplicate_composition_id catches meta-tag/root collisions that create duplicate composition entries.
+  ({ tags }) => {
+    const tagsByCompositionId = new Map<string, string[]>();
+    for (const tag of tags) {
+      if (isInsideInertTemplate(tag, tags)) continue;
+      // A `data-composition-src` element is a MOUNT of a sub-composition, not a
+      // composition root, and sub-compositions.md documents mounting one source
+      // repeatedly with different `data-variable-values` to get per-instance
+      // variations. Those mounts legitimately share an id: the runtime rewrites
+      // repeated ones to `id__hf1`, `id__hf2` so they coexist. Counting them
+      // here made the documented pattern an error with no correct way to
+      // satisfy it. The collision this rule exists for -- a <meta> tag carrying
+      // the root's id, per its own fixHint -- is unaffected, since that tag has
+      // no `data-composition-src`.
+      if (readAttr(tag.raw, "data-composition-src")) continue;
+      const compositionId = readDecodedAttr(tag.raw, "data-composition-id");
+      if (!compositionId || compositionId.trim().length === 0) continue;
+
+      const matchingTags = tagsByCompositionId.get(compositionId) ?? [];
+      matchingTags.push(tag.raw);
+      tagsByCompositionId.set(compositionId, matchingTags);
+    }
+
+    const findings: HyperframeLintFinding[] = [];
+    for (const [compositionId, matchingTags] of tagsByCompositionId) {
+      if (matchingTags.length < 2) continue;
+
+      findings.push({
+        code: "duplicate_composition_id",
+        severity: "error",
+        message: `Composition id "${compositionId}" is used by ${matchingTags.length} elements. Each data-composition-id value must be unique within a composition file.`,
+        fixHint:
+          "Keep data-composition-id on exactly one element, the composition root. Remove it from metadata or duplicate hosts, especially a <meta> tag carrying the same data-composition-id as the root <div>, which causes a silent duplicate-id collision.",
+        snippet: truncateSnippet(matchingTags[0] ?? ""),
+      });
+    }
+
+    return findings;
+  },
+
   // invalid_parent_traversal_in_asset_path — catches `../` traversal in src,
   // href, inline-style url(), and <style> url() asset references on
   // compositions. Sub-compositions live under compositions/ but are served
@@ -253,10 +395,11 @@ export const compositionRules: Array<(ctx: LintContext) => HyperframeLintFinding
     const trackCounts = new Map<string, number>();
     for (const tag of tags) {
       if (TRACK_DENSITY_EXEMPT_TAGS.has(tag.name)) continue;
+      if (isCaptionCue(tag)) continue;
       if (isCompositionRootOrMount(tag.raw)) continue;
       if (!readAttr(tag.raw, "data-start")) continue;
 
-      const track = readAttr(tag.raw, "data-track-index");
+      const track = readAttr(tag.raw, COMPOSITION_ATTRIBUTES.trackIndex);
       if (!track) continue;
       trackCounts.set(track, (trackCounts.get(track) ?? 0) + 1);
     }
@@ -278,58 +421,40 @@ export const compositionRules: Array<(ctx: LintContext) => HyperframeLintFinding
     return findings;
   },
 
-  // timed_element_missing_visibility_hidden
-  // fallow-ignore-next-line complexity
-  ({ tags }) => {
-    const findings: HyperframeLintFinding[] = [];
-    for (const tag of tags) {
-      if (tag.name === "audio" || tag.name === "script" || tag.name === "style") continue;
-      if (!readAttr(tag.raw, "data-start")) continue;
-      if (readAttr(tag.raw, "data-composition-id")) continue;
-      if (readAttr(tag.raw, "data-composition-src")) continue;
-      const classAttr = readAttr(tag.raw, "class") || "";
-      const styleAttr = readAttr(tag.raw, "style") || "";
-      const hasClip = classAttr.split(/\s+/).includes("clip");
-      const hasHiddenStyle =
-        /visibility\s*:\s*hidden/i.test(styleAttr) || /opacity\s*:\s*0/i.test(styleAttr);
-      if (!hasClip && !hasHiddenStyle) {
-        const elementId = readAttr(tag.raw, "id") || undefined;
-        findings.push({
-          code: "timed_element_missing_visibility_hidden",
-          severity: "info",
-          message: `<${tag.name}${elementId ? ` id="${elementId}"` : ""}> has data-start but no class="clip", visibility:hidden, or opacity:0. Consider adding initial hidden state if the element should not be visible before its start time.`,
-          elementId,
-          fixHint:
-            'Add class="clip" (with CSS: .clip { visibility: hidden; }) or style="opacity:0" if the element should start hidden.',
-          snippet: truncateSnippet(tag.raw),
-        });
-      }
-    }
-    return findings;
-  },
-
   // deprecated_data_layer + deprecated_data_end
   // fallow-ignore-next-line complexity
   ({ tags }) => {
     const findings: HyperframeLintFinding[] = [];
     for (const tag of tags) {
-      if (readAttr(tag.raw, "data-layer") && !readAttr(tag.raw, "data-track-index")) {
+      const timing = readTagTiming(tag.raw);
+      if (timing.diagnostics.some(({ code }) => code === "deprecated-layer")) {
         const elementId = readAttr(tag.raw, "id") || undefined;
         findings.push({
           code: "deprecated_data_layer",
           severity: "error",
           message: `<${tag.name}${elementId ? ` id="${elementId}"` : ""}> uses data-layer instead of data-track-index.`,
           elementId,
-          fixHint: "Replace data-layer with data-track-index. The runtime reads data-track-index.",
+          fixHint:
+            "Replace data-layer with data-track-index, which is the canonical name Studio and the linter read. Neither name is read by the render.",
           snippet: truncateSnippet(tag.raw),
         });
       }
-      if (readAttr(tag.raw, "data-end") && !readAttr(tag.raw, "data-duration")) {
+      if (timing.diagnostics.some(({ code }) => code === "deprecated-end")) {
         const elementId = readAttr(tag.raw, "id") || undefined;
+        const conflicting = timing.diagnostics.some(({ code }) => code === "conflicting-end");
+        // Two shapes reach here after the false-positive fix (see
+        // compositionContract.ts `diagnoseDerivedEnd`): the truly-legacy shape
+        // (no data-duration, data-end alone) and the stale-companion shape
+        // (data-duration present but paired with a data-end that disagrees).
+        // A consistent data-duration + data-end pair — the shape the compiler
+        // emits — is silent and never reaches this branch.
+        const message = conflicting
+          ? `<${tag.name}${elementId ? ` id="${elementId}"` : ""}> has data-end that disagrees with data-duration. Remove the stale data-end; the compiler regenerates it from data-duration.`
+          : `<${tag.name}${elementId ? ` id="${elementId}"` : ""}> uses data-end without data-duration. Use data-duration in source HTML.`;
         findings.push({
           code: "deprecated_data_end",
           severity: "error",
-          message: `<${tag.name}${elementId ? ` id="${elementId}"` : ""}> uses data-end without data-duration. Use data-duration in source HTML.`,
+          message,
           elementId,
           fixHint:
             "Replace data-end with data-duration. The compiler generates data-end from data-duration automatically.",
@@ -364,8 +489,8 @@ export const compositionRules: Array<(ctx: LintContext) => HyperframeLintFinding
         });
       }
     };
-    for (const style of styles) scan(style.content);
-    for (const script of scripts) scan(script.content);
+    for (const style of styles) scan(stripCssComments(style.content));
+    for (const script of scripts) scan(stripJsComments(script.content));
     return findings;
   },
 
@@ -375,8 +500,9 @@ export const compositionRules: Array<(ctx: LintContext) => HyperframeLintFinding
     for (const script of scripts) {
       const templateLiteralSelectorPattern =
         /(?:querySelector|querySelectorAll)\s*\(\s*`[^`]*\$\{[^}]+\}[^`]*`\s*\)/g;
+      const scanned = stripJsCode(script.content);
       let tlMatch: RegExpExecArray | null;
-      while ((tlMatch = templateLiteralSelectorPattern.exec(script.content)) !== null) {
+      while ((tlMatch = templateLiteralSelectorPattern.exec(scanned)) !== null) {
         findings.push({
           code: "template_literal_selector",
           severity: "error",
@@ -385,7 +511,9 @@ export const compositionRules: Array<(ctx: LintContext) => HyperframeLintFinding
             "The HTML bundler's CSS parser crashes on these. Use a hardcoded string instead.",
           fixHint:
             "Replace the template literal variable with a hardcoded string. The bundler's CSS parser cannot handle interpolated variables in script content.",
-          snippet: truncateSnippet(tlMatch[0]),
+          snippet: truncateSnippet(
+            script.content.slice(tlMatch.index, tlMatch.index + tlMatch[0].length),
+          ),
         });
       }
     }
@@ -396,11 +524,16 @@ export const compositionRules: Array<(ctx: LintContext) => HyperframeLintFinding
   // fallow-ignore-next-line complexity
   ({ tags }) => {
     const findings: HyperframeLintFinding[] = [];
-    const skipTags = new Set(["audio", "video", "script", "style", "template"]);
+    // `img` sits here for the same reason `video` and `audio` already did: the
+    // three media primitives are authored without `class="clip"` in the
+    // canonical clip block (packages/core/docs/core.md), so requiring it on the
+    // `<img>` alone errored on the documented pattern while its two siblings on
+    // the adjacent lines passed.
+    const skipTags = new Set(["audio", "img", "video", "script", "style", "template"]);
     for (const tag of tags) {
       if (skipTags.has(tag.name)) continue;
       // Skip composition hosts
-      if (readAttr(tag.raw, "data-composition-id")) continue;
+      if (readDecodedAttr(tag.raw, "data-composition-id")) continue;
       if (readAttr(tag.raw, "data-composition-src")) continue;
 
       const hasStart = readAttr(tag.raw, "data-start") !== null;
@@ -415,84 +548,19 @@ export const compositionRules: Array<(ctx: LintContext) => HyperframeLintFinding
       const elementId = readAttr(tag.raw, "id") || undefined;
       findings.push({
         code: "timed_element_missing_clip_class",
-        severity: "error",
-        message: `<${tag.name}${elementId ? ` id="${elementId}"` : ""}> has timing attributes but no class="clip". The element will be visible for the entire composition instead of only during its scheduled time range.`,
+        // Not an error: the runtime drives timed visibility off the `data-start`
+        // ATTRIBUTE, not this class — `syncTimedElementVisibility` walks
+        // `querySelectorAll("[data-start]")` and toggles `style.visibility`
+        // regardless of class (pinned by the runtime's own init test, which
+        // uses a bare `<div data-start data-duration>` with no `class="clip"`).
+        // The class is an authoring convention the tooling reads, so a missing
+        // one is worth flagging but does not break the render.
+        severity: "warning",
+        message: `<${tag.name}${elementId ? ` id="${elementId}"` : ""}> has timing attributes but no class="clip". The runtime still hides it outside its time range, but Studio and the GSAP clip-ownership rules use .clip to recognise a clip, so leaving it off makes the element harder to edit and to lint.`,
         elementId,
         fixHint:
-          'Add class="clip" to the element. The HyperFrames runtime uses .clip to control visibility based on data-start/data-duration.',
+          'Add class="clip" to the element so Studio and the linter can recognise it as a clip.',
         snippet: truncateSnippet(tag.raw),
-      });
-    }
-    return findings;
-  },
-
-  // overlapping_clips_same_track
-  // fallow-ignore-next-line complexity
-  ({ tags }) => {
-    const findings: HyperframeLintFinding[] = [];
-
-    type ClipInfo = { start: number; end: number; elementId?: string; snippet: string };
-    const trackMap = new Map<string, ClipInfo[]>();
-
-    for (const tag of tags) {
-      const startStr = readAttr(tag.raw, "data-start");
-      const durationStr = readAttr(tag.raw, "data-duration");
-      const trackStr = readAttr(tag.raw, "data-track-index");
-      if (!startStr || !durationStr || !trackStr) continue;
-
-      const start = Number(startStr);
-      const duration = Number(durationStr);
-      const track = trackStr;
-
-      // Skip non-numeric (relative timing references like "intro-comp")
-      if (Number.isNaN(start) || Number.isNaN(duration)) continue;
-
-      const clips = trackMap.get(track) || [];
-      clips.push({
-        start,
-        end: start + duration,
-        elementId: readAttr(tag.raw, "id") || undefined,
-        snippet: truncateSnippet(tag.raw) || "",
-      });
-      trackMap.set(track, clips);
-    }
-
-    for (const [track, clips] of trackMap) {
-      clips.sort((a, b) => a.start - b.start);
-      for (let i = 0; i < clips.length - 1; i++) {
-        const current = clips[i];
-        const next = clips[i + 1];
-        if (!current || !next) continue;
-        if (current.end - next.start > OVERLAP_EPSILON_SECONDS) {
-          findings.push({
-            code: "overlapping_clips_same_track",
-            severity: "error",
-            message: `Track ${track}: clip ending at ${current.end}s overlaps with clip starting at ${next.start}s. Overlapping clips on the same track cause rendering conflicts.`,
-            fixHint:
-              "Adjust data-start or data-duration so clips on the same track do not overlap, or move one clip to a different data-track-index.",
-          });
-        }
-      }
-    }
-
-    return findings;
-  },
-
-  // root_composition_missing_data_start
-  ({ rootTag, options }) => {
-    const findings: HyperframeLintFinding[] = [];
-    if (options.isSubComposition) return findings;
-    if (!rootTag) return findings;
-    const compId = readAttr(rootTag.raw, "data-composition-id");
-    if (!compId) return findings;
-    const hasStart = readAttr(rootTag.raw, "data-start") !== null;
-    if (!hasStart) {
-      findings.push({
-        code: "root_composition_missing_data_start",
-        severity: "error",
-        message: `Root composition "${compId}" is missing data-start. The runtime needs data-start="0" on the root element to begin playback.`,
-        fixHint: 'Add data-start="0" to the root composition element.',
-        snippet: truncateSnippet(rootTag.raw),
       });
     }
     return findings;
@@ -585,7 +653,7 @@ export const compositionRules: Array<(ctx: LintContext) => HyperframeLintFinding
     if (isRegistrySourceFile(options.filePath) || isRegistryInstalledFile(rawSource)) return [];
     const findings: HyperframeLintFinding[] = [];
     for (const script of scripts) {
-      const stripped = stripJsComments(script.content);
+      const stripped = stripJsCode(script.content);
       if (/requestAnimationFrame\s*\(/.test(stripped)) {
         findings.push({
           code: "requestanimationframe_in_composition",
@@ -720,6 +788,14 @@ export const compositionRules: Array<(ctx: LintContext) => HyperframeLintFinding
 
     const findings: HyperframeLintFinding[] = [];
     const knownTypes = new Set<string>(COMPOSITION_VARIABLE_TYPES);
+    // Ids whose value the runtime pushes through isSafeMediaUrl: every
+    // data-var-src binding, plus image-typed variables (always consumed as a
+    // URL even when the binding lives in a sub-composition this file can't see).
+    const varSrcIds = new Set<string>();
+    for (const tag of tags) {
+      const bound = readAttr(tag.raw, "data-var-src");
+      if (bound) varSrcIds.add(bound);
+    }
     for (let i = 0; i < parsed.length; i += 1) {
       const entry = parsed[i];
       if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
@@ -742,6 +818,22 @@ export const compositionRules: Array<(ctx: LintContext) => HyperframeLintFinding
           code: "invalid_composition_variables_declaration",
           severity: "error",
           message: `data-composition-variables entry [${i}] is missing or has invalid: ${missing.join(", ")}. Type must be one of string, number, color, boolean, enum, font, image.`,
+          snippet: truncateSnippet(htmlTag.raw),
+        });
+        continue;
+      }
+      const id = String(e.id);
+      if (
+        (e.type === "image" || varSrcIds.has(id)) &&
+        typeof e.default === "string" &&
+        e.default.length > 0 &&
+        !isSafeMediaUrl(e.default)
+      ) {
+        findings.push({
+          code: "unloadable_media_variable_default",
+          severity: "error",
+          message: `Variable "${id}" defaults to a URL the runtime will refuse to load, so any element bound to it renders its authored fallback src instead and the render still exits 0.`,
+          fixHint: `Media URLs must be relative, http(s), blob:, or a data:image/* URI. Copy the file into the project and reference it relatively (e.g. "assets/bg.png") rather than by absolute path.`,
           snippet: truncateSnippet(htmlTag.raw),
         });
       }
@@ -849,10 +941,13 @@ export const compositionRules: Array<(ctx: LintContext) => HyperframeLintFinding
   // can't leak styles into each other. A rule whose LEFTMOST selector is the ROOT
   // element's own class (e.g. `.frame { ... }` on the same element that carries
   // data-composition-id) therefore becomes a DESCENDANT selector that can never
-  // match the root — the whole scene renders unstyled (tiny text top-left, images
-  // at natural size). lint/validate/inspect evaluate the file in isolation (no
-  // scoping) and Studio previews each scene in its own iframe (no scoping), so the
-  // break is invisible until the composited MP4 render. Style the root via `#root`
+  // match the SCOPED element itself. NOTE on the symptom: since #1886 the producer
+  // preserves the authored root as a `data-hf-inner-root` wrapper INSIDE the scoped
+  // element (regression fixture packages/producer/tests/sub-comp-class-selector),
+  // so the class still matches as a descendant and the scene no longer renders
+  // unstyled. This rule is now a consistency constraint, not a render-bug guard:
+  // `#root` is the shape the registry blocks model and the one the scoper
+  // special-cases. Style the root via `#root`
   // (the scoper special-cases the root id) and descendants via plain selectors,
   // like the registry blocks — the runtime already scopes each scene by id, so a
   // class namespace on the root is redundant.
@@ -874,10 +969,10 @@ export const compositionRules: Array<(ctx: LintContext) => HyperframeLintFinding
         severity: "error",
         message:
           `Root element has class="${rootClasses.join(" ")}" and is styled by ${offenders.length} rule(s) keyed off that class (e.g. ${example}). ` +
-          `At render, every sub-composition rule is scoped to [data-composition-id="${rootCompositionId}"] <selector>, so a selector whose leftmost part is the ROOT's own class becomes a descendant selector that cannot match the root — the scene renders unstyled (tiny text top-left, full-size images). ` +
-          `lint/validate/inspect and Studio's per-frame iframe preview do not scope, so this passes every static check and looks correct in preview.`,
+          `At render, every sub-composition rule is scoped to [data-composition-id="${rootCompositionId}"] <selector>, so a selector whose leftmost part is the ROOT's own class becomes a descendant selector that cannot match the scoped element itself. ` +
+          `Since #1886 the producer preserves the authored root as an inner wrapper, so this no longer renders the scene unstyled, but #root is the shape the scoper special-cases and the registry blocks model. Use it so preview, render, and Studio agree.`,
         selector: example,
-        fixHint: `Give the root id="root" and style it with \`#root { ... }\` plus plain descendant selectors (\`.kicker\`, \`#hero\`) — the runtime already scopes each sub-composition by data-composition-id, so a class namespace on the root is redundant and breaks under scoping.`,
+        fixHint: `Give the root id="root" and style it with \`#root { ... }\` plus plain descendant selectors (\`.kicker\`, \`#hero\`) — the runtime already scopes each sub-composition by data-composition-id, so a class namespace on the root is redundant.`,
         snippet: truncateSnippet(rootTag.raw),
       },
     ];
@@ -919,7 +1014,7 @@ export const compositionRules: Array<(ctx: LintContext) => HyperframeLintFinding
     // — e.g. a slideshow demo.html mounts <hyperframes-player src="index.html">
     // with no data-composition-id of its own. Nothing to capture there, so
     // there's no duration contract to enforce.
-    if (readAttr(rootTag.raw, "data-composition-id") === null) return [];
+    if (readDecodedAttr(rootTag.raw, "data-composition-id") === null) return [];
     if (readAttr(rootTag.raw, "data-duration") !== null) return [];
 
     // Strip comments before scanning for signals — a commented-out
@@ -1025,5 +1120,88 @@ export const compositionRules: Array<(ctx: LintContext) => HyperframeLintFinding
     // duration from these at render time (see resolveAdapterDurationFloorSeconds
     // in runtime/init.ts). Not an error; data-duration is optional here.
     return [];
+  },
+
+  // composition_heavy_overlay_count_high
+  // Field signal ts=1784040753 (#hyperframes-cli-feedback): a composition
+  // with ~40 heavy overlay DOM elements — `filter:blur`, oversized
+  // `radial-gradient`, and `clip-path` animations — captures solid-black for
+  // the first ~half of the render, recovering near the end. Reproduces
+  // identically via drawElement AND forced --no-browser-gpu screenshot
+  // capture AND `snapshot`, so the offender is the capture layer itself, not
+  // encoder/mux. Independent of duration (padding the timeline grows the bad
+  // zone proportionally, doesn't shift it). Reporter's workaround was to
+  // split into per-transition mini compositions + FFmpeg concat.
+  //
+  // Presence alone matters: opacity:0 and visibility:hidden overlays still
+  // contribute to the capture-layer regression, so they're counted-in. The
+  // only escape hatch is `display: none` — an element removed from the render
+  // tree can't feed the compositor. Warn at 25, well below the observed
+  // 40-element repro, to give authors lead time before hitting the bug.
+  // fallow-ignore-next-line complexity
+  ({ tags, styles, rawSource, options }) => {
+    if (isRegistrySourceFile(options.filePath) || isRegistryInstalledFile(rawSource)) return [];
+
+    const { classes: heavyClassTokens, ids: heavyIds } = collectHeavyOverlayHooks(styles);
+
+    let heavyCount = 0;
+    for (const tag of tags) {
+      if (HEAVY_OVERLAY_EXEMPT_TAGS.has(tag.name)) continue;
+      // Structural containers (root + mounted sub-compositions) aren't overlay
+      // content — the heavy children live inside them, and each such child is
+      // its own tag entry that we score directly. Counting the container too
+      // would double-attribute the risk to one authoring surface.
+      if (isCompositionRootOrMount(tag.raw)) continue;
+
+      // readJsonAttr lets a `style` value carry the opposite quote character
+      // (inline `background: url("x.png")` etc.), which readAttr would truncate.
+      const styleAttr = readJsonAttr(tag.raw, "style") ?? "";
+      // display:none removes the element from the render tree, so the capture
+      // layer never sees it — the only reliable way to keep an "unused" heavy
+      // overlay in the source without paying the compositor cost.
+      if (styleAttr && INLINE_STYLE_DISPLAY_NONE_PATTERN.test(styleAttr)) continue;
+
+      let heavy = false;
+      if (styleAttr && HEAVY_OVERLAY_CSS_PATTERN.test(styleAttr)) heavy = true;
+
+      if (!heavy && (heavyClassTokens.size > 0 || heavyIds.size > 0)) {
+        const classList = (readAttr(tag.raw, "class") || "").split(/\s+/).filter(Boolean);
+        if (classList.some((cls) => heavyClassTokens.has(cls))) heavy = true;
+        if (!heavy) {
+          const idValue = readAttr(tag.raw, "id");
+          if (idValue && heavyIds.has(idValue)) heavy = true;
+        }
+      }
+
+      if (heavy) heavyCount += 1;
+    }
+
+    if (heavyCount < HEAVY_OVERLAY_ELEMENT_COUNT_WARN) return [];
+
+    const splitTarget = options.isSubComposition
+      ? "Split this sub-composition further into per-transition mini-compositions"
+      : "Split coherent scenes / transitions into separate .html files under compositions/";
+
+    return [
+      {
+        code: "composition_heavy_overlay_count_high",
+        severity: "warning",
+        message:
+          `This composition has ${heavyCount} elements carrying "heavy overlay" CSS ` +
+          `(filter:blur, radial-gradient, or clip-path). Field signal: a composition with ` +
+          `~40 such elements — including opacity:0 / visibility:hidden ones — captures ` +
+          `solid-black for the first ~half of the render, recovering near the end. Reproduces ` +
+          `identically via drawElement, forced screenshot capture, and snapshot, so the capture ` +
+          `layer itself is the offender (not encoder/mux). Independent of duration. Presence ` +
+          `alone matters; only display:none elements are excluded here.`,
+        fixHint:
+          `${splitTarget} and concat the pieces (FFmpeg or the runtime's slideshow) so each ` +
+          `capture only sees a small subset of heavy overlays at once. Even hidden overlays ` +
+          `(opacity:0 / visibility:hidden) contribute — either remove truly unused ones from ` +
+          `the source or scope them into their own per-transition sub-composition. If an ` +
+          `overlay is genuinely inert for the whole clip, use display:none so it never enters ` +
+          `the render tree. Field ref ts=1784040753 (#hyperframes-cli-feedback).`,
+      },
+    ];
   },
 ];

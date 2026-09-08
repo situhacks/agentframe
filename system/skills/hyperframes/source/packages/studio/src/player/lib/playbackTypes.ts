@@ -4,6 +4,8 @@
  * from here without creating circular dependencies.
  */
 
+import type { RuntimeTimelineClipIdentity } from "@hyperframes/core";
+
 export interface PlaybackAdapter {
   play: () => void;
   pause: () => void;
@@ -32,27 +34,25 @@ export interface TimelineLike {
   isActive: () => boolean;
 }
 
-export interface ClipManifestClip {
-  id: string | null;
-  label: string;
-  start: number;
-  duration: number;
-  track: number;
+export interface ClipManifestClip extends RuntimeTimelineClipIdentity {
   zIndex?: number;
   stackingContextId?: string | null;
-  kind: "video" | "audio" | "image" | "element" | "composition";
-  tagName: string | null;
-  compositionId: string | null;
   compositionAncestors?: string[];
-  parentCompositionId: string | null;
-  compositionSrc: string | null;
-  assetUrl: string | null;
+  playbackStart?: number;
+  playbackRate?: number;
 }
 
 export interface ClipManifest {
+  protocolVersion?: number;
+  compositionContractVersion?: number;
+  capabilities?: readonly string[];
+  fps?: { numerator: number; denominator: number };
+  durationSeconds?: number;
   clips: ClipManifestClip[];
   scenes: Array<{ id: string; label: string; start: number; duration: number }>;
   durationInFrames: number;
+  compositionWidth?: number;
+  compositionHeight?: number;
 }
 
 export type IframeWindow = Window & {

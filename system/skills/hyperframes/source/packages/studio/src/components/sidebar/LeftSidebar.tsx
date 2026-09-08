@@ -10,9 +10,9 @@ import {
 import { CompositionsTab } from "./CompositionsTab";
 import { AssetsTab } from "./AssetsTab";
 import { trackStudioEvent } from "../../utils/studioTelemetry";
+import { safeLocalStorage } from "../../utils/safeStorage";
 import { BlocksTab, type BlockPreviewInfo } from "./BlocksTab";
 import { FileTree } from "../editor/FileTree";
-import { STUDIO_BLOCKS_PANEL_ENABLED } from "../editor/manualEditingAvailability";
 import { Tooltip } from "../ui";
 
 export type SidebarTab = "compositions" | "assets" | "code" | "blocks";
@@ -24,8 +24,25 @@ export interface LeftSidebarHandle {
 
 const STORAGE_KEY = "hf-studio-sidebar-tab";
 
-function getPersistedTab(): SidebarTab {
-  const stored = localStorage.getItem(STORAGE_KEY);
+const SIDEBAR_TABS: Array<{ id: SidebarTab; label: string; tooltip: string }> = [
+  { id: "code", label: "Code", tooltip: "Source code editor" },
+  { id: "compositions", label: "Comps", tooltip: "Compositions and sub-compositions" },
+  { id: "assets", label: "Assets", tooltip: "Videos, images, audio, fonts" },
+  { id: "blocks", label: "Catalog", tooltip: "Browse blocks and components" },
+];
+
+// Both the `localStorage` reference and `getItem` itself can throw when the
+// browsing context is partitioned or site data is blocked — the same case
+// telemetry/config.ts documents. This runs as a `useState` initializer, so an
+// unguarded throw here takes the whole editor to the crash boundary rather
+// than losing one remembered tab.
+export function getPersistedTab(): SidebarTab {
+  let stored: string | null = null;
+  try {
+    stored = safeLocalStorage()?.getItem(STORAGE_KEY) ?? null;
+  } catch {
+    /* storage unavailable — fall back to the default tab */
+  }
   if (stored === "assets") return "assets";
   if (stored === "code") return "code";
   if (stored === "blocks") return "blocks";
@@ -39,7 +56,7 @@ interface LeftSidebarProps {
   assets: string[];
   activeComposition: string | null;
   onSelectComposition: (comp: string) => void;
-  onImportFiles?: (files: FileList, dir?: string) => void;
+  onImportFiles?: (files: FileList, dir?: string) => void | Promise<void>;
   fileTree?: string[];
   editingFile?: { path: string; content: string | null } | null;
   onSelectFile?: (path: string) => void;
@@ -57,9 +74,11 @@ interface LeftSidebarProps {
   lintFindingCount?: number;
   lintFindingsByFile?: Map<string, { count: number; messages: string[] }>;
   onToggleCollapse?: () => void;
-  onAddBlock?: (blockName: string) => void;
+  onAddBlock?: (blockName: string) => void | Promise<void>;
   onPreviewBlock?: (preview: BlockPreviewInfo | null) => void;
   takeoverContent?: ReactNode;
+  onAddAssetToTimeline?: (path: string) => void;
+  onAddCompositionToTimeline?: (path: string) => void;
 }
 
 export const LeftSidebar = memo(
@@ -92,16 +111,23 @@ export const LeftSidebar = memo(
       onAddBlock,
       onPreviewBlock,
       takeoverContent,
+      onAddAssetToTimeline,
+      onAddCompositionToTimeline,
     },
     ref,
   ) {
     const [tab, setTab] = useState<SidebarTab>(getPersistedTab);
     const tabRef = useRef(tab);
     tabRef.current = tab;
+    const tablistRef = useRef<HTMLDivElement>(null);
 
     const selectTab = useCallback((t: SidebarTab) => {
       setTab(t);
-      localStorage.setItem(STORAGE_KEY, t);
+      try {
+        safeLocalStorage()?.setItem(STORAGE_KEY, t);
+      } catch {
+        /* storage unavailable — the tab just won't be remembered */
+      }
       trackStudioEvent("tab_switch", { panel: "left_sidebar", tab: t });
     }, []);
 
@@ -109,9 +135,23 @@ export const LeftSidebar = memo(
 
     useImperativeHandle(ref, () => ({ selectTab, getTab }), [selectTab, getTab]);
 
+    // APG tabs pattern: Left/Right move focus AND selection between tabs.
+    const handleTablistKeyDown = useCallback(
+      (e: React.KeyboardEvent) => {
+        if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+        e.preventDefault();
+        const ids = SIDEBAR_TABS.map((t) => t.id);
+        const idx = ids.indexOf(tabRef.current);
+        const next = ids[(idx + (e.key === "ArrowRight" ? 1 : -1) + ids.length) % ids.length];
+        selectTab(next);
+        tablistRef.current?.querySelector<HTMLButtonElement>(`[data-tab-id="${next}"]`)?.focus();
+      },
+      [selectTab],
+    );
+
     return (
       <div
-        className="flex flex-col h-full bg-neutral-950 border-r border-neutral-800/50"
+        className="flex flex-col h-full overflow-hidden rounded-lg border border-neutral-800/50 bg-neutral-950"
         style={{ width }}
       >
         {takeoverContent ? (
@@ -122,67 +162,33 @@ export const LeftSidebar = memo(
             <div className="border-b border-neutral-800/50 px-3 py-3 flex-shrink-0">
               <div className="flex items-center gap-2">
                 <div
+                  ref={tablistRef}
+                  role="tablist"
+                  aria-label="Sidebar panels"
+                  onKeyDown={handleTablistKeyDown}
                   className="grid min-w-0 flex-1 gap-0.5 rounded-[18px] bg-neutral-900 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
-                  style={{
-                    gridTemplateColumns: STUDIO_BLOCKS_PANEL_ENABLED
-                      ? "1fr 1fr 1fr 1fr"
-                      : "1fr 1fr 1fr",
-                  }}
+                  style={{ gridTemplateColumns: "1fr 1fr 1fr 1fr" }}
                 >
-                  <Tooltip label="Source code editor" side="bottom">
-                    <button
-                      type="button"
-                      onClick={() => selectTab("code")}
-                      className={`rounded-[14px] px-1.5 py-2 text-[10px] font-semibold truncate transition-all ${
-                        tab === "code"
-                          ? "bg-neutral-800 text-white"
-                          : "text-neutral-500 hover:text-neutral-200"
-                      }`}
-                    >
-                      Code
-                    </button>
-                  </Tooltip>
-                  <Tooltip label="Compositions and sub-compositions" side="bottom">
-                    <button
-                      type="button"
-                      onClick={() => selectTab("compositions")}
-                      className={`rounded-[14px] px-1.5 py-2 text-[10px] font-semibold truncate transition-all ${
-                        tab === "compositions"
-                          ? "bg-neutral-800 text-white"
-                          : "text-neutral-500 hover:text-neutral-200"
-                      }`}
-                    >
-                      Comps
-                    </button>
-                  </Tooltip>
-                  <Tooltip label="Videos, images, audio, fonts" side="bottom">
-                    <button
-                      type="button"
-                      onClick={() => selectTab("assets")}
-                      className={`rounded-[14px] px-1.5 py-2 text-[10px] font-semibold truncate transition-all ${
-                        tab === "assets"
-                          ? "bg-neutral-800 text-white"
-                          : "text-neutral-500 hover:text-neutral-200"
-                      }`}
-                    >
-                      Assets
-                    </button>
-                  </Tooltip>
-                  {STUDIO_BLOCKS_PANEL_ENABLED && (
-                    <Tooltip label="Browse blocks and components" side="bottom">
+                  {SIDEBAR_TABS.map((t) => (
+                    <Tooltip key={t.id} label={t.tooltip} side="bottom">
                       <button
                         type="button"
-                        onClick={() => selectTab("blocks")}
-                        className={`rounded-[14px] px-1.5 py-2 text-[10px] font-semibold truncate transition-all ${
-                          tab === "blocks"
+                        role="tab"
+                        data-tab-id={t.id}
+                        aria-selected={tab === t.id}
+                        aria-controls={`sidebar-panel-${t.id}`}
+                        tabIndex={tab === t.id ? 0 : -1}
+                        onClick={() => selectTab(t.id)}
+                        className={`rounded-[14px] px-1.5 py-2 text-[10px] font-semibold truncate transition-all active:scale-[0.97] ${
+                          tab === t.id
                             ? "bg-neutral-800 text-white"
                             : "text-neutral-500 hover:text-neutral-200"
                         }`}
                       >
-                        Catalog
+                        {t.label}
                       </button>
                     </Tooltip>
-                  )}
+                  ))}
                 </div>
                 {onToggleCollapse && (
                   <button
@@ -213,27 +219,41 @@ export const LeftSidebar = memo(
 
             {/* Tab content */}
             {tab === "compositions" && (
-              <CompositionsTab
-                projectId={projectId}
-                compositions={compositions}
-                activeComposition={activeComposition}
-                onSelect={onSelectComposition}
-                onRenderComposition={onRenderComposition}
-                isRendering={isRendering}
-                lintFindingsByFile={lintFindingsByFile}
-              />
+              <div
+                id="sidebar-panel-compositions"
+                role="tabpanel"
+                className="flex flex-col flex-1 min-h-0"
+              >
+                <CompositionsTab
+                  projectId={projectId}
+                  compositions={compositions}
+                  activeComposition={activeComposition}
+                  onSelect={onSelectComposition}
+                  onAddToTimeline={onAddCompositionToTimeline}
+                  onRenderComposition={onRenderComposition}
+                  isRendering={isRendering}
+                  lintFindingsByFile={lintFindingsByFile}
+                />
+              </div>
             )}
             {tab === "assets" && (
-              <AssetsTab
-                projectId={projectId}
-                assets={assets}
-                onImport={onImportFiles}
-                onDelete={onDeleteFile}
-                onRename={onRenameFile}
-              />
+              <div
+                id="sidebar-panel-assets"
+                role="tabpanel"
+                className="flex flex-col flex-1 min-h-0"
+              >
+                <AssetsTab
+                  projectId={projectId}
+                  assets={assets}
+                  onImport={onImportFiles}
+                  onDelete={onDeleteFile}
+                  onRename={onRenameFile}
+                  onAddAssetToTimeline={onAddAssetToTimeline}
+                />
+              </div>
             )}
             {tab === "code" && (
-              <div className="flex flex-1 min-h-0">
+              <div id="sidebar-panel-code" role="tabpanel" className="flex flex-1 min-h-0">
                 {(fileProp?.length ?? 0) > 0 && (
                   <div className="w-[160px] flex-shrink-0 border-r border-neutral-800 overflow-y-auto">
                     <FileTree
@@ -261,8 +281,14 @@ export const LeftSidebar = memo(
               </div>
             )}
 
-            {STUDIO_BLOCKS_PANEL_ENABLED && tab === "blocks" && (
-              <BlocksTab onAddBlock={onAddBlock} onPreviewBlock={onPreviewBlock} />
+            {tab === "blocks" && (
+              <div
+                id="sidebar-panel-blocks"
+                role="tabpanel"
+                className="flex flex-col flex-1 min-h-0"
+              >
+                <BlocksTab onAddBlock={onAddBlock} onPreviewBlock={onPreviewBlock} />
+              </div>
             )}
 
             {/* Lint button pinned at the bottom */}
@@ -271,7 +297,7 @@ export const LeftSidebar = memo(
                 <button
                   onClick={onLint}
                   disabled={linting}
-                  className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-[11px] font-medium text-neutral-500 hover:text-amber-300 hover:bg-neutral-800 transition-colors disabled:opacity-40"
+                  className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-[11px] font-medium text-neutral-500 enabled:hover:text-amber-300 enabled:hover:bg-neutral-800 enabled:active:scale-[0.98] transition-colors disabled:opacity-40"
                 >
                   <svg
                     width="12"

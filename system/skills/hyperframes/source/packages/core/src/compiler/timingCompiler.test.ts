@@ -1,11 +1,13 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { JSDOM } from "jsdom";
 import { describe, it, expect } from "vitest";
 import {
   compileTimingAttrs,
   injectDurations,
   extractResolvedMedia,
   clampDurations,
+  shouldClampResolvedMediaDuration,
 } from "./timingCompiler.js";
 
 // Raw 0x00 bytes in the HFMASK delimiters shipped once and broke every render
@@ -17,7 +19,182 @@ it("source contains no raw NUL bytes", () => {
   expect(src.includes("\x00")).toBe(false);
 });
 
+describe("inert region scanning", () => {
+  const media = '<video id="v" data-start="1" data-duration="2">';
+
+  it.each([
+    `<!-- ${media} <!-- nested -->`,
+    `<ScRiPt type="text/javascript">${media}</sCrIpT \n>`,
+    `<STYLE>${media}</STYLE\u00a0>`,
+    `<script-data>${media}</script>`,
+    `<style:${media}</style>`,
+    `<!-- <script>${media} -->`,
+    `<script><!-- ${media}</script>`,
+    `<style><script>${media}</style>`,
+  ])("preserves the existing complete-region boundaries in %j", (region) => {
+    const result = compileTimingAttrs(region + media);
+    expect(result).toEqual({ html: region + compileTimingAttrs(media).html, unresolved: [] });
+    expect(extractResolvedMedia(region + media)).toEqual(extractResolvedMedia(media));
+  });
+
+  it.each(["<!--", "<script>", "<style>", "<scripture>", "<stylesheet>"])(
+    "keeps media outside a complete inert region after %j visible",
+    (prefix) => {
+      expect(compileTimingAttrs(prefix + media).html).toBe(prefix + compileTimingAttrs(media).html);
+      expect(extractResolvedMedia(prefix + media)).toEqual(extractResolvedMedia(media));
+    },
+  );
+
+  it.each(["-->", "--!>"])("recognizes %j as the first comment end like the browser", (end) => {
+    const hidden = '<video id="hidden" data-duration="1">';
+    const visible = '<video id="visible" data-start="1" data-duration="2">';
+    const comment = `<!-- ${hidden} ${end}`;
+    // The trailing delimiter must not extend the comment over visible media.
+    const html = comment + visible + " -->";
+    const dom = new JSDOM(html);
+    expect([...dom.window.document.querySelectorAll("video")].map((el) => el.id)).toEqual([
+      "visible",
+    ]);
+    dom.window.close();
+    expect(compileTimingAttrs(html)).toEqual({
+      html: comment + compileTimingAttrs(visible).html + " -->",
+      unresolved: [],
+    });
+    expect(extractResolvedMedia(html).map((el) => el.id)).toEqual(["visible"]);
+  });
+
+  it("closes an end-bang comment without a later standard delimiter", () => {
+    const comment = '<!-- <video id="hidden" data-duration="1"> --!>';
+    expect(compileTimingAttrs(comment + media)).toEqual({
+      html: comment + compileTimingAttrs(media).html,
+      unresolved: [],
+    });
+    expect(extractResolvedMedia(comment + media)).toEqual(extractResolvedMedia(media));
+  });
+
+  it.each(["<!--", "<script", "<style"])(
+    "handles many unclosed %j prefixes while masking other region kinds",
+    (prefix) => {
+      const unclosed = prefix.repeat(100_000);
+      const hidden = prefix === "<!--" ? `<style>${media}</style>` : `<!--${media}-->`;
+      expect(compileTimingAttrs(unclosed + hidden + media)).toEqual({
+        html: unclosed + hidden + compileTimingAttrs(media).html,
+        unresolved: [],
+      });
+      expect(extractResolvedMedia(unclosed + hidden + media)).toEqual(extractResolvedMedia(media));
+    },
+  );
+
+  it("uses the first closing delimiter and resumes scanning after it", () => {
+    const hidden = `<script>${media}</script>`;
+    const html = hidden + media + `</script><!--${media}--><style>${media}</style>`;
+    expect(compileTimingAttrs(html).html).toBe(
+      hidden + compileTimingAttrs(media).html + `</script><!--${media}--><style>${media}</style>`,
+    );
+    expect(extractResolvedMedia(html)).toEqual(extractResolvedMedia(media));
+  });
+});
+
+describe("opening tag scanning", () => {
+  it.each([injectDurations, clampDurations])(
+    "keeps long unclosed ID-targeted tags unchanged in %p",
+    (write) => {
+      const html = '<video id="target" '.repeat(100_000);
+      expect(write(html, [{ id: "target", duration: 3 }])).toBe(html);
+    },
+  );
+
+  it.each(["target", "a>b", "a<b", "a.b[0]"])(
+    "preserves substring-ID matches and delimiter characters for %j",
+    (id) => {
+      const html = `<video data-id="${id}" data-start="1" data-duration="bad" data-end="4">`;
+      expect(injectDurations(html, [{ id, duration: 3 }])).toBe(
+        `<video data-id="${id}" data-start="1" data-duration="3" data-end="4">`,
+      );
+      expect(clampDurations(html, [{ id, duration: 3 }])).toBe(
+        `<video data-id="${id}" data-start="1" data-duration="3" data-end="4">`,
+      );
+    },
+  );
+
+  it("leaves similar IDs alone and applies repeated resolutions in order", () => {
+    const html = '<video id="a.b" data-start="1" data-duration="bad"><video id="axb">';
+    const resolutions = [
+      { id: "a.b", duration: 3 },
+      { id: "a.b", duration: 5 },
+    ];
+    expect(injectDurations(html, resolutions)).toBe(
+      '<video id="a.b" data-start="1" data-duration="3" data-end="4"><video id="axb">',
+    );
+    expect(clampDurations(html, resolutions)).toBe(
+      '<video id="a.b" data-start="1" data-duration="5"><video id="axb">',
+    );
+  });
+
+  it.each(["<video", "<audio", "<div", "<section", "<video<audio<div<section"])(
+    "preserves an unclosed %j suffix after compiling complete media",
+    (prefix) => {
+      const media = '<video id="v" data-start="1" data-duration="2">';
+      const suffix = prefix.repeat(100_000);
+      expect(compileTimingAttrs(media + suffix)).toEqual({
+        html: compileTimingAttrs(media).html + suffix,
+        unresolved: [],
+      });
+      expect(extractResolvedMedia(media + suffix).map((el) => el.id)).toEqual(["v"]);
+    },
+  );
+
+  it("keeps separate media ID counters and video/audio/composition resolution order", () => {
+    const html = '<audio><VIDEO><section id="scene" data-start="0"><audio>';
+    const result = compileTimingAttrs(html);
+    expect(result.unresolved.map((el) => el.id)).toEqual([
+      "hf-video-0",
+      "hf-audio-0",
+      "hf-audio-1",
+      "scene",
+    ]);
+    expect(result.html.indexOf('id="hf-audio-0"')).toBeLessThan(
+      result.html.indexOf('id="hf-video-0"'),
+    );
+  });
+
+  it("extracts mixed-case media in source order", () => {
+    const html = '<AUDIO id="a" data-duration="2"><video id="v" data-duration="3">';
+    expect(extractResolvedMedia(html).map((el) => [el.id, el.tagName, el.duration])).toEqual([
+      ["a", "audio", 2],
+      ["v", "video", 3],
+    ]);
+  });
+
+  it("retains the existing first-greater-than boundary even inside a quoted value", () => {
+    const html = '<video title="a>b" data-duration="2">';
+    const result = compileTimingAttrs(html);
+    expect(result.html).toBe(
+      '<video title="a id="hf-video-0" data-start="0" data-hf-auto-start="" data-has-audio="true">b" data-duration="2">',
+    );
+    expect(result.unresolved.map((el) => el.id)).toEqual(["hf-video-0"]);
+    expect(extractResolvedMedia(html)).toEqual([]);
+  });
+});
+
 describe("compileTimingAttrs", () => {
+  it.each(["", "   ", "0s", "0abc", "0px", "-1s", "Infinity", "NaN"])(
+    "does not partially parse invalid literal data-duration=%j",
+    (duration) => {
+      const html = `<video id="v1" src="a.mp4" data-start="2" data-duration="${duration}">`;
+      const { html: compiled } = compileTimingAttrs(html);
+
+      expect(compiled).not.toContain("data-end=");
+    },
+  );
+
+  it("uses Number semantics for hexadecimal literal timing", () => {
+    const { html: compiled } = compileTimingAttrs(
+      '<video id="v1" src="a.mp4" data-start="2" data-duration="0x10">',
+    );
+    expect(compiled).toContain('data-end="18"');
+  });
+
   it("adds data-end when data-start and data-duration are present on a video", () => {
     const html = '<video id="v1" src="a.mp4" data-start="2" data-duration="5">';
     const { html: compiled, unresolved } = compileTimingAttrs(html);
@@ -113,6 +290,17 @@ describe("compileTimingAttrs", () => {
 
     expect(compiled).toContain('data-start="5"');
     expect(compiled).not.toContain("data-hf-auto-start");
+  });
+
+  it("leaves data-end off a relative data-start id-ref", () => {
+    const html =
+      '<video id="intro" src="a.mp4" data-start="0" data-duration="10">' +
+      '<video id="main" src="b.mp4" data-start="intro" data-duration="20">';
+    const { html: compiled } = compileTimingAttrs(html);
+
+    expect(compiled).toContain('data-start="intro"');
+    expect(compiled).not.toMatch(/id="main"[^>]*data-end=/);
+    expect(compiled).toMatch(/id="intro"[^>]*data-end="10"/);
   });
 
   it("compiles audio tags the same as video (minus data-has-audio)", () => {
@@ -211,6 +399,15 @@ describe("injectDurations", () => {
     // data-duration already present, should not be duplicated
     expect(result).toContain('data-duration="3"');
   });
+
+  it("injects data-duration but not data-end when data-start is a relative id-ref", () => {
+    const html = '<video id="main" src="b.mp4" data-start="intro">';
+    const result = injectDurations(html, [{ id: "main", duration: 5 }]);
+
+    expect(result).toContain('data-duration="5"');
+    expect(result).toContain('data-start="intro"');
+    expect(result).not.toMatch(/data-end=/);
+  });
 });
 
 describe("extractResolvedMedia", () => {
@@ -262,5 +459,12 @@ describe("clampDurations", () => {
 
     expect(result).toContain('data-duration="5"');
     expect(result).toContain('data-end="7"');
+  });
+});
+
+describe("shouldClampResolvedMediaDuration", () => {
+  it("preserves an explicit video slot but keeps audio source-bounded", () => {
+    expect(shouldClampResolvedMediaDuration("video", 5, 1)).toBe(false);
+    expect(shouldClampResolvedMediaDuration("audio", 5, 1)).toBe(true);
   });
 });

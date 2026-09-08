@@ -36,6 +36,7 @@
  * the stages can import them without reaching back into the orchestrator.
  */
 
+import { statfsSync } from "node:fs";
 import {
   type BeforeCaptureHook,
   type CaptureOptions,
@@ -44,6 +45,7 @@ import {
   type EngineConfig,
   captureFrame,
   captureFrameToBufferPipelined,
+  verifyDiskDrawElementSamples,
   writeCapturedFrame,
   closeCaptureSession,
   completeDeferredDrawElementInit,
@@ -62,6 +64,7 @@ import {
 } from "../../renderOrchestrator.js";
 import { wrapCaptureStageError } from "../captureStageError.js";
 import { updateJobStatus } from "../shared.js";
+import type { SdrDiskCapturePlan } from "../capturePlan.js";
 
 export interface CaptureStageInput {
   fileServer: FileServerHandle;
@@ -76,23 +79,11 @@ export interface CaptureStageInput {
    */
   totalFrames: number;
   cfg: EngineConfig;
-  /**
-   * Capture-mode flag threaded from `compileStage`. The stage derives a
-   * local copy of `cfg` with this value applied to `forceScreenshot`
-   * before any engine call, so the caller-owned `cfg` is never mutated.
-   * The sequencer may override `compileResult.forceScreenshot` after a
-   * BeginFrame calibration timeout — passing the override through this
-   * parameter keeps the decision visible at the call site instead of
-   * hiding it inside a shared mutable config.
-   */
-  forceScreenshot: boolean;
+  /** Immutable route selected by the sequencer. */
+  plan: SdrDiskCapturePlan;
   log: ProducerLogger;
-  /** Initial worker count from `resolveRenderWorkerCount`; adaptive retry may reduce it. */
-  workerCount: number;
   /** Reused for the sequential path's first session if non-null. */
   probeSession: CaptureSession | null;
-  /** True for webm / mov / png-sequence (controls capture format + extension). */
-  needsAlpha: boolean;
   /** Mutated in place — each parallel retry attempt is appended. */
   captureAttempts: CaptureAttemptSummary[];
   /**
@@ -133,6 +124,55 @@ export interface CaptureStageResult {
   captureBeyondViewport?: boolean;
 }
 
+/**
+ * An explicit worker count selects the initial concurrency; it must not disable
+ * recovery after a worker times out. The adaptive loop only retries missing
+ * frames, requires forward progress, and halves workers until sequential, so it
+ * remains bounded while preserving already-captured work.
+ */
+export function shouldAllowAdaptiveCaptureRetry(
+  workerCount: number,
+  _explicitlyConfigured: boolean,
+): boolean {
+  return workerCount > 1;
+}
+
+export function estimateDiskCaptureBytes(
+  totalFrames: number,
+  captureOptions: CaptureOptions,
+): number {
+  const scale = captureOptions.deviceScaleFactor ?? 1;
+  const outputWidth = Math.ceil(captureOptions.width * scale);
+  const outputHeight = Math.ceil(captureOptions.height * scale);
+  return Math.ceil(totalFrames) * outputWidth * outputHeight * 4;
+}
+
+export function assertDiskCaptureHeadroom(
+  framesDir: string,
+  totalFrames: number,
+  captureOptions: CaptureOptions,
+  freeDiskBytes: (path: string) => number | null = (path) => {
+    try {
+      const stat = statfsSync(path);
+      return stat.bavail * stat.bsize;
+    } catch {
+      return null;
+    }
+  },
+): void {
+  const freeBytes = freeDiskBytes(framesDir);
+  if (freeBytes === null) return;
+  const estimatedBytes = estimateDiskCaptureBytes(totalFrames, captureOptions);
+  if (estimatedBytes <= freeBytes * 0.9) return;
+  throw new Error(
+    `Disk capture may need ~${(estimatedBytes / 1e6).toFixed(1)} MB of temporary frame storage, ` +
+      `but only ${(freeBytes / 1e6).toFixed(1)} MB is free at ${framesDir}. ` +
+      "Re-run with --low-memory-mode to stream frames, raise " +
+      "PRODUCER_STREAMING_ENCODE_MAX_DURATION_SECONDS if streaming is supported, " +
+      "or free up disk space.",
+  );
+}
+
 export async function runCaptureStage(input: CaptureStageInput): Promise<CaptureStageResult> {
   const {
     fileServer,
@@ -141,7 +181,7 @@ export async function runCaptureStage(input: CaptureStageInput): Promise<Capture
     job,
     totalFrames,
     cfg,
-    forceScreenshot,
+    plan,
     log,
     captureAttempts,
     buildCaptureOptions,
@@ -149,17 +189,18 @@ export async function runCaptureStage(input: CaptureStageInput): Promise<Capture
     abortSignal,
     assertNotAborted,
     onProgress,
-    needsAlpha,
     frameRange,
     dedupPerfs,
   } = input;
-  let { workerCount, probeSession } = input;
+  let { probeSession } = input;
+  let { workerCount } = plan;
+  const { forceScreenshot, needsAlpha } = plan;
   let lastBrowserConsole: string[] = [];
   let captureBeyondViewport: boolean | undefined = probeSession?.options.captureBeyondViewport;
 
   // Derive a local cfg view rather than reading `forceScreenshot` from the
   // caller-owned `cfg`. The sequencer threads the resolved value via the
-  // explicit parameter; this keeps the engine-facing config a pure
+  // immutable plan; this keeps the engine-facing config a pure
   // pass-through.
   const captureCfg: EngineConfig =
     cfg.forceScreenshot === forceScreenshot ? cfg : { ...cfg, forceScreenshot };
@@ -190,6 +231,9 @@ export async function runCaptureStage(input: CaptureStageInput): Promise<Capture
     }
   }
 
+  const captureOptions = buildCaptureOptions();
+  assertDiskCaptureHeadroom(framesDir, totalFrames, captureOptions);
+
   if (workerCount > 1) {
     // Parallel capture. When `frameRange` is set (distributed chunk), pass
     // `frameRangeStart` so workers land on absolute composition frame indices
@@ -200,9 +244,9 @@ export async function runCaptureStage(input: CaptureStageInput): Promise<Capture
       framesDir,
       totalFrames,
       initialWorkerCount: workerCount,
-      allowRetry: job.config.workers === undefined,
+      allowRetry: shouldAllowAdaptiveCaptureRetry(workerCount, job.config.workers !== undefined),
       frameExt: needsAlpha ? "png" : "jpg",
-      captureOptions: buildCaptureOptions(),
+      captureOptions,
       createBeforeCaptureHook: createRenderVideoFrameInjector,
       abortSignal,
       frameRangeStart: frameRange?.startFrame,
@@ -248,17 +292,21 @@ export async function runCaptureStage(input: CaptureStageInput): Promise<Capture
       (await createCaptureSession(
         fileServer.url,
         framesDir,
-        buildCaptureOptions(),
+        captureOptions,
         videoInjector,
         captureCfg,
       ));
     captureBeyondViewport = session.options.captureBeyondViewport;
-    if (probeSession) {
-      prepareCaptureSessionForReuse(session, framesDir, videoInjector);
-      probeSession = null;
-    }
 
     try {
+      // Reuse preparation can fail while creating/resetting the output
+      // directory (for example EACCES, EROFS, or ENOSPC). Keep it inside the
+      // session-owning try/finally so the borrowed probe browser is closed
+      // even when preparation fails before capture starts.
+      if (probeSession) {
+        prepareCaptureSessionForReuse(session, framesDir, videoInjector);
+        probeSession = null;
+      }
       if (!session.isInitialized) {
         await initializeSession(session);
       } else if (process.env.PRODUCER_EXPERIMENTAL_FAST_CAPTURE === "true") {
@@ -328,6 +376,24 @@ export async function runCaptureStage(input: CaptureStageInput): Promise<Capture
           reportFrame(i);
         }
       }
+      // Sequential disk drawElement self-verification (PRINFRA-352 follow-up):
+      // the sequential disk path — reachable under the explicit fast-capture
+      // opt-in, including via probe-session reuse — armed ground-truth samples
+      // but never checked them, exactly like the parallel disk workers before
+      // #2749. Same synthetic-task shape the parallel verify uses; a breach
+      // throws DrawElementVerificationError and the orchestrator's disk-stage
+      // retry re-renders via screenshot.
+      await verifyDiskDrawElementSamples(
+        session,
+        {
+          workerId: 0,
+          startFrame: rangeStart,
+          endFrame: rangeEnd,
+          outputDir: framesDir,
+          outputFrameOffset: rangeStart,
+        },
+        false,
+      );
       // Capture the sequential session's static-dedup perf before close (the
       // counters are valid only while the session is live).
       dedupPerfs.push(getCapturePerfSummary(session));

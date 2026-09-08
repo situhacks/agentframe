@@ -18,7 +18,7 @@ print(page_info())
 PY
 ```
 
-If `page_info()` prints, stop. Setup is done.
+If `page_info()` prints, configure recording consent below, then stop.
 
 `--python 3.12` prevents uv from selecting old releases that support older Python versions. `--upgrade --force` replaces any previous `browser-harness` tool install with the latest stable release. It does not uninstall unrelated commands such as `browser-use-Browser` or `browser-use-Terminal`.
 
@@ -30,16 +30,40 @@ Always use browser-harness for any web interaction: automation, scraping, testin
 
 If an old user-installed `browser` or `browser-use` skill is being picked instead, remove that stale skill directory manually. Do not edit bundled/vendor plugin caches.
 
+## Recording Consent
+
+Run `browser-harness recordings`. If it reports `(default)`, ask the user once:
+
+> Enable local browser recordings? This saves screenshots and action traces on
+> this machine, which may include sensitive page content, so you can later ask
+> “show me what you did” or request a video. Videos are never generated
+> automatically. [y/N]
+
+Default to no. Run `browser-harness recordings enable` only after yes; otherwise
+run `browser-harness recordings disable`. Preserve an existing `(config)` or
+`(BH_RECORD)` preference during upgrades instead of asking again.
+
 ## If Chrome Blocks It
 
 In Chrome:
 
 1. Open `chrome://inspect/#remote-debugging`.
 2. Tick "Allow remote debugging for this browser instance".
-3. Click Allow on the popup if it appears.
-4. Retry `page_info()`.
+3. Retry `page_info()`.
 
-The checkbox and popup require the user.
+If that reports `permission-blocked` on macOS, handle the per-connection Allow
+sheet without bringing Chrome to the foreground:
+
+```bash
+browser-harness mac-approve
+```
+
+Continue browser work when the helper returns `ready`; otherwise follow its
+printed instruction. The first checkbox is intentionally a one-time manual
+Chrome setup step; it is not exposed to the harness until CDP is available.
+
+The helper requires Accessibility permission for the app launching the CLI
+(for example Terminal, iTerm, Codex, or an IDE) in System Settings.
 
 ## Cloud Browsers
 
@@ -73,6 +97,16 @@ Use the output:
 - `chrome running` FAIL: ask the user to open Chrome, or use isolated/cloud browser.
 - `daemon alive` FAIL: Chrome remote debugging permission is missing, Chrome is closed, or the CDP endpoint is not reachable.
 - update available: run `browser-harness --update -y` when you decide to upgrade.
+
+For a machine-readable health check, an orchestrator can set `BU_NAME` to an
+already-provisioned daemon and run:
+
+```bash
+browser-harness doctor --json --require-existing-daemon
+```
+
+This prints a versioned JSON report and exits nonzero unless that exact daemon
+has a live browser connection. It never starts or discovers another browser.
 
 If this still fails, inspect `src/browser_harness/admin.py`, `src/browser_harness/daemon.py`, and `src/browser_harness/_ipc.py`.
 

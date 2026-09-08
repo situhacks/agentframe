@@ -126,6 +126,15 @@ describe("resolveDomEditSelection — data-hf-group capture", () => {
     expect(selection?.selector).toBe('[data-hf-group="Group 1"]');
   });
 
+  it("resolves an explicit agent target without promoting it to the group", async () => {
+    const { parent, child } = buildNestedGroups();
+    const selection = await resolveDomEditSelection(child, { ...opts, exactTarget: true });
+    document.body.removeChild(parent);
+
+    expect(selection?.element).toBe(child);
+    expect(selection?.id).toBe("child");
+  });
+
   it("selects the next nested group when drilled into the outer group", async () => {
     const { parent, outer, inner, child } = buildNestedGroups();
     const selection = await resolveDomEditSelection(child, { ...opts, activeGroupElement: outer });
@@ -222,5 +231,29 @@ describe("buildTextFieldChildLocator", () => {
     const fields = [textField({ key: "child:0:span", sourceChildIndex: 0 })];
 
     expect(buildTextFieldChildLocator(fields, "missing")).toBeNull();
+  });
+});
+
+describe("collectDomEditLayerItems item budget", () => {
+  function documentWith(count: number): HTMLElement {
+    const root = document.createElement("div");
+    root.setAttribute("data-composition-id", "index.html");
+    for (let i = 0; i < count; i++) {
+      const child = document.createElement("div");
+      child.id = `el-${i}`;
+      root.append(child);
+    }
+    return root;
+  }
+
+  it("returns the whole document by default", () => {
+    // A default cap here silently truncated the marquee's candidate list: a drag
+    // over the whole canvas only ever saw the first 80 elements, so everything
+    // past them was unselectable and survived a Delete.
+    expect(collectDomEditLayerItems(documentWith(200), opts)).toHaveLength(200);
+  });
+
+  it("truncates only when a caller asks for a rendering budget", () => {
+    expect(collectDomEditLayerItems(documentWith(200), opts, 80)).toHaveLength(80);
   });
 });

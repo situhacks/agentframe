@@ -2,13 +2,74 @@ import { EventEmitter } from "node:events";
 import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { formatFfmpegError } from "./runFfmpeg.js";
+import { formatFfmpegError, isExternalFfmpegInterruption } from "./runFfmpeg.js";
+
+describe("isExternalFfmpegInterruption", () => {
+  const base = {
+    exitCode: 255,
+    signal: null,
+    stderr: "",
+    terminationReason: "exit" as const,
+  };
+
+  it("recognizes a direct external termination signal", () => {
+    expect(isExternalFfmpegInterruption({ ...base, exitCode: null, signal: "SIGTERM" })).toBe(true);
+  });
+
+  it("does not broaden the retry signal to SIGKILL", () => {
+    expect(isExternalFfmpegInterruption({ ...base, exitCode: null, signal: "SIGKILL" })).toBe(
+      false,
+    );
+  });
+
+  it("recognizes ffmpeg's handled SIGTERM exit-255 signature", () => {
+    expect(
+      isExternalFfmpegInterruption({
+        ...base,
+        stderr: "frame= 42\nExiting normally, received signal 15.\n",
+      }),
+    ).toBe(true);
+  });
+
+  it("does not classify an ordinary exit 255", () => {
+    expect(isExternalFfmpegInterruption({ ...base, stderr: "Encoder initialization failed" })).toBe(
+      false,
+    );
+  });
+
+  it("requires exit 255 when classification relies on ffmpeg stderr", () => {
+    expect(
+      isExternalFfmpegInterruption({
+        ...base,
+        exitCode: 1,
+        stderr: "Exiting normally, received signal 15.",
+      }),
+    ).toBe(false);
+  });
+
+  it.each(["abort", "deadline", "inactivity"] as const)(
+    "keeps a managed %s termination non-retryable",
+    (terminationReason) => {
+      expect(
+        isExternalFfmpegInterruption({
+          ...base,
+          signal: "SIGTERM",
+          stderr: "Exiting normally, received signal 15.",
+          terminationReason,
+        }),
+      ).toBe(false);
+    },
+  );
+});
 
 describe("formatFfmpegError", () => {
   const originalPlatform = process.platform;
+  const originalFfmpegPath = process.env.HYPERFRAMES_FFMPEG_PATH;
 
   afterEach(() => {
     Object.defineProperty(process, "platform", { value: originalPlatform, configurable: true });
+    if (originalFfmpegPath === undefined) delete process.env.HYPERFRAMES_FFMPEG_PATH;
+    else process.env.HYPERFRAMES_FFMPEG_PATH = originalFfmpegPath;
   });
 
   it("reports exit code alone when stderr is empty", () => {
@@ -57,6 +118,20 @@ describe("formatFfmpegError", () => {
 
     expect(formatFfmpegError(3221225595, "")).toContain("wrong architecture");
   });
+
+  it.each([3221225781, -1073741515])(
+    "maps Windows DLL-not-found exit code %s to selected-path guidance",
+    (exitCode) => {
+      Object.defineProperty(process, "platform", { value: "win32", configurable: true });
+      process.env.HYPERFRAMES_FFMPEG_PATH = "/tools/ffmpeg.exe";
+
+      const message = formatFfmpegError(exitCode, "");
+
+      expect(message).toContain("0xC0000135 (STATUS_DLL_NOT_FOUND)");
+      expect(message).toContain(resolve("/tools/ffmpeg.exe"));
+      expect(message).toContain("working 64-bit Windows FFmpeg build");
+    },
+  );
 });
 
 function createSpawnSpy() {

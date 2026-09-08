@@ -1,9 +1,10 @@
-import { createContext, useContext, useMemo, type ReactNode } from "react";
 import type { useFileManager } from "../hooks/useFileManager";
+import { useContext, useMemo, type ReactNode } from "react";
+import { createStableContext } from "../utils/hmrStableContext";
 
 type FileManagerValue = ReturnType<typeof useFileManager>;
 
-const FileManagerContext = createContext<FileManagerValue | null>(null);
+const FileManagerContext = createStableContext<FileManagerValue | null>("FileManagerContext", null);
 
 export function useFileManagerContext(): FileManagerValue {
   const ctx = useContext(FileManagerContext);
@@ -17,6 +18,7 @@ export function useFileManagerContextOptional(): FileManagerValue | null {
 
 export function FileManagerProvider({
   value: {
+    // fallow-ignore-next-line code-duplication
     editingFile,
     setEditingFile,
     projectDir,
@@ -26,10 +28,15 @@ export function FileManagerProvider({
     editingPathRef,
     projectIdRef,
     saveRafRef,
+    flushPendingSourceSave,
+    discardPendingSourceSave,
+    getPendingSourceCandidate,
     importedFontAssetsRef,
     readProjectFile,
     writeProjectFile,
+    overwriteExternalConflict,
     readOptionalProjectFile,
+    observeProjectFileVersion,
     updateEditingFileContent,
     revealSourceOffset,
     openSourceForSelection,
@@ -65,10 +72,15 @@ export function FileManagerProvider({
       editingPathRef,
       projectIdRef,
       saveRafRef,
+      flushPendingSourceSave,
+      discardPendingSourceSave,
+      getPendingSourceCandidate,
       importedFontAssetsRef,
       readProjectFile,
       writeProjectFile,
+      overwriteExternalConflict,
       readOptionalProjectFile,
+      observeProjectFileVersion,
       updateEditingFileContent,
       revealSourceOffset,
       openSourceForSelection,
@@ -98,10 +110,15 @@ export function FileManagerProvider({
       editingPathRef,
       projectIdRef,
       saveRafRef,
+      flushPendingSourceSave,
+      discardPendingSourceSave,
+      getPendingSourceCandidate,
       importedFontAssetsRef,
       readProjectFile,
       writeProjectFile,
+      overwriteExternalConflict,
       readOptionalProjectFile,
+      observeProjectFileVersion,
       updateEditingFileContent,
       revealSourceOffset,
       openSourceForSelection,

@@ -32,6 +32,7 @@ const runFfmpegMock = mock(async () => ({
 }));
 
 mock.module("@hyperframes/engine", () => ({
+  MIXED_AUDIO_FILENAME: "audio.m4a",
   DEFAULT_CONFIG: { ffmpegEncodeTimeout: 600_000 },
   encodeFramesChunkedConcat: encodeFramesChunkedConcatMock,
   encodeFramesFromDir: encodeFramesFromDirMock,
@@ -120,6 +121,7 @@ describe("gif encode args", () => {
     outputPath: "/tmp/hf/demo.gif",
     fps: { num: 15, den: 1 },
     loop: 0,
+    preserveAlpha: false,
   };
 
   it("builds the palettegen pass with diff statistics", () => {
@@ -151,9 +153,94 @@ describe("gif encode args", () => {
       "/tmp/hf/demo.gif",
     ]);
   });
+
+  it("reserves transparency and applies the GIF alpha threshold for RGBA frames", () => {
+    const transparentInput = {
+      ...input,
+      framePattern: "frame_%06d.png",
+      preserveAlpha: true,
+    };
+
+    expect(buildGifPalettegenArgs(transparentInput)).toContain(
+      "fps=15,palettegen=stats_mode=diff:reserve_transparent=1",
+    );
+    expect(buildGifPaletteuseArgs(transparentInput)).toContain(
+      "fps=15 [x]; [x][1:v] paletteuse=dither=sierra2_4a:alpha_threshold=128",
+    );
+  });
 });
 
 describe("runEncodeStage config plumbing", () => {
+  it("throws a typed retryable error when the GIF encoder is externally interrupted", async () => {
+    const { EncoderInterruptedError } = await import("../encoderInterruption.js");
+    const { runEncodeStage } = await import("./encodeStage.js");
+    runFfmpegMock.mockImplementationOnce(async () => ({
+      success: false,
+      exitCode: 255,
+      stderr: "Exiting normally, received signal 15.\nprivate stderr",
+      durationMs: 1,
+      failureReason: "external_interruption" as const,
+    }));
+    const paths = createFramesDir("jpg");
+
+    try {
+      await runEncodeStage(
+        makeInput({
+          framesDir: paths.framesDir,
+          outputPath: join(paths.root, "out.gif"),
+          videoOnlyPath: join(paths.root, "video-only.mp4"),
+          isGif: true,
+        }),
+      );
+      throw new Error("expected runEncodeStage to reject");
+    } catch (error) {
+      expect(error).toBeInstanceOf(EncoderInterruptedError);
+      expect(String(error)).not.toContain("private stderr");
+    }
+  });
+
+  it("throws a typed retryable error for an external encoder interruption", async () => {
+    const { EncoderInterruptedError } = await import("../encoderInterruption.js");
+    const { runEncodeStage } = await import("./encodeStage.js");
+    encodeFramesFromDirMock.mockImplementationOnce(async (_framesDir, _pattern, outputPath) => ({
+      success: false,
+      outputPath,
+      durationMs: 12,
+      framesEncoded: 0,
+      fileSize: 0,
+      error: "FFmpeg exited with code 255\nprivate stderr",
+      failureReason: "external_interruption" as const,
+    }));
+
+    try {
+      await runEncodeStage(makeInput());
+      throw new Error("expected runEncodeStage to reject");
+    } catch (error) {
+      expect(error).toBeInstanceOf(EncoderInterruptedError);
+      expect(error).toMatchObject({
+        code: "ENCODER_INTERRUPTED",
+        owner: "system",
+        retryable: true,
+      });
+      expect(String(error)).not.toContain("private stderr");
+    }
+  });
+
+  it("keeps a generic exit 255 untyped", async () => {
+    const { EncoderInterruptedError } = await import("../encoderInterruption.js");
+    const { runEncodeStage } = await import("./encodeStage.js");
+    encodeFramesFromDirMock.mockImplementationOnce(async (_framesDir, _pattern, outputPath) => ({
+      success: false,
+      outputPath,
+      durationMs: 12,
+      framesEncoded: 0,
+      fileSize: 0,
+      error: "FFmpeg exited with code 255: invalid encoder settings",
+    }));
+
+    await expect(runEncodeStage(makeInput())).rejects.not.toBeInstanceOf(EncoderInterruptedError);
+  });
+
   it("scales the encode timeout for long compositions", async () => {
     const { runEncodeStage } = await import("./encodeStage.js");
 
@@ -170,6 +257,65 @@ describe("runEncodeStage config plumbing", () => {
     expect(encodeFramesFromDirMock.mock.calls[0]?.[5]).toEqual({
       ffmpegEncodeTimeout: 3_019_200,
     });
+  });
+
+  it("gives the reported long high-quality encode a 24x source-duration budget", async () => {
+    const { runEncodeStage } = await import("./encodeStage.js");
+    const input = makeInput();
+
+    await runEncodeStage(
+      makeInput({
+        job: {
+          ...input.job,
+          config: { ...input.job.config, quality: "high" },
+          duration: 331.273,
+        },
+        engineConfig: { ffmpegEncodeTimeout: 600_000 },
+      }),
+    );
+
+    expect(encodeFramesFromDirMock.mock.calls[0]?.[5]).toEqual({
+      ffmpegEncodeTimeout: 7_950_552,
+    });
+  });
+
+  it("keeps the 4x budget for a standard encode", async () => {
+    const { runEncodeStage } = await import("./encodeStage.js");
+    const input = makeInput();
+
+    await runEncodeStage(
+      makeInput({
+        job: {
+          ...input.job,
+          config: { ...input.job.config, quality: "standard" },
+          duration: 331.273,
+        },
+        engineConfig: { ffmpegEncodeTimeout: 600_000 },
+      }),
+    );
+
+    expect(encodeFramesFromDirMock.mock.calls[0]?.[5]).toEqual({
+      ffmpegEncodeTimeout: 1_325_092,
+    });
+  });
+
+  it("preserves a larger operator timeout for high-quality encoding", async () => {
+    const { runEncodeStage } = await import("./encodeStage.js");
+    const input = makeInput();
+    const operatorConfig = { ffmpegEncodeTimeout: 9_000_000 };
+
+    await runEncodeStage(
+      makeInput({
+        job: {
+          ...input.job,
+          config: { ...input.job.config, quality: "high" },
+          duration: 331.273,
+        },
+        engineConfig: operatorConfig,
+      }),
+    );
+
+    expect(encodeFramesFromDirMock.mock.calls[0]?.[5]).toBe(operatorConfig);
   });
 
   it("prefers engine config supplied by the orchestrator", async () => {
@@ -220,5 +366,49 @@ describe("runEncodeStage config plumbing", () => {
     expect(runFfmpegMock.mock.calls[1]?.[1]?.timeout).toBe(
       resolvedEngineConfig.ffmpegEncodeTimeout,
     );
+  });
+
+  it("encodes alpha GIFs from PNG frames with explicit transparency filters", async () => {
+    const { runEncodeStage } = await import("./encodeStage.js");
+    const paths = createFramesDir("png");
+
+    await runEncodeStage(
+      makeInput({
+        framesDir: paths.framesDir,
+        outputPath: join(paths.root, "out.gif"),
+        videoOnlyPath: join(paths.root, "video-only.mp4"),
+        isGif: true,
+        needsAlpha: true,
+      }),
+    );
+
+    expect(runFfmpegMock).toHaveBeenCalledTimes(2);
+    expect(runFfmpegMock.mock.calls[0]?.[0]).toContain(join(paths.framesDir, "frame_%06d.png"));
+    expect(runFfmpegMock.mock.calls[0]?.[0]).toContain(
+      "fps=30,palettegen=stats_mode=diff:reserve_transparent=1",
+    );
+    expect(runFfmpegMock.mock.calls[1]?.[0]).toContain(join(paths.framesDir, "frame_%06d.png"));
+    expect(runFfmpegMock.mock.calls[1]?.[0]).toContain(
+      "fps=30 [x]; [x][1:v] paletteuse=dither=sierra2_4a:alpha_threshold=128",
+    );
+  });
+
+  it("keeps opaque GIF encoding on JPEG frames without alpha-only filters", async () => {
+    const { runEncodeStage } = await import("./encodeStage.js");
+    const paths = createFramesDir("jpg");
+
+    await runEncodeStage(
+      makeInput({
+        framesDir: paths.framesDir,
+        outputPath: join(paths.root, "out.gif"),
+        videoOnlyPath: join(paths.root, "video-only.mp4"),
+        isGif: true,
+        needsAlpha: false,
+      }),
+    );
+
+    expect(runFfmpegMock.mock.calls[0]?.[0]).toContain(join(paths.framesDir, "frame_%06d.jpg"));
+    expect(runFfmpegMock.mock.calls[0]?.[0]).not.toContain("reserve_transparent");
+    expect(runFfmpegMock.mock.calls[1]?.[0]).not.toContain("alpha_threshold");
   });
 });

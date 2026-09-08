@@ -1,8 +1,8 @@
 # HyperFrames vendor record
 
 - Upstream: `https://github.com/heygen-com/hyperframes`
-- Source ref: `58a36d70788ebdbef716bc804474ff23d758afc7`
-- Snapshot date (UTC): `2026-07-11`
+- Source ref: `30d6f43bdb669af14be894d12985e9924db4a01a` (tag `v0.8.31`)
+- Snapshot date (UTC): `2026-09-08`
 - Source location: `system/skills/hyperframes/source/`
 - License: Apache-2.0 (`source/LICENSE`)
 

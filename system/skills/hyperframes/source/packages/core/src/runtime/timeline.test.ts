@@ -1,13 +1,38 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { collectRuntimeTimelinePayload } from "./timeline";
 
+type TimelineTestWindow = Window & {
+  __timelines?: Record<string, { duration: () => number }>;
+};
+
 describe("collectRuntimeTimelinePayload", () => {
   afterEach(() => {
     document.body.innerHTML = "";
-    delete (window as any).__timelines;
+    delete (window as TimelineTestWindow).__timelines;
   });
 
   const defaultParams = { canonicalFps: 30 };
+
+  function appendTimedCompositionClip(
+    id: string,
+    duration: string,
+    authoredDuration?: string,
+  ): HTMLDivElement {
+    const root = document.createElement("div");
+    root.setAttribute("data-composition-id", "main");
+    root.setAttribute("data-duration", "10");
+    document.body.appendChild(root);
+    const clip = document.createElement("div");
+    clip.id = id;
+    clip.setAttribute("data-composition-id", id);
+    clip.setAttribute("data-start", "0");
+    clip.setAttribute("data-duration", duration);
+    if (authoredDuration != null) {
+      clip.setAttribute("data-hf-authored-duration", authoredDuration);
+    }
+    root.appendChild(clip);
+    return clip;
+  }
 
   it("returns minimal payload for empty document", () => {
     const result = collectRuntimeTimelinePayload(defaultParams);
@@ -18,6 +43,12 @@ describe("collectRuntimeTimelinePayload", () => {
     expect(result.durationInFrames).toBeGreaterThanOrEqual(1);
     expect(result.compositionWidth).toBe(1920);
     expect(result.compositionHeight).toBe(1080);
+    expect(result).toMatchObject({
+      protocolVersion: 1,
+      compositionContractVersion: 1,
+      durationSeconds: 1,
+      fps: { numerator: 30, denominator: 1 },
+    });
   });
 
   // Regression: id-less timed elements (root index.html children carry
@@ -37,6 +68,44 @@ describe("collectRuntimeTimelinePayload", () => {
 
     const result = collectRuntimeTimelinePayload(defaultParams);
     expect(result.clips[0].id).toBe("hf-headline");
+  });
+
+  // Regression: the authored data-track-index must round-trip verbatim, even
+  // when clips of DIFFERENT kinds (video vs element) share a track. The old
+  // mixed-kind renumber split them onto separate tracks, which made the
+  // written track drift from the displayed one on every editor move.
+  it("honors authored track indices verbatim for mixed-kind tracks", () => {
+    const root = document.createElement("div");
+    root.setAttribute("data-composition-id", "main");
+    root.setAttribute("data-duration", "20");
+    document.body.appendChild(root);
+
+    const video = document.createElement("video");
+    video.id = "clip-video";
+    video.setAttribute("data-start", "1");
+    video.setAttribute("data-duration", "3");
+    video.setAttribute("data-track-index", "1");
+    root.appendChild(video);
+
+    const caption = document.createElement("div");
+    caption.id = "clip-caption";
+    caption.setAttribute("data-start", "8");
+    caption.setAttribute("data-duration", "3");
+    caption.setAttribute("data-track-index", "1");
+    root.appendChild(caption);
+
+    const other = document.createElement("div");
+    other.id = "clip-other";
+    other.setAttribute("data-start", "0");
+    other.setAttribute("data-duration", "3");
+    other.setAttribute("data-track-index", "2");
+    root.appendChild(other);
+
+    const result = collectRuntimeTimelinePayload(defaultParams);
+    const trackOf = (id: string) => result.clips.find((c) => c.id === id)?.track;
+    expect(trackOf("clip-video")).toBe(1);
+    expect(trackOf("clip-caption")).toBe(1);
+    expect(trackOf("clip-other")).toBe(2);
   });
 
   it("collects clips from elements with data-start and data-duration", () => {
@@ -94,37 +163,119 @@ describe("collectRuntimeTimelinePayload", () => {
     expect(result.clips[0].zIndex).toBe(0);
   });
 
-  it("assigns stacking context ids from root and nearest sub-composition", () => {
+  it("partitions clips by their nearest real CSS stacking context", () => {
     const root = document.createElement("div");
     root.setAttribute("data-composition-id", "main");
     root.setAttribute("data-duration", "10");
     document.body.appendChild(root);
 
-    const rootClip = document.createElement("div");
-    rootClip.id = "root-layer";
-    rootClip.setAttribute("data-start", "0");
-    rootClip.setAttribute("data-duration", "5");
-    root.appendChild(rootClip);
+    const contextA = document.createElement("div");
+    contextA.style.transform = "translateX(0px)";
+    const contextB = document.createElement("div");
+    contextB.style.opacity = "0.9";
+    root.append(contextA, contextB);
 
-    const scene = document.createElement("div");
-    scene.id = "scene-host";
-    scene.setAttribute("data-composition-id", "scene");
-    scene.setAttribute("data-start", "0");
-    scene.setAttribute("data-duration", "5");
-    root.appendChild(scene);
-
-    const nestedClip = document.createElement("div");
-    nestedClip.id = "nested-layer";
-    nestedClip.setAttribute("data-start", "0");
-    nestedClip.setAttribute("data-duration", "2");
-    scene.appendChild(nestedClip);
+    const addClip = (parent: Element, id: string) => {
+      const clip = document.createElement("div");
+      clip.id = id;
+      clip.setAttribute("data-start", "0");
+      clip.setAttribute("data-duration", "2");
+      parent.appendChild(clip);
+    };
+    addClip(contextA, "a-1");
+    addClip(contextA, "a-2");
+    addClip(contextB, "b-1");
 
     const result = collectRuntimeTimelinePayload(defaultParams);
-    const rootLayer = result.clips.find((clip) => clip.id === "root-layer");
-    const nestedLayer = result.clips.find((clip) => clip.id === "nested-layer");
+    const contextOf = (id: string) =>
+      result.clips.find((clip) => clip.id === id)?.stackingContextId;
 
-    expect(rootLayer?.stackingContextId).toBe("main");
-    expect(nestedLayer?.stackingContextId).toBe("scene");
+    expect(contextOf("a-1")).toBe(contextOf("a-2"));
+    expect(contextOf("a-1")).not.toBe(contextOf("b-1"));
+    expect(contextOf("a-1")).not.toBe("css:root");
+  });
+
+  it("keeps clips without a stacking-context ancestor in the shared root scope", () => {
+    const root = document.createElement("div");
+    root.setAttribute("data-composition-id", "main");
+    root.setAttribute("data-duration", "10");
+    document.body.appendChild(root);
+
+    const plainWrapper = document.createElement("div");
+    root.appendChild(plainWrapper);
+    for (const [parent, id] of [
+      [root, "root-layer"],
+      [plainWrapper, "wrapped-layer"],
+    ] as const) {
+      const clip = document.createElement("div");
+      clip.id = id;
+      clip.setAttribute("data-start", "0");
+      clip.setAttribute("data-duration", "2");
+      parent.appendChild(clip);
+    }
+
+    const result = collectRuntimeTimelinePayload(defaultParams);
+    const contextOf = (id: string) =>
+      result.clips.find((clip) => clip.id === id)?.stackingContextId;
+    expect(contextOf("root-layer")).toBe("css:root");
+    expect(contextOf("wrapped-layer")).toBe("css:root");
+  });
+
+  it("scopes an element's own z-index in its parent context, not a context it creates", () => {
+    const root = document.createElement("div");
+    root.setAttribute("data-composition-id", "main");
+    root.setAttribute("data-duration", "10");
+    document.body.appendChild(root);
+
+    for (const id of ["layer-a", "layer-b"]) {
+      const clip = document.createElement("div");
+      clip.id = id;
+      clip.style.cssText = "position: relative; z-index: 1";
+      clip.setAttribute("data-start", "0");
+      clip.setAttribute("data-duration", "2");
+      root.appendChild(clip);
+    }
+
+    const result = collectRuntimeTimelinePayload(defaultParams);
+    const contexts = result.clips.map((clip) => clip.stackingContextId);
+    expect(contexts).toEqual(["css:root", "css:root"]);
+  });
+
+  it.each([
+    ["positioned z-index", "", "position: relative; z-index: 1"],
+    ["fixed position", "", "position: fixed"],
+    ["sticky position", "", "position: sticky"],
+    ["transform", "", "transform: translateX(0px)"],
+    ["opacity", "", "opacity: 0.9"],
+    ["isolation", "", "isolation: isolate"],
+    ["filter", "", "filter: blur(1px)"],
+    ["perspective", "", "perspective: 100px"],
+    ["mix blend mode", "", "mix-blend-mode: multiply"],
+    ["contain", "", "contain: paint"],
+    ["container type", "", "container-type: inline-size"],
+    ["will change", "", "will-change: transform"],
+    ["z-indexed flex item", "display: flex", "z-index: 1"],
+    ["z-indexed grid item", "display: grid", "z-index: 1"],
+  ])("recognizes a %s stacking-context ancestor", (_label, rootCssText, contextCssText) => {
+    const root = document.createElement("div");
+    root.style.cssText = rootCssText;
+    root.setAttribute("data-composition-id", "main");
+    root.setAttribute("data-duration", "10");
+    document.body.appendChild(root);
+
+    const context = document.createElement("div");
+    context.style.cssText = contextCssText;
+    root.appendChild(context);
+    const clip = document.createElement("div");
+    clip.id = "nested-layer";
+    clip.setAttribute("data-start", "0");
+    clip.setAttribute("data-duration", "2");
+    context.appendChild(clip);
+
+    const result = collectRuntimeTimelinePayload(defaultParams);
+    expect(result.clips.find((item) => item.id === clip.id)?.stackingContextId).not.toBe(
+      "css:root",
+    );
   });
 
   it("identifies video clips by tag", () => {
@@ -186,10 +337,72 @@ describe("collectRuntimeTimelinePayload", () => {
     comp.setAttribute("data-composition-id", "scene-1");
     comp.setAttribute("data-start", "0");
     comp.setAttribute("data-duration", "10");
+    comp.setAttribute("data-playback-start", "1.5");
+    comp.setAttribute("data-playback-rate", "2");
     root.appendChild(comp);
 
     const result = collectRuntimeTimelinePayload(defaultParams);
     expect(result.clips[0].kind).toBe("composition");
+    expect(result.clips[0].playbackStart).toBe(1.5);
+    expect(result.clips[0].playbackRate).toBe(2);
+  });
+
+  it("defaults a legacy composition host playback window to zero at unit rate", () => {
+    const root = document.createElement("div");
+    root.setAttribute("data-composition-id", "main");
+    root.setAttribute("data-duration", "20");
+    document.body.appendChild(root);
+
+    const comp = document.createElement("div");
+    comp.id = "scene-legacy";
+    comp.setAttribute("data-composition-id", "scene-legacy");
+    comp.setAttribute("data-start", "0");
+    comp.setAttribute("data-duration", "10");
+    root.appendChild(comp);
+
+    const clip = collectRuntimeTimelinePayload(defaultParams).clips[0];
+    expect(clip.playbackStart).toBe(0);
+    expect(clip.playbackRate).toBe(1);
+  });
+
+  it.each([
+    [0, 2, 5],
+    [2, 2, 4],
+    [2, 0.01, 80],
+    [2, 20, 1.6],
+    [0, "2x", 5],
+    [0, "0x2", 10],
+  ])("rate-scales natural media duration (start=%s rate=%s)", (mediaStart, rate, expected) => {
+    document.body.innerHTML = '<div data-composition-id="main" data-duration="100"></div>';
+    const root = document.body.firstElementChild!;
+    const video = document.createElement("video");
+    video.id = "natural";
+    video.setAttribute("data-start", "0");
+    video.setAttribute("data-media-start", String(mediaStart));
+    video.setAttribute("data-playback-rate", String(rate));
+    Object.defineProperty(video, "duration", { value: 10, configurable: true });
+    root.appendChild(video);
+    expect(collectRuntimeTimelinePayload(defaultParams).clips[0].duration).toBeCloseTo(expected);
+  });
+
+  it.each([10, 11])(
+    "does not replace a known zero media span with root duration (start=%s)",
+    (start) => {
+      document.body.innerHTML = '<div data-composition-id="main" data-duration="100"></div>';
+      const video = document.createElement("video");
+      video.id = "at-eof";
+      video.setAttribute("data-start", "0");
+      video.setAttribute("data-media-start", String(start));
+      Object.defineProperty(video, "duration", { value: 10, configurable: true });
+      document.body.firstElementChild!.appendChild(video);
+      expect(collectRuntimeTimelinePayload(defaultParams).clips).toEqual([]);
+    },
+  );
+
+  it("keeps explicit media duration ahead of natural rate scaling", () => {
+    document.body.innerHTML =
+      '<div data-composition-id="main" data-duration="100"><video id="v" data-start="0" data-duration="7" data-playback-rate="2"></video></div>';
+    expect(collectRuntimeTimelinePayload(defaultParams).clips[0].duration).toBe(7);
   });
 
   it("collects scenes from composition nodes", () => {
@@ -475,6 +688,26 @@ describe("collectRuntimeTimelinePayload", () => {
     expect(starts["slide-3"]).toBe(26);
     expect(result.durationInFrames).toBe(42 * 30);
   });
+
+  it("uses preserved duration when a normalized timeline clip retains public zero", () => {
+    const clip = appendTimedCompositionClip("normalized-zero", "0", "3.5");
+
+    const result = collectRuntimeTimelinePayload(defaultParams);
+    expect(result.clips.find((candidate) => candidate.id === clip.id)?.duration).toBe(3.5);
+  });
+
+  it.each(["0", "-2"])(
+    "drops an explicit nonpositive duration %s before timeline fallback",
+    (duration) => {
+      const clip = appendTimedCompositionClip("invalid-window", duration);
+      (window as TimelineTestWindow).__timelines = {
+        "invalid-window": { duration: () => 5 },
+      };
+
+      const result = collectRuntimeTimelinePayload(defaultParams);
+      expect(result.clips.find((candidate) => candidate.id === clip.id)).toBeUndefined();
+    },
+  );
 
   it("discovers GSAP-animated scene elements via timeline introspection", () => {
     const root = document.createElement("div");

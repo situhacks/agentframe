@@ -3,12 +3,13 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 
-const VIDEO_EXT = /\.(mp4|webm|mov)$/i;
+const VIDEO_EXT = /\.(mp4|webm|mov|mkv|avi|m4v|mxf|mts|m2ts|ts)$/i;
 const AUDIO_EXT = /\.(mp3|wav|ogg|m4a|aac)$/i;
 
 type FfprobeRunner = (
   command: string,
   args: string[],
+  options: { windowsHide: boolean },
 ) => {
   status: number | null;
   stdout: string | Buffer;
@@ -26,15 +27,11 @@ export function validateUploadedMedia(
     return { ok: true };
   }
 
-  const result = runner("ffprobe", [
-    "-v",
-    "error",
-    "-show_entries",
-    "stream=codec_type",
-    "-of",
-    "json",
-    filePath,
-  ]);
+  const result = runner(
+    "ffprobe",
+    ["-v", "error", "-show_entries", "stream=codec_type", "-of", "json", "--", filePath],
+    { windowsHide: true },
+  );
 
   if (result.error?.code === "ENOENT") {
     return { ok: true };

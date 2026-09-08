@@ -25,7 +25,7 @@ const GROUPS: Group[] = [
       ["catalog", "Browse and install blocks and components"],
       ["preview", "Start the studio for previewing compositions"],
       ["present", "Open a slideshow deck in presenter mode (with audience sync)"],
-      ["publish", "Upload a project and get a stable public URL"],
+      ["publish", "Upload a project to a stable URL (private by default)"],
       ["render", "Render a composition to MP4 or WebM"],
     ],
   },
@@ -33,6 +33,7 @@ const GROUPS: Group[] = [
     title: "Project",
     commands: [
       ["lint", "Validate a composition for common mistakes"],
+      ["check", "Run lint, runtime validation, and layout inspection as one gate"],
       [
         "validate",
         "Runtime-validate a composition in headless Chrome (JS errors, missing assets, contrast)",
@@ -41,6 +42,14 @@ const GROUPS: Group[] = [
       ["inspect", "Inspect rendered visual layout across the timeline"],
       ["keyframes", "Inspect keyframes and render onion-shot diagnostics"],
       ["snapshot", "Capture key frames as PNG screenshots for visual verification"],
+      [
+        "media-treatment",
+        "Discover, apply, or clear deterministic media treatments on one media element",
+      ],
+      [
+        "normalize-audio",
+        "Match one authored audio clip's loudness to another using integrated LUFS",
+      ],
       [
         "grade-compare",
         "Render candidate color grades onto a reference frame as one labeled comparison PNG",

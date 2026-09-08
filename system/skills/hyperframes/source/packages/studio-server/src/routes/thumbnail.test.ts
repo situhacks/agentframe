@@ -1,10 +1,20 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  truncateSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { registerThumbnailRoutes } from "./thumbnail";
+import { pruneThumbnailCache, registerThumbnailRoutes } from "./thumbnail";
 import type { StudioApiAdapter } from "../types";
+import { createProjectSignature } from "../helpers/projectSignature.js";
 
 const tempProjectDirs: string[] = [];
 
@@ -35,6 +45,19 @@ function createAdapter(): StudioApiAdapter {
   };
 }
 
+async function writeComposition(
+  adapter: StudioApiAdapter,
+  width: number,
+  height: number,
+): Promise<void> {
+  const project = await adapter.resolveProject("demo");
+  if (!project) throw new Error("missing project");
+  writeFileSync(
+    join(project.dir, "index.html"),
+    `<div data-width="${width}" data-height="${height}"></div>`,
+  );
+}
+
 describe("registerThumbnailRoutes", () => {
   it("forwards selector queries to thumbnail generation", async () => {
     const adapter = createAdapter();
@@ -52,8 +75,92 @@ describe("registerThumbnailRoutes", () => {
         seekTime: 1.2,
         selector: "#title-card",
         format: "jpeg",
+        outputWidth: 240,
+        outputHeight: 135,
+        signal: expect.any(AbortSignal),
       }),
     );
+  });
+
+  it("maps square authored dimensions across jpeg output modes", async () => {
+    const adapter = createAdapter();
+    const app = new Hono();
+    registerThumbnailRoutes(app, adapter);
+    await writeComposition(adapter, 1080, 1080);
+
+    const sourceResponse = await app.request(
+      "http://localhost/projects/demo/thumbnail/index.html?t=1.2&output=source",
+    );
+    const previewResponse = await app.request(
+      "http://localhost/projects/demo/thumbnail/index.html?t=1.2&output=preview",
+    );
+    const storyboardResponse = await app.request(
+      "http://localhost/projects/demo/thumbnail/index.html?t=1.2&output=storyboard",
+    );
+
+    expect(sourceResponse.status).toBe(200);
+    expect(previewResponse.status).toBe(200);
+    expect(storyboardResponse.status).toBe(200);
+    expect(adapter.generateThumbnail).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        format: "jpeg",
+        outputWidth: 1080,
+        outputHeight: 1080,
+      }),
+    );
+    expect(adapter.generateThumbnail).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ outputWidth: 135, outputHeight: 135 }),
+    );
+    expect(adapter.generateThumbnail).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({ outputWidth: 1080, outputHeight: 1080 }),
+    );
+  });
+
+  it("caps storyboard output at a 1080px longest side", async () => {
+    const adapter = createAdapter();
+    const app = new Hono();
+    registerThumbnailRoutes(app, adapter);
+    await writeComposition(adapter, 7680, 4320);
+
+    const response = await app.request(
+      "http://localhost/projects/demo/thumbnail/index.html?t=1.2&output=storyboard",
+    );
+
+    expect(response.status).toBe(200);
+    expect(adapter.generateThumbnail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        format: "jpeg",
+        outputWidth: 1080,
+        outputHeight: 608,
+      }),
+    );
+  });
+
+  it("deduplicates concurrent generation and writes one complete cache entry", async () => {
+    const adapter = createAdapter();
+    const project = await adapter.resolveProject("demo");
+    if (!project) throw new Error("missing project");
+    let resolve!: (buffer: Buffer) => void;
+    const generated = new Promise<Buffer>((done) => (resolve = done));
+    adapter.generateThumbnail = vi.fn(async () => generated);
+    const app = new Hono();
+    registerThumbnailRoutes(app, adapter);
+
+    const url = "http://localhost/projects/demo/thumbnail/index.html?t=3";
+    const first = app.request(url);
+    const second = app.request(url);
+    await vi.waitFor(() => expect(adapter.generateThumbnail).toHaveBeenCalledTimes(1));
+    resolve(Buffer.from("shared"));
+
+    expect(await (await first).text()).toBe("shared");
+    expect(await (await second).text()).toBe("shared");
+    expect(adapter.generateThumbnail).toHaveBeenCalledTimes(1);
+    const cached = readdirSync(join(project.dir, ".thumbnails"));
+    expect(cached).toHaveLength(1);
+    expect(cached[0]).not.toContain(".tmp");
   });
 
   it("forwards png capture requests and returns a png content type", async () => {
@@ -72,7 +179,24 @@ describe("registerThumbnailRoutes", () => {
         compPath: "compositions/intro.html",
         seekTime: 2,
         format: "png",
+        outputWidth: 1920,
+        outputHeight: 1080,
       }),
+    );
+  });
+
+  it("allows png callers to opt into bounded preview output", async () => {
+    const adapter = createAdapter();
+    const app = new Hono();
+    registerThumbnailRoutes(app, adapter);
+
+    const response = await app.request(
+      "http://localhost/projects/demo/thumbnail/index.html?format=png&output=preview",
+    );
+
+    expect(response.status).toBe(200);
+    expect(adapter.generateThumbnail).toHaveBeenCalledWith(
+      expect.objectContaining({ outputWidth: 240, outputHeight: 135 }),
     );
   });
 
@@ -197,6 +321,98 @@ describe("registerThumbnailRoutes", () => {
     expect(adapter.generateThumbnail).toHaveBeenCalledTimes(2);
   });
 
+  it("regenerates a parent thumbnail when nested composition HTML changes", async () => {
+    const adapter = createAdapter();
+    const project = await adapter.resolveProject("demo");
+    if (!project) throw new Error("missing project");
+    const app = new Hono();
+    registerThumbnailRoutes(app, adapter);
+
+    writeFileSync(
+      join(project.dir, "index.html"),
+      `<div data-width="640" data-height="360" data-composition-src="compositions/nested.html"></div>`,
+    );
+    const compositionsDir = join(project.dir, "compositions");
+    mkdirSync(compositionsDir, { recursive: true });
+    const nestedPath = join(compositionsDir, "nested.html");
+    writeFileSync(nestedPath, `<div>before</div>`);
+    const url = "http://localhost/projects/demo/thumbnail/index.html?t=2&v=test";
+
+    await app.request(url);
+    writeFileSync(nestedPath, `<div>after with a different size</div>`);
+    await app.request(url);
+
+    expect(adapter.generateThumbnail).toHaveBeenCalledTimes(2);
+  });
+
+  it("regenerates a thumbnail when imported CSS changes", async () => {
+    const adapter = createAdapter();
+    const project = await adapter.resolveProject("demo");
+    if (!project) throw new Error("missing project");
+    const app = new Hono();
+    registerThumbnailRoutes(app, adapter);
+
+    writeFileSync(
+      join(project.dir, "index.html"),
+      `<link rel="stylesheet" href="./styles.css"><div data-width="640" data-height="360"></div>`,
+    );
+    const stylesPath = join(project.dir, "styles.css");
+    writeFileSync(stylesPath, `.card { color: red; }`);
+    const url = "http://localhost/projects/demo/thumbnail/index.html?t=2&v=test";
+
+    await app.request(url);
+    writeFileSync(stylesPath, `.card { color: rebeccapurple; }`);
+    await app.request(url);
+
+    expect(adapter.generateThumbnail).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses the adapter-cached project signature for disk reuse and in-flight dedupe", async () => {
+    const adapter = createAdapter();
+    const project = await adapter.resolveProject("demo");
+    if (!project) throw new Error("missing project");
+    const getProjectSignature = vi.fn(() => createProjectSignature(project.dir));
+    adapter.getProjectSignature = getProjectSignature;
+    let resolve!: (buffer: Buffer) => void;
+    const generated = new Promise<Buffer>((done) => (resolve = done));
+    adapter.generateThumbnail = vi.fn(async () => generated);
+    const app = new Hono();
+    registerThumbnailRoutes(app, adapter);
+    const url = "http://localhost/projects/demo/thumbnail/index.html?t=3";
+
+    const first = app.request(url);
+    const duplicate = app.request(url);
+    await vi.waitFor(() => expect(adapter.generateThumbnail).toHaveBeenCalledTimes(1));
+    resolve(Buffer.from("shared"));
+    expect(await (await first).text()).toBe("shared");
+    expect(await (await duplicate).text()).toBe("shared");
+    expect(await (await app.request(url)).text()).toBe("shared");
+
+    expect(adapter.generateThumbnail).toHaveBeenCalledTimes(1);
+    expect(getProjectSignature).toHaveBeenCalledTimes(4);
+    expect(getProjectSignature).toHaveBeenNthCalledWith(1, project.dir);
+  });
+
+  it("does not cache generated pixels under a signature that changed in flight", async () => {
+    const adapter = createAdapter();
+    const project = await adapter.resolveProject("demo");
+    if (!project) throw new Error("missing project");
+    const signatures = ["old", "new", "old", "old"];
+    adapter.getProjectSignature = vi.fn(() => signatures.shift() ?? "old");
+    adapter.generateThumbnail = vi
+      .fn()
+      .mockResolvedValueOnce(Buffer.from("rendered-after-change"))
+      .mockResolvedValueOnce(Buffer.from("rendered-old"));
+    const app = new Hono();
+    registerThumbnailRoutes(app, adapter);
+    const url = "http://localhost/projects/demo/thumbnail/index.html?t=3";
+
+    expect(await (await app.request(url)).text()).toBe("rendered-after-change");
+    expect(existsSync(join(project.dir, ".thumbnails"))).toBe(false);
+    expect(await (await app.request(url)).text()).toBe("rendered-old");
+    expect(adapter.generateThumbnail).toHaveBeenCalledTimes(2);
+  });
+
   it("keeps changed studio motion separated in the disk cache", async () => {
     const adapter = createAdapter();
     const project = await adapter.resolveProject("demo");
@@ -219,5 +435,27 @@ describe("registerThumbnailRoutes", () => {
     await app.request("http://localhost/projects/demo/thumbnail/index.html?t=2&v=test");
 
     expect(adapter.generateThumbnail).toHaveBeenCalledTimes(2);
+  });
+
+  it("prunes expired and over-budget files without touching protected work", () => {
+    const cacheDir = mkdtempSync(join(tmpdir(), "hf-thumbnail-cache-test-"));
+    tempProjectDirs.push(cacheDir);
+    const expiredPath = join(cacheDir, "expired.jpg");
+    const protectedPath = join(cacheDir, "protected.jpg");
+    const overflowPath = join(cacheDir, "overflow.jpg");
+    writeFileSync(expiredPath, "expired");
+    writeFileSync(protectedPath, "protected");
+    writeFileSync(overflowPath, "overflow");
+    const now = Date.now();
+    const expiredSeconds = (now - 15 * 24 * 60 * 60 * 1000) / 1000;
+    utimesSync(expiredPath, expiredSeconds, expiredSeconds);
+    truncateSync(protectedPath, 400 * 1024 * 1024);
+    truncateSync(overflowPath, 200 * 1024 * 1024);
+
+    pruneThumbnailCache(cacheDir, new Set([protectedPath]), now);
+
+    expect(existsSync(expiredPath)).toBe(false);
+    expect(existsSync(protectedPath)).toBe(true);
+    expect(existsSync(overflowPath)).toBe(false);
   });
 });

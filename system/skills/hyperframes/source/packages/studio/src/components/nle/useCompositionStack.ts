@@ -1,7 +1,8 @@
-// Composition drill-down stack management for NLELayout
+// Composition drill-down stack management for NLEContext/EditorShell
 import { useState, useCallback, useRef, useEffect } from "react";
 import { usePlayerStore } from "../../player";
 import type { CompositionLevel } from "./CompositionBreadcrumb";
+import { encodePreviewPath } from "../../player/components/thumbnailUtils";
 
 interface UseCompositionStackOptions {
   projectId: string;
@@ -25,7 +26,11 @@ export function useCompositionStack({
   onCompositionChange,
 }: UseCompositionStackOptions): UseCompositionStackResult {
   const [compositionStack, setCompositionStack] = useState<CompositionLevel[]>([
-    { id: "master", label: "Master", previewUrl: `/api/projects/${projectId}/preview` },
+    {
+      id: "master",
+      label: "Master",
+      previewUrl: `/api/projects/${projectId}/preview`,
+    },
   ]);
 
   const onCompositionChangeRef = useRef(onCompositionChange);
@@ -84,7 +89,7 @@ export function useCompositionStack({
             .split("/")
             .pop()
             ?.replace(/\.html$/, "") || resolvedPath;
-        const previewUrl = `/api/projects/${projectId}/preview/comp/${resolvedPath}`;
+        const previewUrl = `/api/projects/${projectId}/preview/comp/${encodePreviewPath(resolvedPath)}`;
         return [...prev, { id: resolvedPath, label, previewUrl }];
       });
     },
@@ -95,22 +100,31 @@ export function useCompositionStack({
   // Navigate to a composition when activeCompositionPath changes.
   // eslint-disable-next-line no-restricted-syntax
   useEffect(() => {
+    const master: CompositionLevel = {
+      id: "master",
+      label: "Master",
+      previewUrl: `/api/projects/${projectId}/preview`,
+    };
     if (activeCompositionPath === "index.html") {
       usePlayerStore.getState().setElements([]);
-      updateCompositionStack((prev) => (prev.length > 1 ? [prev[0]] : prev));
-    } else if (activeCompositionPath && activeCompositionPath.startsWith("compositions/")) {
+      updateCompositionStack([master]);
+    } else if (activeCompositionPath) {
+      // Any composition file that isn't the root, wherever it lives. Gating
+      // this on a `compositions/` prefix meant a project laying its comps out
+      // anywhere else (`parts/part-1.html`, generated multi-part builds) hit
+      // no branch at all: the stack kept the master mounted while the Comps
+      // panel highlighted the row, so the canvas and timeline stayed on
+      // index.html and edits landed in the root file.
       const label = activeCompositionPath.replace(/^compositions\//, "").replace(/\.html$/, "");
-      const previewUrl = `/api/projects/${projectId}/preview/comp/${activeCompositionPath}`;
+      const previewUrl = `/api/projects/${projectId}/preview/comp/${encodePreviewPath(activeCompositionPath)}`;
       usePlayerStore.getState().setElements([]);
       updateCompositionStack((prev) => {
         if (prev[prev.length - 1]?.id === activeCompositionPath) return prev;
-        return [
-          { id: "master", label: "Master", previewUrl: `/api/projects/${projectId}/preview` },
-          { id: activeCompositionPath, label, previewUrl },
-        ];
+        return [master, { id: activeCompositionPath, label, previewUrl }];
       });
-    } else if (!activeCompositionPath) {
+    } else {
       usePlayerStore.getState().setElements([]);
+      updateCompositionStack([master]);
     }
   }, [activeCompositionPath, projectId, updateCompositionStack]);
 

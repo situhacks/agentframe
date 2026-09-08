@@ -12,6 +12,15 @@ import {
   stripQueryAndHash,
 } from "./propertyPanelHelpers";
 import { Section, SegmentedControl, SelectField, SliderControl } from "./propertyPanelPrimitives";
+import { useTrackDesignInput } from "../../contexts/DesignPanelInputContext";
+import {
+  AUDIO_GAIN_FADER_MAX,
+  AUDIO_GAIN_FADER_MIN,
+  audioFaderPositionToGain,
+  formatAudioGain,
+  audioGainToFaderPosition,
+  audioGainToText,
+} from "@hyperframes/core/audio-gain";
 
 // fallow-ignore-next-line complexity
 export function MediaSection({
@@ -26,7 +35,7 @@ export function MediaSection({
   projectDir: string | null;
   element: DomEditSelection;
   styles: Record<string, string>;
-  onSetStyle: (prop: string, value: string) => void | Promise<void>;
+  onSetStyle: (prop: string, value: string) => void | Promise<unknown>;
   onSetAttribute: (attr: string, value: string) => void | Promise<void>;
   onSetHtmlAttribute: (attr: string, value: string | null) => void | Promise<void>;
   onRemoveBackground?: (
@@ -38,6 +47,7 @@ export function MediaSection({
     },
   ) => Promise<BackgroundRemovalResult>;
 }) {
+  const track = useTrackDesignInput();
   const isVideo = element.tagName === "video";
   const isAudio = element.tagName === "audio";
   const isImage = element.tagName === "img";
@@ -45,7 +55,7 @@ export function MediaSection({
   const el = element.element;
 
   const volume = parseNumericValue(element.dataAttributes.volume ?? "") ?? 1;
-  const volumePercent = Math.round(volume * 100);
+  const volumeFaderPosition = audioGainToFaderPosition(volume);
 
   const mediaStart =
     Number.parseFloat(
@@ -98,6 +108,7 @@ export function MediaSection({
 
   const runBackgroundRemoval = async () => {
     if (!onRemoveBackground || !projectSrc || removeBusy) return;
+    track("button", "Remove background");
     setRemoveBusy(true);
     setRemoveProgress({ status: "processing", progress: 0, stage: "Preparing" });
     try {
@@ -194,6 +205,7 @@ export function MediaSection({
                 <div className="grid min-w-0 gap-1.5">
                   <span className={LABEL}>BG plate</span>
                   <SegmentedControl
+                    trackName="BG plate"
                     value={createPlate ? "on" : "off"}
                     onChange={(next) => setCreatePlate(next === "on")}
                     options={[
@@ -245,14 +257,15 @@ export function MediaSection({
             <div className="grid min-w-0 gap-1.5">
               <span className={LABEL}>Volume</span>
               <SliderControl
-                value={volumePercent}
-                min={0}
-                max={100}
+                trackName="Volume"
+                value={volumeFaderPosition}
+                min={AUDIO_GAIN_FADER_MIN}
+                max={AUDIO_GAIN_FADER_MAX}
                 step={1}
-                displayValue={`${volumePercent}%`}
-                formatDisplayValue={(next) => `${Math.round(next)}%`}
+                displayValue={audioGainToText(volume)}
+                formatDisplayValue={(next) => audioGainToText(audioFaderPositionToGain(next))}
                 onCommit={(next) => {
-                  void onSetAttribute("volume", formatNumericValue(next / 100));
+                  void onSetAttribute("volume", formatAudioGain(audioFaderPositionToGain(next)));
                 }}
               />
             </div>
@@ -260,6 +273,7 @@ export function MediaSection({
             <div className="grid min-w-0 gap-1.5">
               <span className={LABEL}>Playback rate</span>
               <SliderControl
+                trackName="Playback rate"
                 value={playbackRate * 100}
                 min={25}
                 max={300}
@@ -275,6 +289,7 @@ export function MediaSection({
             <div className="grid min-w-0 gap-1.5">
               <span className={LABEL}>Media start</span>
               <SliderControl
+                trackName="Media start"
                 value={Math.round(mediaStart * 100)}
                 min={0}
                 max={mediaStartMax * 100}
@@ -291,6 +306,7 @@ export function MediaSection({
               <div className="grid min-w-0 gap-1.5">
                 <span className={LABEL}>Loop</span>
                 <SegmentedControl
+                  trackName="Loop"
                   value={hasLoop ? "on" : "off"}
                   onChange={(next) => {
                     void onSetHtmlAttribute("loop", next === "on" ? "true" : null);
@@ -304,6 +320,7 @@ export function MediaSection({
               <div className="grid min-w-0 gap-1.5">
                 <span className={LABEL}>Muted</span>
                 <SegmentedControl
+                  trackName="Muted"
                   value={hasMuted ? "on" : "off"}
                   onChange={(next) => {
                     void onSetHtmlAttribute("muted", next === "on" ? "true" : null);
@@ -320,6 +337,7 @@ export function MediaSection({
               <div className="grid min-w-0 gap-1.5">
                 <span className={LABEL}>Has audio track</span>
                 <SegmentedControl
+                  trackName="Has audio track"
                   value={hasAudio ? "yes" : "no"}
                   onChange={(next) => {
                     if (next === "yes") {

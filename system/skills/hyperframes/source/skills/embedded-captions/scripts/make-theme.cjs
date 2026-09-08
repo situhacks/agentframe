@@ -108,7 +108,6 @@ const SETPIECE_PREF_TOP = {
   decode: 26,
   drawon: 18,
   cpslam: 27,
-  coverword: 27,
   settle: 27,
   flapboard: 25,
   ledwipe: 52,
@@ -510,30 +509,6 @@ if (!heroInline && !HEROLESS) {
     HG.fontPx = Math.min(dna.hero.fontPx || 130, Math.floor((W * 0.92 - n * 6) / em1));
     Object.assign(HG, sceneHeroXY("ransomnote", HG.fontPx));
     HG.halfW = (em1 * HG.fontPx + n * 6) / 2;
-  } else if (dna.hero.setpiece === "coverword") {
-    // metric-exact fit from the replica font's advance widths (logo case:
-    // first letter upper, rest lower — the official mark's own arrangement)
-    const CPM = JSON.parse(
-      fs.readFileSync(path.join(SKILL, "assets/brand/cyberpunk-widths.json"), "utf8"),
-    );
-    const disp = heroText[0].toUpperCase() + heroText.slice(1).toLowerCase();
-    const bad = [...disp].filter((c) => !(c in CPM.widths));
-    if (bad.length)
-      throw new Error(
-        `[make-theme] coverword: no replica glyph for ${JSON.stringify(bad)} in "${heroText}" — pick a hero without digits/special chars or use hero.text`,
-      );
-    const em = [...disp].reduce((a, c) => a + CPM.widths[c], 0) + 0.01 * (disp.length - 1);
-    // glyph ink is small inside the em box (x-height ~0.3em) -> size by INK:
-    // dna fontPx = target ink height in px, not nominal font-size
-    const inkTop = Math.max(...[...disp].map((c) => (CPM.bounds[c] || [0, 0, 0, 0.5])[3]));
-    const inkBot = Math.min(...[...disp].map((c) => (CPM.bounds[c] || [0, -0.1, 0, 0])[1]));
-    const inkH = inkTop - inkBot;
-    HG.fontPx = Math.round(Math.min((dna.hero.fontPx || 150) / inkH, (W * 0.84) / em));
-    Object.assign(HG, sceneHeroXY("coverword", Math.round(HG.fontPx * inkH)));
-    HG.halfW = (em * HG.fontPx) / 2 + 0.9 * HG.fontPx;
-    HG.coverEm = em;
-    HG.coverDisp = disp;
-    HG.coverInk = { inkTop, inkBot, inkH };
   }
   // keep the word on frame (when wider than the frame, CENTER it — an inverted
   // Math.max/Math.min clamp would silently pin to the lower bound off-center)
@@ -771,7 +746,7 @@ ${
     : ""
 }
 ${
-  b.yield
+  !HEROLESS && b.yield
     ? `  // rail yields while the apex lands (furniture never contests the hero).
   // Overlap guards: dim starts after the line is IN, never runs into the exit;
   // restore is emitted only with clear runway before the exit (else the line
@@ -802,7 +777,7 @@ function paradigmPanel() {
       w.display,
       +w.start.toFixed(3),
       // redaction: words inside the hero phrase window get blocks until lock
-      redactLinkage && w.start >= hero.start - 0.01 && w.start <= hero.end + 0.01
+      hero && redactLinkage && w.start >= hero.start - 0.01 && w.start <= hero.end + 0.01
         ? +lockT.toFixed(3)
         : 0,
     ]),
@@ -839,7 +814,7 @@ ${lineData.map((L) => `        <div class="ln" id="${L.id}"></div>`).join("\n")}
   // ---- body paradigm: PANEL (typed console log, accumulate) ----
   tl.fromTo("#panel", { opacity: 0, x: -16 }, { opacity: 1, x: 0, duration: 0.3, ease: "power2.out" }, 0.05);
 ${
-  b.yield
+  !HEROLESS && b.yield
     ? `  tl.to("#panel", { opacity: ${b.yield.dim}, duration: 0.25, ease: "power1.in" }, ${(heroIn - 0.08).toFixed(3)});
   tl.to("#panel", { opacity: 1, duration: 0.3, ease: "power1.out" }, ${(lockT + 0.15).toFixed(3)});`
     : ""
@@ -1829,24 +1804,29 @@ function paradigmLastpage() {
     words: L.words.map((w) => [w.display, +w.start.toFixed(3)]),
   }));
   const css = `
-  .fld { position:absolute; white-space:nowrap; font-family:'${dna.fonts.body}', serif;
-         font-weight:600; color:${dna.palette.body}; filter: blur(${b.fieldBlur || 9}px); }
+${
+  HEROLESS
+    ? ""
+    : `  .fld { position:absolute; white-space:nowrap; font-family:'${dna.fonts.body}', serif;
+         font-weight:600; color:${dna.palette.body}; filter: blur(${b.fieldBlur || 9}px); }`
+}
   .ms  { position:absolute; left:${W / 2}px; top:${H - (b.bottomPx || 96)}px; opacity:0; white-space:nowrap;
          font-family:'${dna.fonts.body}', serif; font-size:${b.fontPx}px; line-height:1;
          color:${dna.palette.body}; text-shadow: 0 2px 12px rgba(0,0,0,0.6); }
   .ms .w { display:inline-block; opacity:0; margin:0 0.14em; overflow:hidden; vertical-align:bottom; white-space:nowrap; }`;
   const html =
-    inst
-      .map(
-        (f, i) =>
-          `      <div class="fld" id="f${i}" style="left:${f.x}px; top:${f.y}px; font-size:${f.px}px; opacity:${f.op}; transform:translate(-50%,-50%) rotate(${f.rot}deg)">${esc(heroDisplay)}</div>`,
-      )
-      .join("\n") +
-    "\n" +
+    (HEROLESS
+      ? ""
+      : inst
+          .map(
+            (f, i) =>
+              `      <div class="fld" id="f${i}" style="left:${f.x}px; top:${f.y}px; font-size:${f.px}px; opacity:${f.op}; transform:translate(-50%,-50%) rotate(${f.rot}deg)">${esc(heroDisplay)}</div>`,
+          )
+          .join("\n") + "\n") +
     lineData.map((L) => `      <div class="ms" id="${L.id}"></div>`).join("\n");
   const js = `
   // ---- THE LAST PAGE ----
-  const I = ${I.toFixed(3)};
+${!HEROLESS ? `  const I = ${I.toFixed(3)};` : ""}
   const MS = ${J(lineData)};
   MS.forEach((L) => {
     const line = document.getElementById(L.id);
@@ -1865,7 +1845,9 @@ function paradigmLastpage() {
     tl.to(line, { opacity: 0, duration: 0.16, ease: "power2.in" }, xo);
     tl.set(line, { display: "none" }, xo + 0.18);
   });
-  // the field breathes imperceptibly (alive, unreadable)
+${
+  !HEROLESS
+    ? `  // the field breathes imperceptibly (alive, unreadable)
   ${inst.map((f, i) => `tl.to("#f${i}", { y: ${prnd() - 0.5 > 0 ? "+" : "-"}${(3 + prnd() * 5).toFixed(1)}, duration: ${(2.4 + prnd() * 2).toFixed(1)}, ease: "sine.inOut" }, 0);`).join("\n  ")}
   // APEX: rack focus — the future was only ever one sentence
   tl.to(".fld", { filter: "blur(0px)", duration: 0.38, ease: "power3.inOut" }, I - 0.1);
@@ -1881,7 +1863,9 @@ function paradigmLastpage() {
   tl.to(".fld", { filter: "blur(${b.fieldBlur || 9}px)", duration: 0.6, ease: "power2.inOut" }, I + 1.5);
   tl.to("#f${inst.indexOf(main)}", { filter: "blur(0px)", duration: 0.01 }, I + 1.5);
   ${inst.map((f, i) => (i === inst.indexOf(main) ? "" : `tl.to("#f${i}", { opacity: 0, duration: 0.6 }, I + 1.6);`)).join("\n  ")}
-  tl.to("#f${inst.indexOf(main)}", { opacity: 0, duration: 0.3, ease: "power2.in" }, ${(heroOut - 0.3).toFixed(3)});`;
+  tl.to("#f${inst.indexOf(main)}", { opacity: 0, duration: 0.3, ease: "power2.in" }, ${(heroOut - 0.3).toFixed(3)});`
+    : ""
+}`;
   return { css, html, js };
 }
 
@@ -2080,7 +2064,7 @@ ${
     : ""
 }
 ${
-  b.yield
+  !HEROLESS && b.yield
     ? `  // rail yields while the apex board locks
   tl.to("#flwrap", { opacity: ${b.yield.dim}, duration: 0.18, ease: "power1.in" }, ${(heroIn - (b.yield.pre || 0.07)).toFixed(3)});
   tl.to("#flwrap", { opacity: 1, duration: 0.22, ease: "power1.out" }, ${(heroIn + (b.yield.post || 0.47)).toFixed(3)});`
@@ -2219,14 +2203,18 @@ ${
 }
 
   // ===== furniture =====
-  // status blinks while we wait, then the gag: pages to the OK row
+${
+  !HEROLESS
+    ? `  // status blinks while we wait, then the gag: pages to the OK row
   ${J(statBlinks)}.forEach((t) => {
     tl.set("#tstrow1", { opacity: 0.35 }, t);
     tl.set("#tstrow1", { opacity: 1 },    t + 0.042);
   });
   tl.to("#tstatstack", { y: -24, duration: 0.16, ease: "steps(4)" }, ${swapT.toFixed(3)});
   tl.set("#tstrow2", { opacity: 0.5 }, ${(swapT + 0.18).toFixed(3)});
-  tl.set("#tstrow2", { opacity: 1 },   ${(swapT + 0.222).toFixed(3)});
+  tl.set("#tstrow2", { opacity: 1 },   ${(swapT + 0.222).toFixed(3)});`
+    : ""
+}
 
   // clock seconds tick (stacked digit column, stepped shifts)
   for (let k = 1; k <= ${nDig - 1}; k++) tl.set("#tdigcol", { y: -22 * k }, k);
@@ -2237,7 +2225,7 @@ ${
     tl.set("#twin", { opacity: 1 },    t + 0.042);
   });
 ${
-  b.yield
+  !HEROLESS && b.yield
     ? `
   // ===== hierarchy: board yields while the apex lands =====
   tl.to("#tboard", { opacity: ${b.yield.dim}, duration: 0.18, ease: "power1.in" }, ${(heroIn - (b.yield.pre || 0.2)).toFixed(3)});
@@ -2368,7 +2356,7 @@ function paradigmVhsrail() {
   gags.push([+(lastOut - 0.01).toFixed(3), null]);
   const js = `
   // ---- body paradigm: VHSRAIL (tracking-glitch words, REWIND exits, OSD furniture) ----
-  const I = ${heroIn.toFixed(3)}, X = ${X.toFixed(3)};
+${!HEROLESS ? `  const I = ${heroIn.toFixed(3)}, X = ${X.toFixed(3)};` : ""}
 
   // ===== OSD furniture: present the whole clip, 1-frame power-on glitch =====
   tl.set(["#osdplay","#osdts"], { opacity: 1, x: 5 }, 0.02);
@@ -2429,7 +2417,7 @@ function paradigmVhsrail() {
     });
   });
 ${
-  b.yield
+  !HEROLESS && b.yield
     ? `
   // rail yields while the apex lands (dim clamped ≥ line-in; restore only with runway)
   VRAIL.forEach((L) => {
@@ -2452,7 +2440,9 @@ ${
     tl.set("#drift", { opacity: 0 }, L.out + 0.7);
   });
 
-  // ===== REC FREEZE artifacts (apex-coupled, in FRONT of the subject) =====
+${
+  !HEROLESS
+    ? `  // ===== REC FREEZE artifacts (apex-coupled, in FRONT of the subject) =====
   // 1-frame full white tear band
   tl.set("#tear", { opacity: 0.95 }, I);
   tl.set("#tear", { opacity: 0 }, I + F);
@@ -2471,7 +2461,9 @@ ${
   tl.set("#hsbar", { opacity: 0 }, I + 10 * F);
 
   // apex REWIND exit: 2 scrub lines at the apex band
-  [0.6, 0.25, 0.5, 0].forEach((o, k) => tl.set(["#scrub3","#scrub4"], { opacity: o }, X + k * F));
+  [0.6, 0.25, 0.5, 0].forEach((o, k) => tl.set(["#scrub3","#scrub4"], { opacity: o }, X + k * F));`
+    : ""
+}
   // head-switch reprise on the final rewind
   [[0, 0.85, 40], [0.04, 0.6, 190], [0.08, 0.8, 90]].forEach(([dt, o, px]) => {
     tl.set("#hsbar", { opacity: o, backgroundPositionX: px + "px" }, ${lastOut.toFixed(3)} + dt);
@@ -2576,7 +2568,7 @@ ${lineData.map((L) => `        <div class="hln" id="${L.id}"></div>`).join("\n")
     tl.set(line, { opacity: 0, display: "none" }, Math.min(L.xo + 0.15, ${(DUR - 0.02).toFixed(2)}));
   });
 ${
-  b.yield
+  !HEROLESS && b.yield
     ? `  // HUD yields while the boss lands (restore only with runway)
   tl.to("#hud", { opacity: ${b.yield.dim}, duration: 0.15, ease: "power1.in" }, ${(heroIn - (b.yield.pre || 0.2)).toFixed(3)});
 ${
@@ -2816,7 +2808,7 @@ ${pageData
     }
   });
 ${
-  b.yield
+  !HEROLESS && b.yield
     ? `
   // ===== apex etiquette: the strip yields while the stamp lands =====
   tl.to(strip, { opacity: ${b.yield.dim}, duration: 0.18, ease: "power1.in" }, ${dimT});
@@ -2824,7 +2816,7 @@ ${resT + 0.3 < FY ? `  tl.to(strip, { opacity: 1, duration: 0.25, ease: "power1.
     : ""
 }
 ${
-  shadeDur > 0.4
+  !HEROLESS && shadeDur > 0.4
     ? `
   // strip top-shadow breathes during the stamp's dead-still hold
   tl.to("#shade", { keyframes: { opacity: [0.5, 0.72, 0.54, 0.7, 0.55, 0.66, 0.5] },
@@ -2940,9 +2932,13 @@ function paradigmLaserrail() {
     L.words.forEach(([txt, st, em], wi) => {
       const el = line.children[wi];
       const [wx, wy] = L.pos[wi];
-      // beams yield inside the apex window (the hero owns the light)
+${
+  HEROLESS
+    ? "      const yld = 1;"
+    : `      // beams yield inside the apex window (the hero owns the light)
       const yld = (st > ${(heroIn - 0.41).toFixed(3)} && st < ${(heroIn + 0.99).toFixed(3)})
-        ? ${b.yield ? (b.yield.beamDim ?? 0.55) : 1} : 1;
+        ? ${b.yield ? (b.yield.beamDim ?? 0.55) : 1} : 1;`
+}
       const t0 = st - 0.21, cv = st - 0.083;
       // two beams converge on the word 2 frames before its time
       [[-25, -15, LACC, wx - 170], [${W + 25}, -15, LMAG, wx + 170]].forEach(([ex, ey, col, sx]) => {
@@ -3000,7 +2996,7 @@ function paradigmLaserrail() {
     tl.set(line, { display: "none" }, Math.min(L.sweepT + 0.32, ${(DUR - 0.02).toFixed(3)}));
   });
 ${
-  b.yield
+  !HEROLESS && b.yield
     ? `  // rail yields while the apex lands (restore only with clear runway)
   LRAIL.forEach((L) => {
     if (L.in < ${heroIn.toFixed(3)} + 0.9 && L.sweepT > ${heroIn.toFixed(3)} - 0.3) {
@@ -3060,7 +3056,7 @@ function paradigmStormrail() {
       <div id="rain2"></div>`;
   const js = `
   // ---- body paradigm: STORMRAIL (lightning-kiss words, rain-wash exits, ambient rain) ----
-  const I = ${heroIn.toFixed(3)};
+${!HEROLESS ? `  const I = ${heroIn.toFixed(3)};` : ""}
   // ambient rain: seeded streaks on repeating linear cycles (f(t), no random at render)
   function makeRain(container, n, seed, t0, t1) {
     const rnd = mulberry32(seed);
@@ -3084,10 +3080,14 @@ function paradigmStormrail() {
     }
   }
   makeRain(document.getElementById("rain"),  ${r.count ?? 18}, ${r.seed ?? 9021}, 0, ${(DUR - 0.02).toFixed(2)});
-  makeRain(document.getElementById("rain2"), ${r.count ?? 18}, ${r.seed2 ?? 4477}, ${(heroIn - 0.11).toFixed(3)}, ${Math.min(heroIn + 1.24, DUR - 0.02).toFixed(3)});
+${
+  !HEROLESS
+    ? `  makeRain(document.getElementById("rain2"), ${r.count ?? 18}, ${r.seed2 ?? 4477}, ${(heroIn - 0.11).toFixed(3)}, ${Math.min(heroIn + 1.24, DUR - 0.02).toFixed(3)});
   // rain doubles for ~1s after the strike
   tl.set("#rain2", { opacity: 0.11 }, I + 0.02);
-  tl.to("#rain2",  { opacity: 0, duration: 0.30 }, ${Math.min(heroIn + 1.02, DUR - 0.34).toFixed(3)});
+  tl.to("#rain2",  { opacity: 0, duration: 0.30 }, ${Math.min(heroIn + 1.02, DUR - 0.34).toFixed(3)});`
+    : ""
+}
 
   // rail scrim (stable reading surface against the busy lower frame)
   tl.to("#stscrim", { opacity: 1, duration: 0.20 }, 0.05);
@@ -3122,7 +3122,7 @@ function paradigmStormrail() {
     tl.set(line, { display: "none" }, Math.min(L.out + 0.20, ${(DUR - 0.02).toFixed(2)}));
   });
 ${
-  b.yield
+  !HEROLESS && b.yield
     ? `  // rail yields while the bolt lands; the visible line's shadow flips toward
   // the strike for the flash frames (light from the bolt side)
   SRAIL.forEach((L) => {
@@ -3269,7 +3269,7 @@ function paradigmHolorail() {
     tl.set(line, { opacity: 0, display: "none" }, ex + 0.15);
   });
 ${
-  b.yield
+  !HEROLESS && b.yield
     ? `  // the whole rail (plate included) yields while the apex lands
   tl.to("#railwrap", { opacity: ${b.yield.dim}, duration: 0.18, ease: "power1.in" }, ${(heroIn - (b.yield.pre ?? 0.18)).toFixed(3)});
   tl.to("#railwrap", { opacity: 1, duration: 0.22, ease: "power1.out" }, ${(heroIn + (b.yield.post ?? 0.37)).toFixed(3)});`
@@ -3349,14 +3349,14 @@ function paradigmPlanktonrail() {
       .join("\n");
   const js = `
   // ---- body paradigm: PLANKTONRAIL (jellyfish glow-on, two-row float, sinking exits) ----
-  const I = ${heroIn.toFixed(3)};
+${!HEROLESS ? `  const I = ${heroIn.toFixed(3)};` : ""}
   const mrnd = mulberry32(${m.seed ?? 2929});
   const mf = document.getElementById("mfield");
   // plankton motes: seeded drift walks f(t); the first ${m.near ?? 5} seed a
   // ring around the bloom heart and get ATTRACTED to it as the apex lands
   const APX = ${HG.x}, APY = ${HG.y};
   for (let i = 0; i < ${m.count ?? 12}; i++) {
-    const near = i < ${m.near ?? 5};
+    const near = ${HEROLESS ? "false" : `i < ${m.near ?? 5}`};
     const el = document.createElement("div");
     el.className = "mote"; mf.appendChild(el);
     let L, T;
@@ -3377,11 +3377,13 @@ function paradigmPlanktonrail() {
     // slow seeded drift walk
     const a1 = (mrnd() - 0.5) * 36, a2 = a1 + (mrnd() - 0.5) * 36, a3 = a2 + (mrnd() - 0.5) * 30;
     const b1 = (mrnd() - 0.5) * 28, b2 = b1 + (mrnd() - 0.5) * 28, b3 = b2 + (mrnd() - 0.5) * 24;
-    const dEnd = near ? I - 0.25 : ${(DUR - 0.34).toFixed(3)};
+    const dEnd = ${HEROLESS ? (DUR - 0.34).toFixed(3) : `near ? I - 0.25 : ${(DUR - 0.34).toFixed(3)}`};
     tl.to(el, { keyframes: { x: [a1, a2, a3], y: [b1, b2, b3],
                              opacity: [0.13, 0.07, 0.11] },
                duration: dEnd - (tin + 0.32), ease: "sine.inOut" }, tin + 0.32);
-    if (near) {
+${
+  !HEROLESS
+    ? `    if (near) {
       // ATTRACTION: pulled toward the bloom, brightening
       const tx = (APX - L) * 0.72 + (mrnd() - 0.5) * 24;
       const ty = (APY - T) * 0.72 + (mrnd() - 0.5) * 18;
@@ -3392,7 +3394,9 @@ function paradigmPlanktonrail() {
       tl.to(el, { y: ty + 18, opacity: 0, duration: 0.18, ease: "power1.in" }, ${(DUR - 0.22).toFixed(3)});
     } else {
       tl.to(el, { y: "+=14", opacity: 0, duration: 0.16, ease: "power1.in" }, ${(DUR - 0.2).toFixed(3)});
-    }
+    }`
+    : `    tl.to(el, { y: "+=14", opacity: 0, duration: 0.16, ease: "power1.in" }, ${(DUR - 0.2).toFixed(3)});`
+}
   }
 
   // ---- body lines: jellyfish glow-on, floating couplet rows, sinking exits ----
@@ -3440,7 +3444,9 @@ function paradigmPlanktonrail() {
     }
   });
 
-  // rail yields to the apex landing: the feeding line dims (and exits dimmed
+${
+  !HEROLESS
+    ? `  // rail yields to the apex landing: the feeding line dims (and exits dimmed
   // unless it has ≥0.9s of hold left); a line entering during the hold
   // arrives at ${yld.enter ?? 0.8} and restores once the bloom settles
   PRAIL.forEach((L, i) => {
@@ -3454,7 +3460,9 @@ function paradigmPlanktonrail() {
       tl.to("#" + L.id, { opacity: 1, duration: 0.25, ease: "power1.out" },
             Math.min(Math.max(I + ${(yld.post ?? 0.63).toFixed(2)}, L.in + 0.1), ${(DUR - 0.28).toFixed(2)}));
     }
-  });`;
+  });`
+    : ""
+}`;
   return { css, html, js };
 }
 
@@ -3535,7 +3543,7 @@ function paradigmSheenrail() {
       </div>`;
   const js = `
   // ---- body paradigm: SHEENRAIL (flow-on entrance, sheen-sweep emphasis, dissolve-to-streaks exits) ----
-  const I = ${heroIn.toFixed(3)};
+${!HEROLESS ? `  const I = ${heroIn.toFixed(3)};` : ""}
   const srnd = mulberry32(${b.seed ?? 20260611});
   const stg = document.getElementById("stage");
   const PAL = ${J(PAL)};
@@ -3589,9 +3597,13 @@ function paradigmSheenrail() {
   // continuous iridescent sheen drift f(t) — the body's hold life
   tl.fromTo(allGrads, { backgroundPosition: "0% 50%" },
             { backgroundPosition: "300% 50%", duration: ${(DUR - 0.04).toFixed(3)}, ease: "none" }, 0);
-  // rail yields — band included — while the ribbon writes (apex owns the frame)
+${
+  !HEROLESS
+    ? `  // rail yields — band included — while the ribbon writes (apex owns the frame)
   tl.to("#skwrap", { opacity: ${yld.dim ?? 0.5}, duration: 0.2, ease: "sine.in" }, I - ${(yld.pre ?? 0.16).toFixed(2)});
-  tl.to("#skwrap", { opacity: 1, duration: 0.3, ease: "sine.out" }, I + ${(yld.post ?? 0.62).toFixed(2)});`;
+  tl.to("#skwrap", { opacity: 1, duration: 0.3, ease: "sine.out" }, I + ${(yld.post ?? 0.62).toFixed(2)});`
+    : ""
+}`;
   return { css, html, js };
 }
 
@@ -3651,7 +3663,7 @@ function paradigmScoperail() {
       x += ws[i] + GAPem * b.fontPx;
     });
   });
-  if (!heroInline)
+  if (hero && !heroInline)
     for (let k = 0; k < hero.len; k++) {
       const hx = HG.x + (hero.len === 1 ? 0 : (k / (hero.len - 1)) * 0.6 * (HG.halfW || 300));
       burst.push([+tWords[hero.idx + k].start.toFixed(3), +hx.toFixed(1), 1]);
@@ -3769,7 +3781,7 @@ function paradigmScoperail() {
   tl.fromTo("#scwavewrap", { scaleX: 0.04, transformOrigin: "50% 50%" },
             { scaleX: 1, duration: 0.22, ease: "power2.out" }, 0.04);
 ${
-  b.yield && !heroInline
+  !HEROLESS && b.yield && !heroInline
     ? `
   // rail yields while the apex trace writes (band carries lines + wave + HUD)
   tl.to("#scband", { opacity: ${b.yield.dim}, duration: 0.18, ease: "power1.in" }, ${Math.max(heroIn - (b.yield.pre || 0.13), 0.2).toFixed(3)});
@@ -3965,7 +3977,7 @@ ${lineData.map((L) => `        <div class="pline" id="${L.id}"></div>`).join("\n
   for (let t = 0.45; t < ${(DUR - 0.06).toFixed(3)}; t += 1/6)
     tl.set("#pstrip", { x: (rrnd()-0.5)*1.4, y: (rrnd()-0.5)*1.4, rotation: (rrnd()-0.5)*0.36 }, t);
 ${
-  b.yield && !heroInline
+  !HEROLESS && b.yield && !heroInline
     ? `
   // rail yields while the apex chips land (furniture never contests the hero)
   tl.to(["#pstrip", "#plines"], { opacity: ${b.yield.dim}, duration: 0.10 }, ${dimT});
@@ -4162,7 +4174,7 @@ ${lineData.map((L) => `        <div class="puline" id="${L.id}"></div>`).join("\
     });
   });
 ${
-  b.yield && !heroInline
+  !HEROLESS && b.yield && !heroInline
     ? `
   // APEX OWNS ITS WINDOW — page yields while the centerfold lands, restores
   tl.to("#pupage", { opacity: ${b.yield.dim}, duration: 0.12, ease: "power1.out" }, ${(heroIn - (b.yield.pre || 0.03)).toFixed(3)});
@@ -4356,7 +4368,7 @@ ${lineData.map((L) => `        <div class="crow" id="${L.id}" style="top:${L.top
     }
   });
 ${
-  b.yield && !heroInline
+  !HEROLESS && b.yield && !heroInline
     ? `
   // APEX OWNS ITS WINDOW — band yields while the chalk word writes, restores
   tl.to("#cband", { opacity: ${b.yield.dim}, duration: 0.14, ease: "power1.in"  }, ${(heroIn - (b.yield.pre || 0.07)).toFixed(3)});
@@ -4492,7 +4504,7 @@ function paradigmMarkerrail() {
     }
   });
 ${
-  b.yield && !heroInline
+  !HEROLESS && b.yield && !heroInline
     ? `  // APEX OWNS ITS WINDOW — the line visible at the tag's onset yields.
   // Restore only with runway before the buff (else the line exits dimmed).
   RAILM.forEach((L) => {
@@ -4672,7 +4684,7 @@ ${lineData.map((L) => `        <div class="bline" id="${L.id}"></div>`).join("\n
     tl.set(line, { opacity: 0 }, L.eraseEnd + 0.02);
   });
 ${
-  b.yield && !heroInline
+  !HEROLESS && b.yield && !heroInline
     ? `
   // APEX OWNS ITS WINDOW — band + the line under the gesture yield, band restores
   tl.to(${heroLi >= 0 ? `["#band", "#br${heroLi}"]` : `"#band"`}, { opacity: ${b.yield.dim}, duration: 0.16 }, ${(heroIn - (b.yield.pre || 0.16)).toFixed(3)});
@@ -4807,7 +4819,7 @@ function paradigmInkrail() {
     }
   });
 ${
-  b.yield && !heroInline
+  !HEROLESS && b.yield && !heroInline
     ? `
   // rows visible under the bloom yield while the drop blooms, restore after.
   // Overlap guards: dim only after the line is IN with runway before its exit;
@@ -4955,7 +4967,7 @@ ${lineData.map((L) => `        <div class="rline" id="${L.id}"></div>`).join("\n
                             duration: L.bd, ease: "none" }, L.bs);
   });
 ${
-  b.yield && !heroInline
+  !HEROLESS && b.yield && !heroInline
     ? `  // rail yields while the apex letters slam behind the subject (container
   // opacity — never contests the per-chip channels)
   tl.to("#rrailwrap", { opacity: ${b.yield.dim}, duration: 0.12 }, ${Math.max(0.05, heroIn - (b.yield.pre ?? 0.02)).toFixed(3)});
@@ -5111,176 +5123,6 @@ function setpieceCpslam() {
   return { css, html, js };
 }
 
-function setpieceCoverword() {
-  // CP2077 COVER-LETTERFORM slam, precision pass: the spoken apex word set in
-  // the replica typeface of the official mark (assets/brand/CyberpunkReplica.ttf
-  // — lowercase glyphs carry the logo's actual brush chops, blade terminals and
-  // spikes), in logo case (First-upper). The setpiece adds only what the FONT
-  // does not carry: the solid cyan duplicate offset down-left, the baseline
-  // streak + cyan pixel debris, the circuit trace off the tail, and the
-  // tear-in/living-print/tear-out choreography. No synthetic letter surgery.
-  const h = dna.hero,
-    p = h.params || {},
-    I = heroIn;
-  const YEL = dna.palette.hot || "#FCEE0A",
-    CYN = dna.palette.accent || "#52BEDC";
-  const srnd = (() => {
-    let a = p.seed || 77;
-    return () => {
-      a |= 0;
-      a = (a + 0x6d2b79f5) | 0;
-      let t = Math.imul(a ^ (a >>> 15), 1 | a);
-      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-  })();
-  const CPM = JSON.parse(
-    fs.readFileSync(path.join(SKILL, "assets/brand/cyberpunk-widths.json"), "utf8"),
-  );
-  const fontB64 = fs
-    .readFileSync(path.join(SKILL, "assets/brand/CyberpunkReplica.ttf"))
-    .toString("base64");
-  const DISP = HG.coverDisp || heroText[0].toUpperCase() + heroText.slice(1).toLowerCase();
-  const hpx = HG.fontPx;
-  const em =
-    HG.coverEm ||
-    [...DISP].reduce((a, c) => a + (CPM.widths[c] || 0.7), 0) + 0.01 * (DISP.length - 1);
-  const INK = HG.coverInk || { inkTop: 0.5, inkBot: -0.25, inkH: 0.75 };
-  const IH = INK.inkH * hpx; // visual ink height (px)
-  const Wd = em * hpx;
-  const BW = Math.round(Wd + 2.4 * hpx),
-    BH = Math.round(IH + 0.7 * hpx);
-  // baseline placed so the measured ink box is vertically centered
-  const baseY = Math.round(BH / 2 + ((INK.inkTop + INK.inkBot) / 2) * hpx);
-  const feetY = Math.round(baseY - INK.inkBot * hpx); // lowest ink (px, y-down)
-  const x0 = Math.round((BW - Wd) / 2),
-    x1 = Math.round(x0 + Wd);
-  const CX = BW - 120 > W ? W / 2 : Math.max(BW / 2 - 60, Math.min(W - BW / 2 + 60, HG.x)),
-    CY = HG.y;
-  const P = (pts, fill) =>
-    `<polygon points="${pts.map((q) => q[0].toFixed(0) + "," + q[1].toFixed(0)).join(" ")}" fill="${fill}"/>`;
-  // baseline streak: thin brush drag just under the glyph feet, pointed right
-  // tip past the tail (the font's own C/K blades carry the rest of the energy)
-  let extras = "";
-  // streak band MERGES with the glyph feet (official: letters melt into it)
-  const sT = feetY - 0.075 * IH,
-    sB = feetY + 0.012 * IH;
-  extras += P(
-    [
-      [x0 - 0.16 * hpx, sT + 2],
-      [x1 + 0.1 * hpx, sT],
-      [x1 + 0.55 * hpx, sB - 1],
-      [x0 - 0.05 * hpx, sB],
-    ],
-    "white",
-  );
-  let cuts = "";
-  for (let k = 0; k < 3; k++) {
-    const gx = x0 + (0.1 + srnd() * 0.8) * Wd,
-      gw = (0.05 + srnd() * 0.1) * hpx;
-    cuts += P(
-      [
-        [gx, sT - 1],
-        [gx + gw, sT - 1],
-        [gx + gw, sB + 1],
-        [gx, sB + 1],
-      ],
-      "black",
-    );
-  }
-  // cyan pixel debris along the streak
-  let debris = "";
-  for (let k = 0; k < 8; k++) {
-    const dx = x0 - 0.3 * hpx + srnd() * (Wd + 0.9 * hpx),
-      dw = (0.06 + srnd() * 0.3) * hpx;
-    const dy = sT - 2 + srnd() * (sB - sT + 4);
-    debris += `<rect x="${dx.toFixed(0)}" y="${dy.toFixed(0)}" width="${dw.toFixed(0)}" height="${(1.5 + srnd() * 2.5).toFixed(1)}" fill="${CYN}" opacity="0.85"/>`;
-  }
-  // circuit trace off the tail (the official mark's cyan trace language)
-  const tx = x1 + 0.25 * hpx,
-    ty = feetY + 0.14 * IH;
-  const trace = `<g id="cwT" opacity="0">
-      <path d="M ${x0 + Wd * 0.45} ${ty} H ${tx} l ${0.14 * hpx} ${0.07 * hpx} h ${0.3 * hpx}" stroke="${CYN}" stroke-width="2" fill="none"/>
-      <circle cx="${(tx + 0.05 * hpx).toFixed(0)}" cy="${ty.toFixed(0)}" r="3.5" fill="none" stroke="${CYN}" stroke-width="2"/>
-      <circle cx="${(tx + 0.44 * hpx).toFixed(0)}" cy="${(ty + 0.07 * hpx).toFixed(0)}" r="3.5" fill="${CYN}"/>
-    </g>`;
-  const bnd = [
-    [0, 0.42],
-    [0.42, 0.6],
-    [0.6, 1],
-  ];
-  const clipDefs = bnd
-    .map(
-      (b, i) =>
-        `<clipPath id="cwb${i}"><rect x="-60" y="${(b[0] * BH).toFixed(0)}" width="${BW + 120}" height="${((b[1] - b[0]) * BH).toFixed(0)}"/></clipPath>`,
-    )
-    .join("");
-  const layer = (fill) =>
-    `<rect x="0" y="0" width="${BW}" height="${BH}" fill="${fill}" mask="url(#cwm)"/>`;
-  const EX = theme.hero.exitAt ?? Math.min(heroOut - 0.2, I + (p.hold ?? 2.6));
-  const css = `
-  @font-face { font-family:'CPReplica'; src: url(data:font/ttf;base64,${fontB64}) format('truetype'); font-display: block; }
-  #cw { position:absolute; left:${CX}px; top:${CY}px; width:0; height:0; opacity:0; }
-  #cwW { position:absolute; left:0; top:0; transform:translate(-50%,-50%);
-         filter: drop-shadow(0 5px 20px rgba(0,0,0,0.5)); }`;
-  const html = `      <div id="cw">
-        <svg id="cwW" width="${BW}" height="${BH}" viewBox="0 0 ${BW} ${BH}" style="overflow:visible">
-          <defs>
-            <mask id="cwm">
-              <text x="${x0}" y="${baseY}" font-family="'CPReplica'" font-size="${hpx}"
-                    letter-spacing="${(hpx * 0.01).toFixed(1)}" fill="white">${esc(DISP)}</text>
-              ${extras}
-              ${cuts}
-            </mask>
-            ${clipDefs}
-          </defs>
-          <g id="cwC" transform="translate(-7 8)">${layer(CYN)}</g>
-          ${bnd.map((_, i) => `<g clip-path="url(#cwb${i})"><g id="cwY${i}">${layer(YEL)}</g></g>`).join("\n          ")}
-          <g id="cwD">${debris}</g>
-          ${trace}
-        </svg>
-      </div>`;
-  const js = `
-  // ---- setpiece: COVERWORD v2 (replica letterforms; tear-in -> living print -> tear-out) ----
-  const I = ${I.toFixed(3)};
-  const wrnd = mulberry32(${p.seed || 77});
-  const TB = (sel, dx, dy, at) => tl.set(sel, { attr: { transform: "translate(" + dx + " " + (dy || 0) + ")" } }, at);
-  // corrupted boot-flick of the whole lockup during the charge
-  tl.set("#cw", { opacity: 0.35, filter: "saturate(0) brightness(1.6)" }, I - 0.30);
-  tl.set("#cw", { opacity: 0 }, I - 0.30 + F);
-  tl.set("#cw", { opacity: 0.5, filter: "saturate(0) brightness(2)" }, I - 0.13);
-  tl.set("#cw", { opacity: 0 }, I - 0.13 + F);
-  // SLAM: crush in with slice displacement, snap into register
-  tl.set("#cw", { opacity: 1, filter: "none" }, I - 0.02);
-  tl.fromTo("#cwW", { scale: 2.4 }, { scale: 1, duration: 0.10, ease: "power4.in" }, I - 0.02);
-  TB("#cwY0", -34, 0, I - 0.02); TB("#cwY1", 26, 0, I - 0.02); TB("#cwY2", -18, 0, I - 0.02);
-  TB("#cwC", -44, 8, I - 0.02);
-  tl.set("#cwD", { opacity: 0 }, I - 0.02);
-  TB("#cwY0", 0, 0, I + 0.10); TB("#cwY1", 0, 0, I + 0.10); TB("#cwY2", 0, 0, I + 0.10);
-  TB("#cwC", -7, 8, I + 0.10);
-  tl.set("#cwW", { scaleX: 1.08, scaleY: 0.94 }, I + 0.10);
-  tl.to("#cwW", { scaleX: 1, scaleY: 1, duration: 0.45, ease: "elastic.out(1.05, 0.38)" }, I + 0.16);
-  tl.set("#cwD", { opacity: 1 }, I + 0.12);
-  tl.set("#cwT", { opacity: 0.9 }, I + 0.34);
-  // living print: seeded slice slips + cyan jolts
-  let gt = I + 0.55;
-  while (gt < ${EX.toFixed(3)} - 0.25) {
-    const r = wrnd();
-    if (r < 0.4) { const b = Math.floor(wrnd() * 3); TB("#cwY" + b, (wrnd() - 0.5) * 22, 0, gt); TB("#cwY" + b, 0, 0, gt + F); }
-    else if (r < 0.7) { TB("#cwC", -16, 8, gt); TB("#cwC", -7, 8, gt + F); }
-    else { tl.set("#cw", { x: (wrnd() - 0.5) * 9 }, gt); tl.set("#cw", { x: 0 }, gt + F); }
-    gt += 0.4 + wrnd() * 0.55;
-  }
-  tl.to("#cwW", { scale: 1.04, duration: 1.1, ease: "power1.inOut" }, I + 0.66);
-  // EXIT: tear cascade -> gone
-  const E = ${EX.toFixed(3)};
-  TB("#cwY0", 52, 0, E); TB("#cwY1", -38, 0, E); TB("#cwY2", 30, 0, E);
-  TB("#cwC", -30, 8, E);
-  tl.set("#cwT", { opacity: 0 }, E);
-  tl.set("#cw", { opacity: 0.45 }, E + F);
-  tl.set("#cw", { opacity: 0, display: "none" }, E + 2 * F);`;
-  return { css, html, js };
-}
 function setpieceSettle() {
   const I = heroIn;
   const E = theme.hero.exitAt ?? Math.min(heroOut, DUR - 0.12);
@@ -8659,7 +8501,6 @@ const SETPIECES = {
   decode: setpieceDecode,
   drawon: setpieceDrawon,
   cpslam: setpieceCpslam,
-  coverword: setpieceCoverword,
   settle: setpieceSettle,
   flapboard: setpieceFlapboard,
   ledwipe: setpieceLedwipe,
@@ -8691,7 +8532,7 @@ if (!heroInline && !HEROLESS) {
     throw new Error("[make-theme] unknown setpiece: " + dna.hero.setpiece);
   setp = SETPIECES[dna.hero.setpiece]();
 }
-const fx = frontFx();
+const fx = HEROLESS ? { css: "", html: "", js: "" } : frontFx();
 
 // bg file: plate reaction + embedded setpiece (+ body if body.layer === "bg")
 const bodyInBg = dna.body.layer === "bg";
@@ -8733,7 +8574,9 @@ if (!bodyInBg || fx.html || fx.js || setp.fgHtml) {
 }
 
 // _postfx.sh: plate reaction after the matte composite (subject+text move as one)
-const P = HEROLESS ? { grain: (dna.plate || {}).grain || 5 } : dna.plate || {};
+const P = HEROLESS ? { grain: dna.plate?.grain ?? 5 } : dna.plate || {};
+const grain = P.grain ?? 5;
+const noise = grain === 0 ? "" : `,noise=alls=${grain}:allf=t+u`;
 // punchOffset: themes whose impact is NOT the hero onset (e.g. flapboard's
 // lock-complete clack) shift the plate punch anchor; default keeps onset+2f
 const anchorT = (heroIn + (P.punchOffset ?? 0.045)).toFixed(3);
@@ -8765,8 +8608,7 @@ fs.writeFileSync(
 set -euo pipefail
 cd "$(dirname "$0")"
 ffmpeg -y -v error -i final.mp4 -filter_complex "
-  [0:v]${filter}${rgba},
-  noise=alls=${P.grain || 5}:allf=t+u[v]" \\
+  [0:v]${filter}${rgba}${noise}[v]" \\
   -map "[v]" -map 0:a -c:v libx264 -crf 14 -preset slow -profile:v high -c:a copy \\
   final_fx.mp4
 echo "[postfx] ${dna.name} → final_fx.mp4"

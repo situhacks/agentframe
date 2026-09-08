@@ -56,6 +56,7 @@ def _within_managed_work(path: Path) -> bool:
     for root in (
         ROOT / "workspace" / "projects",
         ROOT / "workspace" / "pipeline" / "applications",
+        ROOT / "workspace" / "studio" / "posts",
     ):
         try:
             path.resolve().relative_to(root.resolve())

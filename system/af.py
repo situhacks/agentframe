@@ -18,7 +18,7 @@ Commands:
   python system/af.py draft <project> <deliverable-slug> (--file <project-relative-v1.md> | --artifact <artifact-name>)
   python system/af.py adopt <project> <deliverable-slug> --file <existing-project-relative.md>
   python system/af.py new-project <slug> [--domain project-mgmt] [--flow open-flow] [--name NAME]
-  python system/af.py doctor [project|pipeline]
+  python system/af.py doctor [project|pipeline|studio]
   python system/af.py index update [--rebuild]|status|eval [--k N]
   python system/af.py search "<query>" [-n LIMIT] [--json]
   python system/af.py sync-harnesses --check|--write
@@ -28,6 +28,9 @@ Commands:
   python system/af.py pipe start <slug>
   python system/af.py pipe stage <slug> <stage>
   python system/af.py pipe board
+  python system/af.py studio new <slug> [--date D] [--platform P] [--series S] [--from FILE] [--name NAME]
+  python system/af.py studio stage <slug> <state>
+  python system/af.py studio post <slug> --url U [--posted-at T]
 
 `pipe` verbs drive the pipeline-topology surface (workspace/pipeline/): a
 stage-based funnel whose board (pipeline.md `applications:` rows) is the single
@@ -35,6 +38,12 @@ owner of stage state. Application folders reuse the generic deliverable
 machinery — ready/version/doctor work on application.md exactly as on
 project.md. The spine still names no domain; a pack opts into the pipeline
 topology by declaring `topology: pipeline`.
+
+`studio` verbs drive the studio-topology surface (workspace/studio/): a standing
+stream of posts whose board (calendar.md `slots:` rows) is the single owner of
+post state. Post folders carry post.md as their state doc, so draft/version/ready
+work on a scripted post exactly as on project.md. A pack opts in by declaring
+`topology: studio`; topology_pack() resolves any singleton surface generically.
 """
 
 import argparse
@@ -65,6 +74,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROJECTS = os.path.join(ROOT, "workspace", "projects")
 DOMAINS = os.path.join(ROOT, "library", "domains")
 PIPELINE = os.path.join(ROOT, "workspace", "pipeline")
+STUDIO = os.path.join(ROOT, "workspace", "studio")
 
 STATUS_ENUM = {"not_started", "drafting", "ready", "published", "deferred"}
 LIFECYCLE_ENUM = {"active", "complete", "cancelled"}
@@ -85,6 +95,21 @@ PIPE_TRANSITIONS = {
 }
 PIPE_NUDGE_DAYS = 7        # applied/interviewing rows silent this long → follow-up note
 PIPE_STALE_SAVED_DAYS = 30 # saved rows older than this → drop-or-start note
+# Studio state machine (studio-topology packs; board = calendar.md `slots:` rows).
+STUDIO_STATES = ("planned", "captured", "cut", "scheduled", "posted", "dropped")
+STUDIO_TRANSITIONS = {
+    "planned": {"captured", "dropped"},
+    "captured": {"cut", "dropped"},
+    "cut": {"scheduled", "posted", "captured", "dropped"},   # captured: re-shoot or re-cut
+    "scheduled": {"posted", "cut", "dropped"},               # cut: pulled from the queue
+    "posted": set(), "dropped": set(),
+}
+STUDIO_CAPTURE_DAYS = 14   # posted rows this old without metrics → capture-due note
+# Where each singleton topology lives, for the refusal message new-project gives its packs.
+TOPOLOGY_SURFACES = {
+    "pipeline": "workspace/pipeline/ (use 'af pipe save' / 'af pipe start')",
+    "studio": "workspace/studio/ (use 'af studio new')",
+}
 DEFAULT_DOMAIN = "project-mgmt"
 DEFAULT_FLOW = "open-flow"
 FLOWS = {"marketing-solo-flow": "1-research-and-architecture",
@@ -147,6 +172,9 @@ def project_dir(arg):
     d = os.path.join(PIPELINE, "applications", arg)
     if os.path.isfile(os.path.join(d, "application.md")):
         return d
+    d = os.path.join(STUDIO, "posts", arg)
+    if os.path.isfile(os.path.join(d, "post.md")):
+        return d
     for base in (PROJECTS, os.path.join(PROJECTS, "completed")):
         if not os.path.isdir(base):
             continue
@@ -154,12 +182,15 @@ def project_dir(arg):
             sp = os.path.join(base, name, "project.md")
             if os.path.isfile(sp) and get_scalar(split_fm(read(sp), sp)[0], "slug") == arg:
                 return os.path.join(base, name)
-    die(f"project '{arg}' not found under workspace/projects/ or workspace/pipeline/applications/")
+    die(f"project '{arg}' not found under workspace/projects/, workspace/pipeline/applications/, or workspace/studio/posts/")
 
 
 def state_doc(cdir):
-    """The state file for a work folder: application.md on the pipeline surface, else project.md."""
-    return "application.md" if os.path.isfile(os.path.join(cdir, "application.md")) else "project.md"
+    """The state file for a work folder: application.md (pipeline), post.md (studio), else project.md."""
+    for name in ("application.md", "post.md"):
+        if os.path.isfile(os.path.join(cdir, name)):
+            return name
+    return "project.md"
 
 
 def split_fm(text, path="file"):
@@ -657,7 +688,7 @@ def safe_project_rel(cdir, value):
     # so that is the form an agent has in working context; a real deliverable path never has it.
     if value.startswith("workspace/"):
         die(f"'{value}' is repo-root-relative. --file takes a PROJECT-relative path: drop the "
-            f"leading workspace/projects/<slug>/ (or workspace/pipeline/applications/<slug>/) "
+            f"leading workspace/projects/<slug>/ (or workspace/pipeline/applications/<slug>/, workspace/studio/posts/<slug>/) "
             f"and pass only the part below it.")
     target = os.path.abspath(os.path.join(cdir, value))
     if os.path.commonpath((os.path.abspath(cdir), target)) != os.path.abspath(cdir):
@@ -790,9 +821,10 @@ def cmd_new_project(args):
     desc, pack_dir = load_pack(args.domain)
     if not desc:
         die(f"no domain pack at library/domains/{args.domain}/ (pack.md missing) — author the pack first")
-    if get_scalar(desc, "topology") == "pipeline":
-        die(f"domain '{args.domain}' is pipeline-topology — its work lives under workspace/pipeline/ "
-            f"(use 'af pipe save' / 'af pipe start'), not workspace/projects/")
+    topology = get_scalar(desc, "topology")
+    if topology and topology != "null":
+        hint = TOPOLOGY_SURFACES.get(topology, f"its own {topology} surface")
+        die(f"domain '{args.domain}' is {topology}-topology — its work lives under {hint}, not workspace/projects/")
     skel_path = os.path.join(pack_dir, "skeleton.md")
     os.path.isfile(skel_path) or die(f"domain '{args.domain}' ships no skeleton.md")
     cdir = os.path.join(PROJECTS, slug)
@@ -1589,20 +1621,31 @@ def cmd_autonomy_migrate(args):
 
 # ---------------------------------------------------------------- pipe (pipeline topology)
 
-def pipe_pack():
-    """The single pack declaring `topology: pipeline` → (domain, desc_fm, pack_dir)."""
+TOPOLOGY_VERBS = {"pipeline": "af pipe", "studio": "af studio"}
+
+
+def topology_pack(kind):
+    """The single pack declaring `topology: {kind}` → (domain, desc_fm, pack_dir).
+
+    A topology is a singleton surface with one board, so exactly one pack may claim it.
+    The spine knows the surfaces; the packs know the domains."""
     if not os.path.isdir(DOMAINS):
         die("library/domains/ missing")
     hits = []
     for name in sorted(os.listdir(DOMAINS)):
         desc, pack_dir = load_pack(name)
-        if desc and get_scalar(desc, "topology") == "pipeline":
+        if desc and get_scalar(desc, "topology") == kind:
             hits.append((name, desc, pack_dir))
+    verb = TOPOLOGY_VERBS.get(kind, f"the {kind} verbs")
     if not hits:
-        die("no domain pack declares topology: pipeline — author one before using 'af pipe'")
+        die(f"no domain pack declares topology: {kind} — author one before using '{verb}'")
     if len(hits) > 1:
-        die(f"multiple pipeline-topology packs ({', '.join(h[0] for h in hits)}) — the singleton board can serve only one")
+        die(f"multiple {kind}-topology packs ({', '.join(h[0] for h in hits)}) — the singleton board can serve only one")
     return hits[0]
+
+
+def pipe_pack():
+    return topology_pack("pipeline")
 
 
 def board_path():
@@ -1989,6 +2032,26 @@ def cmd_pipe_board(args):
         print("  ".join(v.ljust(w) for v, w in zip(r, widths)))
 
 
+def tracker_row_issues(rel, cdir, cfm):
+    """Deliverable-row invariants shared by every state doc (project.md, application.md, post.md)."""
+    issues = []
+    for dslug in all_rows(cfm):
+        st, f = row_get(cfm, dslug, "status"), row_get(cfm, dslug, "file")
+        if st not in STATUS_ENUM:
+            issues.append(f"{rel}: row '{dslug}' status '{st}' invalid")
+        if not f:
+            issues.append(f"{rel}: row '{dslug}' has no file pointer")
+            continue
+        p = os.path.join(cdir, f)
+        if st != "not_started" and not os.path.isfile(p):
+            issues.append(f"{rel}: row '{dslug}' file missing: {f}")
+        elif os.path.isfile(p):
+            m = re.fullmatch(r"(.+)-v(\d+)\.md", os.path.basename(p))
+            if m and int(m.group(2)) != max(versions_in(os.path.dirname(p), m.group(1))):
+                issues.append(f"{rel}: row '{dslug}' points at v{m.group(2)} but head is v{max(versions_in(os.path.dirname(p), m.group(1)))}")
+    return issues
+
+
 def check_pipeline():
     """Board/application invariants (issues) + follow-up/staleness alarms (notes)."""
     issues, notes = [], []
@@ -2048,20 +2111,7 @@ def check_pipeline():
             issues.append(f"{rel}: slug '{get_scalar(afm, 'slug')}' != folder name")
         if stage != "saved" and not os.path.isfile(os.path.join(adir, "jd.md")):
             issues.append(f"{rel}: jd.md missing — tailoring without the verbatim posting is guesswork")
-        for dslug in all_rows(afm):
-            st, f = row_get(afm, dslug, "status"), row_get(afm, dslug, "file")
-            if st not in STATUS_ENUM:
-                issues.append(f"{rel}: row '{dslug}' status '{st}' invalid")
-            if not f:
-                issues.append(f"{rel}: row '{dslug}' has no file pointer")
-                continue
-            p = os.path.join(adir, f)
-            if st != "not_started" and not os.path.isfile(p):
-                issues.append(f"{rel}: row '{dslug}' file missing: {f}")
-            elif os.path.isfile(p):
-                m = re.fullmatch(r"(.+)-v(\d+)\.md", os.path.basename(p))
-                if m and int(m.group(2)) != max(versions_in(os.path.dirname(p), m.group(1))):
-                    issues.append(f"{rel}: row '{dslug}' points at v{m.group(2)} but head is v{max(versions_in(os.path.dirname(p), m.group(1)))}")
+        issues += tracker_row_issues(rel, adir, afm)
         issues += media_manifest_issues_for_fm(adir, afm, "application.md")
         if rules and hasattr(rules, "check_application"):
             r_issues, r_notes = rules.check_application(make_ctx(), adir, afm)
@@ -2085,6 +2135,234 @@ DREAM_LINE_CAPS = (("knowledge/decision-log.md", 300),
 MEDIA_MANIFEST_FIELDS = ("shipped_media", "exports")
 MEDIA_PREVIEW_EXTS = {".html", ".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg",
                       ".pdf", ".mp4", ".mov", ".webm", ".pptx", ".docx"}
+
+
+# ---------------------------------------------------------------- studio (studio topology)
+
+def studio_pack():
+    return topology_pack("studio")
+
+
+def calendar_path():
+    return os.path.join(STUDIO, "calendar.md")
+
+
+def posts_root():
+    return os.path.join(STUDIO, "posts")
+
+
+def post_dir(slug):
+    return os.path.join(posts_root(), slug)
+
+
+def ensure_calendar(pack_dir):
+    if os.path.isfile(calendar_path()):
+        return
+    skel = os.path.join(pack_dir, "calendar-skeleton.md")
+    os.path.isfile(skel) or die(f"{os.path.relpath(pack_dir, ROOT)} ships no calendar-skeleton.md")
+    os.makedirs(posts_root(), exist_ok=True)
+    write(calendar_path(), read(skel).format(date=today(), ts=now_iso()))
+
+
+def load_calendar():
+    os.path.isfile(calendar_path()) or die("no board at workspace/studio/calendar.md — 'af studio new' creates it")
+    return split_fm(read(calendar_path()), "calendar.md")
+
+
+def write_calendar(fm, body):
+    fm = set_scalar(fm, "last_activity", now_iso(), "calendar.md")
+    write(calendar_path(), join_fm(fm, body))
+
+
+def slot_rows(fm):
+    return mapping_rows(fm, "slots")
+
+
+def slot_get(fm, slug, key):
+    return mapping_row_get(fm, "slots", slug, key)
+
+
+def slot_set(fm, slug, key, value):
+    return mapping_row_set(fm, "slots", slug, key, value)
+
+
+def slot_add(fm, slug, fields):
+    return mapping_row_add(fm, "slots", slug, [(k, v) for k, v in fields if v not in (None, "")])
+
+
+def post_render(slug):
+    return os.path.join(post_dir(slug), "renders", "final.mp4")
+
+
+def post_source(slug):
+    vdir = os.path.join(post_dir(slug), "video")
+    hits = sorted(glob.glob(os.path.join(vdir, "source.*"))) if os.path.isdir(vdir) else []
+    return hits[0] if hits else None
+
+
+def touch_post(slug):
+    ppath = os.path.join(post_dir(slug), "post.md")
+    if os.path.isfile(ppath):
+        pfm, pbody = split_fm(read(ppath), "post.md")
+        write(ppath, join_fm(set_scalar(pfm, "last_activity", now_iso(), "post.md"), pbody))
+
+
+def cmd_studio_new(args):
+    domain, desc, pack_dir = studio_pack()
+    slug = args.slug
+    re.match(r"^[a-z0-9][a-z0-9-]*$", slug) or die("slug must be folder-safe lowercase kebab-case")
+    source = getattr(args, "source", None)
+    date_slot = args.date
+    if source and not os.path.isfile(source):
+        die(f"--from file not found: {source}")
+    if date_slot and not parse_iso_date(date_slot):
+        die(f"--date must be YYYY-MM-DD (got {date_slot})")
+    if not source and not date_slot:
+        die("a post is born planned (--date D) or captured (--from FILE); an undated idea belongs in ideas.md, not on the board")
+    for skel in ("post-skeleton.md", "edit-skeleton.md"):
+        os.path.isfile(os.path.join(pack_dir, skel)) or die(f"domain '{domain}' ships no {skel}")
+    ensure_calendar(pack_dir)
+    fm, body = load_calendar()
+    if mapping_row_span(fm, "slots", slug):
+        die(f"board row '{slug}' already exists")
+    pdir = post_dir(slug)
+    os.path.exists(pdir) and die(f"{os.path.relpath(pdir, ROOT)} already exists")
+
+    name = args.name or slug.replace("-", " ").title()
+    os.makedirs(os.path.join(pdir, "video"))
+    os.makedirs(os.path.join(pdir, "renders"))
+    source_rel = "null"
+    if source:
+        ext = os.path.splitext(source)[1].lower() or ".mp4"
+        shutil.copy2(source, os.path.join(pdir, "video", f"source{ext}"))
+        source_rel = f"video/source{ext}"
+    write(os.path.join(pdir, "post.md"), read(os.path.join(pack_dir, "post-skeleton.md")).format(
+        name=name, slug=slug, date=today(), ts=now_iso(), platform=args.platform,
+        date_slot=date_slot or "null", series=args.series or "null", source_file=source_rel))
+    write(os.path.join(pdir, "edit.md"), read(os.path.join(pack_dir, "edit-skeleton.md")).format(name=name))
+
+    state = "captured" if source else "planned"
+    fm = slot_add(fm, slug, [("state", state), ("date", date_slot), ("platform", args.platform),
+                             ("series", args.series), ("created", today())])
+    write_calendar(fm, body)
+
+    print(f"af studio new: workspace/studio/posts/{slug}/ scaffolded -> {state}"
+          + (f" ({source_rel} copied in)" if source else ""))
+    print("\nJudgment (stays with the agent):")
+    print(f"  - Load the runbook: library/domains/{domain}/production.md (load map + the post steps).")
+    if source:
+        print("  - Next is the edit route: transcribe, cut, fill edit.md, compose, render, then 'af studio stage cut'.")
+    else:
+        print("  - Planned: draft script.md against the generic shape only if the piece is scripted; when the")
+        print("    recording lands as video/source.*, 'af studio stage captured' moves it on.")
+
+
+def cmd_studio_stage(args):
+    fm, body = load_calendar()
+    slug, new = args.slug, args.state
+    mapping_row_span(fm, "slots", slug) or die(f"no board row '{slug}'")
+    new in STUDIO_STATES or die(f"unknown state '{new}' (states: {', '.join(STUDIO_STATES)})")
+    if new == "posted":
+        die("'posted' is written by 'af studio post <slug> --url U' — the receipt is the transition")
+    cur = slot_get(fm, slug, "state")
+    legal = STUDIO_TRANSITIONS.get(cur, set())
+    if new not in legal:
+        die(f"illegal transition {cur} -> {new}" + (f" (legal from {cur}: {', '.join(sorted(legal))})" if legal else f" ({cur} is terminal)"))
+    if new == "captured" and not post_source(slug):
+        die(f"'{slug}' has no video/source.* — land the recording first (or 'af studio new --from')")
+    if new in ("cut", "scheduled") and not os.path.isfile(post_render(slug)):
+        die(f"'{slug}' has no renders/final.mp4 — '{new}' means a render exists")
+    fm = slot_set(fm, slug, "state", new)
+    write_calendar(fm, body)
+    touch_post(slug)
+    print(f"af studio stage: {slug} {cur} -> {new}")
+    print("\nJudgment (stays with the agent):")
+    if new == "cut":
+        print("  - The operator watches renders/final.mp4 before anything is scheduled.")
+    if new == "scheduled":
+        print("  - Mirror the slot to the operator's calendar (production.md standing rules); the board stays truth.")
+        print(f"  - When it goes live: 'af studio post {slug} --url <link>'.")
+    if new == "dropped":
+        print("  - Anything reusable in video/? Register it on the media shelf by path (media-intake.md).")
+
+
+def cmd_studio_post(args):
+    fm, body = load_calendar()
+    slug = args.slug
+    mapping_row_span(fm, "slots", slug) or die(f"no board row '{slug}'")
+    cur = slot_get(fm, slug, "state")
+    cur in ("cut", "scheduled") or die(f"'{slug}' is at '{cur}' — post applies to cut or scheduled rows (a render exists)")
+    posted_at = args.posted_at or now_iso()
+    ppath = os.path.join(post_dir(slug), "post.md")
+    os.path.isfile(ppath) or die(f"no post.md for '{slug}'")
+    pfm, pbody = split_fm(read(ppath), "post.md")
+    pfm = set_scalar(pfm, "posted_at", posted_at, "post.md")
+    pfm = set_scalar(pfm, "url", yaml_quote(args.url), "post.md")
+    pfm = set_scalar(pfm, "last_activity", now_iso(), "post.md")
+    write(ppath, join_fm(pfm, pbody))
+    fm = slot_set(fm, slug, "state", "posted")
+    fm = slot_set(fm, slug, "link", args.url)
+    fm = slot_set(fm, slug, "posted", posted_at[:10])
+    write_calendar(fm, body)
+    due = (parse_iso_date(posted_at[:10]) or datetime.date.today()) + datetime.timedelta(days=STUDIO_CAPTURE_DAYS)
+    print(f"af studio post: {slug} {cur} -> posted ({args.url})")
+    print("\nJudgment (stays with the agent):")
+    print(f"  - Performance capture is due around {due.isoformat()}; doctor nudges. Stamp metrics_captured_at when done.")
+    print("  - Score the hook row in hooks.md once the numbers land; next week's hooks are proposed from it.")
+    print("  - Mirror the posted slot to the operator's calendar if the scheduled mirror was never written.")
+
+
+STUDIO_POST_FIELDS = ("name", "slug", "schema_version", "created_at", "domain", "platform", "last_activity")
+
+
+def check_studio():
+    """Board/post invariants (issues) + overdue-slot and capture-due alarms (notes)."""
+    issues, notes = [], []
+    if not os.path.isfile(calendar_path()):
+        return issues, notes
+    fm, _ = split_fm(read(calendar_path()), "calendar.md")
+    today_d = datetime.date.today()
+    rows = slot_rows(fm)
+    root_dir = posts_root()
+    folders = [d for d in (sorted(os.listdir(root_dir)) if os.path.isdir(root_dir) else [])
+               if os.path.isfile(os.path.join(root_dir, d, "post.md"))]
+    for d in folders:
+        if d not in rows:
+            issues.append(f"workspace/studio/posts/{d}: folder has no board row")
+    for slug in rows:
+        state = slot_get(fm, slug, "state")
+        if state not in STUDIO_STATES:
+            issues.append(f"calendar.md: row '{slug}' state '{state}' invalid")
+            continue
+        pd = post_dir(slug)
+        rel = f"workspace/studio/posts/{slug}"
+        if not os.path.isfile(os.path.join(pd, "post.md")):
+            if state != "dropped":
+                issues.append(f"calendar.md: row '{slug}' is '{state}' but has no post folder")
+            continue
+        if state in ("cut", "scheduled") and not os.path.isfile(post_render(slug)):
+            issues.append(f"{rel}: state '{state}' but renders/final.mp4 is missing")
+        slot_date = parse_iso_date(slot_get(fm, slug, "date"))
+        if state == "scheduled" and slot_date and slot_date < today_d:
+            notes.append(f"calendar.md: '{slug}' was scheduled for {slot_date.isoformat()} and has no receipt — "
+                         f"'af studio post' if it went live, or restage it")
+        if state in ("planned", "captured") and slot_date and slot_date < today_d:
+            notes.append(f"calendar.md: '{slug}' slot {slot_date.isoformat()} passed at '{state}' — reschedule or drop")
+        pfm, _ = split_fm(read(os.path.join(pd, "post.md")), "post.md")
+        for field in STUDIO_POST_FIELDS:
+            if get_scalar(pfm, field) in (None, ""):
+                issues.append(f"{rel}: required field '{field}' missing")
+        if get_scalar(pfm, "slug") != slug:
+            issues.append(f"{rel}: slug '{get_scalar(pfm, 'slug')}' != folder name")
+        if state == "posted":
+            posted = parse_iso_date((get_scalar(pfm, "posted_at") or "")[:10])
+            captured = get_scalar(pfm, "metrics_captured_at")
+            if posted and captured in (None, "", "null") and (today_d - posted).days >= STUDIO_CAPTURE_DAYS:
+                notes.append(f"{rel}: posted {(today_d - posted).days}d ago, metrics not captured — "
+                             f"capture per composio-notes.md into performance.csv and stamp metrics_captured_at")
+        issues += tracker_row_issues(rel, pd, pfm)
+        issues += media_manifest_issues_for_fm(pd, pfm, "post.md")
+    return issues, notes
 
 
 def parse_iso_date(value):
@@ -2929,9 +3207,9 @@ def check_system():
 
 
 def cmd_doctor(args):
-    dirs, pipeline_scope = [], ""
-    if args.project == "pipeline":
-        pass  # pipeline checks only
+    dirs, pipeline_scope, studio_scope = [], "", ""
+    if args.project in ("pipeline", "studio"):
+        pass  # surface checks only
     elif args.project:
         dirs = [project_dir(args.project)]
     else:
@@ -2954,13 +3232,19 @@ def cmd_doctor(args):
         notes += pipe_notes
         if os.path.isfile(board_path()):
             pipeline_scope = " + pipeline"
+    if args.project in (None, "studio"):
+        st_issues, st_notes = check_studio()
+        all_issues += st_issues
+        notes += st_notes
+        if os.path.isfile(calendar_path()):
+            studio_scope = " + studio"
     system_scope = ""
     if not args.project:
         sys_issues, sys_notes = check_system()
         all_issues += sys_issues
         notes += sys_notes
         system_scope = " + system surfaces"
-    system_scope += pipeline_scope
+    system_scope += pipeline_scope + studio_scope
     for n in notes:
         print(f"af doctor: note — {n}")
     if all_issues:
@@ -2992,6 +3276,7 @@ def cmd_search(args):
 # and allowed in any mode; so is `pipe board`.
 OPERATOR_VERBS = {"ready", "publish", "version", "draft", "adopt", "new-project"}
 OPERATOR_PIPE_VERBS = {"save", "start", "stage"}
+OPERATOR_STUDIO_VERBS = {"new", "stage", "post"}
 OPERATOR_AUTONOMY_VERBS = {"init", "start", "checkpoint", "finish"}
 OPERATOR_AUTOMATION_VERBS = {"init", "ready", "activate", "pause", "retire"}
 
@@ -3099,6 +3384,15 @@ def main():
     ps.add_argument("--at"); ps.add_argument("--folder"); ps.set_defaults(fn=cmd_pipe_round)
     ps = psub.add_parser("archive");   ps.add_argument("slug"); ps.set_defaults(fn=cmd_pipe_archive)
     ps = psub.add_parser("unarchive"); ps.add_argument("slug"); ps.set_defaults(fn=cmd_pipe_unarchive)
+
+    s = sub.add_parser("studio")
+    ssub = s.add_subparsers(dest="studio_cmd", required=True)
+    sn = ssub.add_parser("new"); sn.add_argument("slug"); sn.add_argument("--date")
+    sn.add_argument("--platform", default="tiktok"); sn.add_argument("--series")
+    sn.add_argument("--from", dest="source"); sn.add_argument("--name"); sn.set_defaults(fn=cmd_studio_new)
+    st = ssub.add_parser("stage"); st.add_argument("slug"); st.add_argument("state"); st.set_defaults(fn=cmd_studio_stage)
+    sp = ssub.add_parser("post"); sp.add_argument("slug"); sp.add_argument("--url", required=True)
+    sp.add_argument("--posted-at"); sp.set_defaults(fn=cmd_studio_post)
 
     args = p.parse_args()
     check_mode_gate(args.cmd, args)

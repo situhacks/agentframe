@@ -291,6 +291,14 @@ def insert_file(con, root, rel, mtime, size, file_hash, heads):
     return items
 
 
+def count_unembedded(con):
+    """Chunks carrying no vector — findable by keyword, invisible to semantic."""
+    return con.execute(
+        "SELECT COUNT(*) FROM chunks c LEFT JOIN embeddings e"
+        " ON e.path = c.path AND e.ord = c.ord"
+        " WHERE e.path IS NULL").fetchone()[0]
+
+
 def cmd_update(root, rebuild=False, quiet=False):
     started = time.time()
     con = connect(root)
@@ -377,6 +385,22 @@ def cmd_update(root, rebuild=False, quiet=False):
         removed += 1
     flush_embeddings()
 
+    # A failed batch (or a backend that was down) leaves chunks without vectors,
+    # and the passes above only revisit files whose hash moved — so those chunks
+    # would stay keyword-only until a full --rebuild. Backfill them here to make
+    # refresh-on-answer genuinely self-healing.
+    backfilled = 0
+    if not embed_state["failed"]:
+        orphans = con.execute(
+            "SELECT c.path, c.ord, c.breadcrumb, c.body FROM chunks c"
+            " LEFT JOIN embeddings e ON e.path = c.path AND e.ord = c.ord"
+            " WHERE e.path IS NULL ORDER BY c.path, c.ord").fetchall()
+        if orphans:
+            queue([(pth, ordn, f"{crumb}\n{text}"[:EMBED_MAX_CHARS])
+                   for pth, ordn, crumb, text in orphans])
+            flush_embeddings()
+            backfilled = len(orphans) - count_unembedded(con)
+
     total_chunks = con.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
     total_files = con.execute("SELECT COUNT(*) FROM files").fetchone()[0]
     embedded_total = con.execute("SELECT COUNT(*) FROM embeddings").fetchone()[0]
@@ -389,7 +413,7 @@ def cmd_update(root, rebuild=False, quiet=False):
     summary = {
         "added": added, "updated": updated, "removed": removed,
         "files": total_files, "chunks": total_chunks,
-        "embedded": embedded_total,
+        "embedded": embedded_total, "backfilled": backfilled,
     }
     if not quiet:
         print(
@@ -398,7 +422,8 @@ def cmd_update(root, rebuild=False, quiet=False):
             f"({rehashed_same} touch-only) · -{removed} gone · "
             f"{total_files} tracked / {total_chunks} chunks · "
             f"E{embedded_total}/{total_chunks} embedded · "
-            f"{time.time() - started:.1f}s"
+            + (f"+{backfilled} backfilled · " if backfilled else "")
+            + f"{time.time() - started:.1f}s"
         )
     return summary
 
@@ -442,14 +467,21 @@ def cmd_status(root):
     superseded = con.execute(
         "SELECT COUNT(*) FROM files WHERE is_head = 0").fetchone()[0]
     embedded = con.execute("SELECT COUNT(*) FROM embeddings").fetchone()[0]
+    unembedded = count_unembedded(con)
     model_row = con.execute("SELECT value FROM meta WHERE key='embed_model'").fetchone()
     con.close()
     print(f"af index: db {os.path.relpath(db_path(root), root)}")
     print(f"  last update : {updated_at}")
     print(f"  tracked     : {files_n} files / {chunks_n} chunks")
+    if not embedded:
+        note = " — keyword-only until you run `af index update`"
+    elif unembedded:
+        note = (f" — WARNING: {unembedded} chunks have no vector and are"
+                " keyword-only; run `af index update` to backfill")
+    else:
+        note = ""
     print(f"  embeddings  : {embedded}/{chunks_n} chunks via"
-          f" {model_row[0] if model_row else 'n/a'}"
-          f"{'' if embedded else ' — keyword-only until you run af index update'}")
+          f" {model_row[0] if model_row else 'n/a'}{note}")
     print(f"  stale       : {stale} (run `af index update`)")
     print(f"  superseded  : {superseded} prior versions ranked down")
 

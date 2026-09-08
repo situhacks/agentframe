@@ -151,7 +151,7 @@ proxy: .derived/3f9a1c2b7d4e/proxy.mp4   # present when codec is not browser-dec
 keyframes: [.derived/3f9a1c2b7d4e/kf-1.jpg, .derived/3f9a1c2b7d4e/kf-2.jpg, .derived/3f9a1c2b7d4e/kf-3.jpg]
 phash: <hex>                  # perceptual hash for near-duplicate detection
 review: pending               # pending | done
-reviewed_by: null             # gemini | claude | qwen3-vl | operator
+reviewed_by: null             # gemini | claude | operator
 description: ""               # one concrete sentence, filled at review
 tags: []                      # five to eight: subject, place, action
 role: null                    # b-roll | hero | reference | personal | talking-head
@@ -163,7 +163,7 @@ quality: null                 # hero | b-roll | reference | reject
 used_in: []                   # post or project slugs, appended by the edit route
 ```
 
-The tool fills everything above `review`; the reviewing agent fills the rest. `people: others` and `restriction: private` gate use in a post behind an operator check. An asset with no card is not available for selection.
+The tool fills everything above `review`; the reviewing agent (the operator uses Gemini in Antigravity, working from `review-queue.md`) fills the rest and sets `review: done`. No model runs inside the tool. `people: others` and `restriction: private` gate use in a post behind an operator check. An asset with no card is not available for selection.
 
 ## `audio/` — third-party sound
 

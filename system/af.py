@@ -3201,9 +3201,25 @@ def cmd_sync_harnesses(args):
     print(f"af sync-harnesses: {action} native skill projections; clean")
 
 
+def media_shelf_notes():
+    """Advisory drift on the operator's media shelf (library/assets/media/); no shelf → []."""
+    try:
+        from system.tools import media_intake
+    except ImportError:
+        try:
+            sys.path.insert(0, os.path.join(ROOT, "system", "tools"))
+            import media_intake  # direct ``python system/af.py`` execution
+        except Exception:
+            return []
+    try:
+        return media_intake.notes(ROOT)
+    except Exception as e:  # a broken card must not take doctor down
+        return [f"media shelf check failed: {e}"]
+
+
 def check_system():
     return (dead_link_issues() + ppt_master_stray_issues(),
-            budget_notes() + voice_mirror_notes() + design_language_notes())
+            budget_notes() + voice_mirror_notes() + design_language_notes() + media_shelf_notes())
 
 
 def cmd_doctor(args):

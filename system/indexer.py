@@ -6,9 +6,14 @@ rebuildable at any moment and is never cited as truth. Search results are
 pointers — consumers open the cited files before relying on them.
 
 Corpus (inclusion, not enforcement — whatever is indexed is the whole world
-`af search` sees): workspace/, library/, .claude/plans/, and system/ machine
-docs. Skipped everywhere: generated harness projections, vendor-source and
-runtime subtrees, archives' noise stays ranked down rather than excluded.
+`af search` sees): the personal layer only. workspace/ (projects, pipeline,
+studio, board), library/context/ (minus the voice corpus and the schema
+skeletons), library/lenses/, library/assets/, and .claude/plans/. System
+machinery (system/, library/process|deliverables|domains) is routed by the
+AGENTS routers and their catalogs, never searched: search exists to find what
+the operator made or lived, faster than grep (operator decision 2026-09-09).
+Skipped everywhere: generated projections, vendor-source and runtime subtrees;
+archived work stays indexed and ranked down rather than excluded.
 
 Ranking v2 (hybrid): FTS5 BM25 over trigram tokens fused with local
 nomic-embed-text cosine similarity through reciprocal-rank fusion — the
@@ -47,13 +52,12 @@ INDEX_DIR_NAME = os.path.join("system", "index")
 DB_NAME = "vault.db"
 GOLDEN_NAME = "golden-set.yaml"
 
-CORPUS_ROOTS = ["workspace", "library", os.path.join(".claude", "plans"), "system"]
+CORPUS_ROOTS = ["workspace", os.path.join("library", "context"), os.path.join("library", "lenses"),
+                os.path.join("library", "assets"), os.path.join(".claude", "plans")]
 SKIP_DIRS_ANYWHERE = {
     "_archive", "_scratch", "__pycache__", "node_modules", "snapshots",
     "runs", "cache", "local", "dist", "out", "source", "references",
 }
-# Extra skips applied only under system/ (machine internals; docs still indexed)
-SYSTEM_SKIP_DIRS = {"tools", "browser", "server", "daemon", "research", "logs", "audit", "index"}
 EXTENSIONS = {".md", ".txt"}
 
 MAX_CHUNK_CHARS = 9000
@@ -97,12 +101,10 @@ def iter_corpus(root):
             for d in dirnames:
                 if d in SKIP_DIRS_ANYWHERE:
                     continue
-                if top == "system" and d in SYSTEM_SKIP_DIRS:
-                    continue
                 # Voice corpus: routed context, not searched content — it is a
                 # curated snapshot whose sources live in projects (operator
                 # decision 2026-08-23). Route loads it; the index skips it.
-                if top == "library" and d == "voice" and rel_dir.startswith("library/context"):
+                if d == "voice" and rel_dir.startswith("library/context"):
                     continue
                 # Schema mirrors are FILL-ME skeletons of the documents the operator layer
                 # holds populated (proof-points.md: 0.5KB of placeholders against 13KB of
@@ -110,7 +112,7 @@ def iter_corpus(root):
                 # on a title match. Not duplicates and never consolidate them - the schema is
                 # the tracked public shape downstream copies need. Route loads it; search
                 # skips it, same contract as the voice corpus above.
-                if top == "library" and d == "operator-schema" and rel_dir == "library/context":
+                if d == "operator-schema" and rel_dir == "library/context":
                     continue
                 pruned.append(d)
             dirnames[:] = pruned

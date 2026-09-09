@@ -101,7 +101,7 @@ model.
   rebuild moved magical / rbc / eliseai under `applications/completed/`.
   Five expectations repointed; q10-q13 recovered.
 
-## Current standing
+## Standing, 2026-08-27
 
 **2026-08-27: recall@5 = 24/29 = 83%, MRR 0.623** (index excludes
 operator-schema; golden paths current; 10454/10730 chunks embedded).
@@ -117,3 +117,67 @@ The four genuine misses are unchanged and remain the real work: q02
 (measurement literacy to Kazmier), q03 (Mike Duffy recruiter screen), q05
 (background-to-JD mapping), q06 (Banyan angle). All four are synthesis queries
 whose answer is spread across several documents rather than sitting in one.
+
+## Boundary change and re-harvest, 2026-09-09
+
+Two operator decisions, taken together because each one moved the golden set.
+
+**The corpus is the personal layer.** `CORPUS_ROOTS` dropped `system/` and the
+library machinery (`process/`, `deliverables/`, `domains/`) and now walks
+`workspace/`, `library/context/` (still minus the voice corpus and the schema
+skeletons), `library/lenses/`, `library/assets/`, and `.claude/plans/`. The
+operator's framing: search exists to find what he made or lived, faster than
+grep; how the machine works is routed by the AGENTS routers and their catalogs,
+never searched. The rebuild dropped 646 files (1511 -> 1097 files, 13546 ->
+9829 chunks), all of them skill bodies, process files, templates, and system
+docs. Plans stay in: they are his decision history, not machinery.
+
+**Archived applications leave the golden set.** The search is closed and every
+application sits under `applications/completed/`; the operator retired those
+queries rather than keep repointing them. Sixteen application queries and the
+two system-shaped queries (`upstream-sync`, `bounded-autonomy`) went with them.
+Twelve replacements were harvested from real `af search` calls found in the
+session transcripts (2026-08-24 to 2026-09-09), each expected path verified on
+disk; the file marks them `[real]`. Twenty-three queries now, so the set is
+thinner than the 30-pair target and every number below carries that caveat.
+
+**Refresh without remembering.** `system/hooks/index_refresh.py` runs at session
+start on all three harnesses and spawns `af index update` detached when the
+index is more than a day old. It never builds from cold and never blocks.
+
+| Measurement | Result | Date |
+|---|---|---|
+| Golden set after retirement + re-harvest, first run | recall@5 = 18/23 = 78% · MRR 0.549 | 2026-09-09 |
+| After repointing 3 stale paths and 1 wrong expectation | **recall@5 = 22/23 = 96% · MRR 0.679** | 2026-09-09 |
+
+Error analysis on the first run, one bucket each:
+
+- q01, q02, q11 (joyce-hair-pilot, vancouver-ai-consultancy): **stale paths**,
+  the same defect as 2026-08-27. Both projects closed since the harvest and
+  moved under `workspace/projects/completed/`; the search ranked the moved files
+  second. Repointed. Rule, now stated in the golden file's header: closed
+  projects stay in the set at their moved path, and a project close is a
+  golden-set edit.
+- q19 (Aeroplan / Cobalt): **wrong expectation**, not a miss. The harvest
+  guessed `life/knowledge/financial-accounts.md`; the index put
+  `life/_local/travel-credit-card-pov/travel-credit-card-pov-v8.md` first at
+  0.259, which is the deliverable the query was actually after. Added as the
+  primary expectation.
+- q18 ("career as a project agent architecture POV post" ->
+  `post-12-career-is-a-project/post-12-plan.md`): **ranking competition**, the
+  one genuine miss. The campaign's messaging architecture, project.md, and
+  campaign brief all carry the same vocabulary more densely than the plan file.
+  Same family as the 2026-08-27 synthesis misses; do not tune fusion weights
+  against one query on n=23.
+
+The 83% -> 76% drift BB-2026-09-08-01 reported was corpus growth competing with
+a set whose targets had moved, not a ranking regression: nothing in ranking
+changed between the two readings, and the recovered number above came from
+correcting targets and boundary alone.
+
+## Current standing
+
+**2026-09-09: recall@5 = 22/23 = 96%, MRR 0.679** (personal-layer corpus,
+1097 files / 9829 chunks, all embedded via qwen3-embedding:0.6b). One
+competition miss (q18). Re-measure when the set is back to ~30 real queries;
+harvest them from `af search` calls in transcripts, not from guesses.

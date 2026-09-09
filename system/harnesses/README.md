@@ -25,6 +25,8 @@ Expose selected canonical AgentFrame skills and deterministic guards through eac
 
 `voice_guard.py` is wired on all three surfaces around two state buttons: it runs `system/voice_lint.py`, denies `af ready` on a user-voiced head with hard findings (banned tics, two dashes in a sentence, an operator hyphen turned into an em dash since the previous version), and after `af version` hands the agent the lint of the version it just closed with the reminder to load the voice system before editing. `AF_VOICE_LINT=skip` on the command is the operator override.
 
+`index_refresh.py` runs at session start on all three surfaces: when the retrieval index is more than a day old it spawns `af index update` detached, prints one line, and returns. It never blocks, never fails the session, and never builds from cold; a machine with no index still needs one explicit `af index update --rebuild`.
+
 `.agents/skills/` remains the portable skill-discovery projection. It is not a fourth hook configuration.
 
 ## Commands

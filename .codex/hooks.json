@@ -18,6 +18,13 @@
             "commandWindows": "python \"$(git rev-parse --show-toplevel)/system/hooks/board_guard.py\" --event sessionstart --harness codex",
             "timeout": 15,
             "statusMessage": "Syncing the AgentFrame board"
+          },
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/system/hooks/index_refresh.py\" --harness codex",
+            "commandWindows": "python \"$(git rev-parse --show-toplevel)/system/hooks/index_refresh.py\" --harness codex",
+            "timeout": 15,
+            "statusMessage": "Refreshing the retrieval index"
           }
         ]
       }

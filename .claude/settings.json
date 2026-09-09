@@ -11,6 +11,10 @@
           {
             "type": "command",
             "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/board_guard.py\" --event sessionstart --harness claude"
+          },
+          {
+            "type": "command",
+            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/index_refresh.py\" --harness claude"
           }
         ]
       }

@@ -10,7 +10,8 @@ Usage:
     python system/tools/media_intake.py inventory <folder>
     python system/tools/media_intake.py ingest <folder> --batch <slug> [--context "..."] [--copy] [--no-index]
     python system/tools/media_intake.py register <file> --batch <slug> [--context "..."]
-    python system/tools/media_intake.py queue [--include-local] [--json]   # review-queue.md for the reviewing agent (Gemini)
+    python system/tools/media_intake.py queue [--include-local] [--json]   # review-queue.md for a reviewing agent
+    python system/tools/media_intake.py review [--limit N] [--model SLUG]   # automatic review: Gemini via the Antigravity CLI
     python system/tools/media_intake.py render [--no-index]
     python system/tools/media_intake.py doctor
 
@@ -19,7 +20,8 @@ Layout (root from media.yaml `root:`, default "." = beside the cards):
 
 Stdlib + PyYAML + Pillow (pillow_heif when present) + ffmpeg/ffprobe. No model is required: the review
 fields are filled by a multimodal agent working from review-queue.md (the operator uses Gemini in
-Antigravity). The tool never runs a model.
+Antigravity), or `review` delegates each pending card to Gemini through the Antigravity CLI
+(system/tools/agy_call.py, the operator's Google AI Pro login, nothing local). No model runs on this machine.
 """
 
 from __future__ import annotations
@@ -663,6 +665,100 @@ def cmd_queue(args):
         print(f"wrote {QUEUE} with {len(rows)} card(s) to review; hand it to the reviewing agent")
 
 
+# ---------------------------------------------------------------- review (automatic: Gemini via the Antigravity CLI)
+
+REVIEW_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "description": {"type": "string"},
+        "tags": {"type": "array", "items": {"type": "string"}},
+        "role": {"type": "string", "enum": ["b-roll", "hero", "reference", "personal", "talking-head"]},
+        "mood": {"type": "array", "items": {"type": "string"}},
+        "setting": {"type": "string"},
+        "motion": {"type": "string", "enum": ["static", "pan", "handheld", "timelapse", "none"]},
+        "people": {"type": "string", "enum": ["none", "self", "others", "self+others"]},
+        "quality": {"type": "string", "enum": ["hero", "b-roll", "reference", "reject"]},
+        "restriction": {"type": "string", "enum": ["none", "private", "reference-only"]},
+        "best_moment": {"type": "string"},
+        "note": {"type": "string"},
+    },
+    "required": ["description", "tags", "role", "mood", "setting", "people", "quality", "restriction"],
+}
+
+REVIEW_TASK = """You are cataloguing ONE asset from my personal footage library for use as b-roll in short-form
+talking-head videos. Batch context: {context}
+Watch or look at the file, then answer:
+- description: one concrete sentence (what is visible, where, light, movement)
+- tags: 5-8 lowercase tags (subject, place, action, objects)
+- role: b-roll | hero | reference | personal | talking-head
+- mood: 1-3 of calm, energetic, moody, bright, cozy, urban, nature, gritty, warm, cold
+- setting: indoor or outdoor, plus time of day when visible
+- motion: static | pan | handheld | timelapse (photos: none)
+- people: none | self | others | self+others  (self = the single presenter on camera)
+- quality: hero | b-roll | reference | reject
+- restriction: none | private | reference-only  (private = not for publishing)
+- best_moment: for video, the strongest two seconds as MM:SS-MM:SS; else empty
+- note: one line if something matters (a person who needs consent, why reject), else empty
+"""
+
+
+def _agy():
+    import importlib.util
+    path = os.path.join(ROOT, "system", "tools", "agy_call.py")
+    spec = importlib.util.spec_from_file_location("agy_call", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def cmd_review(args):
+    agy = _agy()
+    cards = [(r, b) for r, b in all_cards() if r.get("review") == "pending"]
+    if args.limit:
+        cards = cards[: args.limit]
+    cards or die("nothing pending")
+    done, failed = 0, []
+    for rec, body in cards:
+        sid = rec["sha256"][:12]
+        media = os.path.join(SHELF, rec["proxy"]) if rec.get("proxy") else resolve_path(rec)
+        if not os.path.isfile(media):
+            failed.append((sid, "file missing"))
+            continue
+        env = agy.run(REVIEW_TASK.format(context=rec.get("batch_context") or rec.get("batch") or "none given"),
+                      files=[media], schema=json.dumps(REVIEW_SCHEMA), model=args.model,
+                      timeout=args.timeout)
+        out = env.get("structured_output") if env.get("status") == "SUCCESS" else None
+        if not isinstance(out, dict):
+            failed.append((sid, f"{env.get('status')}: {env.get('stderr_tail', '')[:120]}"))
+            continue
+        for k in REVIEW_FIELDS:
+            if out.get(k) not in (None, "", []):
+                rec[k] = out[k]
+        if rec.get("motion") == "none":
+            rec["motion"] = None
+        note_lines = []
+        if out.get("best_moment"):
+            note_lines.append(f"- best moment: {out['best_moment']}")
+        if out.get("note"):
+            note_lines.append(f"- {out['note']}")
+        rec["review"] = "done"
+        rec["reviewed_by"] = f"agy:{env.get('model')}"
+        new_body = body if (body and "## Review notes" in body) else default_body(rec)
+        if note_lines:
+            new_body = new_body.rstrip("\n") + "\n" + "\n".join(note_lines) + "\n"
+        write_card(rec, new_body)
+        done += 1
+        usage = env.get("usage") or {}
+        log(f"{sid}: {rec.get('description', '')[:70]} ({usage.get('total_tokens', '?')} tok)")
+    cmd_render(argparse.Namespace(no_index=True))
+    print(f"reviewed {done} card(s) with {args.model} via the Antigravity CLI"
+          + (f"; {len(failed)} failed" if failed else ""))
+    for sid, why in failed:
+        print(f"  failed: cards/{sid}.md — {why}")
+    if not args.no_index:
+        reindex()
+
+
 # ---------------------------------------------------------------- doctor
 
 def notes(root=None):
@@ -713,6 +809,9 @@ def main():
     s = sub.add_parser("queue", help="write review-queue.md for the reviewing agent")
     s.add_argument("--include-local", action="store_true"); s.add_argument("--json", action="store_true")
     s.set_defaults(fn=cmd_queue)
+    s = sub.add_parser("review", help="automatic review of pending cards: Gemini via the Antigravity CLI")
+    s.add_argument("--limit", type=int); s.add_argument("--model", default="gemini-3.8-flash-medium")
+    s.add_argument("--timeout", default="5m"); s.add_argument("--no-index", action="store_true"); s.set_defaults(fn=cmd_review)
     s = sub.add_parser("render"); s.add_argument("--no-index", action="store_true"); s.set_defaults(fn=cmd_render)
     s = sub.add_parser("doctor"); s.set_defaults(fn=cmd_doctor)
     args = ap.parse_args()

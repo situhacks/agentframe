@@ -50,4 +50,5 @@ Reusable captures never live in the studio. They live on `library/assets/media/`
 - **Design.** The video design language named by the channel profile is the only design input for a recut. Never load HyperFrames' creative house style for one.
 - **Engagement.** No automation on the platform, ever. `community.md` holds peers and drafted comments, stitches and DMs; the human posts them.
 - **Calendar mirror.** At `scheduled` and `posted`, push a one-way event (title, platform, post link) to the operator's Google Calendar through the connected calendar tool when it is authorized. The board stays truth; the mirror never writes back.
+- **Perception is delegated, judgment is not.** Watching footage, bulk tagging, and long transcripts go to Gemini through `system/tools/agy_call.py` (the operator's Antigravity login); what to cut, what to say, and what ships stay with the session.
 - **Overlap with projects.** A short that recaps a project essay is a studio post whose `post.md` names `source_project`. That is a link, not a shared folder.

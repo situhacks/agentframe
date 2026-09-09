@@ -163,7 +163,7 @@ quality: null                 # hero | b-roll | reference | reject
 used_in: []                   # post or project slugs, appended by the edit route
 ```
 
-The tool fills everything above `review`; the reviewing agent (the operator uses Gemini in Antigravity, working from `review-queue.md`) fills the rest and sets `review: done`. No model runs inside the tool. `people: others` and `restriction: private` gate use in a post behind an operator check. An asset with no card is not available for selection.
+The tool fills everything above `review`; the review fields are filled either automatically (`media_intake.py review`, Gemini through the Antigravity CLI, fenced by `agy_call.py`) or by a reviewing session working from `review-queue.md`, and `review` becomes `done`. Nothing runs on this machine. `people: others` and `restriction: private` gate use in a post behind an operator check. An asset with no card is not available for selection.
 
 ## `audio/` — third-party sound
 

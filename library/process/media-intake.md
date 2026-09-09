@@ -36,7 +36,15 @@ python system/tools/media_intake.py ingest <folder> --batch "<slug>" --context "
 
 The tool: hashes every file and skips exact duplicates; flags near-duplicate videos and burst photos; moves originals to `{root}/{YYYY}/{YYYY-MM-DD}-{batch}-{nn}.{ext}` without transcoding; writes an H.264 proxy for HEVC sources; extracts three scene-aware keyframes per video; reads EXIF and `ffprobe` facts; writes one card per asset with `review: pending` and the batch card; then runs `af index update`. Duplicates are listed, never silently dropped.
 
-### 4. Review (judgment, in the operator's multimodal harness)
+### 4. Review (judgment, delegated to Gemini)
+
+Two ways, same fields. **Automatic** (the default when the operator is not reviewing by hand): each pending card is watched by Gemini through the Antigravity CLI on the operator's login, fenced by `system/tools/agy_call.py` so the agent sees only a disposable read-only copy:
+
+```
+python system/tools/media_intake.py review [--limit N] [--model gemini-3.8-flash-medium]
+```
+
+**Manual or in Antigravity itself:** write the queue and hand it to the reviewing session:
 
 ```
 python system/tools/media_intake.py queue
@@ -50,7 +58,7 @@ Then the derived index and search catch up:
 python system/tools/media_intake.py render && python system/af.py index update
 ```
 
-**The tool never runs a model.** Review is agent work: Gemini watches the video; a Claude session reads the keyframes the tool extracted. No local vision model is part of intake.
+**Nothing runs on this machine.** Both paths call Gemini in Google's cloud; a Claude session without either can still review from the extracted keyframes. No local vision model is part of intake.
 
 ### 5. Report
 

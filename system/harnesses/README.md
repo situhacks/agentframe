@@ -57,3 +57,10 @@ Hook coverage is a guardrail, not the source of truth. `system/af.py` owns state
 - Cursor hooks: https://cursor.com/docs/hooks
 - Cursor Claude-hook compatibility: https://cursor.com/docs/reference/third-party-hooks
 - Codex hooks: https://learn.chatgpt.com/docs/hooks
+
+## Antigravity
+
+Antigravity (IDE 1.20.5+ and the `agy` CLI) reads the root `AGENTS.md` natively and discovers skills in `.agents/skills/`, which is the same projection the Codex target writes, so an Antigravity session enters through the stable classifier and its task-local router with no extra wiring.
+
+In the other direction, `system/tools/agy_call.py` is the delegation connector: a bounded task with media or a long multimodal input runs in `agy` print mode on the operator's Google account, fenced to a disposable read-only workspace with shell commands denied. Processes route perception through it and keep judgment in the session; see `library/process/media-intake.md` and `short-form-edit.md`. Pins and measured traps: `system/tools/agy_call.VENDOR.md`.
+

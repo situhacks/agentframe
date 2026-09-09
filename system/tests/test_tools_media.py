@@ -16,6 +16,7 @@ def load(name):
 
 transcribe = load("transcribe")
 media_intake = load("media_intake")
+agy_call = load("agy_call")
 
 
 class TestTokensToWords(unittest.TestCase):
@@ -71,6 +72,41 @@ class TestIntakeHelpers(unittest.TestCase):
     def test_browser_codecs_exclude_hevc(self):
         self.assertIn("h264", media_intake.BROWSER_CODECS)
         self.assertNotIn("hevc", media_intake.BROWSER_CODECS)
+
+
+class TestAgyCallFence(unittest.TestCase):
+    def test_prompt_names_absolute_paths_and_forbids_search(self):
+        p = agy_call.build_prompt("Describe it.", [r"C:\x\clip.mp4"])
+        self.assertIn(r"C:\x\clip.mp4", p)
+        self.assertIn("do not search", p)
+        self.assertTrue(p.endswith("Describe it."))
+        self.assertEqual(agy_call.build_prompt("Plain.", []), "Plain.")
+
+    def test_command_never_skips_permissions_by_default(self):
+        cmd = agy_call.build_command("agy", "p", r"C:\tmp\w", None, "gemini-3.8-flash-medium", "5m", False)
+        self.assertNotIn("--dangerously-skip-permissions", cmd)
+        self.assertNotIn("--effort", cmd)
+        self.assertIn("--add-dir", cmd)
+        self.assertEqual(cmd[cmd.index("--add-dir") + 1], r"C:\tmp\w")
+        self.assertIn("--disable-slash-commands", cmd)
+        cmd2 = agy_call.build_command("agy", "p", "w", "{}", "gemini-3.8-flash-low", "5m", True)
+        self.assertIn("--dangerously-skip-permissions", cmd2)
+        self.assertIn("--json-schema", cmd2)
+
+    def test_stage_copies_read_only_into_workspace(self):
+        import stat
+        import tempfile
+        with tempfile.TemporaryDirectory() as src_dir, tempfile.TemporaryDirectory() as work:
+            src = os.path.join(src_dir, "a.mp4")
+            with open(src, "wb") as fh:
+                fh.write(b"bytes")
+            staged = agy_call.stage([src], work)
+            self.assertEqual(len(staged), 1)
+            self.assertTrue(staged[0].startswith(work))
+            self.assertFalse(os.stat(staged[0]).st_mode & stat.S_IWRITE)
+            with self.assertRaises(PermissionError):
+                open(staged[0], "wb")
+            os.chmod(staged[0], stat.S_IWRITE)
 
 
 if __name__ == "__main__":

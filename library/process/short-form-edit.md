@@ -86,7 +86,13 @@ yt-dlp --impersonate chrome --skip-download --flat-playlist --playlist-end 8 \
 yt-dlp --impersonate chrome --write-subs --sub-langs "eng-US" --skip-download -o "research/{date}-{handle}/%(id)s" "<video url>"
 ```
 
-Where a video ships no captions, download audio and transcribe with the local tool. For each video record: the first-twelve-word hook and its pattern, structure and beat timing, length, caption style, and views relative to the creator's median in the set. Write the breakdown to `research/{date}-{handle}/study.md` and append hook rows to `hooks.md` with the URL. Requires `yt-dlp` 2026.08 or later with `curl_cffi`; if a read fails twice, record the gap rather than substituting a source.
+Where a video ships no captions, download audio and transcribe with the local tool. To have the video *watched* (hook delivery, cuts, on-screen text, pacing), delegate perception to Gemini and keep the judgment here:
+
+```
+python system/tools/agy_call.py --file research/{date}-{handle}/{id}.mp4 --schema '{...}' \n  --prompt "Describe the first 3 seconds, list every cut with timestamps, quote on-screen text, name the caption style."
+```
+
+For each video record: the first-twelve-word hook and its pattern, structure and beat timing, length, caption style, and views relative to the creator's median in the set. Write the breakdown to `research/{date}-{handle}/study.md` and append hook rows to `hooks.md` with the URL. Requires `yt-dlp` 2026.08 or later with `curl_cffi`; if a read fails twice, record the gap rather than substituting a source.
 
 ## Verification Or Logging
 

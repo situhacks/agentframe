@@ -46,7 +46,8 @@ function cardEl(card, names) {
 
   const meta = el('div', { class: 'meta' },
     el('span', { text: ageLabel(card.age_hours) }),
-    el('span', { text: card.by === 'human' ? 'you' : (card.by || '') }));
+    el('span', { text: card.by === 'human' ? 'you' : (card.by || '') }),
+    card.model ? el('span', { text: card.model, title: 'model agreed for this card' }) : null);
   if (card.ask === 'review' && card.receipt) {
     meta.append(el('a', {
       href: `/workspace/board/${card.receipt}`, text: 'receipt', target: '_blank',

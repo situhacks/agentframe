@@ -294,10 +294,19 @@ class BoardModuleTests(unittest.TestCase):
         card = board.close(b, cid)
         self.assertEqual(card.state_label(), "closed")
 
-    def test_meta_carries_the_worker_model_default(self):
+    def test_meta_carries_the_worker_model_fallback(self):
         b = self.load()
         self.assertEqual(b.meta["worker_model"], "sonnet")
         self.assertIn("worker_model: sonnet", board.render(b))
+
+    def test_model_agreed_on_the_card_survives_the_round_trip(self):
+        b = self.load()
+        card = board.add(self.root, b, project="p", deliverable="deck", model="opus", now=self.now)
+        board.save(self.root, b)
+        again = self.load().find(card.id)
+        self.assertEqual(again.fields["model"], "opus")
+        brief = (board.paths(self.root)["dir"] / again.fields["brief"]).read_text(encoding="utf-8")
+        self.assertIn("model: opus", brief)
 
     def test_bind_unbind_and_write_guard(self):
         with self.assertRaises(board.BoardError):
@@ -407,6 +416,19 @@ class BoardCliTests(unittest.TestCase):
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
             fn(types.SimpleNamespace(**kwargs))
         return out.getvalue()
+
+    def test_dispatch_model_precedence_flag_then_card_then_fallback(self):
+        self.run_cmd(af.cmd_board_init)
+        out = self.run_cmd(af.cmd_board_add, project="p", deliverable="deck", by="orchestrator", owner=None,
+                           goal="", done_when="", note="", model="opus")
+        cid = out.split("af board add: ")[1].split(" ")[0]
+        seen = {}
+        with patch.object(board, "launch_background", lambda root, card, model=None: seen.setdefault("model", model) or "abcdef12"):
+            self.run_cmd(af.cmd_board_dispatch, card_id=cid, session=None, launch=True, model=None, force=False, no_roster=True)
+        self.assertEqual(seen["model"], "opus")
+        listing = json.loads(self.run_cmd(af.cmd_board_list, json=True, no_roster=True))
+        card = next(c for l in listing["lanes"] for c in l["cards"] if c["id"] == cid)
+        self.assertEqual(card["model"], "opus")
 
     def test_init_add_dispatch_list_json(self):
         self.assertIn("ready", self.run_cmd(af.cmd_board_init))

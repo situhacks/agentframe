@@ -3362,7 +3362,7 @@ def cmd_board_add(args):
     try:
         card = workboard.add(ROOT, b, project=args.project, deliverable=args.deliverable, by=args.by,
                              owner=args.owner, goal=args.goal or "", done_when=args.done_when or "",
-                             note=args.note or "")
+                             note=args.note or "", model=getattr(args, "model", None))
     except workboard.BoardError as exc:
         die(str(exc))
     workboard.save(ROOT, b)
@@ -3381,7 +3381,9 @@ def cmd_board_dispatch(args):
     # fails to report its id must never leave a live worker behind a Queued card.
     workboard.save(ROOT, b)
     if args.launch:
-        model = args.model or b.meta.get("worker_model") or workboard.DEFAULT_META["worker_model"]
+        # precedence: --model for this dispatch, the model agreed on the card, then the board's fallback
+        model = args.model or card.fields.get("model") or b.meta.get("worker_model") or workboard.DEFAULT_META["worker_model"]
+        card.fields["model"] = model
         try:
             card.fields["session"] = workboard.launch_background(ROOT, card, model=model)
         except workboard.BoardError as exc:
@@ -3599,6 +3601,7 @@ def main():
     ba = bsub.add_parser("add"); ba.add_argument("project"); ba.add_argument("deliverable")
     ba.add_argument("--by", choices=workboard.BY_VALUES, default="orchestrator"); ba.add_argument("--owner")
     ba.add_argument("--goal"); ba.add_argument("--done-when", dest="done_when"); ba.add_argument("--note")
+    ba.add_argument("--model", help="model agreed for this card at the go (opus, sonnet, ...)")
     ba.set_defaults(fn=cmd_board_add)
     bd = bsub.add_parser("dispatch"); bd.add_argument("card_id"); bd.add_argument("--session")
     bd.add_argument("--launch", action="store_true"); bd.add_argument("--model")

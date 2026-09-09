@@ -48,7 +48,7 @@ from pathlib import Path
 
 SCHEMA_VERSION = 1
 LANES = ("Queued", "In progress", "Needs you", "Done")
-FIELD_KEYS = ("by", "since", "ask", "reason", "session", "receipt", "brief", "note", "waiting_since")
+FIELD_KEYS = ("by", "model", "since", "ask", "reason", "session", "receipt", "brief", "note", "waiting_since")
 ARCHIVE_KEYS = ("outcome", "closed_at")
 BY_VALUES = ("orchestrator", "human")
 ASK_VALUES = ("review", "input")
@@ -399,7 +399,7 @@ def _check_slug(value: str, what: str) -> str:
 
 
 def add(root: str | Path, board: Board, *, project: str, deliverable: str, by: str = "orchestrator",
-        owner: str | None = None, goal: str = "", done_when: str = "", note: str = "",
+        owner: str | None = None, goal: str = "", done_when: str = "", note: str = "", model: str | None = None,
         now: dt.datetime | None = None, write_brief: bool = True) -> Card:
     now = now or now_local()
     if by not in BY_VALUES:
@@ -408,6 +408,8 @@ def add(root: str | Path, board: Board, *, project: str, deliverable: str, by: s
     card = Card(id=next_id(root, board, now.date()), project=project, deliverable=deliverable,
                 owner=owner or f"{project}/{deliverable}", lane="Queued",
                 fields={"by": by, "since": now.date().isoformat()})
+    if model:
+        card.fields["model"] = _clean(model)
     if note:
         card.fields["note"] = _clean(note)
     if write_brief:
@@ -440,6 +442,7 @@ allowed_paths:
 receipt: {receipt.relative_to(p["root"]).as_posix()}
 owner_session: {card.owner}
 by: {card.fields.get("by", "orchestrator")}
+model: {card.fields.get("model", "(proposed at dispatch)")}
 ---
 
 ## Brief

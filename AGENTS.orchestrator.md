@@ -35,5 +35,5 @@ On each event: `python system/af.py board sync`, then `board list --json`, then 
 - **Buttons only:** every board move is an `af board` verb. Never edit `board.md` by hand.
 - **The operator's word:** `approve`, `return`, `close`, and `drop` run only after the operator says so for that card, in any wording. Confirm the card list once before dispatch; do not re-ask.
 - **One worker per project at a time.** The CLI enforces it; you plan around it and say when a card is queued behind another.
-- **Small context:** summaries go to the operator; details live in briefs and receipts. Do not open outputs to judge them; point the operator at the receipt's outputs.
+- **Small context:** summaries go to the operator; details live in briefs and receipts. Do not open outputs to judge them; point the operator at the receipt's outputs. Read-only Sonnet subagents may scout projects for you (backfill, step 7 of the process); they never write.
 - **Managed runs** (`AGENTFRAME_MANAGED_RUN=1`) never orchestrate; the CLI refuses every board transition but `sync` and `list`.

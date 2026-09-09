@@ -184,6 +184,40 @@ def query_recent_system_changes(
     ]
 
 
+def append_af_run(
+    *,
+    db_path: str | Path | None = None,
+    verb: str,
+    argv: str,
+    exit_code: int,
+    error: str | None = None,
+    duration_ms: int | None = None,
+    created_at: str | None = None,
+) -> int:
+    """One row per button run. Append-only; the caller treats failure as non-fatal."""
+    ensure_db(db_path)
+    with _connection(db_path) as conn:
+        cursor = conn.execute(
+            "INSERT INTO af_runs (created_at, verb, argv, exit_code, error, duration_ms)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (created_at or _utc_now(), verb, argv, int(exit_code), error, duration_ms),
+        )
+        conn.commit()
+        return int(cursor.lastrowid)
+
+
+def query_af_runs(*, db_path: str | Path | None = None, since: str) -> list[dict[str, Any]]:
+    """Button runs at or after an ISO-8601 UTC instant, oldest first."""
+    ensure_db(db_path)
+    with _connection(db_path) as conn:
+        rows = conn.execute(
+            "SELECT id, created_at, verb, argv, exit_code, error, duration_ms FROM af_runs"
+            " WHERE created_at >= ? ORDER BY created_at, id",
+            (since,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="AgentFrame system-change audit writer")
     parser.add_argument(

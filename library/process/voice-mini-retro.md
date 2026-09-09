@@ -1,6 +1,6 @@
 # Voice Mini-Retro
 
-Called by [`ready-event.md`](ready-event.md) when a deliverable becomes ready. The harvest procedure itself lives in the [`voice-harvest`](../../system/skills/voice-harvest/SKILL.md) skill; this file owns only the ready-event eligibility gate and the invocation.
+Called by [`ready-event.md`](ready-event.md) when a deliverable becomes ready, and again when `af publish` lands a user-voiced final (that is the moment corpus promotion becomes eligible, and the button's checklist names it). The harvest procedure itself lives in the [`voice-harvest`](../../system/skills/voice-harvest/SKILL.md) skill; this file owns only the eligibility gate and the invocation. It is work to do at the transition, not a box to tick: "eligibility checked" with no harvest run is the failure this gate exists to stop.
 
 ## Eligibility (skip-when)
 

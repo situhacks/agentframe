@@ -40,7 +40,9 @@ def make_project(root, slug, *, status="active", created_at, last_activity,
 
 class NewProjectDefaultTests(unittest.TestCase):
     def test_cli_defaults_to_neutral_project_management_open_flow(self):
-        with patch.object(af, "cmd_new_project") as command, \
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.object(af, "AUDIT_DB", os.path.join(tmp, "audit.db")), \
+             patch.object(af, "cmd_new_project") as command, \
              patch.object(af, "check_mode_gate"), \
              patch.object(sys, "argv", ["af", "new-project", "anything"]):
             af.main()

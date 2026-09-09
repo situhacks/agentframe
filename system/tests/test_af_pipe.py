@@ -143,6 +143,35 @@ class TestStageMachine(PipeBase):
         self.stage(slug, "applied")
         self.assertEqual(af.row_get(self.board_fm(), slug, "shipped"), "v2")
 
+    def test_inbound_interviewing_stamps_shipped_from_the_ready_head(self):
+        # BB-2026-09-06-01: the recruiter path ships material too, so it stamps the same way.
+        slug = self.save()
+        write(af.jd_cache_path(slug), "jd")
+        self.start(slug)
+        adir = af.app_dir(slug)
+        write(os.path.join(adir, "deck", "deck-v2.md"),
+              "---\nstatus: ready\nlast_updated: 2026-07-10\nexports: [media/deck-v2.pptx]\n---\n# Deck\n")
+        write(os.path.join(adir, "deck", "media", "deck-v2.pptx"), "pptx")
+        ap = os.path.join(adir, "application.md")
+        afm, abody = af.split_fm(af.read(ap), "application.md")
+        afm = af.set_scalar(afm, "materials", "[deck]")
+        afm = afm.replace("deliverables:", "deliverables:\n  deck:\n    file: deck/deck-v2.md\n    status: ready")
+        af.write(ap, af.join_fm(afm, abody))
+        self.stage(slug, "interviewing")
+        fm = self.board_fm()
+        self.assertEqual(af.row_get(fm, slug, "stage"), "interviewing")
+        self.assertEqual(af.row_get(fm, slug, "shipped"), "v2")
+
+    def test_inbound_interviewing_with_unready_resume_nudges_instead(self):
+        slug = self.save()
+        write(af.jd_cache_path(slug), "jd")
+        self.start(slug)
+        self.stage(slug, "interviewing")
+        self.assertIsNone(af.row_get(self.board_fm(), slug, "shipped"))
+        activity = af.read(os.path.join(af.app_dir(slug), "activity.md"))
+        self.assertIn("went to the recruiter unverified", activity)
+        self.assertIn("submitted_by", activity)
+
 
 class TestPipelineDoctor(PipeBase):
     def test_clean_pipeline_is_quiet(self):

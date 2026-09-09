@@ -87,7 +87,7 @@ Scratchpads are throwaway, unversioned, and named `scratchpad`; never read prior
 
 ### State Transitions
 
-Project state changes (ready, publish, version, scaffold, and drift check) are button-owned: `python system/af.py` does the mechanics and prints the judgment checklist. Never hand-edit `ready` or `published` state. Readiness trigger and judgment steps: [`library/process/ready-event.md`](library/process/ready-event.md).
+Project state changes (ready, publish, version, scaffold, and drift check) are button-owned: `python system/af.py` does the mechanics and prints the judgment checklist. Never hand-edit `ready` or `published` state. Readiness trigger and judgment steps: [`library/process/ready-event.md`](library/process/ready-event.md). When a button refuses or crashes on a shape the project legitimately produces and you work around it, append a `BB-*` row to [`system/builder-backlog.md`](system/builder-backlog.md) before continuing; a usage slip you fix on the retry needs no row, a workaround without one is the hand-wave `af doctor` counts.
 
 ### Phase Overrides
 

@@ -11,7 +11,7 @@ The post's assembly record. Each post is built from ingredient deliverables (sli
 
 ## Artifact Shape
 
-One file per post: `post-FINAL.md` in the post folder, created in the same turn the post's first ingredient starts drafting. The campaign tracker's `post-{n}.file` points here from then on. Not versioned—the ingredient files carry the version trails; this file holds assembled ready content and then the immutable published receipt.
+One file per post: `post-FINAL.md` in the post folder, created in the same turn the post's first ingredient starts drafting. Start that first ingredient with `af draft <campaign> <post-row> --file posts/<folder>/<ingredient>-v1.md`: the button creates the tracker row, and the marketing pack creates this file and points the row at it, so later ingredients start with `--artifact <ingredient>`. Never hand-write the row. The campaign tracker's `post-{n}.file` points here from then on. Not versioned—the ingredient files carry the version trails; this file holds assembled ready content and then the immutable published receipt.
 
 - One section per manifest ingredient, copied verbatim from the ready head version in the ready turn (the ready-event procedure owns this step).
 - Ingredients not yet ready simply aren't there yet.

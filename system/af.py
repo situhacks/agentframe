@@ -64,6 +64,7 @@ import re
 import shutil
 import sys
 import tempfile
+import time
 import types
 from pathlib import Path
 
@@ -72,10 +73,8 @@ try:
 except ModuleNotFoundError:  # direct ``python system/af.py`` execution
     import autonomy_contract
 
-try:
-    from system import indexer
-except ModuleNotFoundError:  # direct ``python system/af.py`` execution
-    import indexer
+# The retrieval index is imported on demand by _indexer(): a syntax error mid-edit in
+# indexer.py must not take every state button down with it.
 
 try:
     from system import board as workboard
@@ -97,8 +96,9 @@ EXPORTABLE_INGREDIENTS = ("image-prompts",)  # cross-domain names; packs add the
 PIPE_STAGES = ("saved", "preparing", "applied", "interviewing", "offer", "rejected", "ghosted", "dropped")
 PIPE_TRANSITIONS = {
     "saved": {"preparing", "dropped"},
-    # Inbound rows skip `applied`: an agency or referral submits, so no self-submission event
-    # and no shipped material ever exist. Provenance lives on `submitted_by` in application.md.
+    # Inbound rows skip `applied`: an agency or referral submits, so there is no self-submission
+    # event to stamp. The material still ships (to the recruiter), so `shipped` is stamped on
+    # either exit from preparing. Provenance lives on `submitted_by` in application.md.
     "preparing": {"applied", "interviewing", "rejected", "ghosted", "dropped"},
     "applied": {"interviewing", "rejected", "ghosted", "dropped"},
     "interviewing": {"offer", "rejected", "ghosted", "dropped"},
@@ -146,7 +146,12 @@ AUTOMATION_TRANSITIONS = {
 }
 
 
+_LAST_ERROR = None  # the refusal main() records in af_runs
+
+
 def die(msg):
+    global _LAST_ERROR
+    _LAST_ERROR = str(msg)
     print(f"af: ERROR: {msg}", file=sys.stderr)
     sys.exit(1)
 
@@ -550,7 +555,8 @@ def cmd_ready(args):
     print("  [ ] Template readiness criteria verified (the deliverable's template)")
     print("  [ ] Humanizer pass run, when the template declares it (public-facing prose)")
     print("  [ ] Voice was loaded for this deliverable's drafting (confirm if session resumed)")
-    print("  [ ] Voice mini-retro eligibility checked (library/process/voice-mini-retro.md)")
+    print("  [ ] User-voiced? Run voice-harvest now (system/skills/voice-harvest/SKILL.md;")
+    print("      gate: library/process/voice-mini-retro.md) - work to do, not a box to tick")
     print("  [ ] Remaining follow-ups surfaced (feedback, export, publish)")
 
 
@@ -591,6 +597,15 @@ def cmd_publish(args):
     detail = f"; url={args.url}" if args.url else ""
     append_activity(cdir, f"publish: {label} published; artifact={rel}{detail}")
     print(f"af publish: {rel} -> published" + (f" ({args.url})" if args.url else ""))
+    print("\nJudgment checklist (agent + operator):")
+    print_harvest_prompt()
+
+
+def print_harvest_prompt():
+    """Publish is the moment corpus promotion becomes eligible; say so where the agent is looking."""
+    print("  [ ] User-voiced? Run voice-harvest and deliverable-harvest now")
+    print("      (system/skills/voice-harvest/SKILL.md, system/skills/deliverable-harvest/SKILL.md);")
+    print("      corpus promotion is eligible from this publish. Not a box to tick: run them.")
 
 
 # ---------------------------------------------------------------- version
@@ -717,7 +732,11 @@ def cmd_draft(args):
 
     notes = []
     if args.artifact:
-        row_exists or die(f"tracker row '{args.deliverable}' not found — nested artifacts require a parent row")
+        row_exists or die(
+            f"tracker row '{args.deliverable}' not found — nested artifacts require a parent row. "
+            f"Start it with af draft {args.project} {args.deliverable} --file <folder>/<first-ingredient>-v1.md: "
+            f"that creates the row (a domain hook may add the assembly record and point the row at it), "
+            f"and --artifact works for the rest. Never hand-write the row.")
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", args.artifact):
             die("artifact name must contain only letters, numbers, underscores, and hyphens")
         parent_rel = row_get(cfm, args.deliverable, "file") or die(
@@ -734,16 +753,22 @@ def cmd_draft(args):
         new_rel, new_path = safe_project_rel(cdir, args.file)
         m = re.fullmatch(r"(.+)-v1\.md", os.path.basename(new_rel))
         if not m:
-            die("--file must name a canonical -v1.md first-draft path")
+            die("--file must name a canonical -v1.md first-draft path (<slug>-v1.md): draft creates "
+                "the stub and you write into it. A file that already exists registers with af adopt.")
+        adopt_hint = (f"a file that already exists registers with af adopt {args.project} "
+                      f"{args.deliverable} --file <project-relative path>; the next head comes from af version")
         current_rel = row_get(cfm, args.deliverable, "file")
         if current_rel and os.path.exists(os.path.join(cdir, current_rel)):
-            die(f"tracker row '{args.deliverable}' already has an existing artifact: {current_rel}")
+            die(f"tracker row '{args.deliverable}' already has an existing artifact: {current_rel}; "
+                f"run af version {args.project} {args.deliverable} for the next head")
         if versions_in(os.path.dirname(new_path), m.group(1)):
-            die(f"deliverable '{m.group(1)}' already has a version chain under {os.path.dirname(new_rel) or '.'}")
+            die(f"deliverable '{m.group(1)}' already has a version chain under "
+                f"{os.path.dirname(new_rel) or '.'}; {adopt_hint}")
         move_pointer = True
 
     if os.path.exists(new_path):
-        die(f"destination already exists: {new_rel}")
+        die(f"destination already exists: {new_rel}; {adopt_hint}" if not args.artifact
+            else f"destination already exists: {new_rel}")
 
     os.makedirs(os.path.dirname(new_path), exist_ok=True)
     write(new_path, f"---\nstatus: drafting\nlast_updated: {today()}\n---\n\n")
@@ -793,10 +818,19 @@ def cmd_adopt(args):
         die("--file must point at an existing project-relative Markdown artifact")
     parsed = split_fm_optional(read(target))
     if parsed is None:
-        die(f"{rel} has no frontmatter block")
-    afm, _ = parsed
+        die(f"{rel} has no frontmatter block (adopt registers a drafting head: at least "
+            f"'status: drafting' between --- fences)")
+    afm, abody = parsed
     if get_scalar(afm, "status") != "drafting":
-        die(f"{rel}: status must be drafting before adoption")
+        die(f"{rel}: status must be drafting before adoption (a superseded or ready file is a "
+            f"snapshot, not a head to register)")
+    notes = []
+    if not has_field(afm, "last_updated"):
+        # Bookkeeping the buttons own: af version refuses a head without it, which is where a
+        # hand-written v1 used to fail one command after a clean adopt.
+        afm = upsert_scalar(afm, "last_updated", today(), before=None)
+        write(target, join_fm(afm, abody))
+        notes.append("last_updated stamped on the artifact")
 
     fields = [
         ("status", "drafting"),
@@ -822,7 +856,8 @@ def cmd_adopt(args):
     cfm = touch_lifecycle(cfm)
     write(cpath, join_fm(cfm, cbody))
     append_activity(cdir, f"deliverable_adopted: {args.deliverable} -> {rel}")
-    print(f"af adopt: {action} row '{args.deliverable}' -> {rel}")
+    print(f"af adopt: {action} row '{args.deliverable}' -> {rel}"
+          + (f" ({'; '.join(notes)})" if notes else ""))
 
 
 # ---------------------------------------------------------------- new-project
@@ -1896,25 +1931,12 @@ def cmd_pipe_stage(args):
     if new == "applied":
         fm = row_set(fm, slug, "applied", today())
         fm = row_set(fm, slug, "next_nudge", (datetime.date.today() + datetime.timedelta(days=PIPE_NUDGE_DAYS)).isoformat())
-        adir = app_dir(slug)
-        ap = os.path.join(adir, "application.md")
-        if os.path.isfile(ap):
-            afm, _ = split_fm(read(ap), "application.md")
-            mats = app_materials(afm)
-            rel, st = row_get(afm, mats[0], "file"), row_get(afm, mats[0], "status")
-            m = re.search(r"-v(\d+)\.md$", rel or "")
-            if m and st in ("ready", "published"):
-                fm = row_set(fm, slug, "shipped", f"v{m.group(1)}")
-            else:
-                notes.append(f"primary material '{mats[0]}' is '{st}' — shipped left unset (ready + export before submitting next time)")
-            for mat in mats[1:]:
-                mst = row_get(afm, mat, "status")
-                if mst not in ("ready", "published"):
-                    notes.append(f"material '{mat}' is '{mst}'")
+        fm = stamp_shipped(fm, slug, notes, sent_to="the ATS")
     elif new == "interviewing":
         fm = row_set(fm, slug, "next_nudge", (datetime.date.today() + datetime.timedelta(days=PIPE_NUDGE_DAYS)).isoformat())
         if cur == "preparing":
             notes.append("skipped 'applied' - inbound/agency-submitted; record `submitted_by:` in application.md")
+            fm = stamp_shipped(fm, slug, notes, sent_to="the recruiter")
     else:
         fm = row_set(fm, slug, "next_nudge", "null")
     write_board(fm, body)
@@ -1929,6 +1951,29 @@ def cmd_pipe_stage(args):
         print("  - Anything worth banking? Run career-harvest while the evidence is fresh (library/process/career-harvest.md).")
     if new == "interviewing":
         print("  - Prep from the jd-map + stories, not the resume; refresh company-brief '## Now' if it is >30 days old.")
+
+
+def stamp_shipped(fm, slug, notes, sent_to):
+    """Record which head actually went out. Every exit from `preparing` ships the primary
+    material - to the ATS on applied, to the recruiter on an inbound interviewing - so both
+    stamp `shipped` from the material's readiness, not from who pressed submit."""
+    ap = os.path.join(app_dir(slug), "application.md")
+    if not os.path.isfile(ap):
+        return fm
+    afm, _ = split_fm(read(ap), "application.md")
+    mats = app_materials(afm)
+    rel, st = row_get(afm, mats[0], "file"), row_get(afm, mats[0], "status")
+    m = re.search(r"-v(\d+)\.md$", rel or "")
+    if m and st in ("ready", "published"):
+        fm = row_set(fm, slug, "shipped", f"v{m.group(1)}")
+    else:
+        notes.append(f"primary material '{mats[0]}' is '{st}' — shipped left unset; it went to {sent_to} "
+                     f"unverified (af ready gates it before the next send)")
+    for mat in mats[1:]:
+        mst = row_get(afm, mat, "status")
+        if mst not in ("ready", "published"):
+            notes.append(f"material '{mat}' is '{mst}'")
+    return fm
 
 
 PIPE_TERMINAL = ("offer", "rejected", "ghosted", "dropped")
@@ -2724,7 +2769,9 @@ def check_project(cdir):
         if not f or f == "null":
             issues.append(f"{rel}: row '{slug}' has no file pointer")
             continue
-        assembly = domain == "marketing" and re.fullmatch(r"post-\d+", slug) and f.endswith("post-FINAL.md")
+        # An assembly record is versionless by design (post-final/template.md); the row slug is
+        # the reader's name for the post, not a fixed post-N shape.
+        assembly = domain == "marketing" and f.endswith("post-FINAL.md")
         if not assembly and not re.fullmatch(r".+-v\d+\.md", os.path.basename(f)):
             issues.append(f"{rel}: row '{slug}' file is not a numeric version head: {f}")
         p = os.path.join(cdir, f)
@@ -3231,7 +3278,97 @@ def media_shelf_notes():
 
 def check_system():
     return (dead_link_issues() + ppt_master_stray_issues(),
-            budget_notes() + voice_mirror_notes() + design_language_notes() + media_shelf_notes())
+            budget_notes() + voice_mirror_notes() + design_language_notes() + media_shelf_notes()
+            + button_notes())
+
+
+# ------------------------------------------------------- buttons (af_runs telemetry)
+
+AUDIT_DB = None            # None = the writer's default (system/audit/agentframe.db); tests repoint it
+BUTTON_WINDOW_DAYS = 14
+# Exit 1 from these means findings, not a refused transition.
+READ_ONLY_VERBS = {"doctor", "index", "search", "sync-harnesses", "autonomy check", "pipe board",
+                   "board list", "automation"}
+SUBCOMMAND_VERBS = {"index", "pipe", "studio", "board", "automation", "autonomy"}
+
+
+def _audit_writer():
+    try:
+        from system.audit import writer
+    except ModuleNotFoundError:  # direct ``python system/af.py`` execution
+        from audit import writer
+    return writer
+
+
+def verb_of(argv):
+    toks = [t for t in argv if not t.startswith("-")]
+    if not toks:
+        return "?"
+    if toks[0] in SUBCOMMAND_VERBS and len(toks) > 1:
+        return f"{toks[0]} {toks[1]}"
+    return toks[0]
+
+
+def log_run(verb, argv, exit_code, error, started):
+    """Best-effort append to af_runs; a logging failure never touches the button's outcome."""
+    try:
+        _audit_writer().append_af_run(
+            db_path=AUDIT_DB, verb=verb, argv=" ".join(argv), exit_code=exit_code, error=error,
+            duration_ms=int((time.monotonic() - started) * 1000))
+    except Exception:
+        pass
+
+
+def open_backlog_rows_naming_af():
+    """Open BB-* rows whose text names af.py or a state verb."""
+    path = os.path.join(ROOT, "system", "builder-backlog.md")
+    if not os.path.isfile(path):
+        return 0
+    active = read(path).split("## Active entries", 1)[-1]
+    rows = re.split(r"(?m)^(?=- id: BB-|## BB-)", active)
+    pat = re.compile(r"af\.py|\baf (ready|publish|version|draft|adopt|pipe|studio|board|new-project)\b")
+    return sum(1 for r in rows if re.match(r"(- id: |## )BB-", r) and pat.search(r))
+
+
+def button_notes():
+    """What the buttons did lately, per state verb, against the open rows that name them.
+
+    A refusal an agent worked around without a BB-* row is the hand-wave this note makes
+    visible; a usage slip fixed on the retry is noise the agent can dismiss. The backlog's
+    af.py-defect share reads its numerator from here instead of from memory.
+    """
+    try:
+        since = (datetime.datetime.now(datetime.timezone.utc)
+                 - datetime.timedelta(days=BUTTON_WINDOW_DAYS)).replace(microsecond=0).isoformat()
+        runs = _audit_writer().query_af_runs(db_path=AUDIT_DB, since=since)
+    except Exception:
+        return []
+    refusals, crashes, usage = {}, {}, 0
+    for r in runs:
+        verb = r["verb"]
+        if r["exit_code"] == 0 or verb in READ_ONLY_VERBS or verb.split(" ")[0] in READ_ONLY_VERBS:
+            continue
+        if r["error"] == "usage":
+            usage += 1
+            continue
+        bucket = crashes if r["exit_code"] >= 2 else refusals
+        bucket[verb] = bucket.get(verb, 0) + 1
+    if not refusals and not crashes:
+        return []
+
+    def fmt(d):
+        return ", ".join(f"{v} {n}" for v, n in sorted(d.items(), key=lambda kv: (-kv[1], kv[0])))
+
+    bits = []
+    if refusals:
+        bits.append(f"{sum(refusals.values())} refusal(s): {fmt(refusals)}")
+    if crashes:
+        bits.append(f"{sum(crashes.values())} crash(es): {fmt(crashes)}")
+    if usage:
+        bits.append(f"{usage} usage slip(s)")
+    return [f"buttons ({BUTTON_WINDOW_DAYS}d): " + "; ".join(bits)
+            + f". Open BB-* rows naming af.py: {open_backlog_rows_naming_af()}. A refusal you worked "
+            f"around needs a row (system/builder-backlog.md); a slip fixed on the retry does not."]
 
 
 def cmd_doctor(args):
@@ -3291,17 +3428,31 @@ def cmd_doctor(args):
 
 # ------------------------------------------------------- retrieval (indexer)
 
+def _indexer():
+    """Import the retrieval index on demand: state buttons never need it, so a broken
+    indexer.py surfaces only here, and never blocks a transition."""
+    try:
+        try:
+            from system import indexer
+        except ModuleNotFoundError:  # direct ``python system/af.py`` execution
+            import indexer
+    except Exception as e:  # SyntaxError mid-edit, a missing optional dependency, ...
+        die(f"retrieval index unavailable ({type(e).__name__}: {e}); state buttons are unaffected")
+    return indexer
+
+
 def cmd_index(args):
+    ix = _indexer()
     if args.index_cmd == "update":
-        indexer.cmd_update(ROOT, rebuild=args.rebuild)
+        ix.cmd_update(ROOT, rebuild=args.rebuild)
     elif args.index_cmd == "status":
-        indexer.cmd_status(ROOT)
+        ix.cmd_status(ROOT)
     elif args.index_cmd == "eval":
-        indexer.cmd_eval(ROOT, k=args.k)
+        ix.cmd_eval(ROOT, k=args.k)
 
 
 def cmd_search(args):
-    indexer.cmd_search_cli(ROOT, args.query, limit=args.limit, as_json=args.json)
+    _indexer().cmd_search_cli(ROOT, args.query, limit=args.limit, as_json=args.json)
 
 
 # ---------------------------------------------------------------- main
@@ -3496,6 +3647,27 @@ def cmd_board_list(args):
 
 
 def main():
+    """Run one button and log its outcome to af_runs, whatever the outcome."""
+    global _LAST_ERROR
+    argv = sys.argv[1:]
+    if not argv or "-h" in argv or "--help" in argv:
+        return _run()
+    _LAST_ERROR, verb, started, code, error = None, verb_of(argv), time.monotonic(), 0, None
+    try:
+        _run()
+    except SystemExit as e:
+        code = e.code if isinstance(e.code, int) else (0 if e.code is None else 1)
+        if code:
+            error = _LAST_ERROR or ("usage" if code == 2 else None)
+        raise
+    except BaseException as e:  # a crash is the one outcome worth more than a refusal
+        code, error = 2, f"{type(e).__name__}: {e}"
+        raise
+    finally:
+        log_run(verb, argv, code, error, started)
+
+
+def _run():
     for stream in (sys.stdout, sys.stderr):
         try:
             stream.reconfigure(encoding="utf-8")

@@ -4,14 +4,14 @@ SQLite appears in exactly two sanctioned places in AgentFrame: this append-only 
 gitignored retrieval index (`system/index/`) — a derived cache, rebuildable, never truth.
 
 - Markdown remains canonical for campaign state, campaign activity, content, and operator-facing work.
-- SQLite is canonical only for append-only `system_changes` audit rows.
+- SQLite is canonical only for the append-only `system_changes` audit rows and the `af_runs` button log.
 - The live database file is `system/audit/agentframe.db` and should stay untracked.
 
 ## Files
 
 | File | Job |
 |---|---|
-| `schema.sql` | Canonical `system_changes` table and indexes. |
+| `schema.sql` | Canonical `system_changes` and `af_runs` tables and indexes. |
 | `writer.py` | Deterministic writer utility and CLI for system-change rows. |
 | `agentframe.db` | Runtime SQLite database (created on first write; not committed). |
 
@@ -66,6 +66,26 @@ Use singular, lowercase, snake_case values. Canonical values:
 - `errata` — corrections to prior rows or recorded drift
 
 Extend this list only for a new class of change, never for a synonym of an existing value. Historical rows keep their original labels; the errata convention above covers drift.
+
+## Table: `af_runs`
+
+One row per `python system/af.py ...` run, written by `af.main()` whatever the outcome (help runs excluded). Nothing reads it on the hot path; `af doctor` reads the last 14 days into one `buttons` note, and the builder backlog's af.py-defect share takes its numerator from here.
+
+- `created_at`, `verb` (`draft`, `pipe stage`, ...), `argv`
+- `exit_code` — 0 success; 1 a refusal (`af: ERROR:`), or findings for read-only verbs (doctor, index, search, sync-harnesses); 2 a usage error (`error = usage`) or a crash (`error = ExceptionType: message`)
+- `error` — the refusal message, `usage`, or the exception; null on success
+- `duration_ms`
+
+A logging failure never changes a button's outcome. Tests repoint `af.AUDIT_DB` at a temp file.
+
+Example: refusals and crashes in the last two weeks, by verb
+
+```sql
+SELECT verb, exit_code, COUNT(*) AS n, MIN(error) AS example
+FROM af_runs
+WHERE created_at >= datetime('now', '-14 days') AND exit_code != 0
+GROUP BY verb, exit_code ORDER BY n DESC;
+```
 
 ## CLI
 

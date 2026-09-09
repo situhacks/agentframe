@@ -21,3 +21,18 @@ CREATE INDEX IF NOT EXISTS idx_system_changes_change_type
 
 CREATE INDEX IF NOT EXISTS idx_system_changes_target_path
     ON system_changes (target_path);
+
+-- Button invocation log: one row per `python system/af.py ...` run. Append-only telemetry
+-- behind the doctor buttons note and the backlog's af.py-defect share reading.
+CREATE TABLE IF NOT EXISTS af_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    verb TEXT NOT NULL,
+    argv TEXT NOT NULL,
+    exit_code INTEGER NOT NULL,
+    error TEXT,
+    duration_ms INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_af_runs_created_at
+    ON af_runs (created_at);

@@ -42,9 +42,14 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+# Both roster() and launch_background() shell out to the claude CLI, a console
+# app; a caller with no attached console (the preview server daemon) otherwise
+# gets a fresh, briefly-visible console window per call.
+_NO_WINDOW = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
 
 SCHEMA_VERSION = 1
 LANES = ("Queued", "In progress", "Needs you", "Done")
@@ -488,7 +493,7 @@ def roster(root: str | Path, *, timeout: float = 10.0) -> list[dict] | None:
         return None
     try:
         proc = subprocess.run([exe, "agents", "--json", "--all"], capture_output=True, text=True,
-                              timeout=timeout, cwd=str(root))
+                              timeout=timeout, cwd=str(root), **_NO_WINDOW)
         rows = json.loads(proc.stdout or "[]")
     except (OSError, subprocess.SubprocessError, ValueError):
         return None
@@ -950,7 +955,7 @@ def launch_background(root: str | Path, card: Card, *, model: str | None = None,
         cmd += ["--model", model]
     cmd.append(kickoff)
     run = runner or (lambda argv: subprocess.run(argv, capture_output=True, text=True, encoding="utf-8",
-                                                 errors="replace", timeout=60, cwd=str(root)).stdout)
+                                                 errors="replace", timeout=60, cwd=str(root), **_NO_WINDOW).stdout)
     out = run(cmd) or ""
     # first 8-hex word after "backgrounded"; tolerant of console mojibake around the separators
     m = re.search(r"backgrounded.*?\b([0-9a-f]{8})\b", out)

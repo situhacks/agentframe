@@ -23,7 +23,7 @@ except ModuleNotFoundError:  # server started outside the repo root
     from system import board as workboard
 
 
-ROSTER_TTL_SECONDS = 8.0
+ROSTER_TTL_SECONDS = 20.0  # above app.js POLL_MS (12s): the poll should never miss the cache
 _roster_cache: dict[str, tuple[float, list[dict] | None]] = {}
 
 

@@ -33,4 +33,6 @@ All AgentFrame skills live here. Some are AgentFrame-owned; others are vendored 
 
 ## Operator Notes
 
+A capability one project needs once is pulled into that project (the mechanics vendored into its folder or scratchpad), not packaged here. A skill earns a row when a second project reaches for the same mechanics; until then the catalog stays small enough to read.
+
 For vendored skills, use each skill-local `VENDOR.md` as the canonical refresh procedure. After a vendor refresh, run the targeted smoke test and append a `system_changes` row through `system/audit/writer.py`.

@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dockview-core@4.13.1/dist/styles/dockview.css">
-<link rel="stylesheet" href="/system/server/static/surface/styles.css?v=16">
+<link rel="stylesheet" href="/system/server/static/surface/styles.css?v=18">
 </head>
 <body>
   <header id="topbar">
@@ -19,6 +19,7 @@
     </div>
     <nav class="top-tabs">
       <button id="tab-dashboard" data-route="dashboard">Dashboard</button>
+      <button id="tab-board" data-route="board">Board</button>
       <button id="tab-automations" data-route="automations">Automations</button>
       <button id="tab-calendar" data-route="calendar">Calendar</button>
       <button id="tab-preview" data-route="preview">Preview</button>
@@ -58,6 +59,23 @@
       <header><span class="title">Recent Activity</span><span class="count" id="activity-count"></span></header>
       <div class="scroll" id="activity-body"></div>
     </section>
+  </main>
+
+  <main id="view-board" class="view" hidden>
+    <div class="dash-header">
+      <h1>Board</h1>
+      <div class="dash-zoom" id="board-zoom" aria-label="Board zoom">
+        <button id="board-zoom-out" title="Zoom out">-</button>
+        <label>
+          <input id="board-zoom-input" type="number" min="60" max="125" step="5" value="90" aria-label="Board zoom percent">
+          <span>%</span>
+        </label>
+        <button id="board-zoom-in" title="Zoom in">+</button>
+      </div>
+      <label class="calendar-check board-archive-toggle"><input id="board-archive" type="checkbox"> archive</label>
+      <span class="meta" id="board-meta"></span>
+    </div>
+    <div class="board-lanes" id="board-lanes"></div>
   </main>
 
   <main id="view-automations" class="view" hidden>
@@ -179,6 +197,6 @@
     <div id="editor-area"></div>
   </main>
 
-<script type="module" src="/system/server/static/surface/app.js?v=11"></script>
+<script type="module" src="/system/server/static/surface/app.js?v=12"></script>
 </body>
 </html>

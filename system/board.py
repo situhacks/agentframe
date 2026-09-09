@@ -669,6 +669,33 @@ def archive_card(root: str | Path, board: Board, card: Card, *, outcome: str, no
     return month_file
 
 
+def archive_cards(root: str | Path, *, months: int = 2, now: dt.datetime | None = None) -> list[dict]:
+    """Closed and dropped cards from the most recent archive months, newest first."""
+    now = now or now_local()
+    files = _archive_files(root)[-months:] if months else _archive_files(root)
+    out: list[dict] = []
+    for path in files:
+        try:
+            lines = path.read_text(encoding="utf-8-sig").splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            if not line.startswith("- ["):
+                continue
+            card, err = parse_card_line(line, "Done")
+            if err:
+                continue
+            entry = {"id": card.id, "project": card.project, "deliverable": card.deliverable, "owner": card.owner,
+                     "outcome": card.fields.get("outcome", "closed"), "closed_at": card.fields.get("closed_at"),
+                     "month": path.stem}
+            for key in ("by", "since", "note", "receipt", "brief", "session"):
+                if key in card.fields:
+                    entry[key] = card.fields[key]
+            out.append(entry)
+    out.sort(key=lambda e: e.get("closed_at") or "", reverse=True)
+    return out
+
+
 def reopen(root: str | Path, board: Board, card_id: str, *, now: dt.datetime | None = None) -> Card:
     now = now or now_local()
     p = paths(root)

@@ -6,6 +6,7 @@ import { getJSON, postJSON, navigate, parseHash } from './api.js?v=5';
 import { renderDashboard, applyActivityUpdate, setupDashboardDensity } from './dashboard.js?v=7';
 import { renderAutomations } from './automations.js?v=3';
 import { renderCalendar, setupCalendar } from './calendar.js?v=7';
+import { renderBoard, setupBoard } from './board.js?v=1';
 
 const POLL_MS = 12000;
 
@@ -36,6 +37,9 @@ function timeNow() {
 async function poll({ force = false } = {}) {
   getJSON('/api/automations').then(renderAutomations).catch(() => {
     renderAutomations({ rows: [] });
+  });
+  getJSON('/api/board').then(renderBoard).catch(() => {
+    renderBoard(null);
   });
   try {
     const query = state.etag && !force ? `?etag=${encodeURIComponent(state.etag)}` : '';
@@ -77,11 +81,13 @@ async function applyRoute() {
   const { path, params } = parseHash();
   const route = path.startsWith('preview') ? 'preview'
     : path.startsWith('calendar') ? 'calendar'
-      : path.startsWith('automations') ? 'automations' : 'dashboard';
+      : path.startsWith('automations') ? 'automations'
+        : path.startsWith('board') ? 'board' : 'dashboard';
   state.route = route;
 
   const calendarWasHidden = document.getElementById('view-calendar').hidden;
   document.getElementById('view-dashboard').hidden = route !== 'dashboard';
+  document.getElementById('view-board').hidden = route !== 'board';
   document.getElementById('view-automations').hidden = route !== 'automations';
   document.getElementById('view-calendar').hidden = route !== 'calendar';
   document.getElementById('view-preview').hidden = route !== 'preview';
@@ -89,6 +95,7 @@ async function applyRoute() {
   // the view visible to measure
   if (route === 'calendar' && calendarWasHidden && state.snapshot) renderCalendar(state.snapshot);
   document.getElementById('tab-dashboard').classList.toggle('active', route === 'dashboard');
+  document.getElementById('tab-board').classList.toggle('active', route === 'board');
   document.getElementById('tab-automations').classList.toggle('active', route === 'automations');
   document.getElementById('tab-calendar').classList.toggle('active', route === 'calendar');
   document.getElementById('tab-preview').classList.toggle('active', route === 'preview');
@@ -128,6 +135,7 @@ window.addEventListener('agentframe:navigate', applyRoute);
 window.addEventListener('focus', () => poll());
 
 setupDashboardDensity();
+setupBoard();
 setupCalendar();
 setFreshness('manual', 'connecting...');
 poll().then(applyRoute);

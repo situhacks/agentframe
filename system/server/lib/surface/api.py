@@ -18,6 +18,7 @@ from pathlib import Path
 from tornado import web
 
 from . import artifacts, automations, convert, snapshot, state
+from . import board as board_model
 
 CACHE_DIR = Path(__file__).resolve().parents[2] / ".cache" / "convert"
 
@@ -125,6 +126,11 @@ class AutomationReceiptsHandler(_JsonHandler):
             self.fail(400, str(exc))
             return
         self.emit(page)
+
+
+class BoardHandler(_JsonHandler):
+    def get(self):
+        self.emit(board_model.build_model(self.root))
 
 
 def project_summaries(root: Path, snap: dict, project_filter: str = "active") -> list[dict]:
@@ -374,6 +380,7 @@ def make_handlers(project_root: Path) -> list[tuple]:
         (r"/api/activity", ActivityHandler, kw),
         (r"/api/automations/receipts", AutomationReceiptsHandler, kw),
         (r"/api/automations", AutomationsHandler, kw),
+        (r"/api/board", BoardHandler, kw),
         (r"/api/projects", ProjectsHandler, kw),
         (r"/api/projects/([^/]+)/files", ProjectFilesHandler, kw),
         (r"/api/projects/([^/]+)/artifacts/([^/]+)", ArtifactDetailHandler, kw),

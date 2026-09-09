@@ -6,11 +6,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python system/hooks/autonomy_guard.py --harness claude"
+            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/autonomy_guard.py\" --harness claude"
           },
           {
             "type": "command",
-            "command": "python system/hooks/board_guard.py --event sessionstart --harness claude"
+            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/board_guard.py\" --event sessionstart --harness claude"
           }
         ]
       }
@@ -20,7 +20,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python system/hooks/board_guard.py --event stop --harness claude"
+            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/board_guard.py\" --event stop --harness claude"
           }
         ]
       }
@@ -31,7 +31,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python system/hooks/version_guard.py"
+            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/version_guard.py\""
           }
         ]
       },
@@ -40,7 +40,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python system/hooks/ppt_master_guard.py --harness claude"
+            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/ppt_master_guard.py\" --harness claude"
           }
         ]
       },
@@ -49,7 +49,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python system/hooks/publish_guard.py"
+            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/publish_guard.py\""
           }
         ]
       }
@@ -60,7 +60,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python system/hooks/ppt_master_guard.py --harness claude"
+            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/ppt_master_guard.py\" --harness claude"
           }
         ]
       }

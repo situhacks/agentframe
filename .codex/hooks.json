@@ -45,6 +45,13 @@
             "commandWindows": "python \"$(git rev-parse --show-toplevel)/system/hooks/version_guard.py\"",
             "timeout": 15,
             "statusMessage": "Checking AgentFrame version safety"
+          },
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/system/hooks/board_guard.py\" --event pretooluse --harness codex",
+            "commandWindows": "python \"$(git rev-parse --show-toplevel)/system/hooks/board_guard.py\" --event pretooluse --harness codex",
+            "timeout": 15,
+            "statusMessage": "Checking the AgentFrame board boundary"
           }
         ]
       },

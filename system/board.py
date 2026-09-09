@@ -55,7 +55,8 @@ ASK_VALUES = ("review", "input")
 OUTCOMES = ("closed", "dropped")
 RECEIPT_STATUSES = ("done", "blocked", "failed")
 DEFAULT_META = {"board": "agentframe", "schema_version": str(SCHEMA_VERSION),
-                "stale_after": "3d", "auto_close_after": "7d"}
+                "stale_after": "3d", "auto_close_after": "7d", "worker_model": "sonnet"}
+BIND_FILE = "orchestrator.json"
 SEP = " · "
 ID_RE = re.compile(r"^T-(\d{4}-\d{2}-\d{2})-(\d{2,})$")
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
@@ -242,7 +243,7 @@ def parse(text: str) -> tuple[Board, list[str]]:
 
 def render(board: Board) -> str:
     out = ["---"]
-    for key in ("board", "schema_version", "stale_after", "auto_close_after"):
+    for key in DEFAULT_META:
         out.append(f"{key}: {board.meta.get(key, DEFAULT_META[key])}")
     for key, value in board.meta.items():
         if key not in DEFAULT_META:
@@ -272,6 +273,7 @@ def paths(root: str | Path) -> dict:
         "receipts": base / "receipts",
         "applied": base / "receipts" / "applied",
         "archive": base / "archive",
+        "bind": base / BIND_FILE,
     }
 
 
@@ -308,6 +310,70 @@ def save(root: str | Path, board: Board) -> None:
 
 def _rel(p: dict, path: Path) -> str:
     return path.relative_to(p["dir"]).as_posix()
+
+
+# ---------------------------------------------------------------- orchestrator binding
+
+BIND_RE = re.compile(r"^[a-z][a-z0-9-]*:[A-Za-z0-9._-]{6,}$")
+
+
+def bind(root: str | Path, key: str, *, now: dt.datetime | None = None) -> dict:
+    """Bind the board to one orchestrator session (``<harness>:<session-id>``).
+
+    The bound session is the one whose writes the hook confines to workspace/board/.
+    This is a routing fact, not authority: it grants nothing the operator has not said.
+    """
+    key = (key or "").strip()
+    if not BIND_RE.match(key):
+        raise BoardError("session key must look like <harness>:<session-id>, as printed at session start")
+    p = paths(root)
+    p["dir"].mkdir(parents=True, exist_ok=True)
+    record = {"session": key, "bound_at": (now or now_local()).replace(microsecond=0).isoformat()}
+    p["bind"].write_text(json.dumps(record, indent=2), encoding="utf-8")
+    return record
+
+
+def unbind(root: str | Path) -> bool:
+    p = paths(root)["bind"]
+    if p.exists():
+        p.unlink()
+        return True
+    return False
+
+
+def bound_session(root: str | Path) -> str | None:
+    p = paths(root)["bind"]
+    if not p.is_file():
+        return None
+    try:
+        data = json.loads(p.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return None
+    key = data.get("session") if isinstance(data, dict) else None
+    return key if isinstance(key, str) and BIND_RE.match(key) else None
+
+
+def session_is_bound(root: str | Path, session_id: str | None) -> bool:
+    key = bound_session(root)
+    if not key or not session_id:
+        return False
+    return key.split(":", 1)[1] == str(session_id)
+
+
+def write_allowed(root: str | Path, target: str | Path) -> tuple[bool, str]:
+    """Whether a bound orchestrator session may write ``target``: only workspace/board/."""
+    root = Path(root).resolve()
+    path = Path(target)
+    if not path.is_absolute():
+        path = root / path
+    try:
+        rel = path.resolve().relative_to(root)
+    except (OSError, ValueError):
+        return False, f"writes outside the vault are refused ({target})"
+    if rel.as_posix().startswith("workspace/board"):
+        return True, ""
+    return False, (f"this session is bound to the board as the orchestrator and writes only under workspace/board/ "
+                   f"(briefs). Make a card for a worker instead of editing {rel.as_posix()}.")
 
 
 # ---------------------------------------------------------------- ids + cards
@@ -530,7 +596,7 @@ def approve(board: Board, card_id: str) -> Card:
     if card.fields.get("ask") != "review":
         raise BoardError(f"{card.id} is waiting for input, not review; answer in the chat or 'af board resume'")
     _leave_needs_you(card)
-    board.move(card, "Done", done=False)
+    board.move(card, "Done", done=True)
     return card
 
 

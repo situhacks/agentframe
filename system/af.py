@@ -31,7 +31,7 @@ Commands:
   python system/af.py studio new <slug> [--date D] [--platform P] [--series S] [--from FILE] [--name NAME]
   python system/af.py studio stage <slug> <state>
   python system/af.py studio post <slug> --url U [--posted-at T]
-  python system/af.py board init|add|dispatch|sync|approve|return|resume|close|drop|reopen|list ...
+  python system/af.py board init|add|dispatch|sync|approve|return|resume|close|drop|reopen|list|bind|unbind ...
 
 `board` verbs drive the work-in-flight index (workspace/board.md): one card per
 bounded slice of work across every project, four lanes (Queued, In progress,
@@ -3381,8 +3381,9 @@ def cmd_board_dispatch(args):
     # fails to report its id must never leave a live worker behind a Queued card.
     workboard.save(ROOT, b)
     if args.launch:
+        model = args.model or b.meta.get("worker_model") or workboard.DEFAULT_META["worker_model"]
         try:
-            card.fields["session"] = workboard.launch_background(ROOT, card, model=args.model)
+            card.fields["session"] = workboard.launch_background(ROOT, card, model=model)
         except workboard.BoardError as exc:
             card.fields["note"] = workboard._clean("launch attempted; session id unknown, sync will reconcile")
             workboard.save(ROOT, b)
@@ -3422,7 +3423,34 @@ def _board_transition(args, fn, label):
 
 
 def cmd_board_approve(args):
-    _board_transition(args, lambda b: workboard.approve(b, args.card_id), "approve")
+    b = _board_load()
+    before = b.find(args.card_id)
+    summary = before.fields.get("reason", "") if before else ""
+    try:
+        card = workboard.approve(b, args.card_id)
+    except workboard.BoardError as exc:
+        die(str(exc))
+    workboard.save(ROOT, b)
+    note = ""
+    cdir = os.path.join(PROJECTS, card.project)
+    if os.path.isfile(os.path.join(cdir, "project.md")):
+        append_activity(cdir, f"board_closed: {card.id} {card.deliverable}; {summary or 'approved by the operator'}")
+        note = "; activity line appended"
+    print(f"af board approve: {_board_card_line(card)} -> Done (closed{note})")
+
+
+def cmd_board_bind(args):
+    if not workboard.exists(ROOT):
+        die("no board yet: run 'af board init'")
+    try:
+        record = workboard.bind(ROOT, args.session_key)
+    except workboard.BoardError as exc:
+        die(str(exc))
+    print(f"af board bind: orchestrator = {record['session']} (writes confined to workspace/board/ while bound)")
+
+
+def cmd_board_unbind(args):
+    print("af board unbind: released" if workboard.unbind(ROOT) else "af board unbind: nothing was bound")
 
 
 def cmd_board_return(args):
@@ -3461,7 +3489,8 @@ def cmd_board_list(args):
             if c.get("state"):
                 extra.append(c["state"])
             print(f"  {c['id']}  {c['project']} · {c['deliverable']}  [{'; '.join(extra)}]")
-    print(f"{snap['open']} open · {snap['waiting_on_you']} waiting on you")
+    bound = workboard.bound_session(ROOT)
+    print(f"{snap['open']} open · {snap['waiting_on_you']} waiting on you · orchestrator: {bound or 'unbound'}")
 
 
 def main():
@@ -3584,6 +3613,8 @@ def main():
     bdr = bsub.add_parser("drop"); bdr.add_argument("card_id"); bdr.add_argument("--note"); bdr.set_defaults(fn=cmd_board_drop)
     bl = bsub.add_parser("list"); bl.add_argument("--json", action="store_true")
     bl.add_argument("--no-roster", action="store_true"); bl.set_defaults(fn=cmd_board_list)
+    bb = bsub.add_parser("bind"); bb.add_argument("session_key"); bb.set_defaults(fn=cmd_board_bind)
+    bu = bsub.add_parser("unbind"); bu.set_defaults(fn=cmd_board_unbind)
 
     args = p.parse_args()
     check_mode_gate(args.cmd, args)

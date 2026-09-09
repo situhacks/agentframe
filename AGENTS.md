@@ -12,6 +12,7 @@ Before any nontrivial action, classify the current task and read exactly one rou
 |---|---|---|
 | Managed unattended run | [`AGENTS.daemon.md`](AGENTS.daemon.md) | A kickoff names a managed task file and result/receipt path |
 | Project execution | [`AGENTS.operator.md`](AGENTS.operator.md) | Project state, research, strategy, deliverables, delivery, retros, pipeline work |
+| Intake and dispatch | [`AGENTS.orchestrator.md`](AGENTS.orchestrator.md) | A note or transcript names work to route across projects, the operator addresses the orchestrator, or a board receipt lands |
 | System construction | [`AGENTS.builder.md`](AGENTS.builder.md) | `system/` or `library/` architecture, templates, processes, skills, schemas, hooks, runtime, agent rules |
 
 The selected router governs that task. If the task class materially changes, stop and read the new router before continuing. Do not merge both routers into working context preemptively, and never rewrite this root file to change modes.

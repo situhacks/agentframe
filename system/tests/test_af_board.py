@@ -270,27 +270,53 @@ class BoardModuleTests(unittest.TestCase):
                          now=self.now + dt.timedelta(days=60))
         self.assertEqual(b.find(cid).lane, "Needs you")
 
-    def test_approve_close_and_sweep(self):
+    def test_approve_closes_and_sweep_archives(self):
         cid = self.add()
         self.dispatch(cid, session="a5b92fc8")
         board.write_receipt(self.root, cid, session="s", status="done", summary="ok")
         self.sync(rows=[row("joyce-hair-pilot/booking-page-copy", state="idle")])
         b = self.load()
         with self.assertRaises(board.BoardError):
-            board.close  # closing is allowed; approving an input card is not
             board.approve(b, "T-2026-09-09-99")
         card = board.approve(b, cid)
-        self.assertEqual((card.lane, card.done, card.state_label()), ("Done", False, "closing"))
+        self.assertEqual((card.lane, card.done, card.state_label()), ("Done", True, "closed"))
+        self.assertNotIn("ask", card.fields)
         board.save(self.root, b)
-        b = self.load()
-        board.close(b, cid)
-        board.save(self.root, b)
-        self.assertEqual(self.load().find(cid).state_label(), "closed")
         events, b = self.sync(rows=[])
         self.assertIsNone(b.find(cid))
         self.assertIn(f"{cid}: closed -> archive", events)
         archive = (board.paths(self.root)["archive"] / "2026-09.md").read_text(encoding="utf-8")
         self.assertIn("outcome: closed", archive)
+
+    def test_close_without_review_marks_closed(self):
+        cid = self.add()
+        b = self.load()
+        card = board.close(b, cid)
+        self.assertEqual(card.state_label(), "closed")
+
+    def test_meta_carries_the_worker_model_default(self):
+        b = self.load()
+        self.assertEqual(b.meta["worker_model"], "sonnet")
+        self.assertIn("worker_model: sonnet", board.render(b))
+
+    def test_bind_unbind_and_write_guard(self):
+        with self.assertRaises(board.BoardError):
+            board.bind(self.root, "not a key")
+        record = board.bind(self.root, "claude:abc123-def456", now=self.now)
+        self.assertEqual(record["session"], "claude:abc123-def456")
+        self.assertEqual(board.bound_session(self.root), "claude:abc123-def456")
+        self.assertTrue(board.session_is_bound(self.root, "abc123-def456"))
+        self.assertFalse(board.session_is_bound(self.root, "other"))
+        ok, _ = board.write_allowed(self.root, "workspace/board/tasks/T-1.task.md")
+        self.assertTrue(ok)
+        ok, why = board.write_allowed(self.root, "workspace/projects/joyce-hair-pilot/phase-1/brief-v1.md")
+        self.assertFalse(ok)
+        self.assertIn("workspace/board/", why)
+        ok, _ = board.write_allowed(self.root, str(self.root.parent / "elsewhere.md"))
+        self.assertFalse(ok)
+        self.assertTrue(board.unbind(self.root))
+        self.assertIsNone(board.bound_session(self.root))
+        self.assertFalse(board.unbind(self.root))
 
     def test_approve_refuses_an_input_card(self):
         cid = self.add()
@@ -399,6 +425,34 @@ class BoardCliTests(unittest.TestCase):
     def test_sync_quiet_without_a_board_is_silent(self):
         self.assertEqual(self.run_cmd(af.cmd_board_sync, quiet=True, no_roster=True), "")
 
+    def test_approve_appends_the_project_activity_line(self):
+        projects = os.path.join(self.root, "workspace", "projects")
+        cdir = os.path.join(projects, "meetcap")
+        os.makedirs(cdir)
+        af.write(os.path.join(cdir, "project.md"), "---\nname: MeetCap\nslug: meetcap\nstatus: active\n---\n")
+        af.write(os.path.join(cdir, "activity.md"), "# Activity\n")
+        with patch.object(af, "PROJECTS", projects):
+            self.run_cmd(af.cmd_board_init)
+            out = self.run_cmd(af.cmd_board_add, project="meetcap", deliverable="live-call-trial", by="orchestrator",
+                               owner=None, goal="", done_when="", note="")
+            cid = out.split("af board add: ")[1].split(" ")[0]
+            self.run_cmd(af.cmd_board_dispatch, card_id=cid, session="abcdef12", launch=False, model=None,
+                         force=False, no_roster=True)
+            board.write_receipt(self.root, cid, session="s", status="done", summary="Trial recorded and reviewed.")
+            self.run_cmd(af.cmd_board_sync, quiet=True, no_roster=True)
+            out = self.run_cmd(af.cmd_board_approve, card_id=cid)
+        self.assertIn("Done (closed; activity line appended)", out)
+        activity = af.read(os.path.join(cdir, "activity.md"))
+        self.assertIn(f"board_closed: {cid} live-call-trial; Trial recorded and reviewed.", activity)
+
+    def test_bind_verb_and_list_shows_the_orchestrator(self):
+        self.run_cmd(af.cmd_board_init)
+        out = self.run_cmd(af.cmd_board_bind, session_key="claude:e381c0e2-1914")
+        self.assertIn("orchestrator = claude:e381c0e2-1914", out)
+        listing = self.run_cmd(af.cmd_board_list, json=False, no_roster=True)
+        self.assertIn("orchestrator: claude:e381c0e2-1914", listing)
+        self.assertIn("released", self.run_cmd(af.cmd_board_unbind))
+
     def test_managed_run_gate_blocks_transitions_but_not_sync_or_list(self):
         with patch.dict(os.environ, {"AGENTFRAME_MANAGED_RUN": "1"}):
             with self.assertRaises(SystemExit):
@@ -432,6 +486,26 @@ class BoardHookTests(unittest.TestCase):
         self.assertIsNone(board_guard.backstop_receipt(self.root, "a84640d9-8382-4d14-a095-a14248326708", {}))
         # a second stop does not overwrite an existing receipt
         self.assertIsNone(board_guard.backstop_receipt(self.root, "a5b92fc8-136c-4ee3-8736-6d3dc5344056", {}))
+
+    def test_write_guard_confines_only_the_bound_session(self):
+        from system.hooks import board_guard
+        board.bind(self.root, "claude:orch-session-1")
+        deny = board_guard.write_guard(self.root, {
+            "session_id": "orch-session-1", "tool_name": "Write",
+            "tool_input": {"file_path": str(self.root / "workspace" / "projects" / "p" / "x.md")}})
+        self.assertIsNotNone(deny)
+        self.assertIn("workspace/board/", deny)
+        allow = board_guard.write_guard(self.root, {
+            "session_id": "orch-session-1", "tool_name": "Write",
+            "tool_input": {"file_path": str(self.root / "workspace" / "board" / "tasks" / "T-1.task.md")}})
+        self.assertIsNone(allow)
+        other = board_guard.write_guard(self.root, {
+            "session_id": "worker-2", "tool_name": "Write",
+            "tool_input": {"file_path": str(self.root / "workspace" / "projects" / "p" / "x.md")}})
+        self.assertIsNone(other)
+        read = board_guard.write_guard(self.root, {"session_id": "orch-session-1", "tool_name": "Read",
+                                                  "tool_input": {"file_path": "anything"}})
+        self.assertIsNone(read)
 
 
 if __name__ == "__main__":

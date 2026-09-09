@@ -115,7 +115,9 @@ Modes are task-local ownership boundaries, not mutable repository state. The roo
 | `library/context/` | Operator positioning/profile/voice (`operator/`), plus shared `channels/`, `people/`, `_meta/` |
 | `library/lenses/` | Tracked package contract plus gitignored, source-backed advisory lens instances; kept separate from operator truth |
 | `library/assets/` | Reusable assets: `logos/`, `design-languages/` packages (ppt-master identity + imagery manifest, optional `video/`), the operator's `media/` shelf, third-party `audio/` (schema: `library/assets/README.md`) |
-| `system/af.py` | Deterministic CLI (ready, publish, version, draft, new-project, automation, autonomy, doctor, pipe, index/search, harness projection sync) |
+| `workspace/board.md` + `workspace/board/` | Work-in-flight index across projects: cards, briefs, receipts, monthly archive, orchestrator binding; owned by `af board`; gitignored personal layer |
+| `system/af.py` | Deterministic CLI (ready, publish, version, draft, new-project, automation, autonomy, doctor, pipe, index/search, board, harness projection sync) |
+| `system/board.py` | Board grammar, lanes, deterministic sync and sweep, receipts, archive, session binding; `system/hooks/board_guard.py` is its hook face (session-start sync, Stop backstop receipt, orchestrator write guard) |
 | `system/daemon/` | Multi-queue managed-run host, deployment contract, and kickoff prompt |
 | `system/skills/` | Builder + Operator skills; catalog of what each does + when to load at `system/skills/README.md` |
 | `system/audit/` | SQLite audit/telemetry exception |

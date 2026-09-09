@@ -32,6 +32,10 @@
           {
             "type": "command",
             "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/version_guard.py\""
+          },
+          {
+            "type": "command",
+            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/board_guard.py\" --event pretooluse --harness claude"
           }
         ]
       },

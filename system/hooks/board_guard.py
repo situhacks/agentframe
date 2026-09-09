@@ -9,7 +9,13 @@ that is still In progress and no receipt exists, write a backstop ``blocked``
 receipt from the last assistant message, then sync. Human-driven chats are
 never touched here; their staleness is judged by the sync's time rule.
 
-The hook never blocks and never fails the session: every path exits 0.
+``--event pretooluse``: when the session is the one bound with ``af board bind``,
+refuse an Edit/Write outside ``workspace/board/`` (exit 2 with the reason), so
+the orchestrator's context boundary is mechanical, not prose. Any other session
+is untouched.
+
+Session-start and stop never block and never fail the session; the write guard
+fails open on its own errors.
 """
 
 from __future__ import annotations
@@ -64,12 +70,42 @@ def backstop_receipt(root: Path, session_id: str, payload: dict) -> str | None:
     return None
 
 
+WRITE_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit", "Delete"}
+
+
+def write_guard(root: Path, payload: dict) -> str | None:
+    """Denial message for a bound orchestrator session writing outside workspace/board/, else None."""
+    session_id = _session_id(payload)
+    if not session_id or not workboard.session_is_bound(root, session_id):
+        return None
+    tool = str(payload.get("tool_name") or payload.get("tool") or "")
+    if tool not in WRITE_TOOLS:
+        return None
+    tool_input = payload.get("tool_input") or {}
+    target = tool_input.get("file_path") or tool_input.get("path") or tool_input.get("notebook_path")
+    if not target:
+        return None
+    allowed, reason = workboard.write_allowed(root, target)
+    return None if allowed else reason
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="AgentFrame board hook")
-    ap.add_argument("--event", choices=("sessionstart", "stop"), required=True)
+    ap.add_argument("--event", choices=("sessionstart", "stop", "pretooluse"), required=True)
     ap.add_argument("--harness", default="claude")
     ap.add_argument("--cursor-native", action="store_true")
     args = ap.parse_args()
+    if args.event == "pretooluse":
+        try:
+            if workboard.exists(ROOT):
+                denial = write_guard(ROOT, _payload())
+                if denial:
+                    print(f"board_guard: {denial}", file=sys.stderr)
+                    return 2
+        except Exception:  # fail open: the guard never breaks an unrelated session
+            pass
+        print("{}")
+        return 0
     try:
         if not workboard.exists(ROOT):
             return 0

@@ -162,6 +162,46 @@ class TestStageMachine(PipeBase):
         self.assertEqual(af.row_get(fm, slug, "stage"), "interviewing")
         self.assertEqual(af.row_get(fm, slug, "shipped"), "v2")
 
+    def _to_offer(self, slug="acme-ai-pm"):
+        slug = self.save(slug)
+        write(af.jd_cache_path(slug), "jd")
+        self.start(slug)
+        for stage in ("applied", "interviewing", "offer"):
+            self.stage(slug, stage)
+        return slug
+
+    def test_offer_is_answered_by_the_terminal_pair(self):
+        slug = self._to_offer()
+        quiet(af.cmd_pipe_stage, SimpleNamespace(slug=slug, stage="accepted",
+                                                 offered_role="Forward Deployed Engineer"))
+        fm = self.board_fm()
+        self.assertEqual(af.row_get(fm, slug, "stage"), "accepted")
+        self.assertEqual(af.row_get(fm, slug, "offered_role"), "Forward Deployed Engineer")
+        with self.assertRaises(SystemExit):
+            self.stage(slug, "declined")  # accepted is terminal
+
+    def test_offer_cannot_be_walked_away_from_without_an_answer(self):
+        slug = self._to_offer()
+        with self.assertRaises(SystemExit):
+            self.stage(slug, "dropped")
+        self.stage(slug, "declined")
+        self.assertEqual(af.row_get(self.board_fm(), slug, "stage"), "declined")
+
+    def test_offered_role_only_at_the_offer_end(self):
+        slug = self.save()
+        write(af.jd_cache_path(slug), "jd")
+        self.start(slug)
+        with self.assertRaises(SystemExit):
+            quiet(af.cmd_pipe_stage, SimpleNamespace(slug=slug, stage="applied", offered_role="X"))
+
+    def test_accepted_archives_but_an_open_offer_does_not(self):
+        slug = self._to_offer()
+        with self.assertRaises(SystemExit):
+            quiet(af.cmd_pipe_archive, SimpleNamespace(slug=slug))  # live until answered
+        self.stage(slug, "accepted")
+        quiet(af.cmd_pipe_archive, SimpleNamespace(slug=slug))
+        self.assertTrue(af.app_is_archived(slug))
+
     def test_inbound_interviewing_with_unready_resume_nudges_instead(self):
         slug = self.save()
         write(af.jd_cache_path(slug), "jd")
@@ -171,6 +211,45 @@ class TestStageMachine(PipeBase):
         activity = af.read(os.path.join(af.app_dir(slug), "activity.md"))
         self.assertIn("went to the recruiter unverified", activity)
         self.assertIn("submitted_by", activity)
+
+
+class TestCloseSearch(PipeBase):
+    def test_drops_live_rows_and_stamps_the_board(self):
+        live = self.save("live-one")
+        write(af.jd_cache_path(live), "jd")
+        self.start(live)
+        saved = self.save("saved-only")
+        done = self.save("done-one")
+        write(af.jd_cache_path(done), "jd")
+        self.start(done)
+        self.stage(done, "dropped")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            af.cmd_pipe_close_search(SimpleNamespace(reason="Banyan accepted"))
+        fm = self.board_fm()
+        self.assertEqual(af.get_scalar(fm, "search_status"), "closed")
+        self.assertEqual(af.get_scalar(fm, "search_closed_at"), af.today())
+        self.assertEqual(af.get_scalar(fm, "search_closed_reason"), "Banyan accepted")
+        self.assertEqual(af.row_get(fm, live, "stage"), "dropped")
+        self.assertEqual(af.row_get(fm, saved, "stage"), "dropped")
+        self.assertIn("live-one (preparing)", out.getvalue())
+        activity = af.read(os.path.join(af.app_dir(live), "activity.md"))
+        self.assertIn("search closed: Banyan accepted", activity)
+
+    def test_closing_twice_is_refused_and_save_reopens(self):
+        self.save("a")
+        quiet(af.cmd_pipe_close_search, SimpleNamespace(reason="done"))
+        with self.assertRaises(SystemExit):
+            quiet(af.cmd_pipe_close_search, SimpleNamespace(reason="again"))
+        self.save("b")
+        self.assertEqual(af.get_scalar(self.board_fm(), "search_status"), "open")
+        quiet(af.cmd_pipe_close_search, SimpleNamespace(reason="done again"))
+        self.assertEqual(af.get_scalar(self.board_fm(), "search_status"), "closed")
+
+    def test_reason_required(self):
+        self.save("a")
+        with self.assertRaises(SystemExit):
+            quiet(af.cmd_pipe_close_search, SimpleNamespace(reason="  "))
 
 
 class TestPipelineDoctor(PipeBase):

@@ -9,7 +9,7 @@ applications: {{}}
 
 The board. Frontmatter `applications:` rows are the single owner of funnel stage state — `af pipe` verbs write them, `af pipe board` renders them, `af doctor` reconciles them against `applications/` folders.
 
-Stage flow: `saved → preparing → applied → interviewing → offer | rejected | ghosted | dropped`.
+Stage flow: `saved → preparing → applied → interviewing → offer → accepted | declined`, with `rejected | ghosted | dropped` as the other exits. `af pipe close-search` ends the campaign: it drops every live row with one reason and stamps `search_status: closed` here; the next `af pipe save` reopens it.
 
 ## Search
 

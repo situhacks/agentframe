@@ -26,7 +26,8 @@ Commands:
   python system/af.py autonomy init|check|start|checkpoint|finish|migrate ...
   python system/af.py pipe save --company C --role R --url U [--ats A] [--source S] [--posted D] [--deadline D] [--salary S] [--slug K]
   python system/af.py pipe start <slug>
-  python system/af.py pipe stage <slug> <stage>
+  python system/af.py pipe stage <slug> <stage> [--offered-role TITLE]
+  python system/af.py pipe close-search --reason "..."
   python system/af.py pipe board
   python system/af.py studio new <slug> [--date D] [--platform P] [--series S] [--from FILE] [--name NAME]
   python system/af.py studio stage <slug> <state>
@@ -93,7 +94,8 @@ PROJECT_SCHEMA_VERSION = "2026-07-19-v2"
 EXPORTABLE_INGREDIENTS = ("image-prompts",)  # cross-domain names; packs add their own via pack.md `exportable:`
 
 # Pipeline stage machine (pipeline-topology packs; board = pipeline.md).
-PIPE_STAGES = ("saved", "preparing", "applied", "interviewing", "offer", "rejected", "ghosted", "dropped")
+PIPE_STAGES = ("saved", "preparing", "applied", "interviewing", "offer", "accepted", "declined",
+               "rejected", "ghosted", "dropped")
 PIPE_TRANSITIONS = {
     "saved": {"preparing", "dropped"},
     # Inbound rows skip `applied`: an agency or referral submits, so there is no self-submission
@@ -103,7 +105,11 @@ PIPE_TRANSITIONS = {
     "applied": {"interviewing", "rejected", "ghosted", "dropped"},
     "interviewing": {"offer", "rejected", "ghosted", "dropped"},
     "ghosted": {"interviewing", "rejected", "dropped"},  # late replies happen
-    "offer": set(), "rejected": set(), "dropped": set(),
+    # An offer is live until answered. The operator's answer is the terminal pair; a company
+    # withdrawing is `rejected`. Nothing else ends it, so a declined offer never reads as a row
+    # that was merely walked away from.
+    "offer": {"accepted", "declined", "rejected"},
+    "accepted": set(), "declined": set(), "rejected": set(), "dropped": set(),
 }
 PIPE_NUDGE_DAYS = 7        # applied/interviewing rows silent this long → follow-up note
 PIPE_STALE_SAVED_DAYS = 30 # saved rows older than this → drop-or-start note
@@ -1861,8 +1867,13 @@ def cmd_pipe_save(args):
         "stage": "saved", "company": yaml_str(args.company), "role": yaml_str(args.role),
         "url": args.url, "ats": args.ats, "source": args.source, "posted": args.posted,
         "deadline": args.deadline, "salary": yaml_str(args.salary), "saved": today()})
+    reopened = ""
+    if get_scalar(fm, "search_status") == "closed":
+        fm = set_scalar(fm, "search_status", "open", "pipeline.md")
+        reopened = (f"; search reopened (closed {get_scalar(fm, 'search_closed_at')}: "
+                    f"{get_scalar(fm, 'search_closed_reason')})")
     write_board(fm, body)
-    print(f"af pipe save: {slug} -> saved (board row; no folder until start)")
+    print(f"af pipe save: {slug} -> saved (board row; no folder until start){reopened}")
     print("\nJudgment (stays with the agent):")
     print(f"  - Cache the verbatim JD at workspace/pipeline/scout/jd-cache/{slug}.jd.md now — postings vanish.")
     print(f"  - Committing to it? 'af pipe start {slug}' scaffolds the sprint folder.")
@@ -1926,8 +1937,15 @@ def cmd_pipe_stage(args):
     if new not in legal:
         die(f"illegal transition {cur} -> {new}" + (f" (legal from {cur}: {', '.join(sorted(legal))})" if legal else f" ({cur} is terminal)"))
 
+    offered_role = getattr(args, "offered_role", None)
+    if offered_role and new not in ("offer", "accepted", "declined"):
+        die("--offered-role records the title actually offered; it applies at offer, accepted, or declined")
+
     notes = []
     fm = row_set(fm, slug, "stage", new)
+    if offered_role:
+        fm = row_set(fm, slug, "offered_role", yaml_quote(offered_role))
+        notes.append(f"offered_role recorded: {offered_role}")
     if new == "applied":
         fm = row_set(fm, slug, "applied", today())
         fm = row_set(fm, slug, "next_nudge", (datetime.date.today() + datetime.timedelta(days=PIPE_NUDGE_DAYS)).isoformat())
@@ -1947,8 +1965,14 @@ def cmd_pipe_stage(args):
     print("\nJudgment (stays with the agent):")
     if new == "applied":
         print("  - Note the submission channel in application.md (direct career site beats boards for ranking).")
-    if new in ("offer", "rejected"):
+    if new in ("offer", "accepted", "declined", "rejected"):
         print("  - Anything worth banking? Run career-harvest while the evidence is fresh (library/process/career-harvest.md).")
+    if new == "offer":
+        print("  - comp-case.md before the first comp call; --offered-role here when the title differs from the posting.")
+    if new == "accepted":
+        print("  - If this ends the search: af pipe close-search --reason \"...\" drops the live rows and stamps the board.")
+    if new == "declined":
+        print("  - Record why in activity.md; comp-case.md keeps the numbers the decision rested on.")
     if new == "interviewing":
         print("  - Prep from the jd-map + stories, not the resume; refresh company-brief '## Now' if it is >30 days old.")
 
@@ -1976,7 +2000,38 @@ def stamp_shipped(fm, slug, notes, sent_to):
     return fm
 
 
-PIPE_TERMINAL = ("offer", "rejected", "ghosted", "dropped")
+PIPE_TERMINAL = ("accepted", "declined", "rejected", "ghosted", "dropped")
+
+
+def cmd_pipe_close_search(args):
+    """End the campaign: every live row drops for one reason, and the board says so."""
+    pipe_pack()
+    fm, body = load_board()
+    reason = (args.reason or "").strip()
+    reason or die("--reason is required: the one line every dropped row and the board carry")
+    if get_scalar(fm, "search_status") == "closed":
+        die(f"search already closed {get_scalar(fm, 'search_closed_at')} "
+            f"({get_scalar(fm, 'search_closed_reason')}); the next 'af pipe save' reopens it")
+    dropped = []
+    for slug in pipe_rows(fm):
+        stage = row_get(fm, slug, "stage")
+        if stage in PIPE_TERMINAL:
+            continue
+        fm = row_set(fm, slug, "stage", "dropped")
+        fm = row_set(fm, slug, "next_nudge", "null")
+        if os.path.isdir(app_dir(slug)):
+            append_activity(app_dir(slug), f"stage: {stage} -> dropped; search closed: {reason}")
+        dropped.append(f"{slug} ({stage})")
+    fm = upsert_scalar(fm, "search_status", "closed", before="applications")
+    fm = upsert_scalar(fm, "search_closed_at", today(), before="applications")
+    fm = upsert_scalar(fm, "search_closed_reason", yaml_quote(reason), before="applications")
+    write_board(fm, body)
+    print(f"af pipe close-search: board closed ({reason})"
+          + (f"; dropped {', '.join(dropped)}" if dropped else "; no live rows to drop"))
+    print("\nJudgment (stays with the agent):")
+    print("  - Update the search status line in search-profile.md (library/context/operator/career/) to match.")
+    print("  - Archive the terminal rows (af pipe archive <slug>) after career-harvest on anything worth banking.")
+    print("  - The next 'af pipe save' reopens the search; note in that row why, if it is deliberate.")
 
 
 def cmd_pipe_round(args):
@@ -3748,7 +3803,12 @@ def _run():
     ps.add_argument("--deadline"); ps.add_argument("--salary"); ps.add_argument("--slug")
     ps.set_defaults(fn=cmd_pipe_save)
     ps = psub.add_parser("start");  ps.add_argument("slug"); ps.set_defaults(fn=cmd_pipe_start)
-    ps = psub.add_parser("stage");  ps.add_argument("slug"); ps.add_argument("stage"); ps.set_defaults(fn=cmd_pipe_stage)
+    ps = psub.add_parser("stage");  ps.add_argument("slug"); ps.add_argument("stage")
+    ps.add_argument("--offered-role", dest="offered_role",
+                    help="the title actually offered, when it differs from the posting (offer, accepted, declined)")
+    ps.set_defaults(fn=cmd_pipe_stage)
+    pc = psub.add_parser("close-search"); pc.add_argument("--reason", required=True)
+    pc.set_defaults(fn=cmd_pipe_close_search)
     ps = psub.add_parser("board");  ps.set_defaults(fn=cmd_pipe_board)
     ps = psub.add_parser("round");  ps.add_argument("slug"); ps.add_argument("number", type=int)
     ps.add_argument("--with", dest="person", action="append")

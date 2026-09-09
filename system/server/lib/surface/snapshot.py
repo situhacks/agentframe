@@ -19,7 +19,7 @@ GOVERNANCE_DOCS = ("raid-log.md", "decision-log.md", "workback-schedule.md")
 WATCHED_FILENAMES = ("project.md", "activity.md")
 ARCHIVE_FILENAME = artifacts.ARCHIVE_REL_PATH
 TIMELINE_STATUS_RANK = {"active": 0, "complete": 1, "cancelled": 2}
-PIPELINE_TERMINAL_STAGES = {"offer", "rejected", "ghosted", "dropped"}
+PIPELINE_TERMINAL_STAGES = {"accepted", "declined", "rejected", "ghosted", "dropped"}  # offer is live until answered
 
 
 def _timeline_sort_key(project: dict) -> tuple:

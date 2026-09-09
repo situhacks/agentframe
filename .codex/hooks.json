@@ -64,6 +64,13 @@
             "commandWindows": "python \"$(git rev-parse --show-toplevel)/system/hooks/ppt_master_guard.py\" --harness codex",
             "timeout": 15,
             "statusMessage": "Checking AgentFrame PPT safety"
+          },
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/system/hooks/voice_guard.py\" --harness codex",
+            "commandWindows": "python \"$(git rev-parse --show-toplevel)/system/hooks/voice_guard.py\" --harness codex",
+            "timeout": 20,
+            "statusMessage": "Checking the AgentFrame voice lint"
           }
         ]
       }
@@ -78,6 +85,13 @@
             "commandWindows": "python \"$(git rev-parse --show-toplevel)/system/hooks/ppt_master_guard.py\" --harness codex",
             "timeout": 15,
             "statusMessage": "Checking AgentFrame PPT follow-through"
+          },
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/system/hooks/voice_guard.py\" --harness codex",
+            "commandWindows": "python \"$(git rev-parse --show-toplevel)/system/hooks/voice_guard.py\" --harness codex",
+            "timeout": 20,
+            "statusMessage": "Reporting the AgentFrame voice lint"
           }
         ]
       }

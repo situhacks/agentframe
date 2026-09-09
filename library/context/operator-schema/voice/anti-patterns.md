@@ -4,6 +4,8 @@ Preferences with calibration, not prohibitions. Hard bans make the model write d
 
 Generic-AI patterns (rule-of-three, inflated significance, copula avoidance, AI vocab, signposting, etc.) are the vendored humanizer's job: `system/skills/humanizer/SKILL.md` — run it with a writing sample for calibration. This file covers only YOUR specific preferences.
 
+**Deterministic backstop.** `python system/voice_lint.py <head>` settles the rules a regex can (zero-budget tics, two dashes in one sentence, the writer's spaced hyphen turned into an em dash since the previous version) and reports the soft shapes; `system/hooks/voice_guard.py` gates `af ready` on it and prints it after `af version`. Keep the tic list in the lint in step with the Banned tics section below; the judgment rules stay prose.
+
 ## Hard lines (zero occurrences — risk and identity, not style)
 [The very few true absolutes: brand-safety and identity lines where one occurrence costs something real. e.g. naming client work, punching down. Style preferences do NOT belong here.]
 

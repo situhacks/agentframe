@@ -45,6 +45,10 @@
           {
             "type": "command",
             "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/ppt_master_guard.py\" --harness claude"
+          },
+          {
+            "type": "command",
+            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/voice_guard.py\" --harness claude"
           }
         ]
       },
@@ -65,6 +69,10 @@
           {
             "type": "command",
             "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/ppt_master_guard.py\" --harness claude"
+          },
+          {
+            "type": "command",
+            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/voice_guard.py\" --harness claude"
           }
         ]
       }

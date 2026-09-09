@@ -52,7 +52,7 @@ If the agent makes a later substantive rewrite after operator tuning, run a delt
 
 ## Verification Or Logging
 
-Before surfacing an initial or materially rewritten draft, state briefly that the pass ran and name its scope. At readiness, verify that the relevant early/delta pass occurred and that no new agent-authored region was added afterward.
+Before surfacing an initial or materially rewritten draft, state briefly that the pass ran and name its scope. The deterministic half of that check is `python system/voice_lint.py <head>` (banned tics, two dashes in a sentence, the operator's hyphens surviving a cleanup); `af ready` refuses a head with hard findings, so run it before the transition rather than at it. At readiness, verify that the relevant early/delta pass occurred and that no new agent-authored region was added afterward.
 
 Do not append a `humanizer_pass` event for every pass to `activity.md`; routine drafting narration belongs in the version chain or conversation. Log only a material override or failure when downstream work depends on it.
 

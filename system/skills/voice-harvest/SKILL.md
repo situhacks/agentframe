@@ -103,7 +103,7 @@ register: formal | informal | both
 context: builder-pov | market-signal | slide | cover | email | long-form | <other task context>
 ```
 
-**Pairs hygiene** (from `pairs/README.md` / voice-mini-retro): keep register and task context separate; never use a channel as either one. Cap ~30 total; over cap → a new pair REPLACES the weakest/most-redundant (name it); dedup by move; recency-weighted. Surface candidates; write only approved ones to the matching register- or context-grouped pair file.
+**Pairs hygiene** (from `pairs/README.md`): keep register and task context separate; never use a channel as either one. There is no numeric cap; a pair that teaches a live move earns its context. Every harvest prunes before it adds, on three tests: a pair that duplicates another pair's move, a pair that only restates a rule already in `anti-patterns.md` or `voice-profile.md`, and a pair whose BRANDON side shows a move the current corpus no longer makes. Name each retirement and what absorbs it. Surface candidates; write only approved ones to the matching register- or context-grouped pair file.
 
 ### Step 6 — Corpus promotion (full-piece exemplars)
 
@@ -140,7 +140,7 @@ Append a `system_changes` row via `system/audit/writer.py` recording: pairs adde
 - **No version trail and no transcript** (a hand-written one-off, a back-fill): only a fresh-artifact harvest is possible — mine the artifact as a positive exemplar. If there's nothing to diff against, harvest a pair only if the operator asks or the move repeats across 3+ pieces (no reject→accept delta means weaker evidence).
 - **Operator is low on tokens:** stay Tier 1 (diffs only). Surface that a deeper transcript mine is available later if the diff pass looks thin.
 - **Fresh session, ready-event invocation:** Tier 1 disk-only is the default; do not claim chat-derived pairs you can't reconstruct from disk.
-- **Over the pairs cap with several strong candidates:** propose the swaps (new replaces weakest, named) rather than growing past ~30. If the operator wants them all, that's a signal the cap should move — surface it, don't silently exceed.
+- **Many strong candidates at once:** write them all; the prune tests above, not a count, decide what leaves. Report the file's pair count so the operator can see the context cost.
 - **The same move shows up as both a new-pair candidate AND a recurrence:** it recurred → treat as recurrence (Step 7), not a fresh pair. A duplicate pair is the wrong fix.
 
 ## Forker note

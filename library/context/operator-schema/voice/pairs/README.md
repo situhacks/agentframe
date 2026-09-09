@@ -22,4 +22,4 @@ context: <task context>
 
 Use `both` only when the move genuinely survives both registers. Never put a platform name in `register`; platform-specific behavior belongs to a channel profile.
 
-Cap by moves, not count: one pair per distinct, generalizable move. Replace redundant pairs with newer approved evidence. A file creeping past roughly 15 pairs is due a dedup pass because competing exemplars dilute the useful ones.
+Cap by moves, not count: one pair per distinct, generalizable move, and no numeric ceiling. Every harvest prunes before it adds, on three tests: a pair that duplicates another pair's move, one that only restates a rule already in `anti-patterns.md` or `voice-profile.md`, and one whose YOU side shows a move the current corpus no longer makes. Name each retirement and what absorbs it.

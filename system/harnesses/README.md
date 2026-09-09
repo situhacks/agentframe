@@ -23,6 +23,8 @@ Expose selected canonical AgentFrame skills and deterministic guards through eac
 
 `publish_guard.py` is wired on Claude and Cursor only: it matches an MCP tool name, and the Substack server is not mounted on the Codex surface. Coverage there is `af doctor`'s state-truth check, which is the backstop everywhere anyway, since a push made from a vendor's web UI is invisible to every hook.
 
+`voice_guard.py` is wired on all three surfaces around two state buttons: it runs `system/voice_lint.py`, denies `af ready` on a user-voiced head with hard findings (banned tics, two dashes in a sentence, an operator hyphen turned into an em dash since the previous version), and after `af version` hands the agent the lint of the version it just closed with the reminder to load the voice system before editing. `AF_VOICE_LINT=skip` on the command is the operator override.
+
 `.agents/skills/` remains the portable skill-discovery projection. It is not a fourth hook configuration.
 
 ## Commands
@@ -39,7 +41,7 @@ Run `--write` after changing a selected canonical skill or the projection manife
 Run the hook smoke matrix after changing shared guard logic or any native hook file:
 
 ```text
-python -m unittest system.tests.test_harness_hooks system.tests.test_version_guard system.tests.test_ppt_master_guard system.tests.test_publish_guard
+python -m unittest system.tests.test_harness_hooks system.tests.test_version_guard system.tests.test_ppt_master_guard system.tests.test_publish_guard system.tests.test_voice_guard system.tests.test_voice_lint
 ```
 
 ## Discovery And Fallback

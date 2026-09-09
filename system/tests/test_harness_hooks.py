@@ -23,6 +23,7 @@ class HarnessHookWiringTests(unittest.TestCase):
         ]
         self.assertTrue(any("version_guard.py" in command for command in commands))
         self.assertTrue(any("ppt_master_guard.py" in command for command in commands))
+        self.assertTrue(any("voice_guard.py" in command for command in commands))
         self.assertTrue(any("autonomy_guard.py" in command for command in commands))
         self.assertTrue(any("publish_guard.py" in command for command in commands))
         self.assertIn("SessionStart", config["hooks"])
@@ -40,6 +41,7 @@ class HarnessHookWiringTests(unittest.TestCase):
         ]
         self.assertTrue(any("version_guard.py" in command for command in commands))
         self.assertTrue(any("ppt_master_guard.py" in command for command in commands))
+        self.assertTrue(any("voice_guard.py" in command for command in commands))
         self.assertTrue(any("autonomy_guard.py" in command for command in commands))
         self.assertTrue(any("publish_guard.py" in command for command in commands))
         self.assertTrue(all("--cursor-native" in command for command in commands))
@@ -61,6 +63,7 @@ class HarnessHookWiringTests(unittest.TestCase):
         commands = [hook["command"] for hook in handlers]
         self.assertTrue(any("version_guard.py" in command for command in commands))
         self.assertTrue(any("ppt_master_guard.py" in command for command in commands))
+        self.assertTrue(any("voice_guard.py" in command for command in commands))
         self.assertTrue(any("autonomy_guard.py" in command for command in commands))
         self.assertTrue(all(hook.get("commandWindows") for hook in handlers))
         self.assertTrue(all("git rev-parse --show-toplevel" in command for command in commands))
@@ -83,7 +86,7 @@ class HarnessHookWiringTests(unittest.TestCase):
                 "cwd": str(ROOT),
             }
         )
-        for script in ("version_guard.py", "ppt_master_guard.py", "publish_guard.py"):
+        for script in ("version_guard.py", "ppt_master_guard.py", "publish_guard.py", "voice_guard.py"):
             result = subprocess.run(
                 [sys.executable, str(ROOT / "system" / "hooks" / script)],
                 input=payload,

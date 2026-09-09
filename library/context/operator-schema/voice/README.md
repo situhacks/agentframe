@@ -40,7 +40,7 @@ After resolving the recipe, load:
 ## How to write in voice
 
 1. **Content pass.** Draft the argument and structure plainly. Deliverable templates and aspiration pieces may inform shape, never wording.
-2. **Style pass.** Put the selected corpus evidence first and the rewrite instruction last. Extract 3–4 concrete markers for this piece, then rewrite toward them. Match cadence, diction, and structure; never copy facts, phrases, or topics.
+2. **Style pass.** Put the selected corpus evidence first and the rewrite instruction last. Extract 3–4 concrete markers for this piece, then rewrite toward them with the mannered-prose rule in force (`anti-patterns.md` § Mannered prose: when a literal phrase is available, use it). Match cadence, diction, and structure; never copy facts, phrases, or topics.
 3. **Clean pass.** In a separate context, apply `anti-patterns.md` and the humanizer with an operator sample. Recheck the recipe after cleaning.
 4. **Register test.** Read aloud: would this sit naturally beside the selected operator corpus while satisfying the named blend direction?
 

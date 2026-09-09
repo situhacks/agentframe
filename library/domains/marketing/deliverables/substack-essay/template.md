@@ -13,8 +13,8 @@ A full-length essay for the operator's Substack publication — the long-form ho
 
 ## Output Shape
 
-- **Title options** (2–3, operator picks) + **subtitle** (descriptive, per channel format).
-- **Sectioned body** — headers are flat claims in the operator's words, each section teaching or narrating one thing. A reveal/twist beat near the end when the material has one.
+- **Title options** (2–3, operator picks) + **subtitle**: one sentence stating the situation, one stating what the reader gets ("I found out I'm at the top of my firm's AI usage list without writing a line of code. Here's what burning $3K in tokens does to your brain, and how to stop runaway AI usage."). Never a payoff line, and never a not-X-it's-Y in disguise (the operator rejected "the money turned out to be the least interesting part" on exactly that ground).
+- **Sectioned body** — act and section headings are questions in the operator's words, answered in the first sentence beneath them (his corpus pattern: "So why did I spend $3,000?" / "Would a credit cap have fixed me?" → "Yes."), or flat claims; personal and specific, never generic. Each section teaches or narrates one thing. A reveal/twist beat near the end when the material has one.
 - **Open slots**, explicitly marked, for operator-only material: `[FILL]` (facts only the operator has), `[POV]` (his live phrasing on a take), `[NERD-NOD]` (cultural reference — agent never invents one).
 - **Close**: takeaway as a directive, then assets/links block, then the native subscribe CTA. No sentiment-stamp, no engagement question.
 - **Paired LinkedIn body**, when the essay ships with a post: drafted as its own `body-copy` deliverable, teasing not retelling.
@@ -23,7 +23,8 @@ A full-length essay for the operator's Substack publication — the long-form ho
 
 - **Never fabricate event facts.** Attendance counts, durations, quotes, student/participant outcomes — if the source material doesn't state it, leave a `[FILL]` slot. (Earned: the first essay draft invented "thirty-odd students, three hours"; reality was twelve and two.)
 - **Open concrete** — a scene, the literal artifact, or a flat true statement. Never an abstraction, never "imagine".
-- **Metaphors are functional, not literary** — a metaphor earns its place only by making a hard idea easier.
+- **Metaphors are functional, not literary** — a metaphor earns its place only by making a hard idea easier. The operator's hand edit cuts the crafted image and keeps the spoken commonplace; the rule and its calibration live in `library/context/operator/voice/anti-patterns.md` § Mannered prose.
+- **Research earns one named term or one story per section.** Provenance (year, authors, sample size, the source's own example) and stat-spraying stay in the research artifact; the essay's authority is the operator's experience. A paragraph whose only job is to deliver a statistic gets cut, and a caveat the operator asked for is a clause, not a paragraph. (Earned: the ai-spend essay lost roughly half its citations in the operator's hand edit, and his review said "don't throw stats for the sake of stats".)
 - **The register test at every section**: would this paragraph sit inside the selected base register's corpus while satisfying any explicit borrow direction? Editorial-polished prose that would sit in an admired publication but not in the operator's own work is off-register.
 - Externally citable claims trace to the research artifact or a named source.
 

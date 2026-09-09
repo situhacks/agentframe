@@ -34,7 +34,9 @@ Counts by kind, total size, date range, codecs. Report it before touching anythi
 python system/tools/media_intake.py ingest <folder> --batch "<slug>" --context "<one line>"
 ```
 
-The tool: hashes every file and skips exact duplicates; flags near-duplicate videos and burst photos; moves originals to `{root}/{YYYY}/{YYYY-MM-DD}-{batch}-{nn}.{ext}` without transcoding; writes an H.264 proxy for HEVC sources; extracts three scene-aware keyframes per video; reads EXIF and `ffprobe` facts; writes one card per asset with `review: pending` and the batch card; then runs `af index update`. Duplicates are listed, never silently dropped.
+**`ingest` moves the originals out of the source folder** into `{root}/{YYYY}/{YYYY-MM-DD}-{batch}-{nn}.{ext}`, leaving it empty. Pass `--copy` to leave them in place instead, and prefer it whenever the drop is irreplaceable, the source is a drive that may be reformatted, or this is the first run against a folder — verify the shelf, then delete the source by hand.
+
+The tool: hashes every file and skips exact duplicates; flags near-duplicate videos and burst photos; places originals without transcoding; writes an H.264 proxy for HEVC sources; extracts three scene-aware keyframes per video; reads EXIF and `ffprobe` facts; writes one card per asset with `review: pending` and the batch card; then runs `af index update`. Duplicates are listed, never silently dropped.
 
 ### 4. Review (judgment, delegated to Gemini)
 

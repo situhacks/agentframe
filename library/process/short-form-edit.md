@@ -62,8 +62,11 @@ One HyperFrames project per post under `video/`. Base track: `cut.mp4` as a `<vi
 ```
 npx hyperframes check
 npx hyperframes render --out renders/final.mp4      # 1080x1920
-ffmpeg -i renders/final.mp4 -af loudnorm=I=-16:TP=-1.5:LRA=11 renders/final.mp4
+ffmpeg -i renders/final.mp4 -af loudnorm=I=-16:TP=-1.5:LRA=11 -c:v copy renders/final-ln.mp4 \
+  && mv -f renders/final-ln.mp4 renders/final.mp4
 ```
+
+ffmpeg refuses to read and write the same file, so loudness normalization goes to a second name and replaces the render only on success; `-c:v copy` keeps the picture untouched.
 
 Watch the first three seconds and the end card. Confirm captions sit inside the platform's safe zones, duration and size fit the channel profile, and nothing carries a watermark. Then `python system/af.py studio stage <slug> cut`. The operator watches before anything is scheduled.
 
@@ -89,7 +92,8 @@ yt-dlp --impersonate chrome --write-subs --sub-langs "eng-US" --skip-download -o
 Where a video ships no captions, download audio and transcribe with the local tool. To have the video *watched* (hook delivery, cuts, on-screen text, pacing), delegate perception to Gemini and keep the judgment here:
 
 ```
-python system/tools/agy_call.py --file research/{date}-{handle}/{id}.mp4 --schema '{...}' \n  --prompt "Describe the first 3 seconds, list every cut with timestamps, quote on-screen text, name the caption style."
+python system/tools/agy_call.py --file research/{date}-{handle}/{id}.mp4 --schema '{...}' \
+  --prompt "Describe the first 3 seconds, list every cut with timestamps, quote on-screen text, name the caption style."
 ```
 
 For each video record: the first-twelve-word hook and its pattern, structure and beat timing, length, caption style, and views relative to the creator's median in the set. Write the breakdown to `research/{date}-{handle}/study.md` and append hook rows to `hooks.md` with the URL. Requires `yt-dlp` 2026.08 or later with `curl_cffi`; if a read fails twice, record the gap rather than substituting a source.

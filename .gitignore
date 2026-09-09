@@ -46,6 +46,10 @@ workspace/studio/*
 # === Operator research ===
 workspace/research/
 
+# === Operator board (work in flight; personal layer, rebuilt by af board) ===
+workspace/board.md
+workspace/board/
+
 # === Runtime / generated state ===
 system/logs/
 system/audit/*.db

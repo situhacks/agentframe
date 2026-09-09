@@ -31,6 +31,13 @@ Commands:
   python system/af.py studio new <slug> [--date D] [--platform P] [--series S] [--from FILE] [--name NAME]
   python system/af.py studio stage <slug> <state>
   python system/af.py studio post <slug> --url U [--posted-at T]
+  python system/af.py board init|add|dispatch|sync|approve|return|resume|close|drop|reopen|list ...
+
+`board` verbs drive the work-in-flight index (workspace/board.md): one card per
+bounded slice of work across every project, four lanes (Queued, In progress,
+Needs you, Done), receipts from worker sessions, and a deterministic `sync`
+that converts anything that stopped moving into a Needs-you card and archives
+what the operator stopped caring about. See system/board.py for the grammar.
 
 `pipe` verbs drive the pipeline-topology surface (workspace/pipeline/): a
 stage-based funnel whose board (pipeline.md `applications:` rows) is the single
@@ -69,6 +76,11 @@ try:
     from system import indexer
 except ModuleNotFoundError:  # direct ``python system/af.py`` execution
     import indexer
+
+try:
+    from system import board as workboard
+except ModuleNotFoundError:  # direct ``python system/af.py`` execution
+    import board as workboard
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROJECTS = os.path.join(ROOT, "workspace", "projects")
@@ -3260,6 +3272,12 @@ def cmd_doctor(args):
         all_issues += sys_issues
         notes += sys_notes
         system_scope = " + system surfaces"
+        if workboard.exists(ROOT):
+            try:
+                notes += [f"board: {n}" for n in workboard.issues(ROOT, workboard.load(ROOT, strict=False))]
+            except workboard.BoardError as exc:
+                all_issues.append(f"board: {exc}")
+            system_scope += " + board"
     system_scope += pipeline_scope + studio_scope
     for n in notes:
         print(f"af doctor: note — {n}")
@@ -3306,8 +3324,144 @@ def check_mode_gate(cmd, args=None):
     if os.environ.get("AGENTFRAME_MANAGED_RUN") == "1":
         if cmd in {"ready", "publish", "automation", "sync-harnesses"}:
             die(f"'af {cmd}' is outside the managed-run charter; report blocked and exit")
+        if cmd == "board" and getattr(args, "board_cmd", None) not in {"sync", "list"}:
+            die("'af board' transitions are outside the managed-run charter; write the receipt and exit")
         return
     return
+
+
+# ------------------------------------------------------- board (work in flight)
+
+def _board_load():
+    try:
+        return workboard.load(ROOT)
+    except workboard.BoardError as exc:
+        die(str(exc))
+
+
+def _board_roster(args):
+    return None if getattr(args, "no_roster", False) else workboard.roster(ROOT)
+
+
+def _board_card_line(card):
+    bits = [card.id, card.project, card.deliverable, f"@{card.owner}"]
+    for key in ("ask", "reason", "session", "note"):
+        if card.fields.get(key):
+            bits.append(f"{key}: {card.fields[key]}")
+    return " · ".join(bits)
+
+
+def cmd_board_init(args):
+    workboard.init(ROOT)
+    rel = os.path.relpath(workboard.paths(ROOT)["board"], ROOT).replace(os.sep, "/")
+    print(f"af board init: {rel} ready (lanes: {', '.join(workboard.LANES)})")
+
+
+def cmd_board_add(args):
+    b = _board_load()
+    try:
+        card = workboard.add(ROOT, b, project=args.project, deliverable=args.deliverable, by=args.by,
+                             owner=args.owner, goal=args.goal or "", done_when=args.done_when or "",
+                             note=args.note or "")
+    except workboard.BoardError as exc:
+        die(str(exc))
+    workboard.save(ROOT, b)
+    print(f"af board add: {card.id} -> Queued ({card.project} · {card.deliverable}); "
+          f"brief workspace/board/{card.fields.get('brief')}")
+    print("  next: fill the brief, then 'af board dispatch " + card.id + " [--launch]'")
+
+
+def cmd_board_dispatch(args):
+    b = _board_load()
+    try:
+        card = workboard.dispatch(b, args.card_id, session=args.session, rows=_board_roster(args), force=args.force)
+    except workboard.BoardError as exc:
+        die(str(exc))
+    # Record the lane move before launching: a launch that starts a worker but
+    # fails to report its id must never leave a live worker behind a Queued card.
+    workboard.save(ROOT, b)
+    if args.launch:
+        try:
+            card.fields["session"] = workboard.launch_background(ROOT, card, model=args.model)
+        except workboard.BoardError as exc:
+            card.fields["note"] = workboard._clean("launch attempted; session id unknown, sync will reconcile")
+            workboard.save(ROOT, b)
+            die(str(exc))
+        workboard.save(ROOT, b)
+    how = "launched claude --bg" if args.launch else "attached"
+    session = card.fields.get("session") or "no session id yet"
+    print(f"af board dispatch: {card.id} -> In progress ({how}; owner @{card.owner}; session {session})")
+    if not args.launch and not card.fields.get("session"):
+        print(f"  note: no live session named '{card.owner}' in the roster; rename the chat or pass --session <id>")
+
+
+def cmd_board_sync(args):
+    if not workboard.exists(ROOT):
+        if args.quiet:
+            return
+        die("no board yet: run 'af board init'")
+    b = _board_load()
+    events = workboard.sync(ROOT, b, rows=_board_roster(args))
+    workboard.save(ROOT, b)
+    if args.quiet:
+        return
+    for event in events:
+        print(f"af board sync: {event}")
+    waiting = len(b.lanes["Needs you"])
+    print(f"af board sync: {len(events)} change(s); {waiting} card(s) need you")
+
+
+def _board_transition(args, fn, label):
+    b = _board_load()
+    try:
+        card = fn(b)
+    except workboard.BoardError as exc:
+        die(str(exc))
+    workboard.save(ROOT, b)
+    print(f"af board {label}: {_board_card_line(card)} -> {card.lane}{' (closed)' if card.done and card.lane == 'Done' else ''}")
+
+
+def cmd_board_approve(args):
+    _board_transition(args, lambda b: workboard.approve(b, args.card_id), "approve")
+
+
+def cmd_board_return(args):
+    _board_transition(args, lambda b: workboard.return_(b, args.card_id, args.feedback, ROOT), "return")
+
+
+def cmd_board_resume(args):
+    _board_transition(args, lambda b: workboard.resume(b, args.card_id), "resume")
+
+
+def cmd_board_close(args):
+    _board_transition(args, lambda b: workboard.close(b, args.card_id), "close")
+
+
+def cmd_board_drop(args):
+    _board_transition(args, lambda b: workboard.drop(ROOT, b, args.card_id, note=args.note or ""), "drop")
+
+
+def cmd_board_reopen(args):
+    _board_transition(args, lambda b: workboard.reopen(ROOT, b, args.card_id), "reopen")
+
+
+def cmd_board_list(args):
+    b = _board_load()
+    rows = _board_roster(args)
+    snap = workboard.snapshot(ROOT, b, rows=rows)
+    if args.json:
+        print(json.dumps(snap, indent=2))
+        return
+    for lane in snap["lanes"]:
+        print(f"{lane['name']} ({len(lane['cards'])})")
+        for c in lane["cards"]:
+            extra = []
+            if c.get("ask"):
+                extra.append(f"{c['ask']}: {c.get('reason', '')}")
+            if c.get("state"):
+                extra.append(c["state"])
+            print(f"  {c['id']}  {c['project']} · {c['deliverable']}  [{'; '.join(extra)}]")
+    print(f"{snap['open']} open · {snap['waiting_on_you']} waiting on you")
 
 
 def main():
@@ -3409,6 +3563,27 @@ def main():
     st = ssub.add_parser("stage"); st.add_argument("slug"); st.add_argument("state"); st.set_defaults(fn=cmd_studio_stage)
     sp = ssub.add_parser("post"); sp.add_argument("slug"); sp.add_argument("--url", required=True)
     sp.add_argument("--posted-at"); sp.set_defaults(fn=cmd_studio_post)
+
+    s = sub.add_parser("board")
+    bsub = s.add_subparsers(dest="board_cmd", required=True)
+    bi = bsub.add_parser("init"); bi.set_defaults(fn=cmd_board_init)
+    ba = bsub.add_parser("add"); ba.add_argument("project"); ba.add_argument("deliverable")
+    ba.add_argument("--by", choices=workboard.BY_VALUES, default="orchestrator"); ba.add_argument("--owner")
+    ba.add_argument("--goal"); ba.add_argument("--done-when", dest="done_when"); ba.add_argument("--note")
+    ba.set_defaults(fn=cmd_board_add)
+    bd = bsub.add_parser("dispatch"); bd.add_argument("card_id"); bd.add_argument("--session")
+    bd.add_argument("--launch", action="store_true"); bd.add_argument("--model")
+    bd.add_argument("--force", action="store_true"); bd.add_argument("--no-roster", action="store_true")
+    bd.set_defaults(fn=cmd_board_dispatch)
+    bs = bsub.add_parser("sync"); bs.add_argument("--quiet", action="store_true")
+    bs.add_argument("--no-roster", action="store_true"); bs.set_defaults(fn=cmd_board_sync)
+    for name, fn in (("approve", cmd_board_approve), ("resume", cmd_board_resume),
+                     ("close", cmd_board_close), ("reopen", cmd_board_reopen)):
+        bx = bsub.add_parser(name); bx.add_argument("card_id"); bx.set_defaults(fn=fn)
+    br = bsub.add_parser("return"); br.add_argument("card_id"); br.add_argument("feedback"); br.set_defaults(fn=cmd_board_return)
+    bdr = bsub.add_parser("drop"); bdr.add_argument("card_id"); bdr.add_argument("--note"); bdr.set_defaults(fn=cmd_board_drop)
+    bl = bsub.add_parser("list"); bl.add_argument("--json", action="store_true")
+    bl.add_argument("--no-roster", action="store_true"); bl.set_defaults(fn=cmd_board_list)
 
     args = p.parse_args()
     check_mode_gate(args.cmd, args)

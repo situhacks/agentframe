@@ -29,6 +29,7 @@ This pack is the only artifact that knows careers. The generic spine (`system/af
 | Doctor rules | `rules.py` `check_application()` | text-material parse hazards, verification freshness |
 | Persona routing | [`production.md`](production.md) | the application-sprint runbook the Operator loads for careers work |
 | Interview loop | [`interview-arc.md`](interview-arc.md) | the per-round procedure, lazy-loaded from `production.md` step 11 when a round is scheduled |
+| Offer terms | [`offer-terms.md`](offer-terms.md) | what to request and verify across the whole package before accepting, lazy-loaded from `production.md` step 12 beside the comp case |
 | Career bank schema | [`operator-schema/career/`](../../context/operator-schema/career/README.md) | shapes for profile, master-cv, proof-points, stories, tracks, search-profile, interview-playbook — instances live gitignored under `library/context/operator/career/` |
 
 ## Stage model (the board owns this)

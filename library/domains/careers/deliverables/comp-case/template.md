@@ -9,6 +9,10 @@ before that call starts rather than assembled during it.
 Lives at `comp-case.md` at the application root. It spans rounds, so it is not a round artifact and
 never moves into a round folder.
 
+**Scope boundary.** This file argues the number. The rest of the package — benefits, retirement match,
+equity mechanics, clawbacks, leave, termination — belongs to
+[`offer-terms.md`](../../offer-terms.md), which runs beside it at step 12.
+
 ## Inputs
 
 - `application.md` — `salary_range` as posted, and any anchor already given.

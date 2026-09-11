@@ -19,6 +19,7 @@ Commands:
   python system/af.py adopt <project> <deliverable-slug> --file <existing-project-relative.md>
   python system/af.py new-project <slug> [--domain project-mgmt] [--flow open-flow] [--name NAME]
   python system/af.py doctor [project|pipeline|studio]
+  python system/af.py feedback <project> [--mark-harvested [--note TEXT]]
   python system/af.py index update [--rebuild]|status|eval [--k N]
   python system/af.py search "<query>" [-n LIMIT] [--json]
   python system/af.py sync-harnesses --check|--write
@@ -704,7 +705,9 @@ def cmd_version(args):
     print("    edits to that copy rather than retyping; a full-file rewrite is right only when")
     print("    the change is genuinely whole-body.")
     print("  - Every content change to a head versions first, copyedits included (deliverable-versioning.md).")
-    print("  - If the operator feedback criticized SHAPE or process, append one feedback-log.md line this turn.")
+    print(f"  - The operator's feedback on this draft is narration: it goes in the new head's changes_from_v{n}.")
+    print("    Append a feedback-log.md line only for a lesson that outlives this deliverable (agent")
+    print("    behaviour or shape), one line: the lesson, then the evidence.")
 
 
 # ---------------------------------------------------------------- draft
@@ -2769,6 +2772,86 @@ def activity_notes(cdir):
     return notes
 
 
+# --------------------------------------------------- feedback log (lessons)
+
+FEEDBACK_LOG = "feedback-log.md"
+# A harvest closes with this heading; everything below the last one is the
+# unharvested tail. The date is the harvest date, the rest of the line is free.
+FEEDBACK_HARVESTED_RE = re.compile(r"^## harvested (\d{4}-\d{2}-\d{2})\b")
+# One lesson per line: "- YYYY-MM-DD — lesson, then evidence". Older logs also
+# carry "YYYY-MM-DD — ...", "## YYYY-MM-DD — ..." and "- **bold** ..." shapes.
+FEEDBACK_ENTRY_RE = re.compile(r"^(?:- |## )?(?:\*\*)?\d{4}-\d{2}-\d{2}\b|^- \*\*")
+
+
+def feedback_tail(cdir):
+    """Split feedback-log.md at its last `## harvested YYYY-MM-DD` heading.
+    Returns (tail_lines, entry_count, last_harvest_date). No heading: the whole
+    file is the tail and the date is None. No file: ([], 0, None)."""
+    path = os.path.join(cdir, FEEDBACK_LOG)
+    if not os.path.isfile(path):
+        return [], 0, None
+    lines = read(path).splitlines()
+    start, last = 0, None
+    for i, line in enumerate(lines):
+        m = FEEDBACK_HARVESTED_RE.match(line)
+        if m:
+            start, last = i + 1, m.group(1)
+    tail = lines[start:]
+    while tail and not tail[0].strip():
+        tail.pop(0)
+    while tail and not tail[-1].strip():
+        tail.pop()
+    count = sum(1 for line in tail if FEEDBACK_ENTRY_RE.match(line.strip()))
+    return tail, count, last
+
+
+def feedback_notes(cdir):
+    """Doctor note: lessons an active project logged and no harvest has mined.
+    A count, never an issue — running the harvest is the operator's call.
+    Completed projects are skipped (same contract as activity_notes)."""
+    try:
+        cfm, _ = split_fm(read(os.path.join(cdir, "project.md")), "project.md")
+    except SystemExit:
+        return []
+    if get_scalar(cfm, "status") != "active":
+        return []
+    _, count, last = feedback_tail(cdir)
+    if not count:
+        return []
+    rel = os.path.relpath(cdir, ROOT).replace("\\", "/")
+    since = f"since the {last} harvest" if last else "never harvested"
+    return [f"{rel}: feedback-log.md {count} unharvested lesson(s), {since} — "
+            f"`af feedback {os.path.basename(cdir)}` reads them before drafting; a harvest marks them with --mark-harvested"]
+
+
+def cmd_feedback(args):
+    """Print the unharvested tail of a project's feedback log, or close a
+    harvest by appending the watermark heading below it."""
+    cdir = project_dir(args.project)
+    rel = os.path.relpath(cdir, ROOT).replace("\\", "/")
+    path = os.path.join(cdir, FEEDBACK_LOG)
+    tail, count, last = feedback_tail(cdir)
+    if args.mark_harvested:
+        if not os.path.isfile(path):
+            die(f"{rel}/{FEEDBACK_LOG} does not exist; nothing to mark")
+        note = (args.note or "").strip()
+        heading = f"## harvested {today()}" + (f" — {note}" if note else "")
+        text = read(path).rstrip("\n")
+        write(path, (f"{text}\n\n" if text else "") + heading + "\n")
+        append_activity(cdir, f"feedback_harvested: {count} lesson(s) above the watermark mined" + (f"; {note}" if note else ""))
+        print(f"af feedback: {rel}/{FEEDBACK_LOG} watermark written ({heading}); {count} lesson(s) now below it")
+        print("\nJudgment (stays with the agent):")
+        print("  - A promoted lesson lives in its target (template, voice file, process, rule); the log line is the")
+        print("    paper trail, not the rule. Anything you chose not to promote stays mined all the same.")
+        print("  - Record the harvest as a system_changes row (voice_harvest / deliverable_harvest) via system/audit/writer.py.")
+        return
+    since = f"since the {last} harvest" if last else "never harvested"
+    print(f"af feedback: {rel}/{FEEDBACK_LOG} — {count} unharvested lesson(s), {since}")
+    if count:
+        print()
+        print("\n".join(tail))
+
+
 def check_project(cdir):
     issues = []
     rel = os.path.relpath(cdir, ROOT).replace("\\", "/")
@@ -3446,6 +3529,7 @@ def cmd_doctor(args):
         notes += empty_head_notes(d)
         notes += binary_head_notes(d)
         notes += activity_notes(d)
+        notes += feedback_notes(d)
     if args.project in (None, "pipeline"):
         pipe_issues, pipe_notes = check_pipeline()
         all_issues += pipe_issues
@@ -3750,6 +3834,10 @@ def _run():
     s.add_argument("--flow", default=DEFAULT_FLOW, choices=sorted(FLOWS)); s.add_argument("--domain", default=DEFAULT_DOMAIN)
     s.add_argument("--name"); s.set_defaults(fn=cmd_new_project)
     s = sub.add_parser("doctor");          s.add_argument("project", nargs="?"); s.set_defaults(fn=cmd_doctor)
+    s = sub.add_parser("feedback");        s.add_argument("project")
+    s.add_argument("--mark-harvested", action="store_true", help="close a harvest: append the '## harvested YYYY-MM-DD' watermark")
+    s.add_argument("--note", help="one line for the watermark heading: what was promoted where")
+    s.set_defaults(fn=cmd_feedback)
     s = sub.add_parser("index")
     isub = s.add_subparsers(dest="index_cmd", required=True)
     iu = isub.add_parser("update"); iu.add_argument("--rebuild", action="store_true"); iu.set_defaults(fn=cmd_index)

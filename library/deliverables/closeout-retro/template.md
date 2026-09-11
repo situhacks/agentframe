@@ -14,7 +14,7 @@ It is not a Builder patch queue and it does not run performance capture. System 
   - `phase-5-launch-and-learn/performance-data.csv` (captured first, same step).
   - `activity.md` only for ship dates, scope changes, back-fill/override evidence, and completion events.
   - Public comment/reply evidence or operator-provided qualitative notes when needed to score a project brief criterion.
-  - `feedback-log.md` for project-scoped observations that bear on the Worked / Did Not Work notes.
+  - The feedback log's unharvested tail (`python system/af.py feedback {slug}`) for lessons that bear on the Worked / Did Not Work notes.
 - **Dependencies:**
   - Final active deliverable ready, published, cancelled, or removed from scope.
   - `system-retro-v{N}.md` is complete or intentionally deferred.

@@ -101,7 +101,7 @@ After `af draft` or `af version`, verify the command receipt and filesystem:
 - any template-specific frontmatter is present before content drafting;
 - no lower-numbered version was edited.
 
-Routine iteration narration does not go to `activity.md`; the commands themselves append one terse work pulse per run (`artifact_drafted` on draft, `artifact_versioned` on version) so the calendar can derive worked time—never add pulse lines by hand. Per-version change narration belongs only in a template-declared `changes_from_v{N}` field. `ready` and `publish` each write their own transition receipt.
+Routine iteration narration does not go to `activity.md`; the commands themselves append one terse work pulse per run (`artifact_drafted` on draft, `artifact_versioned` on version) so the calendar can derive worked time—never add pulse lines by hand. Per-version change narration belongs only in a template-declared `changes_from_v{N}` field, and the operator's feedback on that draft is narration: it goes there, not into `feedback-log.md`, which takes only a lesson that outlives the deliverable (agent behaviour or shape), one line. `ready` and `publish` each write their own transition receipt.
 
 ## Boundaries
 

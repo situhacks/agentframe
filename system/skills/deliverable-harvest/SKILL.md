@@ -3,7 +3,7 @@ name: deliverable-harvest
 version: 0.1.0
 description: |
   Extract deliverable-SHAPE feedback from campaign source material and route it
-  to the right home: template-patch candidates, feedback-log paper trail, and
+  to the right home: template-patch candidates, local-deliverable promotions, and
   builder-backlog recurrence watches. Input-agnostic: a deliverable's version
   trail, a session transcript, or the live chat. Mines the same sources as
   voice-harvest but with a structure lens — what the operator repeatedly added,
@@ -40,7 +40,7 @@ Identify the material (which deliverables, which trails), then ask the operator 
 
 ### Step 2 — Read and extract shape deltas
 
-Walk the sources for **structure changes**: sections added/removed/reordered, format conversions (prose→table, list→prose), weight/length corrections, content-placement rules ("X doesn't belong in this deliverable/version"), sequencing feedback ("settle the skeleton before prose"), and any operator statement about what the deliverable SHOULD contain. Also scan the project directory for the presence of any `_local/` directories indicating project-local ad-hoc deliverables. Discard voice-level deltas (route those to voice-harvest) and one-off content fixes (typos, facts).
+Start with the feedback log's unharvested tail (`python system/af.py feedback {slug}`): shape lessons the operator already named are parked there. Then walk the sources for **structure changes**: sections added/removed/reordered, format conversions (prose→table, list→prose), weight/length corrections, content-placement rules ("X doesn't belong in this deliverable/version"), sequencing feedback ("settle the skeleton before prose"), and any operator statement about what the deliverable SHOULD contain. Also scan the project directory for the presence of any `_local/` directories indicating project-local ad-hoc deliverables. Discard voice-level deltas (route those to voice-harvest) and one-off content fixes (typos, facts).
 
 ### Step 3 — Cluster and classify
 
@@ -49,17 +49,17 @@ Collapse repeats into one candidate each. Per distinct finding:
 - **Generalizable template gap** (test: *would the next campaign hit this with the current template?*) → **template-patch candidate**, named to its target `library/deliverables/{type}/template.md` section.
 - **Already covered by the template but violated anyway** → **recurrence signal**: the template rule didn't fire. Log/update a `BB-*` watch in `system/builder-backlog.md` (first time = watch; matches a prior watch = confirmed, needs a structural fix, not a sharper-worded template line).
 - **Local deliverable promotion candidate** (test: *is this ad-hoc `_local` deliverable type reusable across other projects in this domain?* and *does it cover less than 70% of any existing template?*) → **promotion candidate**, target path `library/domains/{domain}/deliverables/{type}/template.md` (where `{domain}` is the active project's domain).
-- **Campaign-specific, not generalizable** → one line to the campaign's `feedback-log.md` (paper trail for the campaign retro), nothing else.
+- **Project-specific, not generalizable** → nothing to route. A per-piece correction already lives in that version's `changes_from_vN`; a production note the project's next deliverable needs goes in the `project.md` body. Do not copy either into `feedback-log.md`.
 
 ### Step 4 — Propose (FIRST-PASS-THEN-APPROVE)
 
-Surface all candidates grouped by destination: template-patch candidates (with target file + section), promotion candidates, backlog watches, feedback-log lines. The operator approves, edits, or drops each. 
+Surface all candidates grouped by destination: template-patch candidates (with target file + section), promotion candidates, backlog watches. The operator approves, edits, or drops each. 
 - **Approved template patches** route to `system/skills/system-improvement/SKILL.md` (which owns the patch discipline).
 - **Approved local promotions** write directly to the domain's pack directory (`library/domains/{domain}/deliverables/`) and are logged. This Operator-owned exception **must** still apply the `agentframe-structure` authoring standard (correct sections, purpose, readiness criteria, etc.).
 
 ### Step 5 — Log
 
-Append one `system_changes` row via `system/audit/writer.py`: findings count by destination (including promotions), sources mined (tier), deliverables covered. Feedback-log lines and backlog entries were written in Step 3–4; the audit row records the harvest ran.
+Append one `system_changes` row via `system/audit/writer.py`: findings count by destination (including promotions), sources mined (tier), deliverables covered. Backlog entries were written in Step 3; the audit row records the harvest ran. Then close the log with `python system/af.py feedback {slug} --mark-harvested --note "..."`, once per shared read, so a pass that ran both lenses marks once.
 
 ## Boundaries
 

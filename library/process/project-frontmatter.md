@@ -77,7 +77,7 @@ Published rows older than 30 days may move to `knowledge/_archive/deliverables-a
 
 ## Verification Or Logging
 
-`af doctor` validates active projects plus the live pipeline: schema version, required fields, lifecycle timestamps, domain/flow resolution, tracker rows, numeric head pointers, artifact status, optional channel/stakeholder pointers, and domain extensions. It reports drift and never auto-fixes. Completed snapshots are excluded from the default scan.
+`af doctor` validates active projects plus the live pipeline: schema version, required fields, lifecycle timestamps, domain/flow resolution, tracker rows, numeric head pointers, artifact status, optional channel/stakeholder pointers, and domain extensions. It reports drift and never auto-fixes; it also notes unharvested `feedback-log.md` lessons on active projects (`af feedback <slug>` reads them). Completed snapshots are excluded from the default scan.
 
 An approved manual correction appends `frontmatter_manual_edit` using [`project-activity.md`](project-activity.md). Button-owned transitions write their own state and activity receipts.
 

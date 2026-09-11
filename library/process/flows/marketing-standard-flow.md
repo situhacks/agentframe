@@ -121,7 +121,7 @@ Two steps, run in order after the active arc ends.
 
 | Step | Output |
 |---|---|
-| 5.1 Harvest retro | Run [`system/skills/deliverable-harvest/SKILL.md`](../../../system/skills/deliverable-harvest/SKILL.md) + [`system/skills/voice-harvest/SKILL.md`](../../../system/skills/voice-harvest/SKILL.md) over the campaign (shared source-read). Findings route on approval: template patches → `system-improvement`, voice pairs → `voice/pairs/`, recurrences → builder-backlog, campaign-specific notes → `feedback-log.md`. Summary lands in `phase-5-launch-and-learn/system-retro-v{N}.md`. |
+| 5.1 Harvest retro | Run [`system/skills/deliverable-harvest/SKILL.md`](../../../system/skills/deliverable-harvest/SKILL.md) + [`system/skills/voice-harvest/SKILL.md`](../../../system/skills/voice-harvest/SKILL.md) over the campaign (shared source-read). Findings route on approval: template patches → `system-improvement`, voice pairs → `voice/pairs/`, recurrences → builder-backlog; campaign-specific notes stay in their deliverable or the `project.md` body. Close the log with `af feedback {slug} --mark-harvested`. Summary lands in `phase-5-launch-and-learn/system-retro-v{N}.md`. |
 | 5.2 Performance + campaign retro + completion | One closeout motion: capture `phase-5-launch-and-learn/performance-data.csv` per [`composio-notes.md`](../composio-notes.md) (connector-first MCP scan, manual gap-fill; metrics are meaningful ~14 days after each post's `published.posted_at`), then score the campaign in `phase-5-launch-and-learn/campaign-retro-v{N}.md`, then completion/archive when approved. |
 
 **Tracker update during Phase 5:**

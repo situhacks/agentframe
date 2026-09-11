@@ -38,16 +38,21 @@ move is genuinely part of the deal.
 
 **Equity.** Instrument, quantity, strike or grant price, current valuation and its date, vest schedule
 and cliff, what happens at a liquidity event, the **post-termination exercise window** where option
-value quietly dies, and whether refresh grants exist or the initial grant is the whole story.
+value quietly dies, and whether refresh grants exist or the initial grant is the whole story. Separately,
+whether an **employee stock purchase plan** exists — it is a different instrument from a grant, with its
+own discount and enrolment window.
 
-**Retirement.** The match formula stated as a **percent of salary** so it can be benchmarked — a flat
-dollar cap looks generous until divided by the base. Then three things people miss: whether the match
-**scales with level**, **when eligibility starts** (a match that begins in eighteen months is not this
-year's compensation), and whether employer contributions vest.
+**Retirement.** The plan type first, because they behave differently on portability and vesting: group
+RRSP, deferred profit sharing, defined contribution, defined benefit. Then the match formula stated as a
+**percent of salary** so it can be benchmarked — a flat dollar cap looks generous until divided by the
+base. Then four things people miss: whether the match **scales with level**, **when eligibility starts**
+(a match beginning in eighteen months is not this year's compensation), whether employer contributions
+vest, and whether the plan **consumes personal contribution room** you were going to use anyway.
 
-**Health and dental.** Coinsurance and annual maximum on drugs. Dental maximum, basic versus major
-split, orthodontics. Paramedical: per-practitioner or one shared pool. Vision. Carrier. **Start date —
-day one or after a waiting period.**
+**Health and dental.** **Who pays the premium** — employer-paid in full, or a payroll deduction that
+makes this a monthly cost, and what the family tier costs if it applies. Then coinsurance and annual
+maximum on drugs. Dental maximum, basic versus major split, orthodontics. Paramedical: per-practitioner
+or one shared pool. Vision. Carrier. **Start date — day one or after a waiting period.**
 
 **Spending accounts.** Health spending account, wellness account, flex credits, and their annual
 declaration rules. **Professional development and certification budget.** Home office or equipment

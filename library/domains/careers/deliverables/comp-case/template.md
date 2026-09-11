@@ -9,12 +9,12 @@ before that call starts rather than assembled during it.
 Lives at `comp-case.md` at the application root. It spans rounds, so it is not a round artifact and
 never moves into a round folder.
 
-**Scope boundary.** This file argues the number. The rest of the package — benefits, retirement match,
-equity mechanics, clawbacks, leave, termination — belongs to
-[`offer-terms.md`](../../offer-terms.md), which runs beside it at step 12.
+**Scope boundary.** This file is the artifact shape. The offer-stage judgment lives in
+[`offer-arc.md`](../../offer-arc.md), which owns step 12 and produces this file.
 
 ## Inputs
 
+- The **verified package** from [`offer-arc.md`](../../offer-arc.md) — every row filled before the case is argued.
 - `application.md` — `salary_range` as posted, and any anchor already given.
 - Every round's `debrief.md`, specifically `## Evidence the room confirmed`. That section is where the
   reasons come from; a comp case assembled from memory instead is the failure this file exists to stop.

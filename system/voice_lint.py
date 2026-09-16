@@ -6,7 +6,8 @@ carries only what a regex can settle and what a diff can prove, so a late agent
 pass cannot ship them unnoticed:
 
   hard (blocks `af ready` through system/hooks/voice_guard.py):
-    banned-tic          "my read" / "my honest read", "quietly"
+    banned-tic          "my read" / "my honest read", "quietly", and the
+                        "where this lands" shape
     double-dash         two em dashes in one sentence
     hyphen-normalised   a sentence the previous version wrote with the operator's
                         spaced hyphen ( - ) now carries an em dash instead
@@ -18,6 +19,10 @@ pass cannot ship them unnoticed:
     thread-as-topic     "thread" for a subject rather than a literal thread
     litotes             the negated shapes anti-patterns.md names
     contrastive         more than one "isn't X, it's Y" pivot in the piece
+    lands-as-arrival    a bare "lands" / "land" standing in for a conclusion
+    reach-for           "reached for" standing in for said or chose
+    ship-for-release    "ship" next to a model; he says launches / is released
+    act-cross-ref       "in Act II" in prose (the reader does not know the acts)
 
 Cadence numbers are deliberately absent: a threshold on sentence length only
 teaches the agent to aim at the number (AGENTS.builder.md, design principle 7).
@@ -49,10 +54,20 @@ QUOTED = re.compile(r'"[^"\n]{1,400}"')
 SENTENCE_SPLIT = re.compile(
     r"(?<=[.!?])\s+(?=[\"'(\[A-Z0-9*])|(?<=[.!?][\"')\]])\s+(?=[\"'(\[A-Z0-9*])"
 )
+WHERE_LANDS = re.compile(r"\bwhere (?:this|that|it|I|we|you|things?) (?:actually |really )?lands?\b", re.I)
 BANNED_TICS = (
     ("my read", re.compile(r"\bmy (?:honest )?read\b", re.I)),
     ("quietly", re.compile(r"\bquietly\b", re.I)),
+    ("where this lands", WHERE_LANDS),
 )
+LANDS = re.compile(r"\b(?:lands?|landed)\b(?! pages?\b)", re.I)
+REACH_FOR = re.compile(r"\breach(?:ed|es|ing)? for\b", re.I)
+SHIP_MODEL = re.compile(
+    r"\b(?:models?|GPT-\d|Claude|Gemini|Astra|Fable|Mythos|Opus|Sonnet|Haiku|Llama|releases?)\b[^.!?\n]{0,80}?\bship(?:s|ped|ping)?\b"
+    r"|\bship(?:s|ped|ping)?\b[^.!?\n]{0,80}?\b(?:models?|GPT-\d|Claude|Gemini|Astra|Fable|Mythos|Opus|Sonnet|Haiku|Llama)\b",
+    re.I,
+)
+ACT_REF = re.compile(r"\b(?:in|from|after|before|to|of|see|until|later in|back in|earlier in) Act (?:I{1,3}|IV|V|\d+)\b")
 LITOTES = re.compile(
     r"\b(?:not un\w+|not im(?:possible|probable)\w*|not without\b|no small\b|"
     r"no stranger to\b|no accident\b|hardly (?:surprising|a surprise|new)\b|"
@@ -181,6 +196,22 @@ def lint(text: str, prev_text: str | None = None) -> dict:
     for m in LITOTES.finditer(p):
         if not _inside(quoted, m.start()):
             add("soft", "litotes", line_of(m.start()), "litotes shape; write the affirmative or hedge openly", _snippet(p, m.start(), m.end()))
+    where_spans = [m.span() for m in WHERE_LANDS.finditer(p)]
+    for m in LANDS.finditer(p):
+        if not _inside(quoted, m.start()) and not _inside(where_spans, m.start()):
+            add("soft", "lands-as-arrival", line_of(m.start()), '"lands" for a conclusion or an arrival; say the conclusion (a literal landing stays)', _snippet(p, m.start(), m.end()))
+    for m in REACH_FOR.finditer(p):
+        if not _inside(quoted, m.start()):
+            add("soft", "reach-for", line_of(m.start()), '"reach for" standing in for said or chose; say the word', _snippet(p, m.start(), m.end()))
+    for m in SHIP_MODEL.finditer(p):
+        if not _inside(quoted, m.start()):
+            add("soft", "ship-for-release", line_of(m.start()), '"ship" for a model release; he writes launches / is released', _snippet(p, m.start(), m.end()))
+    for m in ACT_REF.finditer(p):
+        line_start = p.rfind("\n", 0, m.start()) + 1
+        if p[line_start:m.start()].lstrip().startswith("#"):
+            continue
+        if not _inside(quoted, m.start()):
+            add("soft", "act-cross-ref", line_of(m.start()), 'act cross-reference in prose; the reader does not know what the act holds, so name the thing or cut the clause', _snippet(p, m.start(), m.end()))
     pivots = [m for m in CONTRASTIVE.finditer(p) if not _inside(quoted, m.start())]
     if len(pivots) > 1:
         for m in pivots[1:]:
@@ -319,6 +350,10 @@ def main(argv: list[str] | None = None) -> int:
     else:
         ap.error("give a file, or --project with --deliverable")
 
+    try:  # Windows consoles and pipes default to cp1252; the report carries § and …
+        sys.stdout.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
     prev = "auto" if args.prev == "auto" else (None if args.prev == "none" else args.prev)
     result = lint_file(path, prev)
     if args.json:

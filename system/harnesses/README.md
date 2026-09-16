@@ -23,7 +23,7 @@ Expose selected canonical AgentFrame skills and deterministic guards through eac
 
 `publish_guard.py` is wired on Claude and Cursor only: it matches an MCP tool name, and the Substack server is not mounted on the Codex surface. Coverage there is `af doctor`'s state-truth check, which is the backstop everywhere anyway, since a push made from a vendor's web UI is invisible to every hook.
 
-`voice_guard.py` is wired on all three surfaces around two state buttons: it runs `system/voice_lint.py`, denies `af ready` on a user-voiced head with hard findings (banned tics, two dashes in a sentence, an operator hyphen turned into an em dash since the previous version), and after `af version` hands the agent the lint of the version it just closed with the reminder to load the voice system before editing. `AF_VOICE_LINT=skip` on the command is the operator override.
+`voice_guard.py` is wired on all three surfaces around two state buttons: it runs `system/voice_lint.py`, denies `af ready` on a user-voiced head with hard findings (banned tics, two dashes in a sentence, an operator hyphen turned into an em dash since the previous version), and after `af version` hands the agent the lint of the version it just closed and names `af voice bundle <project> <deliverable>` as the one read to make before editing. `AF_VOICE_LINT=skip` on the command is the operator override.
 
 `index_refresh.py` runs at session start on all three surfaces: when the retrieval index is more than a day old it spawns `af index update` detached, prints one line, and returns. It never blocks, never fails the session, and never builds from cold; a machine with no index still needs one explicit `af index update --rebuild`.
 

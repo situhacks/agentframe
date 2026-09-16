@@ -61,6 +61,8 @@ system/index/vault.db
 system/index/vault.db-shm
 system/index/vault.db-wal
 system/index/golden-set.yaml
+system/index/voice/
+system/index/refresh.log
 
 # === Browser harness runtime ===
 system/browser/runs/

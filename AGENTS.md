@@ -26,6 +26,7 @@ The selected router governs that task. If the task class materially changes, sto
 - **Keep files single-purpose.** Put state, deliverable content, procedures, reusable capabilities, and audit history in their declared owners.
 - **Verify before claiming success.** Use the cheapest evidence proportionate to the risk: targeted searches, tests, schema checks, renders, or artifact inspection.
 - **Preserve operator work.** Treat existing edits and untracked files as user-owned unless the task clearly says otherwise.
+- **Say what you mean.** Every output, chat replies included: no mannered prose (a metaphor or flourish where a literal phrase exists, "a dial worth turning" for "a parameter worth varying"), no clause that props up a claim already made, one idea per paragraph. The model's drift is denser prose than the reader needs; when a literal phrase is available, use it. User-voiced text adds the operator's calibration in `library/context/operator/voice/`.
 
 ## When You Do Not Know
 

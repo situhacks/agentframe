@@ -52,9 +52,10 @@ READY_DENY = (
 )
 VERSION_CONTEXT = (
     "{report}\n"
-    "{new} now holds that text. Before editing it, load library/context/operator/voice/README.md "
-    "and resolve the recipe (register, corpus, pairs); hard findings above are yours to fix in this "
-    "version, and every region you rewrite gets anti-patterns.md before it is surfaced."
+    "{new} now holds that text. Before editing it, run `python system/af.py voice bundle {project} {deliverable}` "
+    "and read the file it names whole (voice/README.md and the rest of the voice system in one read; "
+    "read it again after any compaction). Hard findings above are yours to fix in this version, and "
+    "every region you rewrite gets anti-patterns.md before it is surfaced."
 )
 
 
@@ -150,7 +151,7 @@ def decide(payload: dict, harness: str | None = None) -> dict | None:
             return None
         result["path"] = closed or head
         report = voice_lint.format_report(result)
-        return _context("PostToolUse", VERSION_CONTEXT.format(report=report, new=os.path.basename(head)))
+        return _context("PostToolUse", VERSION_CONTEXT.format(report=report, new=os.path.basename(head), project=project, deliverable=deliverable))
 
     return None
 

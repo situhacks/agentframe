@@ -46,6 +46,11 @@ class BannedTicTests(unittest.TestCase):
         result = vl.lint(voiced("My honest read is that this works."))
         self.assertEqual([f["code"] for f in result["hard"]], ["banned-tic"])
 
+    def test_where_this_lands_is_hard(self):
+        result = vl.lint(voiced("Here's where I land on all of it. And where this lands is the point."))
+        self.assertEqual([f["code"] for f in result["hard"]], ["banned-tic", "banned-tic"])
+        self.assertNotIn("lands-as-arrival", [f["code"] for f in result["soft"]])
+
     def test_quoted_speech_is_exempt(self):
         result = vl.lint(voiced('Bosworth said "keep doing it quietly" and the dashboard died.'))
         self.assertEqual(result["hard"], [])
@@ -101,6 +106,24 @@ class SoftShapeTests(unittest.TestCase):
         self.assertIn("litotes", codes)
         self.assertEqual(codes.count("thread-as-topic"), 1)
         self.assertEqual(result["hard"], [])
+
+    def test_lands_reach_ship_and_act_refs_are_soft(self):
+        body = (
+            "# Act II: The threat\n\n"
+            "The whole industry reached for the same three letters. That's where the argument lands. "
+            "The day the model ships is the day it graduates. I'll get to that in Act II. The landing page stays."
+        )
+        result = vl.lint(voiced(body))
+        codes = [f["code"] for f in result["soft"]]
+        self.assertEqual(result["hard"], [])
+        self.assertEqual(codes.count("reach-for"), 1)
+        self.assertEqual(codes.count("lands-as-arrival"), 1)
+        self.assertEqual(codes.count("ship-for-release"), 1)
+        self.assertEqual(codes.count("act-cross-ref"), 1)
+
+    def test_ship_without_a_model_is_not_flagged(self):
+        result = vl.lint(voiced("We shipped the pack on Tuesday and the tests stayed green."))
+        self.assertEqual([f["code"] for f in result["soft"] if f["code"] == "ship-for-release"], [])
 
     def test_second_contrastive_pivot_is_soft(self):
         body = "The fix isn't to ration, it's to route. The bill isn't the invoice, it's the unread work."

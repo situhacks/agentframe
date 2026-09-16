@@ -2852,6 +2852,37 @@ def cmd_feedback(args):
         print("\n".join(tail))
 
 
+def cmd_voice_bundle(args):
+    """Write the voice system to one file for a single read (system/voice_bundle.py).
+    With a project and deliverable the head's voice block supplies the recipe and its
+    type picks the template; --register alone serves prose outside a project."""
+    spec = importlib.util.spec_from_file_location("af_voice_bundle", os.path.join(ROOT, "system", "voice_bundle.py"))
+    vb = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(vb)
+    head = None
+    register, borrow = args.register, list(args.borrow or [])
+    contexts, template = list(args.context or []), args.template
+    if args.project or args.deliverable:
+        if not (args.project and args.deliverable):
+            die("af voice bundle: give both project and deliverable, or --register")
+        cdir = project_dir(args.project)
+        sdoc = state_doc(cdir)
+        fm, _ = split_fm(read(os.path.join(cdir, sdoc)), sdoc)
+        _, rel = resolve_deliverable_target(fm, args.deliverable)
+        head = os.path.join(cdir, rel)
+        if not os.path.isfile(head):
+            die(f"af voice bundle: head not found: {rel}")
+        base, head_borrow, dtype = vb.recipe_from_head(head)
+        register = register or base
+        borrow = borrow or head_borrow
+        template = template or vb.TYPE_TEMPLATE.get(dtype or "")
+        if not contexts and dtype in vb.TYPE_CONTEXT:
+            contexts = [vb.TYPE_CONTEXT[dtype]]
+    if not register:
+        die("af voice bundle: the head declares no voice recipe (voice.base_register or register); pass --register")
+    print(vb.format_report(vb.build(register, contexts or None, borrow or None, template, head=head)))
+
+
 def check_project(cdir):
     issues = []
     rel = os.path.relpath(cdir, ROOT).replace("\\", "/")
@@ -3838,6 +3869,15 @@ def _run():
     s.add_argument("--mark-harvested", action="store_true", help="close a harvest: append the '## harvested YYYY-MM-DD' watermark")
     s.add_argument("--note", help="one line for the watermark heading: what was promoted where")
     s.set_defaults(fn=cmd_feedback)
+    s = sub.add_parser("voice")
+    vsub = s.add_subparsers(dest="voice_cmd", required=True)
+    vb = vsub.add_parser("bundle", help="write the voice system to one file for a single read")
+    vb.add_argument("project", nargs="?"); vb.add_argument("deliverable", nargs="?")
+    vb.add_argument("--register", choices=("formal", "informal"))
+    vb.add_argument("--context", action="append", help="task context, repeatable: long-form, short-form, email, builder-pov, market-signal, slide, cover")
+    vb.add_argument("--borrow", action="append", choices=("formal", "informal"))
+    vb.add_argument("--template", help="a file in voice/templates/, e.g. substack-essay.md")
+    vb.set_defaults(fn=cmd_voice_bundle)
     s = sub.add_parser("index")
     isub = s.add_subparsers(dest="index_cmd", required=True)
     iu = isub.add_parser("update"); iu.add_argument("--rebuild", action="store_true"); iu.set_defaults(fn=cmd_index)

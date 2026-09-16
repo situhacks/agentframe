@@ -5,6 +5,9 @@
 - Installed version: `agent-reach 1.5.0`
 - License: MIT
 - Install date (UTC): `2026-08-19`
+- Upstream reviewed through: `a19a171fa980a0785849596492e0af4db800c82f` (2026-09-15) — 4 commits ahead of the
+  pin, all declined: README star-history and sponsor-link fixes plus a Boss直聘 channel, which the
+  scope decision below excludes. `cookie_extract.py` is untouched, so no re-audit is owed.
 - Design plan: [`.claude/plans/2026-08-19-agent-reach-integration-PLAN.md`](../../../.claude/plans/2026-08-19-agent-reach-integration-PLAN.md)
 
 ## Scope

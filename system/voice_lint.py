@@ -11,6 +11,7 @@ pass cannot ship them unnoticed:
     double-dash         two em dashes in one sentence
     hyphen-normalised   a sentence the previous version wrote with the operator's
                         spaced hyphen ( - ) now carries an em dash instead
+    contrastive-kicker  a contrastive pivot closing a paragraph: an aphorism kicker
 
   soft (reported, never blocking):
     dash-consecutive    an em dash in each of two consecutive sentences
@@ -18,7 +19,8 @@ pass cannot ship them unnoticed:
     hyphen-shift        spaced hyphens fell and em dashes rose since the previous version
     thread-as-topic     "thread" for a subject rather than a literal thread
     litotes             the negated shapes anti-patterns.md names
-    contrastive         more than one "isn't X, it's Y" pivot in the piece
+    contrastive         any other contrastive pivot ("isn't X, it's Y", "X, not Y",
+                        "doesn't start with X, it starts with Y", "isn't X. It's Y.")
     lands-as-arrival    a bare "lands" / "land" standing in for a conclusion
     reach-for           "reached for" standing in for said or chose
     ship-for-release    "ship" next to a model; he says launches / is released
@@ -74,10 +76,16 @@ LITOTES = re.compile(
     r"scarcely\b|not (?:bad|terrible|the worst)\b)",
     re.I,
 )
-CONTRASTIVE = re.compile(
-    r"\b(?:isn't|is not|wasn't|was not|aren't|are not)\b[^.!?;]{1,60}?(?:, it's|; it's|, it is)\b",
+NEGATION = r"(?:is|was|are|were|does|do|did|wo|ca)n['’]t|is not|was not|are not|does not|do not|did not|will not|cannot"
+CONTRAST_ONE = re.compile(  # "isn't a system, it's a favour" / "doesn't start with X, it starts with Y"
+    rf"\b(?:{NEGATION})\b[^.!?;]{{1,80}}?[,;] (?:instead |rather )?(?:it|they|that|this)(?:['’]s|['’]re| is| are| was| were| \w+s)\b",
     re.I,
 )
+CONTRAST_NOT = re.compile(r", not (?:a|an|the|just|only|your|my|our|their)\b", re.I)  # "the outcome, not the ticket"
+NEGATED_COPULA = re.compile(r"\b(?:is|was|are|were)n['’]t\b|\b(?:is|was|are|were) not\b|['’](?:s|re) not\b", re.I)
+SUBORDINATOR = re.compile(r"\b(?:if|when|whenever|unless|although|though|because|since|while|whether|once|until)\b", re.I)
+PIVOT_OPEN = re.compile(r"^(?:It|That|This|They)(?:['’]s|['’]re| is| are| was| were)\b")  # "…isn't X. It's Y."
+SUBORDINATE = re.compile(r"^\W*(?:if|when|whenever|unless|although|though|because|since|while|whether|once|until|as long as|even if)\b", re.I)
 THREAD = re.compile(
     r"(?<!\bemail )(?<!\bcomment )(?<!\bX )(?<!\bTwitter )(?<!\bSlack )(?<!\bReddit )"
     r"(?<!\bforum )(?<!\bDiscord )(?<!\bmessage )\bthreads?\b(?! the needle)",
@@ -119,9 +127,9 @@ def prose(body: str) -> str:
     return "\n".join(out)
 
 
-def sentences(text: str) -> list[tuple[str, int]]:
-    """(sentence, 1-based line within `text`), paragraph by paragraph."""
-    out = []
+def paragraph_sentences(text: str) -> list[list[tuple[str, int]]]:
+    """Per paragraph, its (sentence, 1-based line within `text`) pairs; heading lines excluded."""
+    paras = []
     for para in re.finditer(r"(?:[^\n]+\n?)+", text):
         block = para.group(0)
         if not block.strip():
@@ -129,6 +137,7 @@ def sentences(text: str) -> list[tuple[str, int]]:
         block_line = text[: para.start()].count("\n") + 1
         flat = block.replace("\n", " ").strip()
         cursor = 0
+        out = []
         for part in SENTENCE_SPLIT.split(flat):
             part = part.strip()
             if not part:
@@ -136,8 +145,37 @@ def sentences(text: str) -> list[tuple[str, int]]:
             pos = flat.find(part, cursor)
             cursor = pos + len(part) if pos >= 0 else cursor
             line = block_line + block[:pos].count("\n") if pos >= 0 else block_line
-            out.append((part, line))
-    return out
+            if not part.startswith("#"):
+                out.append((part, line))
+        if out:
+            paras.append(out)
+    return paras
+
+
+def sentences(text: str) -> list[tuple[str, int]]:
+    """(sentence, 1-based line within `text`), paragraph by paragraph."""
+    return [pair for para in paragraph_sentences(text) for pair in para]
+
+
+def contrastive_pivots(text: str) -> list[tuple[int, str, bool]]:
+    """(line, sentence, closes_paragraph) for each contrastive pivot outside quotation marks."""
+    found = []
+    for para in paragraph_sentences(text):
+        last = len(para) - 1
+        for i, (sent, line) in enumerate(para):
+            bare = QUOTED.sub('""', sent)
+            subordinate = bool(SUBORDINATE.match(bare))
+            one = None if subordinate else CONTRAST_ONE.search(bare)
+            if one and SUBORDINATOR.search(bare[max(0, bare.rfind(",", 0, one.start()) + 1):one.start()]):
+                one = None
+            if one or CONTRAST_NOT.search(bare):
+                found.append((line, sent, i == last))
+                continue
+            if i < last and not subordinate and not bare.rstrip().endswith("?") and NEGATED_COPULA.search(bare):
+                nxt, nxt_line = para[i + 1]
+                if PIVOT_OPEN.match(QUOTED.sub('""', nxt)):
+                    found.append((nxt_line, sent + " " + nxt, i + 1 == last))
+    return found
 
 
 def _norm(s: str) -> str:
@@ -212,10 +250,11 @@ def lint(text: str, prev_text: str | None = None) -> dict:
             continue
         if not _inside(quoted, m.start()):
             add("soft", "act-cross-ref", line_of(m.start()), 'act cross-reference in prose; the reader does not know what the act holds, so name the thing or cut the clause', _snippet(p, m.start(), m.end()))
-    pivots = [m for m in CONTRASTIVE.finditer(p) if not _inside(quoted, m.start())]
-    if len(pivots) > 1:
-        for m in pivots[1:]:
-            add("soft", "contrastive", line_of(m.start()), f"contrastive negation spent {len(pivots)}x; budget is one per piece", _snippet(p, m.start(), m.end()))
+    for line, sent, closes in contrastive_pivots(p):
+        if closes:
+            add("hard", "contrastive-kicker", offset + line, "contrastive pivot closing a paragraph is an aphorism kicker; name the thing directly (anti-patterns.md § Budgeted moves)", _snippet(sent, 0, len(sent), 90))
+        else:
+            add("soft", "contrastive", offset + line, "contrastive negation; zero in agent prose, keep it only if he typed it (anti-patterns.md § Budgeted moves)", _snippet(sent, 0, len(sent), 90))
 
     # rates
     words = len(p.split())

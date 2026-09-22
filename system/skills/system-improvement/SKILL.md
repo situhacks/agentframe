@@ -113,6 +113,8 @@ Draft the patch as before/after, with internal branching by target class:
 - **Process file patch**: flag scope — flow sequencing, shared process procedure, override-handling, schema/frontmatter behavior, or deliverable-existence check. If the patch changes the selected/default flow model, start with `agentframe-structure`.
 - **Always-loaded persona patch (`AGENTS.operator.md` / `AGENTS.builder.md`)**: flag explicitly that this is paid for in tokens on every turn forever (Architectural Truth #2 / Lazy Loading is the law). Justify why this rule must fire on every turn vs lazy-loading.
 
+The **After** text is runtime-clean (`AGENTS.builder.md` pre-write gate, check 4): the rule in the present tense, with no history, dates or account of what went wrong. The earning citation and the story behind the patch go in the audit row's payload, never in the target file.
+
 Surface the proposal to the user with this exact shape:
 
 > **Proposed patch to**: [file path]

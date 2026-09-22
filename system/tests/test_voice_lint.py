@@ -125,10 +125,41 @@ class SoftShapeTests(unittest.TestCase):
         result = vl.lint(voiced("We shipped the pack on Tuesday and the tests stayed green."))
         self.assertEqual([f["code"] for f in result["soft"] if f["code"] == "ship-for-release"], [])
 
-    def test_second_contrastive_pivot_is_soft(self):
-        body = "The fix isn't to ration, it's to route. The bill isn't the invoice, it's the unread work."
-        codes = [f["code"] for f in vl.lint(voiced(body))["soft"]]
-        self.assertEqual(codes.count("contrastive"), 1)
+    def test_contrastive_forms_mid_paragraph_are_soft(self):
+        lines = [
+            "A system that only works where its author is sitting isn't a system, it's a favour.",
+            "It doesn't start with a bad person, it starts with a leaderboard.",
+            "They own the outcome, not the ticket.",
+            "That's not a character type. It's a Tuesday.",
+            "The honest question isn't what the tool can do. It's what the end-user will do with it.",
+            "This isn't five new projects, instead it's mostly an upgrade.",
+        ]
+        for line in lines:
+            with self.subTest(line=line):
+                result = vl.lint(voiced(line + " The next sentence carries on."))
+                self.assertEqual([f["code"] for f in result["soft"]].count("contrastive"), 1)
+                self.assertEqual(result["hard"], [])
+
+    def test_contrastive_closing_a_paragraph_is_hard(self):
+        body = "The fix isn't to ration, it's to route. The bill isn't the invoice, it's the unread work.\n\nNext paragraph."
+        result = vl.lint(voiced(body))
+        self.assertEqual([f["code"] for f in result["soft"]].count("contrastive"), 1)
+        self.assertEqual([f["code"] for f in result["hard"]], ["contrastive-kicker"])
+
+    def test_conditionals_questions_and_quotes_are_not_contrastive(self):
+        body = (
+            "If the company doesn't have it yet, it's probably the first thing to build. "
+            "Who doesn't want an extra pair of hands? That's the position this role sits in. "
+            'He said "it isn\'t a tool, it\'s a teammate" on the call. '
+            "It isn't cheap, and it takes time to set up. "
+            "I'm not a super technical guy, so if I can't picture myself using it, it's a no-go. "
+            "Users don't know what they don't know. That's change management, and it's old. "
+            "I don't hold that against them. It is a prisoner's dilemma."
+        )
+        result = vl.lint(voiced(body))
+        codes = [f["code"] for f in result["soft"] + result["hard"]]
+        self.assertNotIn("contrastive", codes)
+        self.assertNotIn("contrastive-kicker", codes)
 
 
 class FileTests(unittest.TestCase):

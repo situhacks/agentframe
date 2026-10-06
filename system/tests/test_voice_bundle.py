@@ -50,6 +50,53 @@ class BundleTests(unittest.TestCase):
             self.assertLess(text.index("First piece."), text.index("Second piece."))
             self.assertNotIn("not a piece", text)
             self.assertTrue(result["path"].endswith(os.path.join("out", "informal-long-form.md")))
+            self.assertEqual(result["tier"], "full")
+            self.assertIn(f"VOICE BUNDLE id {result['id']}", text)
+            self.assertIn("tier full", text)
+            self.assertIn("--tier core", vb.format_report(result))
+
+    def test_core_tier_is_rules_plus_one_exemplar(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            voice, out = os.path.join(tmp, "voice"), os.path.join(tmp, "out")
+            seed(voice)
+            result = vb.build("informal", ["email"], template="substack-essay.md", voice_dir=voice, out_dir=out)
+            self.assertEqual(result["tier"], "core")
+            self.assertEqual([label for label, _ in result["parts"]], [
+                "procedure", "identity", "profile", "anti-patterns", "register informal",
+                "template substack-essay.md", "exemplar 2026-02-02-second.md",
+            ])
+            self.assertEqual(result["missing"], [])
+            self.assertTrue(result["path"].endswith(os.path.join("out", "informal-email-core.md")))
+            text = open(result["path"], encoding="utf-8").read()
+            self.assertIn("tier core", text)
+            self.assertNotIn("First piece.", text)
+            self.assertNotIn("### pair-", text)
+            report = vb.format_report(result)
+            self.assertIn("--tier full", report)
+            self.assertIn(f"bundle {result['id']}", report)
+            full = vb.build("informal", ["email"], voice_dir=voice, out_dir=out, tier="full")
+            self.assertEqual(full["tier"], "full")
+            self.assertTrue(full["path"].endswith(os.path.join("out", "informal-email.md")))
+            self.assertNotEqual(full["id"], result["id"])
+
+    def test_default_tier_follows_the_contexts(self):
+        self.assertEqual(vb.default_tier(["email"]), "core")
+        self.assertEqual(vb.default_tier(["short-form", "email"]), "core")
+        self.assertEqual(vb.default_tier(["email", "long-form"]), "full")
+        self.assertEqual(vb.default_tier(None), "full")
+        self.assertEqual(vb.default_tier(["slide"]), "full")
+
+    def test_exemplar_is_newest_under_cap_else_smallest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = os.path.join(tmp, "corpus", "formal")
+            write(os.path.join(corpus, "2026-01-01-a.md"), "a" * 50)
+            write(os.path.join(corpus, "2026-02-01-b.md"), "b" * 200)
+            write(os.path.join(corpus, "2026-03-01-c.md"), "c" * 80)
+            write(os.path.join(corpus, "README.md"), "not a piece")
+            self.assertTrue(vb.exemplar(corpus, cap=100).endswith("2026-03-01-c.md"))
+            self.assertTrue(vb.exemplar(corpus, cap=60).endswith("2026-01-01-a.md"))
+            self.assertTrue(vb.exemplar(corpus, cap=10).endswith("2026-01-01-a.md"))
+            self.assertIsNone(vb.exemplar(os.path.join(tmp, "corpus", "informal")))
 
     def test_borrow_and_context_pairs_dedupe(self):
         with tempfile.TemporaryDirectory() as tmp:

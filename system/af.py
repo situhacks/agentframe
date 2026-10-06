@@ -2880,7 +2880,7 @@ def cmd_voice_bundle(args):
             contexts = [vb.TYPE_CONTEXT[dtype]]
     if not register:
         die("af voice bundle: the head declares no voice recipe (voice.base_register or register); pass --register")
-    print(vb.format_report(vb.build(register, contexts or None, borrow or None, template, head=head)))
+    print(vb.format_report(vb.build(register, contexts or None, borrow or None, template, head=head, tier=args.tier)))
 
 
 def check_project(cdir):
@@ -3877,6 +3877,8 @@ def _run():
     vb.add_argument("--context", action="append", help="task context, repeatable: long-form, short-form, email, builder-pov, market-signal, slide, cover")
     vb.add_argument("--borrow", action="append", choices=("formal", "informal"))
     vb.add_argument("--template", help="a file in voice/templates/, e.g. substack-essay.md")
+    vb.add_argument("--tier", choices=("core", "full"),
+                    help="core: rules + one exemplar for a short write or a copyedit pass; full: everything. Default from the context")
     vb.set_defaults(fn=cmd_voice_bundle)
     s = sub.add_parser("index")
     isub = s.add_subparsers(dest="index_cmd", required=True)

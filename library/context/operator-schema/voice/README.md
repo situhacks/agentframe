@@ -28,7 +28,7 @@ A blend always has one base. Load the base as the imitation anchor, then borrow 
 
 ## Load path
 
-After resolving the recipe, `python system/af.py voice bundle <project> <deliverable>` (or `--register {base} --context {task}`) writes the whole load below to one file under `system/index/voice/`; read it whole, and again after any compaction. By hand, load:
+After resolving the recipe, `python system/af.py voice bundle <project> <deliverable>` (or `--register {base} --context {task}`) writes the load below to one file under `system/index/voice/`; read it whole. Two tiers: `full` (the default for long-form and slide contexts) is the whole list; `core` (the default for `email` and `short-form`, or `--tier core`) drops the pairs and keeps one exemplar, and serves a short write or a copyedit pass over operator-edited text. The bundle stays loaded for the session: read it again only after a compaction, when the register changes, or before the back half of a long draft. By hand, load:
 
 - `identity.md`, `voice-profile.md`, and `anti-patterns.md`;
 - `registers/{base_register}.md`;

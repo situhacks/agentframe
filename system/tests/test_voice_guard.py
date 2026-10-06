@@ -111,7 +111,8 @@ class VersionContextTests(GuardFixture):
         self.assertIn("hyphen-normalised", ctx)
         self.assertIn("essay-v3.md now holds that text", ctx)
         self.assertIn("voice/README.md", ctx)
-        self.assertIn("voice bundle vg-demo essay", ctx)
+        self.assertIn("voice bundle vg-demo essay --tier core", ctx)
+        self.assertIn("already in your context", ctx)
 
     def test_refused_version_says_nothing(self):
         self.version(1, "Fine.")

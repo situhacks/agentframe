@@ -903,6 +903,13 @@ def main():
             print(f"DIFF {name}: {diff}")
         else:
             print(f"PASS {name}")
+    from parity_index import extra_cases  # R3: index/search, compared table by table
+    for name, runner in extra_cases():
+        if args.k and args.k not in name:
+            continue
+        status, detail = runner(args.keep, args.verbose)
+        failed += status == "DIFF"
+        print(f"{status} {name}" + (f": {detail}" if detail else ""))
     return 1 if failed else 0
 
 

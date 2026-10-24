@@ -11,7 +11,7 @@ use crate::runlog;
 use clap::{ArgGroup, Parser, Subcommand};
 
 /// Verbs af.py owns that this port does not carry yet.
-pub const NOT_PORTED: [&str; 5] = ["index", "search", "voice", "pipe", "studio"];
+pub const NOT_PORTED: [&str; 3] = ["voice", "pipe", "studio"];
 
 #[derive(Parser, Debug)]
 #[command(
@@ -87,6 +87,17 @@ enum Cmd {
     },
     Doctor {
         project: Option<String>,
+    },
+    Index {
+        #[command(subcommand)]
+        cmd: crate::index::IndexCmd,
+    },
+    Search {
+        query: String,
+        #[arg(short = 'n', long, default_value = "8", value_parser = crate::index::py_int, allow_negative_numbers = true)]
+        limit: i64,
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -175,6 +186,8 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> R<i32> {
         }
         Cmd::NewProject { slug, domain, name } => cmds::cmd_new_project(ctx, &slug, &domain, name.as_deref()).map(|_| 0),
         Cmd::Doctor { project } => doctor::cmd_doctor(ctx, project.as_deref()),
+        Cmd::Index { cmd } => crate::index::cmd_index(&ctx.root, &cmd),
+        Cmd::Search { query, limit, json } => crate::index::cmd_search(&ctx.root, &query, limit, json),
     }
 }
 

@@ -23,27 +23,8 @@ library/assets/audio/*
 system/models/*
 !system/models/README.md
 
-# === Operator projects ===
-workspace/projects/*
-!workspace/projects/.gitkeep
-!workspace/projects/completed/
-workspace/projects/completed/*
-!workspace/projects/completed/.gitkeep
-
-# === Operator pipeline (careers) ===
-workspace/pipeline/*
-!workspace/pipeline/.gitkeep
-
-# === Operator studio (creator) ===
-workspace/studio/*
-!workspace/studio/.gitkeep
-
-# === Operator research ===
-workspace/research/
-
-# === Operator board files (personal layer) ===
-workspace/board.md
-workspace/board/
+# === Operator layer: life, projects, pipeline, studio (private; its own git repo, no remote) ===
+workspace/
 
 # === Runtime / generated state ===
 system/logs/

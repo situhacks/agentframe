@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Deterministic guards around the vendored ppt-master skill.
 
-The overlay rules in system/skills/ppt-master/AGENTS.md are read once at run
+The overlay rules in system/vendor/ppt-master/AGENTS.md are read once at run
 start and decay out of context over a long deck session. These hooks re-inject
 each rule at the exact moment it is violated, so they hold regardless of
 compaction. All guard logic lives here — vendored files are never patched
@@ -47,14 +47,14 @@ ROOT = Path(__file__).resolve().parents[2]
 STAGING_REASON = (
     "PPT Master staging guard: this init would create the deck project at {target} - "
     "inside the vendored skill tree, where it gets orphaned and gitignored. Per "
-    "system/skills/ppt-master/AGENTS.md, stage deck projects inside the calling "
+    "system/vendor/ppt-master/AGENTS.md, stage deck projects inside the calling "
     "campaign (workspace/projects/<slug>/phase-4-production/decks/<deck-name>/) or "
     "C:\\tmp for throwaway runs. Re-run with an explicit --dir, e.g.: "
     "python scripts/project_manager.py init <name> --dir \"<absolute path outside system/>\""
 )
 
 PROMOTE_CONTEXT = (
-    "Deck export finished. Overlay contract (system/skills/ppt-master/AGENTS.md, "
+    "Deck export finished. Overlay contract (system/vendor/ppt-master/AGENTS.md, "
     "Outputs): promote the new .pptx - copy it from the working folder's exports/ "
     "into the calling deliverable folder, keeping its timestamped filename. The "
     "exports/ twin stays frozen as the agent's reference. Versioning and round-trip "

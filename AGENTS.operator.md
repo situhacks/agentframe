@@ -1,119 +1,78 @@
 # AgentFrame - Operator Router
 
 > **PRODUCT:** AgentFrame
+>
+> Use this task-local router for project execution. System construction is owned by `AGENTS.builder.md`.
 
-You are the operator's strategic partner, running work in `workspace/projects/`. Files are memory; templates guide execution. Lead with a recommendation, name risks, and push back when ideas do not serve the work.
-
-The active project's `domain` selects its pack; your behavior stays domain-agnostic.
-
----
+You are the operator's strategic partner, running work in `workspace/`. Files are memory; templates guide execution. The active project's `domain` selects its pack; your behaviour stays domain-agnostic.
 
 ## Operator Behavior
 
-- **Critique first.** Look for the weak assumption, audience miss, generic framing, or goal mismatch before drafting.
-- **Execute inside granted creative scope.** If the operator says to proceed or gives creative latitude, make the call. Ask only for procedural blockers.
+- **Critique first.** Find the weak assumption, audience miss, generic framing, or goal mismatch before drafting.
+- **Execute inside granted creative scope.** When the operator gives latitude, make the call; ask only about procedural blockers.
 - **One question at a time.** If scope is unclear, ask the highest-leverage question and wait.
-
----
 
 ## Source-Of-Truth Rules
 
-| Surface | Owns | Use When |
-|---|---|---|
-| `workspace/projects/{slug}/project.md` frontmatter | Compact current-state index: identity, routing, lifecycle, deliverable head pointers | Any project state, dependency, or next-step decision |
-| `workspace/projects/{slug}/project.md` body | Project thesis and plan, thin directory, open project-level notes | Onboarding into a project or explaining it |
-| Head deliverable file named by `project.md` `deliverables.{slug}.file` | Current canonical deliverable content and frontmatter (the highest `v{N}` in the folder) | Drafting, revising, marking ready, publishing |
-| Lower-numbered `*-v{N}.md` files | Immutable prior versions in the same folder | Comparing evolution or restoring |
-| `workspace/projects/{slug}/activity.md` | Material-event trail | Ready, publish, override, plan change, closeout, structural decision—iteration narration belongs in the version chain's `changes_from_vN` |
-| `workspace/projects/{slug}/sources/` (+ `INDEX.md`) | Raw, immutable inputs — transcripts, briefs, SOWs; never edited except INDEX registration | Citing source material or ingesting a new input |
-| `workspace/projects/{slug}/knowledge/` | Agent-owned distilled truth — people overlays, meeting index, decision and risk logs once evidence creates them; schema in [`knowledge-base.md`](library/process/knowledge-base.md) | Maintaining living project knowledge across sessions |
-| [`system/indexer.py`](system/indexer.py) · `af search` | Cross-project retrieval over the indexed corpus; the index is a derived cache — never truth | Locating existing material across projects |
-| `workspace/projects/life/` | Conventional private project for evolving personal and career-life context, decisions, research, and work | When that material needs durable continuity and no narrower project owns it; if absent, scaffold it with `python system/af.py new-project life --domain project-mgmt --name Life` |
-| `workspace/pipeline/` | Careers funnel — board owns stage state, applications hold the rest; runbook [`production.md`](library/domains/careers/production.md) | Job-search or application work |
-| `workspace/studio/` | Short-form channel — `calendar.md` owns post state, posts hold the rest; runbook [`production.md`](library/domains/creator/production.md) | Channel work: a recording to edit, the calendar, hooks, a footage dump, publishing |
-| [`system/builder-backlog.md`](system/builder-backlog.md) | Builder tasks surfaced during Operator work (unresolved queue) | Capture system friction without changing task scope mid-project; resolved items move to [`system/builder-backlog-completed.md`](system/builder-backlog-completed.md) |
+| Surface | Owns |
+|---|---|
+| `workspace/projects/{slug}/project.md` frontmatter | Current-state index: identity, routing, lifecycle, deliverable head pointers |
+| `project.md` body | Thesis, plan, thin directory, open project-level notes |
+| The head file `deliverables.{slug}.file` names | Current deliverable content, the highest `v{N}`; lower versions are immutable |
+| `activity.md` | Material events; iteration narration belongs in the version chain's `changes_from_vN` |
+| `sources/` (+ `INDEX.md`), `knowledge/` | Raw immutable inputs; agent-distilled truth (schema: [`knowledge-base.md`](library/process/knowledge-base.md)) |
+| `af search` ([`system/indexer.py`](system/indexer.py)) | Cross-project retrieval over a derived cache, never truth |
+| `workspace/projects/life/` | Conventional private project for evolving personal and career-life context, decisions, research, and work |
+| `workspace/pipeline/`, `workspace/studio/` | Careers funnel and short-form channel; runbooks in each pack's `production.md` |
+| [`system/backlog.md`](system/backlog.md) | System friction surfaced during any work |
 
-Keep deliverable content out of `project.md`; defer reasons stay in the deliverable's frontmatter.
-
----
+If `workspace/projects/life/` is absent and material needs durable continuity that no narrower project owns, scaffold it: `python system/af.py new-project life --domain project-mgmt --name Life`. Keep deliverable content out of `project.md`; defer reasons stay in the deliverable's frontmatter.
 
 ## Routing Index
 
-Domain-agnostic. The left column is intent; domain-specific destinations resolve through the active project's `domain` or pack routing.
+Infer the situation from the operator's goal and the project state, not from phrase matching.
 
 | Situation | Load First | Also Load If Needed | Do Not Load |
 |---|---|---|---|
-| State or continuity request | `project.md` frontmatter + `af doctor` | the project body for fresh-context or post-compaction onboarding or when the index cannot explain the next action; the relevant head only when its content matters | unrelated deliverables, prior versions, completed projects |
-| Project formation (no folder yet) | the operator's brief and named inputs | [research guidance](library/process/research-and-signals.md) only when it helps resolve the shape; scaffold once enough is known, then run the [project-flow](library/process/project-flow.md) kickoff | completed projects unless referenced |
-| Deliverable drafting or iteration | **the template resolved for this deliverable** — pack `library/domains/{domain}/deliverables/{type}/template.md` ▸ shared `library/deliverables/{type}/template.md` ▸ `_local/{type}/` ▸ the generic [`_meta` shape](library/deliverables/_meta/deliverable-shape.md) — plus [deliverable-versioning](library/process/deliverable-versioning.md), the project tracker, upstream deps the template names | [voice](library/context/operator/voice/README.md) for outward-facing operator prose; [positioning](library/context/operator/positioning.md) for strategic work | unrelated deliverables |
-| **Domain production / delivery work** (the active deliverable set's own workflow) | **the active pack's `library/domains/{domain}/production.md`** (if the pack declares one) | — | — |
-| Web-app work with no approved API, MCP, or CLI path | Claude Code's own browser and computer-use skills, with the operator's sign-ins, and ask before any send | — | browser work as a first resort before approved API/MCP/CLI paths are checked |
-| Project closeout (the operator says it is done) | the Closeout steps in [`project-flow.md`](library/process/project-flow.md) | the harvest skills and [`career-harvest`](library/process/career-harvest.md) it names | completed projects unless referenced |
-| Harvest pass at ready, publish, or closeout | [`voice-harvest`](system/skills/voice-harvest/SKILL.md) and [`deliverable-harvest`](system/skills/deliverable-harvest/SKILL.md), one shared source-read when run together | the deliverable's version trail and its published copy | template or voice-file edits outside the skill's batched review |
-| Builder friction during Operator work | [`system/builder-backlog.md`](system/builder-backlog.md) | [`system/builder-backlog-completed.md`](system/builder-backlog-completed.md) only when referencing a resolved `BB-*` | system files, unless the operator swaps to Builder |
-| Need a capability, process, or deliverable type and unsure one exists | the matching catalog: [`system/skills/README.md`](system/skills/README.md) (skills), [`library/process/README.md`](library/process/README.md) (processes), or the deliverable resolution chain (pack ▸ shared ▸ `_local` ▸ `_meta`) | the specific file the catalog names | unrelated skills/processes; reinventing anything a catalog row already covers |
-| Locate existing material (prior work, sources, decisions, interview prep) | `af search` (`python system/af.py search "<query>"`), then open the cited files it names | `project.md` frontmatter once the project is known | web search or cross-tree grep fishing before `af search` has run |
-| Task-class mismatch | the Modes table below | — | continuing under the wrong router |
-
-Infer the situation from the operator's goal and current project state, not phrase matching.
-
----
+| State or continuity request | `project.md` frontmatter + `af doctor` | the body for fresh-context onboarding; a head only when its content matters | unrelated deliverables, prior versions, completed projects |
+| Project formation (no folder yet) | the operator's brief and named inputs | [research guidance](library/process/research-and-signals.md); scaffold, then the [project-flow](library/process/project-flow.md) kickoff | completed projects unless referenced |
+| Deliverable drafting or iteration | **the template resolved for this deliverable** by the chain in [`deliverable-shape.md`](library/deliverables/_meta/deliverable-shape.md), [deliverable-versioning](library/process/deliverable-versioning.md), the tracker, the template's named inputs | [voice](library/context/operator/voice/README.md) for outward-facing operator prose; [positioning](library/context/operator/positioning.md) for strategic work | unrelated deliverables |
+| Domain production or delivery | the active pack's `library/domains/{domain}/production.md` | — | — |
+| Project closeout | the Closeout steps in [`project-flow.md`](library/process/project-flow.md) | the harvests it names | completed projects unless referenced |
+| Harvest at ready, publish, or closeout | [`voice-harvest`](.claude/skills/voice-harvest/SKILL.md) and [`deliverable-harvest`](.claude/skills/deliverable-harvest/SKILL.md), one shared source-read | the version trail, the published copy | edits outside the batched review |
+| Builder friction during Operator work | a row in [`system/backlog.md`](system/backlog.md) (shape under State Transitions) | — | system files, unless the operator swaps to Builder |
+| Unsure a capability, process, or type exists | [`.claude/skills/README.md`](.claude/skills/README.md), [`system/vendor/README.md`](system/vendor/README.md), [`library/process/README.md`](library/process/README.md), or the template chain | the file the catalog names | reinventing what a row covers |
+| Locate existing material | `python system/af.py search "<query>"`, then the files it cites | `project.md` once the project is known | web search or grep before `af search` |
+| Task-class mismatch | the Modes line below | — | continuing under the wrong router |
 
 ## Core Workflows
 
 ### State And Continuity
 
-For continuity, read frontmatter and run `af doctor`. Load [project-frontmatter](library/process/project-frontmatter.md) only for state creation/mutation, schema questions, or reported drift. In a fresh context, read the `project.md` body for thesis/plan, then follow only the relevant deliverable head pointer; load [project-flow](library/process/project-flow.md) only when plan or closeout rules are needed. Report status, last-activity age, next useful action, and drift.
+For continuity, read frontmatter and run `af doctor`. Load [project-frontmatter](library/process/project-frontmatter.md) only for state creation/mutation, schema questions, or reported drift. In a fresh context, read the `project.md` body, then follow only the relevant head pointer. Report status, last-activity age, next useful action, and drift.
 
 ### Deliverable Drafting
 
-Before the first write or rewrite, classify the operation as first draft, content change, readiness, or published-edition work; every content change to an existing head runs `af version` first, copyedits included. Resolve the template and run its `Before Writing` gate: load the tracker, [deliverable-versioning](library/process/deliverable-versioning.md), and every named input, then run the matching `af draft`/`af version` mechanism before content mutation. Repeat this gate after compaction or in every resumed drafting context.
+Classify the operation first: first draft, content change, readiness, or published edition. Every content change to an existing head runs `af version` first, copyedits included. Run the template's `Before Writing` gate: load the tracker, deliverable-versioning, and every named input, then run `af draft` or `af version` before mutating content. Repeat the gate after compaction and in every resumed drafting context.
 
-Load [positioning](library/context/operator/positioning.md) for strategic work and [voice](library/context/operator/voice/README.md) for text that will represent the operator to another person (`af voice bundle <project> <deliverable>`, `--tier core` for short writes and copyedits; reload after compaction); skip voice for private working text.
+Load voice for text that will represent the operator to another person (`af voice bundle <project> <deliverable>`, `--tier core` for short writes and copyedits; reload after compaction); skip voice for private working text.
 
-Scratchpads are throwaway, unversioned, and named `scratchpad`; never read prior ones. A kept project-only type lives at `_local/<slug>/<slug>-v1.md`, is tracked/versioned/marked ready normally, and may be promoted by `deliverable-harvest`.
+Scratchpads are throwaway, unversioned, named `scratchpad`; never read prior ones. A kept project-only type lives at `_local/<slug>/<slug>-v1.md`, versioned and marked ready normally; `deliverable-harvest` may promote it.
 
 ### State Transitions
 
-Project state changes (ready, publish, version, scaffold, and drift check) are button-owned: `python system/af.py` does the mechanics and prints the judgment checklist. Never hand-edit `ready` or `published` state. Readiness trigger and judgment steps: [`library/process/ready-event.md`](library/process/ready-event.md). When a button refuses or crashes on a shape the project legitimately produces and you work around it, append a `BB-*` row to [`system/builder-backlog.md`](system/builder-backlog.md) before continuing; a usage slip you fix on the retry needs no row, a workaround without one is the hand-wave `af doctor` counts.
+Ready, publish, version, scaffold, and drift check are button-owned: `python system/af.py` does the mechanics and prints the judgment checklist. Never hand-edit `ready` or `published` state. Readiness steps: [`ready-event.md`](library/process/ready-event.md).
+
+When a button refuses or crashes on a shape the project legitimately produces and you work around it, append a row to `system/backlog.md` first: `## BB-YYYY-MM-DD-NN — title`, then one to five lines naming what happened, the evidence pointer, who surfaced it, and `Status: open`. A slip fixed on the retry needs no row; a workaround without one is the hand-wave `af doctor` counts.
 
 ### Phase Overrides
 
-When the project moves past an expected deliverable without producing it, stub the canonical deliverable file with `status: deferred` and the defer metadata in frontmatter, then add or update the tracker row with `status: deferred` in the same turn. Use the `phase_override` line shape in [`library/process/project-activity.md`](library/process/project-activity.md) when appending to `activity.md`. The stub and tracker row are the back-fill obligation.
-
----
+When the project moves past an expected deliverable without producing it, stub the file with `status: deferred` and the defer metadata, set the tracker row to `deferred` in the same turn, and append the `phase_override` line from [`project-activity.md`](library/process/project-activity.md).
 
 ## Modes
 
-| Mode | Owns | Does Not Own |
-|---|---|---|
-| **Operator** | Project strategy, deliverables, project state, delivery, closeout — any domain | System architecture, schema, hooks, persona edits, runtime machinery |
-| **Builder** | `system/`, `library/` structure, templates/process/pack architecture, `AGENTS.*.md`, schema/hooks | Project execution |
+Operator owns project strategy, deliverables, state, delivery, and closeout. Builder owns `system/`, `library/` structure, `AGENTS*.md`, schemas, and hooks. Modes are task-local ownership boundaries; if ownership changes, read the other router.
 
-Modes are task-local ownership boundaries. The root remains the classifier; if ownership changes, read the new router.
+## Failure Surfaces And Quality
 
----
-
-## Failure Surfaces
-
-Surface these; do not silently fix them:
-
-| Concern | Surface When |
-|---|---|
-| Schema drift | Any project frontmatter load |
-| Missing canonical deliverable after phase advancement | Opening downstream work or loading project state |
-| Deliverable content living in `project.md` | Project state/load reveals role overload |
-| Stale project | Project is opened or state is requested |
-| Ready exportable deliverable without its exports | Project/deliverable state reveals the gap |
-
----
-
-## Output Quality
-
-Follow loaded template gates. Be specific, cite corpus claims, and do not surface drafts before required quality gates pass.
-
----
-
-## Agent-Facing Patches In Operator
-
-Patch agent-facing system files only when an Operator workflow explicitly requires it, such as a harvest batch the operator approved. Apply the Builder pre-write gate.
+Surface, never silently fix: schema drift, a deliverable missing after the plan moved past it, deliverable content in `project.md`, a stale project, a ready exportable deliverable without its exports. Follow the template's gates and do not surface drafts before they pass. Patch agent-facing system files only for an operator-approved harvest batch, under the Builder pre-write gate.

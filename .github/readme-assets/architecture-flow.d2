@@ -21,7 +21,7 @@ classes: {
 
 # ---- entry column ----
 agent: Coding agent { class: entry }
-persona: "Active persona\nOperator | Builder" { class: persona }
+persona: "Task router\nOperator | Builder" { class: persona }
 agent -> persona: starts a\nconversation { class: link }
 
 # ---- OPERATOR zone (folds downward) ----
@@ -36,7 +36,7 @@ operator: "OPERATOR  ·  runs the work" {
   process: "process\n(loads per step)" { class: node }
   skill: "skill / tool\n(loads on demand)" { class: node }
   draft: "deliverable\ndraft → version\nyour voice · prompt lives here" { class: node }
-  lock: lock gate { class: gate }
+  lock: ready gate { class: gate }
   deliver: "deliver / publish\n+ tracked export" { class: node }
 
   project -> activity: logged to { class: soft }
@@ -57,9 +57,9 @@ builder: "BUILDER  ·  evolves the system" {
   templates: templates { class: node }
   processes: processes { class: node }
   packs: "domain packs" { class: node }
-  personas: personas { class: node }
+  personas: routers { class: node }
   voice: "voice corpus\nlearned from your edits" { class: node }
-  backlog: "builder backlog\nearned system work" { class: node }
+  backlog: "backlog\nsystem friction rows" { class: node }
 }
 
 # ---- cross-zone wiring (kept minimal) ----

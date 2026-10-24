@@ -71,7 +71,7 @@ video/
 └── lut.cube            # optional colour grade
 ```
 
-`frame.md` follows the vendored HyperFrames design-spec contract (`system/skills/hyperframes/source/skills/hyperframes-creative/references/design-spec.md`): frontmatter is the normative layer, prose is context. Author it from the operator's references, never by adopting a frame preset wholesale, and state the anti-tells explicitly: radii, density, type, what never appears. `af doctor` notes a `video/` folder missing `frame.md` or `captions.yaml`.
+`frame.md` follows the vendored HyperFrames design-spec contract (`system/vendor/hyperframes/source/skills/hyperframes-creative/references/design-spec.md`): frontmatter is the normative layer, prose is context. Author it from the operator's references, never by adopting a frame preset wholesale, and state the anti-tells explicitly: radii, density, type, what never appears. `af doctor` notes a `video/` folder missing `frame.md` or `captions.yaml`.
 
 ### Capture — how one gets created
 
@@ -79,7 +79,7 @@ A design language is earned, not declared: capture it after an identity has prov
 
 1. Initialize a throwaway ppt-master capture project (never inside `system/`, never the deck project itself, whose `templates/` is already occupied).
 2. Run the vendor's Create Template route, which dispatches Create Deck for a branded structural system, with the proven deck's SVGs as the reference and output scope `project`.
-3. Validate the workspace from its root: `python system/skills/ppt-master/scripts/svg_quality_checker.py "<root>/templates" --template-mode`.
+3. Validate the workspace from its root: `python system/vendor/ppt-master/scripts/svg_quality_checker.py "<root>/templates" --template-mode`.
 4. Promote `templates/`, `images/`, and `icons/` into `design-languages/<name>/package/`. Leave `exports/` behind.
 5. Write `README.md` and `imagery/manifest.yaml`.
 6. Re-run the validator against the promoted `package/templates/` so the copy is proven, not assumed.

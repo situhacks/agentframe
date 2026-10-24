@@ -115,7 +115,7 @@ out badly, in a sentence, without relitigating it. `## What was missed` is where
 from.
 
 The template's constraints hold unchanged: conclusion rather than recitation, no metric in the body,
-close on logistics. Voice load and humanizer pass before it is surfaced, and the operator sends it.
+close on logistics. Voice load and the voice clean pass before it is surfaced, and the operator sends it.
 
 ## 11. Promote
 

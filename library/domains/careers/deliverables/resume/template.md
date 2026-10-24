@@ -39,9 +39,9 @@ exports: []   # filed export paths under resume/media/—required before readine
 ---
 ```
 
-## Humanizer Pass
+## Clean Pass
 
-Mandatory before verification — resume prose is public-facing and recruiters auto-reject on AI tells. Scope: every rewritten bullet and any positioning line.
+Mandatory before verification, because recruiters auto-reject on AI tells. Run the voice clean pass (`library/context/operator/voice/README.md` step 3) and `python system/voice_lint.py <head>` over every rewritten bullet and any positioning line.
 
 ## Readiness Criteria
 

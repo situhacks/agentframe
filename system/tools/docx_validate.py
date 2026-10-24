@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-VALIDATOR = ROOT / "system" / "skills" / "docx" / "scripts" / "office" / "validate.py"
+VALIDATOR = ROOT / "system" / "vendor" / "docx" / "scripts" / "office" / "validate.py"
 
 
 def validator_env():

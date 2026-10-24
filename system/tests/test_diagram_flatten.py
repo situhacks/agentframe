@@ -24,7 +24,7 @@ from diagram_flatten import (  # noqa: E402
     normalize_dasharray,
 )
 
-ASSETS = ROOT / "system" / "skills" / "diagram-design" / "assets"
+ASSETS = ROOT / "system" / "vendor" / "diagram-design" / "assets"
 
 
 def document(style: str, body: str, view_box: str = "0 0 100 50") -> str:
@@ -239,7 +239,7 @@ class TestShippedAssets(unittest.TestCase):
     """Upstream regression: every shipped diagram must still flatten to valid XML.
 
     A failure here means the vendored skill changed an SVG emission convention
-    the flattener does not yet handle. See `system/skills/diagram-design/VENDOR.md`.
+    the flattener does not yet handle. See `system/vendor/diagram-design/VENDOR.md`.
     """
 
     def test_every_shipped_asset_flattens_to_wellformed_xml(self):

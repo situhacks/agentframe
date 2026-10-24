@@ -19,7 +19,7 @@ def payload(command, cwd, event="PreToolUse"):
 
 class TestStagingGuard(unittest.TestCase):
     def setUp(self):
-        self.skill_dir = os.path.join(guard.ROOT, "system", "skills", "ppt-master")
+        self.skill_dir = os.path.join(guard.ROOT, "system", "vendor", "ppt-master")
 
     def test_init_without_dir_in_skill_cwd_denied(self):
         p = payload("python3 scripts/project_manager.py init demo_deck --format 16:9", self.skill_dir)
@@ -130,7 +130,7 @@ class TestExportGuard(unittest.TestCase):
 
 class TestGuardMain(unittest.TestCase):
     def test_main_emits_json_on_deny(self):
-        skill_dir = os.path.join(guard.ROOT, "system", "skills", "ppt-master")
+        skill_dir = os.path.join(guard.ROOT, "system", "vendor", "ppt-master")
         p = payload("python scripts/project_manager.py init demo", skill_dir)
         result = guard.run(json.dumps(p))
         self.assertIsNotNone(result)
@@ -148,7 +148,7 @@ class TestDoctorStrayDecks(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = self.tmp.name
-        self.skill = os.path.join(self.root, "system", "skills", "ppt-master")
+        self.skill = os.path.join(self.root, "system", "vendor", "ppt-master")
         os.makedirs(self.skill)
 
     def tearDown(self):

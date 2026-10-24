@@ -15,7 +15,7 @@ The carousel's slide-by-slide text—the copy, a few notes, nothing else. This i
 1. Classify the operation as first draft, content change, or readiness reconciliation; load the project tracker and [`deliverable-versioning.md`](../../../../process/deliverable-versioning.md).
 2. For first draft, run `python system/af.py draft <project> <post-row> --artifact slide-copy`. For any change to existing prose, run `python system/af.py version <project> <post-row> --artifact slide-copy` first — copyedits included.
 3. Read every input above. For Voice, follow the full [`voice/README.md`](../../../../context/operator/voice/README.md) route to its required register, corpus, and pairs; nearby shipped posts are not substitutes.
-4. Run the early agent-authored pass in [`humanizer-integration.md`](../../../../process/humanizer-integration.md) on slide prose before the first review surface. Later agent rewrites get a delta pass; operator hand-tuning does not.
+4. Before the first review surface, run the voice clean pass ([`voice/README.md`](../../../../context/operator/voice/README.md) step 3) and `python system/voice_lint.py <head>` on slide prose. Later agent rewrites get `anti-patterns.md` on the rewritten region only; operator hand-tuning gets no pass.
 
 ## Artifact Shape
 
@@ -37,10 +37,10 @@ Options the operator is choosing between stay in the file until narrowed; remove
 
 ## Draft Frontmatter Convention
 
-`status` + `last_updated` per [`library/process/deliverable-versioning.md`](../../../../process/deliverable-versioning.md). File: `slide-copy-v{N}.md` in the post folder named by the active flow.
+`status` + `last_updated` per [`library/process/deliverable-versioning.md`](../../../../process/deliverable-versioning.md). File: `slide-copy-v{N}.md` in the post folder named by the project plan.
 
 ## Readiness Criteria
 
 - Operator approves the full deck read top-to-bottom.
-- Required early/delta humanizer work already ran on slide prose per [`humanizer-integration.md`](../../../../process/humanizer-integration.md). Do not rerun a full pass solely because the artifact is becoming ready.
+- The clean pass already ran on slide prose in the first draft. Do not rerun it because the artifact is becoming ready.
 - Ready-event mechanics per [`library/process/ready-event.md`](../../../../process/ready-event.md); the ready copy lands in the post's `post-FINAL.md` in the same turn.

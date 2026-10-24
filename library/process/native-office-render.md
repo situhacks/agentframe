@@ -64,4 +64,4 @@ Inspect the produced PNGs or PDF directly. Treat it as the deck's true appearanc
 - Does not own native slide replacement, which is `system/tools/reference_deck_com.ps1`.
 - Does not own SVG-stage preview inside PPT Master; that stage renders its own SVG through its browser preview and never needs this tool.
 - Does not extract text or shape facts; the OOXML package owns those.
-- Vendored skill recipes that shell `soffice` + `pdftoppm` (`system/skills/pptx`, `system/skills/docx`) are superseded by this process. Do not run them, and do not edit those vendored mirrors to remove them.
+- Vendored skill recipes that shell `soffice` + `pdftoppm` (`system/vendor/pptx`, `system/vendor/docx`) are superseded by this process. Do not run them, and do not edit those vendored mirrors to remove them.

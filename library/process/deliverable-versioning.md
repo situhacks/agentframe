@@ -106,7 +106,7 @@ Routine iteration narration does not go to `activity.md`; the commands themselve
 ## Boundaries
 
 - The CLI does not decide what a change means; it only makes the snapshot safe.
-- The CLI does not generate content, run voice/humanizer passes, or encode domain phase order.
+- The CLI does not generate content, run voice passes, or encode domain phase order.
 - Templates own type-specific content and frontmatter requirements.
 - Domain packs own assembly behavior.
 - `post-FINAL.md` remains unversioned; its ingredients carry the version trail.

@@ -33,7 +33,7 @@ Write each delta in the row's `delta`. Change a slide from `preserve` only when 
 
 ### 2. Execute native slides first
 
-Apply `native` edits to a copy of `working/working.pptx` using `system/skills/pptx/SKILL.md`. Preserve shape IDs. Adding or deleting objects is a rebuild, not a native edit.
+Apply `native` edits to a copy of `working/working.pptx` using `system/vendor/pptx/SKILL.md`. Preserve shape IDs. Adding or deleting objects is a rebuild, not a native edit.
 
 For a `rebuild` slide, isolate only that page. Start from the source-derived SVG when an unedited PPTX → SVG → PPTX round trip renders faithfully; otherwise author against the origin PNG and retain any complex native group that does not need to change. Export with notes off and paragraph merging disabled.
 

@@ -31,15 +31,15 @@ A full-length essay for the operator's Substack publication — the long-form ho
 
 ## Draft Frontmatter Convention
 
-`status` + `last_updated` per [`library/process/deliverable-versioning.md`](../../../../process/deliverable-versioning.md). File: `substack-essay-v{N}.md` in the folder named by the active flow. Run `af publish ... --url <url>` after it goes live; the generic transition records `published_url` and makes the head immutable.
+`status` + `last_updated` per [`library/process/deliverable-versioning.md`](../../../../process/deliverable-versioning.md). File: `substack-essay-v{N}.md` in the folder named by the project plan. Run `af publish ... --url <url>` after it goes live; the generic transition records `published_url` and makes the head immutable.
 
-## Humanizer Pass
+## Clean Pass
 
-**Run it on the first complete draft, before the operator ever sees it — not at readiness.** A draft surfaced with the pass still owed puts the operator's line edits onto un-swept prose, and from that point the pass can no longer run without washing his wording back to generic. Per [`library/process/humanizer-integration.md`](../../../../process/humanizer-integration.md), run with a Brandon sample, as the separate clean pass of the voice sequence (never in the same context as the corpus exemplars). Readiness only verifies that it happened.
+**Run it on the first complete draft, before the operator ever sees it, not at readiness.** A draft surfaced with the pass still owed puts the operator's line edits onto un-swept prose, and from that point a broad pass washes his wording back to generic. Run the voice clean pass ([`voice/README.md`](../../../../context/operator/voice/README.md) step 3) with an operator sample, in a turn without the corpus exemplars loaded, then `python system/voice_lint.py <head>`. Readiness only verifies that it happened.
 
 ## Readiness Criteria
 
 - All `[FILL]` / `[POV]` / `[NERD-NOD]` slots resolved or deliberately removed by the operator — no placeholder ships.
 - Operator approves after his voice pass.
-- Humanizer pass complete.
+- Clean pass complete on the first draft.
 - Ready-event mechanics per [`library/process/ready-event.md`](../../../../process/ready-event.md)—the voice-harvest gate at readiness harvests this essay (pairs + corpus promotion once published).

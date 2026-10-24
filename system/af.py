@@ -521,9 +521,9 @@ def cmd_ready(args):
     print(f"af ready: {rel} -> ready" + (f" ({'; '.join(notes)})" if notes else ""))
     print("\nJudgment checklist (agent + operator):")
     print("  [ ] Template readiness criteria verified (the deliverable's template)")
-    print("  [ ] Humanizer pass run, when the template declares it (public-facing prose)")
+    print("  [ ] Voice clean pass run on operator-voiced prose (voice/README.md step 3)")
     print("  [ ] Voice was loaded for this deliverable's drafting (confirm if session resumed)")
-    print("  [ ] User-voiced? Run voice-harvest now (system/skills/voice-harvest/SKILL.md;")
+    print("  [ ] User-voiced? Run voice-harvest now (.claude/skills/voice-harvest/SKILL.md;")
     print("      gate: library/process/ready-event.md) - work to do, not a box to tick")
     print("  [ ] Remaining follow-ups surfaced (feedback, export, publish)")
 
@@ -572,7 +572,7 @@ def cmd_publish(args):
 def print_harvest_prompt():
     """Publish is the moment corpus promotion becomes eligible; say so where the agent is looking."""
     print("  [ ] User-voiced? Run voice-harvest and deliverable-harvest now")
-    print("      (system/skills/voice-harvest/SKILL.md, system/skills/deliverable-harvest/SKILL.md);")
+    print("      (.claude/skills/voice-harvest/SKILL.md, .claude/skills/deliverable-harvest/SKILL.md);")
     print("      corpus promotion is eligible from this publish. Not a box to tick: run them.")
 
 
@@ -794,8 +794,8 @@ def cmd_adopt(args):
             f"snapshot, not a head to register)")
     notes = []
     if not has_field(afm, "last_updated"):
-        # Bookkeeping the buttons own: af version refuses a head without it, which is where a
-        # hand-written v1 used to fail one command after a clean adopt.
+        # Bookkeeping the buttons own: af version refuses a head without it, so a hand-written
+        # v1 gets it here rather than failing one command after a clean adopt.
         afm = upsert_scalar(afm, "last_updated", today(), before=None)
         write(target, join_fm(afm, abody))
         notes.append("last_updated stamped on the artifact")
@@ -2078,18 +2078,18 @@ def check_project(cdir):
 # System-surface checks (full doctor runs only). Same contract as project notes:
 # issues are broken invariants (dead links), notes are drift alarms the
 # operator judges (size budgets, voice mirror staleness) — never auto-fixed.
-PERSONA_WORD_BUDGET = 1700    # AGENTS.builder.md / AGENTS.operator.md
+PERSONA_WORD_BUDGET = 1000    # AGENTS.builder.md / AGENTS.operator.md
 PROCESS_WORD_BUDGET = 1500    # library/process/**/*.md
 TEMPLATE_WORD_BUDGET = 900    # */deliverables/*/template.md
 
 VOICE_LIVE = os.path.join(ROOT, "library", "context", "operator", "voice")
-VOICE_SCHEMA = os.path.join(ROOT, "library", "context", "operator-schema", "voice")
+VOICE_SCHEMA = os.path.join(ROOT, "library", "schema", "operator", "voice")
 
 LINK_SCAN_GLOBS = ("AGENTS.md", "AGENTS.builder.md", "AGENTS.operator.md",
                    "library/process/**/*.md", "library/deliverables/**/*.md",
                    "library/domains/**/*.md", "library/assets/README.md",
-                   "system/skills/README.md",
-                   "system/skills/*/SKILL.md", ".claude/skills/*/SKILL.md")
+                   "system/vendor/README.md", "system/vendor/*/SKILL.md",
+                   ".claude/skills/README.md", ".claude/skills/*/SKILL.md")
 
 LINK_PATTERN = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
 
@@ -2119,10 +2119,8 @@ def dead_link_issues():
             local = os.path.normpath(os.path.join(os.path.dirname(path), bare))
             rooted = os.path.normpath(os.path.join(ROOT, bare))
             rel_target = os.path.relpath(local, ROOT).replace("\\", "/")
-            personal_context = rel_target.startswith("library/context/") and not rel_target.startswith(
-                ("library/context/_meta/", "library/context/operator-schema/")
-            )
-            if personal_context or rel_target.startswith("system/builder-backlog"):
+            personal_context = rel_target.startswith("library/context/")
+            if personal_context or rel_target.startswith("system/backlog"):
                 continue
             if not (os.path.exists(local) or os.path.exists(rooted)):
                 issues.append(f"{rel}: dead link -> {target}")
@@ -2167,7 +2165,7 @@ def voice_mirror_notes():
                     if os.path.isfile(os.path.join(VOICE_SCHEMA, os.path.relpath(p, VOICE_LIVE))))
     for rel in method:
         if not os.path.isfile(os.path.join(VOICE_SCHEMA, rel)):
-            notes.append(f"voice mirror: {rel} has no mirror under library/context/operator-schema/voice/ "
+            notes.append(f"voice mirror: {rel} has no mirror under library/schema/operator/voice/ "
                          "— mirror the agnostic method surface or move personal content out of the method slot")
     for rel in shared:
         live, schema = os.path.join(VOICE_LIVE, rel), os.path.join(VOICE_SCHEMA, rel)
@@ -2260,7 +2258,7 @@ def ppt_master_stray_issues(base=None):
     system/hooks/ppt_master_guard.py blocks creating them; this is the
     backstop for anything that slipped past the hooks."""
     root = base or ROOT
-    skill = os.path.join(root, "system", "skills", "ppt-master")
+    skill = os.path.join(root, "system", "vendor", "ppt-master")
     issues = []
     if not os.path.isdir(skill):
         return issues
@@ -2268,7 +2266,7 @@ def ppt_master_stray_issues(base=None):
         rel = os.path.relpath(dirpath, root).replace("\\", "/")
         if "projects" in dirnames:
             issues.append(f"{rel}/projects: deck project staged inside the vendored skill tree — "
-                          "move it under the calling campaign (see system/skills/ppt-master/AGENTS.md)")
+                          "move it under the calling campaign (see system/vendor/ppt-master/AGENTS.md)")
             dirnames.remove("projects")
         for f in sorted(filenames):
             if f.lower().endswith(".pptx"):
@@ -2350,14 +2348,14 @@ def read_runs(since):
 
 
 def open_backlog_rows_naming_af():
-    """Open BB-* rows whose text names af.py or a state verb."""
-    path = os.path.join(ROOT, "system", "builder-backlog.md")
+    """Open BB-* rows whose text names af.py or a state verb; a `status: done` row is closed."""
+    path = os.path.join(ROOT, "system", "backlog.md")
     if not os.path.isfile(path):
         return 0
-    active = read(path).split("## Active entries", 1)[-1]
-    rows = re.split(r"(?m)^(?=- id: BB-|## BB-)", active)
+    rows = re.split(r"(?m)^(?=- id: BB-|## BB-)", read(path))
     pat = re.compile(r"af\.py|\baf (ready|publish|version|draft|adopt|pipe|studio|new-project)\b")
-    return sum(1 for r in rows if re.match(r"(- id: |## )BB-", r) and pat.search(r))
+    done = re.compile(r"(?mi)^\s*-?\s*status:\s*done\b")
+    return sum(1 for r in rows if re.match(r"(- id: |## )BB-", r) and pat.search(r) and not done.search(r))
 
 
 def button_notes():
@@ -2397,7 +2395,7 @@ def button_notes():
         bits.append(f"{usage} usage slip(s)")
     return [f"buttons ({BUTTON_WINDOW_DAYS}d): " + "; ".join(bits)
             + f". Open BB-* rows naming af.py: {open_backlog_rows_naming_af()}. A refusal you worked "
-            f"around needs a row (system/builder-backlog.md); a slip fixed on the retry does not."]
+            f"around needs a row (system/backlog.md); a slip fixed on the retry does not."]
 
 
 def cmd_doctor(args):

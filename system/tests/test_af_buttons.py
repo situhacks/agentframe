@@ -284,10 +284,11 @@ class ButtonNotes(TempLog):
 
     def test_open_backlog_rows_naming_af_are_counted(self):
         root = os.path.join(self._tmp.name, "root")
-        write(os.path.join(root, "system", "builder-backlog.md"),
-                 "# Builder Backlog\n\nprose mentioning af.py that is not a row\n\n## Active entries\n\n"
-                 "## BB-2026-09-01-01 — prose only\nnothing about buttons here\n\n"
-                 "## BB-2026-09-01-02 — `af ready` refuses a shape\nthe button dies on it\n\n"
+        write(os.path.join(root, "system", "backlog.md"),
+                 "# Backlog\n\nprose mentioning af.py that is not a row\n\n"
+                 "## BB-2026-09-01-01 — prose only\nnothing about buttons here\nStatus: open\n\n"
+                 "## BB-2026-09-01-02 — `af ready` refuses a shape\nthe button dies on it\nStatus: open\n\n"
+                 "## BB-2026-09-01-04 — `af draft` crashed once\nfixed in the parser\nStatus: done\n\n"
                  "```yaml\n- id: BB-2026-09-01-03\n  one_line: af.py draft path bug\n```\n")
         with patch.object(af, "ROOT", root):
             self.assertEqual(af.open_backlog_rows_naming_af(), 2)

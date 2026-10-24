@@ -17,8 +17,8 @@ Read all four before drafting. A message written without them repeats a failure 
 - `company-brief.md` — the living company dossier. Its **conclusions** are what may appear; its content is not.
 - `jd-map.md` — coverage and the gap stop. When the board carries a better-fitting req than the one named,
   that finding lives here and is the whole reason the message is worth sending.
-- `library/context/operator/voice/` — outward-facing and user-voiced. Voice load plus a humanizer pass are
-  required before this is shown to the operator.
+- `library/context/operator/voice/` — outward-facing and user-voiced. Voice load plus the voice clean pass
+  (`README.md` step 3, then `python system/voice_lint.py <head>`) are required before this is shown to the operator.
 
 ## Output Shape
 
@@ -68,5 +68,5 @@ sent_at: <ISO date, once sent>
 ## Readiness Criteria
 
 Not ready-gated. It is internal until the operator sends it, and the operator sends it. Before it is
-surfaced for sending: voice load done, humanizer pass run, all five moves present or deliberately
+surfaced for sending: voice load done, voice clean pass run, all five moves present or deliberately
 waived, and the call-questions block populated with whatever the message left on the table.

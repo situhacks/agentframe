@@ -33,7 +33,7 @@ Output is `{text, words:[{text,start,end}]}`, the shape `transcript-cut.mjs` and
 Mark in `edit.md` what goes: retakes (he restarts a sentence), fillers, dead air over 0.8s, tangents that do not serve the hook. Compile and review before encoding:
 
 ```
-node system/skills/hyperframes/source/skills/media-use/scripts/transcript-cut.mjs \
+node system/vendor/hyperframes/source/skills/media-use/scripts/transcript-cut.mjs \
   --input video/source.mp4 --transcript video/transcript.json \
   --remove "12.4-15.0" --remove-fillers "um,uh" --cut-silence 0.8 --plan
 ```
@@ -55,7 +55,7 @@ Fill each section of `edit.md`:
 
 ### 5. Compose
 
-One HyperFrames project per post under `video/`. Base track: `cut.mp4` as a `<video>` element; punch-ins are GSAP scale and translate keyframes on it. Cutaways: clips with `data-media-start` sub-windows, full-frame or picture-in-picture. Text cards: the `talking-head-recut` skill's card pattern, styled from `frame.md`. Captions per the caption path below. Audio: SFX and bed with the ducking keyframes `audio-duck.mjs` emits. Load `system/skills/hyperframes/SKILL.md` for the engine contract; read `frame.md` from the design language as brand truth.
+One HyperFrames project per post under `video/`. Base track: `cut.mp4` as a `<video>` element; punch-ins are GSAP scale and translate keyframes on it. Cutaways: clips with `data-media-start` sub-windows, full-frame or picture-in-picture. Text cards: the `talking-head-recut` skill's card pattern, styled from `frame.md`. Captions per the caption path below. Audio: SFX and bed with the ducking keyframes `audio-duck.mjs` emits. Load `system/vendor/hyperframes/SKILL.md` for the engine contract; read `frame.md` from the design language as brand truth.
 
 ### 6. Render and QC
 

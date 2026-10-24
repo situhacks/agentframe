@@ -12,7 +12,7 @@ Planning and production tracker for a video deliverable. It gives the agent enou
 - `library/process/video-production.md`.
 - Operator Voice (load the voice system (`library/context/operator/voice/`) if the video includes user-voiced narration, captions meant to sound like the operator, or external-facing script copy; do not load for purely technical render/planning work).
 - Video capability references as needed:
-  - `system/skills/hyperframes/SKILL.md` for the upstream HyperFrames route and selected capability.
+  - `system/vendor/hyperframes/SKILL.md` for the upstream HyperFrames route and selected capability.
 
 ## Sections
 
@@ -58,13 +58,9 @@ Generated media files, `video/renders/scenes/`, `video/renders/final/`, `edit/pr
 - **Export format**: final video file (`.mp4` by default; `.webm` if transparency or platform needs it).
 - **Required before downstream**: a video-using deliverable cannot become ready until the final or publish-candidate render is reviewed or the operator explicitly skips that check.
 
-## Humanizer Pass
+## Clean Pass
 
-Partial. Run only when the upstream HyperFrames `SCRIPT.md` is authored or substantively revised. Scope to public-facing script prose: narration, captions, and on-screen editorial text.
-
-Do not run this gate again when `video-spec-v{N}.md` becomes ready. Skip the upstream `STORYBOARD.md`, structured production fields, commands, frontmatter, code, and model prompt text.
-
-When needed, follow `library/process/humanizer-integration.md`.
+Only when the upstream HyperFrames `SCRIPT.md` carries narration, captions, or on-screen text in the operator's voice: run the voice clean pass (`library/context/operator/voice/README.md` step 3) and `python system/voice_lint.py <head>` on that prose when it is authored or substantively revised, not again at readiness. Other script prose, `STORYBOARD.md`, production fields, commands, frontmatter, code, and model prompt text get no extra pass.
 
 ## Exceptions / Branches
 

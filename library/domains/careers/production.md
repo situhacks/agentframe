@@ -6,15 +6,15 @@ Operator-mode routing for `domain: careers` work. The board (`workspace/pipeline
 
 | Step | Do | Owner |
 |---|---|---|
-| 0 Arrive | **Inbound is the default entry point** (see below). Outbound: the `job-scout` skill (operator-invoked, never scheduled) sweeps the watchlist → triage report in `pipeline/scout/` | operator / `system/skills/job-scout/` |
+| 0 Arrive | **Inbound is the default entry point** (see below). Outbound: the `job-scout` skill (operator-invoked, never scheduled) sweeps the watchlist → triage report in `pipeline/scout/` | operator / `.claude/skills/job-scout/` |
 | 1 Save | `af pipe save` — board row at stage `saved`; a fetched JD parks in `scout/jd-cache/{slug}.jd.md`. On an inbound contact, **sweep the whole board first** (see below) | spine |
 | 2 Start | `af pipe start <slug>` — scaffolds `applications/{slug}/` with `sources/`, `correspondence/`, `people/`; moves the cached JD in as `jd.md`; stage → `preparing` | spine |
 | 3 Research | `company-brief.md` per its template; depth matches stakes | template |
 | 4 Map | `jd-map.md`: honeypot scan → 3-tier requirements → experience map → **gap stop** → operator coverage choice | template |
 | 5 Reply | On an inbound contact, `correspondence/reply-to-{name}-{date}.md` per its template — declared inputs, five moves, call-questions block | template |
-| 6 Tailor | Draft materials declared in `materials:` (`resume/resume-v1.md`, `cover-letter/` only if required); offer to scaffold a proof-of-concept repo outside AgentFrame, tracked by `demo/demo-v{N}.md`; humanizer pass on all user-voiced prose | templates + process |
+| 6 Tailor | Draft materials declared in `materials:` (`resume/resume-v1.md`, `cover-letter/` only if required); offer to scaffold a proof-of-concept repo outside AgentFrame, tracked by `demo/demo-v{N}.md`; voice clean pass on all user-voiced prose | templates + process |
 | 7 Verify | fill jd-map `## Verification`; fix findings before export or readiness | template |
-| 8 Export | `doc-export` skill → format by ATS (table below), file under the deliverable's `media/`, record in `exports[]` | `system/skills/doc-export/` |
+| 8 Export | `doc-export` skill → format by ATS (table below), file under the deliverable's `media/`, record in `exports[]` | `.claude/skills/doc-export/` |
 | 9 Ready | `af ready <slug> resume` (and `cover-letter`) — refuses without verification + filed exports | spine |
 | 10 Submit | **The human submits** in a normal browser, on the company career site (never a bot; never Easy Apply when direct apply exists) → `af pipe stage <slug> applied`. **Agency or referral submits instead:** the material still ships, to the recruiter, so `af ready` gates it before it leaves the machine exactly as above; then go straight to `af pipe stage <slug> interviewing`, which stamps `shipped` from the ready head and nudges when it is not, and record `submitted_by:` in `application.md` (who submitted, not whether it was verified) | operator |
 | 11 Interview | Per round, run the arc in [`interview-arc.md`](interview-arc.md) | process + templates |

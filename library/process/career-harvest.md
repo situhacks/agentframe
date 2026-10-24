@@ -1,6 +1,6 @@
 # Career Harvest
 
-Move real wins into the career bank while the evidence is fresh. The bank (`library/context/operator/career/`, schema at `library/context/operator-schema/career/`) feeds resumes, promotion cases, and "recent wins" writeups; a win that never lands there is lost to the next application.
+Move real wins into the career bank while the evidence is fresh. The bank (`library/context/operator/career/`, schema at `library/schema/operator/career/`) feeds resumes, promotion cases, and "recent wins" writeups; a win that never lands there is lost to the next application.
 
 Raw material that arrives from elsewhere and is not distilled yet (work-instance exports, review
 PDFs, a rubric an employer sent) stages in `career/harvests/` until this procedure reads it. It is a
@@ -38,5 +38,5 @@ Any genuine win the round revealed still goes through the main procedure; the tw
 ## Boundaries
 
 - Operator-owned content work; no system files change.
-- Bank instances are personal (gitignored); only the schema mirrors under `library/context/operator-schema/career/` are tracked.
+- Bank instances are personal (gitignored); only the schema mirrors under `library/schema/operator/career/` are tracked.
 - Proof-points record what the source supports — never rewrite history to sound better.

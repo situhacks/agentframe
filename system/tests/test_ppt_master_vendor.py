@@ -4,7 +4,7 @@ import unittest
 
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-PPT = os.path.join(ROOT, "system", "skills", "ppt-master")
+PPT = os.path.join(ROOT, "system", "vendor", "ppt-master")
 
 
 def read(*parts):
@@ -28,7 +28,7 @@ class TestPptMasterVendorContract(unittest.TestCase):
 
     def test_native_slide_background_promotion_remains_upstream_owned(self):
         source = read(
-            "system", "skills", "ppt-master", "scripts", "svg_to_pptx",
+            "system", "vendor", "ppt-master", "scripts", "svg_to_pptx",
             "drawingml", "converter.py",
         )
         self.assertIn("def _extract_background_candidate", source)
@@ -39,10 +39,10 @@ class TestPptMasterVendorContract(unittest.TestCase):
         # 52e85a0 split svg_quality_checker.py into the svg_quality/ package; the
         # font checks moved with it.
         checker = read(
-            "system", "skills", "ppt-master", "scripts", "svg_quality", "checker.py"
+            "system", "vendor", "ppt-master", "scripts", "svg_quality", "checker.py"
         )
         executor = read(
-            "system", "skills", "ppt-master", "references", "executor-base.md"
+            "system", "vendor", "ppt-master", "references", "executor-base.md"
         )
         self.assertIn("def _check_fonts", checker)
         self.assertIn("font-family value(s)", checker)
@@ -50,7 +50,7 @@ class TestPptMasterVendorContract(unittest.TestCase):
         self.assertIn("deck-wide anchors", executor)
 
     def test_agentframe_does_not_mirror_vendor_routing_or_svg_guidance(self):
-        overlay = read("system", "skills", "ppt-master", "AGENTS.md")
+        overlay = read("system", "vendor", "ppt-master", "AGENTS.md")
         process = read("library", "process", "deck-production.md")
         self.assertNotIn("Dedicated session only", overlay)
         self.assertNotIn("Paragraph authoring", overlay)

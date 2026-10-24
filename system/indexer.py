@@ -7,11 +7,11 @@ pointers — consumers open the cited files before relying on them.
 
 Corpus (inclusion, not enforcement — whatever is indexed is the whole world
 `af search` sees): the personal layer only. workspace/ (projects, pipeline,
-studio, board), library/context/ (minus the voice corpus and the schema
-skeletons), library/assets/, and .claude/plans/. System
-machinery (system/, library/process|deliverables|domains) is routed by the
-AGENTS routers and their catalogs, never searched: search exists to find what
-the operator made or lived, faster than grep (operator decision 2026-09-09).
+studio), library/context/ (minus the voice corpus), library/assets/, and
+.claude/plans/. System machinery (system/, library/process|deliverables|domains)
+and the schema skeletons in library/schema/ are routed by the AGENTS routers and
+their catalogs, never searched: search exists to find what the operator made or
+lived, faster than grep.
 Skipped everywhere: generated projections, vendor-source and runtime subtrees;
 archived work stays indexed and ranked down rather than excluded.
 
@@ -31,7 +31,7 @@ Cold start (fresh machine, no Ollama yet): install Ollama from ollama.com,
 Without Ollama the index still works — keyword-only — and every command says
 so. The model is a swap-in constant: edit EMBED_MODEL, rebuild, compare via
 `af index eval`. Dimension changes are detected and refused rather than
-silently mixed. Measured model comparisons live in system/index/EVALS.md;
+silently mixed. The eval method and model lessons live in system/index/EVALS.md;
 when picking a new model, benchmark on this instance's golden set before
 adopting — leaderboard rank does not predict corpus fit.
 """
@@ -66,7 +66,7 @@ POOL_SIZE = 60  # candidates fetched per retriever before fusion
 # Local embedding backend (Ollama). Swap the model here, then run
 # `af index update --rebuild` — dimension changes are detected and refused.
 OLLAMA_URL = "http://127.0.0.1:11434/api/embed"
-EMBED_MODEL = "qwen3-embedding:0.6b"  # challenger vs nomic-embed-text; see EVALS.md comparison
+EMBED_MODEL = "qwen3-embedding:0.6b"  # nomic-embed-text is the installed fallback; see EVALS.md
 EMBED_BATCH = 32
 EMBED_MAX_CHARS = 6000  # breadcrumb + body fed to the model per chunk
 RRF_K = 60  # reciprocal-rank-fusion damping constant
@@ -101,18 +101,11 @@ def iter_corpus(root):
             for d in dirnames:
                 if d in SKIP_DIRS_ANYWHERE:
                     continue
-                # Voice corpus: routed context, not searched content — it is a
-                # curated snapshot whose sources live in projects (operator
-                # decision 2026-08-23). Route loads it; the index skips it.
+                # Voice corpus: routed context, not searched content; a curated
+                # snapshot whose sources live in projects. Route loads it; the
+                # index skips it. The schema skeletons sit in library/schema/,
+                # outside CORPUS_ROOTS, so a template never outranks its content.
                 if d == "voice" and rel_dir.startswith("library/context"):
-                    continue
-                # Schema mirrors are FILL-ME skeletons of the documents the operator layer
-                # holds populated (proof-points.md: 0.5KB of placeholders against 13KB of
-                # real content). Both indexed, a template can outrank the thing it templates
-                # on a title match. Not duplicates and never consolidate them - the schema is
-                # the tracked public shape downstream copies need. Route loads it; search
-                # skips it, same contract as the voice corpus above.
-                if d == "operator-schema" and rel_dir == "library/context":
                     continue
                 pruned.append(d)
             dirnames[:] = pruned
@@ -744,7 +737,7 @@ def cmd_eval(root, k=5):
     n = len(records)
     print(f"af index eval: {n} queries · recall@{k} = {hits}/{n} = {hits / n:.0%} · "
           f"MRR = {mrr_total / n:.3f}")
-    print("(record numbers to system/index/EVALS.md)\n")
+    print("(replace the Current Standing section of system/index/EVALS.md)\n")
     for i, q, ok, rank, expected, shown in rows:
         mark = "PASS" if ok else "MISS"
         got = f"rank {rank}" if ok else f"top: {shown}"

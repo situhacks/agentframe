@@ -33,7 +33,7 @@ except ImportError:  # pragma: no cover - dependency is present in this repo
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 LANGUAGES = ROOT / "library" / "assets" / "design-languages"
-SHIPPED_GUIDE = ROOT / "system" / "skills" / "diagram-design" / "references" / "style-guide.md"
+SHIPPED_GUIDE = ROOT / "system" / "vendor" / "diagram-design" / "references" / "style-guide.md"
 PROFILE_LIBRARY = Path.home() / ".diagram-design" / "profiles"
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 

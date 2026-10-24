@@ -39,7 +39,7 @@ def year_only_ranges(text):
 RESUME_HEADINGS = {"work experience", "experience", "projects", "education", "skills", "skills / extras", "extras"}
 
 # Worst lexical AI tells (recruiter auto-reject territory). Notes, not issues —
-# wording is judgment; the humanizer pass owns the rewrite.
+# wording is judgment; the voice clean pass owns the rewrite.
 AI_TELLS = ("spearheaded", "delve", "delving", "testament to", "synergies",
             "proven track record", "unique blend", "beacon of", "catalyst for")
 
@@ -74,7 +74,7 @@ def _tell_notes(rel, body):
     low = body.lower()
     hits = sorted({t for t in AI_TELLS if t in low})
     if hits:
-        return [f"{rel}: AI-tell wording ({', '.join(hits)}) — run the humanizer pass before verification"]
+        return [f"{rel}: AI-tell wording ({', '.join(hits)}) — rewrite it in the voice clean pass before verification"]
     return []
 
 

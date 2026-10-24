@@ -1,0 +1,42 @@
+# What [you] don't write — weighted, not walls
+
+Preferences with calibration, not prohibitions. Hard bans make the model write defensively and regress to generic; keep this file small and tiered, and put the generative effort into `pairs/` + `voice-profile.md`. Use this to notice drift, not to write scared.
+
+Generic-AI patterns (rule-of-three, inflated significance, copula avoidance, AI vocab, signposting) belong here only in the shapes YOUR drafts produce, each with the tell and what to write instead.
+
+**Deterministic backstop.** `python system/voice_lint.py <head>` settles the rules a regex can (zero-budget tics, two dashes in one sentence, the writer's spaced hyphen turned into an em dash since the previous version) and reports the soft shapes; `system/hooks/voice_guard.py` gates `af ready` on it and prints it after `af version`. Keep the tic list in the lint in step with the Banned tics section below; the judgment rules stay prose.
+
+## Hard lines (zero occurrences — risk and identity, not style)
+[The very few true absolutes: brand-safety and identity lines where one occurrence costs something real. e.g. naming client work, punching down, inventing the writer's inner or research process ("the thought experiment that's been rattling around my head", "I went and checked") — confession only counts when it is theirs. Style preferences do NOT belong here.]
+
+## Banned tics (zero occurrences — style, not identity)
+[Specific recurring verbal habits the writer has ruled out outright: a phrase, an adverb, a rhetorical figure. This section exists because a STYLE rule with a zero budget has no other home — Hard lines above is identity and risk only, and Budgeted moves below allows N>0. Earn every entry: list only habits that actually recur in drafts, and give each one the tell plus what to write instead, so the model has somewhere to go rather than writing around the ban. Where a banned item is also prescribed elsewhere (a hedge listed in `voice-profile.md`, an example in `pairs/`), patch that file in the same pass — a ban that contradicts a file loaded in the same turn does not fire.]
+
+## The boundary beat — sweep this before anything else
+[The highest-value section in this file, and the one most likely to be missing. Filler generated at structural boundaries — the end of a paragraph, the end of a section, the line before a list — where the prose reaches a rhythmic stop before the information does. It survives every revision, because a revision rewrites the substance and then generates a fresh beat to close it; the tic returns in new words, so a phrase blacklist cannot converge on it. List the flavours YOUR drafts produce (quotable maxim / restates-and-asserts-it-matters / certifies with stance / trailing "which is…" restatement / pre-list drumroll / section-opening announcement that the next part matters), then give the SWEEP: read the last sentence of every paragraph, the sentence before every list, and the first sentence of every section in isolation, and require each to carry a fact the reader did not already have. Close with what belongs in that position instead — for most writers, the question the next section answers, a concrete comparison, or nothing.]
+
+## The trailing prop-up clause — sweep every sentence, not just the boundaries
+[The boundary beat's sentence-level cousin, and the single biggest source of length in a model draft: a claim is made, then a second clause inflates it ("and that is what this whole piece hangs on"), certifies it ("even the people who…"), explains it again ("because it turns out…") or turns it into a moral ("so they didn't"). Give the test: delete everything after the comma, the "because", the "and" or the "which"; if the claim still stands, the clause goes. Run it over every sentence before the writer sees a draft, and cite the hand edit that earned it (how many words left, in how many fewer sentences).]
+
+## Say it outright — stance in place of statement
+[Shapes where the sentence performs a stance instead of delivering content: dancing around a term the reader knows, emphasis by justification ("X first, because Y matters"), self-positioning against a straw option ("I want to be X rather than Y"), the conditional buy-in ("if you accept the first three parts"). List the ones the writer has flagged, quote their own plain version, and give the one fix: the word, the claim, or nothing.]
+
+## Over-crediting — one receipt per point, at the reader's altitude
+[The draft proves a claim by stacking a second quote, a third insider, a number and a certifier ("so I'm not embellishing"); the writer keeps one. Name-drops follow: a person the reader would not recognise becomes their company or role. State the reader's altitude (functional vs technical) and what that does to an incident (a retellable story, not a move list) and to references (a short unexplained list). Anchor with a pair.]
+
+## Mannered prose — say what you mean
+[Mannered prose substitutes metaphor and flourish for direct statement: "a dial worth turning" for "a parameter worth varying", "this point earns its keep" for "this point still matters". The phrase exists to display the writer, not to convey the idea, and it drags in connotations the writer did not choose. The fix is to say what you mean; when a literal phrase is available, use it. Calibrate it to the writer: list the spoken commonplaces they actually use and keep (those count as literal in their mouth) against the crafted images their hand edits cut. A vocabulary list does not catch this shape, so sweep for it separately, apply it at generation time (README step 2) as well as in the clean pass, and anchor it with a worked pair in `pairs/`.]
+
+## Budgeted moves (good once, a tell when repeated — counts per piece)
+[Define a "piece" as one standalone prose deliverable or clearly bounded section. Let deliverable templates, not the register, license shape-specific exceptions such as slide or cover fragments.]
+
+[Moves that are strong used deliberately but read as AI when they recur. Give each a per-piece budget and the carve-out. Examples to consider:]
+- **[Contrastive negation ("not X — Y")]** — [e.g. ≤1 per piece, only when the negation is the pivot.]
+- **[Short-beat / staccato run]** — [e.g. ≤1 per piece, payoff or closer only.]
+- **[Punctuation habit]** — [e.g. em-dash: measure the writer's own rate off the corpus, date it, and state it as a drift alarm rather than a quota; the tell is replacement of most commas/periods. A cleanup pass never normalises punctuation the writer typed themselves — a spaced hyphen or a comma splice in a hand edit is theirs.]
+
+## Substitution preferences (reach for this, not that)
+[Frame the word list positively — what you reach for instead. e.g. plain mechanical verbs (built, delivered, wired) where marketing copy says leverage/unlock/empower.]
+
+## The real test
+A draft can respect every line above and still sound like generic AI. If any competent assistant could've written it, it hasn't reached the voice — go back to `pairs/` + `voice-profile.md` and regenerate (markers first, per the README), don't add another rule.

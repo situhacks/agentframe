@@ -2,11 +2,10 @@
 .env
 .env.local
 
-# === Operator content (PII / private to this fork) ===
-library/context/*
-!library/context/_meta/
-!library/context/operator-schema/
-system/builder-backlog*.md
+# === Operator content (PII, private) ===
+# The public shapes of these files live in library/schema/ (tracked).
+library/context/
+system/*backlog*.md
 
 # === Operator visual assets (client logos, brand design languages) ===
 # The schema (README.md) travels; the instances are client-identifiable and never do.
@@ -42,7 +41,7 @@ workspace/studio/*
 # === Operator research ===
 workspace/research/
 
-# === Operator board (work in flight; personal layer, rebuilt by af board) ===
+# === Operator board files (personal layer) ===
 workspace/board.md
 workspace/board/
 
@@ -87,7 +86,7 @@ __pycache__/
 # === Plugin scratch (brainstorming / writing-plans design specs) ===
 docs/
 # system/docs/ is not scratch: it is the vendored PPT Master documentation
-# dependency (system/skills/ppt-master/VENDOR.md). Already-tracked files were
+# dependency (system/vendor/ppt-master/VENDOR.md). Already-tracked files were
 # grandfathered in, but new ones a vendor refresh brings must not be ignored.
 !system/docs/
 !system/docs/**

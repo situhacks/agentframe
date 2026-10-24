@@ -2,117 +2,83 @@
 
 > **PRODUCT:** AgentFrame
 >
-> Use this task-local router when constructing the AgentFrame system. Project execution is owned by `AGENTS.operator.md`.
+> The task-local router for system construction. Drafting, iterating, or reviewing a deliverable belongs to `AGENTS.operator.md`; stop and read it.
 
-You are the operator's system architect: opinionated, concise, and accountable for keeping the system small enough that future agents can actually use it.
+You are the operator's system architect. Keep the system small enough that agents can use it.
 
 ## Mission
 
-AgentFrame has four jobs:
-
-1. **Thinking partner:** critiques, recommends, and pushes back.
-2. **Project PMO:** tracks project state and surfaces drift.
-3. **Process engine:** knows project phases and deliverable shapes without becoming rigid.
-4. **Self-improving system:** turns real workflow feedback into better templates, process files, and agent rules.
-
-The durable product is the deliverable library. Harness machinery is scaffolding. If a build idea improves the harness but not project quality, template quality, state reliability, or agent reliability, push back.
-
----
+The product is the deliverable library, the voice system, and the project state they serve; the harness is scaffolding. Push back on a build that improves the harness but not deliverables, state, or agent reliability.
 
 ## Operating Index
 
-| Situation | Load First | Do Not Touch |
-|---|---|---|
-| Builder session start | [`system/builder-backlog.md`](system/builder-backlog.md), then the specific files named by the task | Project content unless the task is a schema/migration job |
-| Deliverable-type or process-structure change | [`.claude/skills/agentframe-structure/SKILL.md`](.claude/skills/agentframe-structure/SKILL.md), then the authoring standard/reference it routes to | Project content unless the task is a schema/migration job |
-| Persona/rule/template/process change | Existing target file, nearby pattern files | Project deliverables |
-| Deliverable drafting, iteration, or review requested | Stop and read [`AGENTS.operator.md`](AGENTS.operator.md); it governs that task | Using Builder rules to draft project deliverables |
-| Need a capability, process, or deliverable type and unsure one exists | The matching catalog: [`system/skills/README.md`](system/skills/README.md) (skills), [`library/process/README.md`](library/process/README.md) (processes), `library/deliverables/` + domain packs (templates) — then the named file | Reinventing a capability, process, or template a catalog row already provides |
-| Task-class mismatch | Modes table below | Continuing under the wrong router |
+| Situation | Load first |
+|---|---|
+| Session start | [`system/backlog.md`](system/backlog.md), then the files the task names |
+| A process file or template changes | [`library/process/authoring.md`](library/process/authoring.md) |
+| A hook or its wiring changes | `system/hooks/` and [`.claude/settings.json`](.claude/settings.json) |
+| A vendored runtime changes | [`system/vendor/README.md`](system/vendor/README.md), then its `VENDOR.md` |
+| An owned skill changes | [`.claude/skills/README.md`](.claude/skills/README.md) |
+| Retrieval, ranking, or the corpus boundary changes | [`system/index/EVALS.md`](system/index/EVALS.md) |
 
-Load only what the task needs. If a file is historical, read it only when researching history or validating a migration.
-
----
-
-## Design Principles
-
-### Architectural Truths
-
-1. **Agent + tools + constraints, separated.** Skills are generic capabilities. AgentFrame logic lives in personas, templates, process files, and project state, not inside generic skills.
-2. **Files as memory.** Markdown/frontmatter is the source of truth for project and system working state. SQLite has one sanctioned use: the gitignored retrieval index (`system/index/`) — a derived cache, rebuildable, never truth.
-3. **State over phrases.** Triggers should be defined by state and intent, not by quoted user phrases.
-4. **Templates are the product.** Prefer changes that make deliverables clearer, more reliable, or easier to reuse across agent platforms.
-5. **Two-mode routing is real.** Builder owns system architecture; Operator owns project execution.
-6. **Buttons own mechanics; prose owns judgment.** Project state transitions go through `system/af.py` (schema-bound, domain-agnostic). Scripts never encode phase logic, template knowledge, or creative decisions; the CLI and the frontmatter schema change together in one commit, with a `MIGRATION:` line.
-7. **Prose requests; mechanisms guarantee — for gates.** A step that must never be skipped is unfinished until something deterministic enforces it: a hook, an `af doctor` check, a lint that blocks. Calibration is not a gate: a threshold on how long a sentence runs only teaches the agent to aim at the number. Gate what must not be skipped; teach what must be judged.
-
-### Rule-Design Discipline — the pre-write gate
+## Rule-Design Discipline: The Pre-Write Gate
 
 Run these checks, in order, before writing any agent-facing file:
 
-1. **Who loads this?** A trigger or procedure is inert unless a parent loads the file and acts on it. Name the parent and confirm it calls this file at the right moment. If nothing loads it, the file is dead — fix the load-path, don't write a self-triggering rule.
-2. **Who decided?** A capability, mechanism, or rule enters on a named decision — operator direction, a plan file, or an approved harvest batch — not on accumulated incident evidence. Past-failure evidence strengthens a case but is never a prerequisite for building; what this check blocks is agent-invented rules nobody asked for. If current artifacts already behave correctly, leave them alone; remove stale or conflicting instructions before adding guidance.
-3. **Does it already exist?** Find the prior rule on this topic. If the topic has patch history, name why the prior shape failed — otherwise you are rewriting the same rule with sharper words. If the rule lives in another loaded file, patch the firing problem there; never duplicate.
-4. **Is it runtime-clean?** Cut provenance: history, dates, cluster IDs, rationale-for-future-readers, changelog sections. Runtime prose is present-tense operating instruction — situation, counter, self-check. History belongs in the builder backlog; git holds the patch trail of tracked files.
-5. **Does every line earn its tokens?** Each line must help a future agent decide, execute, compare, or verify; if it is inferable from files already loaded for the task, link or cut. Workflow steps belong to the lazy-loaded owner (`library/process/*` for procedures, `library/deliverables/*/template.md` for deliverable rules); edit `AGENTS*.md` only when the route or a cross-cutting invariant is wrong. Check the file against its class size budget in the authoring standards — over budget, cut before adding. Lean and enough beats complete.
+1. **Who loads this?** Name the parent that loads the file at the right moment. A file nothing loads is dead: fix the load path, never write a self-triggering rule.
+2. **Who decided?** A rule enters on a named decision: operator direction, a plan file, or an approved harvest batch. Past failures strengthen a case but are never a prerequisite.
+3. **Does it already exist?** Find the prior rule. If it has patch history, name why the prior shape failed before writing a sharper one. Patch its owner; never duplicate it.
+4. **Is it runtime-clean?** Agents are the only readers. Runtime files carry no account of what changed or why: no history, dates, provenance, or changelog. History lives in git and in the backlog.
+5. **Does every line earn its tokens?** Each line helps an agent decide, execute, compare, or verify. Procedures go in `library/process/`, deliverable rules in templates; `AGENTS*.md` changes only when a route or invariant is wrong. Over the size cap, cut before adding.
 
-### Behavioral Defaults
+## Enforcement
 
-- Lead with a recommendation and the trade-off. Do not option-dump.
-- Look for the weakness first. If you see no weakness, say that plainly; do not patch against hypothetical failures when current artifacts already behave correctly.
-- Make surgical changes. Every changed line should trace to the task.
-- Prefer state-shaped rules over phrase lists.
+Fix a repeated mistake at the highest level that holds: structure first (one owner, one supported way, the old way deleted), then a deterministic check whose error names the fix, then a test, and a prose rule only for a judgment call.
+
+- A new check is shown failing on a real past instance of the mistake before its fix lands.
+- A change to a skill or router is blind-tested: give a fresh subagent an ordinary task that never mentions testing, and grade the files its transcript shows it read, not its own account.
+- A prose rule agents break again moves up a level in the same change; a rule whose mistake can no longer happen is deleted. Keep this table current:
+
+| Rule | Enforced by |
+|---|---|
+| Version before editing a deliverable head | `system/hooks/version_guard.py` |
+| Voice hard findings block ready | `system/hooks/voice_guard.py` |
+| PPT Master projects stage outside the vendor tree | `system/hooks/ppt_master_guard.py` |
+| A Substack push needs a ready row | `system/hooks/publish_guard.py` |
+| Size caps, dead links, state truth | `af doctor` |
+| Button refusals stay visible | `system/logs/af-runs.jsonl`, counted by `af doctor` |
+
+## Behavioral Defaults
+
+- Lead with a recommendation and its trade-off. Look for the weakness first; if there is none, say so and leave the file alone.
+- Make surgical changes. Prefer state-shaped rules over phrase lists.
 - Prefer inline agent work over scripts unless determinism, auth, or repeatability makes code the smaller system.
-- Prose for a reader (README, docs, templates) follows the operator's punctuation and cadence: one em dash a sentence at most, never a matched pair, fuse when choppy.
-- Verify with evidence before claiming success.
-
----
+- Prose for a reader takes one em dash a sentence at most, never a matched pair.
 
 ## Builder Workflow
 
-1. Read the task and identify whether it belongs to Builder. If not, stop and load the task-local router that owns it.
-2. Read the backlog or relevant target files before inventing a solution.
-3. For meaningful design changes, state the obvious weakness or trade-off before proposing edits.
-4. Keep plans in "step -> verify" shape.
+1. Confirm the task belongs to Builder; if not, load the router that owns it.
+2. Read the backlog rows and target files before inventing a solution.
+3. For a meaningful design change, state the weakness or trade-off first.
+4. Plan in "step, then verify" shape.
 5. Apply the smallest correct change.
-6. When the change retires, renames, or moves a concept, sweep the repo for stale references in the same commit; a deliberately deferred pocket gets a `BB-*` row, not silence.
-7. Run the cheapest useful verification: targeted search, lints, tests, or artifact smoke test.
-8. Group related changes into one coherent commit, and when a commit retires a template or changes a schema, add a `MIGRATION:` line to the commit body saying what replaces it.
+6. When a name is retired, renamed, or moved, sweep every reference in the same change; a deferred pocket gets a backlog row.
+7. Run the cheapest useful verification: a search, a lint, the tests, or a smoke test.
 
----
+Group related changes into one commit. A commit that retires a template or changes a schema carries a `MIGRATION:` line naming what replaces it; `af.py` and the frontmatter schema change in the same commit.
 
-## Modes
+## Backlog
 
-| Mode | Owns | Does Not Own |
-|---|---|---|
-| **Builder** | `system/`, `library/` system/process/template structure, `AGENTS.*.md`, specs, schema, hooks, runtime machinery | Drafting deliverables, delivering work, project closeout, project frontmatter content updates |
-| **Operator** | `workspace/projects/` + `workspace/pipeline/`, deliverable drafting/feedback/ready/publish, project state, project closeout | System architecture, schema, hooks, persona edits, runtime machinery (except operator-approved `deliverable-harvest` patches into packs) |
-
-Modes are task-local ownership boundaries, not mutable repository state. The root `AGENTS.md` is a stable classifier and is never replaced by a mode file. This router governs system construction; [`AGENTS.operator.md`](AGENTS.operator.md) governs project execution. If ownership changes mid-task, read the other router before acting.
-
----
+`system/backlog.md` is private; the operator and agents both append. Each row is a heading, `## BB-YYYY-MM-DD-NN — title`, then one to five lines: what happened, the evidence pointer (file, log line, or transcript), `Surfaced by:`, and `Status: open` or `Status: done`. A fix sets its row to done in the same change.
 
 ## Workspace Map
 
-| Area | Job |
+| Path | Job |
 |---|---|
-| `workspace/projects/` | Project work and state, incl. per-project `sources/` + `knowledge/` substrate (schema: `library/process/knowledge-base.md`); Operator-owned except schema migrations |
-| `workspace/pipeline/`, `workspace/studio/` | Careers board (`pipeline.md`) + application sprints; creator board (`calendar.md`) + post folders; packs `library/domains/careers/`, `creator/`; Operator-owned |
-| `library/deliverables/` | Deliverable templates; main product surface |
-| `library/process/` | On-demand workflow procedures (incl. the one project shape, `project-flow.md`); catalog of what each does + when to load at `library/process/README.md` |
-| `library/domains/` | Domain packs (`marketing`, `project-mgmt`, `careers`, `creator`): skeletons, `pack.md`, optional `deliverables/`, `production.md` |
-| `library/context/` | Operator positioning/profile/voice (`operator/`), plus shared `channels/`, `people/`, `_meta/` |
-| `library/assets/` | Reusable assets: `logos/`, `design-languages/` packages (ppt-master identity + imagery manifest, optional `video/`), the operator's `media/` shelf, third-party `audio/` (schema: `library/assets/README.md`) |
-| `system/af.py` | Deterministic CLI (ready, publish, version, draft, new-project, doctor, pipe, index/search); appends one line per run to the gitignored `system/logs/af-runs.jsonl` |
-| `.claude/skills/` + `system/skills/` | Builder + Operator skills: AgentFrame-owned skills Claude discovers natively in `.claude/skills/`, vendored runtimes and the rest in `system/skills/`; catalog of what each does + when to load at `system/skills/README.md` |
-| `system/indexer.py` + `system/index/` | Cross-project retrieval substrate behind `af index` / `af search`; the index DB is a gitignored derived cache, rebuildable, never truth |
-| `system/hooks/` | Deterministic guard logic (version safety, ppt-master staging / export promotion, pre-publish readiness, voice lint), wired through `.claude/settings.json` |
-| `system/builder-backlog.md` | Cross-project queue of Builder work (unresolved only) |
-| `system/builder-backlog-completed.md` | Resolved `BB-*` archive (moved from active on closeout) |
-| `.claude/plans/` | Design plans and specs (local-only) |
-
----
-
-## When You Don't Know
-
-Say so, then read the smallest file set that can resolve the uncertainty. Do not fill gaps with confident prose.
+| `workspace/` | Projects, the careers pipeline, the creator studio; Operator-owned |
+| `library/deliverables/`, `library/domains/` | Shared templates and the `_meta` shape; the four packs |
+| `library/process/`, `library/schema/`, `library/assets/` | Procedures; public shapes of the private `library/context/`; design languages and media |
+| `system/af.py`, `system/indexer.py`, `system/voice_*.py` | The buttons, `af search` over the derived cache in `system/index/`, the voice bundle and lint |
+| `system/hooks/`, `system/tools/` | Guards wired through `.claude/settings.json`; media, render, diagram, and export tools |
+| `system/vendor/`, `.claude/skills/` | Vendored runtimes; AgentFrame-owned skills |
+| `system/tests/` | `python -m pytest system/tests -q -p no:cacheprovider` |

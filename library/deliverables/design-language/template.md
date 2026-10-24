@@ -31,7 +31,7 @@ First check `library/assets/design-languages/` for a shared language that fits. 
 
 Divergence-first. Offer the starting points rather than assuming one:
 
-1. **Offer the on-ramps:** (a) agent ideates from project context, (b) operator drops inspo references — a live-site URL goes through token extraction (`system/skills/extract-design/`, rules in its `AGENTS.md`), images stay the eyeball path, (c) optional Deep Research style pass, its prompt kept agnostic: visual-trend research any project could use, not this project's narrative baked in.
+1. **Offer the on-ramps:** (a) agent ideates from project context, (b) operator drops inspo references — a live-site URL goes through token extraction (`.claude/skills/extract-design/`, rules in its `AGENTS.md`), images stay the eyeball path, (c) optional Deep Research style pass, its prompt kept agnostic: visual-trend research any project could use, not this project's narrative baked in.
 2. **Propose 3–5 named taste directions**, each a STANDALONE FULL PROMPT, copy-paste ready for any generator. Pick the generation path with the operator per [`image-production.md`](../../process/image-production.md) and record the project-wide preference in the active pack's settings when it declares any.
 3. **Render and narrow.** Render on the chosen path (one side-by-side `preview/directions-compare.html` for HTML, no per-direction subfiles), then keep offering variations until the operator picks. Never one-shot the decision.
 4. **Ready.** The picked direction becomes `design-language-v{N}.md` with its treatment block, plus `tokens.yaml`/`tokens.css` when surfaces will render as HTML.
@@ -42,7 +42,7 @@ The project-level base becomes ready here; per-deliverable evolution versions th
 
 Single-direction authoring needs an explicit operator call ("skip the directions, pick one") or a text-only defer. Never take that path silently.
 
-Reasoning that must survive readiness lives in `design-language-v{N}.md` itself; sub-session reasoning is throwaway. Readiness mechanics belong to [`library/process/ready-event.md`](../../process/ready-event.md) and the active flow.
+Reasoning that must survive readiness lives in `design-language-v{N}.md` itself; sub-session reasoning is throwaway. Readiness mechanics belong to [`library/process/ready-event.md`](../../process/ready-event.md) and the project plan.
 
 ## Reuse Across Projects
 

@@ -35,9 +35,9 @@ exports: []
 ---
 ```
 
-## Humanizer Pass
+## Clean Pass
 
-Mandatory — recruiters treat an AI-scented letter as a stronger negative signal than no letter at all.
+Mandatory, because recruiters treat an AI-scented letter as a stronger negative signal than no letter at all. Run the voice clean pass (`library/context/operator/voice/README.md` step 3) and `python system/voice_lint.py <head>` on the first complete draft, before the operator sees it.
 
 ## Readiness Criteria
 

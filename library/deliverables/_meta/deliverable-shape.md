@@ -18,6 +18,19 @@ A deliverable is a **folder** (mirroring how skills and projects are folders):
 - **Cross-deliverable context** (entities, decisions) lives in the project's `knowledge/`; deliverables **link**.
 - Only deliverable-*specific* scratch/media sits in the deliverable folder.
 
+## Template sections
+
+A type's `template.md` uses this order unless the deliverable earns a different one:
+
+1. `Purpose`: the decision, output, or handoff the deliverable creates.
+2. `Inputs`: what is loaded or ready before drafting; name the source, never restate it.
+3. `Output Shape`: the artifact the agent writes.
+4. `Hard Constraints`: the non-negotiable rules.
+5. `Draft Frontmatter Convention`: only fields this deliverable carries beyond `status` and `last_updated`.
+6. `Readiness Criteria`: what is true before `status: ready`.
+
+Optional, only when it changes what an agent does: `Before Writing` (the button and load steps for a draft or a change), `Clean Pass` (operator-voiced prose: the voice clean pass and `python system/voice_lint.py <head>`), `Feedback / Handoff`, `Publish / Export Mechanics`, `Exceptions / Branches`. No placeholder section says a thing does not apply.
+
 ## Template resolution
 
 When drafting deliverable `X` for a project with `domain: D`, the template resolves in order:

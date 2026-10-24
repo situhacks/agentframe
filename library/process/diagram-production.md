@@ -12,8 +12,8 @@ Load when a project or deliverable needs to explain a system, process, decision,
 
 | Route | Use when | Skill | Output |
 |---|---|---|---|
-| **Diagram Design** (default) | A human audience sees this — a deck, a client document, a post, a README figure. Thirty-nine layout grammars, brand-tokenized. | [`system/skills/diagram-design/SKILL.md`](../../system/skills/diagram-design/SKILL.md) | Self-contained `.html`; a flattened `.svg` when it goes into a deck |
-| **D2** | A graph is regenerated from changing source and nobody reads it as a designed artifact — a derived topology, a dependency map that churns. Auto-layout re-solves placement on every change. | [`system/skills/d2-diagrams/SKILL.md`](../../system/skills/d2-diagrams/SKILL.md) | `diagram.d2` source plus derived SVG |
+| **Diagram Design** (default) | A human audience sees this — a deck, a client document, a post, a README figure. Thirty-nine layout grammars, brand-tokenized. | [`system/vendor/diagram-design/SKILL.md`](../../system/vendor/diagram-design/SKILL.md) | Self-contained `.html`; a flattened `.svg` when it goes into a deck |
+| **D2** | A graph is regenerated from changing source and nobody reads it as a designed artifact — a derived topology, a dependency map that churns. Auto-layout re-solves placement on every change. | [`.claude/skills/d2-diagrams/SKILL.md`](../../.claude/skills/d2-diagrams/SKILL.md) | `diagram.d2` source plus derived SVG |
 
 Diagram Design is the broader tool in both directions: more layout grammars than D2's graphs-only, and the only route that reaches native PowerPoint shapes. Choose D2 only for the churn case above. When a D2 diagram graduates to something an audience sees, redraw it through Diagram Design rather than restyling the `.d2`.
 
@@ -25,8 +25,8 @@ Diagram Design is the broader tool in both directions: more layout grammars than
 4. Run the two checks the skill ships with:
 
 ```powershell
-python system/skills/diagram-design/scripts/self_check.py <diagram.html>
-python system/skills/diagram-design/scripts/verify_geometry.py <diagram.html>
+python system/vendor/diagram-design/scripts/self_check.py <diagram.html>
+python system/vendor/diagram-design/scripts/verify_geometry.py <diagram.html>
 ```
 
 `self_check.py` covers the accessible-figure contract and single-file safety. `verify_geometry.py` catches a label mask clipped by a node painted after it — the defect hand-placed geometry actually produces. Upstream ships it as a contribution gate outside the skill; AgentFrame vendors it because generated output has the same failure mode.
@@ -52,7 +52,7 @@ python system/tools/diagram_flatten.py <diagram.html> -o <diagram.svg> `
 Then verify before authoring the slide around it:
 
 ```powershell
-python system/skills/ppt-master/scripts/svg_quality_checker.py <folder-holding-the-svg>
+python system/vendor/ppt-master/scripts/svg_quality_checker.py <folder-holding-the-svg>
 ```
 
 `blocking: 0` is the bar. Warnings about root-level `<g>` bounds and ids are an artifact of checking a diagram as if it were a whole page; they resolve once it is a child of the slide.
@@ -97,5 +97,5 @@ Without it the skill's first-run gate offers to onboard from a website URL. Take
 ## Boundaries
 
 - This process owns agent-authored structural visuals. It does not own image generation, deck production, or a project-specific interactive application.
-- Vendor updates follow [`system/skills/diagram-design/VENDOR.md`](../../system/skills/diagram-design/VENDOR.md) and [`system/tools/d2/VENDOR.md`](../../system/tools/d2/VENDOR.md). Do not patch vendor output conventions to satisfy the PPTX converter; `diagram_flatten.py` owns that boundary.
+- Vendor updates follow [`system/vendor/diagram-design/VENDOR.md`](../../system/vendor/diagram-design/VENDOR.md) and [`system/tools/d2/VENDOR.md`](../../system/tools/d2/VENDOR.md). Do not patch vendor output conventions to satisfy the PPTX converter; `diagram_flatten.py` owns that boundary.
 - Do not build a human-operated diagram editor.

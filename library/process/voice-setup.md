@@ -1,6 +1,6 @@
 # Voice Setup
 
-Builds the operator's voice system the first time. Reached when the agent goes to load voice (`library/context/operator/voice/`) and finds it missing or unbuilt. Owns the initial build; [`voice-harvest`](../../system/skills/voice-harvest/SKILL.md) owns ongoing maintenance.
+Builds the operator's voice system the first time. Reached when the agent goes to load voice (`library/context/operator/voice/`) and finds it missing or unbuilt. Owns the initial build; [`voice-harvest`](../../.claude/skills/voice-harvest/SKILL.md) owns ongoing maintenance.
 
 Run it as a guided session with the operator. Drive the sequence; don't dump it as a checklist.
 
@@ -13,7 +13,7 @@ Build registers from reusable voice temperature and reader relationship, not des
 
 ## Sequence
 
-1. **Scaffold from the schema.** Generate `library/context/operator/voice/` from `library/context/operator-schema/voice/`: create the shared core; `registers/formal.md` and `registers/informal.md`; matching gold-corpus folders plus `aspiration/`; `pairs/`; `templates/`; and `intake/corpus/`. Generate from the shape — there is no example to copy.
+1. **Scaffold from the schema.** Generate `library/context/operator/voice/` from `library/schema/operator/voice/`: create the shared core; `registers/formal.md` and `registers/informal.md`; matching gold-corpus folders plus `aspiration/`; `pairs/`; `templates/`; and `intake/corpus/`. Generate from the shape — there is no example to copy.
 
 2. **Gather samples** (any or all of three routes — all just writing for the agent to read; save raw to `voice/intake/corpus/`):
    - **Admired writing** — articles/posts the operator wishes they wrote. Aspirational seed; gives the reference anchor and the first pairs.
@@ -25,7 +25,7 @@ Build registers from reusable voice temperature and reader relationship, not des
 
 4. **Mine the intake corpus into pairs + profile traits.** Extract pairs tagged independently by voice `register` and task `context`; do not use a platform or deliverable name as a register. Draft profile traits from what the samples actually do, not how the operator describes themselves.
 
-5. **Run the taste interview** ([`taste-interview.md`](../context/operator-schema/voice/intake/taste-interview.md)) — only on the gaps the corpus couldn't reveal (the *why* behind taste, boundaries, registers not yet written, humour). Gap-fill mode if a corpus exists; cold-start full only if there's nothing. Dictated, adversarial, push on vague answers. Save to `voice/intake/transcript-{date}.md`.
+5. **Run the taste interview** ([`taste-interview.md`](../schema/operator/voice/intake/taste-interview.md)) — only on the gaps the corpus couldn't reveal (the *why* behind taste, boundaries, registers not yet written, humour). Gap-fill mode if a corpus exists; cold-start full only if there's nothing. Dictated, adversarial, push on vague answers. Save to `voice/intake/transcript-{date}.md`.
 
 6. **Compile.** Write `voice-profile.md`, `identity.md`, and `anti-patterns.md`; define the formal/informal selection contract and optional base-plus-borrow recipe; and keep each register overlay limited to voice differences evidenced by its corpus. Put channel rules in channel profiles and shape rules in deliverable templates. Finalise pairs with independent register/context tags.
 

@@ -1,16 +1,16 @@
 # `library/process/`
 
-Catalog of reusable process files: what each owns and when to load it. Check here before writing a new procedure — if a row covers the job, load that file instead. New or materially reshaped process files follow [`process-authoring.md`](process-authoring.md), which requires updating this catalog in the same change.
+Catalog of reusable process files: what each owns and when to load it. Check here before writing a new procedure; if a row covers the job, load that file instead. New, reshaped, or retired process files follow [`authoring.md`](authoring.md), which requires updating this catalog in the same change.
 
 ## Process index
 
 | Process | Owns | Load when |
 |---|---|---|
+| [`authoring.md`](authoring.md) | The process-file and deliverable-template shapes, the catalog-row rule, how a new deliverable type is born, and the size caps | Creating, reshaping, or retiring a process file or template, or adding a deliverable type (Builder) |
 | [`career-harvest.md`](career-harvest.md) | Moving real wins into the career bank (proof-points, master-cv bullets, stories) with origin links | A project closes out, or the operator names a win or asks to update the resume bank |
 | [`deck-production.md`](deck-production.md) | Central Deck/PPTX route, PPT Master default, saved design-language handoff, and follow-up-pass versioning/round-trip rules | A deliverable needs deck-shaped output, a project names a design language, or a shared deck gets a revision pass |
 | [`deliverable-versioning.md`](deliverable-versioning.md) | First-draft scaffolding, row/nested-artifact addresses, immutable snapshots, and the version-before-every-content-change rule | Before the first write or rewrite to a kept project deliverable, including every resumed drafting context |
 | [`diagram-production.md`](diagram-production.md) | Diagram route selection (Diagram Design default, D2 for regenerated graphs), the PPT Master native-shape handoff, and design-language brand projection | A system, process, decision, hierarchy, or comparison needs a structural visual |
-| [`humanizer-integration.md`](humanizer-integration.md) | Authorship-aware timing and scope for humanizing public-facing agent prose | A public-facing template directly requires it before writing, during agent rewriting, or at readiness verification |
 | [`image-production.md`](image-production.md) | Image-creation path selection menu | A project or post picks an image path (design language becomes ready, imagery work starts) |
 | [`knowledge-base.md`](knowledge-base.md) | Per-project `sources/` + `knowledge/` substrate schema and workflows | Ingesting sources or maintaining project knowledge |
 | [`media-intake.md`](media-intake.md) | Intake of the operator's own recordings, footage and photos onto the shared media shelf: inventory, dedupe, placement, proxies, review contract, cards | The operator hands over captures to organize or index, or a post/project recording should be registered as reusable |
@@ -18,7 +18,6 @@ Catalog of reusable process files: what each owns and when to load it. Check her
 | [`ready-event.md`](ready-event.md) | Generic readiness/export gate, post-ready judgment checklist, and the voice-harvest gate | A deliverable is being marked good enough to use or share |
 | [`operator-context-setup.md`](operator-context-setup.md) | First-time generation of operator context surfaces | Loading `library/context/operator/` finds a surface missing |
 | [`performance-capture.md`](performance-capture.md) | Post-publication metrics procedure (connector-first, manual gap-fill) and the raw performance CSV shape | About 14 days after a post ships, or a project plan reaches its performance-capture step |
-| [`process-authoring.md`](process-authoring.md) | Authoring standard for process files, incl. the catalog-row requirement | Creating or materially reshaping a file in this folder (Builder) |
 | [`project-activity.md`](project-activity.md) | Material-event line shapes and unresolved Attention shortlist | Appending or interpreting a project event, resolving Attention, or answering a history/why question |
 | [`project-flow.md`](project-flow.md) | The one project shape: kickoff plan, runway loop, files, tracker updates, closeout | Starting a project, working its runway, or closing it out |
 | [`project-frontmatter.md`](project-frontmatter.md) | Compact current-state index, fresh-context load order, schema, and drift check | Reading or writing `project.md` frontmatter for state, routing, or next-action decisions |

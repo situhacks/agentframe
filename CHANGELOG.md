@@ -2,6 +2,19 @@
 
 Notable changes to AgentFrame. Full release notes also live on the [GitHub releases page](https://github.com/situhacks/agentframe/releases).
 
+## Unreleased
+
+- Claude Code only. The Cursor and Codex wiring, the harness manifest, and `af sync-harnesses` are gone.
+- Removed the managed-run daemon and `af automation`, lenses, and the Composio notes. Performance capture lives in `library/process/performance-capture.md`.
+- Removed the board and the orchestrator router, the sealed autonomy contracts, the Workspace Dashboard, the browser harness, open-design, the Gemini research runtime, and upstream-sync.
+- One project shape. `project-flow.md` replaces the three flows and the `flow` field, and a project can point at a code repository with `repo:`.
+- Removed retros, the feedback log and `af feedback`, technical-build, the project-mgmt governance templates, the consolidate skill, the audit database, and every `evolution.md`. The harvests at ready and publish carry the learning, button runs log to `system/logs/af-runs.jsonl`, and friction goes to `system/backlog.md`.
+- Removed the humanizer skill and its process file. For operator-voiced prose, the voice clean pass and `system/voice_lint.py` own the cleanup.
+- One authoring standard, `library/process/authoring.md`, replaces the structure skill, the scaffolding skill, and the process and template authoring files. The template sections now live in `library/deliverables/_meta/deliverable-shape.md`.
+- `system/skills/` is gone. AgentFrame-owned skills live in `.claude/skills/`, where six of them are now operator-invoked; vendored runtimes live in `system/vendor/`. Each folder has its own catalog.
+- The public schemas moved to `library/schema/`, so `library/context/` is wholly private.
+- The routers are shorter, and the builder router gains the enforcement ladder and a rule-to-enforcer table. The README is rewritten for what ships today.
+
 ## v0.1.0 — a context workspace for any kind of work
 
 First public cut of the rebuilt, domain-neutral AgentFrame. It's what I use day to day, it's still moving, and it's free to fork. Works with Claude Code, Codex, Cursor, VS Code, Antigravity, or anything else that reads files.

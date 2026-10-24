@@ -4,7 +4,7 @@
 ``af publish`` refuses a non-ready head, but the button is not on the path that
 actually ships an essay. Copy reaches Substack through the MCP server and the
 operator publishes from the web editor, so every gate hanging off readiness --
-the humanizer pass, the voice harvest, the template's own readiness criteria
+the voice lint, the voice harvest, the template's own readiness criteria
 -- is skipped by doing the obvious thing.
 
 This hook intercepts the last moment AgentFrame can still see the content:
@@ -53,7 +53,7 @@ REASON = (
     "Substack push refused: {source} row '{slug}' is '{status}', not ready. Pushing the "
     "body into draft {draft_id} is the last point AgentFrame can see this copy - the "
     "operator publishes from the Substack editor after this, where nothing can check it. "
-    "Readiness is what runs the humanizer pass, the voice harvest, and the template's "
+    "Readiness is what runs the voice lint, the voice harvest, and the template's "
     "readiness criteria; skipping it here skips all three on the one artifact that reaches "
     "the public feed.\n"
     "Run `python system/af.py ready {project} {slug}` first, or version and finish the head "

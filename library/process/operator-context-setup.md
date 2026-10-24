@@ -7,7 +7,7 @@ the initial generation; per-surface updates afterward fire from their own cadenc
 own "Updates to this file" rules).
 
 The operator context has four surfaces, each with a canonical shape under
-[`library/context/operator-schema/`](../context/operator-schema/README.md). That schema
+[`library/schema/operator/`](../schema/operator/README.md). That schema
 is the single source — the agent **generates** the operator's filled-in file from it;
 there is no example to copy. The operator's files land in `library/context/operator/`,
 which is gitignored (operator content stays private).
@@ -16,10 +16,10 @@ which is gitignored (operator content stays private).
 
 | Surface | Schema | Output | How |
 |---|---|---|---|
-| Positioning | [`operator-schema/positioning.md`](../context/operator-schema/positioning.md) | `operator/positioning.md` | Interview the operator against the shape; write their answers, not the bracketed prompts. |
-| Profile | [`operator-schema/profile.md`](../context/operator-schema/profile.md) | `operator/profile.md` | Same — slowest-cadence surface; mostly a sync pointer to their durable identity notes. |
-| Design language | [`operator-schema/design-language.md`](../context/operator-schema/design-language.md) | `operator/design-language.md` | Confirm tokens/typography against the shape; keep token/slot names stable. |
-| Voice | [`operator-schema/voice/`](../context/operator-schema/voice/README.md) | `operator/voice/` | Do not form-fill — run [`voice-setup.md`](voice-setup.md). Voice comes from real writing, not self-description. |
+| Positioning | [`library/schema/operator/positioning.md`](../schema/operator/positioning.md) | `operator/positioning.md` | Interview the operator against the shape; write their answers, not the bracketed prompts. |
+| Profile | [`library/schema/operator/profile.md`](../schema/operator/profile.md) | `operator/profile.md` | Same — slowest-cadence surface; mostly a sync pointer to their durable identity notes. |
+| Design language | [`library/schema/operator/design-language.md`](../schema/operator/design-language.md) | `operator/design-language.md` | Confirm tokens/typography against the shape; keep token/slot names stable. |
+| Voice | [`library/schema/operator/voice/`](../schema/operator/voice/README.md) | `operator/voice/` | Do not form-fill — run [`voice-setup.md`](voice-setup.md). Voice comes from real writing, not self-description. |
 
 ## Sequence
 
@@ -32,11 +32,11 @@ which is gitignored (operator content stays private).
    operator's corpus + taste interview.
 3. **Confirm load paths.** Once a surface exists in `operator/`, the Operator persona
    loads it from there (see `AGENTS.operator.md` Source-Of-Truth + Routing). The schema
-   under `operator-schema/` is never loaded for project work — only for setup or when the
+   under `library/schema/operator/` is never loaded for project work — only for setup or when the
    shape itself changes.
 
 ## Updating a shape
 
-Change the schema under `operator-schema/`, not a copy — there is no copy. The operator's
+Change the schema under `library/schema/operator/`, not a copy — there is no copy. The operator's
 generated file is regenerated or hand-edited per that surface's own update rules; the
 schema is the durable definition future generations follow.

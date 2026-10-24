@@ -7,7 +7,7 @@ Load this when a project needs a video deliverable. AgentFrame owns the project 
 1. Project `project.md`, current post row, and project architecture when present.
 2. Ready design-language artifacts when visual identity matters.
 3. The calling `video-spec` deliverable.
-4. [`system/skills/hyperframes/SKILL.md`](../../system/skills/hyperframes/SKILL.md), then the upstream route it selects.
+4. [`system/vendor/hyperframes/SKILL.md`](../../system/vendor/hyperframes/SKILL.md), then the upstream route it selects.
 
 For raw footage, generated assets, or audio, let the upstream HyperFrames route select the relevant capability. Do not preselect a workflow from an AgentFrame list.
 

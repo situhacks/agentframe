@@ -2,7 +2,8 @@
 
 Vendored thin skill (see `VENDOR.md`); `SKILL.md` documents the upstream CLI. These notes govern how it runs inside AgentFrame.
 
-- **Triggered from the chain, not by name.** The design-language template's Authoring step owns the trigger: when the operator drops a URL as design inspo, run the extraction — no operator incantation needed. Announce the run ("extracting tokens from {url}"); the first-ever run pulls the CLI + headless Chromium via npx, say so when it's slow.
+- **Triggered from the chain, not by name.** The design-language template's Authoring step owns the trigger: when the operator drops a URL as design inspo, run the extraction — no operator incantation needed. Announce the run ("extracting tokens from {url}").
+- **Pinned CLI.** Invoke `npx designlang@13.3.2` wherever `SKILL.md` says `npx designlang`. The first run downloads the package; the browser is the bundled Chromium if `npx designlang@13.3.2 install-browser` has run, otherwise system Chrome. Exit code `2` is a failed extraction; `3` is a navigation timeout worth one retry.
 - **Output location.** Run with `--out` pointed at the campaign's design-language folder: `phase-{n}/design-language/source-material/extract-{site}/`. Extraction output is research input, never the deliverable.
 - **Distillation, not adoption.** The agent reads `*-design-language.md` + `*-design-tokens.json` and distills into OUR lean `design-language-v{N}.md` shape (palette table, type system, treatment block). Do not paste the upstream 19-section guide in as the artifact.
 

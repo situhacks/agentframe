@@ -5,9 +5,14 @@
 - Installed version: `agent-reach 1.5.0`
 - License: MIT
 - Install date (UTC): `2026-08-19`
-- Upstream reviewed through: `a19a171fa980a0785849596492e0af4db800c82f` (2026-09-15) — 4 commits ahead of the
-  pin, all declined: README star-history and sponsor-link fixes plus a Boss直聘 channel, which the
-  scope decision below excludes. `cookie_extract.py` is untouched, so no re-audit is owed.
+- Upstream reviewed through: `beabda7486e9a666360b18cdb5c0e759c2c4d20f` (tag `v1.6.0`, 2026-10-23), declined.
+  1.6.0 is a rebuild, not an update: one `agent-reach <channel> <action>` entry with a JSON envelope,
+  a downloaded CloakBrowser that copies site cookies from a connected local browser, `rdt-cli` and
+  `twitter-cli` dropped, uv-only installs with tools resolved to the newest in-range version, an
+  update notice, and a skill re-linked into `~/.claude/skills/` on every update. `cookie_extract.py`
+  no longer exists, so the Security posture audit has nothing to re-run against. Reddit, Instagram,
+  and LinkedIn shipped without passing upstream acceptance. Adopting it needs a new security audit,
+  a rewritten `SKILL.md`, and an operator decision on the managed browser.
 - Design plan: [`.claude/plans/2026-08-19-agent-reach-integration-PLAN.md`](../../../.claude/plans/2026-08-19-agent-reach-integration-PLAN.md)
 
 ## Scope
@@ -31,9 +36,10 @@ Supporting tools installed alongside:
 |---|---|---|
 | `pipx` | 1.16.7 | isolated CLI installs |
 | `mcporter` | 0.13.7 (npm -g) | MCP bridge for Exa search and LinkedIn |
-| `uv` / `uvx` | 0.12.5 | runtime for `mcp-server-linkedin` |
+| `uv` / `uvx` | 0.12.5 (Python 3.12 user scripts; a 0.11.7 copy under Python 3.11 resolves first on the Git Bash `PATH`) | runtime for `mcp-server-linkedin` |
 | `rdt-cli` | 0.4.2, pinned `5e4fb3720d5c174e976cd425ccc3b879d52cac66` | Reddit cookie backend |
-| `opencli` | 1.8.6 (npm -g) | browser-session backend (Reddit, Instagram, Facebook) |
+| `twitter-cli` | 0.8.5 (pipx) | legacy X backend; unused, X runs on the OpenCLI browser session |
+| `opencli` | 1.8.7 (npm -g) | browser-session backend (Reddit, X, Instagram, Facebook, TikTok search) |
 
 All tool state lives in `~/.agent-reach/`, `~/.mcporter/`, and `~/.config/rdt-cli/`. Nothing is
 written inside this repository.

@@ -12,13 +12,16 @@ Usage:
 Prints the structured output (when a schema is given) or the response text to stdout; the full
 envelope (status, usage, conversation_id, denied_actions) goes to --out when asked.
 
-The fence, and why it is shaped this way (measured on agy 1.1.27, 2026-09-08):
+The fence, and why it is shaped this way (measurements in agy_call.VENDOR.md):
   * Print mode does NOT gate file writes inside the agent's workspace: neither a view-only
     permissions allow-list nor --mode plan stopped a write_to_file. Only shell commands are gated.
     So the agent never sees a real folder. Every input is copied read-only into a disposable temp
     directory, that directory is the whole workspace (cwd + --add-dir), and it is deleted after.
   * --dangerously-skip-permissions is never passed by default; shell commands stay denied and
     show up in `denied_actions`. --allow-commands opts in for a task that truly needs them.
+  * A denied command ends the turn: `response` comes back empty and `stderr_tail` says
+    "no output produced". Write prompts that need no shell; on an empty response with a denial,
+    re-ask without the step that needed a command, or pass --allow-commands if it is required.
   * Media is handed over by naming its ABSOLUTE PATH in the prompt. The `@file` syntax does not
     attach media in print mode; it makes the agent search the filesystem and burn tokens.
   * Effort lives in the model slug suffix (…-low|medium|high); passing --effort as well is rejected.

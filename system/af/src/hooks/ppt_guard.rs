@@ -1,4 +1,4 @@
-//! Port of system/hooks/ppt_master_guard.py: the PPT Master staging deny and the export
+//! The PPT Master staging deny and the export
 //! promotion reminder.
 
 use super::pathlib::{is_under, name, pjoin};

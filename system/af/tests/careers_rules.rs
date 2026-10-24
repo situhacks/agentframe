@@ -1,4 +1,4 @@
-//! Port of system/tests/test_careers_rules.py against the compiled-in careers rules.
+//! The compiled-in careers rules.
 
 use afcore::packs::careers::{lint, year_only_ranges};
 

@@ -1,7 +1,6 @@
 //! `af hook <event>`: the Claude Code hooks in one process start. The payload arrives on
-//! stdin; the hook's JSON (or nothing) goes to stdout. Each guard is a port of its
-//! system/hooks/*.py script and decides from the payload exactly as the script does;
-//! the event names which guards run, as the matchers in .claude/settings.json do today.
+//! stdin; the hook's JSON (or nothing) goes to stdout. The tool events route to their
+//! guards by `tool_name`; the session events call the handlers in `sessions`.
 
 pub mod index_refresh;
 pub mod pathlib;
@@ -117,7 +116,14 @@ pub fn dispatch(h: &HookCtx, event: &str, stdin_text: &str) -> Result<Option<PyV
     Ok(combine(results))
 }
 
-pub const EVENTS: [&str; 3] = ["pre-tool-use", "post-tool-use", "session-start"];
+pub const EVENTS: [&str; 6] = ["pre-tool-use", "post-tool-use", "session-start", "stop", "session-end", "notification"];
+
+fn emit(o: crate::sessions::HookOutput) -> i32 {
+    if !o.stdout.is_empty() {
+        out::line(&o.stdout);
+    }
+    o.exit
+}
 
 /// `af hook <event> [--harness X] [--cursor-native]`: one process start per event.
 pub fn main(args: &[String]) -> i32 {
@@ -139,12 +145,20 @@ pub fn main(args: &[String]) -> i32 {
         return 1;
     };
     let h = HookCtx::new(&crate::cli::discover_root());
-    if event == "session-start" {
-        return index_refresh::run(&h.root);
-    }
     let mut buf = Vec::new();
     let _ = std::io::stdin().read_to_end(&mut buf);
     let text = String::from_utf8_lossy(&buf);
+    use crate::sessions;
+    match event {
+        "session-start" => {
+            let refresh = index_refresh::refresh(&h.root);
+            return emit(sessions::hook_session_start_with(&h.ctx, &text, refresh));
+        }
+        "stop" => return emit(sessions::hook_stop(&h.ctx, &text)),
+        "session-end" => return emit(sessions::hook_session_end(&h.ctx, &text)),
+        "notification" => return emit(sessions::hook_notification(&h.ctx, &text)),
+        _ => {}
+    }
     match dispatch(&h, event, &text) {
         Ok(result) => {
             let s = result.map(|r| pyjson::dumps(&r)).unwrap_or_else(|| "{}".to_string());

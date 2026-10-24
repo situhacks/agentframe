@@ -17,7 +17,7 @@ pub const BINARY_HEAD_HINT: &str = "the buttons stamp frontmatter, so a binary a
 Markdown head beside it and record the binary in that head's exports[] under media/ \
 (convention: library/process/deck-production.md)";
 
-/// The repo root and the surfaces under it (af.py's module globals).
+/// The repo root and the surfaces under it.
 #[derive(Debug, Clone)]
 pub struct Ctx {
     pub root: String,

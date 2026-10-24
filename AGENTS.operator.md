@@ -43,7 +43,7 @@ Infer the situation from the operator's goal and the project state, not from phr
 | Harvest at ready, publish, or closeout | [`voice-harvest`](.claude/skills/voice-harvest/SKILL.md) and [`deliverable-harvest`](.claude/skills/deliverable-harvest/SKILL.md), one shared source-read | the version trail, the published copy | edits outside the batched review |
 | Builder friction during Operator work | a row in [`system/backlog.md`](system/backlog.md) (shape under State Transitions) | — | system files, unless the operator swaps to Builder |
 | Unsure a capability, process, or type exists | [`.claude/skills/README.md`](.claude/skills/README.md), [`system/vendor/README.md`](system/vendor/README.md), [`library/process/README.md`](library/process/README.md), or the template chain | the file the catalog names | reinventing what a row covers |
-| Locate existing material | `python system/af.py search "<query>"`, then the files it cites | `project.md` once the project is known | web search or grep before `af search` |
+| Locate existing material | `af search "<query>"`, then the files it cites | `project.md` once the project is known | web search or grep before `af search` |
 | Fetch, scrape, or price lookup the default tools cannot reach | [`tool-routes.md`](library/process/tool-routes.md) | [`agent-reach`](.claude/skills/agent-reach/SKILL.md) | retrying a blocked host |
 | Task-class mismatch | the Modes line below | — | continuing under the wrong router |
 
@@ -63,7 +63,7 @@ Scratchpads are throwaway, unversioned, named `scratchpad`; never read prior one
 
 ### State Transitions
 
-Ready, publish, version, scaffold, and drift check are button-owned: `python system/af.py` does the mechanics and prints the judgment checklist. Never hand-edit `ready` or `published` state. Readiness steps: [`ready-event.md`](library/process/ready-event.md).
+Ready, publish, version, scaffold, and drift check are button-owned: `af` does the mechanics and prints the judgment checklist. Never hand-edit `ready` or `published` state. Readiness steps: [`ready-event.md`](library/process/ready-event.md).
 
 When a button refuses or crashes on a shape the project legitimately produces and you work around it, append a row to `system/backlog.md` first: `## BB-YYYY-MM-DD-NN — title`, then one to five lines naming what happened, the evidence pointer, who surfaced it, and `Status: open`. A slip fixed on the retry needs no row.
 

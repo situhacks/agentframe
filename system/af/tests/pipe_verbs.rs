@@ -1,6 +1,5 @@
-//! The `af pipe` verb cases of system/tests/test_af_pipe.py (TestSaveAndStart,
-//! TestStageMachine, TestCloseSearch, and the `pipe stage applied` half of TestReadyGates),
-//! driven through the binary on a temp root carrying the real careers pack.
+//! The `af pipe` verb cases (save and start, the stage machine, close-search, and the
+//! `pipe stage applied` half of the ready gates), driven through the binary on a temp root carrying the real careers pack.
 //! The doctor-only and ready-gate cases are in af_pipe.rs.
 
 mod common;

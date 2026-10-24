@@ -1,5 +1,5 @@
 //! `af studio`: the creator calendar board (workspace/studio/calendar.md `slots:` rows) and
-//! its post folders. Port of af.py `cmd_studio_*` and the slot helpers.
+//! its post folders: every `cmd_studio_*` and the slot helpers.
 
 use crate::core::{self, now_iso, parse_iso_date, read, today, today_date, write, Ctx};
 use crate::die;

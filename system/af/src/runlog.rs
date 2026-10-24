@@ -178,7 +178,7 @@ fn py_repr(v: &Value) -> String {
     }
 }
 
-/// Open BB-* rows whose text names af.py or a state verb.
+/// Open BB-* rows whose text names a state verb.
 pub fn open_backlog_rows_naming_af(ctx: &Ctx) -> usize {
     let path = pyos::join_all(&[&ctx.root, "system", "backlog.md"]);
     if !pyos::isfile(&path) {
@@ -197,12 +197,22 @@ pub fn open_backlog_rows_naming_af(ctx: &Ctx) -> usize {
     }
     cuts.push(text.len());
     let head = rx(r"\A(- id: |## )BB-");
-    let pat = rx(r"af\.py|\baf (ready|publish|version|draft|adopt|pipe|studio|new-project)\b");
+    let pat = rx(r"\baf (ready|publish|version|draft|adopt|pipe|studio|new-project)\b");
     let done = rx(r"(?mi)^\s*-?\s*status:\s*done\b");
     cuts.windows(2)
         .map(|w| &text[w[0]..w[1]])
         .filter(|r| head.is_match(r) && pat.is_match(r) && !done.is_match(r))
         .count()
+}
+
+/// `af session stop` exiting 3 is its HANDOFF_REQUIRED signal, not a refusal.
+fn is_handoff_signal(r: &serde_json::Map<String, Value>) -> bool {
+    let first_two: Vec<&str> = r
+        .get("argv")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().filter_map(Value::as_str).filter(|t| !t.starts_with('-')).take(2).collect())
+        .unwrap_or_default();
+    first_two == ["session", "stop"] && r.get("exit").and_then(Value::as_i64) == Some(3)
 }
 
 /// What the buttons did lately, per state verb, against the open rows that name them.
@@ -227,6 +237,9 @@ pub fn button_notes(ctx: &Ctx) -> Vec<String> {
         }
         if r.get("refusal") == Some(&Value::String("usage".to_string())) {
             usage += 1;
+            continue;
+        }
+        if is_handoff_signal(r) {
             continue;
         }
         if truthy(r.get("crash")) {
@@ -254,7 +267,7 @@ pub fn button_notes(ctx: &Ctx) -> Vec<String> {
         bits.push(format!("{usage} usage slip(s)"));
     }
     vec![format!(
-        "buttons ({BUTTON_WINDOW_DAYS}d): {}. Open BB-* rows naming af.py: {}. A refusal you worked around needs a row (system/backlog.md); a slip fixed on the retry does not.",
+        "buttons ({BUTTON_WINDOW_DAYS}d): {}. Open BB-* rows naming a button: {}. A refusal you worked around needs a row (system/backlog.md); a slip fixed on the retry does not.",
         bits.join("; "),
         open_backlog_rows_naming_af(ctx)
     )]

@@ -1,5 +1,5 @@
-//! Port of system/hooks/index_refresh.py: at session start, when the retrieval index is
-//! more than a day old, spawn one detached `af index update` and say so in one line.
+//! At session start, when the retrieval index is more than a day old, spawn one detached
+//! `af index update` and say so in one line.
 
 use super::pathlib::pjoin;
 use crate::out;
@@ -9,15 +9,12 @@ use std::path::Path;
 pub const REFRESH_AFTER_HOURS: f64 = 24.0;
 pub const LOCK_STALE_HOURS: f64 = 2.0;
 
-/// The child removes the lock when the update ends, so a finished refresh never blocks
-/// the next one; a crashed child leaves a lock that goes stale on its own.
-pub const SHIM: &str = "import os, subprocess, sys; \
-rc = subprocess.run([sys.executable] + sys.argv[1:-1]).returncode; \
-os.path.exists(sys.argv[-1]) and os.remove(sys.argv[-1]); \
-sys.exit(rc)";
+/// The spawned `af index update` removes the lock this names when it ends, so a finished
+/// refresh never blocks the next one; a killed child leaves a lock that goes stale on its own.
+pub const LOCK_ENV: &str = "AF_REFRESH_LOCK";
 
 pub const SPAWNED_LINE: &str = "AgentFrame index: last refresh over a day old; refreshing in the background \
-(python system/af.py index status).";
+(af index status).";
 
 pub struct Paths {
     pub root: String,
@@ -126,17 +123,22 @@ pub fn write_lock(p: &Paths) -> Result<(), String> {
     std::fs::write(&p.lock, format!("{} {}{}", std::process::id(), stamp, out::NL)).map_err(|e| e.to_string())
 }
 
-/// The detached child's argv: `python -c SHIM <root>/system/af.py index update <lock>`.
-pub fn spawn_argv(p: &Paths) -> Vec<String> {
-    vec![
-        "python".into(),
-        "-c".into(),
-        SHIM.into(),
-        pjoin(&p.root, "system/af.py"),
-        "index".into(),
-        "update".into(),
-        p.lock.clone(),
-    ]
+/// The detached child's argv: this binary, `index update`.
+pub fn spawn_argv(_p: &Paths) -> Vec<String> {
+    let exe = std::env::current_exe().map(|e| e.to_string_lossy().into_owned()).unwrap_or_else(|_| "af".into());
+    vec![exe, "index".into(), "update".into()]
+}
+
+/// After any `af index ...` run: remove the lock a session-start refresh handed it.
+pub fn release_lock(argv: &[String]) {
+    if argv.first().map(String::as_str) != Some("index") {
+        return;
+    }
+    if let Ok(lock) = std::env::var(LOCK_ENV) {
+        if !lock.is_empty() && Path::new(&lock).is_file() {
+            let _ = std::fs::remove_file(&lock);
+        }
+    }
 }
 
 /// Write the lock and start the update detached, stdout and stderr appended to refresh.log.
@@ -148,6 +150,8 @@ pub fn spawn(p: &Paths) -> Result<(), String> {
     let mut cmd = std::process::Command::new(&argv[0]);
     cmd.args(&argv[1..])
         .current_dir(&p.root)
+        .env("AF_ROOT", &p.root)
+        .env(LOCK_ENV, &p.lock)
         .stdin(std::process::Stdio::null())
         .stdout(log)
         .stderr(log2);
@@ -167,13 +171,12 @@ pub fn spawn(p: &Paths) -> Result<(), String> {
     cmd.spawn().map(|_| ()).map_err(|e| e.to_string())
 }
 
-/// `main()`: never fails the session.
-pub fn run(root: &str) -> i32 {
+/// The session-start refresh: the one line to show when an update was spawned. Never
+/// fails the session.
+pub fn refresh(root: &str) -> Option<&'static str> {
     let p = Paths::new(root);
-    if let Ok(d) = decide(&p, Local::now().naive_local()) {
-        if d == "spawn" && spawn(&p).is_ok() {
-            out::line(SPAWNED_LINE);
-        }
+    match decide(&p, Local::now().naive_local()) {
+        Ok(d) if d == "spawn" && spawn(&p).is_ok() => Some(SPAWNED_LINE),
+        _ => None,
     }
-    0
 }

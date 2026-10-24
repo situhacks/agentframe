@@ -29,7 +29,7 @@ A type's `template.md` uses this order unless the deliverable earns a different 
 5. `Draft Frontmatter Convention`: only fields this deliverable carries beyond `status` and `last_updated`.
 6. `Readiness Criteria`: what is true before `status: ready`.
 
-Optional, only when it changes what an agent does: `Before Writing` (the button and load steps for a draft or a change), `Clean Pass` (operator-voiced prose: the voice clean pass and `python system/voice_lint.py <head>`), `Feedback / Handoff`, `Publish / Export Mechanics`, `Exceptions / Branches`. No placeholder section says a thing does not apply.
+Optional, only when it changes what an agent does: `Before Writing` (the button and load steps for a draft or a change), `Clean Pass` (operator-voiced prose: the voice clean pass and `af voice lint <head>`), `Feedback / Handoff`, `Publish / Export Mechanics`, `Exceptions / Branches`. No placeholder section says a thing does not apply.
 
 ## Template resolution
 

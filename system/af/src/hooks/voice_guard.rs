@@ -1,9 +1,9 @@
-//! Port of system/hooks/voice_guard.py: the voice lint gate around `af ready` (deny on
-//! hard findings) and the report after `af version`.
+//! The voice lint gate around `af ready` (deny on hard findings) and the report after
+//! `af version`.
 
 use super::pathlib::name;
 use super::shlex::tokens;
-use super::{context, deny, event_of, HookCtx, INTERPRETERS};
+use super::{context, deny, event_of, HookCtx};
 use crate::fm::rx;
 use crate::pyjson::{py_str, str_or, PyVal};
 use crate::pyos;
@@ -17,29 +17,38 @@ then run af ready again. Operator override: prefix the command with AF_VOICE_LIN
 fn version_context(report: &str, new: &str, project: &str, deliverable: &str) -> String {
     format!(
         "{report}\n{new} now holds that text. If a VOICE BUNDLE for this register is already in your context with no \
-compaction since, it is current: continue. Otherwise run `python system/af.py voice bundle {project} {deliverable} \
+compaction since, it is current: continue. Otherwise run `af voice bundle {project} {deliverable} \
 --tier core` for a copyedit pass over his text, or without --tier before drafting a new section, and read the \
 file it names whole (voice/README.md and the rest of the voice system in one read). Hard findings above are \
 yours to fix in this version, and every region you rewrite gets anti-patterns.md before it is surfaced."
     )
 }
 
-/// (verb, project, deliverable) when the command actually invokes af.py.
+const SEPARATORS: [&str; 5] = ["&&", ";", "|", "||", "&"];
+
+/// The `af` binary named by a token: `af`, `af.exe`, or a path ending in either.
+fn is_af(token: &str) -> bool {
+    let base = name(&token.replace('\\', "/")).to_lowercase();
+    base == "af" || base == "af.exe"
+}
+
+/// (verb, project, deliverable) when the command actually runs the `af` binary: the token
+/// starts the command, or follows a separator or an environment assignment.
 fn af_call(toks: &[String]) -> Option<(String, String, String)> {
+    let assignment = rx(r"\A[A-Za-z_][A-Za-z0-9_]*=");
     for (i, token) in toks.iter().enumerate() {
-        let norm = token.replace('\\', "/");
-        if !(norm == "af.py" || norm.ends_with("/af.py")) {
+        if !is_af(token) {
             continue;
         }
         if i != 0 {
-            let prev = name(&toks[i - 1].replace('\\', "/")).to_lowercase();
-            if !INTERPRETERS.contains(&prev.as_str()) {
-                return None;
+            let prev = toks[i - 1].as_str();
+            if !(SEPARATORS.contains(&prev) || assignment.is_match(prev)) {
+                continue;
             }
         }
         let rest: Vec<&String> = toks[i + 1..]
             .iter()
-            .filter(|t| !t.starts_with('-') && !["&&", ";", "|", "||"].contains(&t.as_str()))
+            .filter(|t| !t.starts_with('-') && !SEPARATORS.contains(&t.as_str()))
             .collect();
         if rest.len() < 3 {
             return None;
@@ -72,7 +81,7 @@ pub fn decide(h: &HookCtx, payload: &Value) -> Option<PyVal> {
     } else {
         ""
     };
-    if !command.replace('\\', "/").contains("af.py") {
+    if !command.contains("af") {
         return None;
     }
     let event = event_of(obj.get("hook_event_name"));

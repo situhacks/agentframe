@@ -16,7 +16,7 @@ The product is the deliverable library, the voice system, and the project state 
 |---|---|
 | Session start | [`system/backlog.md`](system/backlog.md), then the files the task names |
 | A process file or template changes | [`library/process/authoring.md`](library/process/authoring.md) |
-| A hook or its wiring changes | `system/hooks/` and [`.claude/settings.json`](.claude/settings.json) |
+| A hook or its wiring changes | `system/af/src/hooks/` and [`.claude/settings.json`](.claude/settings.json) |
 | A vendored runtime changes | [`system/vendor/README.md`](system/vendor/README.md), then its `VENDOR.md` |
 | An owned skill changes | [`.claude/skills/README.md`](.claude/skills/README.md) |
 | Retrieval, ranking, or the corpus boundary changes | [`system/index/EVALS.md`](system/index/EVALS.md) |
@@ -41,11 +41,9 @@ Fix a repeated mistake at the highest level that holds: structure first (one own
 
 | Rule | Enforced by |
 |---|---|
-| Version before editing a deliverable head | `system/hooks/version_guard.py` |
-| Voice hard findings block ready | `system/hooks/voice_guard.py` |
-| PPT Master projects stage outside the vendor tree | `system/hooks/ppt_master_guard.py` |
-| A Substack push needs a ready row | `system/hooks/publish_guard.py` |
+| Version before editing a deliverable head; voice hard findings block ready; PPT Master projects stage outside the vendor tree; a Substack push needs a ready row | `af hook pre-tool-use` |
 | Size caps, dead links, state truth | `af doctor` |
+| A registered chat writes its handoff before stopping | `af hook stop` |
 | Button refusals stay visible | `system/logs/af-runs.jsonl`, counted by `af doctor` |
 
 ## Behavioral Defaults
@@ -54,7 +52,7 @@ Fix a repeated mistake at the highest level that holds: structure first (one own
 - Make surgical changes. Prefer state-shaped rules over phrase lists.
 - Prefer inline agent work over scripts unless determinism, auth, or repeatability makes code the smaller system.
 - When a wrong outcome is cheaply reversible, use judgment and one batched review, not counts, gates, or per-item questions; thresholds go only where mechanics need them.
-- Hook commands use `python "${CLAUDE_PROJECT_DIR}/system/hooks/<name>.py"`; a relative path breaks when the shell's working directory drifts.
+- Hook commands use `AF_ROOT="${CLAUDE_PROJECT_DIR}" af hook <event>`; `AF_ROOT` survives a drifted shell directory.
 - `.claude/settings.json` keeps `worktree.bgIsolation: none` so background sessions see the gitignored `workspace/`.
 - Prose for a reader takes one em dash a sentence at most, never a matched pair.
 
@@ -64,7 +62,7 @@ Fix a repeated mistake at the highest level that holds: structure first (one own
 2. When a name is retired, renamed, or moved, sweep every reference in the same change; a deferred pocket gets a backlog row.
 3. Run the cheapest useful verification: a search, a lint, the tests, or a smoke test.
 
-Group related changes into one commit. A commit that retires a template or changes a schema carries a `MIGRATION:` line naming what replaces it; `af.py` and the frontmatter schema change in the same commit.
+Group related changes into one commit. A commit that retires a template or changes a schema carries a `MIGRATION:` line naming what replaces it; `af` and the frontmatter schema change in the same commit.
 
 ## Backlog
 
@@ -77,7 +75,7 @@ Group related changes into one commit. A commit that retires a template or chang
 | `workspace/` | Life layer, projects, the careers pipeline, the creator studio; Operator-owned |
 | `library/deliverables/`, `library/domains/` | Shared templates and the `_meta` shape; the four packs |
 | `library/process/`, `library/schema/`, `library/assets/` | Procedures; public shapes of the private `workspace/life/`; design languages and media |
-| `system/af.py`, `system/indexer.py`, `system/voice_*.py` | The buttons, `af search` over the derived cache in `system/index/`, the voice bundle and lint |
-| `system/hooks/`, `system/tools/` | Guards wired through `.claude/settings.json`; media, render, diagram, and export tools |
+| `system/af/` | The `af` crate: buttons, hooks, search over the derived cache in `system/index/`, voice bundle and lint |
+| `system/tools/` | Media, render, diagram, and export tools |
 | `system/vendor/`, `.claude/skills/` | Vendored runtimes; AgentFrame-owned skills |
-| `system/tests/` | `python -m pytest system/tests -q -p no:cacheprovider` |
+| Gate | `cargo test` in `system/af/`; `python -m pytest system/tests -q -p no:cacheprovider` for the tools |

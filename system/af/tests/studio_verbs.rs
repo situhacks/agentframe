@@ -1,7 +1,6 @@
-//! The `af studio` verb cases of system/tests/test_af_studio.py (TestNew, TestStateMachine,
-//! TestTopologyPack, and the verb-driven TestStudioDoctor fixtures), driven through the
-//! binary on a temp root carrying the real creator pack. af_studio.rs keeps the cases R1
-//! ported against fixture-written folders.
+//! The `af studio` verb cases (new, the state machine, the topology pack, and the
+//! verb-driven doctor fixtures), driven through the binary on a temp root carrying the real
+//! creator pack. af_studio.rs keeps the cases against fixture-written folders.
 
 mod common;
 use afcore::core::{project_dir, state_doc};

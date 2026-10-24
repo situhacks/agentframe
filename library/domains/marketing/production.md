@@ -32,7 +32,7 @@ Inside the sequence:
 
 ## Publishing
 
-When the operator provides a published post link, follow the Publish / Export Mechanics procedure in [`deliverables/post-final/template.md`](deliverables/post-final/template.md). State transitions are button-owned: `python system/af.py publish` does the mechanics (published-state record on `post-FINAL.md`, tracker, derived published-post receipt, project `shipped_at`) and prints the judgment checklist.
+When the operator provides a published post link, follow the Publish / Export Mechanics procedure in [`deliverables/post-final/template.md`](deliverables/post-final/template.md). State transitions are button-owned: `af publish` does the mechanics (published-state record on `post-FINAL.md`, tracker, derived published-post receipt, project `shipped_at`) and prints the judgment checklist.
 
 ## Output rule
 

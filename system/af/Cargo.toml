@@ -3,7 +3,7 @@ name = "af"
 version = "0.1.0"
 edition = "2021"
 publish = false
-description = "AgentFrame state-transition CLI (the buttons), ported from system/af.py"
+description = "AgentFrame state-transition CLI: the buttons and the hooks"
 
 [lib]
 name = "afcore"

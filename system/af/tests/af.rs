@@ -1,4 +1,4 @@
-//! Port of system/tests/test_af.py: new-project, project state contract, activity notes,
+//! new-project, project state contract, activity notes,
 //! marketing receipts, ready/version/draft/adopt/publish, binary heads, the parser, and a
 //! full lifecycle smoke run.
 

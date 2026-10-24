@@ -46,7 +46,7 @@ Fill each section of `edit.md`:
 
 - **Hook.** The first three seconds decide distribution. If the strongest line is not first, move it first. Under twelve spoken words; identity call, contrarian, open loop, confession, or question. Check `hooks.md` for what has retained before.
 - **Punch-ins.** On emphasis words: scale 1.0 → 1.10–1.15 over 150–250 ms, hold, ease back on the next breath. Three to six per minute. Never on the hook's first frame unless the hook is the punch.
-- **B-roll slots.** Wherever he names something visual, one to two seconds, then back to him. Query the shelf: `python system/af.py search "<what he names>"`, open the card, take `path` (or `proxy`) and pick a sub-window. Full-frame for places and objects; picture-in-picture when his face carries the beat. Append the post slug to the card's `used_in`.
+- **B-roll slots.** Wherever he names something visual, one to two seconds, then back to him. Query the shelf: `af search "<what he names>"`, open the card, take `path` (or `proxy`) and pick a sub-window. Full-frame for places and objects; picture-in-picture when his face carries the beat. Append the post slug to the card's `used_in`.
 - **Text cards.** The claim and any number, once each, in the design language's card style. Not a transcript.
 - **SFX and bed.** From `library/assets/audio/` records only (licence known). A soft whoosh on punch-ins, a pop on cards, a riser into the CTA, a bed at −24 LUFS or lower with ducking under speech. Sparingly; silence is a choice.
 - **Captions.** Verbatim, word-timed, in the identity the design language names. Drop fillers that survived the cut.
@@ -68,7 +68,7 @@ ffmpeg -i renders/final.mp4 -af loudnorm=I=-16:TP=-1.5:LRA=11 -c:v copy renders/
 
 ffmpeg refuses to read and write the same file, so loudness normalization goes to a second name and replaces the render only on success; `-c:v copy` keeps the picture untouched.
 
-Watch the first three seconds and the end card. Confirm captions sit inside the platform's safe zones, duration and size fit the channel profile, and nothing carries a watermark. Then `python system/af.py studio stage <slug> cut`. The operator watches before anything is scheduled.
+Watch the first three seconds and the end card. Confirm captions sit inside the platform's safe zones, duration and size fit the channel profile, and nothing carries a watermark. Then `af studio stage <slug> cut`. The operator watches before anything is scheduled.
 
 ### Caption path
 

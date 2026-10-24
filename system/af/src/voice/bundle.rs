@@ -1,4 +1,4 @@
-//! Port of system/voice_bundle.py: the voice system concatenated into one file under
+//! The voice system concatenated into one file under
 //! `system/index/voice/` so a drafting turn loads it in one read.
 
 use crate::error::R;
@@ -80,7 +80,7 @@ pub fn recipe_from_head(path: &str) -> R<(Option<String>, Vec<String>, Option<St
     let mut base = scalar(&fm, "base_register").or_else(|| scalar(&fm, "register"));
     if let Some(b) = &base {
         if !REGISTERS.contains(&b.as_str()) {
-            // voice_bundle.py: the first register named inside the value, in REGISTERS order
+            // the first register named inside the value, in REGISTERS order
             base = REGISTERS.iter().find(|r| b.contains(*r)).map(|r| r.to_string());
         }
     }

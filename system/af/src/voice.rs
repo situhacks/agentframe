@@ -1,5 +1,4 @@
-//! `af voice bundle` (af.py `cmd_voice_bundle` over system/voice_bundle.py) and
-//! `af voice lint` (system/voice_lint.py's CLI).
+//! `af voice bundle` and `af voice lint`.
 
 pub mod bundle;
 pub mod lint;
@@ -177,7 +176,7 @@ fn project_dir_quiet(ctx: &Ctx, arg: &str) -> R<Option<String>> {
     Ok(None)
 }
 
-/// voice_lint.py `main()`; returns the exit code.
+/// `af voice lint`; returns the exit code.
 pub fn cmd_lint(ctx: &Ctx, a: &LintArgs) -> i32 {
     let path = if let Some(project) = &a.project {
         let Some(deliverable) = &a.deliverable else {
@@ -232,7 +231,7 @@ struct LintCli {
     args: LintArgs,
 }
 
-/// `af voice lint ...` runs outside the button wrapper: voice_lint.py writes no run-log
+/// `af voice lint ...` runs outside the button wrapper: it writes no run-log
 /// row, and a hard finding is a lint result, not a button refusal.
 pub fn intercept(argv: &[String]) -> Option<i32> {
     if argv.first().map(String::as_str) != Some("voice") || argv.get(1).map(String::as_str) != Some("lint") {

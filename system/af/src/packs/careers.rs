@@ -1,4 +1,4 @@
-//! Careers pack rules (library/domains/careers/rules.py): the readiness gate for
+//! Careers pack rules: the readiness gate for
 //! submission materials and the pipeline doctor pass over applications.
 
 use crate::core::{self, today, Ctx};

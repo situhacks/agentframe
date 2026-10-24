@@ -584,7 +584,11 @@ def write_manifest():
 
 
 def reindex():
-    r = run([sys.executable, os.path.join(ROOT, "system", "af.py"), "index", "update"], cwd=ROOT)
+    af = shutil.which("af")
+    if not af:
+        log("af not on PATH (cargo install --path system/af); run af index update by hand")
+        return
+    r = run([af, "index", "update"], cwd=ROOT, env=dict(os.environ, AF_ROOT=ROOT))
     tail = (r.stdout or r.stderr or "").strip().splitlines()
     log("af index update: " + (tail[-1] if tail else f"exit {r.returncode}"))
 
@@ -636,7 +640,7 @@ Then set `review: done` and `reviewed_by: gemini`. Change no other field and kee
 two lines under "## Review notes" in the card body when something matters: a strong two-second moment and
 its timestamp, a person who needs consent, the reason for a reject. The card's `batch_context` names the
 place and event; use it. When the queue is done run
-`python system/tools/media_intake.py render && python system/af.py index update`, then report how many
+`python system/tools/media_intake.py render && af index update`, then report how many
 cards you reviewed, which you rejected or marked private, and every card with `people: others`.
 """
 

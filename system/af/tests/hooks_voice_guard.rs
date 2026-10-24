@@ -1,4 +1,4 @@
-//! Port of system/tests/test_voice_guard.py.
+//! The voice guard around `af ready` and `af version`.
 
 mod common;
 
@@ -76,7 +76,7 @@ fn test_hard_finding_denies_ready() {
     g.version(1, "Clean.", true);
     g.version(2, "Your brain quietly checks out.", true);
     g.project("essay/essay-v2.md");
-    let o = g.decide("python system/af.py ready vg-demo essay");
+    let o = g.decide("af ready vg-demo essay");
     assert_eq!(out(&o)["permissionDecision"], "deny");
     let r = out(&o)["permissionDecisionReason"].as_str().unwrap();
     assert!(r.contains("banned-tic"));
@@ -89,7 +89,7 @@ fn test_hyphen_normalised_against_previous_version_denies() {
     g.version(1, "Even the bad ones - right? More.", true);
     g.version(2, "Even the bad ones — right? More.", true);
     g.project("essay/essay-v2.md");
-    let o = g.decide("python system/af.py ready vg-demo essay/essay-v2.md");
+    let o = g.decide("af ready vg-demo essay/essay-v2.md");
     assert_eq!(out(&o)["permissionDecision"], "deny");
     assert!(out(&o)["permissionDecisionReason"].as_str().unwrap().contains("hyphen-normalised"));
 }
@@ -99,7 +99,7 @@ fn test_clean_head_passes_silently() {
     let g = G::new();
     g.version(1, "A clean sentence. Another one.", true);
     g.project("essay/essay-v1.md");
-    assert!(g.decide("python system/af.py ready vg-demo essay").is_none());
+    assert!(g.decide("af ready vg-demo essay").is_none());
 }
 
 #[test]
@@ -107,7 +107,7 @@ fn test_soft_findings_pass_with_context() {
     let g = G::new();
     g.version(1, "Not unreasonable, I'd say. Fine.", true);
     g.project("essay/essay-v1.md");
-    let o = g.decide("python system/af.py ready vg-demo essay");
+    let o = g.decide("af ready vg-demo essay");
     assert!(out(&o).get("permissionDecision").is_none());
     assert!(out(&o)["additionalContext"].as_str().unwrap().contains("litotes"));
 }
@@ -117,7 +117,7 @@ fn test_operator_override_passes() {
     let g = G::new();
     g.version(1, "Your brain quietly checks out.", true);
     g.project("essay/essay-v1.md");
-    assert!(g.decide("AF_VOICE_LINT=skip python system/af.py ready vg-demo essay").is_none());
+    assert!(g.decide("AF_VOICE_LINT=skip af ready vg-demo essay").is_none());
 }
 
 #[test]
@@ -125,16 +125,16 @@ fn test_non_voiced_head_is_ignored() {
     let g = G::new();
     g.version(1, "Your brain quietly checks out.", false);
     g.project("essay/essay-v1.md");
-    assert!(g.decide("python system/af.py ready vg-demo essay").is_none());
+    assert!(g.decide("af ready vg-demo essay").is_none());
 }
 
 #[test]
 fn test_unrelated_and_malformed_commands_pass() {
     let g = G::new();
     assert!(g.decide("git status").is_none());
-    assert!(g.decide("grep -rn ready system/af.py").is_none());
-    assert!(g.decide("python system/af.py ready nope essay").is_none());
-    assert!(g.decide("python system/af.py doctor vg-demo essay").is_none());
+    assert!(g.decide("grep -rn ready af").is_none());
+    assert!(g.decide("af ready nope essay").is_none());
+    assert!(g.decide("af doctor vg-demo essay").is_none());
 }
 
 // VersionContextTests
@@ -147,7 +147,7 @@ fn test_version_lints_the_closed_version_against_the_one_before() {
     g.version(3, "Even the bad ones — right? More.", true);
     g.project("essay/essay-v3.md");
     let o = g.decide_ev(
-        "python system/af.py version vg-demo essay",
+        "af version vg-demo essay",
         "PostToolUse",
         Some(json!({"stdout": "af version: essay/essay-v2.md -> essay/essay-v3.md (head)"})),
     );
@@ -167,7 +167,7 @@ fn test_refused_version_says_nothing() {
     g.version(1, "Fine.", true);
     g.project("essay/essay-v1.md");
     let o = g.decide_ev(
-        "python system/af.py version vg-demo essay",
+        "af version vg-demo essay",
         "PostToolUse",
         Some(json!({"stdout": "af: ERROR: row 'essay' has no file pointer"})),
     );
@@ -179,7 +179,7 @@ fn test_ready_in_post_tool_use_is_ignored() {
     let g = G::new();
     g.version(1, "Your brain quietly checks out.", true);
     g.project("essay/essay-v1.md");
-    assert!(g.decide_ev("python system/af.py ready vg-demo essay", "PostToolUse", None).is_none());
+    assert!(g.decide_ev("af ready vg-demo essay", "PostToolUse", None).is_none());
 }
 
 // HarnessAdaptationTests
@@ -192,17 +192,18 @@ fn test_garbage_stdin_is_empty_json() {
     assert_eq!(String::from_utf8_lossy(&o.stdout), "{}");
 }
 
-// Beyond the pytest file: the command shapes the tokenizer settles.
+// The command shapes the tokenizer settles.
 
 #[test]
-fn test_af_py_must_follow_an_interpreter() {
+fn test_af_must_start_a_command() {
     let g = G::new();
     g.version(1, "Your brain quietly checks out.", true);
     g.project("essay/essay-v1.md");
-    assert!(g.decide("cat system/af.py ready vg-demo essay").is_none());
-    assert!(g.decide("python3.exe C:/x/system/af.py ready vg-demo essay").is_some());
-    assert!(g.decide("system/af.py ready vg-demo essay").is_some());
-    // posix shlex eats unquoted backslashes, so a bare Windows path never matches
-    assert!(g.decide("python C:\\x\\system\\af.py ready vg-demo essay").is_none());
-    assert!(g.decide("python \"C:\\x\\system\\af.py\" ready vg-demo essay").is_some());
+    assert!(g.decide("cat af ready vg-demo essay").is_none());
+    assert!(g.decide("echo af ready vg-demo essay").is_none());
+    assert!(g.decide("C:/Users/x/.cargo/bin/af.exe ready vg-demo essay").is_some());
+    assert!(g.decide("cd x && af ready vg-demo essay").is_some());
+    assert!(g.decide("AF_ROOT=/v af ready vg-demo essay").is_some());
+    // posix shlex eats unquoted backslashes; a quoted Windows path keeps its name
+    assert!(g.decide("\"C:\\x\\af.exe\" ready vg-demo essay").is_some());
 }

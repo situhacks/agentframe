@@ -1,4 +1,4 @@
-//! Port of system/hooks/version_guard.py: deny unsafe writes to versioned files.
+//! Deny unsafe writes to versioned files.
 
 use super::pathlib::{is_absolute, is_under, name, pjoin, pstr};
 use super::{deny, event_is, HookCtx};
@@ -73,7 +73,7 @@ fn decide_target(h: &HookCtx, path: &str, write: bool) -> Result<Option<PyVal>, 
     let exists = Path::new(path).exists();
     if exists && status(path)?.as_deref() == Some("published") {
         let exit_path = if version_re().is_match(&fname) {
-            "run `python system/af.py version` with the row or nested-artifact address; \
+            "run `af version` with the row or nested-artifact address; \
 the command creates a new drafting head while preserving the published version."
         } else {
             "create a new tracked edition; this unversioned published record cannot be reopened."
@@ -87,13 +87,13 @@ the command creates a new drafting head while preserving the published version."
         if !versions.is_empty() {
             return Ok(Some(deny(&format!(
                 "Do not hand-create {fname}; '{stem}' already has a version chain. \
-Use `python system/af.py version <project> <row>` or add \
+Use `af version <project> <row>` or add \
 `--artifact <name>` for a nested artifact so numbering and tracker state stay safe."
             ))));
         }
         return Ok(Some(deny(&format!(
             "Do not hand-create first draft {fname}. Use \
-`python system/af.py draft <project> <row> --file <path>` or \
+`af draft <project> <row> --file <path>` or \
 `--artifact <name>` so v1 and tracker state are created together."
         ))));
     }
@@ -110,7 +110,7 @@ Restore by creating a new version, never by editing history."
             "Full-file Write would clobber {fname}'s drafted content, and workspace files have \
 no git history to restore from. If this head is already the fresh copy from \
 `af version`, write the change as targeted Edit calls on it. Otherwise snapshot first \
-(`python system/af.py version <project> <row>`, `--artifact <name>` for nested), then \
+(`af version <project> <row>`, `--artifact <name>` for nested), then \
 apply the rewrite as one Edit replacing the new head's body."
         ))));
     }

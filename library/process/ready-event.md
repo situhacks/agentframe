@@ -11,9 +11,9 @@ Load when the operator signals that a deliverable is good enough to use/share or
 ## Procedure
 
 1. Read the deliverable template and verify its readiness criteria.
-2. Run any explicitly declared pre-ready quality gates. For operator-voiced prose, `python system/voice_lint.py <head>` must report no hard findings (`af ready` refuses them).
+2. Run any explicitly declared pre-ready quality gates. For operator-voiced prose, `af voice lint <head>` must report no hard findings (`af ready` refuses them).
 3. For exportable deliverables, land approved finals inside the deliverable folder and record every path in `exports[]`. `af ready` refuses missing or dangling exports unless the operator explicitly approves the rare override.
-4. Run `python system/af.py ready <project-slug> <deliverable-slug-or-path>`. The button updates artifact and tracker state together, runs any domain readiness hook, and records the event.
+4. Run `af ready <project-slug> <deliverable-slug-or-path>`. The button updates artifact and tracker state together, runs any domain readiness hook, and records the event.
 5. Work the printed checklist and surface unresolved follow-ups. If later feedback changes the deliverable materially, run `af version`; small corrections may update the ready head in place.
 
 ## Voice Harvest Gate
@@ -23,7 +23,7 @@ Load when the operator signals that a deliverable is good enough to use/share or
 
 ## Verification Or Logging
 
-Run `python system/af.py doctor <project-slug>` after the transition. The artifact and tracker must both read `ready`, the pointer must name the numeric head, and required exports must resolve.
+Run `af doctor <project-slug>` after the transition. The artifact and tracker must both read `ready`, the pointer must name the numeric head, and required exports must resolve.
 
 ## Boundaries
 

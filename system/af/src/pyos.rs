@@ -1,7 +1,7 @@
-//! Python `os.path` (ntpath on Windows, posixpath elsewhere) and the few `os` calls af.py
-//! makes, as string operations.
+//! Python `os.path` (ntpath on Windows, posixpath elsewhere) and the few `os` calls the
+//! buttons make, as string operations.
 //!
-//! af.py builds paths by string joins and prints some of them (`{cdir} already exists`,
+//! The buttons build paths by string joins and prints some of them (`{cdir} already exists`,
 //! relpaths in doctor lines), and it compares normalized strings in places
 //! (`abspath(a) == abspath(b)`). Reproducing the string semantics, mixed separators
 //! included, keeps those outputs and comparisons byte-identical.

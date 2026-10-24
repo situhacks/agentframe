@@ -1,4 +1,4 @@
-//! Port of system/hooks/publish_guard.py: refuse a Substack draft push whose tracker row
+//! Refuse a Substack draft push whose tracker row
 //! sits below `ready`.
 
 use super::{deny, event_is, truthy, HookCtx};
@@ -22,7 +22,7 @@ operator publishes from the Substack editor after this, where nothing can check 
 Readiness is what runs the voice lint, the voice harvest, and the template's \
 readiness criteria; skipping it here skips all three on the one artifact that reaches \
 the public feed.\n\
-Run `python system/af.py ready {project} {slug}` first, or version and finish the head \
+Run `af ready {project} {slug}` first, or version and finish the head \
 if it is not actually done. If this push is deliberate and the row is wrong, fix the \
 row rather than working around this."
     )

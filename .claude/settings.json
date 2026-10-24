@@ -1,4 +1,9 @@
 {
+  "permissions": {
+    "deny": [
+      "Bash(git push *)"
+    ]
+  },
   "hooks": {
     "SessionStart": [
       {
@@ -6,7 +11,39 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/index_refresh.py\""
+            "command": "AF_ROOT=\"${CLAUDE_PROJECT_DIR}\" af hook session-start"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "AF_ROOT=\"${CLAUDE_PROJECT_DIR}\" af hook stop"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "AF_ROOT=\"${CLAUDE_PROJECT_DIR}\" af hook session-end",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "agent_completed|agent_needs_input",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "AF_ROOT=\"${CLAUDE_PROJECT_DIR}\" af hook notification"
           }
         ]
       }
@@ -17,7 +54,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/version_guard.py\""
+            "command": "AF_ROOT=\"${CLAUDE_PROJECT_DIR}\" af hook pre-tool-use"
           }
         ]
       },
@@ -26,11 +63,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/ppt_master_guard.py\""
-          },
-          {
-            "type": "command",
-            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/voice_guard.py\""
+            "command": "AF_ROOT=\"${CLAUDE_PROJECT_DIR}\" af hook pre-tool-use"
           }
         ]
       },
@@ -39,7 +72,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/publish_guard.py\""
+            "command": "AF_ROOT=\"${CLAUDE_PROJECT_DIR}\" af hook pre-tool-use"
           }
         ]
       }
@@ -50,11 +83,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/ppt_master_guard.py\""
-          },
-          {
-            "type": "command",
-            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/voice_guard.py\""
+            "command": "AF_ROOT=\"${CLAUDE_PROJECT_DIR}\" af hook post-tool-use"
           }
         ]
       }

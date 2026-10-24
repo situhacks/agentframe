@@ -1,4 +1,4 @@
-//! Port of system/tests/test_voice_bundle.py.
+//! `af voice bundle`.
 
 mod common;
 

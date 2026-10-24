@@ -8,7 +8,7 @@ Available image-creation paths for AgentFrame. Load this when a project or post 
 | HTML render + browser screenshot | Slide-shaped visuals from tokens/layout are enough (covers, diagrams, doc-style panels). | `design-language` (tokens + layout guidance) | `carousel-slide-{i}.html` and manual PNG screenshots in the post's `visuals/` |
 | Gemini Nano Banana 2 (`gemini-3.1-flash-image-preview`) | Default raster generation for standard illustrations and fast A/B/C variants. | `image-prompts` | `image-variant-{a|b|c}.png` via `system/tools/image_generate.py` |
 | Gemini Nano Banana Pro (`gemini-3-pro-image-preview`) | Prompt fidelity and text-in-image quality matter more than speed (hero or leadership-facing visuals). | `image-prompts` | `image-variant-{a|b|c}.png` via `system/tools/image_generate.py` |
-| External / stock / operator-provided | Existing assets are already the right fit; no model generation needed. The operator's own captures live on the shared media shelf (`library/assets/media/`, schema in [`library/assets/README.md`](../assets/README.md)) and are found with `python system/af.py search "<scene>"`; reference the card's path, never copy the file. | calling deliverable | Referenced asset path(s) in the post folder |
+| External / stock / operator-provided | Existing assets are already the right fit; no model generation needed. The operator's own captures live on the shared media shelf (`library/assets/media/`, schema in [`library/assets/README.md`](../assets/README.md)) and are found with `af search "<scene>"`; reference the card's path, never copy the file. | calling deliverable | Referenced asset path(s) in the post folder |
 
 ## Record convention
 

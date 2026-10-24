@@ -1,8 +1,5 @@
-//! Port of system/tests/test_af_buttons.py: the run log, draft/adopt routing messages,
-//! adopt bookkeeping, assembly-record rows, and the doctor buttons note.
-//!
-//! Not ported: LazyIndexer (two cases). `index`/`search` stay on the Python until R2+, and
-//! the binary has no indexer import to break.
+//! The run log, draft/adopt routing messages, adopt bookkeeping, assembly-record rows,
+//! and the doctor buttons note.
 
 mod common;
 use afcore::cli;
@@ -286,11 +283,11 @@ fn test_open_backlog_rows_naming_af_are_counted() {
     let l = Log::new();
     l.fx.write(
         "root/system/backlog.md",
-        "# Backlog\n\nprose mentioning af.py that is not a row\n\n\
+        "# Backlog\n\nprose mentioning af ready that is not a row\n\n\
 ## BB-2026-09-01-01 — prose only\nnothing about buttons here\nStatus: open\n\n\
 ## BB-2026-09-01-02 — `af ready` refuses a shape\nthe button dies on it\nStatus: open\n\n\
 ## BB-2026-09-01-04 — `af draft` crashed once\nfixed in the parser\nStatus: done\n\n\
-```yaml\n- id: BB-2026-09-01-03\n  one_line: af.py draft path bug\n```\n",
+```yaml\n- id: BB-2026-09-01-03\n  one_line: af draft path bug\n```\n",
     );
     let ctx = Ctx::new(&l.fx.p("root"));
     assert_eq!(runlog::open_backlog_rows_naming_af(&ctx), 2);

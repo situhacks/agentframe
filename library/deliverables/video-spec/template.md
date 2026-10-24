@@ -60,7 +60,7 @@ Generated media files, `video/renders/scenes/`, `video/renders/final/`, `edit/pr
 
 ## Clean Pass
 
-Only when the upstream HyperFrames `SCRIPT.md` carries narration, captions, or on-screen text in the operator's voice: run the voice clean pass (`workspace/life/voice/README.md` step 3) and `python system/voice_lint.py <head>` on that prose when it is authored or substantively revised, not again at readiness. Other script prose, `STORYBOARD.md`, production fields, commands, frontmatter, code, and model prompt text get no extra pass.
+Only when the upstream HyperFrames `SCRIPT.md` carries narration, captions, or on-screen text in the operator's voice: run the voice clean pass (`workspace/life/voice/README.md` step 3) and `af voice lint <head>` on that prose when it is authored or substantively revised, not again at readiness. Other script prose, `STORYBOARD.md`, production fields, commands, frontmatter, code, and model prompt text get no extra pass.
 
 ## Exceptions / Branches
 

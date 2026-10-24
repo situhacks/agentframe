@@ -431,14 +431,6 @@ pub enum SessionCmd {
         #[arg(long)]
         session: String,
     },
-    #[command(name = "hook_session_start", hide = true)]
-    HookSessionStart,
-    #[command(name = "hook_stop", hide = true)]
-    HookStop,
-    #[command(name = "hook_session_end", hide = true)]
-    HookSessionEnd,
-    #[command(name = "hook_notification", hide = true)]
-    HookNotification,
 }
 
 pub fn run(ctx: &Ctx, cmd: SessionCmd) -> R<i32> {
@@ -454,25 +446,7 @@ pub fn run(ctx: &Ctx, cmd: SessionCmd) -> R<i32> {
             }
             Ok(0)
         }
-        SessionCmd::HookSessionStart => emit(hook_session_start(ctx, &stdin_text())),
-        SessionCmd::HookStop => emit(hook_stop(ctx, &stdin_text())),
-        SessionCmd::HookSessionEnd => emit(hook_session_end(ctx, &stdin_text())),
-        SessionCmd::HookNotification => emit(hook_notification(ctx, &stdin_text())),
     }
-}
-
-fn stdin_text() -> String {
-    use std::io::Read;
-    let mut s = String::new();
-    let _ = std::io::stdin().read_to_string(&mut s);
-    s
-}
-
-fn emit(o: HookOutput) -> R<i32> {
-    if !o.stdout.is_empty() {
-        out::line(&o.stdout);
-    }
-    Ok(o.exit)
 }
 
 fn clean_cell(label: &str, v: &str) -> R<String> {
@@ -594,8 +568,9 @@ fn pick(reg: &Registry, name: Option<&str>, session: Option<&str>) -> R<Option<R
 }
 
 /// The stop mechanics shared by the verb and the Stop hook: stamp, then check.
-/// Some(handoff rel) when a handoff is required.
-pub fn stop_row(ctx: &Ctx, name: Option<&str>, session: Option<&str>) -> R<Option<String>> {
+/// Some(handoff rel) when a handoff is required. With `exempt_main`, a `main` row is
+/// only stamped: its state is life.md and open.md, which it writes all day.
+pub fn stop_row(ctx: &Ctx, name: Option<&str>, session: Option<&str>, exempt_main: bool) -> R<Option<String>> {
     let mut reg = Registry::load(ctx)?;
     let mut row = match pick(&reg, name, session)? {
         Some(r) => r,
@@ -604,11 +579,14 @@ pub fn stop_row(ctx: &Ctx, name: Option<&str>, session: Option<&str>) -> R<Optio
     row.touch(false);
     reg.upsert(&row);
     reg.save()?;
+    if exempt_main && row.role == "main" {
+        return Ok(None);
+    }
     Ok(if handoff_required(ctx, &row)? { Some(handoff_rel(&row.name)) } else { None })
 }
 
 pub fn cmd_stop(ctx: &Ctx, name: Option<&str>, session: Option<&str>) -> R<i32> {
-    match stop_row(ctx, name, session)? {
+    match stop_row(ctx, name, session, false)? {
         Some(rel) => {
             outln!("HANDOFF_REQUIRED {rel}");
             Ok(3)
@@ -654,14 +632,23 @@ fn file_block(ctx: &Ctx, label: &str, rel: &str) -> R<Option<String>> {
 
 /// The SessionStart injection for a session id, and its registry row.
 pub fn bundle(ctx: &Ctx, session_id: &str) -> R<(String, Option<Row>)> {
+    bundle_with(ctx, session_id, None)
+}
+
+/// The bundle, led by the index-refresh line when the session-start hook spawned a
+/// refresh (which then stands in for the index age line).
+pub fn bundle_with(ctx: &Ctx, session_id: &str, refresh: Option<&str>) -> R<(String, Option<Row>)> {
     let reg = Registry::load(ctx)?;
     let row = reg.find_session(session_id);
     let mut parts: Vec<String> = Vec::new();
+    if let Some(line) = refresh {
+        parts.push(line.to_string());
+    }
     match &row {
         Some(r) => parts.push(format!("af: you are {} ({})", r.name, r.role)),
         None => parts.push(format!(
             "af: unregistered session; register with \"af session register <name> --session {session_id}\" or stay ad hoc\n\
-af: names are {NAME_GRAMMAR}; classify the task first (AGENTS.md: project execution -> AGENTS.operator.md, system construction -> AGENTS.builder.md)"
+af: names are {NAME_GRAMMAR}; classify the task first (AGENTS.md: project work -> AGENTS.operator.md, system work -> AGENTS.builder.md, anything else -> main)"
         )),
     }
     let is_main = row.as_ref().map(|r| r.role == "main").unwrap_or(false);
@@ -708,8 +695,10 @@ af: names are {NAME_GRAMMAR}; classify the task first (AGENTS.md: project execut
             parts.push(tail.join("\n"));
         }
     }
-    if let Some(ix) = life::index_age_line(ctx) {
-        parts.push(ix);
+    if refresh.is_none() {
+        if let Some(ix) = life::index_age_line(ctx) {
+            parts.push(ix);
+        }
     }
     Ok((parts.join("\n\n"), row))
 }
@@ -740,14 +729,21 @@ fn field<'a>(p: &'a Value, key: &str) -> &'a str {
 /// SessionStart (startup, resume, clear, compact, fork): the bundle as additionalContext,
 /// the registered name as sessionTitle; stamps the row live.
 pub fn hook_session_start(ctx: &Ctx, payload_text: &str) -> HookOutput {
+    hook_session_start_with(ctx, payload_text, None)
+}
+
+/// SessionStart with the index-refresh line `af hook session-start` hands it. Without a
+/// session id (or on a broken registry) the refresh line alone goes out as plain text.
+pub fn hook_session_start_with(ctx: &Ctx, payload_text: &str, refresh: Option<&str>) -> HookOutput {
+    let alone = || HookOutput { stdout: refresh.unwrap_or("").to_string(), exit: 0 };
     let p = payload(payload_text);
     let id = field(&p, "session_id");
     if id.is_empty() {
-        return HookOutput::quiet();
+        return alone();
     }
-    let (text, row) = match bundle(ctx, id) {
+    let (text, row) = match bundle_with(ctx, id, refresh) {
         Ok(b) => b,
-        Err(_) => return HookOutput::quiet(),
+        Err(_) => return alone(),
     };
     if let Some(r) = &row {
         if let Ok(mut reg) = Registry::load(ctx) {
@@ -764,7 +760,8 @@ pub fn hook_session_start(ctx: &Ctx, payload_text: &str) -> HookOutput {
     HookOutput { stdout: json!({"hookSpecificOutput": hso}).to_string(), exit: 0 }
 }
 
-/// Stop: block once with the handoff instruction when `af session stop` would exit 3.
+/// Stop: block once with the handoff instruction when `af session stop` would exit 3;
+/// a `main` row is stamped and never blocked.
 pub fn hook_stop(ctx: &Ctx, payload_text: &str) -> HookOutput {
     let p = payload(payload_text);
     if p.get("stop_hook_active").and_then(|v| v.as_bool()).unwrap_or(false) {
@@ -774,7 +771,7 @@ pub fn hook_stop(ctx: &Ctx, payload_text: &str) -> HookOutput {
     if id.is_empty() {
         return HookOutput::quiet();
     }
-    match stop_row(ctx, None, Some(id)) {
+    match stop_row(ctx, None, Some(id), true) {
         Ok(Some(rel)) => {
             let reason = format!("Write {rel} (State, Open questions, Next step, Files touched) before stopping.");
             HookOutput { stdout: json!({"decision": "block", "reason": reason}).to_string(), exit: 0 }

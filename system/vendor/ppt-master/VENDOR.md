@@ -20,5 +20,5 @@ Track the upstream source and refresh procedure for the vendored PPT Master deck
 4. Copy every upstream `docs/**/*.md` into `system/docs/`, preserving relative paths. These files are vendor-owned dependencies, not AgentFrame summaries.
 5. Copy the upstream root `LICENSE` to `system/vendor/ppt-master/LICENSE.txt`, then restore the two overlay files.
 6. Remove the temporary clone directory.
-7. Run `python system/vendor/ppt-master/scripts/attribution_guard.py` (exit 0), `python -m unittest system.tests.test_ppt_master_guard system.tests.test_ppt_master_vendor`, and `python system/af.py doctor`. If upstream changed an integration contract, update the AgentFrame boundary or guard; never restate or patch vendor-owned workflow guidance.
+7. Run `python system/vendor/ppt-master/scripts/attribution_guard.py` (exit 0), `python -m unittest system.tests.test_ppt_master_vendor`, `cargo test --test hooks_ppt_guard` in `system/af/`, and `af doctor`. If upstream changed an integration contract, update the AgentFrame boundary or guard; never restate or patch vendor-owned workflow guidance.
 8. Run `git status --short --ignored system/vendor/ppt-master system/docs`. Any `!!` line other than `__pycache__/` is a vendor file a `.gitignore` rule hides; the repo-wide `docs/` rule catches `scripts/docs/`. Re-include it in `.gitignore` before committing.

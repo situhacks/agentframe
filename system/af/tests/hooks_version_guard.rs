@@ -1,4 +1,4 @@
-//! Port of system/tests/test_version_guard.py.
+//! The version guard on Edit and Write.
 
 mod common;
 
@@ -66,7 +66,7 @@ fn test_full_write_over_nonempty_head_body_is_denied() {
     let (d, r) = reason(&g.decide(&head, "Write"));
     assert_eq!(d, "deny");
     assert!(r.contains("targeted Edit calls"));
-    assert!(r.contains("af.py version"));
+    assert!(r.contains("`af version"));
 }
 
 #[test]
@@ -139,7 +139,7 @@ fn test_direct_v1_is_denied() {
     let g = G::new();
     let (d, r) = reason(&g.decide(&g.folder("copy-v1.md"), "Write"));
     assert_eq!(d, "deny");
-    assert!(r.contains("af.py draft"));
+    assert!(r.contains("`af draft "));
 }
 
 #[test]
@@ -166,10 +166,10 @@ fn test_tracked_claude_settings_wires_guard() {
         .iter()
         .flat_map(|e| e["hooks"].as_array().unwrap().iter().map(|h| h["command"].as_str().unwrap().to_string()))
         .collect();
-    assert!(commands.iter().any(|c| c.contains("version_guard.py")));
+    assert!(commands.iter().any(|c| c.contains("af hook pre-tool-use")));
 }
 
-// Beyond the pytest file: shapes the Python handles by failing open.
+// Shapes the guard handles by failing open.
 
 #[test]
 fn test_new_version_in_a_missing_folder_fails_open_like_the_python() {

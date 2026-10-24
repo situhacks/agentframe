@@ -39,13 +39,13 @@ Marketing posts use the nested form: the post row points at unversioned `post-FI
 For a tracker-owned deliverable:
 
 ```text
-python system/af.py draft <project> <row> --file <project-relative-name-v1.md>
+af draft <project> <row> --file <project-relative-name-v1.md>
 ```
 
 For a nested artifact:
 
 ```text
-python system/af.py draft <project> <parent-row> --artifact <artifact-name>
+af draft <project> <parent-row> --artifact <artifact-name>
 ```
 
 The command creates a shared frontmatter container with `status: drafting` and `last_updated`, refuses an existing chain, and updates tracker state. A domain hook may create or reconcile a parent assembly record; for a marketing post, the first ingredient creates `post-FINAL.md` and keeps the post row pointed there.
@@ -55,7 +55,7 @@ After scaffolding, load the resolved template and add any template-specific fron
 When a renderer or external authoring step already produced a valid `status: drafting` Markdown artifact, register it without overwriting the file:
 
 ```text
-python system/af.py adopt <project> <row> --file <project-relative-name-v1.md>
+af adopt <project> <row> --file <project-relative-name-v1.md>
 ```
 
 `af adopt` creates the tracker row when absent, updates an empty placeholder row when present, and refuses an existing competing artifact.
@@ -65,13 +65,13 @@ python system/af.py adopt <project> <row> --file <project-relative-name-v1.md>
 For a tracker-owned head:
 
 ```text
-python system/af.py version <project> <row>
+af version <project> <row>
 ```
 
 For a nested artifact:
 
 ```text
-python system/af.py version <project> <parent-row> --artifact <artifact-name>
+af version <project> <parent-row> --artifact <artifact-name>
 ```
 
 Run the command before changing content. It resolves the exact numeric head, creates `N+1`, resets the new head to drafting, refuses malformed/missing/colliding addresses, and leaves the prior version untouched. The nested form updates parent drafting state but does not move the parent file pointer.

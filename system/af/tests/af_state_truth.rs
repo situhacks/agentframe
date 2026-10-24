@@ -1,4 +1,4 @@
-//! Port of system/tests/test_af_state_truth.py: the repo-root path guard, published-and-
+//! The repo-root path guard, published-and-
 //! not-ready drift, empty-head notes, and readying a nested manifest ingredient.
 
 mod common;

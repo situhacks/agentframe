@@ -1,4 +1,4 @@
-//! Frontmatter as text: the regex helpers af.py edits state with.
+//! Frontmatter as text: the regex helpers the buttons edit state with.
 //!
 //! Nothing here round-trips YAML. Keys are found and replaced in place with the same
 //! patterns the Python uses, so comment lines, blank lines, key order, and the quirks

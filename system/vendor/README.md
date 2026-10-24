@@ -17,4 +17,4 @@ Vendored binaries and wrappers outside this folder carry their own records: the 
 - Do not edit vendored files to change behaviour. AgentFrame rules live in the overlay files and the routing process file.
 - Refresh a runtime by its `VENDOR.md`, then run the smoke test it names.
 - PPTX and DOCX rendering goes through [`native-office-render.md`](../../library/process/native-office-render.md); the vendored `soffice` recipes do not run.
-- Deck projects and exports never stage inside `ppt-master/`. `system/hooks/ppt_master_guard.py` denies the staging and `af doctor` reports strays.
+- Deck projects and exports never stage inside `ppt-master/`. `af hook pre-tool-use` denies the staging and `af doctor` reports strays.

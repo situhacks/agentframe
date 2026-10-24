@@ -1,5 +1,5 @@
-//! Port of system/tests/test_ppt_master_guard.py (the hook cases; the doctor stray-deck
-//! cases were ported in R1 to tests/design_language_check.rs).
+//! The PPT Master staging guard and export reminder (the doctor stray-deck cases are in
+//! tests/design_language_check.rs).
 
 mod common;
 

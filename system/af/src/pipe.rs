@@ -1,5 +1,5 @@
 //! `af pipe`: the careers pipeline board (workspace/pipeline/pipeline.md) and its
-//! application folders. Port of af.py `cmd_pipe_*`, `topology_pack`, and the board helpers.
+//! application folders: every `cmd_pipe_*`, `topology_pack`, and the board helpers.
 
 use crate::core::{self, append_activity, load_pack, now_iso, read, today, today_date, write, Ctx};
 use crate::die;

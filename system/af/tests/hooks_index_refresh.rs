@@ -1,4 +1,4 @@
-//! Port of system/tests/test_index_refresh.py.
+//! The session-start index refresh.
 
 mod common;
 
@@ -51,9 +51,8 @@ fn test_stale_index_spawns_one_detached_update_and_locks() {
     r.make_db(REFRESH_AFTER_HOURS + 1.0);
     assert_eq!(decide(&r.p, now()).unwrap(), "spawn");
     let argv = spawn_argv(&r.p);
-    let n = argv.len();
-    assert_eq!(argv[n - 4..n - 1], [r.fx.p("system/af.py"), "index".to_string(), "update".to_string()]);
-    assert_eq!(argv[n - 1], r.p.lock);
+    assert_eq!(argv[1..], ["index".to_string(), "update".to_string()]);
+    assert!(argv[0].to_lowercase().contains("af"), "the child is this binary: {}", argv[0]);
     write_lock(&r.p).unwrap();
     assert!(r.fx.isfile("system/index/refresh.lock"));
     assert_eq!(decide(&r.p, now()).unwrap(), "a refresh is already running");
@@ -78,4 +77,17 @@ fn test_main_never_fails_the_session() {
     let o = r.fx.af().args(["hook", "session-start", "--harness", "claude", "--cursor-native"]).output().unwrap();
     assert_eq!(o.status.code(), Some(0));
     assert!(o.stdout.is_empty());
+}
+
+#[test]
+fn test_the_spawned_update_releases_the_lock() {
+    let r = R::new();
+    r.fx.write("AGENTS.md", "# root\n");
+    write_lock(&r.p).unwrap();
+    let o = r.fx.af().args(["index", "status"]).env(afcore::hooks::index_refresh::LOCK_ENV, &r.p.lock).output().unwrap();
+    assert!(o.status.code().is_some());
+    assert!(!r.fx.isfile("system/index/refresh.lock"));
+    write_lock(&r.p).unwrap();
+    r.fx.af().args(["doctor"]).env(afcore::hooks::index_refresh::LOCK_ENV, &r.p.lock).output().unwrap();
+    assert!(r.fx.isfile("system/index/refresh.lock"), "only an index run releases it");
 }

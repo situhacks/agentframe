@@ -28,7 +28,7 @@ A blend always has one base. Load the base as the imitation anchor, then borrow 
 
 ## Load path
 
-After resolving the recipe, `python system/af.py voice bundle <project> <deliverable>` (or `--register {base} --context {task}`) writes the load below to one file under `system/index/voice/`; read it whole. Two tiers: `full` (the default for long-form and slide contexts) is the whole list; `core` (the default for `email` and `short-form`, or `--tier core`) drops the pairs and keeps one exemplar, and serves a short write or a copyedit pass over operator-edited text. The bundle stays loaded for the session: read it again only after a compaction, when the register changes, or before the back half of a long draft. By hand, load:
+After resolving the recipe, `af voice bundle <project> <deliverable>` (or `--register {base} --context {task}`) writes the load below to one file under `system/index/voice/`; read it whole. Two tiers: `full` (the default for long-form and slide contexts) is the whole list; `core` (the default for `email` and `short-form`, or `--tier core`) drops the pairs and keeps one exemplar, and serves a short write or a copyedit pass over operator-edited text. The bundle stays loaded for the session: read it again only after a compaction, when the register changes, or before the back half of a long draft. By hand, load:
 
 - `identity.md`, `voice-profile.md`, and `anti-patterns.md`;
 - `registers/{base_register}.md`;
@@ -41,7 +41,7 @@ After resolving the recipe, `python system/af.py voice bundle <project> <deliver
 
 1. **Content pass.** Draft the argument and structure plainly. Deliverable templates and aspiration pieces may inform shape, never wording.
 2. **Style pass.** Put the selected corpus evidence first and the rewrite instruction last. Extract 3–4 concrete markers for this piece, then rewrite toward them with the mannered-prose rule in force (`anti-patterns.md` § Mannered prose: when a literal phrase is available, use it). Match cadence, diction, and structure; never copy facts, phrases, or topics.
-3. **Clean pass.** In a separate context, apply `anti-patterns.md` with an operator sample, then run `python system/voice_lint.py <head>` and fix its hard findings. Recheck the recipe after cleaning.
+3. **Clean pass.** In a separate context, apply `anti-patterns.md` with an operator sample, then run `af voice lint <head>` and fix its hard findings. Recheck the recipe after cleaning.
 4. **Register test.** Read aloud: would this sit naturally beside the selected operator corpus while satisfying the named blend direction?
 
 Do not run inline self-critique during generation. Evaluation is a separate pass. A draft written without corpus evidence will imitate whatever the model saw last; a draft written generically and merely cleaned afterward remains generic.

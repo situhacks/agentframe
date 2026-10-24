@@ -41,7 +41,7 @@ exports: []   # filed export paths under resume/media/—required before readine
 
 ## Clean Pass
 
-Mandatory before verification, because recruiters auto-reject on AI tells. Run the voice clean pass (`workspace/life/voice/README.md` step 3) and `python system/voice_lint.py <head>` over every rewritten bullet and any positioning line.
+Mandatory before verification, because recruiters auto-reject on AI tells. Run the voice clean pass (`workspace/life/voice/README.md` step 3) and `af voice lint <head>` over every rewritten bullet and any positioning line.
 
 ## Readiness Criteria
 

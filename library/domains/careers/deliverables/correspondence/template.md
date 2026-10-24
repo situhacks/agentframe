@@ -18,7 +18,7 @@ Read all four before drafting. A message written without them repeats a failure 
 - `jd-map.md` — coverage and the gap stop. When the board carries a better-fitting req than the one named,
   that finding lives here and is the whole reason the message is worth sending.
 - `workspace/life/voice/` — outward-facing and user-voiced. Voice load plus the voice clean pass
-  (`README.md` step 3, then `python system/voice_lint.py <head>`) are required before this is shown to the operator.
+  (`README.md` step 3, then `af voice lint <head>`) are required before this is shown to the operator.
 
 ## Output Shape
 

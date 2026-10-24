@@ -1,5 +1,5 @@
-//! `af session bundle` and the four hook handlers (library calls and the hidden
-//! `af session hook_*` subcommands).
+//! `af session bundle` and the four session hook handlers (library calls and
+//! `af hook <event>`).
 
 mod common;
 mod life_fx;
@@ -164,12 +164,31 @@ fn session_start_ignores_a_bad_payload() {
 }
 
 #[test]
-fn hidden_subcommand_runs_the_session_start_handler() {
+fn af_hook_session_start_runs_the_handler() {
     let fx = main_fixture();
-    let out = fx.af().args(["session", "hook_session_start"]).write_stdin(r#"{"session_id":"s-main","source":"compact"}"#).output().unwrap();
+    let out = fx.af().args(["hook", "session-start"]).write_stdin(r#"{"session_id":"s-main","source":"compact"}"#).output().unwrap();
     assert_eq!(out.status.code(), Some(0));
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(v["hookSpecificOutput"]["sessionTitle"], "main");
+    let out = fx.af().args(["hook", "session-start"]).write_stdin(r#"{"session_id":"s-fresh","source":"startup"}"#).output().unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(v["hookSpecificOutput"].get("sessionTitle").is_none());
+    assert!(v["hookSpecificOutput"]["additionalContext"].as_str().unwrap().starts_with("af: unregistered session"));
+}
+
+#[test]
+fn session_start_leads_with_the_refresh_line_in_place_of_the_age_line() {
+    let fx = main_fixture();
+    fx.write("system/index/vault.db", "db");
+    set_mtime(&fx, "system/index/vault.db", -3 * 24 * 3600 - 60);
+    let ctx = fx.ctx();
+    let v = context(&sessions::hook_session_start_with(&ctx, r#"{"session_id":"s-acme","source":"startup"}"#, Some("REFRESHING")));
+    let text = v["hookSpecificOutput"]["additionalContext"].as_str().unwrap();
+    assert!(text.starts_with("REFRESHING\n\naf: you are project/acme (operator)"), "{text}");
+    assert!(!text.contains("index: last refresh"), "{text}");
+    assert_eq!(v["hookSpecificOutput"]["sessionTitle"], "project/acme");
+    let alone = sessions::hook_session_start_with(&ctx, "{}", Some("REFRESHING"));
+    assert_eq!(alone, HookOutput { stdout: "REFRESHING".into(), exit: 0 });
 }
 
 // ------------------------------------------------------------------ Stop
@@ -200,11 +219,32 @@ fn stop_hook_is_quiet_when_the_handoff_is_current_or_the_chat_unregistered() {
 }
 
 #[test]
-fn hidden_subcommand_runs_the_stop_handler() {
+fn af_hook_stop_runs_the_handler() {
     let fx = main_fixture();
-    let out = fx.af().args(["session", "hook_stop"]).write_stdin(r#"{"session_id":"s-acme","stop_hook_active":false}"#).output().unwrap();
+    let out = fx.af().args(["hook", "stop"]).write_stdin(r#"{"session_id":"s-acme","stop_hook_active":false}"#).output().unwrap();
     assert_eq!(out.status.code(), Some(0));
     assert!(String::from_utf8_lossy(&out.stdout).contains("\"decision\":\"block\""));
+}
+
+#[test]
+fn stop_hook_never_blocks_main_and_still_stamps_it() {
+    let fx = main_fixture();
+    fx.write("system/sessions/main/handoff.md", &handoff(&ts(-10), &["system/backlog.md"]));
+    let (code, out, _) = fx.run(&["session", "stop", "main"]);
+    assert_eq!((code, out.trim()), (3, "HANDOFF_REQUIRED system/sessions/main/handoff.md"), "the verb still reports it");
+    let o = sessions::hook_stop(&fx.ctx(), r#"{"session_id":"s-main","stop_hook_active":false}"#);
+    assert_eq!(o, HookOutput::quiet());
+    assert!(recent(&find(&fx, "main").last_seen));
+}
+
+#[test]
+fn a_handoff_signal_is_not_a_button_refusal() {
+    let fx = main_fixture();
+    assert_eq!(fx.run(&["session", "stop", "project/acme"]).0, 3);
+    assert!(afcore::runlog::button_notes(&fx.ctx()).is_empty(), "exit 3 from session stop is not counted");
+    assert_eq!(fx.run(&["session", "end", "nope", "--reason", "exit"]).0, 1);
+    let notes = afcore::runlog::button_notes(&fx.ctx());
+    assert!(notes.len() == 1 && notes[0].contains("1 refusal(s): session 1"), "{notes:?}");
 }
 
 // ------------------------------------------------------------------ SessionEnd
@@ -228,7 +268,7 @@ fn session_end_hook_for_an_unregistered_chat_writes_nothing() {
     let o = sessions::hook_session_end(&fx.ctx(), r#"{"session_id":"s-x","reason":"exit"}"#);
     assert_eq!(o, HookOutput::quiet());
     assert!(!fx.exists("system/sessions/registry.md"));
-    let out = fx.af().args(["session", "hook_session_end"]).write_stdin("{}").output().unwrap();
+    let out = fx.af().args(["hook", "session-end"]).write_stdin("{}").output().unwrap();
     assert_eq!(out.status.code(), Some(0));
     assert!(out.stdout.is_empty());
 }
@@ -251,7 +291,7 @@ fn notification_stamps_a_registered_background_session() {
     assert!(r.is_ended(), "a notification does not revive an ended row");
     let out = fx
         .af()
-        .args(["session", "hook_notification"])
+        .args(["hook", "notification"])
         .write_stdin(r#"{"session_id":"s-main","notification_type":"agent_completed"}"#)
         .output()
         .unwrap();

@@ -1,4 +1,4 @@
-//! Port of system/tests/test_voice_lint.py.
+//! `af voice lint`.
 
 mod common;
 
@@ -221,7 +221,7 @@ fn test_cli_exit_codes() {
     let (code, out, _) = fx.run(&["voice", "lint", &plain]);
     assert_eq!(code, 0);
     assert!(out.contains("skipped"));
-    // voice_lint.py writes no run-log row, and neither does `af voice lint`
+    // `af voice lint` writes no run-log row
     assert!(fx.run_log_rows().is_empty());
 }
 

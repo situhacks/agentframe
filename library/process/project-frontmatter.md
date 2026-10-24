@@ -14,7 +14,7 @@ Load for project state, continuity, dependency, routing, and next-action decisio
 
 ## Procedure
 
-1. Read `project.md` frontmatter and run `python system/af.py doctor <project-slug>`.
+1. Read `project.md` frontmatter and run `af doctor <project-slug>`.
 2. Use `domain`, `current_phase`, and the deliverable tracker to route the task.
 3. Read the `project.md` body when onboarding into the project or when its thesis, plan, or open project-level notes affect the decision.
 4. Follow only the relevant `deliverables.{slug}.file` pointer. That head is canonical content; lower-numbered versions are history.

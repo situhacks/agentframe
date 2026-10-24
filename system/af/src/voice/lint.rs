@@ -1,4 +1,4 @@
-//! Port of system/voice_lint.py: the deterministic backstop for the zero-budget voice rules.
+//! The deterministic backstop for the zero-budget voice rules.
 //!
 //! Offsets are bytes throughout; where the Python's arithmetic depends on code-point
 //! counts (snippet windows, the sentence-to-line mapping) the count is taken in chars.

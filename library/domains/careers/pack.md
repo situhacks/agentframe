@@ -12,7 +12,7 @@ assembly_record: null
 
 The careers domain: job applications that ship tailored, ATS-safe materials. Careers work is **not** project-shaped—it lives on the singleton pipeline surface `workspace/pipeline/` (stage-based funnel, no deliverable terminal beyond readiness), declared here via `topology: pipeline`. `af new-project` refuses this domain; applications scaffold with `af pipe start`.
 
-This pack is the only artifact that knows careers. The generic spine (`system/af.py`) reads what is declared here; it names no domain.
+This pack is the only artifact that knows careers. The generic spine (`af`) reads what is declared here; it names no domain.
 
 ## What this pack declares
 
@@ -24,8 +24,8 @@ This pack is the only artifact that knows careers. The generic spine (`system/af
 | Round skeleton | [`round-skeleton.md`](round-skeleton.md) | the round folder's `README.md` scaffolded by `af pipe round` |
 | Board skeleton | [`pipeline-skeleton.md`](pipeline-skeleton.md) | the `pipeline.md` created on first `af pipe save` |
 | Deliverable templates | [`deliverables/`](deliverables/) | `jd-map`, `resume`, `cover-letter`, `company-brief` (materials + research); `correspondence`, `interviewer-brief`, `round-sheet`, `round-debrief`, `comp-case` (internal, never materials); non-text materials (`deck`, `demo`) use the generic deliverable shape + the routes in [`production.md`](production.md) |
-| Verb applicability + hooks | `verbs` above + `rules.py` | every submission material becomes ready only after jd-map verification; text materials also pass the parse-hazard lint (`on_ready`) |
-| Doctor rules | `rules.py` `check_application()` | text-material parse hazards, verification freshness |
+| Verb applicability + hooks | `verbs` above + the compiled-in rules (`system/af/src/packs/careers.rs`) | every submission material becomes ready only after jd-map verification; text materials also pass the parse-hazard lint (`on_ready`) |
+| Doctor rules | `check_application()` in `system/af/src/packs/careers.rs` | text-material parse hazards, verification freshness |
 | Persona routing | [`production.md`](production.md) | the application-sprint runbook the Operator loads for careers work |
 | Interview loop | [`interview-arc.md`](interview-arc.md) | the per-round procedure, lazy-loaded from `production.md` step 11 when a round is scheduled |
 | Offer loop | [`offer-arc.md`](offer-arc.md) | the offer-stage procedure — verify the package, price it, route the ask — lazy-loaded from `production.md` step 12; produces `comp-case.md` |

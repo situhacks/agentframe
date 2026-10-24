@@ -12,7 +12,7 @@ assembly_record: null
 
 The creator domain: a standing short-form channel that ships talking-head videos. Creator work is **not** project-shaped. It lives on the singleton studio surface `workspace/studio/`: a rolling calendar of posts, series that open and close inside it, no terminal retro. That is declared here via `topology: studio`. `af new-project` refuses this domain; posts scaffold with `af studio new`.
 
-This pack is the only artifact that knows creator work. The generic spine (`system/af.py`) reads what is declared here; it names no domain.
+This pack is the only artifact that knows creator work. The generic spine (`af`) reads what is declared here; it names no domain.
 
 ## What this pack declares
 

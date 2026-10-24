@@ -1,8 +1,6 @@
-//! In-scope cases of system/tests/test_af_studio.py: new-project's topology refusal, posts
-//! as work folders, draft on a post, and the studio doctor.
-//!
-//! The `studio` verbs are not ported (R2+), so fixtures write what `af studio new|stage|post`
-//! leave behind (common::write_post / write_calendar).
+//! New-project's topology refusal, posts as work folders, draft on a post, and the studio
+//! doctor. Fixtures write what `af studio new|stage|post` leave behind
+//! (common::write_post / write_calendar); the verb-driven cases are in studio_verbs.rs.
 
 mod common;
 use afcore::core::{project_dir, state_doc};

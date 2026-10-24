@@ -1,5 +1,5 @@
 //! Python's `glob.glob` (3.12 algorithm) and `fnmatch`, so result strings and the
-//! hidden-file and case rules match what af.py sorts and prints.
+//! hidden-file and case rules match CPython's sort and print order.
 
 use crate::pyos;
 use regex::Regex;

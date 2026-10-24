@@ -10,7 +10,9 @@ def text(rel):
 
 
 OPERATOR_ONLY_SKILLS = ("deliverable-harvest", "voice-harvest", "doc-export", "job-scout",
-                        "d2-diagrams", "extract-design")
+                        "d2-diagrams", "extract-design", "gym")
+AGENT_ROLES = ("reader", "researcher", "filer", "writer", "reviewer", "auditor", "briefer",
+               "consolidator", "builder")
 MODEL_INVOCABLE_SKILLS = ("agent-reach", "deep-research")
 
 
@@ -21,14 +23,33 @@ def frontmatter(rel):
 class InstructionTopologyCharacterizationTests(unittest.TestCase):
     """Pin the discovery and routing shape."""
 
-    def test_root_is_a_small_stable_task_classifier(self):
+    def test_root_is_mains_instruction_and_the_role_router(self):
         root = text("AGENTS.md")
-        self.assertNotEqual(root, text("AGENTS.operator.md"))
-        self.assertNotEqual(root, text("AGENTS.builder.md"))
-        self.assertIn("AGENTS.operator.md", root)
-        self.assertIn("AGENTS.builder.md", root)
-        self.assertIn("read exactly one router", root)
-        self.assertLessEqual(len(root.split()), 500)
+        for router in ("AGENTS.operator.md", "AGENTS.builder.md", "AGENTS.worker.md"):
+            self.assertNotEqual(root, text(router))
+            self.assertIn(f"[`{router}`]({router})", root)
+        self.assertIn("If the task class changes, stop and read the new router.", root)
+        self.assertLessEqual(len(root.split()), 700)
+
+    def test_claude_code_reads_agents_md_natively(self):
+        self.assertFalse((ROOT / "CLAUDE.md").exists(),
+                         "a CLAUDE.md in the folder stops Claude Code reading AGENTS.md natively")
+
+    def test_worker_overlay_ends_in_a_handoff(self):
+        worker = text("AGENTS.worker.md")
+        for section in ("## State", "## Open questions", "## Next step", "## Files touched"):
+            self.assertIn(section, worker)
+        self.assertIn("SendMessage", worker)
+
+    def test_agent_roles_pin_a_model_and_an_effort_of_medium_or_more(self):
+        found = sorted(p.stem for p in (ROOT / ".claude" / "agents").glob("*.md"))
+        self.assertEqual(found, sorted(AGENT_ROLES))
+        for role in AGENT_ROLES:
+            fm = frontmatter(f".claude/agents/{role}.md")
+            self.assertRegex(fm, rf"(?m)^name:\s*{role}\s*$", role)
+            self.assertRegex(fm, r"(?m)^model:\s*(opus|sonnet)\s*$", role)
+            self.assertRegex(fm, r"(?m)^effort:\s*(medium|high|xhigh|max)\s*$", role)
+            self.assertRegex(fm, r"(?m)^tools:\s*\S", role)
 
     def test_skill_and_vendor_catalogs_carry_their_columns(self):
         self.assertIn("| Skill | Owns | Load when | Invocation |", text(".claude/skills/README.md"))
@@ -67,8 +88,8 @@ class InstructionTopologyCharacterizationTests(unittest.TestCase):
         ):
             template = text(rel)
             self.assertIn("## Before Writing", template, rel)
-            self.assertIn("system/af.py draft", template, rel)
-            self.assertIn("system/af.py version", template, rel)
+            self.assertIn("`af draft <project>", template, rel)
+            self.assertIn("`af version <project>", template, rel)
             self.assertIn("voice/README.md", template, rel)
 
     def test_task_routers_stay_small_and_task_local(self):

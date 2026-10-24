@@ -37,7 +37,7 @@ exports: []
 
 ## Clean Pass
 
-Mandatory, because recruiters treat an AI-scented letter as a stronger negative signal than no letter at all. Run the voice clean pass (`workspace/life/voice/README.md` step 3) and `python system/voice_lint.py <head>` on the first complete draft, before the operator sees it.
+Mandatory, because recruiters treat an AI-scented letter as a stronger negative signal than no letter at all. Run the voice clean pass (`workspace/life/voice/README.md` step 3) and `af voice lint <head>` on the first complete draft, before the operator sees it.
 
 ## Readiness Criteria
 

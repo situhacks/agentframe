@@ -35,7 +35,7 @@ A full-length essay for the operator's Substack publication — the long-form ho
 
 ## Clean Pass
 
-**Run it on the first complete draft, before the operator ever sees it, not at readiness.** A draft surfaced with the pass still owed puts the operator's line edits onto un-swept prose, and from that point a broad pass washes his wording back to generic. Run the voice clean pass ([`voice/README.md`](../../../../../workspace/life/voice/README.md) step 3) with an operator sample, in a turn without the corpus exemplars loaded, then `python system/voice_lint.py <head>`. Readiness only verifies that it happened.
+**Run it on the first complete draft, before the operator ever sees it, not at readiness.** A draft surfaced with the pass still owed puts the operator's line edits onto un-swept prose, and from that point a broad pass washes his wording back to generic. Run the voice clean pass ([`voice/README.md`](../../../../../workspace/life/voice/README.md) step 3) with an operator sample, in a turn without the corpus exemplars loaded, then `af voice lint <head>`. Readiness only verifies that it happened.
 
 ## Readiness Criteria
 

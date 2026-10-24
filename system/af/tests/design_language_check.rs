@@ -1,6 +1,5 @@
-//! Port of system/tests/test_design_language_check.py, plus the doctor stray-deck cases of
-//! system/tests/test_ppt_master_guard.py (TestDoctorStrayDecks). The hook cases of that file
-//! stay on the Python suite; hooks are not ported.
+//! The doctor's design-language package checks and its PPT Master stray-deck scan. The
+//! staging guard itself is tested in hooks_ppt_guard.rs.
 
 mod common;
 use afcore::doctor::{design_language_notes_at, ppt_master_stray_issues};

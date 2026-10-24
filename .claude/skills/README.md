@@ -12,6 +12,7 @@ AgentFrame-owned skills. Claude Code discovers every folder here. A skill marked
 | [`job-scout/`](job-scout/SKILL.md) | Public-ATS job discovery and recency-first triage into the pipeline | The operator asks for role discovery against the search profile | Operator only |
 | [`d2-diagrams/`](d2-diagrams/SKILL.md) | Auto-laid-out D2 graphs rendered to SVG with the vendored D2 CLI | A graph is regenerated from changing source and its layout must re-solve itself ([`diagram-production.md`](../../library/process/diagram-production.md)) | Operator; agents by path |
 | [`extract-design/`](extract-design/SKILL.md) | Website design-language extraction through `designlang`: tokens, type, colour, accessibility scores | A design language needs evidence from a live site (the `design-language` template's on-ramp) | Operator; agents by path |
+| [`gym/`](gym/SKILL.md) | One coached fitness session over the private fitness system in `workspace/life/systems/fitness/`: sync, the day's card, set logging, readback, progression | The operator opens a gym session with `/gym` | Operator only |
 
 Provenance: `agent-reach`, `doc-export`, and `extract-design` adapt upstream work and carry a `VENDOR.md`; `deep-research` carries `PROVENANCE.md`.
 

@@ -35,10 +35,12 @@ pub const PERSONA_WORD_BUDGET: usize = 1000;
 pub const PROCESS_WORD_BUDGET: usize = 1500;
 pub const TEMPLATE_WORD_BUDGET: usize = 900;
 
-pub const LINK_SCAN_GLOBS: [&str; 11] = [
+pub const LINK_SCAN_GLOBS: [&str; 13] = [
     "AGENTS.md",
     "AGENTS.builder.md",
     "AGENTS.operator.md",
+    "AGENTS.worker.md",
+    ".claude/agents/*.md",
     "library/process/**/*.md",
     "library/deliverables/**/*.md",
     "library/domains/**/*.md",
@@ -441,7 +443,7 @@ pub fn check_project(ctx: &Ctx, cdir: &str) -> R<Vec<String>> {
     }
 
     let domain = get_scalar(&cfm, "domain");
-    let (desc, pack_dir) = load_pack(ctx, domain.as_deref())?;
+    let (desc, _) = load_pack(ctx, domain.as_deref())?;
     if truthy(&domain) && !truthy(&desc) {
         issues.push(format!(
             "{rel}: domain '{}' has no pack at library/domains/{}/",
@@ -538,9 +540,6 @@ pub fn check_project(ctx: &Ctx, cdir: &str) -> R<Vec<String>> {
         }
     }
 
-    // Neither compiled-in pack defines a project `check` hook; load_rules still runs so a
-    // pack shipping an unported rules.py is refused here as the Python would fail its import.
-    packs::load_rules(ctx, pack_dir.as_deref())?;
     issues.extend(media_manifest_issues(ctx, cdir, &cfm)?);
     issues.extend(state_truth_issues(ctx, cdir, &cfm)?);
     Ok(issues)

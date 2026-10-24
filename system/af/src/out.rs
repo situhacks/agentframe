@@ -1,8 +1,7 @@
 //! stdout/stderr the way Python's text streams write them.
 //!
-//! On Windows `sys.stdout`/`sys.stderr` translate every "\n" to "\r\n" (the af.py
-//! `reconfigure(encoding="utf-8")` changes the encoding, not the newline mode), so the
-//! port does the same translation on Windows and none elsewhere.
+//! On Windows `sys.stdout`/`sys.stderr` translate every "\n" to "\r\n", so the binary does the
+//! same translation on Windows and none elsewhere.
 
 use std::io::Write;
 

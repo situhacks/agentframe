@@ -1,4 +1,4 @@
-//! Port of system/tests/test_af_media_doctor.py: shipped_media / exports manifest checks.
+//! shipped_media / exports manifest checks.
 
 mod common;
 use afcore::doctor;

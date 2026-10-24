@@ -1,4 +1,4 @@
-//! Marketing pack rules (library/domains/marketing/rules.py): the post-FINAL assembly
+//! Marketing pack rules: the post-FINAL assembly
 //! record on draft and ready, and the receipt-writing publish for post rows.
 
 use crate::core::{self, today};

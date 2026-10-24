@@ -1,4 +1,4 @@
-//! Port of system/tests/test_publish_guard.py.
+//! The Substack publish guard.
 
 mod common;
 
@@ -67,7 +67,7 @@ fn test_push_to_draft_row_below_ready_is_denied() {
     assert_eq!(o["hookSpecificOutput"]["permissionDecision"], "deny");
     let r = o["hookSpecificOutput"]["permissionDecisionReason"].as_str().unwrap();
     assert!(r.contains("substack-essay-11"));
-    assert!(r.contains("af.py ready"));
+    assert!(r.contains("`af ready "));
 }
 
 #[test]
@@ -145,7 +145,7 @@ fn test_malformed_payload_emits_empty_json() {
     assert_eq!(String::from_utf8_lossy(&o.stdout), "{}");
 }
 
-// Beyond the pytest file.
+// Edge shapes.
 
 #[test]
 fn test_tracker_without_frontmatter_exits_1_like_the_python() {

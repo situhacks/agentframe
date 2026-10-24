@@ -1,5 +1,4 @@
-//! Media-shelf notes read hand-edited cards with PyYAML's YAML 1.1 typing (no pytest
-//! counterpart: system/tests has no media_intake.notes() case; parity.py covers the rest).
+//! Media-shelf notes read hand-edited cards with PyYAML's YAML 1.1 typing.
 
 mod common;
 use afcore::media_shelf::media_shelf_notes;

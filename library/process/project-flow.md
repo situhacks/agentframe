@@ -4,8 +4,8 @@ The one project shape. A project is `project.md`, its versioned deliverables, `s
 
 ## Read Once
 
-- Every artifact is a versioned deliverable instance per [`deliverable-versioning.md`](deliverable-versioning.md): `{name}-v{N}.md`, head named by the tracker. Revisions bump the head (`python system/af.py version`); they never spawn a new differently-named v1. Only scratchpads are throwaway, and they carry `scratchpad` in the filename.
-- State transitions are button-owned: `python system/af.py` (`draft`, `adopt`, `ready`, `publish`, `version`, `new-project`, `doctor`); readiness triggers per [`ready-event.md`](ready-event.md). Never hand-edit tracker `status:`.
+- Every artifact is a versioned deliverable instance per [`deliverable-versioning.md`](deliverable-versioning.md): `{name}-v{N}.md`, head named by the tracker. Revisions bump the head (`af version`); they never spawn a new differently-named v1. Only scratchpads are throwaway, and they carry `scratchpad` in the filename.
+- State transitions are button-owned: `af` (`draft`, `adopt`, `ready`, `publish`, `version`, `new-project`, `doctor`); readiness triggers per [`ready-event.md`](ready-event.md). Never hand-edit tracker `status:`.
 - Tracker schema: [`project-frontmatter.md`](project-frontmatter.md). Apply file edits and `project.md` updates in the same turn.
 
 ## Kickoff — propose the plan
@@ -40,7 +40,7 @@ Short and current:
 
 ## Tracker Updates
 
-- New projects scaffold via `python system/af.py new-project <slug> [--domain <pack>]`; `current_phase` starts `active`. Once the plan is agreed, set it to the plan's current phase id (`active` when single-phase). It is free text the plan section owns.
+- New projects scaffold via `af new-project <slug> [--domain <pack>]`; `current_phase` starts `active`. Once the plan is agreed, set it to the plan's current phase id (`active` when single-phase). It is free text the plan section owns.
 - Deliverables move `not_started -> drafting -> ready` in the same turn as their files change. `ready -> published` is optional and only applies when the artifact is issued as an immutable record; the active pack owns any domain-specific assembly step.
 
 ## Closeout

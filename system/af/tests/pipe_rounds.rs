@@ -1,4 +1,4 @@
-//! Port of system/tests/test_af_pipe_rounds.py: start's raw-input folders, the inbound
+//! Start's raw-input folders, the inbound
 //! skip of `applied`, `af pipe round`, and archive/unarchive. TestRoundDoctorNotes and the
 //! fixture-written archived-doctor case are in af_pipe.rs.
 
@@ -244,7 +244,7 @@ fn test_round_number_parses_like_python_int() {
 
 #[test]
 fn test_unnamed_lead_person_is_the_python_crash() {
-    // af.py indexes `split()[0]` of the first person's name; an empty name raises IndexError.
+    // The button indexes `split()[0]` of the first person's name; an empty name raises IndexError.
     let fx = pfx();
     let slug = started(&fx);
     let (code, _, err) = fx.run(&["pipe", "round", &slug, "5", "--with", ", nobody"]);

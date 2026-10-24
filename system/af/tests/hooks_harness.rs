@@ -1,5 +1,5 @@
-//! Port of system/tests/test_harness_hooks.py, plus the `af hook` surface: one process
-//! per event, payload on stdin, `{}` when no rule matches.
+//! The `af hook` surface and its wiring: one process per event, payload on stdin, `{}`
+//! when no rule matches.
 
 mod common;
 
@@ -19,12 +19,41 @@ fn test_claude_reference_wires_all_guards() {
             }
         }
     }
-    for script in ["version_guard.py", "ppt_master_guard.py", "voice_guard.py", "publish_guard.py"] {
-        assert!(commands.iter().any(|c| c.contains(script)), "{script}");
+    for event in ["session-start", "stop", "session-end", "notification", "pre-tool-use", "post-tool-use"] {
+        let want = format!("AF_ROOT=\"${{CLAUDE_PROJECT_DIR}}\" af hook {event}");
+        assert!(commands.iter().any(|c| c == &want), "{event}");
     }
-    assert!(config["hooks"].get("SessionStart").is_some());
-    let matchers: Vec<&str> = config["hooks"]["PreToolUse"].as_array().unwrap().iter().map(|g| g["matcher"].as_str().unwrap()).collect();
-    assert!(matchers.contains(&"mcp__substack__update_draft"));
+    assert!(!commands.iter().any(|c| c.contains("python")), "every hook runs the binary");
+    let matchers = |ev: &str| -> Vec<String> {
+        config["hooks"][ev].as_array().unwrap().iter().map(|g| g["matcher"].as_str().unwrap_or("").to_string()).collect()
+    };
+    for m in ["Edit|Write", "Bash|PowerShell", "mcp__substack__update_draft"] {
+        assert!(matchers("PreToolUse").iter().any(|x| x == m), "{m}");
+    }
+    assert_eq!(matchers("SessionStart"), ["startup|resume|clear|compact"]);
+    assert_eq!(matchers("Notification"), ["agent_completed|agent_needs_input"]);
+    assert_eq!(config["hooks"]["SessionEnd"][0]["hooks"][0]["timeout"], 10);
+    assert_eq!(config["permissions"]["deny"], serde_json::json!(["Bash(git push *)"]));
+    assert_eq!(config["worktree"]["bgIsolation"], "none");
+}
+
+#[test]
+fn test_every_hook_shim_forwards_to_its_event() {
+    let dir = common::repo_root().join("system").join("hooks");
+    let want = [
+        ("version_guard.py", "pre-tool-use"),
+        ("voice_guard.py", "pre-tool-use"),
+        ("ppt_master_guard.py", "pre-tool-use"),
+        ("publish_guard.py", "pre-tool-use"),
+        ("index_refresh.py", "session-start"),
+        ("board_guard.py", "pre-tool-use"),
+        ("autonomy_guard.py", "pre-tool-use"),
+    ];
+    for (script, event) in want {
+        let text = std::fs::read_to_string(dir.join(script)).unwrap();
+        assert!(text.lines().count() <= 8, "{script} is a shim of at most eight lines");
+        assert!(text.contains(event), "{script} forwards to {event}");
+    }
 }
 
 fn fixture() -> Fx {
@@ -68,7 +97,7 @@ fn test_old_wiring_flags_are_accepted_and_ignored() {
 #[test]
 fn test_unknown_event_is_a_non_blocking_error() {
     let fx = fixture();
-    assert_eq!(hook(&fx, &["stop"], "{}").0, 1);
+    assert_eq!(hook(&fx, &["pre-compact"], "{}").0, 1);
     assert_eq!(hook(&fx, &[], "{}").0, 1);
 }
 

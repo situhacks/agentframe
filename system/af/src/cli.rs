@@ -10,9 +10,6 @@ use crate::pyos;
 use crate::runlog;
 use clap::{ArgGroup, Parser, Subcommand};
 
-/// Verbs af.py owns that this port does not carry yet.
-pub const NOT_PORTED: [&str; 0] = [];
-
 #[derive(Parser, Debug)]
 #[command(
     name = "af",
@@ -29,10 +26,12 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Cmd {
+    /// Load the voice system in one read, or lint a head against it
     Voice {
         #[command(subcommand)]
         cmd: crate::voice::VoiceCmd,
     },
+    /// Mark a deliverable head ready and run the pack's readiness rules
     Ready {
         project: String,
         deliverable: String,
@@ -42,6 +41,7 @@ enum Cmd {
         #[arg(long)]
         allow_missing_exports: bool,
     },
+    /// Record a published edition: URL, date, platform, media
     Publish {
         project: String,
         deliverable: String,
@@ -54,6 +54,7 @@ enum Cmd {
         #[arg(long, num_args = 0..)]
         media: Vec<String>,
     },
+    /// Snapshot the head as a new version before any content change
     Version {
         project: String,
         deliverable: String,
@@ -61,6 +62,7 @@ enum Cmd {
         artifact: Option<String>,
     },
     #[command(group(ArgGroup::new("target").required(true).multiple(false).args(["artifact", "file"])))]
+    /// Create a first draft (v1) and its tracker row
     Draft {
         project: String,
         deliverable: String,
@@ -69,6 +71,7 @@ enum Cmd {
         #[arg(long)]
         file: Option<String>,
     },
+    /// Adopt an existing file as a tracked deliverable
     Adopt {
         project: String,
         deliverable: String,
@@ -81,6 +84,7 @@ enum Cmd {
         #[arg(long)]
         notes: Option<String>,
     },
+    /// Scaffold workspace/projects/<slug>/ from a domain pack
     #[command(name = "new-project")]
     NewProject {
         slug: String,
@@ -89,40 +93,49 @@ enum Cmd {
         #[arg(long)]
         name: Option<String>,
     },
+    /// Check state truth, size caps, links, the life layer, and button refusals
     Doctor {
         project: Option<String>,
     },
+    /// The careers pipeline board and application folders
     Pipe {
         #[command(subcommand)]
         cmd: crate::pipe::PipeCmd,
     },
+    /// The creator calendar board and post folders
     Studio {
         #[command(subcommand)]
         cmd: crate::studio::StudioCmd,
     },
+    /// The chat registry: register, list, stop, end, bundle
     Session {
         #[command(subcommand)]
         cmd: crate::sessions::SessionCmd,
     },
+    /// Open loops in workspace/life/open.md: add, close, due
     Open {
         #[command(subcommand)]
         cmd: crate::open::OpenCmd,
     },
+    /// The zero-token catch-up: due loops, chats, backlog, boards
     Brief {
         #[arg(long)]
         json: bool,
         #[arg(long)]
         write: bool,
     },
+    /// Close a project: move it to completed/ and print the harvest checklist
     Close {
         slug: String,
         #[arg(long)]
         force: bool,
     },
+    /// Build, refresh, or evaluate the retrieval index
     Index {
         #[command(subcommand)]
         cmd: crate::index::IndexCmd,
     },
+    /// Search the vault (hybrid keyword and embedding ranking)
     Search {
         query: String,
         #[arg(short = 'n', long, default_value = "8", value_parser = crate::index::py_int, allow_negative_numbers = true)]
@@ -130,12 +143,18 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// Run a Claude Code hook: session-start, stop, session-end, notification, pre-tool-use,
+    /// post-tool-use (payload on stdin)
+    Hook {
+        event: String,
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true, hide = true)]
+        rest: Vec<String>,
+    },
 }
 
-/// The repo root: `AF_ROOT`, else the nearest ancestor of the binary, then of the working
-/// directory, that holds `AGENTS.md` and `system/`; else the working directory. af.py
-/// derives ROOT from its own location (`system/af.py` -> repo root); the binary cannot,
-/// because it lives under `system/af/target/`.
+/// The vault root: `AF_ROOT`, else the nearest ancestor of the working directory that holds
+/// `AGENTS.md` and `system/`; else the working directory. The binary is installed on PATH,
+/// so its own location says nothing about the vault.
 pub fn discover_root() -> String {
     if let Ok(r) = std::env::var("AF_ROOT") {
         if !r.is_empty() {
@@ -143,18 +162,9 @@ pub fn discover_root() -> String {
         }
     }
     let is_root = |p: &std::path::Path| p.join("AGENTS.md").is_file() && p.join("system").is_dir();
-    let mut starts = Vec::new();
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(d) = exe.parent() {
-            starts.push(d.to_path_buf());
-        }
-    }
     let cwd = std::env::current_dir().ok();
     if let Some(c) = &cwd {
-        starts.push(c.clone());
-    }
-    for s in starts {
-        for a in s.ancestors() {
+        for a in c.ancestors() {
             if is_root(a) {
                 return pyos::abspath(&a.to_string_lossy());
             }
@@ -226,6 +236,8 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> R<i32> {
         Cmd::Close { slug, force } => crate::close::cmd_close(ctx, &slug, force),
         Cmd::Index { cmd } => crate::index::cmd_index(&ctx.root, &cmd),
         Cmd::Search { query, limit, json } => crate::index::cmd_search(&ctx.root, &query, limit, json),
+        // `af hook` is intercepted before the parser; the variant exists for --help.
+        Cmd::Hook { .. } => Ok(0),
     }
 }
 
@@ -245,16 +257,10 @@ pub fn main_entry(argv: Vec<String>) -> i32 {
     if let Some(code) = crate::hooks::intercept(&argv).or_else(|| crate::voice::intercept(&argv)) {
         return code;
     }
-    if let Some(first) = argv.first() {
-        if NOT_PORTED.contains(&first.as_str()) {
-            out::err_line(&format!(
-                "af: '{first}' is not ported to the Rust binary yet; use python system/af.py {first} ..."
-            ));
-            return 1;
-        }
-    }
     let ctx = Ctx::new(&discover_root());
-    main_with(&ctx, argv, &run)
+    let code = main_with(&ctx, argv.clone(), &run);
+    crate::hooks::index_refresh::release_lock(&argv);
+    code
 }
 
 /// `main()` against a given root, with an injectable dispatcher (tests drive the crash path

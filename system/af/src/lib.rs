@@ -1,4 +1,4 @@
-//! AgentFrame's deterministic CLI, ported from system/af.py. See PORT-STATUS.md.
+//! AgentFrame's deterministic CLI: the buttons and the hooks.
 
 pub mod error;
 pub mod out;

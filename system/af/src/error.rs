@@ -1,6 +1,6 @@
 //! Refusals and crashes, shaped like the Python's `die()` and uncaught exceptions.
 //!
-//! `die()` in af.py prints `af: ERROR: msg` to stderr *at the moment it is called* and
+//! `die()` prints `af: ERROR: msg` to stderr *at the moment it is called* and
 //! records the message for the run log, then raises SystemExit. Several doctor helpers
 //! catch that SystemExit and carry on, so the print and the recorded message survive the
 //! catch. `refuse()` reproduces both side effects at construction time; callers that

@@ -1,10 +1,7 @@
-//! In-scope cases of system/tests/test_af_pipe.py and test_af_pipe_rounds.py: new-project's
-//! topology refusal, the pipeline doctor (board, folders, careers lint, round notes), and
-//! the careers readiness gates on application folders.
-//!
-//! The `pipe` verbs are not ported (R2+), so fixtures write the board and application
-//! folders `af pipe save` / `af pipe start` / `af pipe archive` leave behind (common::App).
-//! Cases that exercise only pipe verbs stay on the Python suite.
+//! New-project's topology refusal, the pipeline doctor (board, folders, careers lint, round
+//! notes), and the careers readiness gates on application folders. Fixtures write the board
+//! and application folders `af pipe save` / `af pipe start` / `af pipe archive` leave
+//! behind (common::App); the verb-driven cases are in pipe_verbs.rs.
 
 mod common;
 use afcore::doctor;
@@ -157,7 +154,7 @@ fn test_deck_ready_needs_verification_but_skips_ats_lint() {
 
 #[test]
 fn test_ready_succeeds_and_applied_records_shipped() {
-    // The readiness half; the `pipe stage applied` half (board `shipped`) stays on the Python.
+    // The readiness half; the `pipe stage applied` half (board `shipped`) is in pipe_verbs.rs.
     let fx = pfx();
     let d = prep_application(&fx, true);
     fx.ok(&["ready", "acme-ai-pm", "resume"]);

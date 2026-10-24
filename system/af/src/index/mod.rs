@@ -1,4 +1,4 @@
-//! The retrieval index behind `af index` / `af search`, ported from system/indexer.py.
+//! The retrieval index behind `af index` / `af search`.
 //!
 //! A derived cache: files stay the memory, the database (system/index/vault.db) is
 //! rebuildable and shares its schema with the Python, so either side opens what the other
@@ -27,8 +27,8 @@ pub const SKIP_DIRS_ANYWHERE: [&str; 12] = [
     "references",
 ];
 
-/// The indexer's own `die()`: `af index: ERROR: msg` on stderr, exit 1, and (unlike af.py's
-/// `die`) no recorded refusal in the run log.
+/// The indexer's own `die()`: `af index: ERROR: msg` on stderr, exit 1, and (unlike the
+/// buttons' `die`) no recorded refusal in the run log.
 #[derive(Debug, Clone)]
 pub struct IndexDie(pub String);
 

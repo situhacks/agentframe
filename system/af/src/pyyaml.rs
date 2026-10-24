@@ -7,7 +7,7 @@
 //! construction order and error texts, and the Python value model (str, repr,
 //! truthiness, type names) the caller formats notes with.
 //!
-//! Known gaps, recorded in PORT-STATUS.md: scanner, parser and composer errors keep
+//! Known gaps: scanner, parser and composer errors keep
 //! yaml-rust2's wording (and its YAML 1.2 view of NEL/LS/PS line breaks and duplicate
 //! anchors); constructor-error marks are rebuilt from yaml-rust2 event positions and can
 //! drift on unusual layouts.

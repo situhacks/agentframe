@@ -4,7 +4,6 @@
 
 # === Operator content (PII, private) ===
 # The public shapes of these files live in library/schema/ (tracked).
-library/context/
 system/*backlog*.md
 
 # === Operator visual assets (client logos, brand design languages) ===

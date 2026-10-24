@@ -22,8 +22,6 @@ Commands:
   python system/af.py feedback <project> [--mark-harvested [--note TEXT]]
   python system/af.py index update [--rebuild]|status|eval [--k N]
   python system/af.py search "<query>" [-n LIMIT] [--json]
-  python system/af.py sync-harnesses --check|--write
-  python system/af.py automation init|ready|activate|pause|retire ...
   python system/af.py autonomy init|check|start|checkpoint|finish|migrate ...
   python system/af.py pipe save --company C --role R --url U [--ats A] [--source S] [--posted D] [--deadline D] [--salary S] [--slug K]
   python system/af.py pipe start <slug>
@@ -58,14 +56,12 @@ work on a scripted post exactly as on project.md. A pack opts in by declaring
 import argparse
 import datetime
 import glob
-import hashlib
 import importlib.util
 import json
 import os
 import re
 import shutil
 import sys
-import tempfile
 import time
 import types
 from pathlib import Path
@@ -142,15 +138,6 @@ AUTONOMY_LEVELS = {"plan-only", "assisted", "unattended"}
 AUTONOMY_REVIEWER_MODES = {"independent", "same-context", "human"}
 AUTONOMY_COMPLETION_GATES = {"human", "independent-review"}
 AUTONOMY_MODEL_TIERS = {"premium", "workhorse", "economical", "current", "none"}
-AUTOMATION_SCHEMA_VERSION = "2026-07-12"
-AUTOMATION_STATUSES = {"proposed", "ready", "active", "paused", "retired"}
-AUTOMATION_TRANSITIONS = {
-    "proposed": {"ready", "retired"},
-    "ready": {"active", "retired"},
-    "active": {"paused", "retired"},
-    "paused": {"active", "retired"},
-    "retired": set(),
-}
 
 
 _LAST_ERROR = None  # the refusal main() records in af_runs
@@ -907,191 +894,6 @@ def cmd_new_project(args):
     print("    (research offer / plan proposal / pack-owned kickoff steps — flow-owned, not script-owned).")
 
 
-# ---------------------------------------------------------------- project automation
-
-def automation_id(value):
-    if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", value or ""):
-        die(f"automation id '{value}' is not folder-safe (use lowercase letters, numbers, hyphens)")
-    return value
-
-
-def automation_ref(project, automation, must_exist=True):
-    cdir = project_dir(project)
-    if state_doc(cdir) != "project.md":
-        die("project automations belong to workspace projects, not pipeline applications")
-    automation = automation_id(automation)
-    rel = f"automations/{automation}/automation.md"
-    path = os.path.join(cdir, *rel.split("/"))
-    if must_exist and not os.path.isfile(path):
-        die(f"automation '{automation}' not found at {rel}")
-    return cdir, rel, path
-
-
-def automation_issues(cdir, cfm=None):
-    cpath = os.path.join(cdir, "project.md")
-    if cfm is None:
-        cfm, _ = split_fm(read(cpath), "project.md")
-    project = get_scalar(cfm, "slug")
-    issues = []
-    tracked = set(mapping_rows(cfm, "automations"))
-    for aid in sorted(tracked):
-        rel_project = os.path.relpath(cdir, ROOT).replace("\\", "/")
-        label = f"{rel_project}: automation '{aid}'"
-        status = mapping_row_get(cfm, "automations", aid, "status")
-        rel = mapping_row_get(cfm, "automations", aid, "file")
-        deployment = mapping_row_get(cfm, "automations", aid, "deployment_id")
-        job = mapping_row_get(cfm, "automations", aid, "job")
-        if status not in AUTOMATION_STATUSES:
-            issues.append(f"{label} status '{status}' invalid")
-        if not rel:
-            issues.append(f"{label} has no file pointer")
-            continue
-        expected = f"automations/{aid}/automation.md"
-        if rel != expected:
-            issues.append(f"{label} file must be {expected}")
-        path = os.path.join(cdir, *rel.replace("\\", "/").split("/"))
-        if not os.path.isfile(path):
-            issues.append(f"{label} file missing: {rel}")
-            continue
-        try:
-            afm, body = split_fm(read(path), rel)
-        except SystemExit:
-            issues.append(f"{label} contract has invalid frontmatter")
-            continue
-        required = {
-            "schema_version": AUTOMATION_SCHEMA_VERSION,
-            "automation_id": aid,
-            "project": project,
-        }
-        for key, expected_value in required.items():
-            if get_scalar(afm, key) != expected_value:
-                issues.append(f"{label} contract {key} must be '{expected_value}'")
-        for heading in ("## Job", "## Trigger And Inputs", "## Project Route",
-                        "## Human Boundaries", "## Result", "## Verification", "## Deployment"):
-            if heading not in body:
-                issues.append(f"{label} contract missing '{heading}'")
-        if not job:
-            issues.append(f"{label} job is empty")
-        if status == "active" and deployment in (None, "", "null"):
-            issues.append(f"{label} active status requires deployment_id")
-
-    root = os.path.join(cdir, "automations")
-    if os.path.isdir(root):
-        for path in sorted(glob.glob(os.path.join(root, "*", "automation.md"))):
-            aid = os.path.basename(os.path.dirname(path))
-            if aid not in tracked:
-                rel = os.path.relpath(path, cdir).replace("\\", "/")
-                issues.append(f"{rel}: automation contract has no project.md tracker row")
-    return issues
-
-
-def automation_write_project(cdir, cfm, cbody):
-    write(os.path.join(cdir, "project.md"), join_fm(touch_lifecycle(cfm), cbody))
-
-
-def cmd_automation_init(args):
-    cdir, rel, path = automation_ref(args.project, args.automation_id, must_exist=False)
-    cpath = os.path.join(cdir, "project.md")
-    cfm, cbody = split_fm(read(cpath), "project.md")
-    if get_scalar(cfm, "status") != "active":
-        die("project automation requires an active project")
-    if mapping_row_span(cfm, "automations", args.automation_id) or os.path.exists(path):
-        die(f"automation '{args.automation_id}' already exists")
-    project = get_scalar(cfm, "slug")
-    os.makedirs(os.path.dirname(path), exist_ok=False)
-    afm = f"""schema_version: {AUTOMATION_SCHEMA_VERSION}
-automation_id: {args.automation_id}
-project: {project}
-created_at: {now_iso()}"""
-    body = f"""
-# Project Automation — {args.automation_id}
-
-## Job
-
-{args.job}
-
-## Trigger And Inputs
-
-(Define the standing trigger and the minimum inputs each run receives.)
-
-## Project Route
-
-(Name the project files, processes, templates, or deliverables a fresh managed run loads.)
-
-## Human Boundaries
-
-(Narrow the daemon charter for this automation. Never widen it.)
-
-## Result
-
-(Define the useful done, blocked, and failed receipt summaries.)
-
-## Verification
-
-(Name the checks one run can perform before reporting done.)
-
-## Deployment
-
-Not deployed. Runtime paths, credentials, queues, logs, and heartbeat state stay outside this project bundle.
-"""
-    write(path, join_fm(afm, body))
-    cfm = mapping_row_add(cfm, "automations", args.automation_id, (
-        ("status", "proposed"),
-        ("file", rel),
-        ("deployment_id", "null"),
-        ("last_updated", now_iso()),
-        ("job", yaml_quote(args.job)),
-    ))
-    automation_write_project(cdir, cfm, cbody)
-    append_activity(cdir, f"automation_proposed: {args.automation_id} contract created; {rel}")
-    print(f"af automation init: {args.automation_id} -> proposed ({rel})")
-
-
-def automation_transition(args, target):
-    cdir, rel, path = automation_ref(args.project, args.automation_id)
-    cpath = os.path.join(cdir, "project.md")
-    cfm, cbody = split_fm(read(cpath), "project.md")
-    current = mapping_row_get(cfm, "automations", args.automation_id, "status")
-    if current is None:
-        die(f"project.md has no automation row '{args.automation_id}'")
-    if target not in AUTOMATION_TRANSITIONS.get(current, set()):
-        die(f"automation transition {current} -> {target} is not allowed")
-    if target == "ready":
-        issues = automation_issues(cdir, cfm)
-        if issues:
-            die("automation contract invalid:\n  - " + "\n  - ".join(issues))
-    if target == "active":
-        deployment = getattr(args, "deployment", None) or mapping_row_get(
-            cfm, "automations", args.automation_id, "deployment_id")
-        if deployment in (None, "", "null"):
-            die("activating an automation requires --deployment <registry-id>")
-        cfm = mapping_row_set(cfm, "automations", args.automation_id,
-                              "deployment_id", yaml_quote(deployment))
-    cfm = mapping_row_set(cfm, "automations", args.automation_id, "status", target)
-    cfm = mapping_row_set(cfm, "automations", args.automation_id, "last_updated", now_iso())
-    automation_write_project(cdir, cfm, cbody)
-    event = {"ready": "automation_ready", "active": "automation_activated",
-             "paused": "automation_paused", "retired": "automation_retired"}[target]
-    append_activity(cdir, f"{event}: {args.automation_id} -> {target}; {rel}")
-    print(f"af automation {target}: {args.automation_id} -> {target}")
-
-
-def cmd_automation_ready(args):
-    automation_transition(args, "ready")
-
-
-def cmd_automation_activate(args):
-    automation_transition(args, "active")
-
-
-def cmd_automation_pause(args):
-    automation_transition(args, "paused")
-
-
-def cmd_automation_retire(args):
-    automation_transition(args, "retired")
-
-
 # ---------------------------------------------------------------- bounded autonomy
 
 def autonomy_run_id(value):
@@ -1433,19 +1235,11 @@ def cmd_autonomy_start(args):
         die("resuming a blocked run requires --resume-reason")
     raw_binding = getattr(args, "session_binding", None)
     if not raw_binding:
-        die("autonomy start requires --session-binding <harness>:<session-id>")
+        die("autonomy start requires --session-binding claude:<session-id>")
     try:
         binding = autonomy_contract.normalize_session_binding(raw_binding)
     except ValueError as exc:
         die(str(exc))
-    if (
-        binding.startswith("cursor:")
-        and get_scalar(fm, "autonomy_level") == "unattended"
-    ):
-        die(
-            "Cursor sessionStart is not compaction-safe; unattended runs require "
-            "claude:<session-id> or codex:<session-id>"
-        )
     conflicts = autonomy_binding_conflicts(binding, exclude_path=path)
     if conflicts:
         rels = ", ".join(os.path.relpath(item, ROOT) for item in conflicts)
@@ -1804,7 +1598,7 @@ def mapping_row_add(fm, mapping, slug, fields):
             block = re.sub(rf"^{re.escape(mapping)}:\s*\{{\}}\s*$", f"{mapping}:\n", block, count=1, flags=re.M)
         block = block.rstrip("\n") + "\n" + row
         return fm[:s] + block + fm[e:]
-    section = f"\n# AUTOMATIONS\n{mapping}:\n{row}"
+    section = f"\n# {mapping.upper()}\n{mapping}:\n{row}"
     marker = re.search(r"^# COUNTERS\s*$", fm, re.M)
     if marker:
         return fm[:marker.start()].rstrip() + "\n" + section + "\n" + fm[marker.start():]
@@ -2474,7 +2268,7 @@ def check_studio():
             captured = get_scalar(pfm, "metrics_captured_at")
             if posted and captured in (None, "", "null") and (today_d - posted).days >= STUDIO_CAPTURE_DAYS:
                 notes.append(f"{rel}: posted {(today_d - posted).days}d ago, metrics not captured — "
-                             f"capture per composio-notes.md into performance.csv and stamp metrics_captured_at")
+                             f"capture per performance-capture.md into performance.csv and stamp metrics_captured_at")
         issues += tracker_row_issues(rel, pd, pfm)
         issues += media_manifest_issues_for_fm(pd, pfm, "post.md")
     return issues, notes
@@ -3000,7 +2794,6 @@ def check_project(cdir):
                 require_ready=False,
                 check_hash=True,
             )
-    issues += automation_issues(cdir, cfm)
     return issues
 
 
@@ -3014,11 +2807,11 @@ TEMPLATE_WORD_BUDGET = 900    # */deliverables/*/template.md
 VOICE_LIVE = os.path.join(ROOT, "library", "context", "operator", "voice")
 VOICE_SCHEMA = os.path.join(ROOT, "library", "context", "operator-schema", "voice")
 
-LINK_SCAN_GLOBS = ("AGENTS.md", "AGENTS.builder.md", "AGENTS.operator.md", "AGENTS.daemon.md",
+LINK_SCAN_GLOBS = ("AGENTS.md", "AGENTS.builder.md", "AGENTS.operator.md",
                    "library/process/**/*.md", "library/deliverables/**/*.md",
                    "library/domains/**/*.md", "library/assets/README.md",
                    "system/audit/README.md", "system/skills/README.md",
-                   "system/skills/*/SKILL.md")
+                   "system/skills/*/SKILL.md", ".claude/skills/*/SKILL.md")
 
 LINK_PATTERN = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
 
@@ -3061,7 +2854,7 @@ def dead_link_issues():
 def budget_notes():
     notes = []
     targets = [(os.path.join(ROOT, f), PERSONA_WORD_BUDGET, "persona")
-               for f in ("AGENTS.builder.md", "AGENTS.operator.md", "AGENTS.daemon.md")]
+               for f in ("AGENTS.builder.md", "AGENTS.operator.md")]
     targets += [(p, PROCESS_WORD_BUDGET, "process file")
                 for p in sorted(glob.glob(os.path.join(ROOT, "library", "process", "**", "*.md"), recursive=True))]
     targets += [(p, TEMPLATE_WORD_BUDGET, "template")
@@ -3206,229 +2999,6 @@ def ppt_master_stray_issues(base=None):
     return issues
 
 
-HARNESS_MANIFEST = os.path.join("system", "harnesses", "manifest.json")
-PROJECTION_MARKER = ".agentframe-projection.json"
-PROJECTION_MANIFEST = ".agentframe-manifest.json"
-PROJECTION_GENERATOR = "AgentFrame af sync-harnesses"
-
-
-def _sha256(data):
-    return hashlib.sha256(data).hexdigest()
-
-
-def _projection_config(root=ROOT):
-    path = Path(root) / HARNESS_MANIFEST
-    try:
-        config = json.loads(path.read_text(encoding="utf-8-sig"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise ValueError(f"cannot load {HARNESS_MANIFEST}: {exc}") from exc
-    if config.get("schema_version") != 1:
-        raise ValueError(f"{HARNESS_MANIFEST}: unsupported schema_version")
-    if not config.get("skills") or not config.get("targets"):
-        raise ValueError(f"{HARNESS_MANIFEST}: skills and targets are required")
-    return path, config
-
-
-def _tree_hashes(folder):
-    folder = Path(folder)
-    hashes = {}
-    for path in sorted(p for p in folder.rglob("*") if p.is_file()):
-        rel = path.relative_to(folder).as_posix()
-        hashes[rel] = _sha256(_projection_bytes(path))
-    return hashes
-
-
-def _bundle_hash(file_hashes):
-    payload = "".join(f"{name}\0{digest}\n" for name, digest in sorted(file_hashes.items()))
-    return _sha256(payload.encode("utf-8"))
-
-
-def _projection_bytes(path):
-    """Normalize UTF-8 text EOLs while leaving binary bytes exact."""
-    data = Path(path).read_bytes()
-    try:
-        text = data.decode("utf-8")
-    except UnicodeDecodeError:
-        return data
-    return text.replace("\r\n", "\n").encode("utf-8")
-
-
-def _build_harness_projections(root, build_root):
-    root, build_root = Path(root), Path(build_root)
-    config_path, config = _projection_config(root)
-    canonical_root = root / config["canonical_root"]
-    config_hash = _sha256(_projection_bytes(config_path))
-    overlays = config.get("overlays", {})
-    built = {}
-
-    for harness, target_rel in sorted(config["targets"].items()):
-        target_build = build_root / harness
-        target_build.mkdir(parents=True)
-        skill_records = {}
-        for skill in config["skills"]:
-            source = canonical_root / skill
-            if not (source / "SKILL.md").is_file():
-                raise ValueError(f"canonical skill is missing SKILL.md: {source}")
-            destination = target_build / skill
-            shutil.copytree(source, destination)
-
-            overlay_rel = overlays.get(harness, {}).get(skill)
-            if overlay_rel:
-                overlay = root / overlay_rel
-                if not overlay.is_dir():
-                    raise ValueError(f"projection overlay does not exist: {overlay_rel}")
-                shutil.copytree(overlay, destination, dirs_exist_ok=True)
-
-            file_hashes = _tree_hashes(destination)
-            record = {
-                "source": f"{config['canonical_root']}/{skill}",
-                "overlay": overlay_rel,
-                "bundle_sha256": _bundle_hash(file_hashes),
-                "files": file_hashes,
-            }
-            marker = {
-                "generated_by": PROJECTION_GENERATOR,
-                "regenerate": "python system/af.py sync-harnesses --write",
-                "do_not_edit": True,
-                **record,
-            }
-            (destination / PROJECTION_MARKER).write_text(
-                json.dumps(marker, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n"
-            )
-            skill_records[skill] = record
-
-        root_manifest = {
-            "schema_version": 1,
-            "generated_by": PROJECTION_GENERATOR,
-            "regenerate": "python system/af.py sync-harnesses --write",
-            "source_manifest": HARNESS_MANIFEST.replace("\\", "/"),
-            "source_manifest_sha256": config_hash,
-            "harness": harness,
-            "skills": skill_records,
-        }
-        (target_build / PROJECTION_MANIFEST).write_text(
-            json.dumps(root_manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n"
-        )
-        built[harness] = (target_build, root / target_rel)
-    return built
-
-
-def _projection_drift(expected, actual):
-    expected, actual = Path(expected), Path(actual)
-    if not actual.is_dir():
-        return [f"missing projection directory: {actual}"]
-    expected_files = {
-        p.relative_to(expected).as_posix(): p for p in expected.rglob("*") if p.is_file()
-    }
-    actual_files = {
-        p.relative_to(actual).as_posix(): p for p in actual.rglob("*") if p.is_file()
-    }
-    issues = []
-    for rel in sorted(expected_files.keys() - actual_files.keys()):
-        issues.append(f"missing generated file: {actual / rel}")
-    for rel in sorted(actual_files.keys() - expected_files.keys()):
-        issues.append(f"unexpected generated file: {actual / rel}")
-    for rel in sorted(expected_files.keys() & actual_files.keys()):
-        if _projection_bytes(expected_files[rel]) != _projection_bytes(actual_files[rel]):
-            issues.append(f"drifted generated file: {actual / rel}")
-    return issues
-
-
-def _remove_projection_path(path):
-    path = Path(path)
-    if path.is_dir():
-        shutil.rmtree(path)
-    elif path.exists():
-        path.unlink()
-
-
-def _validate_projection_destination(path):
-    path = Path(path)
-    if not path.exists():
-        return
-    marker_path = path / PROJECTION_MARKER
-    try:
-        marker = json.loads(marker_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise ValueError(
-            f"refusing to replace non-generated skill directory: {path}"
-        ) from exc
-    if marker.get("generated_by") != PROJECTION_GENERATOR:
-        raise ValueError(f"refusing to replace foreign projection: {path}")
-
-
-def sync_harnesses(*, root=ROOT, write=False):
-    root = Path(root)
-    with tempfile.TemporaryDirectory(prefix=".agentframe-sync-", dir=root) as tmp:
-        temp_root = Path(tmp)
-        built = _build_harness_projections(root, temp_root / "build")
-        if not write:
-            issues = []
-            for _harness, (expected_root, actual_root) in built.items():
-                for skill in json.loads((root / HARNESS_MANIFEST).read_text(encoding="utf-8-sig"))["skills"]:
-                    issues.extend(_projection_drift(expected_root / skill, actual_root / skill))
-                expected_manifest = expected_root / PROJECTION_MANIFEST
-                actual_manifest = actual_root / PROJECTION_MANIFEST
-                if not actual_manifest.is_file():
-                    issues.append(f"missing projection manifest: {actual_manifest}")
-                elif _projection_bytes(expected_manifest) != _projection_bytes(actual_manifest):
-                    issues.append(f"drifted projection manifest: {actual_manifest}")
-            return issues
-
-        operations = []
-        backup_root = temp_root / "backup"
-        for harness, (expected_root, actual_root) in built.items():
-            actual_root.mkdir(parents=True, exist_ok=True)
-            for skill_dir in sorted(p for p in expected_root.iterdir() if p.is_dir()):
-                destination = actual_root / skill_dir.name
-                _validate_projection_destination(destination)
-                operations.append((skill_dir, destination, backup_root / harness / skill_dir.name))
-            manifest_source = expected_root / PROJECTION_MANIFEST
-            manifest_destination = actual_root / PROJECTION_MANIFEST
-            if manifest_destination.exists():
-                try:
-                    current = json.loads(manifest_destination.read_text(encoding="utf-8"))
-                except (OSError, json.JSONDecodeError) as exc:
-                    raise ValueError(
-                        f"refusing to replace foreign manifest: {manifest_destination}"
-                    ) from exc
-                if current.get("generated_by") != PROJECTION_GENERATOR:
-                    raise ValueError(f"refusing to replace foreign manifest: {manifest_destination}")
-            operations.append((manifest_source, manifest_destination,
-                               backup_root / harness / PROJECTION_MANIFEST))
-
-        installed = []
-        backups = []
-        try:
-            for source, destination, backup in operations:
-                if destination.exists():
-                    backup.parent.mkdir(parents=True, exist_ok=True)
-                    os.replace(destination, backup)
-                    backups.append((backup, destination))
-                os.replace(source, destination)
-                installed.append(destination)
-        except Exception:
-            for destination in reversed(installed):
-                _remove_projection_path(destination)
-            for backup, destination in reversed(backups):
-                os.replace(backup, destination)
-            raise
-    return []
-
-
-def cmd_sync_harnesses(args):
-    try:
-        issues = sync_harnesses(write=args.write)
-    except ValueError as exc:
-        die(str(exc))
-    if issues:
-        for issue in issues:
-            print(f"af sync-harnesses: DRIFT: {issue}")
-        raise SystemExit(1)
-    action = "wrote" if args.write else "checked"
-    print(f"af sync-harnesses: {action} native skill projections; clean")
-
-
 def media_shelf_notes():
     """Advisory drift on the operator's media shelf (library/assets/media/); no shelf → []."""
     try:
@@ -3456,9 +3026,8 @@ def check_system():
 AUDIT_DB = None            # None = the writer's default (system/audit/agentframe.db); tests repoint it
 BUTTON_WINDOW_DAYS = 14
 # Exit 1 from these means findings, not a refused transition.
-READ_ONLY_VERBS = {"doctor", "index", "search", "sync-harnesses", "autonomy check", "pipe board",
-                   "board list", "automation"}
-SUBCOMMAND_VERBS = {"index", "pipe", "studio", "board", "automation", "autonomy"}
+READ_ONLY_VERBS = {"doctor", "index", "search", "autonomy check", "pipe board", "board list"}
+SUBCOMMAND_VERBS = {"index", "pipe", "studio", "board", "autonomy"}
 
 
 def _audit_writer():
@@ -3633,22 +3202,6 @@ OPERATOR_VERBS = {"ready", "publish", "version", "draft", "adopt", "new-project"
 OPERATOR_PIPE_VERBS = {"save", "start", "stage"}
 OPERATOR_STUDIO_VERBS = {"new", "stage", "post"}
 OPERATOR_AUTONOMY_VERBS = {"init", "start", "checkpoint", "finish"}
-OPERATOR_AUTOMATION_VERBS = {"init", "ready", "activate", "pause", "retire"}
-
-
-def check_mode_gate(cmd, args=None):
-    """Enforce the unattended-run charter for state-changing commands.
-
-    Interactive task ownership is routed by the stable root AGENTS.md and its
-    task-local routers, not by mutable repository mode state.
-    """
-    if os.environ.get("AGENTFRAME_MANAGED_RUN") == "1":
-        if cmd in {"ready", "publish", "automation", "sync-harnesses"}:
-            die(f"'af {cmd}' is outside the managed-run charter; report blocked and exit")
-        if cmd == "board" and getattr(args, "board_cmd", None) not in {"sync", "list"}:
-            die("'af board' transitions are outside the managed-run charter; write the receipt and exit")
-        return
-    return
 
 
 # ------------------------------------------------------- board (work in flight)
@@ -3888,25 +3441,6 @@ def _run():
     s = sub.add_parser("search")
     s.add_argument("query"); s.add_argument("-n", "--limit", type=int, default=8)
     s.add_argument("--json", action="store_true"); s.set_defaults(fn=cmd_search)
-    s = sub.add_parser("sync-harnesses")
-    action = s.add_mutually_exclusive_group(required=True)
-    action.add_argument("--check", action="store_true")
-    action.add_argument("--write", action="store_true")
-    s.set_defaults(fn=cmd_sync_harnesses)
-
-    s = sub.add_parser("automation")
-    msub = s.add_subparsers(dest="automation_cmd", required=True)
-    ma = msub.add_parser("init"); ma.add_argument("project"); ma.add_argument("automation_id")
-    ma.add_argument("--job", required=True); ma.set_defaults(fn=cmd_automation_init)
-    ma = msub.add_parser("ready"); ma.add_argument("project"); ma.add_argument("automation_id")
-    ma.set_defaults(fn=cmd_automation_ready)
-    ma = msub.add_parser("activate"); ma.add_argument("project"); ma.add_argument("automation_id")
-    ma.add_argument("--deployment"); ma.set_defaults(fn=cmd_automation_activate)
-    ma = msub.add_parser("pause"); ma.add_argument("project"); ma.add_argument("automation_id")
-    ma.set_defaults(fn=cmd_automation_pause)
-    ma = msub.add_parser("retire"); ma.add_argument("project"); ma.add_argument("automation_id")
-    ma.set_defaults(fn=cmd_automation_retire)
-
     s = sub.add_parser("autonomy")
     asub = s.add_subparsers(dest="autonomy_cmd", required=True)
     aa = asub.add_parser("init"); aa.add_argument("project"); aa.add_argument("run_id")
@@ -3982,7 +3516,6 @@ def _run():
     bu = bsub.add_parser("unbind"); bu.set_defaults(fn=cmd_board_unbind)
 
     args = p.parse_args()
-    check_mode_gate(args.cmd, args)
     args.fn(args)
 
 

@@ -475,15 +475,6 @@ class BoardCliTests(unittest.TestCase):
         self.assertIn("orchestrator: claude:e381c0e2-1914", listing)
         self.assertIn("released", self.run_cmd(af.cmd_board_unbind))
 
-    def test_managed_run_gate_blocks_transitions_but_not_sync_or_list(self):
-        with patch.dict(os.environ, {"AGENTFRAME_MANAGED_RUN": "1"}):
-            with self.assertRaises(SystemExit):
-                with contextlib.redirect_stderr(io.StringIO()):
-                    af.check_mode_gate("board", types.SimpleNamespace(board_cmd="approve"))
-            af.check_mode_gate("board", types.SimpleNamespace(board_cmd="sync"))
-            af.check_mode_gate("board", types.SimpleNamespace(board_cmd="list"))
-
-
 class BoardHookTests(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()

@@ -17,7 +17,7 @@ from pathlib import Path
 
 from tornado import web
 
-from . import artifacts, automations, convert, snapshot, state
+from . import artifacts, convert, snapshot, state
 from . import board as board_model
 
 CACHE_DIR = Path(__file__).resolve().parents[2] / ".cache" / "convert"
@@ -104,28 +104,6 @@ class ProjectsHandler(_JsonHandler):
             self.fail(400, "filter must be active, completed, or all")
             return
         self.emit({"projects": project_summaries(self.root, self.cache.get(), project_filter)})
-
-
-class AutomationsHandler(_JsonHandler):
-    def get(self):
-        self.emit(automations.build_model(self.root))
-
-
-class AutomationReceiptsHandler(_JsonHandler):
-    def get(self):
-        try:
-            cursor = int(self.get_argument("cursor", "0"))
-            limit = int(self.get_argument("limit", str(automations.RECEIPT_PAGE_SIZE)))
-        except ValueError:
-            self.fail(400, "cursor and limit must be integers")
-            return
-        status = self.get_argument("status", "all")
-        try:
-            page = automations.receipt_page(self.root, cursor=cursor, limit=limit, status=status)
-        except ValueError as exc:
-            self.fail(400, str(exc))
-            return
-        self.emit(page)
 
 
 class BoardHandler(_JsonHandler):
@@ -378,8 +356,6 @@ def make_handlers(project_root: Path) -> list[tuple]:
         (r"/api/health", HealthHandler, kw),
         (r"/api/snapshot", SnapshotHandler, kw),
         (r"/api/activity", ActivityHandler, kw),
-        (r"/api/automations/receipts", AutomationReceiptsHandler, kw),
-        (r"/api/automations", AutomationsHandler, kw),
         (r"/api/board", BoardHandler, kw),
         (r"/api/projects", ProjectsHandler, kw),
         (r"/api/projects/([^/]+)/files", ProjectFilesHandler, kw),

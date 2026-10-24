@@ -33,8 +33,6 @@ Short and current:
 2. When an item is ready: run ready-event, sync the tracker, refresh the plan section, and PROPOSE the next 1–2 runway steps—don't make the operator plan from scratch each turn. `_local` deliverables use `af version` and `af ready` identically to library-backed deliverables.
 3. Recalibrate when scope moves: phases can be added, merged, or dropped. Log plan changes to `activity.md` as `plan_revised` events using one event per material state change; the first clause names the result, then only the useful consequence/reason.
 
-When a runway item becomes standing recurring or event-driven execution, load [`project-automation.md`](../project-automation.md). Keep the project on open flow; managed execution is an attached capability, not a new phase ladder.
-
 ## Files
 
 - With phases: `phase-{n}-{name}/` folders, versioned artifacts inside (same shape as the structured flows).

@@ -32,7 +32,7 @@ The normal vendor confirmation gate remains the default. A repo-contained PPT pr
 python system/tools/ppt_master_contract.py seal <ppt-project> `
   --run <run-file> --draft <draft-json>
 python system/af.py autonomy start <project> <run-id> `
-  --session-binding <harness>:<session-id>
+  --session-binding claude:<session-id>
 ```
 
 The run-unique sibling is `<deck-name>.<run-id>.agentframe-confirmation.json`. It records the pinned vendor commit, input hashes, approval record, and exact final result. The seal is immutable; `by: operator` is a durable record, not cryptographic authentication.
@@ -41,7 +41,7 @@ On the vendor's recognized confirmation waits (`stage1` and `final` since vendor
 
 ```powershell
 python system/tools/ppt_master_contract.py materialize <sealed-wrapper> `
-  --session-binding <harness>:<session-id>
+  --session-binding claude:<session-id>
 ```
 
 ## Verification Or Logging
@@ -52,7 +52,7 @@ Visual-QA evidence goes in the run's autonomy evidence, never in `activity.md`.
 
 ## Boundaries
 
-- `C:\tmp`, untrusted or missing hooks, and Cursor unattended runs do not claim the noninteractive-gate guarantee.
+- `C:\tmp` and untrusted or missing hooks do not claim the noninteractive-gate guarantee.
 - Route selection, the design-language handoff, and versioning/round-trip belong to [`deck-production.md`](deck-production.md).
 - Run authority, checkpoints, model routing, and stop rules belong to [`bounded-autonomy.md`](bounded-autonomy.md).
 - This file never authorizes a run; it describes deck obligations inside one already approved.

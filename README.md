@@ -2,13 +2,13 @@
 
 ![AgentFrame — a file-native context workspace for any kind of work, inside your AI coding agent](.github/readme-assets/banner.jpg)
 
-AgentFrame is a file-native context workspace for running any kind of work alongside coding agents. It works with Claude Code, Codex, Cursor, VS Code, Antigravity, or anything else that can read files because the projects, context, deliverables, decisions, and feedback loops are all plain markdown files. Everything about your work stays organized, so a fresh agent can read the workspace and pick up where you left off without a lengthy re-explanation.
+AgentFrame is a file-native context workspace for running any kind of work alongside Claude Code. The projects, context, deliverables, decisions, and feedback loops are all plain markdown files. Everything about your work stays organized, so a fresh agent can read the workspace and pick up where you left off without a lengthy re-explanation.
 
 I built it for my professional and personal work over many weekends, with likely many more to come. It's free to fork, so take whatever is useful for your own setup.
 
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" /></a>
-  <img alt="Works with" src="https://img.shields.io/badge/works%20with-claude%20code%20%7C%20codex%20%7C%20cursor%20%7C%20vscode%20%7C%20antigravity-blue?style=flat-square" />
+  <img alt="Works with" src="https://img.shields.io/badge/works%20with-claude%20code-blue?style=flat-square" />
   <img alt="Status" src="https://img.shields.io/badge/status-actively%20used-orange?style=flat-square" />
 </p>
 
@@ -43,7 +43,7 @@ The original marketing-only system is frozen at [agentframe-marketing](https://g
 
 ## Key features
 
-AgentFrame keeps its context, working rules, and project state in files that any coding agent can read.
+AgentFrame keeps its context, working rules, and project state in plain files that Claude Code reads and writes.
 
 ### 1. Pick up a project without re-briefing
 
@@ -73,8 +73,6 @@ AgentFrame keeps its context, working rules, and project state in files that any
 
 - **Record what happened as part of the work.** Activity logs and version notes cover projects, while an append-only audit database records system changes. `af doctor` reports drift without silently fixing it.
 
-- **Run standing project work through managed automations.** A project can define a job, receive queued tasks, and run them through a bounded local agent that returns a `done`, `bready`, or `failed` receipt. The included deployment path uses Power Automate, OneDrive, and a single-flight Cursor host. This part of the system is early and currently being tested in real use.
-
 ### 4. Learn deliberately from finished work
 
 - **Feed finished work back into the system.** When a project closes, harvest passes compare agent drafts with the operator's manual edits and the friction logged along the way. They propose changes to templates, processes, or the voice corpus, but nothing updates itself automatically; at least one short human review step remains.
@@ -84,8 +82,6 @@ AgentFrame keeps its context, working rules, and project state in files that any
 ### 5. See the workspace without another database
 
 - **Render the workspace from the same files the agents use.** The dashboard covers projects, attention items, the calendar, and the timeline without adding another database or making a model call. It provides a quick operational view while demonstrating that the underlying files are coherent enough to become an interface.
-
-- **See what the automation runtime is doing.** The read-only Automations tab shows waiting requests, terminal receipts, exceptions, and mismatches between a project's declared lifecycle and the local runtime. It reports problems without starting, retrying, or changing an automation.
 
 More detail is in [The Workspace Dashboard](#the-workspace-dashboard).
 
@@ -108,9 +104,9 @@ More detail is in [The Workspace Dashboard](#the-workspace-dashboard).
    cd agentframe
    ```
 
-2. Open the folder in Claude Code, Codex, Cursor, VS Code, Antigravity, or another coding agent that can read and write the workspace.
+2. Open the folder in Claude Code.
 
-3. Copy `.env.example` to `.env` if you want the optional Gemini or Composio integrations. The workspace, CLI, project system, and dashboard all run without API keys.
+3. Copy `.env.example` to `.env` if you want the optional Gemini integration. The workspace, CLI, project system, and dashboard all run without API keys.
 
 4. Tell the agent: **"Start a new project."** The stable root routes project work to the Operator instructions; under the hood the state transition is:
 
@@ -134,7 +130,7 @@ One stable `AGENTS.md` classifier routes each task to a lazy-loaded instruction 
 - **Operator** runs projects and career work under `workspace/` and reads the system on demand.
 - **Builder** evolves the templates, packs, processes, personas, CLI, and runtime under `library/` and `system/`.
 
-The root file is never rewritten to change modes. An agent reads only the task-local router it needs, then switches routers if the task's ownership changes. Managed unattended work has its own overlay.
+The root file is never rewritten to change modes. An agent reads only the task-local router it needs, then switches routers if the task's ownership changes.
 
 ### Pulling upstream changes
 
@@ -241,7 +237,6 @@ This is the full capability catalog. AgentFrame does not rebuild every productio
 | `humanizer` | Detects and removes common AI-writing patterns | Vendored |
 | `hyperframes` | HTML-to-video composition: Studio, CLI, engine, and routed video skills | Vendored |
 | `job-scout` | Sweeps public ATS feeds against the career search profile, login-free | Adapted |
-| `manage-lenses` | Creates and refreshes source-backed advisory lens packages | Internal |
 | `open-design` | Local-first advanced image and deck runtime | Vendored |
 | `ppt-master` | Converts sources into designed SVG pages and native-editable PowerPoint decks | Vendored |
 | `pptx` | Inspects, validates, and performs native PowerPoint edits | Vendored |
@@ -261,7 +256,6 @@ All AgentFrame-owned. Each loads on demand when the work reaches it.
 | `bounded-autonomy` | Goal contracts, budgets, checkpoints, reviewer gates, and stop rules |
 | `browser-fallback` | A controlled browser route when a supported API, connector, or CLI is unavailable |
 | `career-harvest` | Promotion of real project wins into proof points, stories, and resume-bank bullets |
-| `composio-notes` | Connected-workspace publishing and performance-capture conventions |
 | `deck-production` | Central deck routing with PPT Master as the default for new PowerPoint work |
 | `deliverable-versioning` | Head pointers, immutable snapshots, and revision judgment |
 | `diagram-production` | Diagram route selection, the native-shape deck handoff, and design-language brand projection |
@@ -269,14 +263,13 @@ All AgentFrame-owned. Each loads on demand when the work reaches it.
 | `humanizer-integration` | A calibrated humanization pass where a template calls for it |
 | `image-production` | Path selection across generated imagery, HTML visuals, and Open Design |
 | `knowledge-base` | Source ingestion, living knowledge files, archives, and consolidation rules |
-| `lens-use` | Explicit lens selection and application with disk-backed rehydration |
 | `native-office-render` | Renders PPTX/DOCX to pixels or PDF through installed Microsoft Office — the only sanctioned renderer |
 | `ready-event` | Readiness mechanics and the post-ready judgment checklist |
 | `operator-context-setup` | First-run generation of positioning, profile, career, and voice surfaces |
+| `performance-capture` | Connector-first post metrics capture and the raw performance CSV shape |
 | `preview-server` | Start-or-open behaviour, deep links, and preview hygiene for the dashboard |
 | `process-authoring` | The standard for reusable process files |
 | `project-activity` | The material-event trail and Attention items behind every project |
-| `project-automation` | Project-owned contracts, lifecycle, deployment joins, and result verification for standing work |
 | `project-frontmatter` | Canonical project state, tracker schema, overrides, and drift checks |
 | `reference-grounded-deck-redesign` | Preserves an existing deck's geometry and native objects while applying named redesign deltas |
 | `research-and-signals` | Kickoff context scans and research-method selection |
@@ -311,7 +304,6 @@ The structure follows a few rules that have kept it from turning into a second j
 - **Specialization is additive.** Packs declare vocabulary, templates, valid verbs, and routes; the core engine stays blind to what a project is about.
 - **Files own working truth.** Markdown and media hold project state, context, decisions, and outputs. SQLite has exactly two sanctioned jobs: the append-only system-change audit, and a rebuildable search index that stays a derived cache, never truth.
 - **Sources and knowledge are different things.** Immutable inputs live in `sources/`; distilled working context lives in `knowledge/`.
-- **Operator context and advisory lenses stay distinct.** Personal truth lives in `library/context/`; source-backed external viewpoints live in `library/lenses/` and load only when selected.
 - **Prose owns judgment; mechanisms guarantee invariants.** The agent decides what good work is. The CLI and hooks protect state, exports, and repeatable gates.
 - **The dashboard is a reader.** It never becomes a competing state owner. It only shows what's already available in markdown.
 - **Templates hold the reusable knowledge.** Skills and runtimes can be replaced without rewriting the deliverable library.
@@ -323,15 +315,15 @@ The structure follows a few rules that have kept it from turning into a second j
 <table>
 <tr>
 <td width="50%" valign="top"><img src=".github/readme-assets/dash-home.jpg" alt="Dashboard home" /><br/><sub><b>Surface · Dashboard.</b> Active projects, attention items, and recent activity, read straight from the workspace files.</sub></td>
-<td width="50%" valign="top"><img src=".github/readme-assets/dash-automations.jpg" alt="Automations pulse" /><br/><sub><b>Surface · Automations.</b> Read-only pulse of declared automations reconciled against live runtime state, receipts, and drift.</sub></td>
-</tr>
-<tr>
 <td width="50%" valign="top"><img src=".github/readme-assets/dash-preview.jpg" alt="Preview workspace" /><br/><sub><b>Surface · Preview.</b> An IDE-style workspace with tabs and splits for markdown, decks, PDFs, images, and video.</sub></td>
-<td width="50%" valign="top"><img src=".github/readme-assets/cal-week.jpg" alt="Week calendar" /><br/><sub><b>Calendar · Week.</b> Work blocks derived from logged activity; the day view zooms into this.</sub></td>
 </tr>
 <tr>
+<td width="50%" valign="top"><img src=".github/readme-assets/cal-week.jpg" alt="Week calendar" /><br/><sub><b>Calendar · Week.</b> Work blocks derived from logged activity; the day view zooms into this.</sub></td>
 <td width="50%" valign="top"><img src=".github/readme-assets/cal-month.jpg" alt="Month calendar" /><br/><sub><b>Calendar · Month.</b> Deliverable and shipped-media markers across the month, with hover previews.</sub></td>
+</tr>
+<tr>
 <td width="50%" valign="top"><img src=".github/readme-assets/cal-timeline.jpg" alt="Timeline" /><br/><sub><b>Calendar · Timeline.</b> A multi-month swimlane across projects, active-first.</sub></td>
+<td width="50%" valign="top"></td>
 </tr>
 </table>
 
@@ -349,20 +341,17 @@ agentframe/
 ├── AGENTS.md                   # stable task classifier
 ├── AGENTS.operator.md          # project execution and routing
 ├── AGENTS.builder.md           # system architecture and maintenance
-├── AGENTS.daemon.md            # unattended managed-run overlay
+├── .claude/                    # Claude Code hook wiring and natively discovered skills
 ├── library/
 │   ├── context/                 # operator, people, channel, career, and voice context
 │   ├── deliverables/            # shared deliverable templates
 │   ├── domains/                 # marketing, project-mgmt, careers
-│   ├── lenses/                  # schema plus private source-backed advisory packages
 │   ├── process/                 # flows and on-demand procedures
 │   └── assets/                  # logos and replayable design-language packages
 ├── system/
 │   ├── af.py                    # deterministic state-transition CLI
 │   ├── audit/                   # append-only system-change audit
 │   ├── browser/                 # browser runtime and recipes
-│   ├── daemon/                  # local managed-automation host and queue protocol
-│   ├── harnesses/               # native skill projections and hook-wiring contract
 │   ├── hooks/                   # deterministic production guards
 │   ├── indexer.py               # hybrid cross-project retrieval behind af index / af search
 │   ├── research/                # Gemini deep-research runtime
@@ -377,12 +366,11 @@ agentframe/
 
 ## Integrations
 
-AgentFrame runs locally, and the coding agent you already use provides the model. External services add optional production capabilities, so environment keys are only needed for the tools that use them.
+AgentFrame runs locally, and Claude Code provides the model. External services add optional production capabilities, so environment keys are only needed for the tools that use them.
 
 | Integration or runtime | Used for |
 |---|---|
 | Gemini | Deep Research and image generation through the local helper |
-| Composio | Connected-workspace context, publishing, and performance capture |
 | Open Design | Local-first advanced visual and deck production |
 | PPT Master | Native-editable deck generation from source material and SVG |
 | HyperFrames | HTML-to-video composition and rendering |
@@ -410,7 +398,6 @@ PRs for templates, process improvements, domain packs, skills, and runtime fixes
 ## References and lineage
 
 - [agentframe-marketing](https://github.com/situhacks/agentframe-marketing), the frozen marketing-only predecessor
-- [Composio](https://composio.dev)
 - [Open Design](https://github.com/nexu-io/open-design)
 - [PPT Master](https://github.com/hugohe3/ppt-master)
 - [HyperFrames](https://github.com/heygen-com/hyperframes)

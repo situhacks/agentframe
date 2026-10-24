@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Cross-harness guard for mechanically unsafe versioned-file writes.
+"""Guard for mechanically unsafe versioned-file writes.
 
 The guard is intentionally narrow. It denies direct edits to immutable lower
 versions and published heads, and denies hand-creating version files
@@ -12,13 +12,8 @@ a head that already has body content is denied — workspace files have no git
 history, so a clobbered draft is unrecoverable; the deny reason names both
 legitimate exits.
 
-Claude and Cursor expose direct file-write payloads. Codex exposes file edits
-as an ``apply_patch`` command, so the guard extracts every patch target before
-applying the same policy. Harness-specific response formatting happens only at
-the stdin/stdout boundary; the decision logic stays shared.
-
 Fail-open on malformed hook payloads. ``af doctor`` and the CLI remain the
-cross-harness backstops.
+backstops.
 """
 
 from __future__ import annotations
@@ -32,14 +27,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 VERSION_RE = re.compile(r"(.+)-v(\d+)\.md$")
 FRONTMATTER_RE = re.compile(r"\A---\n.*?\n---\n?", re.S)
-PATCH_FILE_RE = re.compile(r"^\*\*\* (Add|Update|Delete) File:\s*(.+?)\s*$", re.M)
 PPT_CONFIRMATION_SUFFIX = ".agentframe-confirmation.json"
-
-EVENT_ALIASES = {
-    "PreToolUse": "PreToolUse",
-    "preToolUse": "PreToolUse",
-    "beforeShellExecution": "PreToolUse",
-}
 
 
 def _deny(reason: str) -> dict:
@@ -104,37 +92,15 @@ def _resolve_path(raw: str, payload: dict) -> Path:
 
 
 def _targets(payload: dict) -> list[tuple[Path, str]]:
-    """Return ``(path, operation)`` pairs for one harness tool call."""
+    """Return ``(path, operation)`` pairs for one Edit or Write call."""
     tool = payload.get("tool_name") or ""
     tool_input = payload.get("tool_input") or {}
-
-    if tool == "apply_patch":
-        patch = tool_input.get("command") or tool_input.get("patch") or ""
-        operations = {"Add": "write", "Update": "edit", "Delete": "delete"}
-        return [
-            (_resolve_path(raw, payload), operations[action])
-            for action, raw in PATCH_FILE_RE.findall(patch)
-        ]
-
-    if tool not in {"Edit", "Write", "Delete"}:
+    if tool not in {"Edit", "Write"}:
         return []
-    raw = (
-        tool_input.get("file_path")
-        or tool_input.get("path")
-        or tool_input.get("target_file")
-        or ""
-    )
+    raw = tool_input.get("file_path") or tool_input.get("path") or ""
     if not raw:
         return []
-
-    if tool == "Delete":
-        operation = "delete"
-    elif tool == "Edit" or any(
-        key in tool_input for key in ("old_string", "new_string", "edits", "patch")
-    ):
-        operation = "edit"
-    else:
-        operation = "write"
+    operation = "edit" if tool == "Edit" else "write"
     return [(_resolve_path(raw, payload), operation)]
 
 
@@ -147,8 +113,8 @@ def _decide_target(path: Path, operation: str) -> dict | None:
         if path.exists():
             return _deny(
                 f"{path.name} is a sealed PPT confirmation contract and is immutable. "
-                "Create a new run-bound approval instead of editing, overwriting, or "
-                "deleting this record."
+                "Create a new run-bound approval instead of editing or overwriting "
+                "this record."
             )
         return _deny(
             f"Do not hand-create {path.name}. Use "
@@ -196,12 +162,6 @@ def _decide_target(path: Path, operation: str) -> dict | None:
             "Restore by creating a new version, never by editing history."
         )
 
-    if operation == "delete":
-        return _deny(
-            f"Do not delete versioned artifact {path.name}. Version files are the recovery trail; "
-            "change tracker state or create a new head through `python system/af.py version` instead."
-        )
-
     if operation == "write" and _has_drafted_body(path):
         return _deny(
             f"Full-file Write would clobber {path.name}'s drafted content, and workspace files have "
@@ -214,8 +174,7 @@ def _decide_target(path: Path, operation: str) -> dict | None:
 
 
 def decide(payload: dict) -> dict | None:
-    event = EVENT_ALIASES.get(payload.get("hook_event_name") or "PreToolUse")
-    if event != "PreToolUse":
+    if (payload.get("hook_event_name") or "PreToolUse") != "PreToolUse":
         return None
     for path, operation in _targets(payload):
         result = _decide_target(path, operation)
@@ -224,47 +183,20 @@ def decide(payload: dict) -> dict | None:
     return None
 
 
-def _cursor_payload(payload: dict) -> bool:
-    return bool(payload.get("cursor_version")) or payload.get("hook_event_name") in {
-        "preToolUse",
-        "beforeShellExecution",
-    }
-
-
-def _adapt_result(payload: dict, result: dict | None) -> dict | None:
-    if not result or not _cursor_payload(payload):
-        return result
-    output = result.get("hookSpecificOutput") or {}
-    decision = output.get("permissionDecision")
-    if not decision:
-        return result
-    reason = output.get("permissionDecisionReason") or "Blocked by AgentFrame policy."
-    return {
-        "permission": decision,
-        "user_message": reason,
-        "agent_message": reason,
-    }
-
-
 def run(stdin_text: str) -> str | None:
     try:
         payload = json.loads(stdin_text)
-        result = _adapt_result(payload, decide(payload))
+        result = decide(payload)
     except Exception:
         return None
     return json.dumps(result) if result else None
 
 
-def dispatch(stdin_text: str, argv: list[str]) -> str:
-    """Render one process response and suppress Cursor's imported Claude twin."""
-    try:
-        payload = json.loads(stdin_text)
-    except Exception:
-        return "{}"
-    if _cursor_payload(payload) and "--cursor-native" not in argv:
-        return "{}"
+def dispatch(stdin_text: str) -> str:
+    """Render one process response; always valid JSON."""
     return run(stdin_text) or "{}"
 
 
 if __name__ == "__main__":
-    sys.stdout.write(dispatch(sys.stdin.read(), sys.argv[1:]))
+    # Command-line arguments are ignored, so stale wiring that still passes flags keeps working.
+    sys.stdout.write(dispatch(sys.stdin.read()))

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Own when and where the [vendored humanizer](../../system/skills/humanizer/SKILL.md) runs on public-facing, agent-authored prose. The skill owns rewrite technique; this process owns authorship timing and scope.
+Own when and where the [vendored humanizer](../../.claude/skills/humanizer/SKILL.md) runs on public-facing, agent-authored prose. The skill owns rewrite technique; this process owns authorship timing and scope.
 
 **Read the vendored file at that path. Never invoke a skill named `humanizer` by name** — a different skill of the same name may be installed globally, and its patterns are numbered differently and calibrated against a different voice. The carve-outs in `anti-patterns.md` cite the vendored file's numbering, so the wrong file silently applies the wrong rules.
 

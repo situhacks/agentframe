@@ -6,15 +6,15 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/autonomy_guard.py\" --harness claude"
+            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/autonomy_guard.py\""
           },
           {
             "type": "command",
-            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/board_guard.py\" --event sessionstart --harness claude"
+            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/board_guard.py\" --event sessionstart"
           },
           {
             "type": "command",
-            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/index_refresh.py\" --harness claude"
+            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/index_refresh.py\""
           }
         ]
       }
@@ -24,14 +24,14 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/board_guard.py\" --event stop --harness claude"
+            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/board_guard.py\" --event stop"
           }
         ]
       }
     ],
     "PreToolUse": [
       {
-        "matcher": "Edit|Write|Delete",
+        "matcher": "Edit|Write",
         "hooks": [
           {
             "type": "command",
@@ -39,7 +39,7 @@
           },
           {
             "type": "command",
-            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/board_guard.py\" --event pretooluse --harness claude"
+            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/board_guard.py\" --event pretooluse"
           }
         ]
       },
@@ -48,11 +48,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/ppt_master_guard.py\" --harness claude"
+            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/ppt_master_guard.py\""
           },
           {
             "type": "command",
-            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/voice_guard.py\" --harness claude"
+            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/voice_guard.py\""
           }
         ]
       },
@@ -72,11 +72,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/ppt_master_guard.py\" --harness claude"
+            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/ppt_master_guard.py\""
           },
           {
             "type": "command",
-            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/voice_guard.py\" --harness claude"
+            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/voice_guard.py\""
           }
         ]
       }

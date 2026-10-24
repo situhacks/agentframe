@@ -8,7 +8,7 @@ pointers — consumers open the cited files before relying on them.
 Corpus (inclusion, not enforcement — whatever is indexed is the whole world
 `af search` sees): the personal layer only. workspace/ (projects, pipeline,
 studio, board), library/context/ (minus the voice corpus and the schema
-skeletons), library/lenses/, library/assets/, and .claude/plans/. System
+skeletons), library/assets/, and .claude/plans/. System
 machinery (system/, library/process|deliverables|domains) is routed by the
 AGENTS routers and their catalogs, never searched: search exists to find what
 the operator made or lived, faster than grep (operator decision 2026-09-09).
@@ -52,8 +52,8 @@ INDEX_DIR_NAME = os.path.join("system", "index")
 DB_NAME = "vault.db"
 GOLDEN_NAME = "golden-set.yaml"
 
-CORPUS_ROOTS = ["workspace", os.path.join("library", "context"), os.path.join("library", "lenses"),
-                os.path.join("library", "assets"), os.path.join(".claude", "plans")]
+CORPUS_ROOTS = ["workspace", os.path.join("library", "context"), os.path.join("library", "assets"),
+                os.path.join(".claude", "plans")]
 SKIP_DIRS_ANYWHERE = {
     "_archive", "_scratch", "__pycache__", "node_modules", "snapshots",
     "runs", "cache", "local", "dist", "out", "source", "references",

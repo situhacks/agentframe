@@ -141,8 +141,8 @@ session transcripts (2026-08-24 to 2026-09-09), each expected path verified on
 disk; the file marks them `[real]`. Twenty-three queries now, so the set is
 thinner than the 30-pair target and every number below carries that caveat.
 
-**Refresh without remembering.** `system/hooks/index_refresh.py` runs at session
-start on all three harnesses and spawns `af index update` detached when the
+**Refresh without remembering.** `system/hooks/index_refresh.py` runs from the Claude Code
+SessionStart hook and spawns `af index update` detached when the
 index is more than a day old. It never builds from cold and never blocks.
 
 | Measurement | Result | Date |

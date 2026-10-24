@@ -1,4 +1,3 @@
-import json
 import os
 import tempfile
 import unittest
@@ -15,10 +14,6 @@ def payload(command, event="PreToolUse", tool_response=None):
     if tool_response is not None:
         p["tool_response"] = tool_response
     return p
-
-
-def cursor_payload(command, event="beforeShellExecution"):
-    return {"hook_event_name": event, "cursor_version": "test", "command": command, "cwd": str(guard.ROOT)}
 
 
 class GuardFixture(unittest.TestCase):
@@ -130,20 +125,8 @@ class VersionContextTests(GuardFixture):
 
 
 class HarnessAdaptationTests(GuardFixture):
-    def test_cursor_native_deny_shape(self):
-        self.version(1, "Your brain quietly checks out.")
-        self.project("essay/essay-v1.md")
-        out = json.loads(guard.dispatch(json.dumps(cursor_payload("python system/af.py ready vg-demo essay")), ["--cursor-native", "--harness", "cursor"]))
-        self.assertEqual(out["permission"], "deny")
-        self.assertIn("banned-tic", out["agent_message"])
-
-    def test_cursor_twin_without_native_flag_is_silent(self):
-        self.version(1, "Your brain quietly checks out.")
-        self.project("essay/essay-v1.md")
-        self.assertEqual(guard.dispatch(json.dumps(cursor_payload("python system/af.py ready vg-demo essay")), []), "{}")
-
     def test_garbage_stdin_is_empty_json(self):
-        self.assertEqual(guard.dispatch("not json", ["--harness", "claude"]), "{}")
+        self.assertEqual(guard.dispatch("not json"), "{}")
 
 
 if __name__ == "__main__":

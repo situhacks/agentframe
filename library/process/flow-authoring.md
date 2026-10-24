@@ -47,7 +47,7 @@ Do not create placeholder sections to say a thing does not apply.
 
 - Flow files own phase order, deliverable inclusion, tracker transition points, and flow-specific skip/override rules.
 - Do not duplicate deliverable template details. Templates own artifact shape, readiness gates, publish/export details, and per-deliverable frontmatter.
-- Do not duplicate shared process primitives. Process files own reusable procedures such as ready events, performance capture, Composio notes, frontmatter schema, humanizer, voice mini-retro, and cancellation routines.
+- Do not duplicate shared process primitives. Process files own reusable procedures such as ready events, performance capture, frontmatter schema, humanizer, voice mini-retro, and cancellation routines.
 - Do not duplicate flow registry details. `flows/README.md` owns available flows, default selection, and high-level selection context.
 - Do not duplicate project instance state. `project.md` frontmatter owns the selected flow for each project instance.
 - Do not put project-specific content in a flow file.

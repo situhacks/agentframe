@@ -24,9 +24,9 @@ Each project instance records its selected flow in `project.md` frontmatter as `
 - Flow registry and default selection live here.
 - Per-project flow selection lives in `workspace/projects/{slug}/project.md` frontmatter.
 - Flow-specific phase sequencing lives in the flow file.
-- Shared process primitives stay in sibling process files such as `project-frontmatter.md`, `ready-event.md`, `voice-mini-retro.md`, and `composio-notes.md`.
+- Shared process primitives stay in sibling process files such as `project-frontmatter.md`, `ready-event.md`, `voice-mini-retro.md`, and `performance-capture.md`.
 - Deliverable details stay in `library/deliverables/{type}/template.md`.
 
 ## Adding Or Changing A Flow
 
-Use `system/skills/agentframe-structure/SKILL.md`, then load `flow-changes.md` from that skill.
+Use `.claude/skills/agentframe-structure/SKILL.md`, then load `flow-changes.md` from that skill.

@@ -105,7 +105,7 @@ External review (only when the post goes to a leadership stakeholder before publ
 
 The cross-ingredient coherence check (body doesn't retell the slides, cover aligns with the hook, CTA placement) runs when `post-FINAL.md` becomes ready per [`post-final/template.md`](../../domains/marketing/deliverables/post-final/template.md); video posts also run the cross-check in [`video-spec/template.md`](../../deliverables/video-spec/template.md).
 
-When all ingredients are ready and publish media exists or has been selected, follow the publish-prep procedure in [`composio-notes.md`](../composio-notes.md).
+When all ingredients are ready and publish media exists or has been selected, offer to prepare the draft through the connected MCP for the target platform, or follow the channel's own process file (for Substack, [`substack-publishing.md`](../substack-publishing.md)). Draft prep is not published state.
 
 **Tracker update during Phase 4** (per post, in the same turn as the file edit):
 - Post starts drafting: `deliverables.post-{n}.status: drafting` + `file: phase-4-production/posts/post-{n}/post-FINAL.md` + `last_updated`, creating the `post-FINAL.md` stub in the same turn.
@@ -122,7 +122,7 @@ Two steps, run in order after the active arc ends.
 | Step | Output |
 |---|---|
 | 5.1 Harvest retro | Run [`system/skills/deliverable-harvest/SKILL.md`](../../../system/skills/deliverable-harvest/SKILL.md) + [`system/skills/voice-harvest/SKILL.md`](../../../system/skills/voice-harvest/SKILL.md) over the campaign (shared source-read). Findings route on approval: template patches → `system-improvement`, voice pairs → `voice/pairs/`, recurrences → builder-backlog; campaign-specific notes stay in their deliverable or the `project.md` body. Close the log with `af feedback {slug} --mark-harvested`. Summary lands in `phase-5-launch-and-learn/system-retro-v{N}.md`. |
-| 5.2 Performance + campaign retro + completion | One closeout motion: capture `phase-5-launch-and-learn/performance-data.csv` per [`composio-notes.md`](../composio-notes.md) (connector-first MCP scan, manual gap-fill; metrics are meaningful ~14 days after each post's `published.posted_at`), then score the campaign in `phase-5-launch-and-learn/campaign-retro-v{N}.md`, then completion/archive when approved. |
+| 5.2 Performance + campaign retro + completion | One closeout motion: capture `phase-5-launch-and-learn/performance-data.csv` per [`performance-capture.md`](../performance-capture.md) (connector-first MCP scan, manual gap-fill; metrics are meaningful ~14 days after each post's `published.posted_at`), then score the campaign in `phase-5-launch-and-learn/campaign-retro-v{N}.md`, then completion/archive when approved. |
 
 **Tracker update during Phase 5:**
 - Harvest retro lands: add `system-retro` row to `deliverables` at `status: ready`.

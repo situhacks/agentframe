@@ -2,7 +2,7 @@
 
 Preferences with calibration, not prohibitions. Hard bans make the model write defensively and regress to generic; keep this file small and tiered, and put the generative effort into `pairs/` + `voice-profile.md`. Use this to notice drift, not to write scared.
 
-Generic-AI patterns (rule-of-three, inflated significance, copula avoidance, AI vocab, signposting, etc.) are the vendored humanizer's job: `system/skills/humanizer/SKILL.md` — run it with a writing sample for calibration. This file covers only YOUR specific preferences.
+Generic-AI patterns (rule-of-three, inflated significance, copula avoidance, AI vocab, signposting, etc.) are the vendored humanizer's job: `.claude/skills/humanizer/SKILL.md` — run it with a writing sample for calibration. This file covers only YOUR specific preferences.
 
 **Deterministic backstop.** `python system/voice_lint.py <head>` settles the rules a regex can (zero-budget tics, two dashes in one sentence, the writer's spaced hyphen turned into an em dash since the previous version) and reports the soft shapes; `system/hooks/voice_guard.py` gates `af ready` on it and prints it after `af version`. Keep the tic list in the lint in step with the Banned tics section below; the judgment rules stay prose.
 

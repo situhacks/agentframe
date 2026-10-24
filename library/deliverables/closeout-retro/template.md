@@ -74,7 +74,7 @@ State one of:
 
 - **Boundary Rules:** Do not patch system, template, voice, positioning, or process files from Closeout Retro. If outcome evidence suggests future Builder work, mention it only as an outcome note. Route actual changes through the harvest retro / `system-improvement` later. Do not restate project history. Use only facts needed to score the project brief and close the project.
 - **Criterion Honesty:** Attach compact caveats to the relevant scorecard item when the project brief was back-filled after the work was underway, the project scope changed after criteria were set, evidence is operator-reported rather than externally observable, or the metric is unavailable through Phase 5.3 capture. The absence of optional stakeholder feedback is not a caveat by itself.
-- **Analytics Collection:** Closeout Retro does not run connector discovery, Composio/Rube tools, exports, or manual analytics collection. See `library/process/composio-notes.md`. Treat missing metrics as `unknown`, not `0`. For operator-only qualitative criteria, ask only for the criterion evidence needed to score the project brief item. Do not turn this into an analytics collection step.
+- **Analytics Collection:** Closeout Retro does not run connector discovery, MCP tools, exports, or manual analytics collection. See `library/process/performance-capture.md`. Treat missing metrics as `unknown`, not `0`. For operator-only qualitative criteria, ask only for the criterion evidence needed to score the project brief item. Do not turn this into an analytics collection step.
 
 ## Draft Frontmatter Convention
 

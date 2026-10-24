@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tokenless board maintenance from harness hooks.
+"""Tokenless board maintenance from Claude Code hooks.
 
 ``--event sessionstart``: run one deterministic ``af board sync`` and print at
 most one short line when cards are waiting on the operator.
@@ -47,7 +47,7 @@ def _payload() -> dict:
 
 
 def _session_id(payload: dict) -> str | None:
-    value = payload.get("session_id") or payload.get("conversation_id")
+    value = payload.get("session_id")
     return str(value) if value else None
 
 
@@ -70,7 +70,7 @@ def backstop_receipt(root: Path, session_id: str, payload: dict) -> str | None:
     return None
 
 
-WRITE_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit", "Delete"}
+WRITE_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
 
 
 def write_guard(root: Path, payload: dict) -> str | None:
@@ -92,8 +92,9 @@ def write_guard(root: Path, payload: dict) -> str | None:
 def main() -> int:
     ap = argparse.ArgumentParser(description="AgentFrame board hook")
     ap.add_argument("--event", choices=("sessionstart", "stop", "pretooluse"), required=True)
-    ap.add_argument("--harness", default="claude")
-    ap.add_argument("--cursor-native", action="store_true")
+    # Accepted and ignored so a session started on older wiring never hits a usage error.
+    ap.add_argument("--harness", help=argparse.SUPPRESS)
+    ap.add_argument("--cursor-native", action="store_true", help=argparse.SUPPRESS)
     args = ap.parse_args()
     if args.event == "pretooluse":
         try:

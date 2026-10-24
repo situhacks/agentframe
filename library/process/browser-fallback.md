@@ -1,10 +1,10 @@
 # Browser Fallback Process
 
-Lazy-load this file when Composio/Rube MCP, another approved API/MCP, or an approved CLI is unavailable and the operator asks Cursor to use a browser workflow instead.
+Lazy-load this file when a connected MCP server, another approved API, or an approved CLI is unavailable and the operator asks for a browser workflow instead.
 
 ## Principle
 
-Cursor is the brain. Local browser-use/browser-harness is the browser hand.
+Claude Code is the brain. Local browser-use/browser-harness is the browser hand.
 
 Browser fallback is not an app-specific automation stack. The agent reads the workflow recipe, observes the controlled browser through browser-harness, executes one bounded browser action, observes again, and updates workflow memory only when something durable changes.
 
@@ -12,7 +12,7 @@ Do not introduce new browser scripts by default. Improve the workflow recipe fir
 
 ## When To Use
 
-Use browser fallback only after checking that Composio/Rube or another native integration is not available or not worth wiring for the current task. Prefer approved API, MCP, or CLI when they exist.
+Use browser fallback only after checking that a connected MCP server or another native integration is not available or not worth wiring for the current task. Prefer approved API, MCP, or CLI when they exist.
 
 Use browser fallback for visible web-app work the operator can already do manually: Outlook, calendar, SharePoint-style browser surfaces, or similar apps where session access works in a controlled profile.
 
@@ -38,16 +38,16 @@ Stop at password, one-time code, authenticator approval, security question, devi
 
 ## Hardening Rule
 
-Do not harden upfront. Cursor-driven browser-harness execution is the default while the workflow is fluid.
+Do not harden upfront. Claude-driven browser-harness execution is the default while the workflow is fluid.
 
-Promote only when the same workflow succeeds repeatedly and the cost of Cursor reasoning is the bottleneck. Promotion means improving the workflow recipe, not adding a new Outlook/email/calendar script and not adding run history inside `recipe.md`.
+Promote only when the same workflow succeeds repeatedly and the cost of Claude's reasoning is the bottleneck. Promotion means improving the workflow recipe, not adding a new Outlook/email/calendar script and not adding run history inside `recipe.md`.
 
-If a hardened recipe path fails, fall back to Cursor-driven execution from the workflow file and live observations. Do not add a second deterministic verifier stack.
+If a hardened recipe path fails, fall back to Claude-driven execution from the workflow file and live observations. Do not add a second deterministic verifier stack.
 
 ## Anti-Patterns
 
 - One script per app task.
-- Browser-action schemas that reject useful Cursor judgment before the first real workflow is stable.
+- Browser-action schemas that reject useful agent judgment before the first real workflow is stable.
 - Hard-coded semantic gates for every app.
 - Adding any separate browser automation framework for this system.
 - Adding security machinery beyond the simple approval mode already declared in the workflow file.

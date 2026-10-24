@@ -37,7 +37,7 @@ Load when the operator (or forker) wants to add a new deliverable type. Concrete
 Do NOT load this skill for:
 
 - Patching an existing deliverable type → that is `system/skills/system-improvement/SKILL.md`.
-- Changing campaign flows, phase systems, default flow selection, or broad structure routing → start with `system/skills/agentframe-structure/SKILL.md`.
+- Changing campaign flows, phase systems, default flow selection, or broad structure routing → start with `.claude/skills/agentframe-structure/SKILL.md`.
 - One-off deliverable instances inside a campaign (a one-off slide, a one-off email) → those are produced inline, no template needed.
 - Decommissioning a deliverable type → not yet a skill; bespoke under Builder.
 
@@ -93,7 +93,7 @@ Identify and surface all upstream files that need updating to wire the new deliv
 | Wire-up | When needed | If needed, route through |
 |---|---|---|
 | Add letter (i+) to System Retro smart-routing options | If patches to this new deliverable will need their own routing letter (rare — most new deliverable types use existing route (c) "deliverables/{type}/template.md hard constraints") | `system/skills/system-improvement/SKILL.md` (since it's a template patch to `system-retro/template.md`) |
-| Add deliverable to a campaign flow | If this deliverable belongs in one or more named flows | `system/skills/agentframe-structure/SKILL.md` (flow change, then `system-improvement` for the file patch if needed) |
+| Add deliverable to a campaign flow | If this deliverable belongs in one or more named flows | `.claude/skills/agentframe-structure/SKILL.md` (flow change, then `system-improvement` for the file patch if needed) |
 | Add `current_phase` enum value to `library/process/project-frontmatter.md` | Only if this deliverable triggers a brand-new campaign phase (very rare; almost always slots into existing phases) | `system/skills/system-improvement/SKILL.md` |
 | Confirm `status` enum on the new deliverable matches the canonical vocabulary in `library/process/project-frontmatter.md` | Always (no-op when scaffold uses the default `drafting | ready | deferred`; `published` is already available when the artifact is issued immutably) — surface only if the operator proposes a brand-new value | `system/skills/system-improvement/SKILL.md` (any new value is a `library/process/project-frontmatter.md` schema change and must pass the prior-patch shape-failure check when prior history exists) |
 | Add campaign-local export template convention at `workspace/projects/{slug}/exports/templates/{new-type}.{docx,pptx}` | If this deliverable exports to Word/PPT | Surface to user; they create optional templates (this skill does not author binary export templates) |
@@ -139,7 +139,7 @@ payload_json:
 
 After the first real use of this deliverable type, the System Retro for that campaign appends a paired `validation_resolved` `system_changes` row linked to this scaffold (see `system/skills/system-improvement/SKILL.md` Step 6 for the schema).
 
-If the new deliverable was wired into a campaign flow or `project-frontmatter.md`, those wire-ups produce their own `process_patch` / `schema_change` `system_changes` rows via `system/skills/agentframe-structure/SKILL.md` and `system/skills/system-improvement/SKILL.md` — link them from this scaffold row's payload.
+If the new deliverable was wired into a campaign flow or `project-frontmatter.md`, those wire-ups produce their own `process_patch` / `schema_change` `system_changes` rows via `.claude/skills/agentframe-structure/SKILL.md` and `system/skills/system-improvement/SKILL.md` — link them from this scaffold row's payload.
 
 ## What this skill does NOT do
 
@@ -151,7 +151,7 @@ If the new deliverable was wired into a campaign flow or `project-frontmatter.md
 
 ## Edge cases
 
-- **The new deliverable is actually a phase, not a deliverable** (e.g. user says "let's add a discovery phase deliverable"): surface the category confusion. Phases are in named campaign flows under `library/process/flows/`; deliverables produced within phases are here. If the user wants a new phase, that is a Builder decision routed through `system/skills/agentframe-structure/SKILL.md`.
+- **The new deliverable is actually a phase, not a deliverable** (e.g. user says "let's add a discovery phase deliverable"): surface the category confusion. Phases are in named campaign flows under `library/process/flows/`; deliverables produced within phases are here. If the user wants a new phase, that is a Builder decision routed through `.claude/skills/agentframe-structure/SKILL.md`.
 - **The new deliverable is a one-off for a single campaign**: refuse to scaffold. Templates earn their place from repeat use. *"This sounds like a one-off artifact for `[campaign-slug]`. Templates earn their place from 2+ uses. Draft this inline in the campaign for now; if it shows up again in a future campaign, scaffold then."*
 - **User wants to scaffold from a template that doesn't exist yet**: ask which existing type is closest. Use that as the reference baseline. The skill cannot bootstrap a deliverable type from nothing — there must always be a reference shape.
 - **Forker is scaffolding a deliverable for a marketing process that has zero overlap with this fork's existing types** (e.g. forker is in B2B SaaS, fork ships consumer-content templates): the locate-before-inventing check will return ~0% overlap on every comparison, which is the correct signal. Proceed; the new template anchors a new family within this fork's `library/deliverables/`. Their next deliverable type compares against the new entry too.

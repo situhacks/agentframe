@@ -50,7 +50,6 @@ Load for project state, continuity, dependency, routing, and next-action decisio
 | `completed_at` / `cancelled_at` | The matching terminal transition occurs. |
 | `quarterly_goals_advanced` | The project actively references current positioning goals. |
 | `build_repo` / `build_graduated_at` | [`technical-build.md`](technical-build.md) owns an external build. |
-| `automations` | `af automation init` creates the first project-attached automation pointer. |
 
 Domain packs may add current routing or state fields through `pack.md`. Marketing adds `post_manifest` when a real manifest moment occurs; it is absent for marketing work with no post manifest.
 

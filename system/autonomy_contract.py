@@ -15,7 +15,7 @@ from pathlib import Path
 
 
 SCHEMA_VERSION = "2026-08-03-v2"
-SESSION_HARNESSES = {"claude", "codex", "cursor"}
+SESSION_HARNESSES = {"claude"}
 PROHIBITED_EFFECTS = (
     "external-communications-or-transmission",
     "deliverable-readiness-or-publication",
@@ -106,7 +106,7 @@ def normalize_session_binding(value: str) -> str:
     match = re.fullmatch(r"([a-z]+):([A-Za-z0-9][A-Za-z0-9._:-]{2,255})", value or "")
     if not match or match.group(1) not in SESSION_HARNESSES:
         raise ValueError(
-            "session binding must be <claude|codex|cursor>:<session-id>"
+            "session binding must be claude:<session-id>"
         )
     return f"{match.group(1)}:{match.group(2)}"
 

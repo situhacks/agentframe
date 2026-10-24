@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Cross-harness gate: unready copy must not reach an external publication surface.
+"""Gate: unready copy must not reach an external publication surface.
 
 ``af publish`` refuses a non-ready head, but the button is not on the path that
 actually ships an essay. Copy reaches Substack through the MCP server and the
@@ -31,7 +31,6 @@ from __future__ import annotations
 import glob
 import json
 import os
-import re
 import sys
 from pathlib import Path
 
@@ -40,13 +39,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from system import af  # noqa: E402
 
-EVENT_ALIASES = {
-    "PreToolUse": "PreToolUse",
-    "preToolUse": "PreToolUse",
-}
-
-# Harnesses spell the same MCP tool slightly differently; match the verb, not the prefix.
-GATED_TOOL_RE = re.compile(r"substack.*update_draft$|update_draft.*substack", re.I)
+GATED_TOOL = "mcp__substack__update_draft"
 
 CONTENT_FIELDS = ("body", "title", "subtitle")
 
@@ -107,10 +100,9 @@ def _draft_owner(draft_id: str):
 
 
 def decide(payload: dict) -> dict | None:
-    if EVENT_ALIASES.get(payload.get("hook_event_name") or "PreToolUse") != "PreToolUse":
+    if (payload.get("hook_event_name") or "PreToolUse") != "PreToolUse":
         return None
-    tool = payload.get("tool_name") or ""
-    if not GATED_TOOL_RE.search(tool):
+    if payload.get("tool_name") != GATED_TOOL:
         return None
 
     tool_input = payload.get("tool_input") or {}
@@ -121,7 +113,7 @@ def decide(payload: dict) -> dict | None:
     if raw in (None, ""):
         return None
     draft_id = str(raw).strip()
-    if draft_id.endswith(".0"):  # JSON numbers arrive as floats on some harnesses
+    if draft_id.endswith(".0"):  # JSON numbers can arrive as floats
         draft_id = draft_id[:-2]
 
     owner = _draft_owner(draft_id)
@@ -141,36 +133,20 @@ def decide(payload: dict) -> dict | None:
     )
 
 
-def _cursor_payload(payload: dict) -> bool:
-    return bool(payload.get("cursor_version")) or payload.get("hook_event_name") == "preToolUse"
-
-
-def _adapt_result(payload: dict, result: dict | None) -> dict | None:
-    if not result or not _cursor_payload(payload):
-        return result
-    reason = result["hookSpecificOutput"]["permissionDecisionReason"]
-    return {"permission": "deny", "user_message": reason, "agent_message": reason}
-
-
 def run(stdin_text: str) -> str | None:
     try:
         payload = json.loads(stdin_text)
-        result = _adapt_result(payload, decide(payload))
+        result = decide(payload)
     except Exception:
         return None
     return json.dumps(result) if result else None
 
 
-def dispatch(stdin_text: str, argv: list[str]) -> str:
-    """Render one process response and suppress Cursor's imported Claude twin."""
-    try:
-        payload = json.loads(stdin_text)
-    except Exception:
-        return "{}"
-    if _cursor_payload(payload) and "--cursor-native" not in argv:
-        return "{}"
+def dispatch(stdin_text: str) -> str:
+    """Render one process response; always valid JSON."""
     return run(stdin_text) or "{}"
 
 
 if __name__ == "__main__":
-    sys.stdout.write(dispatch(sys.stdin.read(), sys.argv[1:]))
+    # Command-line arguments are ignored, so stale wiring that still passes flags keeps working.
+    sys.stdout.write(dispatch(sys.stdin.read()))

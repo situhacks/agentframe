@@ -107,6 +107,6 @@ For each video record: the first-twelve-word hook and its pattern, structure and
 
 ## Boundaries
 
-- Does not own state transitions (`af studio`), the intake of reusable captures (`media-intake.md`), publishing mechanics (the channel's browser recipe), or performance capture (`composio-notes.md`).
+- Does not own state transitions (`af studio`), the intake of reusable captures (`media-intake.md`), publishing mechanics (the channel's browser recipe), or performance capture (`performance-capture.md`).
 - Does not maintain a parallel HyperFrames guide; the vendored skills own composition, animation and rendering detail.
 - Does not automate anything on the platform.

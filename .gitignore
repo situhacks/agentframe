@@ -8,10 +8,6 @@ library/context/*
 !library/context/operator-schema/
 system/builder-backlog*.md
 
-# === Private source-backed lenses ===
-library/lenses/*
-!library/lenses/README.md
-
 # === Operator visual assets (client logos, brand design languages) ===
 # The schema (README.md) travels; the instances are client-identifiable and never do.
 library/assets/design-languages/*
@@ -112,19 +108,13 @@ __pycache__/
 *.pyc
 *.pyo
 
-# === Harness-local config with narrow tracked AgentFrame integrations ===
-# Ignore each directory's local plans/settings while re-including only the
-# shared hook wiring and generated skill projections AgentFrame owns.
+# === Claude Code local config ===
+# Ignore local plans, settings, and worktrees while re-including the shared
+# hook wiring and the AgentFrame-owned skills Claude discovers natively.
 .claude/*
 !.claude/settings.json
 !.claude/skills/
 !.claude/skills/**
-.cursor/*
-!.cursor/hooks.json
-!.cursor/skills/
-!.cursor/skills/**
-.codex/*
-!.codex/hooks.json
 
 # === Plugin scratch (brainstorming / writing-plans design specs) ===
 docs/
@@ -138,6 +128,3 @@ docs/
 system/server/.surface.lock
 system/server/.surface.log
 system/server/.cache/
-
-# === Managed automation deployment state (per-machine) ===
-system/daemon/local/

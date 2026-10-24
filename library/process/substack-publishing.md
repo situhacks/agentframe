@@ -38,5 +38,5 @@ Before calling the publication reconciled, verify:
 - Content shape and readiness criteria belong to the calling deliverable template, especially [`substack-essay`](../domains/marketing/deliverables/substack-essay/template.md) and [`post-final`](../domains/marketing/deliverables/post-final/template.md).
 - Publication URL, credentials, session rotation, series labels, footer wording, and CTA conventions belong to the Substack channel profile.
 - Generic post state transitions belong to `system/af.py` and the `post-final` template.
-- Performance capture belongs to [`composio-notes.md`](composio-notes.md).
+- Performance capture belongs to [`performance-capture.md`](performance-capture.md).
 - Publication-level optimization such as welcome email, About page, recommendations, naming, and pinned-post strategy is operator work, not part of each publish run.

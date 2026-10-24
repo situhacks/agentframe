@@ -146,7 +146,7 @@ class PptMasterContractTests(unittest.TestCase):
                 project="deck-test",
                 run_id="deck-run",
                 resume_reason=None,
-                session_binding="codex:ppt-session",
+                session_binding="claude:ppt-session",
             ),
         )
         return run, wrapper
@@ -154,11 +154,11 @@ class PptMasterContractTests(unittest.TestCase):
     def test_fixed_values_seal_start_materialize_and_check(self):
         _, wrapper = self.seal_and_start()
         sealed = contract.validate_contract(
-            wrapper, expected_session="codex:ppt-session"
+            wrapper, expected_session="claude:ppt-session"
         )
         self.assertEqual(sealed["vendor_commit"], contract.VENDOR_COMMIT)
         result_path = contract.materialize(
-            str(wrapper), expected_session="codex:ppt-session"
+            str(wrapper), expected_session="claude:ppt-session"
         )
         self.assertEqual(
             json.loads(result_path.read_text(encoding="utf-8")),
@@ -166,7 +166,7 @@ class PptMasterContractTests(unittest.TestCase):
         )
         contract.validate_contract(
             wrapper,
-            expected_session="codex:ppt-session",
+            expected_session="claude:ppt-session",
             require_materialized=True,
         )
 
@@ -199,7 +199,7 @@ class PptMasterContractTests(unittest.TestCase):
         self.source.write_text("Mutated brief\n", encoding="utf-8")
         with self.assertRaisesRegex(contract.ContractError, "hash/path drift"):
             contract.validate_contract(
-                wrapper, expected_session="codex:ppt-session"
+                wrapper, expected_session="claude:ppt-session"
             )
 
     def test_guard_blocks_ui_and_revalidates_export(self):
@@ -215,11 +215,11 @@ class PptMasterContractTests(unittest.TestCase):
             "cwd": str(self.root),
             "session_id": "ppt-session",
         }
-        denied = ppt_master_guard.decide(payload, harness="codex")
+        denied = ppt_master_guard.decide(payload)
         reason = denied["hookSpecificOutput"]["permissionDecisionReason"]
         self.assertIn("materialize", reason)
         wrong_session = {**payload, "session_id": "other-session"}
-        denied = ppt_master_guard.decide(wrong_session, harness="codex")
+        denied = ppt_master_guard.decide(wrong_session)
         self.assertIn(
             "different harness session",
             denied["hookSpecificOutput"]["permissionDecisionReason"],
@@ -230,13 +230,13 @@ class PptMasterContractTests(unittest.TestCase):
             side_effect=RuntimeError("synthetic guard failure"),
         ):
             fail_closed = json.loads(
-                ppt_master_guard.run(json.dumps(payload), harness="codex")
+                ppt_master_guard.run(json.dumps(payload))
             )
         self.assertIn(
             "guard failed",
             fail_closed["hookSpecificOutput"]["permissionDecisionReason"],
         )
-        contract.materialize(str(wrapper), expected_session="codex:ppt-session")
+        contract.materialize(str(wrapper), expected_session="claude:ppt-session")
 
         export_payload = {
             **payload,
@@ -248,10 +248,10 @@ class PptMasterContractTests(unittest.TestCase):
             },
         }
         self.assertIsNone(
-            ppt_master_guard.decide(export_payload, harness="codex")
+            ppt_master_guard.decide(export_payload)
         )
         self.source.write_text("Drift\n", encoding="utf-8")
-        denied = ppt_master_guard.decide(export_payload, harness="codex")
+        denied = ppt_master_guard.decide(export_payload)
         self.assertIn(
             "invalid",
             denied["hookSpecificOutput"]["permissionDecisionReason"].lower(),
@@ -261,7 +261,7 @@ class PptMasterContractTests(unittest.TestCase):
         fm = af.set_scalar(fm, "status", "complete", str(run))
         run.write_text(af.join_fm(fm, body), encoding="utf-8")
         self.assertIsNone(
-            ppt_master_guard.decide(payload, harness="codex")
+            ppt_master_guard.decide(payload)
         )
 
 

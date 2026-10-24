@@ -1,7 +1,7 @@
 # LinkedIn Profile Refresh
 
 workflow_id: linkedin-profile-refresh
-status: cursor_replay
+status: replay
 browser: chrome
 app_url: https://www.linkedin.com/in/{operator-handle}/
 approval_mode: human_review

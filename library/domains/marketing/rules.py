@@ -214,7 +214,7 @@ def publish(ctx, cdir, args):
     print("  [ ] Published copy reconciled before this immutable receipt: if the live post differs")
     print("      materially, create a new tracked edition rather than mutating this published record")
     print("  [ ] shipped_media recorded for every asset that actually shipped (--media)")
-    print("  [ ] Performance capture scheduled (~14 days after posted_at, per composio-notes.md)")
+    print("  [ ] Performance capture scheduled (~14 days after posted_at, per performance-capture.md)")
     print("  [ ] User-voiced? Run voice-harvest and deliverable-harvest now")
     print("      (system/skills/voice-harvest/SKILL.md, system/skills/deliverable-harvest/SKILL.md);")
     print("      corpus promotion is eligible from this publish. Not a box to tick: run them.")

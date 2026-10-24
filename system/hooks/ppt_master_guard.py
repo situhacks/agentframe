@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Cross-harness deterministic guards around the vendored ppt-master skill.
+"""Deterministic guards around the vendored ppt-master skill.
 
 The overlay rules in system/skills/ppt-master/AGENTS.md are read once at run
 start and decay out of context over a long deck session. These hooks re-inject
 each rule at the exact moment it is violated, so they hold regardless of
 compaction. All guard logic lives here — vendored files are never patched
-(refresh procedure: VENDOR.md). Native wiring lives in the tracked Claude,
-Cursor, and Codex project configs; command shapes matched here are pinned by
-system/tests/test_ppt_master_guard.py — re-run after every vendor refresh.
+(refresh procedure: VENDOR.md). Wiring lives in .claude/settings.json; command
+shapes matched here are pinned by system/tests/test_ppt_master_guard.py — re-run
+after every vendor refresh.
 
 PreToolUse (Bash|PowerShell):
   - project_manager.py init      -> deny when the project would land inside
@@ -49,15 +49,6 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from system.tools import ppt_master_contract as contract  # noqa: E402
-
-EVENT_ALIASES = {
-    "PreToolUse": "PreToolUse",
-    "preToolUse": "PreToolUse",
-    "beforeShellExecution": "PreToolUse",
-    "PostToolUse": "PostToolUse",
-    "postToolUse": "PostToolUse",
-    "afterShellExecution": "PostToolUse",
-}
 
 STAGING_REASON = (
     "PPT Master staging guard: this init would create the deck project at {target} - "
@@ -220,18 +211,13 @@ def _confirm_project_path(tokens: list[str], cwd: Path) -> Path | None:
     return cwd / raw
 
 
-def _payload_binding(payload: dict, harness: str | None) -> str | None:
-    if harness not in {"claude", "codex", "cursor"}:
-        return None
-    if harness == "cursor":
-        session_id = payload.get("session_id") or payload.get("conversation_id")
-    else:
-        session_id = payload.get("session_id")
+def _payload_binding(payload: dict) -> str | None:
+    session_id = payload.get("session_id")
     if not session_id:
         return None
     try:
         return contract.autonomy_contract.normalize_session_binding(
-            f"{harness}:{session_id}"
+            f"claude:{session_id}"
         )
     except ValueError:
         return None
@@ -271,14 +257,13 @@ def _candidate_owner(candidate: Path, project: Path) -> tuple[str | None, str | 
 def _contract_guard(
     project: Path,
     payload: dict,
-    harness: str | None,
     *,
     confirmation_launch: bool,
 ) -> dict | None:
     candidates = _contract_candidates(project)
     if not candidates:
         return None
-    binding = _payload_binding(payload, harness)
+    binding = _payload_binding(payload)
     running = []
     for candidate in candidates:
         status, owner_binding = _candidate_owner(candidate, project)
@@ -321,12 +306,8 @@ def _contract_guard(
     return None
 
 
-def decide(payload: dict, harness: str | None = None) -> dict | None:
-    command = (
-        (payload.get("tool_input") or {}).get("command")
-        or payload.get("command")
-        or ""
-    )
+def decide(payload: dict) -> dict | None:
+    command = (payload.get("tool_input") or {}).get("command") or ""
     if (
         "project_manager.py" not in command
         and "svg_to_pptx.py" not in command
@@ -334,7 +315,7 @@ def decide(payload: dict, harness: str | None = None) -> dict | None:
     ):
         return None
     cwd = Path(payload.get("cwd") or ".")
-    event = EVENT_ALIASES.get(payload.get("hook_event_name") or "PreToolUse")
+    event = payload.get("hook_event_name") or "PreToolUse"
     tokens = _tokens(command)
 
     if event == "PreToolUse":
@@ -343,7 +324,6 @@ def decide(payload: dict, harness: str | None = None) -> dict | None:
             result = _contract_guard(
                 confirm_project,
                 payload,
-                harness,
                 confirmation_launch=True,
             )
             if result:
@@ -353,7 +333,6 @@ def decide(payload: dict, harness: str | None = None) -> dict | None:
             result = _contract_guard(
                 export_project,
                 payload,
-                harness,
                 confirmation_launch=False,
             )
             if result:
@@ -373,40 +352,9 @@ def decide(payload: dict, harness: str | None = None) -> dict | None:
     return None
 
 
-def _cursor_payload(payload: dict) -> bool:
-    return bool(payload.get("cursor_version")) or payload.get("hook_event_name") in {
-        "preToolUse",
-        "postToolUse",
-        "beforeShellExecution",
-        "afterShellExecution",
-    }
-
-
-def _adapt_result(payload: dict, result: dict | None) -> dict | None:
-    if not result or not _cursor_payload(payload):
-        return result
-    output = result.get("hookSpecificOutput") or {}
-    decision = output.get("permissionDecision")
-    if decision:
-        reason = output.get("permissionDecisionReason") or "Blocked by AgentFrame policy."
-        return {
-            "permission": decision,
-            "user_message": reason,
-            "agent_message": reason,
-        }
-    context = output.get("additionalContext")
-    if context:
-        return {"additional_context": context}
-    return result
-
-
 def _recognized_active_contract(payload: dict) -> bool:
     """Best-effort discriminator for the guard's narrow fail-closed surface."""
-    command = (
-        (payload.get("tool_input") or {}).get("command")
-        or payload.get("command")
-        or ""
-    )
+    command = (payload.get("tool_input") or {}).get("command") or ""
     tokens = _tokens(command)
     cwd = Path(payload.get("cwd") or ".")
     project = (
@@ -422,20 +370,17 @@ def _recognized_active_contract(payload: dict) -> bool:
     return False
 
 
-def run(stdin_text: str, harness: str | None = None) -> str | None:
+def run(stdin_text: str) -> str | None:
     try:
         payload = json.loads(stdin_text)
     except Exception:
         return None
     try:
-        result = _adapt_result(payload, decide(payload, harness=harness))
+        result = decide(payload)
     except Exception as exc:
         try:
             if _recognized_active_contract(payload):
-                result = _adapt_result(
-                    payload,
-                    _deny(f"Active sealed PPT confirmation guard failed: {exc}"),
-                )
+                result = _deny(f"Active sealed PPT confirmation guard failed: {exc}")
             else:
                 return None
         except Exception:
@@ -443,20 +388,11 @@ def run(stdin_text: str, harness: str | None = None) -> str | None:
     return json.dumps(result) if result else None
 
 
-def dispatch(stdin_text: str, argv: list[str]) -> str:
-    """Render one process response and suppress Cursor's imported Claude twin."""
-    try:
-        payload = json.loads(stdin_text)
-    except Exception:
-        return "{}"
-    if _cursor_payload(payload) and "--cursor-native" not in argv:
-        return "{}"
-    harness = next(
-        (name for name in ("claude", "codex", "cursor") if name in argv),
-        None,
-    )
-    return run(stdin_text, harness=harness) or "{}"
+def dispatch(stdin_text: str) -> str:
+    """Render one process response; always valid JSON."""
+    return run(stdin_text) or "{}"
 
 
 if __name__ == "__main__":
-    sys.stdout.write(dispatch(sys.stdin.read(), sys.argv[1:]))
+    # Command-line arguments are ignored, so stale wiring that still passes flags keeps working.
+    sys.stdout.write(dispatch(sys.stdin.read()))

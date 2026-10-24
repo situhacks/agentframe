@@ -43,7 +43,6 @@ class NewProjectDefaultTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, \
              patch.object(af, "AUDIT_DB", os.path.join(tmp, "audit.db")), \
              patch.object(af, "cmd_new_project") as command, \
-             patch.object(af, "check_mode_gate"), \
              patch.object(sys, "argv", ["af", "new-project", "anything"]):
             af.main()
 
@@ -502,7 +501,6 @@ class VersionCommandCharacterizationTests(unittest.TestCase):
 
     def test_cli_parser_accepts_nested_artifact_address(self):
         with patch.object(af, "cmd_version") as command, \
-             patch.object(af, "check_mode_gate"), \
              patch.object(sys, "argv", ["af", "version", "version-project", "post-8", "--artifact", "body-copy"]):
             af.main()
 
@@ -626,7 +624,6 @@ class DraftCommandTests(unittest.TestCase):
 
     def test_cli_parser_requires_one_draft_address(self):
         with patch.object(af, "cmd_draft") as command, \
-             patch.object(af, "check_mode_gate"), \
              patch.object(sys, "argv", ["af", "draft", "version-project", "post-8", "--artifact", "body-copy"]):
             af.main()
 
@@ -944,7 +941,6 @@ class BinaryHeadTests(unittest.TestCase):
 class LifecycleCliParserTests(unittest.TestCase):
     def test_ready_is_the_quality_gate_command(self):
         with patch.object(af, "cmd_ready") as command, \
-             patch.object(af, "check_mode_gate"), \
              patch.object(sys, "argv", ["af", "ready", "project", "brief"]):
             af.main()
         self.assertEqual(command.call_args.args[0].deliverable, "brief")

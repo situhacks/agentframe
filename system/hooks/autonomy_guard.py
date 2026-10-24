@@ -2,7 +2,7 @@
 """Inject one exact, sealed bounded-autonomy contract at session start.
 
 The hook grants no authority by itself. It only rehydrates a run that was
-started through ``af autonomy start`` with the same harness session id and whose
+started through ``af autonomy start`` with the same Claude Code session id and whose
 static contract plus frozen files still match its stored digest.
 """
 
@@ -29,20 +29,12 @@ def _split_frontmatter(text: str) -> str | None:
     return text[4:end] if end >= 0 else None
 
 
-def _session_id(payload: dict, harness: str) -> str | None:
-    if harness == "cursor":
-        return payload.get("session_id") or payload.get("conversation_id")
-    return payload.get("session_id")
-
-
-def _binding(payload: dict, harness: str) -> str | None:
-    session_id = _session_id(payload, harness)
+def _binding(payload: dict) -> str | None:
+    session_id = payload.get("session_id")
     if not session_id:
         return None
     try:
-        return autonomy_contract.normalize_session_binding(
-            f"{harness}:{session_id}"
-        )
+        return autonomy_contract.normalize_session_binding(f"claude:{session_id}")
     except ValueError:
         return None
 
@@ -129,8 +121,8 @@ def _pin(path: Path, fm: str) -> str:
     )
 
 
-def context_for(payload: dict, harness: str) -> str:
-    binding = _binding(payload, harness)
+def context_for(payload: dict) -> str:
+    binding = _binding(payload)
     if binding is None:
         return _session_key_context(None, "the harness supplied no usable session id")
     matches = _running_matches(binding)
@@ -160,18 +152,12 @@ def context_for(payload: dict, harness: str) -> str:
     return pin
 
 
-def _cursor_payload(payload: dict) -> bool:
-    return bool(payload.get("cursor_version")) or payload.get("hook_event_name") == "sessionStart"
-
-
-def run(stdin_text: str, harness: str) -> str:
+def run(stdin_text: str) -> str:
     try:
         payload = json.loads(stdin_text)
-        context = context_for(payload, harness)
+        context = context_for(payload)
     except Exception as exc:
         context = _session_key_context(None, f"guard error: {exc}")
-    if harness == "cursor":
-        return json.dumps({"additional_context": context})
     return json.dumps(
         {
             "hookSpecificOutput": {
@@ -182,21 +168,14 @@ def run(stdin_text: str, harness: str) -> str:
     )
 
 
-def dispatch(stdin_text: str, argv: list[str]) -> str:
+def dispatch(stdin_text: str) -> str:
     try:
-        payload = json.loads(stdin_text)
+        json.loads(stdin_text)
     except Exception:
         return "{}"
-    if _cursor_payload(payload) and "--cursor-native" not in argv:
-        return "{}"
-    harness = None
-    for name in sorted(autonomy_contract.SESSION_HARNESSES):
-        if name in argv:
-            harness = name
-    if harness is None:
-        return "{}"
-    return run(stdin_text, harness)
+    return run(stdin_text)
 
 
 if __name__ == "__main__":
-    sys.stdout.write(dispatch(sys.stdin.read(), sys.argv[1:]))
+    # Command-line arguments are ignored, so stale wiring that still passes flags keeps working.
+    sys.stdout.write(dispatch(sys.stdin.read()))

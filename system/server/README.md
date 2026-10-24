@@ -2,7 +2,7 @@
 
 Localhost server with two jobs:
 
-1. **Workspace Dashboard at `/`** — the AgentFrame Dashboard (attention items, active projects, recent activity), a read-only Automations pulse tab (unanswered requests, terminal receipts, exceptions, and desired/runtime reconciliation), historical Calendar (Day/Week/Month via FullCalendar + a slimmed swimlane Timeline; ghost/solid project ribbons with a toggle, synthesized work blocks, hover-to-preview deliverable dots, career-case deadline/follow-up markers, active/completed/all filters, full-surface PNG export), and IDE-style Preview tab (active/completed/all project filters; media-first artifact index from `project.md` tracker rows, manifest media, exports, and untracked files; tabs/splits via Dockview; viewers for markdown/text/HTML/image/PDF/video, and PPTX/DOCX via native Microsoft Office conversion — see [`library/process/native-office-render.md`](../../library/process/native-office-render.md)). Backend modules live in `lib/surface/`, frontend in `static/surface/`. Deterministic file reads only — no LLM, no API keys.
+1. **Workspace Dashboard at `/`** — the AgentFrame Dashboard (attention items, active projects, recent activity), historical Calendar (Day/Week/Month via FullCalendar + a slimmed swimlane Timeline; ghost/solid project ribbons with a toggle, synthesized work blocks, hover-to-preview deliverable dots, career-case deadline/follow-up markers, active/completed/all filters, full-surface PNG export), and IDE-style Preview tab (active/completed/all project filters; media-first artifact index from `project.md` tracker rows, manifest media, exports, and untracked files; tabs/splits via Dockview; viewers for markdown/text/HTML/image/PDF/video, and PPTX/DOCX via native Microsoft Office conversion — see [`library/process/native-office-render.md`](../../library/process/native-office-render.md)). Backend modules live in `lib/surface/`, frontend in `static/surface/`. Deterministic file reads only — no LLM, no API keys.
 2. **Static + LiveReload serving** of the whole repo root, which the Preview viewers and the legacy hub (`/hub`) build on.
 
 Operator-facing process: [`library/process/preview-server.md`](../../library/process/preview-server.md).
@@ -154,7 +154,7 @@ system/server/
 
 ## 9. Hub (`/`)
 
-`http://localhost:8080/` renders an auto-generated dashboard. Three columns: left sidebar renders each project as a generic folder tree; middle is a panzoom canvas hosting whichever artifact you click; right rail shows the post's `copy.md` text when a post group is active (collapses to zero width otherwise). Use it as a second-monitor viewer while you iterate in Cursor.
+`http://localhost:8080/` renders an auto-generated dashboard. Three columns: left sidebar renders each project as a generic folder tree; middle is a panzoom canvas hosting whichever artifact you click; right rail shows the post's `copy.md` text when a post group is active (collapses to zero width otherwise). Use it as a second-monitor viewer while you iterate in Claude Code.
 
 ### Artifact kinds
 

@@ -4,7 +4,7 @@
 
 Own the governance for one agent-harness run that iterates toward a defined project outcome. The calling flow or production process supplies the work and quality criteria; this process supplies readiness, authority bounds, model routing, checkpoints, and stop rules.
 
-The run state is one file at `workspace/projects/{slug}/knowledge/autonomy/{run-id}.md`. State changes use `python system/af.py autonomy`; the harness still owns model/subagent dispatch, tool use, and the work itself. A `SessionStart` hook re-pins one exact running contract after startup, resume, clear, or compaction on supported harnesses.
+The run state is one file at `workspace/projects/{slug}/knowledge/autonomy/{run-id}.md`. State changes use `python system/af.py autonomy`; the harness still owns model/subagent dispatch, tool use, and the work itself. A `SessionStart` hook re-pins one exact running contract after startup, resume, clear, or compaction.
 
 ## When To Load
 
@@ -18,7 +18,7 @@ Do not load for an ordinary single-pass task, recurring monitoring/scheduling, o
 
 - `plan-only`: inspect and plan; no implementation writes.
 - `assisted` (default): execute inside the charter, then stop for human review or a blocking decision.
-- `unattended`: iterate without turn-by-turn approval. This requires a real independent reviewer context, deterministic evidence, and a harness that re-pins after compaction; otherwise downgrade to `assisted` and say why. Cursor's current `sessionStart` is fire-and-forget and has no post-compaction re-pin, so it cannot bind unattended runs.
+- `unattended`: iterate without turn-by-turn approval. This requires a real independent reviewer context, deterministic evidence, and the `SessionStart` re-pin hook; otherwise downgrade to `assisted` and say why.
 
 State the level, iteration cap, subagent cap, and requested model tiers before starting. If the operator already selected bounded autonomy with these limits, that selection is acknowledgement.
 
@@ -52,10 +52,10 @@ Run the deterministic readiness check. The session-start hook prints the current
 ```powershell
 python system/af.py autonomy check <project> <run-id>
 python system/af.py autonomy start <project> <run-id> `
-  --session-binding <harness>:<session-id>
+  --session-binding claude:<session-id>
 ```
 
-Only one running run may own a binding. `assisted` or `plan-only` may use `cursor:<session-id>` with the compaction limitation above. Never copy a binding from another conversation.
+Only one running run may own a binding. Never copy a binding from another conversation.
 
 ### 3. Plan once and route models by role
 
@@ -102,7 +102,7 @@ A blocked run resumes only after the blocker, contract, or budget is deliberatel
 
 ```powershell
 python system/af.py autonomy start <project> <run-id> `
-  --session-binding <harness>:<session-id> `
+  --session-binding claude:<session-id> `
   --resume-reason "<what changed>"
 ```
 

@@ -63,7 +63,7 @@ class RefreshDecision(unittest.TestCase):
 
     def test_main_never_fails_the_session(self):
         refresh.DB.write_text("not a database", encoding="utf-8")
-        with patch.object(refresh.sys, "argv", ["index_refresh.py", "--harness", "claude"]):
+        with patch.object(refresh.sys, "argv", ["index_refresh.py"]):
             self.assertEqual(refresh.main(), 0)
 
 

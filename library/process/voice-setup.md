@@ -18,7 +18,7 @@ Build registers from reusable voice temperature and reader relationship, not des
 2. **Gather samples** (any or all of three routes — all just writing for the agent to read; save raw to `voice/intake/corpus/`):
    - **Admired writing** — articles/posts the operator wishes they wrote. Aspirational seed; gives the reference anchor and the first pairs.
    - **Their own writing** — manual paste/upload of past posts, notes, dictated transcripts.
-   - **Composio pull** — direct Composio at the operator's sent emails or written docs (long-form explaining/arguing prose is highest-signal). Operator points it at the right files/folders.
+   - **Connected-tool pull** — point a connected MCP server at the operator's sent emails or written docs (long-form explaining/arguing prose is highest-signal). Operator points it at the right files/folders.
    Note inside each saved file whether it's admired or their own (one line, not a folder split).
 
 3. **Seed the gold corpus.** Have the operator classify their best FINISHED pieces by reusable register (`formal` or `informal`), not by platform, and store them verbatim in `voice/corpus/{register}/` (3–5 per register, one provenance line each). Preserve channel in provenance. Admired writing goes to `corpus/aspiration/`, never the voice anchor. If a register is thin, say so until real work ships and `voice-harvest` promotes it.

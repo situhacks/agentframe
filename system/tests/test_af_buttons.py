@@ -62,7 +62,7 @@ class RunLog(TempDB):
         self.assertNotIn("af: ERROR", rows[0]["error"])
 
     def test_success_lands_with_exit_zero(self):
-        with patch.object(af, "cmd_new_project"), patch.object(af, "check_mode_gate"), \
+        with patch.object(af, "cmd_new_project"), \
              patch.object(sys, "argv", ["af", "new-project", "anything"]):
             af.main()
         row = self.runs()[0]
@@ -79,7 +79,7 @@ class RunLog(TempDB):
     def test_crash_is_recorded_and_still_raised(self):
         def boom(args):
             raise RuntimeError("kaboom")
-        with patch.object(af, "cmd_new_project", boom), patch.object(af, "check_mode_gate"), \
+        with patch.object(af, "cmd_new_project", boom), \
              patch.object(sys, "argv", ["af", "new-project", "anything"]), \
              self.assertRaises(RuntimeError):
             af.main()
@@ -89,7 +89,7 @@ class RunLog(TempDB):
 
     def test_logging_failure_never_changes_the_outcome(self):
         with patch.object(af, "_audit_writer", side_effect=RuntimeError("db down")), \
-             patch.object(af, "cmd_new_project"), patch.object(af, "check_mode_gate"), \
+             patch.object(af, "cmd_new_project"), \
              patch.object(sys, "argv", ["af", "new-project", "anything"]):
             af.main()  # no exception escapes
 
@@ -242,7 +242,7 @@ class ButtonNotes(TempDB):
     def test_silent_when_nothing_failed(self):
         self.add("draft", 0)
         self.add("doctor", 1)             # findings, not a refusal
-        self.add("sync-harnesses", 1)
+        self.add("search", 1)
         self.assertEqual(af.button_notes(), [])
 
     def test_counts_refusals_crashes_and_slips_by_verb(self):

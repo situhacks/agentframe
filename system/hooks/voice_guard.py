@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Cross-harness gate on the voice lint around the state buttons.
+"""Gate on the voice lint around the state buttons.
 
 The zero-budget voice rules (banned tics, two dashes in a sentence, the
 operator's hyphen turned into an em dash) kept shipping through late agent
@@ -34,14 +34,6 @@ sys.path.insert(0, str(ROOT))
 
 from system import voice_lint  # noqa: E402
 
-EVENT_ALIASES = {
-    "PreToolUse": "PreToolUse",
-    "preToolUse": "PreToolUse",
-    "beforeShellExecution": "PreToolUse",
-    "PostToolUse": "PostToolUse",
-    "postToolUse": "PostToolUse",
-    "afterShellExecution": "PostToolUse",
-}
 INTERPRETERS = {"python", "python3", "py", "python.exe", "python3.exe", "py.exe"}
 SKIP = re.compile(r"AF_VOICE_LINT\s*=\s*['\"]?skip", re.I)
 
@@ -86,8 +78,6 @@ def _af_call(tokens: list[str]) -> tuple[str, str, str] | None:
 def _tool_output(payload: dict) -> str | None:
     resp = payload.get("tool_response")
     if resp is None:
-        resp = payload.get("output")
-    if resp is None:
         return None
     if isinstance(resp, dict):
         return " ".join(str(v) for v in resp.values() if isinstance(v, str))
@@ -108,15 +98,11 @@ def _context(event: str, text: str) -> dict:
     return {"hookSpecificOutput": {"hookEventName": event, "additionalContext": text}}
 
 
-def decide(payload: dict, harness: str | None = None) -> dict | None:
-    command = (
-        (payload.get("tool_input") or {}).get("command")
-        or payload.get("command")
-        or ""
-    )
+def decide(payload: dict) -> dict | None:
+    command = (payload.get("tool_input") or {}).get("command") or ""
     if "af.py" not in command.replace("\\", "/"):
         return None
-    event = EVENT_ALIASES.get(payload.get("hook_event_name") or "PreToolUse")
+    event = payload.get("hook_event_name") or "PreToolUse"
     call = _af_call(_tokens(command))
     if call is None:
         return None
@@ -157,49 +143,20 @@ def decide(payload: dict, harness: str | None = None) -> dict | None:
     return None
 
 
-def _cursor_payload(payload: dict) -> bool:
-    return bool(payload.get("cursor_version")) or payload.get("hook_event_name") in {
-        "preToolUse",
-        "postToolUse",
-        "beforeShellExecution",
-        "afterShellExecution",
-    }
-
-
-def _adapt_result(payload: dict, result: dict | None) -> dict | None:
-    if not result or not _cursor_payload(payload):
-        return result
-    output = result.get("hookSpecificOutput") or {}
-    decision = output.get("permissionDecision")
-    if decision:
-        reason = output.get("permissionDecisionReason") or "Blocked by AgentFrame policy."
-        return {"permission": decision, "user_message": reason, "agent_message": reason}
-    context = output.get("additionalContext")
-    if context:
-        return {"additional_context": context}
-    return result
-
-
-def run(stdin_text: str, harness: str | None = None) -> str | None:
+def run(stdin_text: str) -> str | None:
     try:
         payload = json.loads(stdin_text)
-        result = _adapt_result(payload, decide(payload, harness=harness))
+        result = decide(payload)
     except Exception:
         return None
     return json.dumps(result) if result else None
 
 
-def dispatch(stdin_text: str, argv: list[str]) -> str:
-    """Render one process response and suppress Cursor's imported Claude twin."""
-    try:
-        payload = json.loads(stdin_text)
-    except Exception:
-        return "{}"
-    if _cursor_payload(payload) and "--cursor-native" not in argv:
-        return "{}"
-    harness = next((name for name in ("claude", "codex", "cursor") if name in argv), None)
-    return run(stdin_text, harness=harness) or "{}"
+def dispatch(stdin_text: str) -> str:
+    """Render one process response; always valid JSON."""
+    return run(stdin_text) or "{}"
 
 
 if __name__ == "__main__":
-    sys.stdout.write(dispatch(sys.stdin.read(), sys.argv[1:]))
+    # Command-line arguments are ignored, so stale wiring that still passes flags keeps working.
+    sys.stdout.write(dispatch(sys.stdin.read()))

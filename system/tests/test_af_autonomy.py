@@ -69,7 +69,7 @@ class AutonomyTests(unittest.TestCase):
             fm = af.set_scalar(fm, key, value, self.run_path)
         af.write(self.run_path, af.join_fm(fm, body))
 
-    def start(self, resume_reason=None, session_binding="codex:test-session"):
+    def start(self, resume_reason=None, session_binding="claude:test-session"):
         self.quiet(af.cmd_autonomy_start, types.SimpleNamespace(
             project="auto-test", run_id="build-widget", resume_reason=resume_reason,
             session_binding=session_binding))
@@ -111,7 +111,7 @@ class AutonomyTests(unittest.TestCase):
         fm = self.run_fm()
         self.assertEqual(af.get_scalar(fm, "status"), "running")
         self.assertNotEqual(af.get_scalar(fm, "started_at"), "null")
-        self.assertEqual(af.get_scalar(fm, "bound_session"), "codex:test-session")
+        self.assertEqual(af.get_scalar(fm, "bound_session"), "claude:test-session")
         self.assertRegex(af.get_scalar(fm, "contract_sha256"), r"^[0-9a-f]{64}$")
         activity = af.read(os.path.join(self.cdir, "activity.md"))
         self.assertIn("autonomy_started: build-widget running", activity)
@@ -121,13 +121,6 @@ class AutonomyTests(unittest.TestCase):
         self.make_ready(reviewer_mode="same-context")
         with self.assertRaises(SystemExit):
             self.start()
-        self.assertEqual(af.get_scalar(self.run_fm(), "status"), "proposed")
-
-    def test_cursor_refuses_unattended_binding(self):
-        self.init(level="unattended")
-        self.make_ready()
-        with self.assertRaises(SystemExit):
-            self.start(session_binding="cursor:test-session")
         self.assertEqual(af.get_scalar(self.run_fm(), "status"), "proposed")
 
     def test_contract_drift_only_allows_budget_neutral_quarantine(self):
@@ -189,7 +182,7 @@ class AutonomyTests(unittest.TestCase):
                     project="auto-test",
                     run_id="second-run",
                     resume_reason=None,
-                    session_binding="codex:test-session",
+                    session_binding="claude:test-session",
                 ),
             )
 

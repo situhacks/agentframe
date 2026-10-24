@@ -41,9 +41,9 @@ Load when you are about to patch any of these target file classes:
 | Process file | `library/process/project-frontmatter.md`, `library/process/flows/{flow}.md`, other `library/process/*.md` | Builder |
 | Always-loaded persona | `AGENTS.operator.md`, `AGENTS.builder.md` | Builder |
 
-If you are about to edit anything else (a campaign deliverable, a daemon script, infra), this skill is not the right reference — it is scoped to system-level rule content.
+If you are about to edit anything else (a campaign deliverable, a runtime script, infra), this skill is not the right reference — it is scoped to system-level rule content.
 
-If the change adds, renames, defaults, or retires a campaign flow; adds or retires a deliverable type; or moves ownership between flows/templates/process files/personas, start with `system/skills/agentframe-structure/SKILL.md`. Return here only for the ordinary file patch once the structural owner is clear.
+If the change adds, renames, defaults, or retires a campaign flow; adds or retires a deliverable type; or moves ownership between flows/templates/process files/personas, start with `.claude/skills/agentframe-structure/SKILL.md`. Return here only for the ordinary file patch once the structural owner is clear.
 
 ## Boundaries
 
@@ -192,7 +192,7 @@ After Step 5's validation expectation is written:
 }
 ```
 
-3. **Router verification.** If the target is `AGENTS.md`, `AGENTS.operator.md`, `AGENTS.builder.md`, or `AGENTS.daemon.md`, verify the stable root still routes to exactly one task-local owner and that no instruction asks an agent to copy a router over the root. Log the patch normally; router selection itself is not an audit event.
+3. **Router verification.** If the target is `AGENTS.md`, `AGENTS.operator.md`, `AGENTS.builder.md`, or `AGENTS.orchestrator.md`, verify the stable root still routes to exactly one task-local owner and that no instruction asks an agent to copy a router over the root. Log the patch normally; router selection itself is not an audit event.
 
 ## What this skill does NOT do
 

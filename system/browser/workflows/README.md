@@ -1,8 +1,8 @@
 # Browser Workflow Files
 
-Workflow folders are memory for Cursor, not scripts.
+Workflow folders are memory for Claude Code, not scripts.
 
-Each `recipe.md` should tell a fresh-context Cursor agent what job to do, what browser surface to open, what inputs/outputs matter, what path was demonstrated or approved, what durable browser/app quirks affect execution, and where to stop for human review. Cursor uses this file plus live browser observation to decide the next browser action.
+Each `recipe.md` should tell a fresh-context agent what job to do, what browser surface to open, what inputs/outputs matter, what path was demonstrated or approved, what durable browser/app quirks affect execution, and where to stop for human review. Claude uses this file plus live browser observation to decide the next browser action.
 
 Browser-harness mechanics come from `system/skills/browser-harness/SKILL.md`. Workflow recipes add the repeatable use-case prompt on top: what to do, where to stop, and which browser signals are reliable for this specific app flow.
 
@@ -26,7 +26,7 @@ Create a workflow only after a real run or operator-provided recording establish
 4. **Write `recipe.md`.** Convert the learned shape into the minimal sections below. Do not include the run diary.
 5. **Replay once.** Run from the recipe in a fresh context. Patch the recipe when replay reveals durable behavior; discard one-off timing and screenshots.
 
-If a workflow becomes too branchy, keep Cursor in the loop rather than turning the recipe into a brittle script. Promote helper code only when it is smaller than repeated reasoning.
+If a workflow becomes too branchy, keep Claude in the loop rather than turning the recipe into a brittle script. Promote helper code only when it is smaller than repeated reasoning.
 
 ## Minimal Shape
 
@@ -34,7 +34,7 @@ If a workflow becomes too branchy, keep Cursor in the loop rather than turning t
 # {Workflow Name}
 
 workflow_id: {stable-id}
-status: learning | cursor_replay
+status: learning | replay
 browser: edge | chrome
 app_url: {starting URL}
 approval_mode: human_review | autonomous_when_whitelisted
@@ -59,10 +59,10 @@ Only the files, folders, URLs, or operator choices needed to run.
 - Efficient observation strategy for long waits.
 
 ## Human Gate
-Where Cursor must stop for the operator unless the workflow has explicit autonomous approval.
+Where Claude must stop for the operator unless the workflow has explicit autonomous approval.
 ```
 
-Keep recipes compact but complete enough for a fresh-context agent. If the workflow starts needing many branches, keep Cursor in the loop instead of over-hardening it.
+Keep recipes compact but complete enough for a fresh-context agent. If the workflow starts needing many branches, keep Claude in the loop instead of over-hardening it.
 
 Routine success/failure notes, timing, counters, screenshots, and run journals do not belong in `recipe.md`. Save one-off captures under `runs/` only when a human deliberately asks for the run artifact.
 

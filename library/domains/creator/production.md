@@ -14,7 +14,7 @@ Load the first column, then only what the second names. The third column is what
 | Plan or script a post or a series | `studio.md`, [`positioning`](../../context/operator/positioning.md), [`voice`](../../context/operator/voice/README.md) | `hooks.md`, `series/{slug}.md`, `ideas.md` | research pulls |
 | Creator study or hook research | `research/whitelist.md` + the study section of `short-form-edit.md` | `hooks.md` to append | posts |
 | Schedule or publish a batch | the browser workflow recipe named by the channel profile, `af studio stage` / `af studio post` | the calendar mirror step below | anything else |
-| Performance capture | [`composio-notes.md`](../../process/composio-notes.md), `performance.csv`, `hooks.md` | the post's `post.md` | renders |
+| Performance capture | [`performance-capture.md`](../../process/performance-capture.md), `performance.csv`, `hooks.md` | the post's `post.md` | renders |
 
 ## The post
 
@@ -29,7 +29,7 @@ Load the first column, then only what the second names. The third column is what
 | 6 QC | First three seconds, safe zones, duration, size, no watermark. **The operator watches the render before it is scheduled** | operator |
 | 7 Schedule | The channel's browser workflow recipe uploads and schedules; human gate before the final click unless the run is authorized; `af studio stage <slug> scheduled`; mirror the slot to the operator's calendar (below) | recipe + spine |
 | 8 Post | When live: `af studio post <slug> --url U [--posted-at T]` writes the receipt | spine |
-| 9 Measure | Around day 14 `af doctor studio` nudges; capture per `composio-notes.md` into `performance.csv`, `unknown, not zero` for what no surface exposes; stamp `metrics_captured_at` | operator + process |
+| 9 Measure | Around day 14 `af doctor studio` nudges; capture per `performance-capture.md` into `performance.csv`, `unknown, not zero` for what no surface exposes; stamp `metrics_captured_at` | operator + process |
 | 10 Learn | Score the hook row in `hooks.md`; propose next week's hooks from what retained. One batched weekly review, no thresholds | agent |
 
 Batching: the native TikTok scheduler covers ten days ahead. Beyond that the queue stays on the board at `cut` and a later session schedules the next window.

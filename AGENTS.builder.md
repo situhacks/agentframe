@@ -6,12 +6,6 @@
 
 You are the operator's system architect: opinionated, concise, and accountable for keeping the system small enough that future agents can actually use it.
 
-## Managed Run Dispatch
-
-When a kickoff names managed task and result files, stop and load `AGENTS.daemon.md`; it owns unattended execution.
-
-
-
 ## Mission
 
 AgentFrame has four jobs:
@@ -30,7 +24,7 @@ The durable product is the deliverable library. Harness machinery is scaffolding
 | Situation | Load First | Do Not Touch |
 |---|---|---|
 | Builder session start | [`system/builder-backlog.md`](system/builder-backlog.md), then the specific files named by the task | Project content unless the task is a schema/migration job |
-| Flow, deliverable-type, or process-structure change | [`system/skills/agentframe-structure/SKILL.md`](system/skills/agentframe-structure/SKILL.md), then the authoring standard/reference it routes to | Project content unless the task is a schema/migration job |
+| Flow, deliverable-type, or process-structure change | [`.claude/skills/agentframe-structure/SKILL.md`](.claude/skills/agentframe-structure/SKILL.md), then the authoring standard/reference it routes to | Project content unless the task is a schema/migration job |
 | Persona/rule/template/process change | Existing target file, nearby pattern files, [`system/audit/README.md`](system/audit/README.md) if logging/querying is needed | Project deliverables |
 | Audit/telemetry work | [`system/audit/README.md`](system/audit/README.md), `system/audit/schema.sql`, relevant audit modules/tests | Markdown project content except fixtures |
 | Browser/runtime work | `system/browser/README.md`, relevant workflow recipe; `system/skills/browser-harness/SKILL.md` for browser-control mechanics | Project copy/spec files |
@@ -113,16 +107,14 @@ Modes are task-local ownership boundaries, not mutable repository state. The roo
 | `library/process/` | On-demand workflow procedures (incl. `flows/`); catalog of what each does + when to load at `library/process/README.md` |
 | `library/domains/` | Domain packs (`marketing`, `project-mgmt`, `careers`, `creator`): skeletons, `pack.md`, optional `deliverables/`, `production.md` |
 | `library/context/` | Operator positioning/profile/voice (`operator/`), plus shared `channels/`, `people/`, `_meta/` |
-| `library/lenses/` | Tracked package contract plus gitignored, source-backed advisory lens instances; kept separate from operator truth |
 | `library/assets/` | Reusable assets: `logos/`, `design-languages/` packages (ppt-master identity + imagery manifest, optional `video/`), the operator's `media/` shelf, third-party `audio/` (schema: `library/assets/README.md`) |
 | `workspace/board.md` + `workspace/board/` | Work-in-flight index across projects: cards, briefs, receipts, monthly archive, orchestrator binding; owned by `af board`; gitignored personal layer |
-| `system/af.py` | Deterministic CLI (ready, publish, version, draft, new-project, automation, autonomy, doctor, pipe, index/search, board, harness projection sync) |
+| `system/af.py` | Deterministic CLI (ready, publish, version, draft, new-project, autonomy, doctor, pipe, index/search, board) |
 | `system/board.py` | Board grammar, lanes, deterministic sync and sweep, receipts, archive, session binding; `system/hooks/board_guard.py` is its hook face (session-start sync, Stop backstop receipt, orchestrator write guard) |
-| `system/daemon/` | Multi-queue managed-run host, deployment contract, and kickoff prompt |
-| `system/skills/` | Builder + Operator skills; catalog of what each does + when to load at `system/skills/README.md` |
+| `.claude/skills/` + `system/skills/` | Builder + Operator skills: AgentFrame-owned skills Claude discovers natively in `.claude/skills/`, vendored runtimes and the rest in `system/skills/`; catalog of what each does + when to load at `system/skills/README.md` |
 | `system/audit/` | SQLite audit/telemetry exception |
 | `system/indexer.py` + `system/index/` | Cross-project retrieval substrate behind `af index` / `af search`; the index DB is a gitignored derived cache, rebuildable, never truth |
-| `system/hooks/` | Shared deterministic guard logic (version safety, ppt-master staging / export promotion, pre-publish readiness), wired natively through tracked Claude, Cursor, and Codex project configs; contract: `system/harnesses/README.md` |
+| `system/hooks/` | Deterministic guard logic (version safety, ppt-master staging / export promotion, pre-publish readiness, voice lint, board, autonomy pin), wired through `.claude/settings.json` |
 | `system/browser/` | Browser automation runtime |
 | `system/research/` | Deep-research runtime (`gemini_deep_research`) |
 | `system/server/` | Preview server |

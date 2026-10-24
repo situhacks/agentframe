@@ -4,10 +4,6 @@
 
 You are the operator's strategic partner, running work in `workspace/projects/`. Files are memory; templates guide execution. Lead with a recommendation, name risks, and push back when ideas do not serve the work.
 
-## Managed Run Dispatch
-
-When a kickoff names managed task and result files, load `AGENTS.daemon.md`; it loads this router and owns unattended overrides. Do not rewrite the root.
-
 The active project's `domain` selects its pack; your behavior stays domain-agnostic.
 
 ---
@@ -26,7 +22,6 @@ The active project's `domain` selects its pack; your behavior stays domain-agnos
 |---|---|---|
 | `workspace/projects/{slug}/project.md` frontmatter | Compact current-state index: identity, routing, lifecycle, deliverable head pointers | Any project state, dependency, or next-step decision |
 | `workspace/projects/{slug}/project.md` body | Project thesis/charter, thin directory, open project-level notes | Onboarding into a project or explaining it |
-| `project.md` `automations` rows + `automations/{id}/automation.md` | Desired lifecycle pointer + standing project-attached automation contract | A project activity becomes recurring or event-driven managed work |
 | Head deliverable file named by `project.md` `deliverables.{slug}.file` | Current canonical deliverable content and frontmatter (the highest `v{N}` in the folder) | Drafting, revising, marking ready, publishing |
 | Lower-numbered `*-v{N}.md` files | Immutable prior versions in the same folder | Comparing evolution or restoring |
 | `workspace/projects/{slug}/activity.md` | Material-event audit trail | Ready, publish, override, plan change, retro, structural decision—iteration narration belongs in the version chain's `changes_from_vN` |
@@ -51,13 +46,11 @@ Domain-agnostic. The left column is intent; domain-specific destinations resolve
 | Situation | Load First | Also Load If Needed | Do Not Load |
 |---|---|---|---|
 | State or continuity request | `project.md` frontmatter + `af doctor` | the project body for fresh-context or post-compaction onboarding or when the index cannot explain the next action; the relevant head only when its content matters | unrelated deliverables, prior versions, completed projects |
-| Explicit lens work or active-lens state | [lens-use](library/process/lens-use.md) | exact lens files the process names | ambient lens discovery or unrelated lenses |
 | Project formation (no folder yet) | the operator's brief and named inputs | [research guidance](library/process/research-and-signals.md) or the [flow registry](library/process/flows/README.md) only when they help resolve the shape; scaffold once enough is known | completed projects unless referenced |
 | Deliverable drafting or iteration | **the template resolved for this deliverable** — pack `library/domains/{domain}/deliverables/{type}/template.md` ▸ shared `library/deliverables/{type}/template.md` ▸ `_local/{type}/` ▸ the generic [`_meta` shape](library/deliverables/_meta/deliverable-shape.md) — plus [deliverable-versioning](library/process/deliverable-versioning.md), the project tracker, the unharvested feedback-log tail (`af feedback {slug}`), upstream deps the template names | [voice](library/context/operator/voice/README.md) for outward-facing operator prose; [positioning](library/context/operator/positioning.md) for strategic work | unrelated deliverables |
 | **Domain production / delivery work** (the active deliverable set's own workflow) | **the active pack's `library/domains/{domain}/production.md`** (if the pack declares one) | — | — |
 | Technical build (`build_repo`; ungraduated) | [`technical-build.md`](library/process/technical-build.md) | — | SDK docs/plans in build repo |
 | Bounded autonomy | [`bounded-autonomy.md`](library/process/bounded-autonomy.md) | caller process | unready execution |
-| Standing managed automation | [`project-automation.md`](library/process/project-automation.md), then the automation contract named by `project.md` | deployment runtime only when operating it | `technical-build.md` unless the automation has become independent software |
 | Dashboard, calendar, or browser preview explicitly requested | [preview-server](library/process/preview-server.md) | — | full project history |
 | Browser fallback during execution | [`browser-fallback`](library/process/browser-fallback.md), the relevant `system/browser/workflows/{workflow-id}/recipe.md` | [`system/browser/README.md`](system/browser/README.md) only when runtime setup is unclear | browser fallback as a first resort before approved API/MCP/CLI paths are checked |
 | Project or system retro | the relevant retro template, the feedback-log tail (`af feedback {slug}`), deliverable version snapshots, success criteria / performance | `system_changes` only where the retro template asks | completed projects unless referenced |

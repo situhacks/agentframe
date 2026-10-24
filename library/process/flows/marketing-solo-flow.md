@@ -27,7 +27,7 @@ Run a lightweight campaign for one accountable operator with no assumed stakehol
 | `3-produce-ship` | Post ingredients (per `project.md` `post_manifest`) | `phase-3-production/posts/post-{n}/{ingredient}-v{N}.md` | [`slide-copy`](../../domains/marketing/deliverables/slide-copy/template.md), [`body-copy`](../../domains/marketing/deliverables/body-copy/template.md), [`video-spec`](../../deliverables/video-spec/template.md), generation paths per [`image-production`](../image-production.md) |
 | `3-produce-ship` | Post assembly—accumulates each ingredient as it becomes ready | `phase-3-production/posts/post-{n}/post-FINAL.md` | [`post-final`](../../domains/marketing/deliverables/post-final/template.md) |
 | `4-learn-close` | Harvest Retro (system + deliverable + voice lenses) | `phase-4-close/system-retro-v{N}.md` | [`voice-harvest`](../../../system/skills/voice-harvest/SKILL.md) + [`deliverable-harvest`](../../../system/skills/deliverable-harvest/SKILL.md), summary per [`system-retro`](../../deliverables/system-retro/template.md) |
-| `4-learn-close` | Performance + Campaign Retro (capture first, then score) | `phase-4-close/performance-data.csv` + `phase-4-close/campaign-retro-v{N}.md` | [`composio-notes`](../composio-notes.md) + [`campaign-retro`](../../deliverables/closeout-retro/template.md) |
+| `4-learn-close` | Performance + Campaign Retro (capture first, then score) | `phase-4-close/performance-data.csv` + `phase-4-close/campaign-retro-v{N}.md` | [`performance-capture`](../performance-capture.md) + [`campaign-retro`](../../deliverables/closeout-retro/template.md) |
 
 **Idea-bank shape (keep tight):** a candidate list plus the selected pick, nothing more. Per candidate: title, 1-3 sentence thesis, and one provenance line. Name the selected pick in one line. Do not add per-candidate Risk, Research Questions, Workspace Signal Summary, or Next Research Step sections.
 
@@ -44,8 +44,8 @@ Load-on-demand procedures by phase. Solo flow is the same shape as standard flow
 | `1-research-and-architecture` | Operator starts a new campaign | Offer menu: Workspace Scan (loads [`research-and-signals.md`](../research-and-signals.md)), Brainstorm Idea Bank, or Direct Input. |
 | `2-design-language` | Operator ready for visual direction | Run as an interactive coworking session in chat to align on mood before drafting. |
 | `3-produce-ship` | All manifest ingredients ready for a post | Cross-ingredient coherence check when `post-FINAL.md` becomes ready per [`post-final/template.md`](../../domains/marketing/deliverables/post-final/template.md); video posts also run the cross-check in [`video-spec/template.md`](../../deliverables/video-spec/template.md). |
-| `3-produce-ship` | Ingredients ready and publish media selected | [`composio-notes.md`](../composio-notes.md) "Publish Prep" for the connected-tools draft offer; PDF/document carousels stay manual. |
-| `4-learn-close` | ~14 days after each post's `posted_at` | [`composio-notes.md`](../composio-notes.md) "Performance Capture" for the per-platform live MCP scan, canonical CSV columns, and partial-data rule. |
+| `3-produce-ship` | Ingredients ready and publish media selected | Offer to prepare the draft through the connected MCP for the target platform, or follow the channel's own process file; draft prep is not published state, and PDF/document carousels stay manual. |
+| `4-learn-close` | ~14 days after each post's `posted_at` | [`performance-capture.md`](../performance-capture.md) for the per-platform MCP scan, canonical CSV columns, and partial-data rule. |
 | Any phase | Operator overrides sequence | Activity event line shape in [`project-activity.md`](../project-activity.md). |
 
 ## Tracker Updates

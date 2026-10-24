@@ -93,8 +93,6 @@ def scan_projects(root: Path, *, include_completed: bool = False) -> list[dict]:
         project["slug"] = fm.get("slug") or folder.name
         deliverables = fm.get("deliverables")
         project["deliverables"] = deliverables if isinstance(deliverables, dict) else {}
-        automations = fm.get("automations")
-        project["automations"] = automations if isinstance(automations, dict) else {}
         project["dir"] = str(folder)
         out.append(project)
     return out

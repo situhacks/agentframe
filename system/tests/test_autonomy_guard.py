@@ -1,6 +1,5 @@
 import contextlib
 import io
-import json
 import os
 import tempfile
 import types
@@ -74,7 +73,7 @@ class AutonomyGuardTests(unittest.TestCase):
                 project="hook-test",
                 run_id="work",
                 resume_reason=None,
-                session_binding="codex:session-123",
+                session_binding="claude:session-123",
             ),
         )
         return path
@@ -83,7 +82,6 @@ class AutonomyGuardTests(unittest.TestCase):
         self.start_run()
         context = guard.context_for(
             {"session_id": "session-123", "hook_event_name": "SessionStart"},
-            "codex",
         )
         self.assertIn("AGENTFRAME BOUNDED AUTONOMY PIN", context)
         self.assertIn('"goal": "Build"', context)
@@ -92,9 +90,8 @@ class AutonomyGuardTests(unittest.TestCase):
     def test_unbound_session_receives_key_without_authority(self):
         context = guard.context_for(
             {"session_id": "session-999", "hook_event_name": "SessionStart"},
-            "codex",
         )
-        self.assertIn("codex:session-999", context)
+        self.assertIn("claude:session-999", context)
         self.assertIn("not autonomy authority", context)
         self.assertNotIn("BOUNDED AUTONOMY PIN", context)
 
@@ -105,25 +102,9 @@ class AutonomyGuardTests(unittest.TestCase):
         path.write_text(af.join_fm(fm, body), encoding="utf-8")
         context = guard.context_for(
             {"session_id": "session-123", "hook_event_name": "SessionStart"},
-            "codex",
         )
         self.assertIn("contract hash drift", context)
         self.assertNotIn("BOUNDED AUTONOMY PIN", context)
-
-    def test_cursor_dispatch_uses_native_context_envelope(self):
-        raw = json.dumps(
-            {
-                "hook_event_name": "sessionStart",
-                "cursor_version": "test",
-                "session_id": "cursor-session",
-            }
-        )
-        self.assertEqual(json.loads(guard.dispatch(raw, ["--harness", "codex"])), {})
-        output = json.loads(
-            guard.dispatch(raw, ["--cursor-native", "--harness", "cursor"])
-        )
-        self.assertIn("cursor:cursor-session", output["additional_context"])
-
 
 if __name__ == "__main__":
     unittest.main()

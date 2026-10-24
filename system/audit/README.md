@@ -35,7 +35,7 @@ Core fields:
 - `payload_json`
 - `source`
 
-Use this for template/process/schema/skill/persona/runtime changes where the `reason` and `summary` matter. Do not use it for routine campaign progress, deliverable locks, publishing, daemon runs, browser runs, or mode/session telemetry.
+Use this for template/process/schema/skill/persona/runtime changes where the `reason` and `summary` matter. Do not use it for routine campaign progress, deliverable locks, publishing, browser runs, or mode/session telemetry.
 
 ### `target_kind` vocabulary
 
@@ -72,7 +72,7 @@ Extend this list only for a new class of change, never for a synonym of an exist
 One row per `python system/af.py ...` run, written by `af.main()` whatever the outcome (help runs excluded). Nothing reads it on the hot path; `af doctor` reads the last 14 days into one `buttons` note, and the builder backlog's af.py-defect share takes its numerator from here.
 
 - `created_at`, `verb` (`draft`, `pipe stage`, ...), `argv`
-- `exit_code` — 0 success; 1 a refusal (`af: ERROR:`), or findings for read-only verbs (doctor, index, search, sync-harnesses); 2 a usage error (`error = usage`) or a crash (`error = ExceptionType: message`)
+- `exit_code` — 0 success; 1 a refusal (`af: ERROR:`), or findings for read-only verbs (doctor, index, search); 2 a usage error (`error = usage`) or a crash (`error = ExceptionType: message`)
 - `error` — the refusal message, `usage`, or the exception; null on success
 - `duration_ms`
 

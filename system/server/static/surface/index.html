@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dockview-core@4.13.1/dist/styles/dockview.css">
-<link rel="stylesheet" href="/system/server/static/surface/styles.css?v=18">
+<link rel="stylesheet" href="/system/server/static/surface/styles.css?v=19">
 </head>
 <body>
   <header id="topbar">
@@ -20,7 +20,6 @@
     <nav class="top-tabs">
       <button id="tab-dashboard" data-route="dashboard">Dashboard</button>
       <button id="tab-board" data-route="board">Board</button>
-      <button id="tab-automations" data-route="automations">Automations</button>
       <button id="tab-calendar" data-route="calendar">Calendar</button>
       <button id="tab-preview" data-route="preview">Preview</button>
     </nav>
@@ -76,31 +75,6 @@
       <span class="meta" id="board-meta"></span>
     </div>
     <div class="board-lanes" id="board-lanes"></div>
-  </main>
-
-  <main id="view-automations" class="view" hidden>
-    <header class="automations-header">
-      <div>
-        <h1>Managed automations</h1>
-        <p>Declared project intent reconciled with live deployment and run state.</p>
-      </div>
-      <span class="meta" id="automations-meta"></span>
-    </header>
-    <section class="automation-panel" id="automation-inventory-panel">
-      <header><span class="title">Managed roster</span><span class="count" id="automations-count"></span></header>
-      <div class="automation-roster-body" id="automations-body"></div>
-    </section>
-    <section class="automation-panel" id="automation-receipts-panel">
-      <header id="automation-receipts-header">
-        <span class="title">Activity</span>
-        <span class="count" id="automation-receipts-count"></span>
-        <div class="automation-receipt-filters" id="automation-receipt-filters" aria-label="Run status filter">
-          <button data-status="all" class="active">all</button>
-          <button data-status="issues">issues</button>
-        </div>
-      </header>
-      <div class="scroll" id="automation-receipts-body"></div>
-    </section>
   </main>
 
   <main id="view-calendar" class="view" hidden>
@@ -197,6 +171,6 @@
     <div id="editor-area"></div>
   </main>
 
-<script type="module" src="/system/server/static/surface/app.js?v=13"></script>
+<script type="module" src="/system/server/static/surface/app.js?v=14"></script>
 </body>
 </html>

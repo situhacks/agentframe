@@ -84,8 +84,9 @@ def spawn() -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="AgentFrame index refresh hook")
-    ap.add_argument("--harness", default="claude")
-    ap.add_argument("--cursor-native", action="store_true")
+    # Accepted and ignored so a session started on older wiring never hits a usage error.
+    ap.add_argument("--harness", help=argparse.SUPPRESS)
+    ap.add_argument("--cursor-native", action="store_true", help=argparse.SUPPRESS)
     ap.parse_args()
     try:
         if decide() == "spawn":

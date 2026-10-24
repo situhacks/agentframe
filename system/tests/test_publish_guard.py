@@ -1,4 +1,3 @@
-import json
 import os
 import tempfile
 import unittest
@@ -110,17 +109,7 @@ class PublishGuardTests(unittest.TestCase):
         self.assertIsNone(guard.decide(p))
 
     def test_malformed_payload_emits_empty_json(self):
-        self.assertEqual(guard.dispatch("not json", []), "{}")
-
-    def test_cursor_native_envelope(self):
-        self.write_tracker(status="drafting")
-        p = payload(body="the essay")
-        p["cursor_version"] = "test"
-        out = json.loads(guard.dispatch(json.dumps(p), ["--cursor-native"]))
-        self.assertEqual(out["permission"], "deny")
-        # The imported Claude twin must no-op rather than deny twice.
-        self.assertEqual(json.loads(guard.dispatch(json.dumps(p), [])), {})
-
+        self.assertEqual(guard.dispatch("not json"), "{}")
 
 if __name__ == "__main__":
     unittest.main()

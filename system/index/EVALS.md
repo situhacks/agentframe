@@ -40,8 +40,7 @@ Two layers:
 
 Replace this section when `af index eval` produces a new number; do not append.
 
-- recall@5 = 22/23 (96%), MRR 0.679, on the personal-layer corpus, every chunk embedded with `qwen3-embedding:0.6b`.
-- Gate: recall@5 at or above 86% after any change.
-- Open miss: q18, ranking competition between a post plan and denser campaign files on the same vocabulary.
-- The next upgrade targets synthesis queries, whose answers spread across several documents, through query rewriting.
-- Re-measure when the set is back to about 30 real queries.
+- recall@5 = 21/23 (91%), MRR = 0.591, gate 86%, corpus 1,423 files / 13,400 chunks, all embedded with qwen3-embedding:0.6b.
+- Ranking classes: `_archive/` 0.45; `workspace/life/` outside `_history/` and `sources/` 1.5 (`life`); `knowledge/` 1.5; `sources/` and `_local/` 1.15; `.claude/plans/` 1.05; routers 1.15. Prior versions rank down 0.55; tracker heads 1.9; registered sources 1.25.
+- The two open misses: a project post plan outranked by the campaign's own brief and messaging draft for a generic query, and a long voice-register query whose extra words pull toward FDE material; both are query-shape misses, not corpus or path misses. Nineteen golden paths moved with the life migration and the set follows the new paths.
+

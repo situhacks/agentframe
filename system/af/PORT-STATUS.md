@@ -16,8 +16,8 @@ Stage R1 of the port planned in `.claude/plans/2026-10-23-life-os-PLAN.md` secti
 | run log (`system/logs/af-runs.jsonl`) | ported and parity PASS |
 | `index`, `search` | not started (R2+); binary prints "not ported yet" and exits 1 |
 | `voice` | not started (R2+) |
-| `pipe` | not started (R2+); doctor's pipeline checks are ported |
-| `studio` | not started (R2+); doctor's studio checks are ported |
+| `pipe` | ported and parity PASS (R4, below) |
+| `studio` | ported and parity PASS (R4, below) |
 | `system/hooks/*` | not started (R2+) |
 
 ## Crate layout
@@ -50,6 +50,52 @@ Stage R1 of the port planned in `.claude/plans/2026-10-23-life-os-PLAN.md` secti
 - Pack rules are compiled in and active only while the pack ships `rules.py`; a pack shipping a `rules.py` with no Rust counterpart is refused.
 - Media-shelf YAML: values, types, constructor errors, tab and duplicate-anchor errors match PyYAML. Still different: scanner and parser error text for malformed YAML (yaml-rust2 wording), NEL/LS/PS as line breaks outside quoted scalars, `!!set` print order (hash order in Python), multi-line quoted keys in flow mappings (yaml-rust2 accepts).
 - Messages follow CPython 3.12 (`KeyError: slice(None, 12, None)`, `datetime.date` type names). A Python upgrade can move them.
+
+## Stage R4: `pipe` and `studio`
+
+Baseline: `system/af.py` at `b030c418`.
+
+### Subcommands
+
+| Subcommand | Parity case(s) | Status |
+|---|---|---|
+| `pipe save` | `pipe-save`, `pipe-topology`, `pipe-close-search` (reopen) | PASS |
+| `pipe start` | `pipe-start`, `pipe-lifecycle` | PASS |
+| `pipe stage` | `pipe-stage`, `pipe-no-board` | PASS |
+| `pipe close-search` | `pipe-close-search`, `pipe-close-search-empty` | PASS |
+| `pipe round` | `pipe-round` (incl. the IndexError crash path) | PASS |
+| `pipe archive`, `pipe unarchive` | `pipe-archive` | PASS |
+| `pipe board` | every pipe case | PASS |
+| `studio new` | `studio-new`, `studio-new-packs`, `pipe-topology` | PASS |
+| `studio stage` | `studio-stage`, `studio-no-calendar` | PASS |
+| `studio post` | `studio-post`, `studio-lifecycle` | PASS |
+
+### Layout
+
+- `src/pipe.rs`: the `PipeCmd` clap surface, `topology_pack`, board helpers (`pipe_row_add`, `app_dir`, `stamp_shipped`), every `cmd_pipe_*`.
+- `src/studio.rs`: the `StudioCmd` clap surface, slot helpers (`mapping_row_set`, `mapping_row_add`), every `cmd_studio_*`.
+- Shared-file edits: `src/lib.rs` (two `pub mod` lines), `src/cli.rs` (`NOT_PORTED` drops `pipe`/`studio`; two `Cmd` variants and two dispatch arms), `tests/parity.py` (one appended block, `CASES +=`).
+- Tests: `tests/pipe_verbs.rs` (test_af_pipe.py), `tests/pipe_rounds.rs` (test_af_pipe_rounds.py), `tests/studio_verbs.rs` (test_af_studio.py). `af_pipe.rs` and `af_studio.rs` keep R1's fixture-written doctor cases; the verb-driven versions sit beside them.
+
+### Verification (last run)
+
+- `cargo test`: 217 passed (3 unit, 214 integration).
+- `python system/af/tests/parity.py`: 69/69 PASS (R1's 53 plus 16 pipe/studio cases).
+- `python -m pytest system/tests -q -p no:cacheprovider`: 390 passed, 1 skipped.
+- `cargo build --release`: no warnings; `target/release/af.exe` 3,658,240 bytes.
+
+### Divergences and choices
+
+- `pipe round NUMBER` (af.py 2577, `type=int`): ASCII digits, sign, single underscores, whitespace, i128 range. Python's `int()` also takes Unicode decimal digits and unbounded values. `-1` is a positional for both (argparse has no negative-number options there).
+- `shutil.move` (af.py 1102, 1296, 1313) is `std::fs::rename`: same-volume moves only. Every move here stays inside `workspace/pipeline/`; a cross-volume move would crash where Python copies.
+- `shutil.copy2` (af.py 1535) copies bytes plus access and modification times, not Windows file attributes.
+- `--with ", x"` (af.py 1249) reproduces Python's `IndexError: list index out of range` crash instead of refusing.
+- Paths in `pipe round`, `pipe archive`/`unarchive`, `studio new`, and the skeleton refusals come from `os.path.relpath` without `/` normalisation, so they print with `\` on Windows; the port does the same.
+
+### Left for cutover
+
+- The careers and creator packs, `.claude/skills/job-scout/SKILL.md`, and two `library/process/` files say `af pipe ...` / `af studio ...`; they resolve to whatever `af` is on PATH once root discovery is decided (see Cutover notes).
+- When R2 and R3 merge, `NOT_PORTED` in `src/cli.rs` is edited by all three stages; the merged line keeps only the verbs still unported.
 
 ## Cutover notes
 

@@ -754,6 +754,365 @@ for _name, _cards, _config in (
     CASES.append((f"media-{_name}", media_case(_cards, _config)))
 
 
+# ------------------------------------------------------------------ R4: pipe and studio verbs
+
+def _rm(rel):
+    def step(root):
+        p = os.path.join(root, *rel.split("/"))
+        (shutil.rmtree if os.path.isdir(p) else os.remove)(p)
+    return step
+
+
+def _put(rel, text):
+    def step(root):
+        w(root, rel, text)
+    return step
+
+
+def _copytree(src_rel, dst_rel):
+    def step(root):
+        shutil.copytree(os.path.join(root, *src_rel.split("/")), os.path.join(root, *dst_rel.split("/")))
+    return step
+
+
+SAVE = ["pipe", "save", "--company", "Acme", "--role", "AI PM", "--url", "https://boards.example.com/acme/1"]
+
+
+def case_pipe_save(root):
+    return [["pipe", "board"],
+            SAVE + ["--ats", "greenhouse", "--posted", "2026-10-01", "--deadline", "2026-11-01", "--salary", "$150k"],
+            SAVE,
+            ["pipe", "save", "--company", "Beta Co", "--role", "Eng", "--url", "https://x.example/2", "--slug", "beta"],
+            ["pipe", "save", "--company", "!!!", "--role", "???", "--url", "u"],
+            ["pipe", "save", "--company", "C", "--role", "R", "--url", "u", "--slug", "Bad_Slug"],
+            ["pipe", "save", "--comp", "Gamma", "--role", "PM", "--url", "u", "--source", "referral", "--ats", "",
+             "--url", "https://x.example/3"],
+            ["pipe", "save", "--company", "Ünïcode Ltd", "--role", "Head of Ops", "--url", "u"],
+            ["pipe", "board"],
+            ["pipe", "save", "--company", "x"],
+            ["pipe"],
+            ["pipe", "bogus"],
+            ["doctor", "pipeline"]]
+
+
+def case_pipe_start(root):
+    w(root, "workspace/pipeline/scout/jd-cache/acme-ai-pm.jd.md", "verbatim JD\n")
+    return [["pipe", "start", "acme-ai-pm"],
+            SAVE + ["--salary", "$150k", "--posted", "2026-10-01"],
+            ["pipe", "start", "acme-ai-pm"],
+            ["pipe", "start", "acme-ai-pm"],
+            ["pipe", "start", "nope"],
+            ["pipe", "save", "--company", "Beta", "--role", "Eng", "--url", "u", "--slug", "beta"],
+            _put("workspace/pipeline/applications/beta/notes.md", "already here\n"),
+            ["pipe", "start", "beta"],
+            ["pipe", "save", "--company", "Gamma", "--role", "PM", "--url", "u", "--slug", "gamma"],
+            _put("workspace/pipeline/applications/completed/gamma/application.md", "---\nslug: gamma\n---\n"),
+            ["pipe", "start", "gamma"],
+            ["pipe", "save", "--company", "Delta", "--role", "PM", "--url", "u", "--slug", "delta"],
+            _rm("library/domains/careers/sources-skeleton.md"),
+            ["pipe", "start", "delta"],
+            ["pipe", "save", "--company", "Eps", "--role", "PM", "--url", "u", "--slug", "eps"],
+            _rm("library/domains/careers/skeleton.md"),
+            ["pipe", "start", "eps"],
+            ["doctor", "pipeline"]]
+
+
+def case_pipe_topology(root):
+    return [_copytree("library/domains/careers", "library/domains/careers-two"),
+            SAVE,
+            ["studio", "new", "x", "--date", "2026-10-01"],
+            _rm("library/domains/careers-two"),
+            _rm("library/domains/careers/pipeline-skeleton.md"),
+            SAVE,
+            _rm("library/domains/careers"),
+            ["pipe", "save", "--company", "A", "--role", "B", "--url", "u"],
+            ["pipe", "close-search", "--reason", "x"],
+            ["pipe", "board"],
+            _rm("library/domains"),
+            ["pipe", "archive", "x"],
+            ["studio", "new", "x", "--date", "2026-10-01"]]
+
+
+def case_pipe_stage(root):
+    board = ("  acme:\n    stage: preparing\n    company: \"Acme\"\n    role: \"AI PM\"\n    saved: 2026-10-01\n"
+             "  ready-one:\n    stage: preparing\n    company: \"Ready\"\n"
+             "  inbound:\n    stage: preparing\n"
+             "  inbound-unready:\n    stage: preparing\n"
+             "  saved-one:\n    stage: saved\n"
+             "  weird:\n    stage: wishlist\n"
+             "  nostage:\n    company: \"Nobody\"\n"
+             "  nofolder:\n    stage: saved\n"
+             "  later:\n    stage: interviewing\n    next_nudge: 2026-10-02\n")
+    pipeline_board(root, board)
+    app(root, "acme")
+    app(root, "ready-one", materials="[resume, deck]",
+        rows="  resume:\n    file: resume/resume-v2.md\n    status: ready\n"
+             "  deck:\n    file: deck/deck-v1.md\n    status: drafting\n")
+    app(root, "inbound", materials="[deck]",
+        rows="  deck:\n    file: deck/deck-v3.md\n    status: published\n")
+    app(root, "inbound-unready", materials="[]")
+    app(root, "later")
+    return [["pipe", "stage", "ghost", "applied"],
+            ["pipe", "stage", "acme", "bogus"],
+            ["pipe", "stage", "saved-one", "interviewing"],
+            ["pipe", "stage", "acme", "applied", "--offered-role", "X"],
+            ["pipe", "stage", "acme", "applied", "--offered-role", ""],
+            ["pipe", "stage", "ready-one", "applied"],
+            ["pipe", "stage", "inbound", "interviewing"],
+            ["pipe", "stage", "inbound-unready", "interviewing"],
+            ["pipe", "stage", "acme", "ghosted"],
+            ["pipe", "stage", "acme", "interviewing"],
+            ["pipe", "stage", "acme", "offer", "--offered-role", "Staff  PM \"AI\""],
+            ["pipe", "stage", "acme", "dropped"],
+            ["pipe", "stage", "acme", "accepted", "--off", "Forward Deployed Engineer"],
+            ["pipe", "stage", "acme", "declined"],
+            ["pipe", "stage", "weird", "preparing"],
+            ["pipe", "stage", "nostage", "preparing"],
+            ["pipe", "stage", "nofolder", "preparing"],
+            ["pipe", "stage", "nofolder", "rejected"],
+            ["pipe", "stage", "later", "offer"],
+            ["pipe", "stage", "later", "declined"],
+            ["pipe", "stage", "saved-one", "dropped"],
+            ["pipe", "stage", "acme"],
+            ["pipe", "board"],
+            ["doctor", "pipeline"]]
+
+
+def case_pipe_stage_no_board(root):
+    return [["pipe", "stage", "a", "applied"], ["pipe", "round", "a", "1"], ["pipe", "archive", "a"],
+            ["pipe", "unarchive", "a"], ["pipe", "close-search", "--reason", "x"]]
+
+
+def case_pipe_close_search(root):
+    board = ("  live-one:\n    stage: preparing\n    next_nudge: null\n"
+             "  saved-only:\n    stage: saved\n"
+             "  applied-one:\n    stage: applied\n    next_nudge: 2026-10-08\n"
+             "  done-one:\n    stage: rejected\n"
+             "  nostage:\n    company: \"X\"\n")
+    pipeline_board(root, board)
+    app(root, "live-one")
+    app(root, "applied-one")
+    app(root, "done-one", folder="completed/done-one")
+    return [["pipe", "close-search", "--reason", "   "],
+            ["pipe", "close-search"],
+            ["pipe", "close-search", "--reason", "  Banyan   accepted  "],
+            ["pipe", "close-search", "--reason", "again"],
+            ["pipe", "save", "--company", "New", "--role", "Role", "--url", "u", "--slug", "new-one"],
+            ["pipe", "close-search", "--reas", "done \"again\" \\ here"],
+            ["pipe", "board"],
+            ["doctor", "pipeline"]]
+
+
+def case_pipe_close_search_empty(root):
+    w(root, "workspace/pipeline/pipeline.md",
+      "---\nschema_version: 1\ncreated_at: 2026-10-01\nlast_activity: 2026-10-01T10:00:00-04:00\n"
+      "applications: {}\n---\n\n# Job Pipeline\n")
+    return [["pipe", "close-search", "--reason", "nothing live"], ["pipe", "board"],
+            ["pipe", "save", "--company", "A", "--role", "B", "--url", "u"], ["pipe", "board"]]
+
+
+def case_pipe_round(root):
+    board = ("  acme:\n    stage: interviewing\n"
+             "  saved-row:\n    stage: saved\n"
+             "  nofolder:\n    stage: preparing\n"
+             "  applied-row:\n    stage: applied\n")
+    pipeline_board(root, board)
+    app(root, "acme")
+    app(root, "applied-row")
+    return [["pipe", "round", "ghost", "1"],
+            ["pipe", "round", "saved-row", "1"],
+            ["pipe", "round", "nofolder", "1"],
+            ["pipe", "round", "acme", "2", "--with", "Charles Duckworth, Senior Director", "--type", "hiring-manager",
+             "--at", "2026-09-02T10:00:00-07:00"],
+            ["pipe", "round", "acme", "3", "--with", "Dave McKellar, Partner", "--with", "  Jeff O'Neill, Senior Manager  ",
+             "--with", "   ", "--type", "panel"],
+            ["pipe", "round", "acme", "1", "--type", "recruiter-screen"],
+            ["pipe", "round", "acme", "1", "--type", "recruiter-screen"],
+            ["pipe", "round", "acme", "4"],
+            ["pipe", "round", "acme", "5", "--with", ", nobody"],
+            ["pipe", "round", "acme", "6", "--folder", "Bad_Folder"],
+            ["pipe", "round", "acme", "7", "--with", "Émile Zola"],
+            ["pipe", "round", "acme", "x"],
+            ["pipe", "round", "acme", "8", "--type", "bogus"],
+            ["pipe", "round", "acme", "007", "--folder", "lead"],
+            ["pipe", "round", "acme", "-1", "--folder", "neg"],
+            ["pipe", "round", "acme", "1_0", "--folder", "under"],
+            ["pipe", "round", "applied-row", "1", "--with", "Mike Duffy, Recruiter", "--at", "2026-01-05"],
+            ["pipe", "round", "acme", "9", "--folder", "x", "--folder", "last-wins"],
+            ["doctor", "pipeline"]]
+
+
+def case_pipe_archive(root):
+    board = ("  acme:\n    stage: preparing\n"
+             "  rej:\n    stage: rejected\n"
+             "  dup:\n    stage: ghosted\n"
+             "  nofolder:\n    stage: dropped\n"
+             "  offer-row:\n    stage: offer\n")
+    pipeline_board(root, board)
+    app(root, "acme")
+    app(root, "rej")
+    app(root, "dup")
+    app(root, "dup", folder="completed/dup")
+    app(root, "offer-row")
+    return [["pipe", "archive", "ghost"],
+            ["pipe", "archive", "acme"],
+            ["pipe", "archive", "offer-row"],
+            ["pipe", "archive", "rej"],
+            ["pipe", "archive", "rej"],
+            ["pipe", "archive", "dup"],
+            ["pipe", "archive", "nofolder"],
+            ["pipe", "unarchive", "ghost"],
+            ["pipe", "unarchive", "acme"],
+            ["pipe", "unarchive", "rej"],
+            ["pipe", "archive", "rej"],
+            ["pipe", "unarchive", "dup"],
+            ["pipe", "board"],
+            ["doctor", "pipeline"]]
+
+
+def case_pipe_lifecycle(root):
+    return [SAVE,
+            _put("workspace/pipeline/scout/jd-cache/acme-ai-pm.jd.md", "jd\n"),
+            ["pipe", "start", "acme-ai-pm"],
+            ["pipe", "round", "acme-ai-pm", "1", "--with", "Mike Duffy, Recruiter", "--type", "recruiter-screen"],
+            ["pipe", "stage", "acme-ai-pm", "interviewing"],
+            ["pipe", "stage", "acme-ai-pm", "offer"],
+            ["pipe", "stage", "acme-ai-pm", "accepted"],
+            ["pipe", "archive", "acme-ai-pm"],
+            ["pipe", "close-search", "--reason", "accepted Acme"],
+            ["pipe", "board"],
+            ["doctor"]]
+
+
+def case_studio_new(root):
+    w(root, "inbox/take1.MOV", "fake video bytes")
+    w(root, "inbox/noext", "raw bytes")
+    return [["studio", "new", "x", "--date", "2026-10-01"],
+            ["studio", "new", "Bad", "--date", "2026-10-01"],
+            ["studio", "new", "y"],
+            ["studio", "new", "y", "--date", "Oct 1"],
+            ["studio", "new", "y", "--date", "2026-02-30"],
+            ["studio", "new", "y", "--from", "inbox/missing.mov"],
+            ["studio", "new", "x", "--date", "2026-10-02"],
+            _put("workspace/studio/posts/z/notes.md", "here\n"),
+            ["studio", "new", "z", "--date", "2026-10-03"],
+            ["studio", "new", "meta-read-1", "--from", "inbox/take1.MOV", "--series", "patch-notes",
+             "--name", "Meta Read: One"],
+            ["studio", "new", "raw-clip", "--from", "inbox/noext", "--date", "2026-10-04", "--platform", "youtube"],
+            ["studio", "new", "dated", "--date", "2026-10-05T10:00", "--platform", ""],
+            ["studio", "new", "basic", "--date", "20261006", "--series", ""],
+            ["studio", "new"],
+            ["studio"],
+            ["doctor", "studio"]]
+
+
+def case_studio_new_packs(root):
+    return [_rm("library/domains/creator/edit-skeleton.md"),
+            ["studio", "new", "a", "--date", "2026-10-01"],
+            _rm("library/domains/creator/calendar-skeleton.md"),
+            _put("library/domains/creator/edit-skeleton.md", "# Edit {name}\n"),
+            ["studio", "new", "a", "--date", "2026-10-01"],
+            _rm("library/domains/creator"),
+            ["studio", "new", "a", "--date", "2026-10-01"]]
+
+
+def case_studio_stage(root):
+    cal = ("  p1:\n    state: planned\n    date: 2026-10-01\n    platform: tiktok\n"
+           "  c1:\n    state: captured\n    platform: tiktok\n"
+           "  done1:\n    state: posted\n    link: https://t.example/1\n"
+           "  weird:\n    state: editing\n"
+           "  nofolder:\n    state: planned\n"
+           "  nostate:\n    platform: tiktok\n")
+    calendar(root, cal)
+    post(root, "p1")
+    d = post(root, "c1")
+    w(root, f"{d}/video/source.mov", "v")
+    post(root, "done1", fields={"posted_at": "2026-09-01T09:00:00-07:00", "metrics_captured_at": "2026-09-20"})
+    post(root, "weird")
+    return [["studio", "stage", "ghost", "cut"],
+            ["studio", "stage", "p1", "bogus"],
+            ["studio", "stage", "c1", "posted"],
+            ["studio", "stage", "p1", "scheduled"],
+            ["studio", "stage", "p1", "captured"],
+            _put("workspace/studio/posts/p1/video/source.mp4", "v"),
+            ["studio", "stage", "p1", "captured"],
+            ["studio", "stage", "c1", "cut"],
+            _put("workspace/studio/posts/c1/renders/final.mp4", "mp4"),
+            ["studio", "stage", "c1", "cut"],
+            ["studio", "stage", "c1", "scheduled"],
+            ["studio", "stage", "c1", "cut"],
+            ["studio", "stage", "c1", "captured"],
+            ["studio", "stage", "c1", "dropped"],
+            ["studio", "stage", "done1", "cut"],
+            ["studio", "stage", "weird", "cut"],
+            ["studio", "stage", "nostate", "captured"],
+            ["studio", "stage", "nofolder", "captured"],
+            ["studio", "stage", "nofolder", "dropped"],
+            ["studio", "stage", "p1"],
+            ["doctor", "studio"]]
+
+
+def case_studio_post(root):
+    cal = ("  p1:\n    state: planned\n    date: 2026-10-01\n"
+           "  c1:\n    state: cut\n"
+           "  s1:\n    state: scheduled\n    date: 2026-10-02\n"
+           "  s2:\n    state: scheduled\n"
+           "  nopost:\n    state: cut\n"
+           "  legacy:\n    state: cut\n")
+    calendar(root, cal)
+    post(root, "p1")
+    for slug in ("c1", "s1", "s2"):
+        d = post(root, slug)
+        w(root, f"{d}/renders/final.mp4", "mp4")
+    post(root, "legacy", fields={"url": None})
+    return [["studio", "post", "ghost", "--url", "u"],
+            ["studio", "post", "p1", "--url", "u"],
+            ["studio", "post", "c1", "--url", "https://www.tiktok.com/@b/video/42", "--posted-at", "2026-09-08T10:00:00-07:00"],
+            ["studio", "post", "s1", "--url", "https://t.example/a  b   c"],
+            ["studio", "post", "s2", "--url", "https://t.example/2", "--posted", "yesterday"],
+            ["studio", "post", "nopost", "--url", "u"],
+            ["studio", "post", "legacy", "--url", "https://t.example/legacy"],
+            ["studio", "post", "c1", "--url", "u"],
+            ["studio", "post", "c1"],
+            ["studio", "post", "nostate-ghost", "--url", "u"],
+            ["doctor", "studio"]]
+
+
+def case_studio_no_calendar(root):
+    return [["studio", "stage", "a", "cut"], ["studio", "post", "a", "--url", "u"]]
+
+
+def case_studio_lifecycle(root):
+    w(root, "inbox/take.mp4", "bytes")
+    return [["studio", "new", "life-1", "--from", "inbox/take.mp4"],
+            _put("workspace/studio/posts/life-1/renders/final.mp4", "mp4"),
+            ["studio", "stage", "life-1", "cut"],
+            ["studio", "stage", "life-1", "scheduled"],
+            ["studio", "post", "life-1", "--url", "https://t.example/life", "--posted-at", "2026-09-01T09:00:00-07:00"],
+            ["draft", "life-1", "script", "--file", "script/script-v1.md"],
+            ["doctor"]]
+
+
+CASES += [
+    ("pipe-save", case_pipe_save),
+    ("pipe-start", case_pipe_start),
+    ("pipe-topology", case_pipe_topology),
+    ("pipe-stage", case_pipe_stage),
+    ("pipe-no-board", case_pipe_stage_no_board),
+    ("pipe-close-search", case_pipe_close_search),
+    ("pipe-close-search-empty", case_pipe_close_search_empty),
+    ("pipe-round", case_pipe_round),
+    ("pipe-archive", case_pipe_archive),
+    ("pipe-lifecycle", case_pipe_lifecycle),
+    ("studio-new", case_studio_new),
+    ("studio-new-packs", case_studio_new_packs),
+    ("studio-stage", case_studio_stage),
+    ("studio-post", case_studio_post),
+    ("studio-no-calendar", case_studio_no_calendar),
+    ("studio-lifecycle", case_studio_lifecycle),
+]
+
+
 # ------------------------------------------------------------------ comparison
 
 NOW_T = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[+-]\d{2}:\d{2}|Z)?")

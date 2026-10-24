@@ -12,4 +12,6 @@ pub mod runlog;
 pub mod media_shelf;
 pub mod pyyaml;
 pub mod doctor;
+pub mod pipe;
+pub mod studio;
 pub mod cli;

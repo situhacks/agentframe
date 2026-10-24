@@ -151,6 +151,33 @@ def invert_roles(light: dict[str, str]) -> dict[str, str]:
     return dark
 
 
+def luminance(value: str) -> float:
+    """WCAG 2.x relative luminance of a hex colour."""
+
+    def channel(c: int) -> float:
+        s = c / 255
+        return s / 12.92 if s <= 0.04045 else ((s + 0.055) / 1.055) ** 2.4
+
+    r, g, b = hex_to_rgb(value)
+    return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+
+
+def contrast(a: str, b: str) -> float:
+    high, low = sorted((luminance(a), luminance(b)), reverse=True)
+    return (high + 0.05) / (low + 0.05)
+
+
+def with_ink_strong(roles: dict[str, str]) -> dict[str, str]:
+    """`ink-strong` labels text on an `accent` fill at 0.85 over `paper`. No
+    design language names it, and the shipped near-black fails on a dark accent,
+    so it takes whichever of the language's own ink and paper reads better on
+    that fill."""
+    fill = mix(roles["paper"], roles["accent"], 0.85)
+    out = dict(roles)
+    out["ink-strong"] = max((roles["ink"], roles["paper"]), key=lambda c: contrast(c, fill))
+    return out
+
+
 def font_families(tokens: dict) -> dict[str, str]:
     """Map the language's type roles onto the guide's display/sans/mono slots."""
     types = tokens.get("type") or {}
@@ -182,7 +209,20 @@ def first_family(stack: str) -> str:
 
 
 def rewrite_roles_table(guide: str, light: dict[str, str], dark: dict[str, str]) -> str:
-    """Replace only the value cells of the semantic-roles table."""
+    """Replace only the value cells of the semantic-roles table.
+
+    The rewrite is held to the `### Semantic roles` section: other four-column
+    tables reuse role-shaped names, and a row the shipped guide adds to this
+    table must not push a projected role out of reach.
+    """
+    start = guide.find("### Semantic roles")
+    if start < 0:
+        raise ProjectionError(
+            "the vendored style guide has no `### Semantic roles` section; "
+            "update rewrite_roles_table in system/tools/diagram_profile.py to its new heading"
+        )
+    following = re.compile(r"^(?:#{1,3} |---$)", re.M).search(guide, start + 1)
+    end = following.start() if following else len(guide)
 
     def row(match: re.Match[str]) -> str:
         role = match.group("role")
@@ -197,7 +237,7 @@ def rewrite_roles_table(guide: str, light: dict[str, str], dark: dict[str, str])
         r"^\|\s*`(?P<role>[\w-]+)`\s*\|(?P<purpose>[^|]*)\|[^|]*\|[^|]*\|\s*$",
         re.M,
     )
-    return pattern.sub(row, guide, count=len(light))
+    return guide[:start] + pattern.sub(row, guide[start:end]) + guide[end:]
 
 
 def rewrite_typography_table(guide: str, fonts: dict[str, str]) -> str:
@@ -257,12 +297,52 @@ def rewrite_font_stack(guide: str, fonts: dict[str, str], tokens: dict) -> str:
         f"[primitive-annotation.md](primitive-annotation.md))."
     )
 
-    section = re.compile(
-        r"(### Font stack\n\n).*?(?=\n---\n)", re.S
-    )
+    note = ""
+    if re.search(r"^### (?:Font source|.* labels)$", guide, re.M):
+        note = (
+            f"> **Projected faces:** the sections below name {sans}, {display}, and "
+            f"{mono} in place of the shipped faces. Their glyph-coverage claims, width "
+            f"metrics, and the Noto faces they say the font link carries were written "
+            f"for the shipped skin; confirm a face covers a script before relying on one.\n\n"
+        )
+
+    # The section ends at the next heading, so the font-source switch and the
+    # per-script sections that follow it survive.
+    section = re.compile(r"(### Font stack\n\n).*?(?=^#{1,3} |^---$)", re.S | re.M)
     if not section.search(guide):
         return guide
-    return section.sub(lambda m: m.group(1) + loader + "\n\n" + rule + "\n", guide, count=1)
+    guide = section.sub(lambda m: m.group(1) + loader + "\n\n" + note, guide, count=1)
+    return re.sub(r"^\*\*Load-bearing rule:\*\*.*$", lambda m: rule, guide, count=1, flags=re.M)
+
+
+def rewrite_script_sections(body: str, fonts: dict[str, str], tokens: dict) -> str:
+    """Keep the font-source switch and the Korean, Chinese, and Cyrillic rules,
+    in this language's faces.
+
+    The rules hold for any face: extend a label's stack with a Noto fallback,
+    the 12px floor, the register switch, per-character width budgets. Left
+    naming the shipped faces, they would put the shipped typefaces back into
+    every non-Latin label. Runs before `rewrite_font_stack`, so only shipped
+    text is renamed.
+    """
+    start = body.find("### Font stack")
+    if start < 0:
+        return body
+    following = re.compile(r"^---$", re.M).search(body, start)
+    end = following.start() if following else len(body)
+    region = body[start:end]
+
+    names = {
+        "Geist Mono": first_family(fonts["mono"]),
+        "Instrument Serif": first_family(fonts["display"]),
+        "Geist": first_family(fonts["sans"]),
+    }
+    region = re.sub(r"Geist Mono|Instrument Serif|Geist", lambda m: names[m.group(0)], region)
+    # Installing the shipped faces locally is advice about the shipped skin only.
+    region = re.sub(r"^To keep the editorial faces with no network at all.*\n\n?", "", region, count=1, flags=re.M)
+    source = "web" if (tokens.get("type") or {}).get("google_fonts_import") else "system"
+    region = re.sub(r"^Font source: `\w+`$", f"Font source: `{source}`", region, count=1, flags=re.M)
+    return body[:start] + region + body[end:]
 
 
 def rewrite_typography_constraint(body: str, fonts: dict[str, str]) -> str:
@@ -302,7 +382,7 @@ def replace_provenance_note(body: str, name: str) -> str:
         f"`library/assets/design-languages/{name}/tokens.yaml`, which is the "
         f"single source of truth for this identity. Do not edit token values "
         f"here; regenerate with `python system/tools/diagram_profile.py {name}`. "
-        f"The `soft`, `rule`, `accent-tint`, and `link` roles are derived, "
+        f"The `soft`, `rule`, `accent-tint`, `link`, and `ink-strong` roles are derived, "
         f"because a deck design language does not name them directly."
     )
     body = re.sub(
@@ -310,7 +390,10 @@ def replace_provenance_note(body: str, name: str) -> str:
     )
     # The shipped note about pre-baked examples describes the vendor's own
     # regeneration backlog and says nothing about a projected profile.
-    return re.sub(r"^> \*\*Note:\*\* The pre-baked example HTML.*?(?=\n\n)", "", body, count=1, flags=re.S | re.M)
+    body = re.sub(r"^> \*\*Note:\*\* The pre-baked example HTML.*?(?=\n\n)", "", body, count=1, flags=re.S | re.M)
+    # The contrast contract quotes ratios measured on the shipped palette, which
+    # describe nothing about the projected one.
+    return re.sub(r"^- \*\*Current defaults:\*\*.*\n", "", body, count=1, flags=re.M)
 
 
 def strip_existing_header(body: str) -> str:
@@ -323,13 +406,15 @@ def sanitize(value: str) -> str:
 
 
 def build_profile(name: str, tokens: dict, guide: str, summary: str) -> str:
-    light = build_roles(tokens, "light")
-    dark = build_roles(tokens, "dark") or invert_roles(light)
+    base_light = build_roles(tokens, "light")
+    light = with_ink_strong(base_light)
+    dark = with_ink_strong(build_roles(tokens, "dark") or invert_roles(base_light))
     fonts = font_families(tokens)
 
     body = strip_existing_header(guide)
     body = rewrite_roles_table(body, light, dark)
     body = rewrite_typography_table(body, fonts)
+    body = rewrite_script_sections(body, fonts, tokens)
     body = rewrite_font_stack(body, fonts, tokens)
     body = rewrite_typography_constraint(body, fonts)
     body = rewrite_node_treatments(body)

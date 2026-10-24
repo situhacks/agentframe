@@ -65,7 +65,7 @@ TOKENS = {
     },
 }
 
-SHIPPED_TOKENS = ("#f5f5f5", "#2d3142", "#eb6c36", "#4f5d75", "#7a8399", "#2e5aa8")
+SHIPPED_TOKENS = ("#f5f5f5", "#2d3142", "#eb6c36", "#4f5d75", "#7a8399", "#2e5aa8", "#bf4520", "#5a6580")
 SHIPPED_FONTS = ("Instrument Serif", "Geist")
 
 

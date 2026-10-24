@@ -12,7 +12,7 @@ Load when a project or deliverable needs to explain a system, process, decision,
 
 | Route | Use when | Skill | Output |
 |---|---|---|---|
-| **Diagram Design** (default) | A human audience sees this — a deck, a client document, a post, a README figure. Thirty-nine layout grammars, brand-tokenized. | [`system/vendor/diagram-design/SKILL.md`](../../system/vendor/diagram-design/SKILL.md) | Self-contained `.html`; a flattened `.svg` when it goes into a deck |
+| **Diagram Design** (default) | A human audience sees this — a deck, a client document, a post, a README figure. Forty-five visual types, brand-tokenized. | [`system/vendor/diagram-design/SKILL.md`](../../system/vendor/diagram-design/SKILL.md) | Self-contained `.html`; a flattened `.svg` when it goes into a deck |
 | **D2** | A graph is regenerated from changing source and nobody reads it as a designed artifact — a derived topology, a dependency map that churns. Auto-layout re-solves placement on every change. | [`.claude/skills/d2-diagrams/SKILL.md`](../../.claude/skills/d2-diagrams/SKILL.md) | `diagram.d2` source plus derived SVG |
 
 Diagram Design is the broader tool in both directions: more layout grammars than D2's graphs-only, and the only route that reaches native PowerPoint shapes. Choose D2 only for the churn case above. When a D2 diagram graduates to something an audience sees, redraw it through Diagram Design rather than restyling the `.d2`.
@@ -29,11 +29,11 @@ python system/vendor/diagram-design/scripts/self_check.py <diagram.html>
 python system/vendor/diagram-design/scripts/verify_geometry.py <diagram.html>
 ```
 
-`self_check.py` covers the accessible-figure contract and single-file safety. `verify_geometry.py` catches a label mask clipped by a node painted after it — the defect hand-placed geometry actually produces. Upstream ships it as a contribution gate outside the skill; AgentFrame vendors it because generated output has the same failure mode.
+`self_check.py` covers the accessible-figure contract and single-file safety. `verify_geometry.py` catches a label mask clipped by a node painted after it and connector-routing faults (diagonal segments, segments on a node border, endpoints at a corner, crowded or stacked connectors) — the defects hand-placed geometry actually produces. Upstream ships it as a contribution gate outside the skill; AgentFrame vendors it because generated output has the same failure mode.
 
 5. Look at the rendered diagram before handing it off. Neither check reads overlap, crowding, or a hierarchy that collapses at final size.
 
-For a deck, continue to the handoff below. For an existing Mermaid or draw.io source, the skill's import route redraws it — it extracts structure and redraws, never converts, and reports what it merged or dropped.
+For a deck, continue to the handoff below. For an existing Mermaid, draw.io, or Excalidraw source, the skill's import route redraws it — it extracts structure and redraws, never converts, and reports what it merged or dropped.
 
 ## Deck handoff — native shapes, not a raster
 
@@ -59,11 +59,12 @@ python system/vendor/ppt-master/scripts/svg_quality_checker.py <folder-holding-t
 
 ### What reaches native shapes
 
-Checked across the vendored roster: 128 of 148 shipped diagrams flatten to a clean gate. Six types carry a constraint the translation cannot remove, because PowerPoint has no equivalent:
+Checked across the vendored roster: 184 of 216 shipped diagrams flatten to a clean gate. These types carry a constraint the translation cannot remove, because PowerPoint has no equivalent:
 
 | Type | Blocked by | Route instead |
 |---|---|---|
 | Venn, Medallion | `clipPath` on a shape | Raster, or redraw with overlapping translucent fills |
+| Exploded axonometric (keyboard, phone, unboxing exemplars) | `clipPath` on a group, defined outside `<defs>` | Raster, or redraw the cavity without a clip |
 | UML class, Sequence (OAuth variant) | Independently filled arrowheads; `<polyline>` line-ends | `--match-markers`, or raster if the hollow arrowhead is load-bearing |
 | Fishbone | `viewBox` origin is not `0 0` | Raster |
 | IT current-state | Matrix transform over a rounded-rect subtree | Raster |
@@ -73,7 +74,7 @@ Raster fallback needs Playwright (`pip install playwright && playwright install 
 
 ### Charts inside a deck
 
-Diagram Design ships bar, line, scatter, radar, treemap, Sankey, and Gantt. Inside a deck, do not use them. PPT Master's Chart executor produces native PowerPoint chart objects with real underlying data, which outlives an SVG the moment someone needs to change a number. Diagram Design owns conceptual and relational types for deck work; its chart types are for documents, posts, and social cards.
+Diagram Design ships bar, waterfall, line, scatter, radar, polar, heatmap, treemap, Sankey, and Gantt. Inside a deck, do not use them. PPT Master's Chart executor produces native PowerPoint chart objects with real underlying data, which outlives an SVG the moment someone needs to change a number. Diagram Design owns conceptual and relational types for deck work; its chart types are for documents, posts, and social cards.
 
 ## Brand
 

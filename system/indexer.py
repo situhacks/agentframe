@@ -487,6 +487,8 @@ def path_boost(rel):
     p = rel.replace("\\", "/").lower()
     if "_archive/" in p:
         return 0.45, "archive"
+    if p.startswith("workspace/life/") and "/_history/" not in p and "/sources/" not in p:
+        return 1.5, "life"
     if "/knowledge/" in p or p.startswith("knowledge/"):
         return 1.5, "knowledge"
     if "/sources/" in p or "/_local/" in p:

@@ -50,6 +50,9 @@ Thumbs.db
 .vscode/
 .idea/
 
+# === Rust build output (system/af is the af crate) ===
+system/af/target/
+
 # === Python bytecode caches ===
 __pycache__/
 *.pyc

@@ -1,0 +1,32 @@
+[package]
+name = "af"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "AgentFrame state-transition CLI (the buttons), ported from system/af.py"
+
+[lib]
+name = "afcore"
+path = "src/lib.rs"
+
+[[bin]]
+name = "af"
+path = "src/main.rs"
+
+[dependencies]
+chrono = "0.4"
+clap = { version = "4", features = ["derive"] }
+regex = "1"
+serde_json = "1"
+walkdir = "2"
+yaml-rust2 = "0.13.0"
+
+[dev-dependencies]
+assert_cmd = "2"
+tempfile = "3"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

@@ -95,6 +95,7 @@ enum Cmd {
     Studio {
         #[command(subcommand)]
         cmd: crate::studio::StudioCmd,
+    },
     Session {
         #[command(subcommand)]
         cmd: crate::sessions::SessionCmd,

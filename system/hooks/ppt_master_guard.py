@@ -11,8 +11,9 @@ after every vendor refresh.
 
 PreToolUse (Bash|PowerShell):
   - project_manager.py init      -> deny when the project would land inside
-                                    this repo's system/ tree (vendor default
-                                    is cwd/projects, i.e. the skill folder)
+                                    this repo's system/ tree. Without --dir the
+                                    vendor defaults to system/projects/ when run
+                                    from inside system/, else to cwd/projects
 PostToolUse (Bash|PowerShell):
   - svg_to_pptx.py               -> re-inject the export promotion contract, but only
                                     when the command actually invoked the exporter AND
@@ -43,10 +44,13 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+# project_manager's REPO_ROOT is the skill folder's grandparent, which is system/
+# here, so an init without --dir run from inside system/ lands in system/projects/.
+VENDOR_REPO_ROOT = ROOT / "system"
 
 STAGING_REASON = (
     "PPT Master staging guard: this init would create the deck project at {target} - "
-    "inside the vendored skill tree, where it gets orphaned and gitignored. Per "
+    "inside system/, outside any calling project, where af doctor flags it as a stray. Per "
     "system/vendor/ppt-master/AGENTS.md, stage deck projects inside the calling "
     "campaign (workspace/projects/<slug>/phase-4-production/decks/<deck-name>/) or "
     "C:\\tmp for throwaway runs. Re-run with an explicit --dir, e.g.: "
@@ -155,7 +159,12 @@ def _staging_guard(tokens: list[str], cwd: Path) -> dict | None:
             target = rest[i + 1]
         elif tok.startswith("--dir="):
             target = tok.split("=", 1)[1]
-    resolved = (cwd / target) if target else (cwd / "projects")
+    if target:
+        resolved = cwd / target
+    elif _is_under(cwd, VENDOR_REPO_ROOT):
+        resolved = VENDOR_REPO_ROOT / "projects"
+    else:
+        resolved = cwd / "projects"
 
     if _is_under(resolved, ROOT / "system"):
         return _deny(STAGING_REASON.format(target=resolved))

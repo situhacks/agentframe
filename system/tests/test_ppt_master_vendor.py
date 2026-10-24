@@ -46,8 +46,12 @@ class TestPptMasterVendorContract(unittest.TestCase):
         )
         self.assertIn("def _check_fonts", checker)
         self.assertIn("font-family value(s)", checker)
-        self.assertIn("Read typography from `spec_lock.md`", executor)
-        self.assertIn("deck-wide anchors", executor)
+        self.assertIn("Default reads typography from `spec_lock.md`", executor)
+        self.assertIn(
+            "map every structural text item to a declared `typography` role "
+            "and write its anchor",
+            executor,
+        )
 
     def test_agentframe_does_not_mirror_vendor_routing_or_svg_guidance(self):
         overlay = read("system", "vendor", "ppt-master", "AGENTS.md")

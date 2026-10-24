@@ -2260,6 +2260,10 @@ def ppt_master_stray_issues(base=None):
     root = base or ROOT
     skill = os.path.join(root, "system", "vendor", "ppt-master")
     issues = []
+    # The vendor's init default when run from inside system/ without --dir.
+    if os.path.isdir(os.path.join(root, "system", "projects")):
+        issues.append("system/projects: deck project staged inside system/ — "
+                      "move it under the calling campaign (see system/vendor/ppt-master/AGENTS.md)")
     if not os.path.isdir(skill):
         return issues
     for dirpath, dirnames, filenames in os.walk(skill):

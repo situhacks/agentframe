@@ -18,6 +18,13 @@ After selecting PPT Master, read the local overlay then follow the vendor's `SKI
 
 Reference-grounded redesign is selected before this handoff. It is a hybrid preservation path the vendor's rebuild-from-scratch beautify workflow does not own.
 
+## PPTX skill handoff
+
+Two commands in the vendor's `SKILL.md` do not run as written on Windows:
+
+- **Validate through the wrapper.** Run `python system/tools/docx_validate.py <deck.pptx> [--original <source.pptx>]` wherever the skill says `python scripts/office/validate.py`. Run directly on a cp1252 console, the vendored validator cannot decode slide XML carrying some non-ASCII bytes and reports those slides as failed checks. The wrapper forces UTF-8 and selects an interpreter with `defusedxml` and `lxml`.
+- **Repack with the vendored helper, not `zip`**, which is not installed: `python -c "import sys; sys.path.insert(0, 'system/vendor/pptx/scripts/office'); from pathlib import Path; from helpers import rezip; rezip(Path(sys.argv[1]), Path(sys.argv[2]))" unpacked out.pptx`. It writes `[Content_Types].xml` first and replaces the output whole, so deleted parts do not survive.
+
 ## Design language handoff
 
 When the project names a design language, route the identity rather than remember it. A context threading only palette and typography reproduces the colours and loses the archetypes, which is why decks built in a fresh session stop resembling their showcase.
@@ -60,11 +67,9 @@ A deck that exported cleanly months ago can fail at rebuild on conventions the v
 1. **Run the SVG checker over the existing roster first:** `python system/vendor/ppt-master/scripts/svg_quality_checker.py <ppt-project>/svg_output`. It reports every legacy hazard at once with the exact required value. Gradients are the common one and they hard-reject: `gradientUnits` must be `objectBoundingBox` with normalized coordinates, and `gradientTransform`, `spreadMethod`, and `href`-inherited stops are each refused outright.
 2. **Read `spec_lock.md` by hand.** No vendor tool validates it before export, so it is the gap the checker does not cover. Two legacy shapes are known: `pptx_structure.mode: baseline`, where the current values are `flat` and `structured`, and a missing `## communication` section.
 3. **Migrate the mechanical cases, never the content.** `baseline` becomes `flat`. A full-canvas `userSpaceOnUse` gradient becomes normalized `objectBoundingBox` coordinates inside the range the checker prints. If a fix appears to require cutting or restructuring slide content, stop and say so instead.
-4. **Lockless re-export, flat rosters only.** `--quick-generate` is the only path that skips the `spec_lock.md` release gate; naming a source directory with `-s` does not, and fails identically. It needs a matching final quality report and exports `svg_output/` as a flat package, which is why it **cannot export a structured deck**: flat mode forbids `data-pptx-master`, `data-pptx-layout`, `data-pptx-layer`, `data-pptx-carrier`, and `data-pptx-placeholder`, and a structured roster carries all five. A structured deck has no lockless path; it goes through the release gate. Treat any quick-generate output as evidence rather than a release.
+4. **Lockless re-export.** Two paths skip the `spec_lock.md` release gate. `--quick-generate` needs a passing final quality report for the current `svg_output/` and infers flat or structured output from the whole roster. `-s <dir>` naming any source other than `output` is a diagnostic export: flat only and ungated, so it rejects a structured roster, since flat mode forbids `data-pptx-master`, `data-pptx-layout`, `data-pptx-layer`, `data-pptx-carrier`, and `data-pptx-placeholder`. Treat any lockless output as evidence rather than a release.
 
-A design-language `package/` has no `spec_lock.md` at all — that file is a per-deck-project artifact — so a package cannot be exported to PPTX on its own by any route. Install it into a deck project through `generate-pptx` and export from there.
-
-The SVG checker resolves `design_spec.md` by that exact name, so `--template-mode` targets a package's own `templates/`, never a project that installed one — installation renames the spec to `design_spec.<kind>.<id>.md`, and the checker then reports a missing canvas plus unresolvable `../images/` on every page. Those errors mean the target is wrong, not the package.
+A design-language `package/` cannot be exported to PPTX on its own: it has no `spec_lock.md`, and its structured roster fails the flat-only `-s` path. Install it into a deck project through `generate-pptx` and export from there.
 
 ## Versioning and round trip
 

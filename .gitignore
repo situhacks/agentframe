@@ -74,3 +74,6 @@ docs/
 # hyperframes ships its own docs tree under the vendored source; the root docs/ rule must not hide it
 !system/vendor/hyperframes/source/docs/
 !system/vendor/hyperframes/source/docs/**
+# the same for PPT Master's scripts/docs
+!system/vendor/ppt-master/scripts/docs/
+!system/vendor/ppt-master/scripts/docs/**

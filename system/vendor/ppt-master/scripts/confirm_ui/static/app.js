@@ -22,8 +22,9 @@
             btn_confirm: "Confirm",
             btn_confirm_contract: "Confirm contract & continue →",
             btn_confirm_final_plan: "Confirm final plan →",
-            deriving: "Generating the downstream options from your choices…",
+            deriving: "Preparing the final plan and verifying your selected templates…",
             template_selection_required: "Choose free design or use templates. When using templates, select at least one workspace.",
+            template_selection_conflict: "Choose at most one workspace per kind.",
             connection_lost: "Connection to the confirm server was interrupted; retrying. If this keeps failing, return to the chat for confirmation.",
             confirmed_title: "✓ Confirmed",
             confirmed_hint: "Your choices are saved. You can close this page and return to the chat.",
@@ -34,19 +35,14 @@
             template_free_desc: "Use no reusable template workspace. The Strategist will derive the visual system from this project.",
             template_use_title: "Use templates",
             template_use_desc: "Select one or more reusable Brand, Style, Layout, Deck, or specified workspaces.",
-            sec_template_library: "Template combination",
-            template_library_hint: "Choose at most one registered template for each type. Brand, Style, Layout, and Deck can be combined.",
-            sec_template_explicit: "Specified templates",
-            template_explicit_hint: "Choose at most one exact workspace supplied for this run. Its source path is shown for verification.",
+            template_library_hint: "Choose at most one workspace per kind. All four kinds can combine; Layout takes structural precedence over Deck.",
+            template_explicit_hint: "Choose exact workspaces supplied for this run with non-overlapping kinds; every kind in each selected root is applied. Source paths are shown for verification.",
             template_kind_brand: "Brand",
             template_kind_style: "Style",
             template_kind_layout: "Layout",
             template_kind_deck: "Deck",
-            template_source_library: "Library",
             template_source_explicit: "Specified path",
-            template_source_path: "Source path",
             template_select_none: "None",
-            template_none_registered: "No registered templates",
             template_none_explicit: "No specified templates for this run",
             sec_canvas: "Canvas format",
             sec_pages: "Page count",
@@ -63,6 +59,12 @@
             sec_proactive_execution: "Proactive execution",
             sec_mode: "Generation mode",
             sec_refine: "Review the Design Spec first",
+            sec_design_spec_depth: "Design Spec depth",
+            design_spec_depth_brief: "Brief",
+            design_spec_depth_brief_desc: "A short block list per page; no full page copy.",
+            design_spec_depth_complete: "Complete",
+            design_spec_depth_complete_desc: "Full page briefs with complete wording.",
+            design_spec_depth_locked: "Locked to Complete because split mode or Design Spec refinement is enabled.",
             sec_design_directions: "Coherent design directions",
             design_directions_hint: "The recommended complete direction is applied first. Choose another or fine-tune the projected fields below; use Restore to return an adjusted direction to its authored bundle.",
             direction_active: "Applied",
@@ -71,9 +73,8 @@
             direction_restore: "Restore authored direction",
             scheme_component_options: "Project-specific custom choices · select a card to edit",
             sec_template_application: "Template application",
-            template_application_hint: "The AI recommends how to apply the installed template to this deck. Revise the plan directly in natural language.",
-            placeholder_template_application: "Describe which template pages or prototypes to use, skip, repeat, or reorder; what must stay; and what may be replaced or reorganized.",
-            sub_mode: "Narrative mode",
+            template_application_hint: "After reading every installed template SVG, the AI proposes one natural-language application plan. Edit it directly; this is not a mode selector.",
+            placeholder_template_application: "Name exact SVG files for page-specific rules; describe what to use, skip, repeat, or reorder, what stays fixed, and what may be replaced or reorganized.",
             sub_visual: "Visual style",
             sub_divergence: "Material divergence (how freely to reshape vs. stay close to the source)",
             placeholder_divergence: "In your words — e.g. \"stick closely to the document\" / \"freely restructure and expand within the source\". Leave blank for a balanced default.",
@@ -104,8 +105,7 @@
             placeholder_audience: "Who is this deck for?",
             placeholder_pages: "e.g. 12-15",
             hex_override: "Custom HEX override:",
-            formula_policy: "Formula rendering policy",
-            image_ai_path: "AI image source",
+            image_ai_path: "AI image path",
             image_strategy: "Generated image style",
             image_strategy_empty: "No preset style references are available. You can still use a custom style.",
             image_strategy_required: "Choose a generated-image preset or describe a custom style.",
@@ -166,17 +166,9 @@
             role_accent: "accent",
             role_secondary_accent: "2nd accent",
             role_body_text: "body text",
-            cjk: "CJK",
-            latin: "Latin",
-            sample_heading_cjk: "主题方案标题",
-            sample_heading_latin: "Presentation Title",
-            sample_body_cjk: "关键信息摘要",
-            sample_body_latin: "Key message summary",
             style_preview_label: "Overall impression (color + typography + icons)",
             style_preview_body: "· rough feel only, not the actual slide layout",
-            no_icons: "No icons",
             preview_big_title: "Big Title",
-            preview_section_title: "Section Title",
             preview_latin_title: "Section Title",
             preview_body_intro: "Body copy shows the baseline text rhythm and contrast.",
             preview_latin_body: "Body text sample for checking Latin typography.",
@@ -189,7 +181,7 @@
             mode_continuous_desc: "Generate the whole deck in one pass.",
             mode_split_desc: "Stop after the spec; resume SVG generation in a fresh window.",
             refine_off_desc: "Write the Design Spec and execution lock in sequence, then auto-proceed.",
-            refine_on_desc: "Stop after the Design Spec. Revise any part in chat; approval then creates the execution lock and continues generation.",
+            refine_on_desc: "Stop after the Design Spec. A review page opens: edit any page directly or leave comments; approval in chat then creates the execution lock and continues generation.",
             off_default: "Off",
             on: "On",
             option_prefix: "Option",
@@ -198,42 +190,38 @@
         ja: {
             page_title: "PPT Master - デザイン確認",
             topbar_hint: "自由記述の質問に答えるか、提案を選択・調整して次へ進んでください。",
-            stage_anchors: "ステージ 1 · コミュニケーション契約",
-            stage_final_plan: "ステージ 2 · 最終プランと制作",
+            stage_anchors: "ステージ1 · コミュニケーション方針",
+            stage_final_plan: "ステージ2 · 最終プランと制作",
             loading: "読み込み中…",
-            load_error: "現在の推奨ステージを読み込めませんでした。起動前にAIが書き込む必要があります。",
+            load_error: "現在のステージの提案を読み込めませんでした。起動前にAIが書き込んでおく必要があります。",
             btn_confirm: "確定",
-            btn_confirm_contract: "契約内容を確定して次へ →",
+            btn_confirm_contract: "方針を確定して次へ →",
             btn_confirm_final_plan: "最終プランを確定 →",
-            deriving: "選択内容をもとに後続の選択肢を生成しています…",
+            deriving: "最終プランを準備し、選択したテンプレートを確認しています…",
             template_selection_required: "自由デザインまたはテンプレート利用を選んでください。テンプレート利用時は、1つ以上のワークスペースを選択してください。",
-            connection_lost: "確認ページのサーバー接続が中断されました。再試行しています。失敗が続く場合はチャットで確認してください。",
+            template_selection_conflict: "種類ごとにワークスペースを1件まで選択してください。",
+            connection_lost: "確認サーバーへの接続が中断されました。再試行しています。失敗が続く場合は、チャットに戻って確定してください。",
             confirmed_title: "✓ 確定しました",
-            confirmed_hint: "選択内容を保存しました。このページを閉じてチャットに戻ってください。",
+            confirmed_hint: "選択内容を保存しました。このページを閉じてチャットに戻れます。",
             lang_toggle_title: "言語を切り替え",
             sec_template_choice: "デザインの基準",
             template_choice_hint: "この資料のデザインシステムをどう決めるか選択します。",
             template_free_title: "現在の内容からデザインする",
-            template_free_desc: "再利用テンプレートを使わず、Strategist がこのプロジェクトからビジュアルシステムを組み立てます。",
+            template_free_desc: "再利用可能なテンプレートワークスペースを使わず、Strategist がこのプロジェクトの内容からビジュアルシステムを組み立てます。",
             template_use_title: "テンプレートを使用",
-            template_use_desc: "Brand、Style、Layout、Deck、または指定ワークスペースから1つ以上選択します。",
-            sec_template_library: "テンプレートの組み合わせ",
-            template_library_hint: "登録済みテンプレートは種類ごとに1件まで選択でき、Brand、Style、Layout、Deck を組み合わせられます。",
-            sec_template_explicit: "指定テンプレート",
-            template_explicit_hint: "この実行で指定された正確なワークスペースを1件まで選択できます。確認用に参照元パスを表示します。",
+            template_use_desc: "再利用可能な Brand、Style、Layout、Deck、または指定ワークスペースを1つ以上選択します。",
+            template_library_hint: "種類ごとにワークスペースを1件まで選択できます。4種類はすべて組み合わせ可能で、構造は Layout が Deck より優先されます。",
+            template_explicit_hint: "今回の実行で指定されたワークスペースを、種類が重複しない範囲で複数選択できます。選択したワークスペースに含まれるすべての種類が適用されます。確認用に参照元パスを表示します。",
             template_kind_brand: "Brand",
             template_kind_style: "Style",
             template_kind_layout: "Layout",
             template_kind_deck: "Deck",
-            template_source_library: "ライブラリ",
             template_source_explicit: "指定パス",
-            template_source_path: "参照元パス",
             template_select_none: "なし",
-            template_none_registered: "登録済みテンプレートはありません",
-            template_none_explicit: "この実行で指定されたテンプレートはありません",
+            template_none_explicit: "今回の実行で指定されたテンプレートはありません",
             sec_canvas: "キャンバス形式",
             sec_pages: "ページ数",
-            sec_audience: "想定読者",
+            sec_audience: "対象者",
             sec_communication: "このプレゼンで何を実現するか",
             sec_delivery: "どう使い、何を残すか",
             sec_narrative: "ナラティブ方針",
@@ -243,9 +231,15 @@
             sec_type: "タイポグラフィ",
             sec_images: "画像の使用",
             sec_image_production: "画像制作",
-            sec_proactive_execution: "能動的な実行",
+            sec_proactive_execution: "自動で行う作業",
             sec_mode: "生成モード",
-            sec_refine: "先に設計仕様を確認",
+            sec_refine: "先に設計仕様をレビュー",
+            sec_design_spec_depth: "設計仕様の詳細度",
+            design_spec_depth_brief: "簡潔",
+            design_spec_depth_brief_desc: "各ページを短いブロック一覧で記し、全文は書きません。",
+            design_spec_depth_complete: "詳細",
+            design_spec_depth_complete_desc: "各ページの詳細な内容を、文言まで含めて記載します。",
+            design_spec_depth_locked: "分割モードまたは設計仕様のレビューが有効なため、「詳細」に固定されています。",
             sec_design_directions: "統合デザイン方針",
             design_directions_hint: "おすすめの全体案が最初に適用されています。別案を選ぶか、下の各項目を微調整できます。調整後は「元の案に戻す」で最初の組み合わせを復元できます。",
             direction_active: "適用中",
@@ -254,25 +248,24 @@
             direction_restore: "元の案に戻す",
             scheme_component_options: "プロジェクト専用カスタム案 · カードを選んで編集",
             sec_template_application: "テンプレートの適用方法",
-            template_application_hint: "AIが現在の内容に合わせたテンプレートの使い方を提案します。自然言語で直接修正できます。",
-            placeholder_template_application: "使用・省略・反復・並べ替えするページやプロトタイプ、保持する要素、差し替え・再構成できる内容を記述します。",
-            sub_mode: "ナラティブモード",
+            template_application_hint: "AIがインストール済みテンプレートの全SVGを確認し、自然言語の適用方針を1段落で提案します。モード選択ではなく、文章を直接修正できます。",
+            placeholder_template_application: "ページ固有の規則は正確なSVGファイル名で示し、使用・省略・反復・並べ替え、固定する要素、差し替え・再構成できる内容を記述してください。",
             sub_visual: "ビジュアルスタイル",
-            sub_divergence: "素材からの発散度（どこまで自由に再構成するか、原文に忠実か）",
-            placeholder_divergence: "自分の言葉でどうぞ — 例：「文書に忠実に」「元素材の範囲内で自由に再構成・展開」。空欄ならバランス型になります。",
+            sub_divergence: "元資料からの自由度（どこまで自由に再構成するか、原文に忠実か）",
+            placeholder_divergence: "自分の言葉で入力してください（例：「文書に忠実に」「元資料の範囲内で自由に再構成・展開」）。空欄の場合はバランス型になります。",
             communication_intent: "このプレゼンで何を実現したいですか？",
-            communication_intent_hint: "自由記述です。情報共有・説明・説得・意思決定・合意形成・教育・報告と説明責任・行動喚起・記録と引き継ぎを必要に応じて組み合わせ、必要なら優先順位や順序も書いてください。ラベルを選ぶ必要はありません。",
+            communication_intent_hint: "自由記述です。情報共有・説明・説得・意思決定・合意形成・教育・報告と説明責任・行動喚起・記録と引き継ぎのうち、当てはまるものを組み合わせてください。必要なら優先順位や順序も書いてください。ラベルを選ぶ必要はありません。",
             placeholder_communication_intent: "例：まず進捗とリスクを報告し、そのうえで次の投資判断を得る。",
-            audience_outcome: "聴衆に期待する変化・成功条件",
-            placeholder_audience_outcome: "終了後、聴衆は何を知り、理解し、信じ、決め、行動できる状態になるべきですか？",
-            core_message: "中核メッセージ／意思決定の依頼／行動",
+            audience_outcome: "対象者に期待する変化・成功条件",
+            placeholder_audience_outcome: "終了後、対象者は何を知り、理解し、信じ、決め、行動できる状態になるべきですか？",
+            core_message: "コアメッセージ／意思決定の依頼／行動",
             placeholder_core_message: "ほかの内容が忘れられても、必ず残すべき主張・依頼・行動は何ですか？",
-            delivery_context: "利用状況（主モードを明記）",
-            delivery_context_hint: "発表者主導、読者主導、ハイブリッド、録画／自動再生を区別してください。ハイブリッドでは主モードと、維持すべき副用途を明記します。",
-            placeholder_delivery_context: "例：主は発表者付き20分の経営レビュー。副は会議後に単独で読む承認資料。",
-            artifact_afterlife: "資料の利用後",
-            placeholder_artifact_afterlife: "例：承認、レビュー、監査、保管、引き継ぎ、再利用。後続利用がなければ空欄で構いません。",
-            stage1_current_value_hint: "編集可能な欄には提案が入っています。そのまま使う・修正する・空にすることができ、確定時の現在値を空欄も含めてそのまま保存します。",
+            delivery_context: "利用状況（主な使い方を明記）",
+            delivery_context_hint: "発表者主導、読者主導、ハイブリッド、録画／自動再生を区別してください。ハイブリッドの場合は、主となる使い方と、あわせて成り立たせたい副次的な用途も明記してください。",
+            placeholder_delivery_context: "例：主な用途は発表者主導の20分の経営レビュー。副次的な用途は、会議後に共有する読者主導の承認資料。",
+            artifact_afterlife: "資料の利用後の扱い",
+            placeholder_artifact_afterlife: "例：承認、レビュー、監査、保管、引き継ぎ、再利用。後で使う予定がなければ空欄で構いません。",
+            stage1_current_value_hint: "編集できる欄には提案が入っています。そのまま使う、修正する、空にするのいずれも可能です。確定すると、空欄も含めて現在の入力内容がそのまま保存されます。",
             content_divergence_locked_hint: "このプロファイルは原文とページ構成を保持するため、この項目は固定されています。",
             custom: "カスタム",
             custom_placeholder: "自由に入力…",
@@ -280,15 +273,14 @@
             ai_custom_candidate_hint: "比較できるよう常に全文を表示します。初期選択はされず、選択後に編集できます。",
             custom_behavior_required: "選択したAIカスタム案を空欄にはできません。",
             custom_color_required: "続行する前に、カスタム配色の説明を入力してください。",
-            design_system_required: "続行する前に、完全な配色と書体システムを選択してください。",
-            mode_behavior_placeholder: "構成の流れ、タイトルの語り口、ページのリズム、表現姿勢を記述します。",
-            visual_style_behavior_placeholder: "形状言語、構図、装飾密度、余白、書体の性格、質感を記述します。",
+            design_system_required: "続行する前に、配色とタイポグラフィをすべて選択してください。",
+            mode_behavior_placeholder: "構成の流れ、タイトルの語り口、ページのリズム、プレゼンのスタンスを記述してください。",
+            visual_style_behavior_placeholder: "形状の特徴、構図、装飾の密度、余白、書体の性格、質感を記述してください。",
             recommended: "おすすめ",
-            placeholder_audience: "この資料は誰に向けたもの？",
+            placeholder_audience: "この資料は誰に向けたものですか？",
             placeholder_pages: "例：12-15",
             hex_override: "カスタムHEXで上書き：",
-            formula_policy: "数式レンダリング方針",
-            image_ai_path: "AI画像の生成元",
+            image_ai_path: "AI画像の生成経路",
             image_strategy: "生成画像のスタイル",
             image_strategy_empty: "プリセットのスタイル見本を利用できません。カスタムスタイルは引き続き使用できます。",
             image_strategy_required: "生成画像のプリセットを選ぶか、カスタムスタイルを記述してください。",
@@ -296,27 +288,27 @@
             image_strategy_select_placeholder: "生成画像のプリセットを選択…",
             image_strategy_recommended_group: "この資料へのおすすめ",
             image_strategy_all_group: "すべてのプリセットスタイル",
-            image_strategy_rendering: "レンダリング",
+            image_strategy_rendering: "表現スタイル",
             image_strategy_visual: "ビジュアル",
             image_strategy_mood: "ムード",
             image_strategy_ai_custom: "AIカスタム案",
-            image_strategy_ai_custom_desc: "新規または複数の既存表現を統合したレンダリング案です。選択後に編集できます。",
+            image_strategy_ai_custom_desc: "新規、または複数の既存スタイルを組み合わせた表現案です。選択後に編集できます。",
             image_strategy_custom_placeholder: "生成画像の方向性、被写体、構図、スタイル要素、避けたい要素を具体的に入力してください。",
-            image_strategy_reference_hint: "参照画像はレンダリングのみを示します。最終AI画像の色は上で選んだデッキ配色を継承します。",
+            image_strategy_reference_hint: "参照画像が示すのは表現スタイルのみです。最終的なAI画像の配色は、上で選んだ資料の配色を引き継ぎます。",
             image_strategy_no_reference: "このカスタム選択には参照画像がありません。",
             image_source_summary: "選択中の画像ソース",
-            image_production_hint: "画像ソースとレンダリングは上で選択済みです。ここでは制作経路だけを決めます。",
+            image_production_hint: "画像ソースと表現スタイルは上で選択済みです。ここでは制作経路だけを決めます。",
             image_usage_notes: "画像に関する補足要件",
             image_usage_notes_placeholder: "例：リアルな手洗いシーンを優先、漫画調の菌のイラストは避ける、製品写真はそのまま使う。",
             image_usage_required: "画像の使用方法を少なくとも1つ選択してください。",
             image_usage_none_exclusive: "「画像なし」は他の画像オプションと同時に選択できません。",
             proactive_execution_hint: "これらの初期設定は、明示的な指示がない場合にのみ適用されます。最新の明示的な指示が常に優先されます。",
-            proactive_speaker_notes: "発表者ノートを能動的に生成",
-            proactive_speaker_notes_desc: "初期設定はオンです。個別の依頼がなくても発表者ノートを生成します。",
-            proactive_custom_animations: "カスタムアニメーションを能動的に作成",
-            proactive_custom_animations_desc: "初期設定はオフです。ストラテジストの動きの提案は維持され、オンにすると個別の依頼がなくてもカスタムアニメーションを作成します。",
-            proactive_narration_audio: "ナレーション音声を能動的に生成",
-            proactive_narration_audio_desc: "初期設定はオフです。この選択は発表者ノートの設定を書き換えません。ナレーションに必要なノートの有効状態は、ストラテジストが設計仕様で解決します。",
+            proactive_speaker_notes: "発表者ノートを自動で生成",
+            proactive_speaker_notes_desc: "初期設定はオンです。別途依頼しなくても、エージェントが発表者ノートを生成します。",
+            proactive_custom_animations: "カスタムアニメーションを自動で作成",
+            proactive_custom_animations_desc: "初期設定はオフです。Strategist によるアニメーションの提案は引き続き利用できます。オンにすると、別途依頼しなくてもエージェントがカスタムアニメーションを作成します。",
+            proactive_narration_audio: "ナレーション音声を自動で生成",
+            proactive_narration_audio_desc: "初期設定はオフです。ここでの選択は発表者ノートの設定を書き換えません。ナレーションに実際に必要なノートの扱いは、Strategist が設計仕様の中で決定します。",
             font_heading: "見出し",
             font_body: "本文",
             font_selection: "フォント選択",
@@ -327,56 +319,48 @@
             other_font_placeholder: "インストール済みフォントの正確な名前",
             customized: "カスタマイズ済み",
             font_body_size: "本文の基準サイズ",
-            font_body_size_hint: "すべての文字サイズはこの本文基準から導出されます。",
-            body_size_unit_relation: "SVG px と PPT pt の換算：1px = 0.75pt。",
-            body_size_pt_hint: "約 {pt} pt（1px = 0.75pt 換算、保存は px）。",
-            role_size_pt_hint: "約 {pt} pt",
-            body_size_hint_canvas: "このキャンバスの目安は約{lo}–{hi}px（有効キャンバス尺度から算出）。",
-            body_size_hint_purpose: "この閲覧モードの推奨は{def}px — 範囲ではなく固定値です。",
-            body_size_hint_oor: "（現在の値はこのキャンバスの通常範囲外です — 単位とサイズ感を確認してください。）",
+            font_body_size_hint: "すべての文字サイズは、この本文の基準サイズをもとに決まります。",
+            body_size_unit_relation: "SVGのpxとPPTのptの換算：1px = 0.75pt。",
+            body_size_pt_hint: "約{pt}pt（1px = 0.75ptで換算。保存はpx単位）。",
+            role_size_pt_hint: "約{pt}pt",
+            body_size_hint_canvas: "このキャンバスの目安は約{lo}〜{hi}px（キャンバスの実効サイズから算出）。",
+            body_size_hint_purpose: "この閲覧モードの推奨値は{def}pxです（範囲ではなく固定値）。",
+            body_size_hint_oor: "（現在の値はこのキャンバスの通常の範囲外です。単位が正しいか、サイズが適切かを確認してください。）",
             delivery_purpose: "閲覧モード",
-            delivery_purpose_hint: "情報を主にページと話者のどちらに担わせるかを決めます。近距離閲覧は完全な文と細部で自立させ、プレゼン型は1枚1メッセージで短い主張と視覚的根拠を中心にします。",
+            delivery_purpose_hint: "情報をページと発表者のどちらに担わせるかを決めます。文書型は完結した文と必要な細部でページ単体で理解できるようにし、プレゼン型は1枚1メッセージで、短い主張と視覚的な根拠を中心にします。",
             size_override: "役割ごとのサイズ上書き：",
             size_role_title: "タイトル",
             size_role_subtitle: "サブタイトル",
             size_role_annotation: "注釈",
             custom_typography: "カスタムタイポグラフィ",
             custom_color: "カスタム配色",
-            custom_color_placeholder: "配色を言葉で説明 — 例：濃紺をメインに暖色オレンジのアクセント、背景は白 — またはHEX値を貼り付け…",
+            custom_color_placeholder: "配色を言葉で入力（例：濃紺をメインに、暖色オレンジをアクセントに、背景は白）、またはHEX値を貼り付け…",
             role_background: "背景",
             role_secondary_bg: "第2背景",
             role_primary: "メイン",
             role_accent: "アクセント",
             role_secondary_accent: "第2アクセント",
-            role_body_text: "本文文字",
-            cjk: "和文",
-            latin: "欧文",
-            sample_heading_cjk: "プレゼンテーションの表題",
-            sample_heading_latin: "Presentation Title",
-            sample_body_cjk: "キーメッセージの要約",
-            sample_body_latin: "Key message summary",
-            style_preview_label: "全体の印象（配色 + タイポグラフィ + アイコン）",
+            role_body_text: "本文テキスト",
+            style_preview_label: "全体の印象（配色・タイポグラフィ・アイコン）",
             style_preview_body: "· 雰囲気の確認用で、実際のレイアウトではありません",
-            no_icons: "アイコンなし",
             preview_big_title: "大見出し",
-            preview_section_title: "章タイトル",
             preview_latin_title: "Section Title",
             preview_body_intro: "本文の基準サイズとコントラストを確認するための文です。",
             preview_latin_body: "Body text sample for checking Latin typography.",
             preview_point_1_title: "本文内容",
             preview_point_1_text: "段落密度と行間の見え方をここで確認します。",
-            preview_point_2_title: "要点説明",
+            preview_point_2_title: "要点",
             preview_point_2_text: "アイコンは単独ではなく、実際の文章の横に配置します。",
-            preview_point_3_title: "結論・提案",
+            preview_point_3_title: "結論",
             preview_point_3_text: "投影時にも読みやすい組み合わせかを判断します。",
-            mode_continuous_desc: "デッキ全体を一気に生成します。",
-            mode_split_desc: "設計仕様の作成後に停止し、別ウィンドウでSVG生成を再開します。",
+            mode_continuous_desc: "資料全体を一括で生成します。",
+            mode_split_desc: "設計仕様の作成後に停止し、新しいチャットでSVG生成を再開します。",
             refine_off_desc: "設計仕様と実行ロックを順番に作成し、そのまま自動で進みます。",
-            refine_on_desc: "設計仕様の作成後に停止します。チャットで任意の箇所を修正し、承認後に実行ロックを作成して生成を続けます。",
+            refine_on_desc: "設計仕様の作成後に停止します。レビューページが開き、各ページを直接編集するかコメントを残せます。チャットで承認すると実行ロックを作成して生成を続けます。",
             off_default: "オフ",
             on: "オン",
             option_prefix: "案",
-            error_retry: "エラー - 再試行"
+            error_retry: "エラーが発生しました。再試行してください"
         },
         zh: {
             page_title: "确认设计方案",
@@ -384,35 +368,31 @@
             stage_anchors: "第一阶段 · 沟通契约",
             stage_final_plan: "第二阶段 · 最终方案与制作",
             loading: "加载中…",
-            load_error: "无法加载推荐文件，需在启动前写入。",
+            load_error: "无法加载当前阶段的推荐内容。需由 AI 在启动页面前先写入。",
             btn_confirm: "确认",
             btn_confirm_contract: "确认沟通契约并继续 →",
             btn_confirm_final_plan: "确认最终方案 →",
-            deriving: "正在根据你的选择生成下游选项…",
+            deriving: "正在准备最终方案并核验所选模板…",
             template_selection_required: "请选择自由设计或使用模板；选择使用模板时，至少选择一个工作区。",
-            connection_lost: "确认页服务连接中断，正在重试；如果持续失败，请回到聊天窗口走聊天确认。",
+            template_selection_conflict: "每种类型最多选择一个工作区。",
+            connection_lost: "与确认服务的连接已中断，正在重试；若持续失败，请回到对话窗口，在对话中确认。",
             confirmed_title: "✓ 已确认",
-            confirmed_hint: "选择已保存，可关闭此页并回到聊天窗口。",
+            confirmed_hint: "选择已保存，可关闭此页并回到对话窗口。",
             lang_toggle_title: "切换语言",
-            sec_template_choice: "设计基础",
+            sec_template_choice: "设计依据",
             template_choice_hint: "选择这份演示文稿如何建立设计系统。",
-            template_free_title: "根据当前内容从零设计",
-            template_free_desc: "不使用可复用模板工作区，由 Strategist 根据当前项目推导视觉系统。",
+            template_free_title: "根据当前内容自由设计",
+            template_free_desc: "不使用可复用模板工作区，由策略师根据当前项目推导视觉系统。",
             template_use_title: "使用模板",
             template_use_desc: "选择一个或多个 Brand、Style、Layout、Deck 或指定工作区。",
-            sec_template_library: "模板组合",
-            template_library_hint: "每种已注册模板最多选择一个；Brand、Style、Layout、Deck 可以组合使用。",
-            sec_template_explicit: "指定模板",
-            template_explicit_hint: "本次运行明确提供的精确工作区最多选择一个；显示来源路径供你核对。",
+            template_library_hint: "每种类型最多选择一个工作区；四种类型可任意组合，结构上 Layout 优先于 Deck。",
+            template_explicit_hint: "可多选本次运行指定的工作区，但各工作区的模板类型不得重叠；所选工作区中的全部类型都会被应用，来源路径仅供核对。",
             template_kind_brand: "Brand",
             template_kind_style: "Style",
             template_kind_layout: "Layout",
             template_kind_deck: "Deck",
-            template_source_library: "模板库",
-            template_source_explicit: "指定地址",
-            template_source_path: "来源路径",
+            template_source_explicit: "指定路径",
             template_select_none: "无",
-            template_none_registered: "暂无已注册模板",
             template_none_explicit: "本次运行没有指定模板",
             sec_canvas: "画布格式",
             sec_pages: "页数",
@@ -421,42 +401,47 @@
             sec_delivery: "如何使用、之后留下什么",
             sec_narrative: "叙事方向",
             sec_visual: "视觉方向",
-            sec_color: "色彩方案",
+            sec_color: "配色方案",
             sec_icons: "图标使用",
             sec_type: "字体方案",
             sec_images: "图片使用",
-            sec_image_production: "图片生产",
+            sec_image_production: "图片制作",
             sec_proactive_execution: "主动执行",
             sec_mode: "生成模式",
-            sec_refine: "先审核设计规范",
+            sec_refine: "先评审设计规范",
+            sec_design_spec_depth: "设计规范深度",
+            design_spec_depth_brief: "简要",
+            design_spec_depth_brief_desc: "每页只写简短的内容块列表，不写整页文案。",
+            design_spec_depth_complete: "完整",
+            design_spec_depth_complete_desc: "写入包含完整文案的逐页简报。",
+            design_spec_depth_locked: "分段模式或设计规范评审已开启，因此固定为“完整”。",
             sec_design_directions: "成套设计方向",
-            design_directions_hint: "AI 最倾向的成套方案已默认应用；你可以改选其他方案，或在下方微调各项。调整后可用“恢复原方案”还原整套预设。",
+            design_directions_hint: "推荐的成套方案已默认应用；你可以改选其他方案，或在下方微调各项。调整后可点击“恢复原方案”还原整套预设。",
             direction_active: "已应用",
             direction_adjusted: "已调整",
             direction_apply_hint: "点击应用这套完整方案。",
             direction_restore: "恢复原方案",
             scheme_component_options: "项目专属自定义方案 · 选中卡片后可编辑",
             sec_template_application: "模板应用方式",
-            template_application_hint: "AI 会根据当前内容推荐如何使用已安装模板；你可以直接用自然语言修改。",
-            placeholder_template_application: "说明使用、跳过、重复或重排哪些模板页面/原型，哪些内容必须保留，哪些可以替换或重组。",
-            sub_mode: "叙事模式",
+            template_application_hint: "AI 会先阅读已安装模板的全部 SVG，再给出一段自然语言应用方案；这不是模式选择，你可以直接修改文字。",
+            placeholder_template_application: "页面级规则请写明精确 SVG 文件名；说明使用、跳过、重复或重排哪些原型，哪些内容固定，哪些可以替换或重组。",
             sub_visual: "视觉风格",
             sub_divergence: "材料发散度（多大程度重塑，还是贴近源材料）",
-            placeholder_divergence: "用你自己的话写，例如「严格贴着文档来」/「在源材料范围内自由重组并展开」。留空则按平衡处理。",
+            placeholder_divergence: "用你自己的话写，例如“严格贴着文档来”/“在源材料范围内自由重组并展开”。留空则按平衡处理。",
             communication_intent: "这份演示文稿需要完成什么？",
             communication_intent_hint: "开放回答，可按需组合：告知、解释、说服、决策、对齐、教学、汇报与问责、动员、留档与交接。必要时说明主次或先后，不需要选择标签。",
             placeholder_communication_intent: "例如：先汇报进展并暴露风险，再推动管理层决定下一阶段投入。",
             audience_outcome: "期望的受众变化 / 成功条件",
             placeholder_audience_outcome: "结束后，受众应该知道、理解、相信、决定或采取什么行动？",
             core_message: "核心信息 / 决策请求 / 行动",
-            placeholder_core_message: "即使其他内容没有被记住，受众至少需要接住哪些主张、请求或行动？",
-            delivery_context: "传递场景（明确主要模式）",
+            placeholder_core_message: "即使其他内容都没被记住，哪些主张、请求或行动也必须传达到位？",
+            delivery_context: "使用场景（明确主要模式）",
             delivery_context_hint: "区分演讲者主导、读者主导、混合、录制/自动播放；混合场景要说明哪一种主导，以及还要兼顾什么次要用途。",
-            placeholder_delivery_context: "例如：主要为有主讲的 20 分钟管理层现场评审；次要为会后独立阅读的审批材料。",
+            placeholder_delivery_context: "例如：主要为演讲者主导的 20 分钟管理层现场评审；次要为会后独立阅读的审批材料。",
             artifact_afterlife: "演示后的成果用途",
             placeholder_artifact_afterlife: "例如：审批、评审、审计、留档、交接或复用；没有后续用途时可留空。",
-            stage1_current_value_hint: "可编辑字段中是推荐内容。你可以保留、修改或清空；确认时会按当前内容原样保存，空白也会保持为空。",
-            content_divergence_locked_hint: "当前流程要求原文和页面结构保持不变，因此该字段已锁定。",
+            stage1_current_value_hint: "可编辑字段已预填推荐内容。你可以保留、修改或清空；确认时会原样保存当前内容，留空也会保持为空。",
+            content_divergence_locked_hint: "当前模式会保留原文措辞和页面结构，因此该字段已锁定。",
             custom: "自定义",
             custom_placeholder: "输入自定义内容…",
             ai_custom_candidate: "AI 自定义方案",
@@ -468,10 +453,9 @@
             visual_style_behavior_placeholder: "描述形状语言、构图、装饰密度、留白、字体气质和纹理。",
             recommended: "推荐",
             placeholder_audience: "这份演示文稿面向谁？",
-            placeholder_pages: "如：12-15",
+            placeholder_pages: "例如：12-15",
             hex_override: "自定义色值覆盖：",
-            formula_policy: "公式渲染策略",
-            image_ai_path: "生成配图来源",
+            image_ai_path: "AI 生成图路径",
             image_strategy: "生成图风格",
             image_strategy_empty: "当前没有可用的预设风格参考，仍可使用自定义风格。",
             image_strategy_required: "请选择一种生成图预设，或填写自定义风格。",
@@ -480,19 +464,19 @@
             image_strategy_recommended_group: "本项目推荐",
             image_strategy_all_group: "全部预设风格",
             image_strategy_rendering: "渲染风格",
-            image_strategy_visual: "视觉",
-            image_strategy_mood: "情绪",
+            image_strategy_visual: "画面",
+            image_strategy_mood: "氛围",
             image_strategy_ai_custom: "AI 自定义方案",
             image_strategy_ai_custom_desc: "一套全新或综合多个已有风格的渲染方案；选择后可以编辑。",
             image_strategy_custom_placeholder: "描述生成图的具体方向、主体、构图、风格关键词或需要避免的内容。",
-            image_strategy_reference_hint: "参考图只展示渲染风格；最终 AI 图片直接继承上方已选的整套 PPT 配色。",
+            image_strategy_reference_hint: "参考图只展示渲染风格；最终 AI 生成图直接继承上方已选的整套 PPT 配色。",
             image_strategy_no_reference: "自定义选择没有参考图。",
             image_source_summary: "已选图片来源",
-            image_production_hint: "图片来源和渲染方向已在上方选择；这里仅决定实际生产路径。",
+            image_production_hint: "图片来源和渲染风格已在上方选择；这里只需确定实际制作路径。",
             image_usage_notes: "图片补充要求",
             image_usage_notes_placeholder: "例如：优先真实洗手场景；不要卡通病菌；产品照片保持原样。",
             image_usage_required: "请至少选择一种图片使用方式。",
-            image_usage_none_exclusive: "「不使用图片」不能和其它图片选项同时选择。",
+            image_usage_none_exclusive: "“不使用图片”不能和其他图片选项同时选择。",
             proactive_execution_hint: "这些默认开关只在你没有明确要求时生效；你最新的明确指令始终优先。",
             proactive_speaker_notes: "主动生成演讲者备注",
             proactive_speaker_notes_desc: "默认开启。无需另行要求，Agent 也会生成演讲者备注。",
@@ -505,7 +489,7 @@
             font_selection: "字体选择",
             primary_language_font: "主要语言字体",
             english_font: "英文字体",
-            font_picker_hint: "选择推荐方案会同步下方字体；修改任一下拉或手动字体后会标记为已自定义。",
+            font_picker_hint: "选择推荐方案会自动填入下方的字体选择器；修改任一字体后，字体方案会标记为已自定义。",
             other_installed_font: "其他已安装字体…",
             other_font_placeholder: "输入精确的已安装字体名称",
             customized: "已自定义",
@@ -516,60 +500,232 @@
             role_size_pt_hint: "约 {pt} pt",
             body_size_hint_canvas: "当前画布建议 ~{lo}–{hi}px（按有效画布跨度计算）。",
             body_size_hint_purpose: "该阅读模式推荐 {def}px（单一固定值，非区间）。",
-            body_size_hint_oor: "（当前数值超出该画布的常用范围——请确认单位无误、是否合适。）",
+            body_size_hint_oor: "（当前数值超出该画布的常用范围——请确认单位是否正确、字号是否合适。）",
             delivery_purpose: "阅读模式",
-            delivery_purpose_hint: "决定信息主要由页面还是讲者承担：近读型用完整句、短段落和细节自洽；演讲型一页一意，以简短主张和视觉证据为主。",
+            delivery_purpose_hint: "决定信息主要由页面还是演讲者承担：文字型（近读）用完整句子和必要细节，让页面无需讲解也能读懂；展示型（演讲）一页一意，以简短主张和视觉证据为主。",
             size_override: "逐角色字号覆盖：",
             size_role_title: "标题",
             size_role_subtitle: "副标题",
             size_role_annotation: "注释",
             custom_typography: "自定义字体方案",
             custom_color: "自定义配色",
-            custom_color_placeholder: "用文字描述配色，如：深蓝主色、暖橙强调、白色背景——或直接粘贴 HEX 值…",
+            custom_color_placeholder: "用文字描述配色，例如：深蓝主色、暖橙强调、白色背景——或直接粘贴 HEX 值…",
             role_background: "背景",
             role_secondary_bg: "次级背景",
             role_primary: "主色",
-            role_accent: "强调",
-            role_secondary_accent: "次强调",
+            role_accent: "强调色",
+            role_secondary_accent: "次强调色",
             role_body_text: "正文文字",
-            cjk: "中文",
-            latin: "西文",
-            sample_heading_cjk: "主题方案标题",
-            sample_heading_latin: "Presentation Title",
-            sample_body_cjk: "关键信息摘要",
-            sample_body_latin: "Key message summary",
-            style_preview_label: "整体形象（配色 + 字体 + 图标）",
-            style_preview_body: "· 仅大致形象，非实际版式",
-            no_icons: "无图标",
+            style_preview_label: "整体观感（配色 + 字体 + 图标）",
+            style_preview_body: "· 仅供感受大致风格，并非实际版式",
             preview_big_title: "大标题",
-            preview_section_title: "章节标题",
             preview_latin_title: "Section Title",
-            preview_body_intro: "正文内容用于判断基础字号、行距和颜色对比。",
+            preview_body_intro: "正文内容用于观察基础文字的节奏与对比度。",
             preview_latin_body: "Body text sample for checking Latin typography.",
             preview_point_1_title: "正文内容",
-            preview_point_1_text: "这里展示普通段落的密度和阅读节奏。",
-            preview_point_2_title: "要点说明",
+            preview_point_1_text: "这里用于判断段落密度和行距。",
+            preview_point_2_title: "要点",
             preview_point_2_text: "图标和文字放在一起，判断真实使用效果。",
-            preview_point_3_title: "结论建议",
+            preview_point_3_title: "结论",
             preview_point_3_text: "组合效果需要在演示场景下保持清晰可读。",
             mode_continuous_desc: "一次性连续生成整份演示文稿。",
-            mode_split_desc: "写完设计规范后停止，另开窗口继续生成页面。",
+            mode_split_desc: "写完设计规范后停止，在新的对话窗口中继续生成 SVG 页面。",
             refine_off_desc: "依次生成设计规范和执行锁，然后自动继续。",
-            refine_on_desc: "生成设计规范后暂停；你可在聊天中修改任何部分，明确确认后再生成执行锁并继续制作。",
+            refine_on_desc: "生成设计规范后暂停，并打开评审页面：可逐页直接修改或留下修改意见；在对话中明确确认后再生成执行锁并继续制作。",
             off_default: "关",
             on: "开",
             option_prefix: "方案",
             error_retry: "出错，请重试"
+        },
+        "zh-TW": {
+            page_title: "確認設計方案",
+            topbar_hint: "回答開放問題，或選擇並調整推薦項，然後繼續。",
+            stage_anchors: "第一階段 · 溝通契約",
+            stage_final_plan: "第二階段 · 最終方案與製作",
+            loading: "載入中…",
+            load_error: "無法載入目前的推薦階段。AI 必須在啟動前先寫入。",
+            btn_confirm: "確認",
+            btn_confirm_contract: "確認溝通契約並繼續 →",
+            btn_confirm_final_plan: "確認最終方案 →",
+            deriving: "正在準備最終方案並核驗所選範本…",
+            template_selection_required: "請選擇自由設計或使用範本；選擇使用範本時，至少選擇一個工作區。",
+            template_selection_conflict: "每種類型最多選擇一個工作區。",
+            connection_lost: "與確認伺服器的連線已中斷，正在重試；若持續失敗，請回到對話視窗，改在對話中確認。",
+            confirmed_title: "✓ 已確認",
+            confirmed_hint: "選擇已儲存，可關閉此頁並回到對話視窗。",
+            lang_toggle_title: "切換語言",
+            sec_template_choice: "設計基礎",
+            template_choice_hint: "選擇這份簡報如何建立設計系統。",
+            template_free_title: "根據目前內容從零設計",
+            template_free_desc: "不使用可重複使用的範本工作區，由策略師根據目前專案推導視覺系統。",
+            template_use_title: "使用範本",
+            template_use_desc: "選擇一個或多個 Brand、Style、Layout、Deck 或指定工作區。",
+            template_library_hint: "每種類型最多選擇一個工作區；四種類型均可組合，其中 Layout 的結構優先於 Deck。",
+            template_explicit_hint: "可選擇本次執行提供的多個指定工作區，各工作區的範本類型不得重疊；選取的工作區會套用其全部類型，來源路徑供你核對。",
+            template_kind_brand: "Brand",
+            template_kind_style: "Style",
+            template_kind_layout: "Layout",
+            template_kind_deck: "Deck",
+            template_source_explicit: "指定路徑",
+            template_select_none: "無",
+            template_none_explicit: "本次執行沒有指定範本",
+            sec_canvas: "畫布格式",
+            sec_pages: "頁數",
+            sec_audience: "目標受眾",
+            sec_communication: "這份簡報要完成什麼",
+            sec_delivery: "如何使用、之後留下什麼",
+            sec_narrative: "敘事方向",
+            sec_visual: "視覺方向",
+            sec_color: "色彩方案",
+            sec_icons: "圖示使用",
+            sec_type: "字型方案",
+            sec_images: "圖片使用",
+            sec_image_production: "圖片產製",
+            sec_proactive_execution: "主動執行",
+            sec_mode: "生成模式",
+            sec_refine: "先審閱設計規範",
+            sec_design_spec_depth: "設計規範深度",
+            design_spec_depth_brief: "簡要",
+            design_spec_depth_brief_desc: "每頁只寫簡短的內容區塊清單，不寫整頁文案。",
+            design_spec_depth_complete: "完整",
+            design_spec_depth_complete_desc: "寫入包含完整文案的逐頁簡報。",
+            design_spec_depth_locked: "分段模式或設計規範審閱已開啟，因此固定為「完整」。",
+            sec_design_directions: "成套設計方向",
+            design_directions_hint: "AI 最傾向的成套方案已預設套用；你可以改選其他方案，或在下方微調各項。調整後可用「還原原始方案」還原整套預設。",
+            direction_active: "已套用",
+            direction_adjusted: "已調整",
+            direction_apply_hint: "按一下即可套用這套完整方案。",
+            direction_restore: "還原原始方案",
+            scheme_component_options: "專案專屬自訂方案 · 選取卡片後可編輯",
+            sec_template_application: "範本套用方式",
+            template_application_hint: "AI 會先閱讀已安裝範本的全部 SVG，再提出一段自然語言套用方案；這不是模式選擇，你可以直接修改文字。",
+            placeholder_template_application: "頁面級規則請寫明精確 SVG 檔名；說明使用、略過、重複或重排哪些原型，哪些內容固定，哪些可以替換或重組。",
+            sub_visual: "視覺風格",
+            sub_divergence: "素材發散度（要多自由地重塑，還是貼近來源素材）",
+            placeholder_divergence: "用你自己的話寫，例如「嚴格貼著文件來」/「在來源素材範圍內自由重組並展開」。留空則採平衡處理。",
+            communication_intent: "這份簡報需要完成什麼？",
+            communication_intent_hint: "開放回答，可按需組合：告知、解釋、說服、決策、對齊、教學、報告與問責、動員、留檔與交接。必要時說明主次或先後，不需要選擇標籤。",
+            placeholder_communication_intent: "例如：先報告進度並揭露風險，再爭取管理階層決定下一階段投入。",
+            audience_outcome: "期望的受眾變化 / 成功條件",
+            placeholder_audience_outcome: "結束後，受眾應該知道、理解、相信、決定或採取什麼行動？",
+            core_message: "核心資訊 / 決策請求 / 行動",
+            placeholder_core_message: "即使其他內容都沒被記住，受眾至少要記得哪些主張、請求或行動？",
+            delivery_context: "傳遞場景（明確主要模式）",
+            delivery_context_hint: "區分演講者主導、讀者主導、混合、錄製/自動播放；混合場景要說明哪一種主導，以及還要兼顧什麼次要用途。",
+            placeholder_delivery_context: "例如：主要為有主講的 20 分鐘管理階層現場評審；次要為會後獨立閱讀的簽核文件。",
+            artifact_afterlife: "簡報後的成果用途",
+            placeholder_artifact_afterlife: "例如：簽核、評審、稽核、留檔、交接或重複使用；沒有後續用途時可留空。",
+            stage1_current_value_hint: "可編輯欄位中是推薦內容。你可以保留、修改或清空；確認時會按目前內容原樣儲存，空白也會保持為空。",
+            content_divergence_locked_hint: "目前流程要求原文和頁面結構保持不變，因此該欄位已鎖定。",
+            custom: "自訂",
+            custom_placeholder: "輸入自訂內容…",
+            ai_custom_candidate: "AI 自訂方案",
+            ai_custom_candidate_hint: "始終展示完整內容用於比較；預設不選取，選擇後可編輯。",
+            custom_behavior_required: "已選擇的 AI 自訂方案不能為空。",
+            custom_color_required: "請先填寫自訂配色說明，再繼續確認。",
+            design_system_required: "請先選擇完整的配色與字型方案，再繼續確認。",
+            mode_behavior_placeholder: "描述敘事階段、標題語氣、頁面節奏和表達姿態。",
+            visual_style_behavior_placeholder: "描述形狀語言、構圖、裝飾密度、留白、字型氣質和紋理。",
+            recommended: "推薦",
+            placeholder_audience: "這份簡報是給誰看的？",
+            placeholder_pages: "如：12-15",
+            hex_override: "自訂色碼覆寫：",
+            image_ai_path: "AI 生成圖片路徑",
+            image_strategy: "生成圖片風格",
+            image_strategy_empty: "目前沒有可用的預設風格參考，仍可使用自訂風格。",
+            image_strategy_required: "請選擇一種生成圖片預設，或填寫自訂風格。",
+            image_strategy_invalid: "所選生成圖片預設目前不可用。",
+            image_strategy_select_placeholder: "選擇生成圖片預設…",
+            image_strategy_recommended_group: "本專案推薦",
+            image_strategy_all_group: "全部預設風格",
+            image_strategy_rendering: "渲染風格",
+            image_strategy_visual: "視覺",
+            image_strategy_mood: "情緒",
+            image_strategy_ai_custom: "AI 自訂方案",
+            image_strategy_ai_custom_desc: "一套全新或綜合多個已有風格的渲染方案；選擇後可以編輯。",
+            image_strategy_custom_placeholder: "描述生成圖片的具體方向、主體、構圖、風格關鍵字或需要避免的內容。",
+            image_strategy_reference_hint: "參考圖只展示渲染風格；最終 AI 圖片直接繼承上方已選的整套 PPT 配色。",
+            image_strategy_no_reference: "自訂選擇沒有參考圖。",
+            image_source_summary: "已選圖片來源",
+            image_production_hint: "圖片來源和渲染方向已在上方選擇；這裡僅決定實際產製路徑。",
+            image_usage_notes: "圖片補充要求",
+            image_usage_notes_placeholder: "例如：優先真實洗手場景；不要卡通病菌；產品照片保持原樣。",
+            image_usage_required: "請至少選擇一種圖片使用方式。",
+            image_usage_none_exclusive: "「不使用圖片」不能和其他圖片選項同時選擇。",
+            proactive_execution_hint: "這些預設開關只在你沒有明確要求時生效；你最新的明確指令始終優先。",
+            proactive_speaker_notes: "主動生成講者備忘稿",
+            proactive_speaker_notes_desc: "預設開啟。無需另行要求，Agent 也會生成講者備忘稿。",
+            proactive_custom_animations: "主動生成自訂動畫",
+            proactive_custom_animations_desc: "預設關閉。策略師的動畫建議仍會保留；開啟後，Agent 可在沒有另行要求時實際製作自訂動畫。",
+            proactive_narration_audio: "主動生成旁白音訊",
+            proactive_narration_audio_desc: "預設關閉。這裡保留原始選擇，不改寫講者備忘稿開關；策略師會在設計規範中解析旁白所需的最終備忘稿狀態。",
+            font_heading: "標題",
+            font_body: "正文",
+            font_selection: "字型選擇",
+            primary_language_font: "主要語言字型",
+            english_font: "英文字型",
+            font_picker_hint: "選擇推薦方案會同步下方字型；修改任一下拉選單或手動輸入字型後，會標示為已自訂。",
+            other_installed_font: "其他已安裝字型…",
+            other_font_placeholder: "輸入精確的已安裝字型名稱",
+            customized: "已自訂",
+            font_body_size: "正文基準字級",
+            font_body_size_hint: "所有字級按這個正文基準推導。",
+            body_size_unit_relation: "SVG px 與 PPT pt 的換算：1px = 0.75pt。",
+            body_size_pt_hint: "約 {pt} pt（依 1px = 0.75pt 換算；儲存時仍以 px 為準）",
+            role_size_pt_hint: "約 {pt} pt",
+            body_size_hint_canvas: "目前畫布建議 ~{lo}–{hi}px（依有效畫布跨距計算）。",
+            body_size_hint_purpose: "該閱讀模式推薦 {def}px（單一固定值，非區間）。",
+            body_size_hint_oor: "（目前數值超出該畫布的常用範圍——請確認單位無誤、是否合適。）",
+            delivery_purpose: "閱讀模式",
+            delivery_purpose_hint: "決定資訊主要由頁面還是講者承擔：文字型簡報要能獨立閱讀，用完整句、短段落和必要細節說清楚；演講型簡報一頁一意，以簡短主張和視覺證據為主。",
+            size_override: "逐角色字級覆寫：",
+            size_role_title: "標題",
+            size_role_subtitle: "副標題",
+            size_role_annotation: "註解",
+            custom_typography: "自訂字型方案",
+            custom_color: "自訂配色",
+            custom_color_placeholder: "用文字描述配色，如：深藍主色、暖橙強調、白色背景——或直接貼上 HEX 值…",
+            role_background: "背景",
+            role_secondary_bg: "次級背景",
+            role_primary: "主色",
+            role_accent: "強調",
+            role_secondary_accent: "次強調",
+            role_body_text: "正文文字",
+            style_preview_label: "整體印象（配色 + 字型 + 圖示）",
+            style_preview_body: "· 僅供大致印象參考，非實際版面",
+            preview_big_title: "大標題",
+            preview_latin_title: "Section Title",
+            preview_body_intro: "正文內容用於判斷基礎字級、行距和顏色對比。",
+            preview_latin_body: "Body text sample for checking Latin typography.",
+            preview_point_1_title: "正文內容",
+            preview_point_1_text: "這裡展示普通段落的密度和閱讀節奏。",
+            preview_point_2_title: "要點",
+            preview_point_2_text: "圖示和文字放在一起，判斷真實使用效果。",
+            preview_point_3_title: "結論",
+            preview_point_3_text: "組合效果需要在簡報場景下保持清晰可讀。",
+            mode_continuous_desc: "一次性連續生成整份簡報。",
+            mode_split_desc: "寫完設計規範後停止，另開視窗繼續生成頁面。",
+            refine_off_desc: "依次生成設計規範和執行鎖，然後自動繼續。",
+            refine_on_desc: "生成設計規範後暫停，並開啟審閱頁面：可逐頁直接修改或留下修改意見；在對話中明確確認後再生成執行鎖並繼續製作。",
+            off_default: "關",
+            on: "開",
+            option_prefix: "方案",
+            error_retry: "出錯，請重試"
         }
     };
 
     var LANG = (function () {
         try {
             var stored = window.localStorage.getItem("ppt_lang");
-            if (stored === "zh" || stored === "en" || stored === "ja") return stored;
+            if (stored === "zh" || stored === "en" || stored === "ja" ||
+                    stored === "zh-TW") return stored;
         } catch (e) { /* ignore */ }
         var nav = (navigator.language || navigator.userLanguage || "en").toLowerCase();
-        if (nav.indexOf("zh") === 0) return "zh";
+        if (nav.indexOf("zh") === 0) {
+            if (/\bhans\b/.test(nav)) return "zh";
+            if (/\bhant\b/.test(nav) || /\b(tw|hk|mo)\b/.test(nav)) return "zh-TW";
+            return "zh";
+        }
         if (nav.indexOf("ja") === 0) return "ja";
         return "en";
     })();
@@ -579,37 +735,59 @@
         return dict[key] != null ? dict[key] : key;
     }
 
-    // Fallback stays LANG-relative: zh/en users never see Japanese labels,
-    // ja pages fall back ja → en → zh.
-    var LANG_FALLBACK = { zh: ["zh", "en", "ja"], en: ["en", "zh", "ja"], ja: ["ja", "en", "zh"] };
+    // zh / zh-TW / ja text takes a full-width colon and no space between sentences.
+    function isCjkUi() {
+        return LANG === "zh" || LANG === "zh-TW" || LANG === "ja";
+    }
+
+    function labelSep() {
+        return isCjkUi() ? "：" : ": ";
+    }
+
+    // Preserve the existing locale order, then accept zh_tw-only candidate
+    // prose from any persisted UI language so browser and server validation agree.
+    // Entries are FIELD SUFFIXES, not BCP-47 tags: "zh-TW" data lives in
+    // `<base>_zh_tw` keys, so a hyphenless suffix is used here and in langField().
+    var LANG_FALLBACK = {
+        zh: ["zh", "en", "ja", "zh_tw"],
+        en: ["en", "zh", "ja", "zh_tw"],
+        ja: ["ja", "en", "zh", "zh_tw"],
+        "zh-TW": ["zh_tw", "zh", "en", "ja"]
+    };
+    // Suffix used to look up localized catalog/recommendation fields.
+    var LANG_FIELD = { "zh-TW": "zh_tw" };
+
+    function langField(lang) {
+        return LANG_FIELD[lang] || lang;
+    }
     var IMAGE_COMPARISON_LABELS = {
         rendering: {
-            "vector-illustration": { zh: "矢量插画", en: "Vector illustration", ja: "ベクターイラスト" },
-            flat: { zh: "扁平插画", en: "Flat illustration", ja: "フラットイラスト" },
-            "3d-isometric": { zh: "3D 等距", en: "3D isometric", ja: "3Dアイソメトリック" },
-            "digital-dashboard": { zh: "数字仪表盘", en: "Digital dashboard", ja: "デジタルダッシュボード" },
-            "corporate-photo": { zh: "企业摄影", en: "Corporate photo", ja: "企業写真" },
-            blueprint: { zh: "蓝图线稿", en: "Blueprint", ja: "ブループリント" },
-            editorial: { zh: "编辑杂志", en: "Editorial", ja: "エディトリアル" },
-            "sketch-notes": { zh: "手绘笔记", en: "Sketch notes", ja: "スケッチノート" },
-            "ink-notes": { zh: "墨线笔记", en: "Ink notes", ja: "インクノート" },
-            chalkboard: { zh: "粉笔黑板", en: "Chalkboard", ja: "チョークボード" },
-            watercolor: { zh: "水彩", en: "Watercolor", ja: "水彩" },
-            "warm-scene": { zh: "暖调场景", en: "Warm scene", ja: "暖色シーン" },
-            "screen-print": { zh: "丝网印刷", en: "Screen print", ja: "スクリーンプリント" },
-            "fantasy-animation": { zh: "幻想动画", en: "Fantasy animation", ja: "ファンタジーアニメ" },
-            "pixel-art": { zh: "像素艺术", en: "Pixel art", ja: "ピクセルアート" },
-            nature: { zh: "自然有机", en: "Nature", ja: "自然・オーガニック" },
-            "minimalist-swiss": { zh: "瑞士极简", en: "Minimalist Swiss", ja: "スイスミニマル" },
-            glassmorphism: { zh: "玻璃拟态", en: "Glassmorphism", ja: "グラスモーフィズム" },
-            "vintage-poster": { zh: "复古海报", en: "Vintage poster", ja: "ヴィンテージポスター" },
-            "paper-cut": { zh: "剪纸拼贴", en: "Paper cut", ja: "ペーパーカット" }
+            "vector-illustration": { zh: "矢量插画", zh_tw: "向量插畫", en: "Vector illustration", ja: "ベクターイラスト" },
+            flat: { zh: "扁平插画", zh_tw: "扁平插畫", en: "Flat illustration", ja: "フラットイラスト" },
+            "3d-isometric": { zh: "3D 等距", zh_tw: "3D 等距", en: "3D isometric", ja: "3Dアイソメトリック" },
+            "digital-dashboard": { zh: "数字仪表盘", zh_tw: "數位儀表板", en: "Digital dashboard", ja: "デジタルダッシュボード" },
+            "corporate-photo": { zh: "企业摄影", zh_tw: "企業攝影", en: "Corporate photo", ja: "ビジネス写真" },
+            blueprint: { zh: "蓝图线稿", zh_tw: "藍圖線稿", en: "Blueprint", ja: "ブループリント" },
+            editorial: { zh: "杂志编辑风", zh_tw: "編輯雜誌", en: "Editorial", ja: "エディトリアル" },
+            "sketch-notes": { zh: "手绘笔记", zh_tw: "手繪筆記", en: "Sketch notes", ja: "スケッチノート" },
+            "ink-notes": { zh: "墨迹笔记", zh_tw: "墨跡筆記", en: "Ink notes", ja: "インクノート" },
+            chalkboard: { zh: "粉笔黑板", zh_tw: "粉筆黑板", en: "Chalkboard", ja: "黒板" },
+            watercolor: { zh: "水彩", zh_tw: "水彩", en: "Watercolor", ja: "水彩" },
+            "warm-scene": { zh: "暖调场景", zh_tw: "暖調場景", en: "Warm scene", ja: "暖色シーン" },
+            "screen-print": { zh: "丝网印刷", zh_tw: "絲網印刷", en: "Screen print", ja: "スクリーンプリント" },
+            "fantasy-animation": { zh: "幻想动画", zh_tw: "幻想動畫", en: "Fantasy animation", ja: "ファンタジーアニメ" },
+            "pixel-art": { zh: "像素艺术", zh_tw: "像素藝術", en: "Pixel art", ja: "ピクセルアート" },
+            nature: { zh: "自然有机", zh_tw: "自然有機", en: "Nature", ja: "自然・オーガニック" },
+            "minimalist-swiss": { zh: "瑞士极简", zh_tw: "瑞士極簡", en: "Minimalist Swiss", ja: "スイス・ミニマル" },
+            glassmorphism: { zh: "玻璃拟态", zh_tw: "玻璃擬態", en: "Glassmorphism", ja: "グラスモーフィズム" },
+            "vintage-poster": { zh: "复古海报", zh_tw: "復古海報", en: "Vintage poster", ja: "ヴィンテージポスター" },
+            "paper-cut": { zh: "剪纸拼贴", zh_tw: "剪紙拼貼", en: "Paper cut", ja: "切り絵" }
         }
     };
 
     function localized(obj, base) {
         if (!obj) return "";
-        var langKey = base + "_" + LANG;
+        var langKey = base + "_" + langField(LANG);
         if (obj[langKey] != null) return obj[langKey];
         var order = LANG_FALLBACK[LANG] || LANG_FALLBACK.en;
         var i;
@@ -663,13 +841,13 @@
     }
 
     function applyStaticTranslations() {
-        document.documentElement.setAttribute("lang", LANG === "zh" ? "zh-CN" : (LANG === "ja" ? "ja" : "en"));
+        document.documentElement.setAttribute("lang", LANG === "zh" ? "zh-CN" : (LANG === "zh-TW" ? "zh-TW" : (LANG === "ja" ? "ja" : "en")));
         document.querySelectorAll("[data-i18n]").forEach(function (node) {
             node.textContent = t(node.getAttribute("data-i18n"));
         });
     }
 
-    var LANG_NAMES = { zh: "中文", en: "English", ja: "日本語" };
+    var LANG_NAMES = { zh: "中文", en: "English", ja: "日本語", "zh-TW": "繁體中文" };
 
     function refreshLangToggle(toggleBtn) {
         // Custom dropdown (OS-independent): button shows the CURRENT language.
@@ -812,7 +990,7 @@
         var value = String(id || "").trim();
         if (!value || value === "custom") return "";
         if (!/^[A-Za-z0-9_.-]+$/.test(value)) return "";
-        return "/ai-image-comparison/" + kind + "/" + encodeURIComponent(value) + ".png";
+        return "/ai-image-comparison/" + kind + "/" + encodeURIComponent(value) + ".webp";
     }
 
     function appendImageStrategyPreviews(card, candidate) {
@@ -887,6 +1065,7 @@
             throw new Error("template_options.default_mode must be free_design or templates");
         }
         var normalized = {
+            options_sha256: data && data.options_sha256,
             lang: data && data.lang,
             default_mode: defaultMode,
             library: {},
@@ -918,18 +1097,27 @@
             if (!candidate || !slot) {
                 throw new Error("Invalid preselected template key: " + key);
             }
-            if (TEMPLATE_SELECTIONS[slot]) {
+            if (slot === "explicit") {
+                if (TEMPLATE_SELECTIONS.explicit.indexOf(candidate.workspace_root) < 0) {
+                    TEMPLATE_SELECTIONS.explicit.push(candidate.workspace_root);
+                }
+                return;
+            }
+            if (TEMPLATE_SELECTIONS[slot] && TEMPLATE_SELECTIONS[slot] !== key) {
                 throw new Error("Multiple preselected templates for slot: " + slot);
             }
             TEMPLATE_SELECTIONS[slot] = key;
         });
+        // Publish options before syncing: expanding an explicit root into its
+        // kinds reads TEMPLATE_OPTIONS, so a preselected root would otherwise
+        // resolve to zero keys on first load.
+        TEMPLATE_OPTIONS = normalized;
         syncTemplateSelectionState();
         TEMPLATE_MODE = normalized.default_mode;
-        TEMPLATE_OPTIONS = normalized;
     }
 
     function emptyTemplateSelections() {
-        return { brand: "", style: "", layout: "", deck: "", explicit: "" };
+        return { brand: "", style: "", layout: "", deck: "", explicit: [] };
     }
 
     function templateSelectionSlot(candidate) {
@@ -949,11 +1137,44 @@
         return null;
     }
 
+    function explicitCandidatesForRoot(workspaceRoot) {
+        var root = String(workspaceRoot || "");
+        if (!root) return [];
+        return ((TEMPLATE_OPTIONS && TEMPLATE_OPTIONS.explicit) || [])
+            .filter(function (candidate) { return candidate.workspace_root === root; });
+    }
+
+    // One supplied path is one workspace, and its kinds compose rather than
+    // compete. Selecting that root therefore takes every kind it exposes.
+    function explicitRootOptions() {
+        var roots = [];
+        var seen = Object.create(null);
+        ((TEMPLATE_OPTIONS && TEMPLATE_OPTIONS.explicit) || []).forEach(function (candidate) {
+            var root = candidate.workspace_root || "";
+            if (!root || seen[root]) return;
+            seen[root] = true;
+            var kinds = explicitCandidatesForRoot(root).map(function (item) {
+                return templateKindLabel(item.kind);
+            });
+            roots.push({
+                key: root,
+                label: candidate.label || root,
+                summary: kinds.join(" + "),
+                workspace_root: root
+            });
+        });
+        return roots;
+    }
+
     function syncTemplateSelectionState() {
         TEMPLATE_SELECTED_KEYS = TEMPLATE_KINDS.map(function (kind) {
             return TEMPLATE_SELECTIONS[kind];
         });
-        TEMPLATE_SELECTED_KEYS.push(TEMPLATE_SELECTIONS.explicit);
+        TEMPLATE_SELECTIONS.explicit.forEach(function (root) {
+            explicitCandidatesForRoot(root).forEach(function (candidate) {
+                TEMPLATE_SELECTED_KEYS.push(candidate.key);
+            });
+        });
         TEMPLATE_SELECTED_KEYS = TEMPLATE_SELECTED_KEYS.filter(Boolean);
     }
 
@@ -983,6 +1204,16 @@
 
     function chooseTemplateForSlot(slot, key) {
         TEMPLATE_SELECTIONS[slot] = String(key || "");
+        syncTemplateSelectionState();
+        TEMPLATE_MODE = "templates";
+        updateTemplateSelectionControls();
+    }
+
+    function chooseExplicitTemplateRoot(root, selected) {
+        TEMPLATE_SELECTIONS.explicit = TEMPLATE_SELECTIONS.explicit.filter(function (value) {
+            return value !== root;
+        });
+        if (selected) TEMPLATE_SELECTIONS.explicit.push(root);
         syncTemplateSelectionState();
         TEMPLATE_MODE = "templates";
         updateTemplateSelectionControls();
@@ -1023,20 +1254,29 @@
         });
         field.appendChild(select);
 
-        if (slot === "explicit") {
-            field.appendChild(el(
-                "div",
-                "template-select-help",
-                candidates.length ? t("template_explicit_hint") : t("template_none_explicit")
-            ));
-            var path = el("div", "template-selected-path");
-            path.id = "template-explicit-path";
-            path.appendChild(el("span", "template-selected-path-label", t("template_source_path") + ":"));
-            var code = el("code", "template-selected-path-value");
-            code.id = "template-explicit-path-value";
-            path.appendChild(code);
-            field.appendChild(path);
-        }
+        return field;
+    }
+
+    function renderExplicitTemplateChoices() {
+        var field = el("div", "template-select-field template-select-field-explicit");
+        field.appendChild(el("div", "template-select-label", t("template_source_explicit")));
+        var roots = explicitRootOptions();
+        field.appendChild(el("div", "template-select-help",
+            roots.length ? t("template_explicit_hint") : t("template_none_explicit")));
+        roots.forEach(function (candidate) {
+            var label = el("label", "template-select-help");
+            var checkbox = el("input", "template-explicit-choice");
+            checkbox.type = "checkbox";
+            checkbox.value = candidate.workspace_root;
+            checkbox.checked = TEMPLATE_SELECTIONS.explicit.indexOf(checkbox.value) >= 0;
+            checkbox.addEventListener("change", function () {
+                chooseExplicitTemplateRoot(checkbox.value, checkbox.checked);
+            });
+            label.appendChild(checkbox);
+            label.appendChild(el("span", "", templateCandidateTitle(candidate) + " · " + candidate.summary));
+            label.appendChild(el("code", "template-selected-path-value", candidate.workspace_root));
+            field.appendChild(label);
+        });
         return field;
     }
 
@@ -1079,26 +1319,11 @@
             var candidates = TEMPLATE_OPTIONS.library[kind] || [];
             grid.appendChild(renderTemplateSelectField(kind, templateKindLabel(kind), candidates));
         });
-        grid.appendChild(renderTemplateSelectField(
-            "explicit",
-            t("template_source_explicit"),
-            TEMPLATE_OPTIONS.explicit || []
-        ));
+        grid.appendChild(renderExplicitTemplateChoices());
         panel.appendChild(grid);
         sec.appendChild(panel);
         host.appendChild(sec);
         updateTemplateSelectionControls();
-    }
-
-    function updateTemplateExplicitPath() {
-        var path = document.getElementById("template-explicit-path");
-        var value = document.getElementById("template-explicit-path-value");
-        if (!path || !value) return;
-        var candidate = templateCandidateByKey(TEMPLATE_SELECTIONS.explicit);
-        var workspaceRoot = candidate && candidate.workspace_root ? candidate.workspace_root : "";
-        path.hidden = !workspaceRoot;
-        value.textContent = workspaceRoot;
-        value.title = workspaceRoot;
     }
 
     function updateTemplateSelectionControls() {
@@ -1117,11 +1342,13 @@
             useChoice.setAttribute("aria-expanded", templatesSelected ? "true" : "false");
         }
         if (selectorPanel) selectorPanel.hidden = !templatesSelected;
-        TEMPLATE_KINDS.concat(["explicit"]).forEach(function (slot) {
+        TEMPLATE_KINDS.forEach(function (slot) {
             var select = document.getElementById("template-select-" + slot);
             if (select) select.value = TEMPLATE_SELECTIONS[slot] || "";
         });
-        updateTemplateExplicitPath();
+        document.querySelectorAll(".template-explicit-choice").forEach(function (checkbox) {
+            checkbox.checked = TEMPLATE_SELECTIONS.explicit.indexOf(checkbox.value) >= 0;
+        });
         var status = document.getElementById("confirm-status");
         if (status) status.textContent = "";
     }
@@ -1149,7 +1376,6 @@
         if (field === "icons") return REC.icons && REC.icons.value;
         if (field === "image_usage") return REC.images && REC.images.value;
         if (field === "image_ai_path") return REC.image_ai_path || (REC.images && REC.images.ai_path);
-        if (field === "formula_policy") return REC.typography && REC.typography.formula_policy && REC.typography.formula_policy.value;
         if (field === "generation_mode") return REC.generation_mode && REC.generation_mode.value;
         return REC[field] && REC[field].value;
     }
@@ -1192,6 +1418,7 @@
     function enumField(parent, list, recommendedId, getVal, setVal, opts2) {
         list = list || [];
         opts2 = opts2 || {};
+        var disabled = opts2.disabled === true;
         var grouped = list.length && list[0] && list[0].items;
         var flat = grouped ? list.reduce(function (a, g) { return a.concat(g.items || []); }, []) : list;
         var ids = flat.map(function (o) { return o.id; });
@@ -1260,7 +1487,7 @@
                 label = label + (o.dim ? " · " + o.dim : "");
             } else {
                 if (o.dim) label += " · " + o.dim;
-                if (desc) label += (LANG === "zh" || LANG === "ja" ? "：" : " — ") + desc;
+                if (desc) label += (isCjkUi() ? "：" : " — ") + desc;
                 if (spec && spec.note) label += " · " + spec.note;
             }
             copy.appendChild(el("span", "chip-text", label));
@@ -1274,7 +1501,13 @@
             }
             chip.appendChild(copy);
             if (!isCustom && o.id === cur) chip.classList.add("selected");
+            if (disabled) {
+                chip.setAttribute("aria-disabled", "true");
+                chip.style.cursor = "not-allowed";
+                chip.style.opacity = "0.65";
+            }
             chip.addEventListener("click", function () {
+                if (disabled) return;
                 deselect();
                 chip.classList.add("selected");
                 if (!aiCustom) customInput.style.display = "none";
@@ -1447,7 +1680,7 @@
     }
 
     function setUiLanguageAttributes(node) {
-        node.lang = LANG === "zh" ? "zh-CN" : (LANG === "ja" ? "ja-JP" : "en-US");
+        node.lang = LANG === "zh" ? "zh-CN" : (LANG === "zh-TW" ? "zh-TW" : (LANG === "ja" ? "ja-JP" : "en-US"));
         node.dir = "ltr";
     }
 
@@ -2451,6 +2684,9 @@
     // Replaced when the final plan's image-production section mounts; image-use
     // edits call it so the conditional AI path stays synchronized on the page.
     var refreshImageProduction = function () {};
+    // Replaced when the Design Spec depth section mounts; generation/refinement
+    // edits call it so the forced-complete coupling stays synchronized.
+    var refreshDesignSpecDepth = function () {};
     // Replaced when the typography section mounts; the canvas section calls it so
     // the body-size hint tracks the chosen canvas dimensions.
     var refreshBodySizeHint = function () {};
@@ -3020,15 +3256,16 @@
         // Everything is px — lo/hi are only a sanity envelope for the OOR flag.
         refreshBodySizeHint = function () {
             var txt = t("font_body_size_hint");
+            var sep = isCjkUi() ? "" : " ";
             var lo, hi;
             if (isPptCanvas(STATE.canvas)) {
                 var pb = deliveryBodyPx(STATE.delivery_purpose);
                 lo = pb.lo; hi = pb.hi;
-                txt += " " + t("body_size_hint_purpose").replace("{def}", pb.def);
+                txt += sep + t("body_size_hint_purpose").replace("{def}", pb.def);
             } else {
                 var band = bodySizeBandForCanvas(STATE.canvas, STATE.delivery_purpose);
                 lo = band.lo; hi = band.hi;
-                txt += " " + t("body_size_hint_canvas")
+                txt += sep + t("body_size_hint_canvas")
                     .replace("{lo}", lo).replace("{hi}", hi);
             }
             // Flag (hint only) a value far outside the
@@ -3039,7 +3276,7 @@
                 ? t("body_size_pt_hint").replace("{pt}", formatPtFromPx(cur))
                 : "";
             if (isFinite(cur) && isFinite(lo) && isFinite(hi) && (cur < lo || cur > hi)) {
-                txt += " " + t("body_size_hint_oor");
+                txt += sep + t("body_size_hint_oor");
             }
             sizeHint.textContent = txt;
         };
@@ -3117,7 +3354,7 @@
         var signatureMatch = -1;
         var stateSignature = typographySignature(STATE.typography || {});
         if (STATE.typography && STATE.typography.name !== "custom") cands.forEach(function (c, i) {
-            var sameName = [localized(c, "name"), c.name_zh, c.name_en, c.name_ja]
+            var sameName = [localized(c, "name"), c.name_zh, c.name_zh_tw, c.name_en, c.name_ja]
                 .some(function (name) { return name === STATE.typography.name; });
             if (!sameName && c.name && typeof c.name === "object") {
                 sameName = Object.keys(c.name).some(function (key) {
@@ -3141,13 +3378,6 @@
         } else {
             syncCustomInputs();
         }
-    }
-
-    function renderFormulaPolicy(host) {
-        var sec = section("F", "formula_policy");
-        enumField(sec, CAT.formula_policy, recOrFirst("formula_policy", CAT.formula_policy),
-            function () { return STATE.formula_policy; }, function (v) { STATE.formula_policy = v; });
-        host.appendChild(sec);
     }
 
     // Combined color + typography + icon preview — not a separate confirmation, just a
@@ -3276,11 +3506,11 @@
                         t("image_strategy_select_placeholder")));
             var parts = [];
             if (strategy.rendering) {
-                parts.push(t("image_strategy_rendering") + ": " +
+                parts.push(t("image_strategy_rendering") + labelSep() +
                     comparisonValueLabel("rendering", strategy.rendering));
             }
-            if (strategy.visual) parts.push(t("image_strategy_visual") + ": " + strategy.visual);
-            if (strategy.mood) parts.push(t("image_strategy_mood") + ": " + strategy.mood);
+            if (strategy.visual) parts.push(t("image_strategy_visual") + labelSep() + strategy.visual);
+            if (strategy.mood) parts.push(t("image_strategy_mood") + labelSep() + strategy.mood);
             if (strategy.behavior) parts.push(strategy.behavior);
             desc.textContent = parts.join(" · ") || t("image_strategy_reference_hint");
         }
@@ -3438,7 +3668,7 @@
                 ["image_strategy_visual", customStrategy.visual],
                 ["image_strategy_mood", customStrategy.mood]
             ].forEach(function (row) {
-                if (row[1]) customCard.appendChild(el("div", "color-note", t(row[0]) + "：" + row[1]));
+                if (row[1]) customCard.appendChild(el("div", "color-note", t(row[0]) + labelSep() + row[1]));
             });
             var customCopy = el("div", "ai-custom-candidate-copy",
                 customStrategy.behavior || t("image_strategy_custom_placeholder"));
@@ -3536,7 +3766,7 @@
         (CAT.image_usage || []).forEach(function (option) {
             var label = optionLabel(option);
             var desc = optionDesc(option);
-            if (desc) label += (LANG === "zh" || LANG === "ja" ? "：" : " — ") + desc;
+            if (desc) label += (isCjkUi() ? "：" : " — ") + desc;
             var chip = el("div", "chip");
             chip.appendChild(el("span", "chip-text", label));
             if (recommendedIds.indexOf(option.id) >= 0) {
@@ -3603,7 +3833,11 @@
             setSectionNote(sec, STATE.generation_mode === "split" ? t("mode_split_desc") : t("mode_continuous_desc"));
         }
         enumField(sec, CAT.generation_mode, recOrFirst("generation_mode", CAT.generation_mode),
-            function () { return STATE.generation_mode; }, function (v) { STATE.generation_mode = v; refresh(); });
+            function () { return STATE.generation_mode; }, function (v) {
+                STATE.generation_mode = v;
+                refresh();
+                refreshDesignSpecDepth();
+            });
         refresh();
         host.appendChild(sec);
     }
@@ -3654,8 +3888,54 @@
         }
         enumField(sec, opts, STATE.refine_spec ? "on" : "off",
             function () { return STATE.refine_spec ? "on" : "off"; },
-            function (v) { STATE.refine_spec = (v === "on"); refresh(); });
+            function (v) {
+                STATE.refine_spec = (v === "on");
+                refresh();
+                refreshDesignSpecDepth();
+            });
         refresh();
+        host.appendChild(sec);
+    }
+
+    function designSpecDepthCatalog() {
+        if (CAT.design_spec_depth && CAT.design_spec_depth.length) {
+            return CAT.design_spec_depth;
+        }
+        return [
+            {
+                id: "brief",
+                label: t("design_spec_depth_brief"),
+                desc: t("design_spec_depth_brief_desc")
+            },
+            {
+                id: "complete",
+                label: t("design_spec_depth_complete"),
+                desc: t("design_spec_depth_complete_desc")
+            }
+        ];
+    }
+
+    function renderDesignSpecDepth(host) {
+        var sec = section("D", "sec_design_spec_depth");
+        var body = el("div", "design-spec-depth-body");
+        var recommended = REC.design_spec_depth && REC.design_spec_depth.value;
+        if (recommended !== "brief" && recommended !== "complete") recommended = "brief";
+        sec.appendChild(body);
+        refreshDesignSpecDepth = function () {
+            var locked = STATE.generation_mode === "split" || STATE.refine_spec;
+            if (locked) STATE.design_spec_depth = "complete";
+            body.innerHTML = "";
+            enumField(
+                body,
+                designSpecDepthCatalog(),
+                locked ? null : recommended,
+                function () { return STATE.design_spec_depth; },
+                function (value) { STATE.design_spec_depth = value; },
+                { disabled: locked }
+            );
+            setSectionNote(sec, locked ? t("design_spec_depth_locked") : "");
+        };
+        refreshDesignSpecDepth();
         host.appendChild(sec);
     }
 
@@ -3690,6 +3970,7 @@
         refreshStylePreview = function () {};
         refreshImageStrategyPreview = function () {};
         refreshImageProduction = function () {};
+        refreshDesignSpecDepth = function () {};
         refreshBodySizeHint = function () {};
         refreshSizeInputs = function () {};
         DIRECTION_COMPONENT_PAINTERS = [];
@@ -3721,10 +4002,10 @@
             host.appendChild(styleGroup);
             renderImageDirection(host);
             renderImageProduction(host);
-            renderFormulaPolicy(host);
             renderProactiveExecution(host);
             renderMode(host);
             renderRefine(host);
+            renderDesignSpecDepth(host);
             var refreshDirectionIndicators = function () {
                 window.setTimeout(function () {
                     refreshDesignDirectionState();
@@ -3878,7 +4159,6 @@
     }
 
     function initProductionState() {
-        STATE.formula_policy = pick("formula_policy", CAT.formula_policy);
         STATE.image_ai_path = pick("image_ai_path", CAT.image_ai_path);
         STATE.proactive_speaker_notes = booleanRecommendation("proactive_speaker_notes", true);
         STATE.proactive_custom_animations = booleanRecommendation("proactive_custom_animations", false);
@@ -3886,6 +4166,11 @@
 
         STATE.generation_mode = pick("generation_mode", CAT.generation_mode);
         STATE.refine_spec = !!((REC.refine_spec && REC.refine_spec.value) || (REC.recommend && REC.recommend.refine_spec));
+        var designSpecDepth = REC.design_spec_depth && REC.design_spec_depth.value;
+        STATE.design_spec_depth = designSpecDepth === "complete" ? "complete" : "brief";
+        if (STATE.generation_mode === "split" || STATE.refine_spec) {
+            STATE.design_spec_depth = "complete";
+        }
     }
 
     function initState() {
@@ -3921,6 +4206,7 @@
     function stage1Payload() {
         var payload = communicationPayload();
         payload.stage = "stage1";
+        payload.options_sha256 = TEMPLATE_OPTIONS.options_sha256;
         payload.template_selection = {
             mode: TEMPLATE_MODE,
             selection_keys: TEMPLATE_MODE === "templates"
@@ -4044,8 +4330,22 @@
         if (!valid) {
             document.getElementById("confirm-status").textContent =
                 t("template_selection_required");
+            return false;
         }
-        return valid;
+        if (TEMPLATE_MODE === "templates") {
+            var seenKinds = Object.create(null);
+            for (var i = 0; i < TEMPLATE_SELECTED_KEYS.length; i += 1) {
+                var candidate = templateCandidateByKey(TEMPLATE_SELECTED_KEYS[i]);
+                if (!candidate) continue;
+                if (seenKinds[candidate.kind]) {
+                    document.getElementById("confirm-status").textContent =
+                        t("template_selection_conflict");
+                    return false;
+                }
+                seenKinds[candidate.kind] = true;
+            }
+        }
+        return true;
     }
 
     function submitStage1() {
@@ -4061,6 +4361,7 @@
         document.getElementById("sections").style.display = "none";
         document.getElementById("actionbar").style.display = "none";
         var l = document.getElementById("loading");
+        l.setAttribute("data-i18n", "deriving");
         l.textContent = t("deriving");
         l.style.display = "block";
     }
@@ -4187,9 +4488,10 @@
 
     function applyServerLanguage(data) {
         var requested = data && data.lang;
-        if (requested !== "zh" && requested !== "en" && requested !== "ja") return;
+        if (requested !== "zh" && requested !== "en" && requested !== "ja" &&
+                requested !== "zh-TW") return;
         var hasStored = false;
-        try { hasStored = !!window.localStorage.getItem("ppt_lang"); } catch (e) { /* ignore */ }
+        try { hasStored = ["zh", "en", "ja", "zh-TW"].indexOf(window.localStorage.getItem("ppt_lang")) >= 0; } catch (e) { /* ignore */ }
         if (hasStored) return;
         LANG = requested;
         applyStaticTranslations();
@@ -4239,12 +4541,13 @@
         var chooseLang = function (v) {
             setMenuOpen(false);
             toggleBtn.focus();
-            if (v !== "ja" && v !== "en" && v !== "zh") return;
+            if (v !== "ja" && v !== "en" && v !== "zh" && v !== "zh-TW") return;
+            try { window.localStorage.setItem("ppt_lang", v); } catch (e2) { /* ignore */ }
             if (v === LANG) return;
             LANG = v;
-            try { window.localStorage.setItem("ppt_lang", LANG); } catch (e2) { /* ignore */ }
             applyStaticTranslations();
             refreshLangToggle(toggleBtn);
+            document.getElementById("confirm-status").textContent = "";
             if (REC && CAT) {
                 renderAll();   // STATE persists → selections preserved
             }

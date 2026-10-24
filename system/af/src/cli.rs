@@ -11,7 +11,7 @@ use crate::runlog;
 use clap::{ArgGroup, Parser, Subcommand};
 
 /// Verbs af.py owns that this port does not carry yet.
-pub const NOT_PORTED: [&str; 5] = ["index", "search", "voice", "pipe", "studio"];
+pub const NOT_PORTED: [&str; 4] = ["index", "search", "pipe", "studio"];
 
 #[derive(Parser, Debug)]
 #[command(
@@ -29,6 +29,10 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Cmd {
+    Voice {
+        #[command(subcommand)]
+        cmd: crate::voice::VoiceCmd,
+    },
     Ready {
         project: String,
         deliverable: String,
@@ -137,6 +141,7 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> R<i32> {
         }
     };
     match cli.cmd {
+        Cmd::Voice { cmd } => crate::voice::run(ctx, cmd),
         Cmd::Ready { project, deliverable, artifact, allow_missing_exports } => {
             let a = ReadyArgs {
                 project: &project,
@@ -191,6 +196,9 @@ fn panic_message(p: &(dyn std::any::Any + Send)) -> String {
 /// `main()`: run one button and append its outcome to the run log, whatever the outcome.
 /// Returns the process exit code.
 pub fn main_entry(argv: Vec<String>) -> i32 {
+    if let Some(code) = crate::hooks::intercept(&argv).or_else(|| crate::voice::intercept(&argv)) {
+        return code;
+    }
     if let Some(first) = argv.first() {
         if NOT_PORTED.contains(&first.as_str()) {
             out::err_line(&format!(

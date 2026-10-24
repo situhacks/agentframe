@@ -20,3 +20,4 @@ pub mod sessions;
 pub mod open;
 pub mod brief;
 pub mod close;
+pub mod index;

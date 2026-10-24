@@ -11,7 +11,7 @@ use crate::runlog;
 use clap::{ArgGroup, Parser, Subcommand};
 
 /// Verbs af.py owns that this port does not carry yet.
-pub const NOT_PORTED: [&str; 3] = ["index", "search", "voice"];
+pub const NOT_PORTED: [&str; 1] = ["voice"];
 
 #[derive(Parser, Debug)]
 #[command(
@@ -115,6 +115,17 @@ enum Cmd {
         #[arg(long)]
         force: bool,
     },
+    Index {
+        #[command(subcommand)]
+        cmd: crate::index::IndexCmd,
+    },
+    Search {
+        query: String,
+        #[arg(short = 'n', long, default_value = "8", value_parser = crate::index::py_int, allow_negative_numbers = true)]
+        limit: i64,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 /// The repo root: `AF_ROOT`, else the nearest ancestor of the binary, then of the working
@@ -208,6 +219,9 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> R<i32> {
         Cmd::Open { cmd } => crate::open::run(ctx, cmd),
         Cmd::Brief { json, write } => crate::brief::cmd_brief(ctx, json, write),
         Cmd::Close { slug, force } => crate::close::cmd_close(ctx, &slug, force),
+    },
+        Cmd::Index { cmd } => crate::index::cmd_index(&ctx.root, &cmd),
+        Cmd::Search { query, limit, json } => crate::index::cmd_search(&ctx.root, &query, limit, json),
     }
 }
 

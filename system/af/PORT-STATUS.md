@@ -124,3 +124,44 @@ Baseline: `system/af.py` at `b030c418`.
 - Doctor: a handoff with no parseable `written` is a note. The 7-day idle note uses the effective status, so a stored `live` row 10 days old notes too. Remotes come from `workspace/.git/config` (a `gitdir:` file is followed) with no git process.
 - Run log: rows are recorded as verb `session`, `open`, `brief`, `close`. A direct `af session stop` exit 3 is counted as a `session` refusal by `runlog::button_notes`. The merge should exclude it there (`runlog.rs` was outside this stage).
 - Verification: `cargo test` 213 passed (58 new across `tests/sessions_*.rs`, `tests/life_*.rs`; helpers in `tests/life_fx/`). `cargo build --release` has no warnings. Release `af session hook_session_start` takes about 0.035 s and `af doctor` about 0.18 s.
+## Stage R3: `index`, `search`
+
+Baseline: `system/indexer.py` and af.py's `cmd_index`/`cmd_search` at `b030c418`. This section supersedes the `index`, `search` row in the R1 table above.
+
+| Verb | Status |
+|---|---|
+| `index update [--rebuild]` | ported and parity PASS (tables row for row; embeddings bit-exact on the live copy) |
+| `index status` | ported and parity PASS |
+| `index eval [--k N]` | ported and parity PASS (live golden set: 23 queries, recall@5 21/23, MRR 0.591 on both) |
+| `search "<q>" [-n N] [--json]` | ported and parity PASS (all 23 golden queries plus 5 `--json -n 12`, ranked output identical) |
+
+### Layout
+
+- `src/index/`: `chunk.rs` (frontmatter, heading chunks, breadcrumbs, version heads), `store.rs` (schema, corpus walk, update, status), `rank.rs` (hybrid search, boosts, snippets), `eval.rs`, `embed.rs` (Ollama over `ureq`, a small JSON parser), `pynum.rs` (CPython `math.fsum`, 3.12 `math.sumprod`, `round`, float `repr`, `st_mtime`), `mod.rs` (CLI glue, JSON output).
+- Deps added: `rusqlite =0.35.0` with `bundled` (SQLite 3.49.1, the same version Python 3.12.10's `sqlite3` carries, so FTS5 BM25 ties order the same), `ureq 2` without TLS, `sha2`.
+- Same schema SQL, same `meta` keys (`updated_at`, `embed_model`), same little-endian f32 vector blobs: the binary opens the Python's `vault.db` as is, and the Python reads a binary `--rebuild` (parity case `index-fixture` runs the Python on the binary's database).
+
+### Verification (last run)
+
+- `cargo test` (debug and release): 178 passed (18 unit, 160 integration); new: 15 unit in `src/index/`, 8 in `tests/index_search.rs` (keyword-only through the binary against a dead port, fusion through the library with a fake embedder).
+- `python system/af/tests/parity.py`: 57/57 PASS. New cases live in `tests/parity_index.py` (hooked from `parity.py`): `index-usage`, `index-fixture` (Ollama live; update, mutate, update, eval, `--rebuild`, Python reading the binary's database), `index-keyword-only` (Ollama unreachable on both sides; warnings, partial vectors, backfill), `index-live` (a copy of the live corpus and `vault.db`, read-only against the main checkout). Ollama-dependent cases print SKIP when it is not serving.
+- `python -m pytest system/tests -q -p no:cacheprovider`: 390 passed, 1 skipped (untouched).
+- `cargo build --release`: no warnings; `af.exe` 5,762,048 bytes (R1: 3,331,072; the bundled SQLite is most of the growth).
+- Wall time on the live copy, median of 7: `search` 2.126 s Python vs 0.746 s Rust; `search --json -n 12` 1.619 vs 0.724; `index update` with nothing stale 0.556 vs 0.272; `index status` 0.562 vs 0.304.
+
+### Choices where the Python was ambiguous or platform-bound
+
+- `AF_OLLAMA_URL` overrides the endpoint (tests drive the keyword-only path with it); `indexer.py:67` has no override. Parity reaches the same state in the Python with `HTTP_PROXY` to a dead port.
+- `st_mtime` is `sec + nsec * 1e-9` as CPython builds it (R1's `pyos::getmtime` divides by 1e9, which can differ in the last bit; the index needs exact equality at `indexer.py:367`).
+- Vector norms use an exact `fsum` port and cosine uses CPython 3.12's triple-length `sumprod` (`indexer.py:339`, `:614`); a naive loop lands a few ulps off and can flip near-tie ranks.
+- Ollama floats are parsed with a correctly rounded parser (serde_json's default float path can be an ulp off).
+- `VERSION_RE` (`indexer.py:80`) uses ASCII digits; Python's `\d` also takes non-ASCII decimal digits in a filename.
+- Exception text in the degraded-mode warning follows urllib (`URLError: <urlopen error [WinError 10061] ...>`, `HTTPError: HTTP Error N: reason`); rarer failures (malformed JSON, timeouts) are named the same class with shorter text.
+- The indexer's own `die()` (`indexer.py:83`, golden set missing or empty) prints `af index: ERROR:` and exits 1 with no `refusal` in the run log, as af.py records it.
+- argparse `type=int` for `-n` and `--k` accepts negative values and slices like Python (`-n -1` drops the last hit).
+
+### Cutover notes (R3)
+
+- The SessionStart hook `system/hooks/index_refresh.py` still spawns `python system/af.py index update` (R2 owns hooks); point it at the binary at cutover.
+- No embedding backfill is pending: the live index is fully embedded, and either engine backfills orphan vectors on its next `index update` or search refresh. A model swap still needs one `af index update --rebuild` by the operator (about 13k chunks through Ollama).
+- `NOT_PORTED` in `src/cli.rs` lost `index` and `search`; the R2 and R4 merges will touch the same line.

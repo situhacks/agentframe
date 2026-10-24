@@ -1,6 +1,7 @@
 {
   "permissions": {
     "deny": [
+      "Bash(git push)",
       "Bash(git push *)"
     ]
   },
@@ -91,5 +92,10 @@
   },
   "worktree": {
     "bgIsolation": "none"
+  },
+  "modelSettings": {
+    "claude-opus-5-5": {
+      "autoCompactWindow": 200000
+    }
   }
 }

@@ -6,6 +6,7 @@ pub mod index_refresh;
 pub mod pathlib;
 pub mod ppt_guard;
 pub mod publish_guard;
+pub mod push_guard;
 pub mod shlex;
 pub mod version_guard;
 pub mod voice_guard;
@@ -107,6 +108,9 @@ pub fn dispatch(h: &HookCtx, event: &str, stdin_text: &str) -> Result<Option<PyV
     match (event, tool) {
         ("pre-tool-use", "Edit" | "Write") => results.extend(version_guard::decide(h, &payload)),
         ("pre-tool-use" | "post-tool-use", "Bash" | "PowerShell") => {
+            if event == "pre-tool-use" {
+                push_guard::check(&payload)?;
+            }
             results.extend(ppt_guard::decide(h, &payload));
             results.extend(voice_guard::decide(h, &payload));
         }

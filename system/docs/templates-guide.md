@@ -18,7 +18,7 @@ Choose the route by the artifact you already have and the result you want:
 
 | Starting point and goal | Route | Copy-ready request |
 |---|---|---|
-| A raw `.pptx`; keep its existing slide shells and replace content | **Fill Native PPTX** | `Fill projects/source/template.pptx with projects/source/content.md.` |
+| A raw `.pptx`; keep its existing slide shells and replace content | **Edit Native PPTX** | `Fill projects/source/template.pptx with projects/source/content.md; keep its design and use only the pages that fit.` |
 | A reusable Brand/Style/Layout/Deck workspace; generate a fresh deck | **Generate PPTX → Stage-1 template controls** | `Make a deck from sources/report.pdf with template skills/ppt-master/templates/layouts/presentation_core/.` |
 | A PPTX, SVG set, brand guide, website, images, or mixed references; first build a reusable system | **Create Template → Generate PPTX** | `Use /create-template to create a reusable Deck workspace from projects/brand/our_deck.pptx.` |
 
@@ -53,7 +53,7 @@ The two rules that prevent most mistakes:
 ### How selection works
 
 Default Generate places template selection inside **Stage 1**, beside the
-template-independent communication contract. The page first shows switchable
+communication contract. The page first shows switchable
 Free design / Use templates choices. Ordinary requests initialize Free design
 and keep the detailed selectors collapsed. Explicit template intent or any
 exact workspace root initializes Use templates and expands the registered
@@ -61,19 +61,25 @@ Brand/Style/Layout/Deck plus supplied-root candidates. Exactly one supplied root
 is preselected; multiple roots remain unselected candidates. The system does
 not infer a specific template from the topic.
 
-> **Quick Generate exception:** Quick never opens that page. Up to one exact
-> workspace root per kind supplied in the request is validated, installed, and
-> used directly; no exact root means free design. Bare names still do not
-> resolve. Quick remains a lockless flat export, so Layout/Deck prototypes are
-> authoring inputs rather than reusable native Master/Layout output.
+> **Quick Generate exception:** Quick never opens that page. Exact roots in the
+> request are validated and used directly, with at most one contribution per
+> kind. Layout and Deck may coexist, with Layout taking structural precedence;
+> a multi-kind root contributes all of its specs.
+> No exact root means free design. Bare names still do not resolve. Quick is
+> lockless, not structureless: free design and Brand/Style-only output stays
+> flat, while an installed Layout/Deck structure owner remains explicit
+> Master/Layout/slot metadata in the authored SVGs and exported PPTX.
 
 ### How to use the selector
 
 On the Stage-1 page, choose Free design or Use templates. Only Use templates
 reveals five compact dropdowns: one each for registered Brand, Style, Layout,
 and Deck workspaces, plus one for exact roots supplied for this run. Each is
-single-select and includes `None`; the four registered kinds can be combined,
-and the specified-root channel contributes at most one workspace. The lists
+single-select and includes `None`; the complete selection may combine all four
+distinct kinds but contains at most one of each kind. Layout supplies structure
+when present; otherwise Deck does. The
+specified-root channel contributes at most one workspace, atomically with every
+kind it exposes. The lists
 come only from the four kind indexes; the workflow never scans the template
 directories. Send an exact Brand/Style/Layout/Deck workspace root in chat when
 you want template mode opened and that sole path preselected. Anywhere in the
@@ -83,20 +89,34 @@ sentence is fine; the path just has to be unambiguous:
 > "use last deck's template: `projects/last_deck/`" ✅
 > "make a product introduction with `/Users/me/Desktop/our_brand_v3/`" ✅
 
-For every current template kind, an explicit path is the **template workspace root**. An exact root matching a registered index entry may be displayed as `library`; an unregistered root remains separately labelled `explicit`. The server parses the latter's actual frontmatter `kind`; `explicit` is provenance, not a fifth kind or a priority tier. Stage 1 validates the selected candidate roots; after confirmation, Brand/Layout/Deck install their package-owned `templates/` plus any real `images/` and `icons/`, while Style installs only its spec and ignores unrelated project scaffolding. It never copies `exports/`. Deck/Layout workspaces additionally validate the structured SVG contract; Brand/Style validate their roster-free specs. The path may point to a built-in library workspace under `skills/ppt-master/templates/<kind>/<id>/`, a project workspace under `projects/<name>/`, or another workspace with the same routing. A Create Template run may hand its exact validated workspace root directly to the next Stage-1 selector in the same conversation.
+For every current template kind, an explicit path is the **template workspace root**. An exact root matching a registered index entry may be displayed as `library`; an unregistered root remains separately labelled `explicit`. The server parses the latter's actual qualified specs; `explicit` is provenance, not a fifth kind or a priority tier. Stage 1 validates each selected root atomically. After confirmation, installation maps every selected spec and asset root exactly once, installs only the effective structural roster (Layout when present, otherwise Deck), and never copies `exports/`. Deck/Layout roots additionally validate their structured SVG contracts before precedence is applied; Brand/Style validate their roster-free specs. The path may point to a built-in library workspace under `skills/ppt-master/templates/<kind>/<id>/`, a project workspace under `projects/<name>/`, or another workspace with the same routing. A Create Template run may hand its exact validated workspace root directly to the next Stage-1 selector in the same conversation.
 
 Template selection shares the Stage-1 screen and submit action but remains a
-separate sidecar decision. The communication recommendation is authored only
-from the current request, source facts, conversation constraints, and project
-initialization; candidate metadata, selected roots, installed content, and
-template canvas cannot influence it. After the combined confirmation, a
+separate sidecar decision. The communication goal (audience, intent, outcome,
+core message, delivery context, and afterlife) is authored only from the
+current request, source facts, conversation constraints, and project
+initialization; a candidate's existence, summary, or prototypes never bend it.
+Template facts already in context—a root handed off by Create Template in this
+conversation, or an exact root's kind and canvas—may inform only the
+recommended canvas and page range, and a canvas that differs from project
+initialization is a visible Stage-1 decision. After the combined confirmation, a
 non-free choice runs the common apply stage and installs the selected
 workspaces into the project's `templates/`, `images/`, and `icons/`. Final
 Stage 2 then compares the confirmed communication contract with that installed
 state; `template_application` describes **how** to use it and never chooses
 **which** template to use.
 
-> **Compatibility preflight:** Step 3 also accepts a legacy-flat Brand/Layout/Deck workspace with `design_spec.md` directly at the supplied root when it satisfies the current kind contract. Layout/Deck additionally require current structured SVGs; Style has no flat form. Former atomic-placeholder, unmapped Master/Layout, and other semantic-legacy packages are rejected; run `create-template` to create a new workspace, then generate new structured pages from that workspace. Nothing upgrades the old package in place.
+`template_application` is one natural-language paragraph, not a mode selector.
+Explicit user instructions win; otherwise the AI reads every installed template
+SVG, decides from the current content, and defaults to reference-led use when no
+stronger fit exists. Reference-led use may redesign after studying the full
+roster; augment-only preserves existing non-slot objects, permits slot edits,
+and only adds; replacement-only changes information carriers while preserving
+the rest. These are examples, not fixed options. Any prototype-specific exception
+names the exact SVG basename. Quick makes and freezes the same paragraph only in
+its active context instead of writing confirmation/spec artifacts.
+
+> **Current-workspace preflight:** Step 3 accepts only a workspace root exposing its Design Spec under `templates/`. Flat-root, former atomic-placeholder, unmapped Master/Layout, and other semantic-legacy packages are rejected; run `create-template` to create a new workspace, then generate new structured pages from that workspace. Nothing upgrades the old package in place.
 
 ### What does NOT select a template automatically
 
@@ -131,9 +151,9 @@ Make a deck from projects/annual-report/sources/report.md.
 Template workspace: projects/acme_template/
 ```
 
-For chat-based explicit root selection, path labels are optional but exact roots are mandatory. The page's library selection already carries exact roots. The page allows one registered selection per kind and one specified root. If the specified root has the same parsed kind as a registered selection, the workflow stops at the existing two-workspace conflict-resolution gate instead of choosing one silently.
+For chat-based explicit root selection, path labels are optional but exact roots are mandatory. The page's library selection already carries exact roots. The page allows one registered selection per kind and one specified root, and rejects only duplicate kinds. Layout and Deck may be selected together; Layout then owns structure while Deck retains its other segments. A specified multi-kind root is all-or-nothing; its exposed kinds cannot be selected again from the library.
 
-You do not need to choose a template-use mode. For Layout/Deck, Strategist reads the actual Master/Layout/prototype roster and current content, then decides which pages to select, repeat, skip, reorder, or reorganize. Brand instead supplies identity constraints, while Style supplies direction/method defaults; both leave pages freely composed unless another workspace supplies structure. If you care about a specific boundary, state it in ordinary language in the same request—for example, “keep the cover and closing page exactly, choose suitable middle pages yourself” or “use only the visual language”. That explicit sentence wins over AI judgment.
+You do not need to choose a template-use mode. Strategist reads the effective structural roster—Layout when present, otherwise Deck—and current content, then decides which pages to select, repeat, skip, reorder, or reorganize. Brand instead supplies identity constraints, while Style supplies direction/method defaults; both leave pages freely composed unless another workspace supplies structure. If you care about a specific boundary, state it in ordinary language in the same request—for example, “keep the cover and closing page exactly, choose suitable middle pages yourself” or “use only the visual language”. That explicit sentence wins over AI judgment.
 
 ### Template catalog
 
@@ -212,7 +232,7 @@ Before generation, the workflow writes one concise natural-language proposal and
 
 | Field | Notes |
 |-------|-------|
-| **Output scope** | `library` (default) or `project`; both use the same portable workspace routing, while only library scope registers it globally |
+| **Output scope** | `library` (default) or `project`; both use the same spec schema, while the library uses a bare spec in a single-kind directory and a project uses a qualified spec in its shared root |
 | **Target project** | Required only for `project`; give the exact initialized project path |
 | **Selected child workflow** | Create Brand / Create Style / Create Layout / Create Deck, fixed by the entry dispatch |
 | **Template ID** | Portable template identity; in library scope it is also the directory / index key. Prefer ASCII slug like `acme_consulting`; non-ASCII names work but must be filesystem-safe |
@@ -226,7 +246,7 @@ Before generation, the workflow writes one concise natural-language proposal and
 
 After confirmation the workflow echoes the finalized brief and emits the marker `[TEMPLATE_BRIEF_CONFIRMED]`. Subsequent steps only run after that marker. **This is a hard gate — no brief, no generation.**
 
-Before either scope writes final files, one hard preflight resolves the required `templates/` destination and any optional asset destinations, requires an empty `templates/` root, and rejects bitmap or imported-vector filename collisions in `images/` and `icons/imported/`. It checks `exports/` only when a review PPTX was requested. Project scope additionally requires an initialized target project. Existing empty scaffolding created by project initialization is allowed and left untouched; Create Template does not create optional directories merely to keep empty paths. A failed check stops before partial output; the workflow does not merge or overwrite.
+Before either scope writes final files, one hard preflight resolves the Design Spec and all real asset destinations. Library scope requires an empty `templates/` root. Project scope requires an initialized project and rejects a bare spec, an existing spec of the new kind, or invalid qualified naming; distinct kinds may coexist. Adding Deck beside Layout preserves the Layout roster, while adding Layout beside Deck uses isolated validation and an atomic structural replacement. Both scopes reject bitmap, imported-vector, review-export, and unrelated destination collisions before writing. Existing empty project scaffolding is left untouched, and optional directories are not created merely to retain empty paths. A failed check stops before partial output; the workflow does not overwrite.
 
 > Why so strict? A template is a reusable ownership contract, whether it is global or project-scoped. Confirming the owned segment and destination first—and geometry only for Layout/Deck—avoids partial or misplaced output.
 
@@ -239,29 +259,35 @@ strategy so deterministic tools can run:
 
 - a compact reusable system when the request calls for distillation;
 - broader source-aligned coverage when the source itself contains useful variants;
-- literal materialization when the request calls for preservation and the source has a complete supported structure contract.
+- compact mirror authoring when the request calls for preservation and the source has a complete supported structure contract.
 
 Layout/Deck frontmatter still records `replication_mode: standard|fidelity|mirror` for tool compatibility and audit. It is an implementation record, not a user-facing choice. Style frontmatter intentionally has no replication/native-structure fields. A brand-neutral Layout cannot literally preserve brand/application facts; the AI either re-authors it as a Layout or keeps those facts in a Deck according to the requested result.
 
 **About sprite sheets**: PPTX-exported assets are often a single large image referenced from multiple slides, each cropping a different region via nested `<svg viewBox=...>` wrappers. In `fidelity` and `mirror` modes this nesting must be preserved — you cannot flatten it to a bare `<image>`, or the crop is lost and the page misaligns. The workflow validates this automatically.
 
-**About native PowerPoint shapes**: the lossless import SVG stays immutable in the temporary analysis workspace as native-payload backing. Template creation uses the lightweight editable `authoring-svg/` IR and its source-ref/hash manifest. Authored modes use project-canonical SVG and compact authored-preset groups only for exact registered preset matches. Mirror materializes final template SVGs from the IR, reusing converter-supported payload only for unchanged Slide-local/slot refs; fixed Master/Layout layers remain direct atoms, unsupported or edited objects keep the current SVG fallback, and final templates contain no IR-only refs.
+**About native PowerPoint shapes**: the lossless import SVG stays immutable as source/package evidence and supported non-visible payload backing. Template creation uses the new compact editable `authoring-svg/` tree and its source-ref/hash manifest. Template_Designer reviews/authors that tree for mirror, preserving structure, meaning, and similar presentation without requiring identical SVG code. The publisher validates/composes the current visible tree and never restores ordinary lossless subtrees; final templates contain no IR-only refs. Imported/template-owned Chart/Table JSON remains inline and authoritative, while its compact preview may be approximate.
 
-For a PPTX-backed Type A mirror, that final step is one deterministic command:
+For a PPTX-backed Type A mirror, final validation/publication uses one deterministic command after the authoring review:
 
 ```bash
 python3 skills/ppt-master/scripts/mirror_template_materialize.py \
-  "<import_workspace>" "<empty_template_workspace>"
+  "<import_workspace>" "<template_workspace>"
 ```
 
-It validates the IR manifest, immutable source hashes, complete native graph,
-visibility facts, and imported-vector closure before atomically publishing the
-source-ordered SVG roster and its `icons/imported/` / `images/` assets. It never
+It validates source SHA/known refs, the authoring manifest, reachable native
+graph, visibility/assignment facts, and imported-vector closure before atomically publishing the
+current source-ordered SVG roster and assets. It never
 requires or uses the opt-in `svg-flat/` verification tree as the template source
-and never generates `design_spec.md`;
-the designer writes that brief against the published roster.
+and never generates a Design Spec; the designer writes the resolved spec
+against the published roster.
 
-**Mirror graph boundary**: mirror preserves the complete supported source Master/Layout graph. It emits one complete prototype per source slide and one definition-only `layout_<layout_key>.svg` prototype for every source Layout unused by those slides. The latter registers in PowerPoint through the independent Layout roster without becoming a published page; its parent Master is retained with it. Preflight stops only when required source facts or supported geometry are missing, never merely because a Layout is unused.
+**Mirror graph boundary**: mirror emits one complete prototype per source Slide and preserves only each Slide's referenced Layout and parent Master. The SVG resolves Master + Layout + Slide context while keeping layer ownership explicit. Source Master/Layout identities unused by every Slide are not materialized by mirror; `standard` / `fidelity` may use the complete source inventory to author useful new Slide prototypes.
+
+The Design Spec gives every emitted Slide prototype its normal roster row. When the source contains unreferenced Master/Layout identities, one scope sentence may note that they exist but were not materialized by mirror; it does not invent per-identity usage analysis.
+
+Template use is Slide-first: each generated-page SVG already resolves its Master and Layout visuals, so normal authoring selects that complete Slide prototype. The workspace contains no standalone Master/Layout definition SVGs.
+
+“Slide-only” describes the editable SVG roster. A PPTX-backed mirror may also carry tool-only structural sidecars such as `source_themes.json` and `native_payloads.json.gz`; they preserve exact reachable Theme plus supported opaque restoration payloads/attribute records and are not page prototypes or AI authoring inputs. Semantic Chart/Table JSON always stays inline in its SVG marker.
 
 **How a mirror-authored workspace is consumed**: source-to-workspace `replication_mode: mirror` is a capability, not a project choice. Strategist inspects the actual prototypes, current content, and any explicit instruction, then decides which pages to select, repeat, skip, or reorder and whether literal, structural, or visual-only reuse is appropriate. Literal reuse copies a complete prototype and edits only allowed visible text values while preserving decoration, sprite crops, geometry, and normalized structured declarations. This never requires the source page count or order.
 
@@ -274,7 +300,7 @@ After generation, both scopes run [`svg_quality_checker.py`](../skills/ppt-maste
 | `library` (default) | `skills/ppt-master/templates/<kind>/<id>/` | Create Brand/Create Style: N/A; Create Layout/Create Deck: optional for one Master, mandatory for multiple Masters | Register in the matching `brands_index.json`, `styles_index.json`, `layouts_index.json`, or `decks_index.json` after validation |
 | `project` | `projects/<name>/` | Same kind-specific review behavior | Skip global index registration |
 
-Library registration makes the template **selectable** in the Default Stage-1 template controls and discoverable in chat because both read the same index. For project scope or an exact handoff, supply the workspace root, for example `use this template: projects/<name>/`; this initializes template mode, exactly one supplied root is preselected, multiple supplied roots remain unselected candidates, and an unregistered root remains labelled `explicit`. A project workspace can also be migrated or reused elsewhere because its core shape is identical; register it only if it is placed in the library and should appear in the library catalog.
+Library registration makes the template **selectable** in the Default Stage-1 template controls and discoverable in chat because both read the same index. For project scope or an exact handoff, supply the workspace root, for example `use this template: projects/<name>/`; this initializes template mode, exactly one supplied root is preselected, multiple supplied roots remain unselected candidates, and an unregistered root remains labelled `explicit`. A project root remains directly reusable by another project and contributes every qualified spec it exposes. Moving one contribution into the single-kind library requires placing its unchanged spec body at that library workspace's bare `templates/design_spec.md` path and registering it.
 
 When a Deck/Layout template is selected, Strategist automatically authors the page/prototype plan. It may use the whole roster or a subset, repeat or reorder prototypes, and reorganize content where needed. `strict` / `adaptive` remain internal exporter values and do not appear as confirmation options.
 
@@ -294,11 +320,11 @@ Brand/Style use is intentionally different: both keep authored content Slide-loc
 
 `exports/<id>_template_preview.pptx` is review evidence created by Create Template when requested or required. It is not the template input; generation always consumes the workspace root.
 
-Microsoft PowerPoint is the acceptance target for Master/Layout behavior. Keynote, WPS, and LibreOffice can open PPTX files but may normalize template structure or load a large mirror roster of unused Layouts more slowly.
+Microsoft PowerPoint is the acceptance target for Master/Layout behavior. Keynote, WPS, and LibreOffice can open PPTX files but may normalize template structure.
 
 ### What a derived template workspace looks like
 
-Library and project scopes use the same core structure; substitute either `skills/ppt-master/templates/<kind>/<id>/` or `projects/<name>/` for `<template_workspace>`:
+Library and project scopes use the same spec schema and asset routing; a library workspace uses a bare spec while a shared project root uses qualified specs. Substitute either `skills/ppt-master/templates/<kind>/<id>/` or `projects/<name>/` for `<template_workspace>`:
 
 Brand and Style stop at `templates/design_spec.md` (plus real Brand assets when
 present); they do not create the SVG or `exports/` rows shown above.
@@ -333,16 +359,17 @@ nor allowed.
 ### Library registration vs project placement
 
 - **Library scope (`library`, default)** writes the workspace under `skills/ppt-master/templates/<kind>/<id>/` and registers it globally.
-- **Project scope (`project`)** writes the same portable workspace at `projects/<name>/` and skips registration.
+- **Project scope (`project`)** writes a qualified spec at `projects/<name>/templates/design_spec.<kind>.<id>.md` and skips registration, so one project root can accumulate one contribution of every kind over separate runs and hand the complete bundle to any project that points at that root. Layout owns the active roster when Layout and Deck coexist.
 
 The result is not a private or reduced project-only format. Supplying an exact
 workspace root adds it to the Step-3 candidate input, defaults Stage 1 to
 template mode, and preselects that root only when it is the sole supplied root.
-Brand/Layout/Deck migrate with `templates/` plus any real package-owned
-`images/` and `icons/`; Style migrates only `templates/design_spec.md`, and
-unrelated project scaffolding is ignored. If a workspace moves into the
-library, run its kind-specific registration so discovery reflects the new
-location.
+Each distinct root migrates once with every qualified spec it exposes and any
+real package-owned `images/` and `icons/`; only the effective Layout-or-Deck SVG
+roster is installed;
+unrelated project scaffolding and `exports/` are ignored. If one contribution
+moves into the library, place it in a single-kind library workspace and run its
+kind-specific registration so discovery reflects the new location.
 
 ---
 
@@ -354,7 +381,7 @@ Common misconceptions to avoid:
 - **A template is not one undifferentiated "style skin".** Brand, Style, Layout, and Deck deliberately separate identity, direction/method, structure, and application so each segment can be reused or combined under an explicit ownership rule
 - **A template does not make content decisions for you.** The Strategist still decides per-page which layout to use and whether to extend a variant. Templates offer candidates, not predetermined results
 - **`fidelity` mode is not pixel-perfect copying.** Even with `literal` fidelity, the AI still strips noise and unnecessary repetition — geometry stays, redundancy goes
-- **`mirror` targets literal supported appearance and source topology, not byte-identical OOXML.** It inherits source import limitations and permits only mechanical normalization such as fixed-layer group expansion. Unsupported native objects keep their available SVG fallback or are reported; mirror never synthesizes replacement ownership.
+- **`mirror` targets literal supported appearance and each source Slide's reachable topology, not byte-identical OOXML.** It inherits source import limitations and permits only mechanical normalization such as inheritance completion and fixed-layer group expansion. Unsupported native objects keep their available SVG fallback or are reported; mirror never synthesizes replacement ownership.
 
 ---
 

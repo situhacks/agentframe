@@ -26,6 +26,10 @@ class TestStagingGuard(unittest.TestCase):
         out = guard.decide(p)
         self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "deny")
         self.assertIn("--dir", out["hookSpecificOutput"]["permissionDecisionReason"])
+        self.assertIn(
+            os.path.join(guard.ROOT, "system", "projects"),
+            out["hookSpecificOutput"]["permissionDecisionReason"],
+        )
 
     def test_init_with_dir_inside_skill_denied(self):
         p = payload(
@@ -166,6 +170,11 @@ class TestDoctorStrayDecks(unittest.TestCase):
             f.write(b"")
         issues = af.ppt_master_stray_issues(self.root)
         self.assertTrue(any("deck_20260709.pptx" in i for i in issues))
+
+    def test_system_projects_dir_is_issue(self):
+        os.makedirs(os.path.join(self.root, "system", "projects", "demo", "exports"))
+        issues = af.ppt_master_stray_issues(self.root)
+        self.assertTrue(any(i.startswith("system/projects:") for i in issues))
 
     def test_clean_tree_no_issues(self):
         self.assertEqual(af.ppt_master_stray_issues(self.root), [])

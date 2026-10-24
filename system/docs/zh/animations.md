@@ -85,7 +85,7 @@ OOXML，而不是嵌入视频。对象动画包括进入、强调、动作路径
 |---|---|---|
 | `on-click` | 每次单击显示一个内容组 | 由演讲者控制节奏的现场演示 |
 | `with-previous` | 页面出现时所有内容组同时入场 | 一次协调完成的整体入场 |
-| `after-previous`（默认） | 各内容组无需点击，按顺序自动出现 | 展厅循环、录屏走查和旁白 deck |
+| `after-previous`（默认） | 各内容组无需点击，按顺序自动出现 | 展台循环播放、逐步讲解和旁白 deck |
 
 `--recorded-narration` 不支持 `on-click`；带旁白或用于视频导出的 deck 应使用 `after-previous` 或 `with-previous`。
 
@@ -115,22 +115,23 @@ Wipe 方向名统一映射到 `entrance_wipe`；方向会保留为参数，而�
 
 ## 在确定动效后添加声音
 
-音效默认关闭。PPT Master 内置了全局 CC0 音效检索库，但不会在策略阶段或普通
+音效默认关闭。PPT Master 内置了全局 CC0 音效库，但不会在策略阶段或普通
 项目初始化时把它复制进项目。先完成 SVG 页面并确定视觉转场 / 对象动画；只有
-其中一个已确定的节拍确实需要听觉提示时，才检索并同步声音：
+其中一个已确定的节拍确实需要听觉提示时，才完整读取客观的
+[声音词汇表](../../skills/ppt-master/templates/sounds/sound-vocabulary.md)，选定一个
+准确 id 并同步声音：
 
 ```bash
-python3 skills/ppt-master/scripts/sound_sync.py list --query whoosh
 python3 skills/ppt-master/scripts/sound_sync.py \
   <project> bigsoundbank/1797 kenney-interface/click_001
 ```
 
-第二条命令只会把选中的文件复制到 `<project>/sounds/<namespace>/`。没有选中
-声音时，PPT Master 不创建项目 `sounds/` 目录，也不复制任何文件。
-`recommended` 只是便于检索的保守推荐集合，不会自动添加声音：
+该命令只会把选中的文件复制到 `<project>/sounds/<namespace>/`。没有选中声音时，
+PPT Master 不创建项目 `sounds/` 目录，也不复制任何文件。完整阅读词汇表后，可以
+用 CLI 缩小已经考虑过的名称、标签或语境范围，但它不负责判断适配性：
 
 ```bash
-python3 skills/ppt-master/scripts/sound_sync.py list --query recommended
+python3 skills/ppt-master/scripts/sound_sync.py list --query whoosh
 ```
 
 配置始终引用复制后的项目相对路径，不直接引用全局 `templates/sounds/` 路径，
@@ -161,6 +162,11 @@ python3 skills/ppt-master/scripts/sound_sync.py list --query recommended
 只有转场声音时可以使用稀疏 `animations.json`；页面级
 `transition.sound: null` 可清除继承的默认转场声音。导出前仍须校验。
 不要为了展示项目具备音效能力而强行添加声音。
+
+上述校验只能证明可编辑 PPTX 含有原生 cue，不能证明 PowerPoint 导出的 MP4
+音轨含有它。直接交付带旁白且含音效 cue 的视频时，应按
+[音频旁白与视频导出](./audio-narration.md)选择验收后的原生导出混音，或显式采用
+捕获系统音频的 PowerPoint 实时放映录制；两条路径不能叠加。
 
 ## 自定义具体对象
 
@@ -242,7 +248,8 @@ PPT Master 会严格校验动画设置：未知效果或 Start 模式、非法�
 | 静态结构 | 背景、Master/Layout 内容、placeholder 与页面框架保持静态 |
 | 不支持的对象 build | 不会从分组 SVG 推导段落/文字范围 build、自定义自由动作路径、原生 Chart/SmartArt 分步 build 或媒体播放命令 |
 | 输出路线 | 动画存在于从 `svg_output/` 生成的原生 PPTX；`svg_final/` 只是静态预览 |
-| 现有 PPTX 路线 | Template Fill 与 Native Enhance 保留源对象动画，不把它翻译成生成路线的动画模型 |
+| Edit Native PPTX | 通过 round-trip 工作区保留来源对象动画，不把它翻译成生成路线的动画模型 |
+| PPTX-to-SVG 回导 | 只重建当前注册表内具有精确原生时长且可唯一映射到顶层 group 的记录；高级/build/media timing 保留诊断 |
 | 播放兼容性 | Microsoft PowerPoint 桌面版是主要验证目标；Keynote、WPS、LibreOffice 与较旧 Office 可能重新映射或忽略个别效果 |
 
 完整 CLI 说明见 [`svg-pipeline.md`](../../skills/ppt-master/scripts/docs/svg-pipeline.md)。精确效果定义、sidecar 要求、锚点回退逻辑与 OOXML 回读规则见[动画执行规范](../../skills/ppt-master/references/animations.md)。

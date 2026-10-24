@@ -219,7 +219,6 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> R<i32> {
         Cmd::Open { cmd } => crate::open::run(ctx, cmd),
         Cmd::Brief { json, write } => crate::brief::cmd_brief(ctx, json, write),
         Cmd::Close { slug, force } => crate::close::cmd_close(ctx, &slug, force),
-    },
         Cmd::Index { cmd } => crate::index::cmd_index(&ctx.root, &cmd),
         Cmd::Search { query, limit, json } => crate::index::cmd_search(&ctx.root, &query, limit, json),
     }

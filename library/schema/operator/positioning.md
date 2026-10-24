@@ -1,6 +1,6 @@
 # Positioning — canonical shape
 
-> **Canonical shape for `library/context/operator/positioning.md`.** The setup process ([`operator-context-setup.md`](../../process/operator-context-setup.md)) generates the operator's filled-in file from this shape; the bracketed prompts are the generation questions. The operator's file is gitignored (private).
+> **Canonical shape for `workspace/life/positioning.md`.** The setup process ([`operator-context-setup.md`](../../process/operator-context-setup.md)) generates the operator's filled-in file from this shape; the bracketed prompts are the generation questions. The operator's file is gitignored (private).
 
 The outward-facing strategic anchor for any user-voiced or strategic deliverable. Narrative + Content Pillars + Audience + POV Stances + Angles + Current Quarter Goals are the pieces that evolve as projects close and quarters turn.
 

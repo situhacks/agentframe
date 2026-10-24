@@ -1,6 +1,6 @@
 # Profile — canonical shape
 
-> **Canonical shape for `library/context/operator/profile.md`.** The setup process ([`operator-context-setup.md`](../../process/operator-context-setup.md)) generates the operator's filled-in file from this shape; the bracketed prompts are the generation questions. The operator's file is gitignored (private).
+> **Canonical shape for `workspace/life/profile.md`.** The setup process ([`operator-context-setup.md`](../../process/operator-context-setup.md)) generates the operator's filled-in file from this shape; the bracketed prompts are the generation questions. The operator's file is gitignored (private).
 
 The operator-self file. Who you are in real life — biography, role, location, active projects, primary identity sources. Mostly static; updates are rare and almost always sync events from your primary source of truth, not authored content.
 

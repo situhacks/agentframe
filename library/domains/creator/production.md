@@ -11,7 +11,7 @@ Load the first column, then only what the second names. The third column is what
 | Continuity: what is coming up, where are we | `calendar.md` frontmatter + `af doctor studio` | `studio.md` on a fresh context or a strategy question | post folders, hooks, research |
 | He hands over recordings, footage or photos | [`media-intake.md`](../../process/media-intake.md) | [`library/assets/README.md`](../../assets/README.md) for the record schema | the studio at all; intake is shared |
 | A recording arrives to be edited | [`short-form-edit.md`](../../process/short-form-edit.md), the channel profile, the video design language the profile names | `hooks.md` for the hook check; `af search` for cutaways; `studio.md` when the piece needs a frame | other posts' `edit.md` |
-| Plan or script a post or a series | `studio.md`, [`positioning`](../../context/operator/positioning.md), [`voice`](../../context/operator/voice/README.md) | `hooks.md`, `series/{slug}.md`, `ideas.md` | research pulls |
+| Plan or script a post or a series | `studio.md`, [`positioning`](../../../workspace/life/positioning.md), [`voice`](../../../workspace/life/voice/README.md) | `hooks.md`, `series/{slug}.md`, `ideas.md` | research pulls |
 | Creator study or hook research | `research/whitelist.md` + the study section of `short-form-edit.md` | `hooks.md` to append | posts |
 | Schedule or publish a batch | the channel profile, `af studio stage` / `af studio post` | the calendar mirror step below | anything else |
 | Performance capture | [`performance-capture.md`](../../process/performance-capture.md), `performance.csv`, `hooks.md` | the post's `post.md` | renders |

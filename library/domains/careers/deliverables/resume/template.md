@@ -8,7 +8,7 @@ One submission-ready resume per application: the operator's real experience, sel
 
 - `jd-map.md` — requirements, experience map, coverage target. Draft only after its gap stop has cleared.
 - Career bank: `master-cv.md` (the only source of bullets), `profile.md` (contact header, exact strings), `proof-points.md` (every number cited), the active track file under `tracks/`.
-- Voice (`library/context/operator/voice/`) for any prose line.
+- Voice (`workspace/life/voice/`) for any prose line.
 - The board row's `ats` → export format and screen traits (table in the pack's `production.md`).
 
 ## Output Shape
@@ -41,7 +41,7 @@ exports: []   # filed export paths under resume/media/—required before readine
 
 ## Clean Pass
 
-Mandatory before verification, because recruiters auto-reject on AI tells. Run the voice clean pass (`library/context/operator/voice/README.md` step 3) and `python system/voice_lint.py <head>` over every rewritten bullet and any positioning line.
+Mandatory before verification, because recruiters auto-reject on AI tells. Run the voice clean pass (`workspace/life/voice/README.md` step 3) and `python system/voice_lint.py <head>` over every rewritten bullet and any positioning line.
 
 ## Readiness Criteria
 

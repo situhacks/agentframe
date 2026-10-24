@@ -10,7 +10,7 @@ Planning and production tracker for a video deliverable. It gives the agent enou
 - The project's plan/architecture if one exists.
 - Design Language if the video needs project-specific visual continuity.
 - `library/process/video-production.md`.
-- Operator Voice (load the voice system (`library/context/operator/voice/`) if the video includes user-voiced narration, captions meant to sound like the operator, or external-facing script copy; do not load for purely technical render/planning work).
+- Operator Voice (load the voice system (`workspace/life/voice/`) if the video includes user-voiced narration, captions meant to sound like the operator, or external-facing script copy; do not load for purely technical render/planning work).
 - Video capability references as needed:
   - `system/vendor/hyperframes/SKILL.md` for the upstream HyperFrames route and selected capability.
 
@@ -60,7 +60,7 @@ Generated media files, `video/renders/scenes/`, `video/renders/final/`, `edit/pr
 
 ## Clean Pass
 
-Only when the upstream HyperFrames `SCRIPT.md` carries narration, captions, or on-screen text in the operator's voice: run the voice clean pass (`library/context/operator/voice/README.md` step 3) and `python system/voice_lint.py <head>` on that prose when it is authored or substantively revised, not again at readiness. Other script prose, `STORYBOARD.md`, production fields, commands, frontmatter, code, and model prompt text get no extra pass.
+Only when the upstream HyperFrames `SCRIPT.md` carries narration, captions, or on-screen text in the operator's voice: run the voice clean pass (`workspace/life/voice/README.md` step 3) and `python system/voice_lint.py <head>` on that prose when it is authored or substantively revised, not again at readiness. Other script prose, `STORYBOARD.md`, production fields, commands, frontmatter, code, and model prompt text get no extra pass.
 
 ## Exceptions / Branches
 

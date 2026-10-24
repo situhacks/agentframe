@@ -12,7 +12,7 @@ Lives at `round-{N}-{name}/round-sheet.md`, scaffolded by `af pipe round`.
 
 Read these first; a sheet written without them repeats a failure the bank already recorded.
 
-- `library/context/operator/career/interview-playbook.md` — the standing cross-round reminders. Binding
+- `workspace/life/career/interview-playbook.md` — the standing cross-round reminders. Binding
   here, and **not restated**. Pull only the drill-set rows this round earns.
 - `proof-points.md` — every number cites a `pp-NNN`. An uncited number does not go in the room.
 - `interviewer-brief.md`, in this folder — who is in the room and what changes because of it.

@@ -23,7 +23,7 @@ Two layers:
 
 ## Corpus Boundary
 
-`CORPUS_ROOTS` in `system/indexer.py`: `workspace/`, `library/context/` minus the voice corpus, `library/assets/`, and `.claude/plans/`. Search finds what the operator made or lived. Machinery (`system/`, process files, templates, skills) is reached through the routers and catalogs, never searched. The schema skeletons in `library/schema/` sit outside the corpus, so a template never outranks the content it shapes.
+`CORPUS_ROOTS` in `system/indexer.py`: `workspace/` (life included, minus the voice corpus at `workspace/life/voice/`), `library/assets/`, and `.claude/plans/`. Search finds what the operator made or lived. Machinery (`system/`, process files, templates, skills) is reached through the routers and catalogs, never searched. The schema skeletons in `library/schema/` sit outside the corpus, so a template never outranks the content it shapes.
 
 ## Model And Fusion
 

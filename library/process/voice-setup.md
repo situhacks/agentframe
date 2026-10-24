@@ -1,6 +1,6 @@
 # Voice Setup
 
-Builds the operator's voice system the first time. Reached when the agent goes to load voice (`library/context/operator/voice/`) and finds it missing or unbuilt. Owns the initial build; [`voice-harvest`](../../.claude/skills/voice-harvest/SKILL.md) owns ongoing maintenance.
+Builds the operator's voice system the first time. Reached when the agent goes to load voice (`workspace/life/voice/`) and finds it missing or unbuilt. Owns the initial build; [`voice-harvest`](../../.claude/skills/voice-harvest/SKILL.md) owns ongoing maintenance.
 
 Run it as a guided session with the operator. Drive the sequence; don't dump it as a checklist.
 
@@ -9,11 +9,11 @@ Extract from existing writing FIRST, interview LAST. Self-reported style ("I wri
 
 ## The separation rule
 
-Build registers from reusable voice temperature and reader relationship, not destinations. Channel constraints live in `library/context/channels/{channel}/profile.md`; deliverable shape lives in templates; pair metadata keeps `register` separate from task `context`.
+Build registers from reusable voice temperature and reader relationship, not destinations. Channel constraints live in `workspace/life/channels/{channel}/profile.md`; deliverable shape lives in templates; pair metadata keeps `register` separate from task `context`.
 
 ## Sequence
 
-1. **Scaffold from the schema.** Generate `library/context/operator/voice/` from `library/schema/operator/voice/`: create the shared core; `registers/formal.md` and `registers/informal.md`; matching gold-corpus folders plus `aspiration/`; `pairs/`; `templates/`; and `intake/corpus/`. Generate from the shape — there is no example to copy.
+1. **Scaffold from the schema.** Generate `workspace/life/voice/` from `library/schema/operator/voice/`: create the shared core; `registers/formal.md` and `registers/informal.md`; matching gold-corpus folders plus `aspiration/`; `pairs/`; `templates/`; and `intake/corpus/`. Generate from the shape — there is no example to copy.
 
 2. **Gather samples** (any or all of three routes — all just writing for the agent to read; save raw to `voice/intake/corpus/`):
    - **Admired writing** — articles/posts the operator wishes they wrote. Aspirational seed; gives the reference anchor and the first pairs.

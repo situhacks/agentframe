@@ -48,6 +48,6 @@ Short and current:
 Closeout starts when the operator says the project is done. In order:
 
 1. Run [`deliverable-harvest`](../../.claude/skills/deliverable-harvest/SKILL.md) and [`voice-harvest`](../../.claude/skills/voice-harvest/SKILL.md) on every published head they have not already covered, and [`career-harvest.md`](career-harvest.md) when the project produced a bankable win.
-2. Promote durable `knowledge/` entries to the operator's context layer: person facts from `knowledge/people/` to `library/context/people/{slug}/profile.md` ([`person-profile.md`](../schema/person-profile.md)), operator-level facts to `library/context/operator/`. Project-specific detail stays in the project.
+2. Promote durable `knowledge/` entries to the operator's life layer: person facts from `knowledge/people/` to `workspace/life/people/{slug}.md` ([`person-profile.md`](../schema/person-profile.md)), durable topic knowledge to its page in `workspace/life/knowledge/`. Project-specific detail stays in the project.
 3. Set `status: complete` and `completed_at` (or `cancelled` and `cancelled_at`), then move the folder to `workspace/projects/completed/{slug}/`.
 4. Append one `project_closed` line to `activity.md`.

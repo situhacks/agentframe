@@ -1,6 +1,6 @@
 # Career bank — schema
 
-Shapes for the operator's career capital under `library/context/operator/career/` (personal, gitignored — these schema files are the tracked mirrors). The careers pack (`library/domains/careers/pack.md`) consumes the bank; [`career-harvest`](../../../process/career-harvest.md) feeds it.
+Shapes for the operator's career capital under `workspace/life/career/` (personal, gitignored — these schema files are the tracked mirrors). The careers pack (`library/domains/careers/pack.md`) consumes the bank; [`career-harvest`](../../../process/career-harvest.md) feeds it.
 
 | Surface | Shape | Holds |
 |---|---|---|
@@ -14,4 +14,4 @@ Shapes for the operator's career capital under `library/context/operator/career/
 | `harvests/` | [harvests.md](harvests.md) | staging for raw material that arrived from elsewhere (work-instance exports, review PDFs, sent rubrics) and has not been distilled into the layers yet |
 | `employers/` | [employers.md](employers.md) | per-employer relationship page: leveling rubric, KPIs, cycle calendar, expectations (compiled truth + timeline) |
 
-Layer rule — one fact, one home: a number lives once in proof-points; bullets and stories cite its ID. First-time setup: copy each shape into `library/context/operator/career/` and fill, or run career-harvest against existing material.
+Layer rule — one fact, one home: a number lives once in proof-points; bullets and stories cite its ID. First-time setup: copy each shape into `workspace/life/career/` and fill, or run career-harvest against existing material.

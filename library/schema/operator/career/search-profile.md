@@ -1,6 +1,6 @@
 # Search Profile (schema)
 
-Copy to `library/context/operator/career/search-profile.md`. The active search: what the scout sweeps, what disqualifies a posting, and how interview rounds get captured. This is campaign config, not identity — identity lives in `profile.md` and the tracks.
+Copy to `workspace/life/career/search-profile.md`. The active search: what the scout sweeps, what disqualifies a posting, and how interview rounds get captured. This is campaign config, not identity — identity lives in `profile.md` and the tracks.
 
 ## Campaign
 

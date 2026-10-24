@@ -53,7 +53,7 @@ a coordinator's background rarely changes the plan. From the hiring manager on, 
   end up in one application folder disagreeing with each other.
 - **Freeform, never versioned.** No `-v{N}` filenames on either file; both are edited in place.
 - A person who becomes a durable relationship beyond this application is promoted to
-  `library/context/people/` by [`career-harvest`](../../../../process/career-harvest.md), not copied there by hand.
+  `workspace/life/people/` by [`career-harvest`](../../../../process/career-harvest.md), not copied there by hand.
 
 ## Draft Frontmatter Convention
 

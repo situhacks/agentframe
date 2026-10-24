@@ -1222,7 +1222,7 @@ def cmd_pipe_close_search(args):
     print(f"af pipe close-search: board closed ({reason})"
           + (f"; dropped {', '.join(dropped)}" if dropped else "; no live rows to drop"))
     print("\nJudgment (stays with the agent):")
-    print("  - Update the search status line in search-profile.md (library/context/operator/career/) to match.")
+    print("  - Update the search status line in search-profile.md (workspace/life/career/) to match.")
     print("  - Archive the terminal rows (af pipe archive <slug>) after career-harvest on anything worth banking.")
     print("  - The next 'af pipe save' reopens the search; note in that row why, if it is deliberate.")
 
@@ -2054,15 +2054,15 @@ def check_project(cdir):
     # Channels and stakeholders validation
     channels = fm_list(cfm, "channels")
     for c_slug in channels:
-        c_file = os.path.join(ROOT, "library", "context", "channels", c_slug, "profile.md")
+        c_file = os.path.join(ROOT, "workspace", "life", "channels", c_slug, "profile.md")
         if not os.path.isfile(c_file):
-            issues.append(f"{rel}: channel '{c_slug}' referenced in frontmatter but library/context/channels/{c_slug}/profile.md does not exist")
+            issues.append(f"{rel}: channel '{c_slug}' referenced in frontmatter but workspace/life/channels/{c_slug}/profile.md does not exist")
 
     stakeholders = fm_list(cfm, "stakeholders")
     for s_slug in stakeholders:
-        s_file = os.path.join(ROOT, "library", "context", "people", s_slug, "profile.md")
+        s_file = os.path.join(ROOT, "workspace", "life", "people", f"{s_slug}.md")
         if not os.path.isfile(s_file):
-            issues.append(f"{rel}: stakeholder '{s_slug}' referenced in frontmatter but library/context/people/{s_slug}/profile.md does not exist")
+            issues.append(f"{rel}: stakeholder '{s_slug}' referenced in frontmatter but workspace/life/people/{s_slug}.md does not exist")
         overlay_path = os.path.join(cdir, "knowledge", "people", f"{s_slug}.md")
         if not os.path.isfile(overlay_path):
             issues.append(f"{rel}: stakeholder '{s_slug}' per-project overlay missing at knowledge/people/{s_slug}.md")
@@ -2082,7 +2082,7 @@ PERSONA_WORD_BUDGET = 1000    # AGENTS.builder.md / AGENTS.operator.md
 PROCESS_WORD_BUDGET = 1500    # library/process/**/*.md
 TEMPLATE_WORD_BUDGET = 900    # */deliverables/*/template.md
 
-VOICE_LIVE = os.path.join(ROOT, "library", "context", "operator", "voice")
+VOICE_LIVE = os.path.join(ROOT, "workspace", "life", "voice")
 VOICE_SCHEMA = os.path.join(ROOT, "library", "schema", "operator", "voice")
 
 LINK_SCAN_GLOBS = ("AGENTS.md", "AGENTS.builder.md", "AGENTS.operator.md",
@@ -2119,7 +2119,7 @@ def dead_link_issues():
             local = os.path.normpath(os.path.join(os.path.dirname(path), bare))
             rooted = os.path.normpath(os.path.join(ROOT, bare))
             rel_target = os.path.relpath(local, ROOT).replace("\\", "/")
-            personal_context = rel_target.startswith("library/context/")
+            personal_context = rel_target.startswith("workspace/life/")
             if personal_context or rel_target.startswith("system/backlog"):
                 continue
             if not (os.path.exists(local) or os.path.exists(rooted)):

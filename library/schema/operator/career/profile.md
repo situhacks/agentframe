@@ -1,6 +1,6 @@
 # Profile — contact + targets (schema)
 
-Copy to `library/context/operator/career/profile.md` and fill. The contact block seeds the resume header verbatim — keep the strings exact and submission-ready.
+Copy to `workspace/life/career/profile.md` and fill. The contact block seeds the resume header verbatim — keep the strings exact and submission-ready.
 
 ## Contact (resume header, exact strings)
 

@@ -21,7 +21,7 @@ never moves into a round folder.
 - `jd-map.md` — scope confirmed against scope as posted. Scope that grew between the posting and the
   rounds is usually the strongest argument available.
 - `company-brief.md` — published bands on adjacent reqs, funding, size, anything that prices the seat.
-- `library/context/operator/career/profile.md` — comp targets and constraints, which set the floor.
+- `workspace/life/career/profile.md` — comp targets and constraints, which set the floor.
 
 ## Output Shape
 

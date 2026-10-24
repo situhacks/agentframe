@@ -79,7 +79,7 @@ When the watchlist names the screen: Workday Illuminate / Phenom — outcomes in
 
 ## Career sessions (internal, ongoing)
 
-Career work between cases is a session, not a project and never always-on. On career-management intent (coach prep, KPI inventory, promotion planning), load the career bank (`library/context/operator/career/`), employer page (`career/employers/{slug}.md` - rubric, KPIs, cycle calendar), and relevant coach/manager people pages (`library/context/people/`). On interview intent specifically, `career/interview-playbook.md` is the first read, before any prep drafting. Work the session; before closing, harvest durable output to its home: win -> career-harvest; stated expectation or rubric change -> employer-page timeline; relationship fact -> the person's page. Nothing persists in chat and no session folder exists.
+Career work between cases is a session, not a project and never always-on. On career-management intent (coach prep, KPI inventory, promotion planning), load the career bank (`workspace/life/career/`), employer page (`career/employers/{slug}.md` - rubric, KPIs, cycle calendar), and relevant coach/manager people pages (`workspace/life/people/`). On interview intent specifically, `career/interview-playbook.md` is the first read, before any prep drafting. Work the session; before closing, harvest durable output to its home: win -> career-harvest; stated expectation or rubric change -> employer-page timeline; relationship fact -> the person's page. Nothing persists in chat and no session folder exists.
 
 ## Internal cases (promotion, level moves)
 

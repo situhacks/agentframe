@@ -3,7 +3,7 @@
 One round, start to finish. Load this when a round is scheduled. It repeats per round; the loop is what
 makes round 3 cheaper than round 1 instead of more expensive.
 
-Read [`interview-playbook.md`](../../context/operator/career/interview-playbook.md) first, every round,
+Read [`interview-playbook.md`](../../../workspace/life/career/interview-playbook.md) first, every round,
 before drafting anything. It is binding and no artifact here restates it.
 
 ## 0. The carry-forward gate

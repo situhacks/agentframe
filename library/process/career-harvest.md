@@ -1,6 +1,6 @@
 # Career Harvest
 
-Move real wins into the career bank while the evidence is fresh. The bank (`library/context/operator/career/`, schema at `library/schema/operator/career/`) feeds resumes, promotion cases, and "recent wins" writeups; a win that never lands there is lost to the next application.
+Move real wins into the career bank while the evidence is fresh. The bank (`workspace/life/career/`, schema at `library/schema/operator/career/`) feeds resumes, promotion cases, and "recent wins" writeups; a win that never lands there is lost to the next application.
 
 Raw material that arrives from elsewhere and is not distilled yet (work-instance exports, review
 PDFs, a rubric an employer sent) stages in `career/harvests/` until this procedure reads it. It is a

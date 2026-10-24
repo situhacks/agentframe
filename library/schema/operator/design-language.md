@@ -1,6 +1,6 @@
 ﻿# Design Language — canonical shape
 
-> **Canonical shape for `library/context/operator/design-language.md`.** The setup process ([`operator-context-setup.md`](../../process/operator-context-setup.md)) generates the operator's filled-in file from this shape; the bracketed prompts are the generation values. The operator's file is gitignored (private).
+> **Canonical shape for `workspace/life/design-language.md`.** The setup process ([`operator-context-setup.md`](../../process/operator-context-setup.md)) generates the operator's filled-in file from this shape; the bracketed prompts are the generation values. The operator's file is gitignored (private).
 
 The system default for HOW any rendered deliverable looks (.docx, .pptx, future formats). Sibling to `voice.md` (verbal identity) and `positioning.md` (strategic identity).
 

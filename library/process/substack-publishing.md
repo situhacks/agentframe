@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Prepare Substack drafts from canonical project copy, hand off editor-only actions, and reconcile the live publication back into AgentFrame. Publication identity, credentials, and formatting conventions live in [`library/context/channels/substack/profile.md`](../context/channels/substack/profile.md).
+Prepare Substack drafts from canonical project copy, hand off editor-only actions, and reconcile the live publication back into AgentFrame. Publication identity, credentials, and formatting conventions live in [`workspace/life/channels/substack/profile.md`](../../workspace/life/channels/substack/profile.md).
 
 ## When To Load
 

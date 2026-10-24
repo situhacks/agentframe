@@ -1,6 +1,6 @@
 # Employers (schema)
 
-One file per employment relationship under `library/context/operator/career/employers/{slug}.md`. Use a compiled-truth header plus a dated, append-only timeline, mirroring people pages: resynthesize the header when the timeline outruns it. This is the "how do I get promoted here" substrate for a career session; the evidence stays in the bank.
+One file per employment relationship under `workspace/life/career/employers/{slug}.md`. Use a compiled-truth header plus a dated, append-only timeline, mirroring people pages: resynthesize the header when the timeline outruns it. This is the "how do I get promoted here" substrate for a career session; the evidence stays in the bank.
 
 ```markdown
 # {Employer} - {current title} (since {Month YYYY})

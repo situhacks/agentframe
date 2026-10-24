@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # job-scout
 
-Find real postings and feed the funnel. **Operator-invoked only — never scheduled, never auto-applying.** What counts as a good job lives in `library/context/operator/career/search-profile.md` (targets, dealbreakers, watchlist); this skill owns only the mechanics of finding and triaging.
+Find real postings and feed the funnel. **Operator-invoked only — never scheduled, never auto-applying.** What counts as a good job lives in `workspace/life/career/search-profile.md` (targets, dealbreakers, watchlist); this skill owns only the mechanics of finding and triaging.
 
 ## Two modes
 

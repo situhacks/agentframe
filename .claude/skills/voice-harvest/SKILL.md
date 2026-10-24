@@ -4,8 +4,8 @@ version: 0.1.0
 description: |
   Extract the operator's voice signal from finished work and fit it into the
   voice system: annotated contrastive pairs (ACPs) in
-  library/context/operator/voice/pairs/, corpus promotion of user-voiced finals
-  into library/context/operator/voice/corpus/, voice-file patches
+  workspace/life/voice/pairs/, corpus promotion of user-voiced finals
+  into workspace/life/voice/corpus/, voice-file patches
   (anti-patterns, profile, identity, register overlays), and backlog
   recurrence watches when a voice issue recurs despite an existing rule or
   pair. Runs at ready or publish time on a user-voiced deliverable, at project
@@ -103,7 +103,7 @@ A MOVE note states the move in the present tense and may end with a short source
 
 When the harvested source includes a **published or operator-approved ready user-voiced final** (an essay that went live, a ready LinkedIn body + carousel copy), propose promoting it into the register's corpus:
 
-1. Read `library/context/operator/voice/corpus/README.md` (the rules: 3–5 per register, topical diversity, verbatim finals only, one provenance line, recency-weighted pruning) and the target register folder.
+1. Read `workspace/life/voice/corpus/README.md` (the rules: 3–5 per register, topical diversity, verbatim finals only, one provenance line, recency-weighted pruning) and the target register folder.
 2. Propose: the piece verbatim (reader-facing prose only—strip production notes, char targets, changelogs) + one provenance line (source path/URL + ready/publish date). If the register is at cap, name the piece it replaces and why (oldest / most topic-redundant).
 
 Agent drafts and cleaned intermediates never promote—only text the operator wrote or explicitly marked ready as final.

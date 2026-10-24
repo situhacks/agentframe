@@ -46,5 +46,5 @@ These are edited in place and are the current record. **This folder cites them; 
 them.** Anything learned in this round goes into `debrief.md`'s Promote block and from there back into
 the dossiers, so that round {round} + 1 starts from a current picture instead of re-deriving one.
 
-The standing playbook at `library/context/operator/career/interview-playbook.md` (repo root) is
+The standing playbook at `workspace/life/career/interview-playbook.md` (repo root) is
 binding and is not repeated here.

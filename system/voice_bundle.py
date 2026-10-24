@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Write the voice system to one file so a drafting turn loads it in one read.
 
-`library/context/operator/voice/README.md` names a dozen files to load before
+`workspace/life/voice/README.md` names a dozen files to load before
 any user-voiced prose: identity, profile, anti-patterns, the register, the
 matching pairs and template, and every corpus piece whole. Twelve reads get
 skipped, especially after a compaction; one does not. This module concatenates
@@ -36,7 +36,7 @@ import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VOICE_DIR = os.path.join(ROOT, "library", "context", "operator", "voice")
+VOICE_DIR = os.path.join(ROOT, "workspace", "life", "voice")
 OUT_DIR = os.path.join(ROOT, "system", "index", "voice")
 READ_LIMIT = 2000  # the Read tool's default line window
 

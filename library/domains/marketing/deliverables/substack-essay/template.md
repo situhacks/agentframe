@@ -6,9 +6,9 @@ A full-length essay for the operator's Substack publication — the long-form ho
 
 ## Inputs
 
-- **Voice**: mandatory — resolve a formal, informal, or base-plus-borrow recipe through `library/context/operator/voice/README.md`. Select it from the essay's audience, purpose, and operator direction, never from the fact that it publishes on Substack. Draft against the selected base corpus, not rules alone.
-- **Channel conventions**: `library/context/channels/substack/profile.md` (series/subtitle format, footer, subscribe CTA, image handling).
-- **Shape blueprint**: `library/context/operator/voice/templates/substack-essay.md` (two-beat title, the acts-in-order subtitle, the opening run, colon act headers, so-what subheaders, no act cross-references, the editor's-note convention for day-of news, the close, and the hand-edit loop). Load it with the voice.
+- **Voice**: mandatory — resolve a formal, informal, or base-plus-borrow recipe through `workspace/life/voice/README.md`. Select it from the essay's audience, purpose, and operator direction, never from the fact that it publishes on Substack. Draft against the selected base corpus, not rules alone.
+- **Channel conventions**: `workspace/life/channels/substack/profile.md` (series/subtitle format, footer, subscribe CTA, image handling).
+- **Shape blueprint**: `workspace/life/voice/templates/substack-essay.md` (two-beat title, the acts-in-order subtitle, the opening run, colon act headers, so-what subheaders, no act cross-references, the editor's-note convention for day-of news, the close, and the hand-edit loop). Load it with the voice.
 - **Source material** when the essay reports a real event: transcript, notes, photos. What only the operator witnessed stays an open slot (see Hard Constraints).
 - **Research Artifact** for any externally citable claim.
 
@@ -24,7 +24,7 @@ A full-length essay for the operator's Substack publication — the long-form ho
 
 - **Never fabricate event facts.** Attendance counts, durations, quotes, student/participant outcomes — if the source material doesn't state it, leave a `[FILL]` slot. (Earned: the first essay draft invented "thirty-odd students, three hours"; reality was twelve and two.)
 - **Open concrete** — a scene, the literal artifact, or a flat true statement. Never an abstraction, never "imagine".
-- **Metaphors are functional, not literary** — a metaphor earns its place only by making a hard idea easier. The operator's hand edit cuts the crafted image and keeps the spoken commonplace; the rule and its calibration live in `library/context/operator/voice/anti-patterns.md` § Mannered prose.
+- **Metaphors are functional, not literary** — a metaphor earns its place only by making a hard idea easier. The operator's hand edit cuts the crafted image and keeps the spoken commonplace; the rule and its calibration live in `workspace/life/voice/anti-patterns.md` § Mannered prose.
 - **Research earns one named term or one story per section.** Provenance (year, authors, sample size, the source's own example) and stat-spraying stay in the research artifact; the essay's authority is the operator's experience. A paragraph whose only job is to deliver a statistic gets cut, and a caveat the operator asked for is a clause, not a paragraph. (Earned: the ai-spend essay lost roughly half its citations in the operator's hand edit, and his review said "don't throw stats for the sake of stats".)
 - **The register test at every section**: would this paragraph sit inside the selected base register's corpus while satisfying any explicit borrow direction? Editorial-polished prose that would sit in an admired publication but not in the operator's own work is off-register.
 - Externally citable claims trace to the research artifact or a named source.
@@ -35,7 +35,7 @@ A full-length essay for the operator's Substack publication — the long-form ho
 
 ## Clean Pass
 
-**Run it on the first complete draft, before the operator ever sees it, not at readiness.** A draft surfaced with the pass still owed puts the operator's line edits onto un-swept prose, and from that point a broad pass washes his wording back to generic. Run the voice clean pass ([`voice/README.md`](../../../../context/operator/voice/README.md) step 3) with an operator sample, in a turn without the corpus exemplars loaded, then `python system/voice_lint.py <head>`. Readiness only verifies that it happened.
+**Run it on the first complete draft, before the operator ever sees it, not at readiness.** A draft surfaced with the pass still owed puts the operator's line edits onto un-swept prose, and from that point a broad pass washes his wording back to generic. Run the voice clean pass ([`voice/README.md`](../../../../../workspace/life/voice/README.md) step 3) with an operator sample, in a turn without the corpus exemplars loaded, then `python system/voice_lint.py <head>`. Readiness only verifies that it happened.
 
 ## Readiness Criteria
 

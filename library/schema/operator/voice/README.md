@@ -1,6 +1,6 @@
 # Voice — canonical shape (v5, register/channel separated)
 
-> **Canonical shape of the voice system.** [`voice-setup.md`](../../../process/voice-setup.md) generates the private `library/context/operator/voice/` tree from this shape.
+> **Canonical shape of the voice system.** [`voice-setup.md`](../../../process/voice-setup.md) generates the private `workspace/life/voice/` tree from this shape.
 
 > **NOT SET UP YET?** If these files still hold bracketed placeholders, run [`voice-setup.md`](../../../process/voice-setup.md). Do not draft against placeholders.
 
@@ -10,7 +10,7 @@ Load for any user-voiced text, regardless of destination: posts, essays, emails,
 
 Resolve two independent inputs:
 
-1. **Channel or deliverable context** — where the text will appear and what shape or platform constraints apply. Load the relevant `library/context/channels/{channel}/profile.md` and deliverable template when they exist.
+1. **Channel or deliverable context** — where the text will appear and what shape or platform constraints apply. Load the relevant `workspace/life/channels/{channel}/profile.md` and deliverable template when they exist.
 2. **Voice recipe** — how the operator should sound. A channel never selects this.
 
 Canonical recipe:

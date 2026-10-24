@@ -13,6 +13,6 @@ Stage flow: `saved → preparing → applied → interviewing → offer → acce
 
 ## Search
 
-The active campaign lives in `library/context/operator/career/search-profile.md` (targets, dealbreakers, and the watchlist that drives `job-scout` sweeps). Watch rule: any row with a deadline inside 14 days is the next action.
+The active campaign lives in `workspace/life/career/search-profile.md` (targets, dealbreakers, and the watchlist that drives `job-scout` sweeps). Watch rule: any row with a deadline inside 14 days is the next action.
 
 ## Notes

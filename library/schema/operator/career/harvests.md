@@ -1,6 +1,6 @@
 # Harvests (schema)
 
-Copy this note to `library/context/operator/career/harvests/README.md`.
+Copy this note to `workspace/life/career/harvests/README.md`.
 
 Raw career material that arrives from somewhere else and has not been distilled yet: a
 cross-instance export from the work AgentFrame, a performance-review PDF, a rubric an employer

@@ -7,7 +7,7 @@ pointers — consumers open the cited files before relying on them.
 
 Corpus (inclusion, not enforcement — whatever is indexed is the whole world
 `af search` sees): the personal layer only. workspace/ (projects, pipeline,
-studio), library/context/ (minus the voice corpus), library/assets/, and
+studio, and life/ minus the voice corpus), library/assets/, and
 .claude/plans/. System machinery (system/, library/process|deliverables|domains)
 and the schema skeletons in library/schema/ are routed by the AGENTS routers and
 their catalogs, never searched: search exists to find what the operator made or
@@ -52,8 +52,7 @@ INDEX_DIR_NAME = os.path.join("system", "index")
 DB_NAME = "vault.db"
 GOLDEN_NAME = "golden-set.yaml"
 
-CORPUS_ROOTS = ["workspace", os.path.join("library", "context"), os.path.join("library", "assets"),
-                os.path.join(".claude", "plans")]
+CORPUS_ROOTS = ["workspace", os.path.join("library", "assets"), os.path.join(".claude", "plans")]
 SKIP_DIRS_ANYWHERE = {
     "_archive", "_scratch", "__pycache__", "node_modules", "snapshots",
     "runs", "cache", "local", "dist", "out", "source", "references",
@@ -105,7 +104,7 @@ def iter_corpus(root):
                 # snapshot whose sources live in projects. Route loads it; the
                 # index skips it. The schema skeletons sit in library/schema/,
                 # outside CORPUS_ROOTS, so a template never outranks its content.
-                if d == "voice" and rel_dir.startswith("library/context"):
+                if d == "voice" and rel_dir == "workspace/life":
                     continue
                 pruned.append(d)
             dirnames[:] = pruned

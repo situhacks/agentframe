@@ -8,7 +8,7 @@ A short human-proof artifact carrying what the resume format cannot: one institu
 
 - `jd-map.md` (the requirement the letter answers) and `company-brief.md` (the cited institutional hook).
 - One story from the bank — roster-line selection, opening only the chosen arc.
-- Voice (`library/context/operator/voice/`) — the letter is fully user-voiced.
+- Voice (`workspace/life/voice/`) — the letter is fully user-voiced.
 
 ## Output Shape
 
@@ -37,7 +37,7 @@ exports: []
 
 ## Clean Pass
 
-Mandatory, because recruiters treat an AI-scented letter as a stronger negative signal than no letter at all. Run the voice clean pass (`library/context/operator/voice/README.md` step 3) and `python system/voice_lint.py <head>` on the first complete draft, before the operator sees it.
+Mandatory, because recruiters treat an AI-scented letter as a stronger negative signal than no letter at all. Run the voice clean pass (`workspace/life/voice/README.md` step 3) and `python system/voice_lint.py <head>` on the first complete draft, before the operator sees it.
 
 ## Readiness Criteria
 

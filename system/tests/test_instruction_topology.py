@@ -58,7 +58,7 @@ class InstructionTopologyCharacterizationTests(unittest.TestCase):
         production = text("library/domains/marketing/production.md")
         for pseudo_link in ("[voice]", "[positioning]"):
             self.assertNotIn(pseudo_link, production)
-        self.assertIn("[`voice`](../../context/operator/voice/README.md)", production)
+        self.assertIn("[`voice`](../../../workspace/life/voice/README.md)", production)
 
     def test_public_prose_templates_have_an_action_anchored_prewrite_gate(self):
         for rel in (
@@ -87,21 +87,16 @@ class InstructionTopologyCharacterizationTests(unittest.TestCase):
         self.assertIn("skip voice for private working text", operator)
         self.assertNotIn("voice/anti-patterns.md", operator)
 
-    def test_life_project_is_discoverable_private_and_lazy(self):
+    def test_life_layer_is_discoverable_private_and_not_a_project(self):
         operator = text("AGENTS.operator.md")
-        self.assertIn(
-            "| `workspace/projects/life/` | Conventional private project "
-            "for evolving personal and career-life context, decisions, research, and work |",
-            operator,
-        )
-        self.assertIn(
-            "python system/af.py new-project life --domain project-mgmt --name Life",
-            operator,
-        )
+        self.assertIn("| `workspace/life/` | The operator layer: ", operator)
+        self.assertIn("`workspace/life/` is the operator layer, not a project: "
+                      "the migration created it once", operator)
+        self.assertNotIn("new-project life", operator)
 
         ignore = text(".gitignore")
-        self.assertIn("workspace/projects/*", ignore)
-        self.assertNotIn("!workspace/projects/life", ignore)
+        self.assertRegex(ignore, r"(?m)^workspace/$")
+        self.assertNotIn("!workspace/", ignore)
 
     def test_model_invocable_skills_have_discoverable_descriptions(self):
         for name in MODEL_INVOCABLE_SKILLS:

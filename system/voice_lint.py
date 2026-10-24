@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Deterministic backstop for the zero-budget voice rules.
 
-`library/context/operator/voice/anti-patterns.md` carries the judgment. This lint
+`workspace/life/voice/anti-patterns.md` carries the judgment. This lint
 carries only what a regex can settle and what a diff can prove, so a late agent
 pass cannot ship them unnoticed:
 

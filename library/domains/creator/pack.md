@@ -24,7 +24,7 @@ This pack is the only artifact that knows creator work. The generic spine (`syst
 | Runbook | [`production.md`](production.md) | the per-post order of operations and the situation load map the Operator uses for creator work |
 | Edit route | [`short-form-edit.md`](../../process/short-form-edit.md) | footage-first production; shared, so a project can borrow it |
 | Intake route | [`media-intake.md`](../../process/media-intake.md) | how captures enter the shared media shelf; shared, never studio-only |
-| Channel profile | `library/context/channels/tiktok/profile.md` | platform constraints; a gitignored instance of the channel-profile shape |
+| Channel profile | `workspace/life/channels/tiktok/profile.md` | platform constraints; a gitignored instance of the channel-profile shape |
 | Deliverable templates | none | the `edit.md` shape lives in the edit route; a `script.md` is drafted against the generic deliverable shape and may be versioned; templates arrive only when a second post reaches for the same shape |
 | Doctor rules | none | the spine's studio checks (state validity, row and folder reconciliation, overdue slots, missing renders, capture due) suffice |
 
@@ -42,4 +42,4 @@ Two things are schema: the board and one `post.md` per post. Everything else is 
 
 ## Where intent lives
 
-Person over channel over post. `library/context/operator/positioning.md` holds the cross-channel narrative and stances. `workspace/studio/studio.md` holds this channel's why, niche, audience, formats, cadence, series roster and parked ideas. A post's `edit.md` holds one piece. Stances that stabilize in the charter promote into positioning through the update path positioning already declares.
+Person over channel over post. `workspace/life/positioning.md` holds the cross-channel narrative and stances. `workspace/studio/studio.md` holds this channel's why, niche, audience, formats, cadence, series roster and parked ideas. A post's `edit.md` holds one piece. Stances that stabilize in the charter promote into positioning through the update path positioning already declares.

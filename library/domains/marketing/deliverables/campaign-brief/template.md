@@ -7,7 +7,7 @@ Where the Business Brief framed the opportunity, the Campaign Brief frames the c
 ## Depends On
 
 - Business Brief ready (audience direction + success criteria become inputs; do NOT re-derive them)
-- `library/context/operator/positioning.md` loaded (for Key message anchoring)
+- `workspace/life/positioning.md` loaded (for Key message anchoring)
 
 ## Output Shape
 

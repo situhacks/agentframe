@@ -22,11 +22,11 @@ You are the operator's strategic partner, running work in `workspace/`. Files ar
 | `activity.md` | Material events; iteration narration belongs in the version chain's `changes_from_vN` |
 | `sources/` (+ `INDEX.md`), `knowledge/` | Raw immutable inputs; agent-distilled truth (schema: [`knowledge-base.md`](library/process/knowledge-base.md)) |
 | `af search` ([`system/indexer.py`](system/indexer.py)) | Cross-project retrieval over a derived cache, never truth |
-| `workspace/projects/life/` | Conventional private project for evolving personal and career-life context, decisions, research, and work |
+| `workspace/life/` | The operator layer: profile, positioning, voice, career bank, people, channels, life knowledge, plans, and open loops |
 | `workspace/pipeline/`, `workspace/studio/` | Careers funnel and short-form channel; runbooks in each pack's `production.md` |
 | [`system/backlog.md`](system/backlog.md) | System friction surfaced during any work |
 
-If `workspace/projects/life/` is absent and material needs durable continuity that no narrower project owns, scaffold it: `python system/af.py new-project life --domain project-mgmt --name Life`. Keep deliverable content out of `project.md`; defer reasons stay in the deliverable's frontmatter.
+`workspace/life/` is the operator layer, not a project: the migration created it once; do not scaffold it with `af new-project`. Durable personal or career-life material that no narrower project owns goes to its `sources/` and `knowledge/`. Keep deliverable content out of `project.md`; defer reasons stay in the deliverable's frontmatter.
 
 ## Routing Index
 
@@ -36,7 +36,7 @@ Infer the situation from the operator's goal and the project state, not from phr
 |---|---|---|---|
 | State or continuity request | `project.md` frontmatter + `af doctor` | the body for fresh-context onboarding; a head only when its content matters | unrelated deliverables, prior versions, completed projects |
 | Project formation (no folder yet) | the operator's brief and named inputs | [research guidance](library/process/research-and-signals.md); scaffold, then the [project-flow](library/process/project-flow.md) kickoff | completed projects unless referenced |
-| Deliverable drafting or iteration | **the template resolved for this deliverable** by the chain in [`deliverable-shape.md`](library/deliverables/_meta/deliverable-shape.md), [deliverable-versioning](library/process/deliverable-versioning.md), the tracker, the template's named inputs | [voice](library/context/operator/voice/README.md) for outward-facing operator prose; [positioning](library/context/operator/positioning.md) for strategic work | unrelated deliverables |
+| Deliverable drafting or iteration | **the template resolved for this deliverable** by the chain in [`deliverable-shape.md`](library/deliverables/_meta/deliverable-shape.md), [deliverable-versioning](library/process/deliverable-versioning.md), the tracker, the template's named inputs | [voice](workspace/life/voice/README.md) for outward-facing operator prose; [positioning](workspace/life/positioning.md) for strategic work | unrelated deliverables |
 | Domain production or delivery | the active pack's `library/domains/{domain}/production.md` | — | — |
 | Project closeout | the Closeout steps in [`project-flow.md`](library/process/project-flow.md) | the harvests it names | completed projects unless referenced |
 | Harvest at ready, publish, or closeout | [`voice-harvest`](.claude/skills/voice-harvest/SKILL.md) and [`deliverable-harvest`](.claude/skills/deliverable-harvest/SKILL.md), one shared source-read | the version trail, the published copy | edits outside the batched review |

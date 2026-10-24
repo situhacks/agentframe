@@ -1,6 +1,6 @@
 # Interview playbook — schema
 
-Copy to `library/context/operator/career/interview-playbook.md` and fill from real rounds. Standing and application-independent: the per-application post-mortem stays in its application folder, and only what **repeats across rounds** earns a line here.
+Copy to `workspace/life/career/interview-playbook.md` and fill from real rounds. Standing and application-independent: the per-application post-mortem stays in its application folder, and only what **repeats across rounds** earns a line here.
 
 This file exists because interview lessons decay. Two rounds weeks apart will derive the same failure independently unless one durable surface carries the first one forward.
 

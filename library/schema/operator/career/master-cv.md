@@ -1,6 +1,6 @@
 # Master CV (schema)
 
-Copy to `library/context/operator/career/master-cv.md`. The presentation layer: every role, all resume-ready bullets. Tailoring **selects** from here — it never writes new claims at draft time (new claims enter via career-harvest).
+Copy to `workspace/life/career/master-cv.md`. The presentation layer: every role, all resume-ready bullets. Tailoring **selects** from here — it never writes new claims at draft time (new claims enter via career-harvest).
 
 Per role:
 

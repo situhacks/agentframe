@@ -157,8 +157,7 @@ agentframe/
 │   ├── domains/              # project-mgmt, marketing, careers, creator
 │   ├── process/              # on-demand procedures, cataloged in README.md
 │   ├── schema/               # public shapes of the private context files
-│   ├── assets/               # design languages, logos, media shelf (instances gitignored)
-│   └── context/              # your private context (gitignored)
+│   └── assets/               # design languages, logos, media shelf (instances gitignored)
 ├── system/
 │   ├── af.py                 # the buttons
 │   ├── indexer.py            # af index and af search
@@ -169,14 +168,14 @@ agentframe/
 │   ├── vendor/               # vendored runtimes
 │   ├── docs/                 # PPT Master's upstream docs
 │   └── tests/                # the suite
-└── workspace/                # your projects, pipeline, and studio (gitignored)
+└── workspace/                # your life layer, projects, pipeline, and studio (gitignored)
 ```
 
 ## Privacy boundary
 
 The repository is public. The shapes travel; your content never does. These paths are gitignored:
 
-- `library/context/`: your positioning, profile, voice, career bank, people, and channels. The public shapes for these files live in `library/schema/`.
+- `workspace/life/`: your positioning, profile, voice, career bank, people, and channels, plus life knowledge, plans, and open loops. The public shapes for the context files live in `library/schema/`.
 - `workspace/projects/`, `workspace/pipeline/`, `workspace/studio/`: your projects and their deliverables.
 - `system/backlog.md`: the friction rows you and the agent append.
 - The instances under `library/assets/design-languages/`, `logos/`, `media/`, and `audio/`: client brands and your own recordings.

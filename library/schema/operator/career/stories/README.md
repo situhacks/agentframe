@@ -1,6 +1,6 @@
 # Stories (schema)
 
-One STAR+R arc per file under `library/context/operator/career/stories/{slug}.md`. **Line 1 is the ROSTER line** — selection scans only first lines and opens only the chosen arcs:
+One STAR+R arc per file under `workspace/life/career/stories/{slug}.md`. **Line 1 is the ROSTER line** — selection scans only first lines and opens only the chosen arcs:
 
 ```
 ROSTER: competency, competency, competency | one-line hook

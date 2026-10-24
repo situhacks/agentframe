@@ -7,7 +7,7 @@ Turn a captured posting into an evidence-backed tailoring plan: what the JD dema
 ## Inputs
 
 - `jd.md` in this application folder — the verbatim posting, the canonical input; never tailor from a paraphrase.
-- Career bank: `library/context/operator/career/master-cv.md` + `proof-points.md`; `stories/` roster lines only, opening just the 2–3 matching arcs.
+- Career bank: `workspace/life/career/master-cv.md` + `proof-points.md`; `stories/` roster lines only, opening just the 2–3 matching arcs.
 - The board row's `ats` value (drives format and screen-trait notes — see the pack's `production.md`).
 
 ## Output Shape (sections, in order)

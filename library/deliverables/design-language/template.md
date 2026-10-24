@@ -60,7 +60,7 @@ A shared language is a replayable package plus its imagery manifest, never a cop
 6. **Emphasis Devices** — each as name, job, never-combine rule.
 7. **Motif / Imagery** — only when earned; omit otherwise.
 8. **Treatment block** — the paste-once prompt block downstream image work consumes: the full visual treatment (palette, light, materials, mood, composition grammar) as generator-ready prose. Each `image-prompts-v{N}.md` copies it verbatim and adds per-image deltas.
-9. **Anti-patterns** — project-specific banned moves. System-wide bans live in `library/context/operator/design-language.md`.
+9. **Anti-patterns** — project-specific banned moves. System-wide bans live in `workspace/life/design-language.md`.
 
 Sections without earned content can stay short ("none for this project") rather than padded. No Components or Motion specs by default; a project that earns them puts them in the artifact body.
 

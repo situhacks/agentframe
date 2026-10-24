@@ -44,7 +44,7 @@ MeetCap (`~/Documents/MeetCap` by default; the app in the meetcap project's `rep
 2. File each through the standard ingest workflow above: copy into `sources/meeting-{date}-{slug}.md`, register in `sources/INDEX.md`, set frontmatter `project:` from `unassigned` to this project's slug.
 3. Distill decisions/actions into `knowledge/` as usual. Do not edit the MeetCap folder itself; copying is the durability act.
 
-**Person facts route project-first, always.** New facts about a person land in this project's `knowledge/people/{person-slug}.md` overlay — never directly in `library/context/people/`. Promotion to the global layer is a judgment call made at project closeout ([`project-flow.md`](project-flow.md)).
+**Person facts route project-first, always.** New facts about a person land in this project's `knowledge/people/{person-slug}.md` overlay — never directly in `workspace/life/people/`. Promotion to `workspace/life/people/{person-slug}.md` is a judgment call made at project closeout ([`project-flow.md`](project-flow.md)).
 
 ## Logs Are Born From Evidence
 

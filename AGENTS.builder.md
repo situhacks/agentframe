@@ -75,9 +75,9 @@ Group related changes into one commit. A commit that retires a template or chang
 
 | Path | Job |
 |---|---|
-| `workspace/` | Projects, the careers pipeline, the creator studio; Operator-owned |
+| `workspace/` | Life layer, projects, the careers pipeline, the creator studio; Operator-owned |
 | `library/deliverables/`, `library/domains/` | Shared templates and the `_meta` shape; the four packs |
-| `library/process/`, `library/schema/`, `library/assets/` | Procedures; public shapes of the private `library/context/`; design languages and media |
+| `library/process/`, `library/schema/`, `library/assets/` | Procedures; public shapes of the private `workspace/life/`; design languages and media |
 | `system/af.py`, `system/indexer.py`, `system/voice_*.py` | The buttons, `af search` over the derived cache in `system/index/`, the voice bundle and lint |
 | `system/hooks/`, `system/tools/` | Guards wired through `.claude/settings.json`; media, render, diagram, and export tools |
 | `system/vendor/`, `.claude/skills/` | Vendored runtimes; AgentFrame-owned skills |

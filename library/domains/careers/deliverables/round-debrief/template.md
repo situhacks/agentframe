@@ -12,7 +12,7 @@ Lives at `round-{N}-{name}/debrief.md`, beside the prep it grades.
 - The round's transcript, filed in `sources/` and registered in `sources/INDEX.md`. Written from the
   recording, not from memory.
 - `round-sheet.md` — what was planned, so the gap between plan and room is visible.
-- `library/context/operator/career/interview-playbook.md` — the standing cross-round patterns this
+- `workspace/life/career/interview-playbook.md` — the standing cross-round patterns this
   round gets tested against.
 
 ## Output Shape

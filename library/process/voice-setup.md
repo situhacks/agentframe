@@ -1,6 +1,6 @@
 # Voice Setup
 
-Builds the operator's voice system the first time. Reached when the agent goes to load voice (`library/context/operator/voice/`) and finds it missing or unbuilt. Owns the initial build; [`voice-mini-retro.md`](voice-mini-retro.md) owns ongoing maintenance.
+Builds the operator's voice system the first time. Reached when the agent goes to load voice (`library/context/operator/voice/`) and finds it missing or unbuilt. Owns the initial build; [`voice-harvest`](../../system/skills/voice-harvest/SKILL.md) owns ongoing maintenance.
 
 Run it as a guided session with the operator. Drive the sequence; don't dump it as a checklist.
 
@@ -33,6 +33,6 @@ Build registers from reusable voice temperature and reader relationship, not des
 
 ## Not this
 - One-time setup, not per-session. Once `voice/` is filled, this doesn't re-run.
-- Not a replacement for `voice-mini-retro` (that harvests corrections after deliverables ship).
+- Not a replacement for `voice-harvest` (that harvests corrections at ready, publish, and closeout).
 - No self-report-then-stop: extraction-first, interview-last, always.
 - Don't bloat pairs — one pair per distinct move, dedup from day one; the corpus, not the pairs, carries the imitation load.

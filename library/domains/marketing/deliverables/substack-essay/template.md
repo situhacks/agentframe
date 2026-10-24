@@ -42,4 +42,4 @@ A full-length essay for the operator's Substack publication — the long-form ho
 - All `[FILL]` / `[POV]` / `[NERD-NOD]` slots resolved or deliberately removed by the operator — no placeholder ships.
 - Operator approves after his voice pass.
 - Humanizer pass complete.
-- Ready-event mechanics per [`library/process/ready-event.md`](../../../../process/ready-event.md)—the voice mini-retro at readiness harvests this essay (pairs + corpus promotion once published).
+- Ready-event mechanics per [`library/process/ready-event.md`](../../../../process/ready-event.md)—the voice-harvest gate at readiness harvests this essay (pairs + corpus promotion once published).

@@ -50,7 +50,7 @@ Generated media files, `video/renders/scenes/`, `video/renders/final/`, `edit/pr
 - Appropriate verification ran:
   - HyperFrames: the selected upstream workflow's `npx hyperframes check` and render gates.
 - Known issues are fixed or explicitly accepted by the operator.
-- The active pack's delivery flow knows which video file will ship, when the deliverable feeds one.
+- The active pack's delivery route knows which video file will ship, when the deliverable feeds one.
 
 ## Feedback / Handoff
 

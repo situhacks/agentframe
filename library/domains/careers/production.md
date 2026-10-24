@@ -12,7 +12,7 @@ Operator-mode routing for `domain: careers` work. The board (`workspace/pipeline
 | 3 Research | `company-brief.md` per its template; depth matches stakes | template |
 | 4 Map | `jd-map.md`: honeypot scan → 3-tier requirements → experience map → **gap stop** → operator coverage choice | template |
 | 5 Reply | On an inbound contact, `correspondence/reply-to-{name}-{date}.md` per its template — declared inputs, five moves, call-questions block | template |
-| 6 Tailor | Draft materials declared in `materials:` (`resume/resume-v1.md`, `cover-letter/` only if required); offer to scaffold a proof-of-concept repo (`demo/`) via [`technical-build`](../../process/technical-build.md); humanizer pass on all user-voiced prose | templates + process |
+| 6 Tailor | Draft materials declared in `materials:` (`resume/resume-v1.md`, `cover-letter/` only if required); offer to scaffold a proof-of-concept repo outside AgentFrame, tracked by `demo/demo-v{N}.md`; humanizer pass on all user-voiced prose | templates + process |
 | 7 Verify | fill jd-map `## Verification`; fix findings before export or readiness | template |
 | 8 Export | `doc-export` skill → format by ATS (table below), file under the deliverable's `media/`, record in `exports[]` | `system/skills/doc-export/` |
 | 9 Ready | `af ready <slug> resume` (and `cover-letter`) — refuses without verification + filed exports | spine |
@@ -65,7 +65,7 @@ Freeform careers files are **not versioned**. No `-v{N}` filename on a brief, sh
 |---|---|---|
 | resume, cover-letter | pack templates + `doc-export` skill | PDF/DOCX per ATS table below, filed in `media/` + `exports[]` |
 | deck | [`deck-production`](../../process/deck-production.md) (PPT Master default); content doc versioned as `deck/deck-v{N}.md` | `.pptx` filed in `deck/media/` + `exports[]` (pack-declared exportable) |
-| demo | [`technical-build`](../../process/technical-build.md) conventions, thinned: repo lives outside AgentFrame; `demo/demo-v{N}.md` is the umbilical stub (repo path, scope, what it proves, run steps) | no exports gate; the repo link in the stub is the deliverable |
+| demo | the repo lives outside AgentFrame; `demo/demo-v{N}.md` records its path, scope, what it proves, and run steps | no exports gate; the repo link in `demo-v{N}.md` is the deliverable |
 
 | Board `ats` | Submit | Why |
 |---|---|---|

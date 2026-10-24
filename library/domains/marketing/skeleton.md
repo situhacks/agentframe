@@ -8,8 +8,7 @@ domain: {domain}
 
 # LIFECYCLE
 status: active
-current_phase: {phase}
-flow: {flow}
+current_phase: active
 last_activity: {ts}
 
 # DELIVERABLES

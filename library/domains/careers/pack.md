@@ -6,7 +6,6 @@ extension_fields: []
 verbs: [ready, version, doctor]
 exportable: [resume, cover-letter, deck]
 assembly_record: null
-flows: []
 ---
 
 # Careers domain pack

@@ -10,7 +10,7 @@ This file exists because interview lessons decay. Two rounds weeks apart will de
 
 Name the rounds this file is derived from, each with a date and a pointer to the full analysis. A playbook with no named rounds is a guess, not a playbook.
 
-- FILL-ME (date, company, round type, duration) → pointer to the retro or post-mortem
+- FILL-ME (date, company, round type, duration) → pointer to the round debrief
 
 ## The one rule
 

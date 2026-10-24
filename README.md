@@ -23,7 +23,6 @@ I built it for my professional and personal work over many weekends, with likely
 - [Architecture](#architecture)
 - [Repository map](#repository-map)
 - [Integrations](#integrations)
-- [Auditability](#auditability)
 - [Design constraints](#design-constraints)
 - [Contributing](#contributing)
 - [References and lineage](#references-and-lineage)
@@ -36,7 +35,7 @@ The first version of AgentFrame was a marketing system. It came from trying to r
 
 Then I kept using the marketing system for work that had nothing to do with marketing. I ran PowerPoint redesigns through it, made Word document deliverables, and did small research jobs by asking my coding agent to treat them as "campaigns." That worked surprisingly well, which made the useful part of AgentFrame obvious: it was not just the marketing workflow but the context organization. It was the way the system kept project state, versioned the work, and carried the right information into the next step.
 
-So I rebuilt AgentFrame around the smallest piece of work: projects. Marketing is still there, but now it is one domain pack beside project management and careers, while the core handles the things all of them share: context, state, deliverables, and the path between them. That rebuild also gave me the parts I care about most now, including long-horizon memory that can consolidate without forgetting, a voice system trained on my actual edits, and deliverables that keep a version trail.
+So I rebuilt AgentFrame around the smallest piece of work: projects. Marketing is still there, but now it is one domain pack beside project management and careers, while the core handles the things all of them share: context, state, deliverables, and the path between them. That rebuild also gave me the parts I care about most now, including long-horizon memory kept in plain files, a voice system trained on my actual edits, and deliverables that keep a version trail.
 
 The original marketing-only system is frozen at [agentframe-marketing](https://github.com/situhacks/agentframe-marketing). This repository is its successor.
 
@@ -48,7 +47,7 @@ AgentFrame keeps its context, working rules, and project state in plain files th
 
 - **Reconstruct the project from disk.** After a memory compaction, a provider switch, or a month-long hiatus, a fresh agent reads the project files and continues from the same state. You do not need to write a catch-up paragraph or upload the brief again.
 
-- **Keep sources and working knowledge separate.** Transcripts and briefs land in `sources/` and never get edited. The agent maintains what it has learned from them in `knowledge/`, and a consolidation pass archives resolved detail when the active context gets too big.
+- **Keep sources and working knowledge separate.** Transcripts and briefs land in `sources/` and never get edited. The agent maintains what it has learned from them in `knowledge/`, and resolved detail moves to an archive folder when the live files get too long.
 
 - **Load only what the task needs.** The stable root selects one task router; that router points to the project or system owner, and those files route to the process for the current step. Skills stay out of context until the work calls for them, so the workspace can get large without every chat carrying all of it.
 
@@ -61,7 +60,7 @@ AgentFrame keeps its context, working rules, and project state in plain files th
 - **Teach the voice system from real edits.** It reads complete pieces you have published, keeps reusable voice registers separate from channel rules, and compares agent drafts against your rewrites. A formal or informal voice can travel across posts, emails, decks, and essays, with an explicit blend when one register needs a controlled borrow from the other.
 
 <p align="center">
-  <img src=".github/readme-assets/voice-system.png" alt="How the voice system works in detail. Built from the per-register corpus of published pieces, the always-three files (identity, voice-profile, anti-patterns), a formal or informal register overlay selected independently from channel, and contrastive pairs. Every draft runs a four-pass method: content, corpus-first style, a separate anti-pattern and humanizer clean pass, and a register test. Human edits pass through a mini-retro gate; worthwhile deltas become new contrastive pairs that feed the system." width="880" />
+  <img src=".github/readme-assets/voice-system.png" alt="How the voice system works in detail. Built from the per-register corpus of published pieces, the always-three files (identity, voice-profile, anti-patterns), a formal or informal register overlay selected independently from channel, and contrastive pairs. Every draft runs a four-pass method: content, corpus-first style, a separate anti-pattern and humanizer clean pass, and a register test. Human edits are harvested at ready and publish; worthwhile deltas become new contrastive pairs that feed the system." width="880" />
 </p>
 
 ### 3. Keep state and automation deterministic
@@ -70,11 +69,13 @@ AgentFrame keeps its context, working rules, and project state in plain files th
 
 - **Keep a version trail for every deliverable.** Replacement-shaped revisions become immutable snapshots, the tracker or artifact folder identifies the current numeric head, and readiness gates run before use or sharing. When the deliverable needs a real file (e.g., PPTX, DOCX), the export is tracked too.
 
-- **Record what happened as part of the work.** Activity logs and version notes cover projects, while an append-only audit database records system changes. `af doctor` reports drift without silently fixing it.
+- **Record what happened as part of the work.** Activity logs and version notes cover projects, and git history covers the system. `af doctor` reports drift without silently fixing it.
 
 ### 4. Learn deliberately from finished work
 
-- **Feed finished work back into the system.** When a project closes, harvest passes compare agent drafts with the operator's manual edits and the friction logged along the way. They propose changes to templates, processes, or the voice corpus, but nothing updates itself automatically; at least one short human review step remains.
+- **Harvest at publish time.** When a deliverable goes ready or publishes, and once more when a project closes, two harvest passes compare the agent's drafts with your hand edits and the published copy. They propose template and voice changes in one review, and nothing changes until you approve it.
+
+- **Send friction to the backlog.** When a command refuses a legitimate shape or a rule misfires, the agent logs a row in the builder backlog instead of quietly working around it, so system fixes happen in a dedicated session.
 
 ### 5. Find anything you've ever written
 
@@ -102,10 +103,10 @@ AgentFrame keeps its context, working rules, and project state in plain files th
 4. Tell the agent: **"Start a new project."** The stable root routes project work to the Operator instructions; under the hood the state transition is:
 
    ```bash
-   python system/af.py new-project my-project --domain project-mgmt --flow open-flow
+   python system/af.py new-project my-project --domain project-mgmt
    ```
 
-   The agent proposes a plan scaled to your objective. Nothing governed is created unless the work needs it.
+   The agent proposes a plan scaled to your objective, and you narrow it. Knowledge files appear only when the work produces them.
 
 ### Modes
 
@@ -122,38 +123,33 @@ Three domain packs and two work topologies ship today.
 
 | Surface | What it is for | Default shape |
 |---|---|---|
-| **Open project** | The domain-neutral starting point for research, planning, building, writing, or analysis; use it for any objective the model and its tools can handle | `project-mgmt` + `open-flow`; no fixed phase ladder, no mandatory governance files |
-| **Governed project** | Longer engagements that benefit from a charter, RAID log, stakeholder map, decision log, and workback schedule | `project-mgmt` + opt-in governance flow |
-| **Marketing project** | Research, campaign architecture, copy, visuals, video, decks, publishing, and performance capture | `marketing` + open flow or an opt-in phase ladder |
-| **Life project** | A private, ongoing project for evolving personal and career-life context, decisions, research, and work | Lazily scaffolded `project-mgmt` + `open-flow`; no separate schema |
+| **Open project** | The domain-neutral starting point for research, planning, building, writing, or analysis; use it for any objective the model and its tools can handle | `project-mgmt`; no fixed phase ladder, no mandatory knowledge files |
+| **Marketing project** | Research, campaign architecture, copy, visuals, video, decks, publishing, and performance capture | `marketing`, with an optional campaign phase checklist |
+| **Life project** | A private, ongoing project for evolving personal and career-life context, decisions, research, and work | Lazily scaffolded `project-mgmt`; no separate schema |
 | **Career workspace** | Ongoing career context, internal progression, promotion evidence, and structured application cases | Career bank + calendar/pipeline + case folders |
 
 The open project is the default because most work fits inside a project shape before it needs anything more specialised. A frontier model can reason about and tailor the project for just about anything, so you do not have to design a domain pack every time. Packs are for the jobs you repeat often enough to justify a stronger shape.
 
-### Technical builds without splitting the brain
+### Projects that work in a code repository
 
-When a project turns into a proof of concept or an application, the code lives in its own repository while AgentFrame keeps the plan, sources, decisions, and build log. Once that repository is mature enough, it receives the context it needs and AgentFrame stops orchestrating the build.
+When a project works in a code repository, `project.md` points at it with one `repo:` key. The code and its history stay in that repository, while AgentFrame keeps the plan, sources, decisions, and deliverables.
 
 ## A real project, step by step
 
 The content changes between packs, but the project path stays familiar: bring the context in, version the work as it changes, deliver it through a gate, and keep what the next project should learn.
 
-### A governed project
+### A project-management project
 
-The project-management pack takes a charter and turns it into living context the agent maintains for months.
+The project-management pack is the default shape: sources come in, the agent keeps working knowledge current in `knowledge/`, and deliverables ship through the same versioned path.
 
 <table>
 <tr>
-<td width="50%" valign="top"><img src=".github/readme-assets/pm-walkthrough-01.jpg" alt="A 'new governed project' command scaffolding into a project folder tree" /><br/><sub><b>1 · Kickoff.</b> Tell the agent to start a new governed project. It scaffolds the workspace from the pack skeleton and files your charter into the project's <code>sources/</code>.</sub></td>
-<td width="50%" valign="top"><img src=".github/readme-assets/pm-walkthrough-02.jpg" alt="charter.md fanning out into four governance files" /><br/><sub><b>2 · Derive the knowledge base.</b> From the charter, the agent derives living context files under <code>knowledge/</code>: a RAID log, a stakeholder map, a decision log, and a workback schedule.</sub></td>
+<td width="50%" valign="top"><img src=".github/readme-assets/pm-walkthrough-04.jpg" alt="A current deliverable with its immutable v3/v2/v1 snapshot stack" /><br/><sub><b>1 · Draft deliverables.</b> Findings, memos, and decks are drafted in your voice from the deliverable library, and every replacement-shaped revision becomes an immutable <code>-v{N}</code> snapshot.</sub></td>
+<td width="50%" valign="top"><img src=".github/readme-assets/pm-walkthrough-05.jpg" alt="A ready deliverable passing a gate and exporting to a PowerPoint deck" /><br/><sub><b>2 · Deliver.</b> Deliverables pass readiness criteria before delivery is recorded, including deck exports in your own PowerPoint template when the destination needs a file.</sub></td>
 </tr>
 <tr>
-<td width="50%" valign="top"><img src=".github/readme-assets/pm-walkthrough-03.jpg" alt="A meeting transcript updating the RAID and decision logs, with resolved detail archived" /><br/><sub><b>3 · Maintain and consolidate.</b> Meeting transcripts land in <code>sources/</code>; the agent updates the RAID log, appends decisions, and re-plans the schedule. On long projects, a consolidation pass archives resolved items so active files stay lean without losing history.</sub></td>
-<td width="50%" valign="top"><img src=".github/readme-assets/pm-walkthrough-04.jpg" alt="A current deliverable with its immutable v3/v2/v1 snapshot stack" /><br/><sub><b>4 · Draft deliverables.</b> Findings, memos, and decks are drafted in your voice from the deliverable library, and every replacement-shaped revision becomes an immutable <code>-v{N}</code> snapshot.</sub></td>
-</tr>
-<tr>
-<td width="50%" valign="top"><img src=".github/readme-assets/pm-walkthrough-05.jpg" alt="A ready deliverable passing a gate and exporting to a PowerPoint deck" /><br/><sub><b>5 · Deliver.</b> Deliverables pass readiness criteria before delivery is recorded, including deck exports in your own PowerPoint template when the destination needs a file.</sub></td>
-<td width="50%" valign="top"><img src=".github/readme-assets/pm-walkthrough-06.jpg" alt="A closed project harvested into proposed template, process, and voice updates" /><br/><sub><b>6 · Learn.</b> Closeout harvests your manual edits and workflow friction into proposed template, process, and voice improvements.</sub></td>
+<td width="50%" valign="top"><img src=".github/readme-assets/pm-walkthrough-06.jpg" alt="A closed project harvested into proposed template and voice updates" /><br/><sub><b>3 · Learn.</b> Harvests at ready, publish, and closeout turn your manual edits into proposed template and voice improvements.</sub></td>
+<td width="50%" valign="top"></td>
 </tr>
 </table>
 
@@ -172,7 +168,7 @@ The marketing pack has the most visual production because it is where this works
 </tr>
 <tr>
 <td width="50%" valign="top"><img src=".github/readme-assets/walkthrough-05-published.png" alt="Publish" /><br/><sub><b>5 · Deliver.</b> Deterministic gates verify ready copy and landed exports before publishing is recorded.</sub></td>
-<td width="50%" valign="top"><img src=".github/readme-assets/walkthrough-06-retro.png" alt="Harvest retro" /><br/><sub><b>6 · Learn.</b> Harvest real edits and workflow friction into proposed voice, template, and process improvements.</sub></td>
+<td width="50%" valign="top"><img src=".github/readme-assets/walkthrough-06-retro.png" alt="A harvest pass proposing system changes" /><br/><sub><b>6 · Learn.</b> Harvest real edits into proposed voice and template improvements, one review per pass.</sub></td>
 </tr>
 </table>
 
@@ -204,11 +200,11 @@ This is the full capability catalog. AgentFrame does not rebuild every productio
 | Skill | What it does | Provenance |
 |---|---|---|
 | `agent-reach` | Read-only reach for sources the default toolchain can't fetch: Reddit, LinkedIn, X, YouTube transcripts, RSS, semantic search | Vendored |
-| `agentframe-structure` | Safely changes flows, deliverable types, defaults, and ownership boundaries | Internal |
+| `agentframe-structure` | Safely changes deliverable types, processes, and ownership boundaries | Internal |
 | `d2-diagrams` | Auto-laid-out graphs for regenerated topologies | Internal (pinned D2 binary vendored) |
 | `diagram-design` | 39 editorial diagram grammars as self-contained HTML/SVG; flattens to native PowerPoint shapes | Vendored |
 | `deep-research` | Architect → specialist → synthesis research on the agent's own tools | Internal (prompts adapted from upstream) |
-| `deliverable-harvest` | Mines finished projects for earned template and process improvements | Internal |
+| `deliverable-harvest` | Mines version trails and published copy for template improvements, applied after one review | Internal |
 | `deliverable-scaffolding` | Creates deliverable instances with the correct shape and frontmatter | Internal |
 | `doc-export` | Produces ATS-safe resume and cover-letter files keyed to the destination system | Adapted |
 | `docx` | Creates, inspects, and edits Word documents | Vendored |
@@ -218,9 +214,7 @@ This is the full capability catalog. AgentFrame does not rebuild every productio
 | `job-scout` | Sweeps public ATS feeds against the career search profile, login-free | Adapted |
 | `ppt-master` | Converts sources into designed SVG pages and native-editable PowerPoint decks | Vendored |
 | `pptx` | Inspects, validates, and performs native PowerPoint edits | Vendored |
-| `project-consolidate` | Archives stale project detail and promotes durable context | Internal |
-| `system-improvement` | Applies scoped system patches with verification and audit discipline | Internal |
-| `voice-harvest` | Turns finished work and edit deltas into corpus examples and contrastive pairs | Internal |
+| `voice-harvest` | Turns edit deltas and published finals into contrastive pairs, voice-file patches, and corpus examples | Internal |
 
 Vendored skills keep a skill-local `VENDOR.md` with the upstream source and refresh procedure, so pulling the latest community version is a documented step. The live index is [`system/skills/README.md`](system/skills/README.md).
 
@@ -234,23 +228,21 @@ All AgentFrame-owned. Each loads on demand when the work reaches it.
 | `deck-production` | Central deck routing with PPT Master as the default for new PowerPoint work |
 | `deliverable-versioning` | Head pointers, immutable snapshots, and revision judgment |
 | `diagram-production` | Diagram route selection, the native-shape deck handoff, and design-language brand projection |
-| `flow-authoring` | The standard for adding or reshaping project flows |
 | `humanizer-integration` | A calibrated humanization pass where a template calls for it |
 | `image-production` | Path selection across generated imagery, diagrams, and HTML visuals |
-| `knowledge-base` | Source ingestion, living knowledge files, archives, and consolidation rules |
+| `knowledge-base` | Source ingestion, living knowledge files, and archives |
 | `native-office-render` | Renders PPTX/DOCX to pixels or PDF through installed Microsoft Office — the only sanctioned renderer |
-| `ready-event` | Readiness mechanics and the post-ready judgment checklist |
+| `ready-event` | Readiness mechanics, the post-ready judgment checklist, and the voice-harvest gate |
 | `operator-context-setup` | First-run generation of positioning, profile, career, and voice surfaces |
 | `performance-capture` | Connector-first post metrics capture and the raw performance CSV shape |
 | `process-authoring` | The standard for reusable process files |
 | `project-activity` | The material-event trail and Attention items behind every project |
+| `project-flow` | The one project shape: kickoff plan, runway loop, tracker updates, and closeout |
 | `project-frontmatter` | Canonical project state, tracker schema, overrides, and drift checks |
 | `reference-grounded-deck-redesign` | Preserves an existing deck's geometry and native objects while applying named redesign deltas |
 | `research-and-signals` | Kickoff context scans and research-method selection |
 | `substack-publishing` | Draft preparation, editor handoff, and live-result reconciliation |
-| `technical-build` | External-repository orchestration and graduation |
 | `video-production` | Talking-head, HyperFrames, generated-asset, and hybrid video routes |
-| `voice-mini-retro` | The ready-time eligibility gate for harvesting meaningful voice edits |
 | `voice-setup` | Corpus mining, taste interview, and initial voice-system setup |
 
 The live catalog with load triggers is [`library/process/README.md`](library/process/README.md).
@@ -261,22 +253,21 @@ All AgentFrame-owned, shaped by real use.
 
 | Where | Templates |
 |---|---|
-| Shared (`library/deliverables/`) | design-language · image-prompts · video-spec · closeout-retro · system-retro · the generic `_meta` deliverable shape |
+| Shared (`library/deliverables/`) | design-language · image-prompts · video-spec · the generic `_meta` deliverable shape |
 | Marketing pack | body-copy · business-brief · campaign-architecture · campaign-brief · post-final · research-artifact · slide-copy · substack-essay |
-| Project-mgmt pack | charter · raid-log · decision-log · stakeholder-map · workback-schedule |
 | Careers pack | resume · cover-letter · jd-map · company-brief · correspondence · interviewer-brief · round-sheet · round-debrief |
 
 ## Architecture
 
 <p align="center">
-  <img src=".github/readme-assets/architecture-flow.svg" alt="AgentFrame architecture: a coding agent opens a conversation and takes the Operator or Builder persona. In Operator, project.md holds state alongside activity.md and the sources/knowledge substrate; the selected flow loads a process per step, which pulls skills on demand and produces deliverables in your voice, gated for readiness before use or sharing. Finished work harvests back into the Builder surface (templates, processes, domain packs, personas, voice corpus, builder backlog), which shapes future runs." width="760" />
+  <img src=".github/readme-assets/architecture-flow.svg" alt="AgentFrame architecture: a coding agent opens a conversation and takes the Operator or Builder persona. In Operator, project.md holds state alongside activity.md and the sources/knowledge substrate; project-flow.md loads a process per step, which pulls skills on demand and produces deliverables in your voice, gated for readiness before use or sharing. Finished work harvests back into the Builder surface (templates, processes, domain packs, personas, voice corpus, builder backlog), which shapes future runs." width="760" />
 </p>
 
 The structure follows a few rules that have kept it from turning into a second job to maintain:
 
-- **The default project is domain-neutral.** `project-mgmt/open-flow` contributes no domain fields and no mandatory governance ceremony.
+- **The default project is domain-neutral.** `project-mgmt` contributes no domain fields and no mandatory knowledge files.
 - **Specialization is additive.** Packs declare vocabulary, templates, valid verbs, and routes; the core engine stays blind to what a project is about.
-- **Files own working truth.** Markdown and media hold project state, context, decisions, and outputs. SQLite has exactly two sanctioned jobs: the append-only system-change audit, and a rebuildable search index that stays a derived cache, never truth.
+- **Files own working truth.** Markdown and media hold project state, context, decisions, and outputs. SQLite has exactly one sanctioned job: a rebuildable search index that stays a derived cache, never truth.
 - **Sources and knowledge are different things.** Immutable inputs live in `sources/`; distilled working context lives in `knowledge/`.
 - **Prose owns judgment; mechanisms guarantee invariants.** The agent decides what good work is. The CLI and hooks protect state, exports, and repeatable gates.
 - **Templates hold the reusable knowledge.** Skills and runtimes can be replaced without rewriting the deliverable library.
@@ -293,18 +284,18 @@ agentframe/
 │   ├── context/                 # operator, people, channel, career, and voice context
 │   ├── deliverables/            # shared deliverable templates
 │   ├── domains/                 # marketing, project-mgmt, careers
-│   ├── process/                 # flows and on-demand procedures
+│   ├── process/                 # the project flow and on-demand procedures
 │   └── assets/                  # logos and replayable design-language packages
 ├── system/
 │   ├── af.py                    # deterministic state-transition CLI
-│   ├── audit/                   # append-only system-change audit
 │   ├── hooks/                   # deterministic production guards
 │   ├── indexer.py               # hybrid cross-project retrieval behind af index / af search
+│   ├── logs/                    # gitignored af run log
 │   ├── skills/                  # owned and vendored capabilities
 │   ├── tests/                   # CLI, guard, and runtime tests
 │   └── tools/                   # local helpers and pinned tool binaries
 └── workspace/
-    ├── projects/                # open-flow and structured projects
+    ├── projects/                # projects, one shape for all
     └── pipeline/                # career board and case folders
 ```
 
@@ -318,21 +309,6 @@ AgentFrame runs locally, and Claude Code provides the model. External services a
 | PPT Master | Native-editable deck generation from source material and SVG |
 | HyperFrames | HTML-to-video composition and rendering |
 | Ollama | Optional local embedding model for cross-project search; without it, search runs keyword-only |
-
-## Auditability
-
-Every trail has one owner:
-
-| Trail | Lives in |
-|---|---|
-| Current project state | `project.md` / `application.md` frontmatter |
-| Material project events | `activity.md` |
-| What changed between versions | the version files themselves |
-| Low-volume system changes (template patches, runtime changes, migrations) | `system/audit/agentframe.db` |
-| Cross-project search hits | the underlying files themselves — results are pointers; the index is never cited as truth |
-| Schema, file, export, and pack-rule checks | `python system/af.py doctor`; it reports drift and never silently fixes it |
-
-Git carries the version history of the reusable system; personal work stays local and gitignored.
 
 ## Contributing
 

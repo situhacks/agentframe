@@ -6,12 +6,10 @@ Skills Claude discovers natively live in `.claude/skills/`: `agentframe-structur
 
 | Skill | Owns | Load when | Provenance |
 |---|---|---|---|
-| [`agentframe-structure/`](../../.claude/skills/agentframe-structure/) | Structural changes to flows, deliverable types, processes, and ownership boundaries | Adding, renaming, defaulting, retiring, or moving an AgentFrame structural object | Owned by AgentFrame |
+| [`agentframe-structure/`](../../.claude/skills/agentframe-structure/) | Structural changes to deliverable types, processes, and ownership boundaries | Adding, renaming, retiring, or moving an AgentFrame structural object | Owned by AgentFrame |
 | [`deliverable-scaffolding/`](deliverable-scaffolding/) | New deliverable folders, template files, and system registration | A genuinely new reusable deliverable type has been approved | Owned by AgentFrame |
-| [`system-improvement/`](system-improvement/) | Earned patches to agent-facing system rules with audit and validation discipline | Applying a template, process, persona, voice, profile, or positioning patch from observed friction | Owned by AgentFrame |
-| [`deliverable-harvest/`](deliverable-harvest/) | Deliverable-shape signal extraction and patch-candidate routing | Finished work or feedback should be mined for reusable deliverable-shape improvements | Owned by AgentFrame |
-| [`voice-harvest/`](voice-harvest/) | Voice-signal extraction into annotated contrastive pairs | Source material contains a person's voice signal worth adding to the voice system | Owned by AgentFrame |
-| [`project-consolidate/`](project-consolidate/) | Project dream pass, governance archive, truth recompilation, and people promotion | `af doctor` reports consolidation due or the operator requests a project consolidation | Owned by AgentFrame |
+| [`deliverable-harvest/`](deliverable-harvest/) | Deliverable-shape extraction into template patches, local promotions, and backlog watches, applied after one batched review | A shaped deliverable goes ready or publishes, or a project closes out | Owned by AgentFrame |
+| [`voice-harvest/`](voice-harvest/) | Voice-signal extraction into pairs, voice-file patches, corpus promotions, and backlog watches, applied after one batched review | A user-voiced deliverable goes ready or publishes, a project closes out, or the operator asks for a voice pass | Owned by AgentFrame |
 | [`deep-research/`](../../.claude/skills/deep-research/) | Architect/specialist/synthesis research workflow with grounded citations | A question needs multi-angle investigation beyond a bounded lookup | Owned by AgentFrame; prompts lifted from upstream (see [`deep-research/PROVENANCE.md`](../../.claude/skills/deep-research/PROVENANCE.md)) |
 | [`doc-export/`](doc-export/) | ATS-safe PDF/DOCX export and filing for career materials | A finished resume or cover-letter head must become submission files | Adapted from the operator's extern kit (see [`doc-export/VENDOR.md`](doc-export/VENDOR.md)) |
 | [`job-scout/`](job-scout/) | Public-ATS job discovery and recency-first triage | The operator requests role discovery against the career search profile | Adapted from the operator's extern kit find-job skill |
@@ -29,4 +27,4 @@ Skills Claude discovers natively live in `.claude/skills/`: `agentframe-structur
 
 A capability one project needs once is pulled into that project (the mechanics vendored into its folder or scratchpad), not packaged here. A skill earns a row when a second project reaches for the same mechanics; until then the catalog stays small enough to read.
 
-For vendored skills, use each skill-local `VENDOR.md` as the canonical refresh procedure. After a vendor refresh, run the targeted smoke test and append a `system_changes` row through `system/audit/writer.py`.
+For vendored skills, use each skill-local `VENDOR.md` as the canonical refresh procedure. After a vendor refresh, run the targeted smoke test.

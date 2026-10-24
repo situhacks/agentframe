@@ -24,9 +24,8 @@ The durable product is the deliverable library. Harness machinery is scaffolding
 | Situation | Load First | Do Not Touch |
 |---|---|---|
 | Builder session start | [`system/builder-backlog.md`](system/builder-backlog.md), then the specific files named by the task | Project content unless the task is a schema/migration job |
-| Flow, deliverable-type, or process-structure change | [`.claude/skills/agentframe-structure/SKILL.md`](.claude/skills/agentframe-structure/SKILL.md), then the authoring standard/reference it routes to | Project content unless the task is a schema/migration job |
-| Persona/rule/template/process change | Existing target file, nearby pattern files, [`system/audit/README.md`](system/audit/README.md) if logging/querying is needed | Project deliverables |
-| Audit/telemetry work | [`system/audit/README.md`](system/audit/README.md), `system/audit/schema.sql`, relevant audit modules/tests | Markdown project content except fixtures |
+| Deliverable-type or process-structure change | [`.claude/skills/agentframe-structure/SKILL.md`](.claude/skills/agentframe-structure/SKILL.md), then the authoring standard/reference it routes to | Project content unless the task is a schema/migration job |
+| Persona/rule/template/process change | Existing target file, nearby pattern files | Project deliverables |
 | Deliverable drafting, iteration, or review requested | Stop and read [`AGENTS.operator.md`](AGENTS.operator.md); it governs that task | Using Builder rules to draft project deliverables |
 | Need a capability, process, or deliverable type and unsure one exists | The matching catalog: [`system/skills/README.md`](system/skills/README.md) (skills), [`library/process/README.md`](library/process/README.md) (processes), `library/deliverables/` + domain packs (templates) — then the named file | Reinventing a capability, process, or template a catalog row already provides |
 | Task-class mismatch | Modes table below | Continuing under the wrong router |
@@ -40,11 +39,11 @@ Load only what the task needs. If a file is historical, read it only when resear
 ### Architectural Truths
 
 1. **Agent + tools + constraints, separated.** Skills are generic capabilities. AgentFrame logic lives in personas, templates, process files, and project state, not inside generic skills.
-2. **Files as memory.** Markdown/frontmatter is the source of truth for project and system working state. SQLite has two sanctioned uses: append-only audit/telemetry, and the gitignored retrieval index (`system/index/`) — a derived cache, rebuildable, never truth.
+2. **Files as memory.** Markdown/frontmatter is the source of truth for project and system working state. SQLite has one sanctioned use: the gitignored retrieval index (`system/index/`) — a derived cache, rebuildable, never truth.
 3. **State over phrases.** Triggers should be defined by state and intent, not by quoted user phrases.
 4. **Templates are the product.** Prefer changes that make deliverables clearer, more reliable, or easier to reuse across agent platforms.
 5. **Two-mode routing is real.** Builder owns system architecture; Operator owns project execution.
-6. **Buttons own mechanics; prose owns judgment.** Project state transitions go through `system/af.py` (schema-bound, flow-agnostic). Scripts never encode flow logic, template knowledge, or creative decisions; the CLI and the frontmatter schema change together in one commit, with a `MIGRATION:` line.
+6. **Buttons own mechanics; prose owns judgment.** Project state transitions go through `system/af.py` (schema-bound, domain-agnostic). Scripts never encode phase logic, template knowledge, or creative decisions; the CLI and the frontmatter schema change together in one commit, with a `MIGRATION:` line.
 7. **Prose requests; mechanisms guarantee — for gates.** A step that must never be skipped is unfinished until something deterministic enforces it: a hook, an `af doctor` check, a lint that blocks. Calibration is not a gate: a threshold on how long a sentence runs only teaches the agent to aim at the number. Gate what must not be skipped; teach what must be judged.
 
 ### Rule-Design Discipline — the pre-write gate
@@ -52,9 +51,9 @@ Load only what the task needs. If a file is historical, read it only when resear
 Run these checks, in order, before writing any agent-facing file:
 
 1. **Who loads this?** A trigger or procedure is inert unless a parent loads the file and acts on it. Name the parent and confirm it calls this file at the right moment. If nothing loads it, the file is dead — fix the load-path, don't write a self-triggering rule.
-2. **Who decided?** A capability, mechanism, or rule enters on a named decision — operator direction, a plan file, or a retro action — not on accumulated incident evidence. Past-failure evidence strengthens a case but is never a prerequisite for building; what this check blocks is agent-invented rules nobody asked for. If current artifacts already behave correctly, leave them alone; remove stale or conflicting instructions before adding guidance.
+2. **Who decided?** A capability, mechanism, or rule enters on a named decision — operator direction, a plan file, or an approved harvest batch — not on accumulated incident evidence. Past-failure evidence strengthens a case but is never a prerequisite for building; what this check blocks is agent-invented rules nobody asked for. If current artifacts already behave correctly, leave them alone; remove stale or conflicting instructions before adding guidance.
 3. **Does it already exist?** Find the prior rule on this topic. If the topic has patch history, name why the prior shape failed — otherwise you are rewriting the same rule with sharper words. If the rule lives in another loaded file, patch the firing problem there; never duplicate.
-4. **Is it runtime-clean?** Cut provenance: history, dates, cluster IDs, rationale-for-future-readers, changelog sections. Runtime prose is present-tense operating instruction — situation, counter, self-check. Patch history belongs in `system/audit/agentframe.db`, a dedicated history file, or the retro/backlog artifact.
+4. **Is it runtime-clean?** Cut provenance: history, dates, cluster IDs, rationale-for-future-readers, changelog sections. Runtime prose is present-tense operating instruction — situation, counter, self-check. History belongs in the builder backlog; git holds the patch trail of tracked files.
 5. **Does every line earn its tokens?** Each line must help a future agent decide, execute, compare, or verify; if it is inferable from files already loaded for the task, link or cut. Workflow steps belong to the lazy-loaded owner (`library/process/*` for procedures, `library/deliverables/*/template.md` for deliverable rules); edit `AGENTS*.md` only when the route or a cross-cutting invariant is wrong. Check the file against its class size budget in the authoring standards — over budget, cut before adding. Lean and enough beats complete.
 
 ### Behavioral Defaults
@@ -78,8 +77,7 @@ Run these checks, in order, before writing any agent-facing file:
 5. Apply the smallest correct change.
 6. When the change retires, renames, or moves a concept, sweep the repo for stale references in the same commit; a deliberately deferred pocket gets a `BB-*` row, not silence.
 7. Run the cheapest useful verification: targeted search, lints, tests, or artifact smoke test.
-8. Log system changes in `system/audit/agentframe.db` when the change affects system behavior, schema, templates, process files, or personas, using a `change_type` from the canonical list in `system/audit/README.md`; extend that list deliberately, not per-row.
-9. Group related changes into one coherent commit, and when a commit retires a template or changes a schema, add a `MIGRATION:` line to the commit body saying what replaces it.
+8. Group related changes into one coherent commit, and when a commit retires a template or changes a schema, add a `MIGRATION:` line to the commit body saying what replaces it.
 
 ---
 
@@ -87,10 +85,10 @@ Run these checks, in order, before writing any agent-facing file:
 
 | Mode | Owns | Does Not Own |
 |---|---|---|
-| **Builder** | `system/`, `library/` system/process/template structure, `AGENTS.*.md`, specs, schema, hooks, runtime machinery | Drafting deliverables, delivering work, project retros, project frontmatter content updates |
-| **Operator** | `workspace/projects/` + `workspace/pipeline/`, deliverable drafting/feedback/ready/publish, project state, project retros | System architecture, schema, hooks, persona edits, runtime machinery (except retro-driven `deliverable-harvest` promotion into packs) |
+| **Builder** | `system/`, `library/` system/process/template structure, `AGENTS.*.md`, specs, schema, hooks, runtime machinery | Drafting deliverables, delivering work, project closeout, project frontmatter content updates |
+| **Operator** | `workspace/projects/` + `workspace/pipeline/`, deliverable drafting/feedback/ready/publish, project state, project closeout | System architecture, schema, hooks, persona edits, runtime machinery (except operator-approved `deliverable-harvest` patches into packs) |
 
-Modes are task-local ownership boundaries, not mutable repository state. The root `AGENTS.md` is a stable classifier and is never replaced by a mode file. This router governs system construction; [`AGENTS.operator.md`](AGENTS.operator.md) governs project execution. If ownership changes mid-task, read the other router before acting. Routine router changes are not audit events.
+Modes are task-local ownership boundaries, not mutable repository state. The root `AGENTS.md` is a stable classifier and is never replaced by a mode file. This router governs system construction; [`AGENTS.operator.md`](AGENTS.operator.md) governs project execution. If ownership changes mid-task, read the other router before acting.
 
 ---
 
@@ -101,13 +99,12 @@ Modes are task-local ownership boundaries, not mutable repository state. The roo
 | `workspace/projects/` | Project work and state, incl. per-project `sources/` + `knowledge/` substrate (schema: `library/process/knowledge-base.md`); Operator-owned except schema migrations |
 | `workspace/pipeline/`, `workspace/studio/` | Careers board (`pipeline.md`) + application sprints; creator board (`calendar.md`) + post folders; packs `library/domains/careers/`, `creator/`; Operator-owned |
 | `library/deliverables/` | Deliverable templates; main product surface |
-| `library/process/` | On-demand workflow procedures (incl. `flows/`); catalog of what each does + when to load at `library/process/README.md` |
+| `library/process/` | On-demand workflow procedures (incl. the one project shape, `project-flow.md`); catalog of what each does + when to load at `library/process/README.md` |
 | `library/domains/` | Domain packs (`marketing`, `project-mgmt`, `careers`, `creator`): skeletons, `pack.md`, optional `deliverables/`, `production.md` |
 | `library/context/` | Operator positioning/profile/voice (`operator/`), plus shared `channels/`, `people/`, `_meta/` |
 | `library/assets/` | Reusable assets: `logos/`, `design-languages/` packages (ppt-master identity + imagery manifest, optional `video/`), the operator's `media/` shelf, third-party `audio/` (schema: `library/assets/README.md`) |
-| `system/af.py` | Deterministic CLI (ready, publish, version, draft, new-project, doctor, pipe, index/search) |
+| `system/af.py` | Deterministic CLI (ready, publish, version, draft, new-project, doctor, pipe, index/search); appends one line per run to the gitignored `system/logs/af-runs.jsonl` |
 | `.claude/skills/` + `system/skills/` | Builder + Operator skills: AgentFrame-owned skills Claude discovers natively in `.claude/skills/`, vendored runtimes and the rest in `system/skills/`; catalog of what each does + when to load at `system/skills/README.md` |
-| `system/audit/` | SQLite audit/telemetry exception |
 | `system/indexer.py` + `system/index/` | Cross-project retrieval substrate behind `af index` / `af search`; the index DB is a gitignored derived cache, rebuildable, never truth |
 | `system/hooks/` | Deterministic guard logic (version safety, ppt-master staging / export promotion, pre-publish readiness, voice lint), wired through `.claude/settings.json` |
 | `system/builder-backlog.md` | Cross-project queue of Builder work (unresolved only) |

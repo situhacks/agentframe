@@ -21,12 +21,6 @@ class InstructionTopologyCharacterizationTests(unittest.TestCase):
         self.assertIn("read exactly one router", root)
         self.assertLessEqual(len(root.split()), 500)
 
-    def test_mode_swap_writer_retires_persona_copying(self):
-        writer = text("system/audit/writer.py")
-        self.assertIn("mode_swap is retired", writer)
-        self.assertNotIn("MODE_SWAP_PERSONA_FILES", writer)
-        self.assertNotIn("destination.write_bytes(source.read_bytes())", writer)
-
     def test_skill_catalog_carries_load_when_metadata(self):
         catalog = text("system/skills/README.md")
         self.assertIn("| Skill | Owns | Load when | Provenance |", catalog)
@@ -82,13 +76,12 @@ class InstructionTopologyCharacterizationTests(unittest.TestCase):
     def test_life_project_is_discoverable_private_and_lazy(self):
         operator = text("AGENTS.operator.md")
         self.assertIn(
-            "| `workspace/projects/life/` | Conventional private open-flow project "
+            "| `workspace/projects/life/` | Conventional private project "
             "for evolving personal and career-life context, decisions, research, and work |",
             operator,
         )
         self.assertIn(
-            "python system/af.py new-project life --domain project-mgmt "
-            "--flow open-flow --name Life",
+            "python system/af.py new-project life --domain project-mgmt --name Life",
             operator,
         )
         self.assertLessEqual(len(operator.split()), 1700)

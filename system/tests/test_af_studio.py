@@ -108,7 +108,7 @@ class TestNew(StudioBase):
 
     def test_new_project_refuses_studio_topology(self):
         with self.assertRaises(SystemExit):
-            quiet(af.cmd_new_project, SimpleNamespace(slug="x", domain="creator", flow="open-flow", name=None))
+            quiet(af.cmd_new_project, SimpleNamespace(slug="x", domain="creator", name=None))
 
     def test_posts_resolve_as_work_folders(self):
         slug = self.new(date="2026-10-01")

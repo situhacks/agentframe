@@ -55,8 +55,7 @@ Lives at `round-{N}-{name}/debrief.md`, beside the prep it grades.
 
 9. `## For the next round` — what changes about the plan, who is likely next, and what to ask that this
    round opened up. Where the application carries a `demo` material, say whether this round surfaced
-   anything worth a new `demo/demo-v{N}.md` and a commit to the repo behind it, per
-   [`technical-build`](../../../../process/technical-build.md).
+   anything worth a new `demo/demo-v{N}.md` and a commit to the repo behind it.
 
 ## Hard Constraints
 

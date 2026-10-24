@@ -20,7 +20,7 @@ Use this order:
 
 - Prefer state and intent over quoted phrases.
 - Phrase examples are allowed only as secondary examples.
-- If a trigger depends on project phase sequence, the project flow file should point here.
+- If a trigger depends on a project's phase, the project plan or the domain pack's production routing should point here.
 
 ## Catalog Row
 
@@ -29,12 +29,10 @@ Every process file has a row in [`README.md`](README.md) (what it owns + when to
 ## Ownership Rules
 
 - Shared procedures live in `library/process/`.
-- Flow-specific phase sequencing lives in `library/process/flows/`.
+- The project shape lives in `library/process/project-flow.md`; optional domain phase checklists live in the pack's `production.md`.
 - Deliverable-specific output requirements live in `library/deliverables/{type}/template.md`.
 - Cross-cutting invariants live in `AGENTS*.md`.
 
 ## Runtime Cleanliness
 
-Every section must help a future agent decide, execute, compare, or verify. Do not keep provenance, patch history, or retro narration in runtime process files unless the agent needs it to choose behavior.
-
-Log system-level process changes in `system/audit/agentframe.db`.
+Every section must help a future agent decide, execute, compare, or verify. Do not keep provenance or patch history in runtime process files unless the agent needs it to choose behavior; a process file's history is its git log.

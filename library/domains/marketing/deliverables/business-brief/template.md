@@ -23,7 +23,7 @@ A structured business document for skim, markup, and approval. Bullets and sub-b
 - **Business Goal** — tied to a quarterly goal from `positioning.md` Current Quarter Goals. Measurable.
 - **Constraints** — what can't change (timeline, budget, channel mix, banned framings).
 - **Risks + Open Questions** — never empty. If you can't think of risks, you don't understand the opportunity yet.
-- **Binary Success Criteria** — measurable yes/no outcomes the campaign retro will check against.
+- **Binary Success Criteria** — measurable yes/no outcomes the campaign is judged against once it ships.
 
 ## Hard Constraints
 
@@ -54,7 +54,7 @@ State transitions: `drafting` → `ready` (or `drafting` → `deferred`). Stakeh
 
 - Internal draft approved by operator
 - Frontmatter `status` set to `ready`
-- Campaign tracker updated per selected `flow`
+- Campaign tracker updated per [`project-flow.md`](../../../../process/project-flow.md)
 - When stakeholder feedback or handoff needs them, Word + PPT exports generated to `phase-2-strategy/business-brief/exports/`
 - Any stakeholder feedback the operator chose to seek has been applied or consciously left for a later version.
 - Final markdown saved with `last_updated` frontmatter set

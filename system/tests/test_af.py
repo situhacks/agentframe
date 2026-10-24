@@ -15,8 +15,7 @@ def days_ago(n):
     return (datetime.date.today() - datetime.timedelta(days=n)).isoformat()
 
 
-def make_project(root, slug, *, status="active", created_at, last_activity,
-                 last_consolidated=None, decision_log_lines=0):
+def make_project(root, slug, *, status="active", created_at, last_activity):
     cdir = os.path.join(root, "workspace", "projects", slug)
     os.makedirs(os.path.join(cdir, "knowledge"), exist_ok=True)
     fm = [
@@ -27,28 +26,34 @@ def make_project(root, slug, *, status="active", created_at, last_activity,
         "domain: marketing",
         f"status: {status}",
         "current_phase: active",
-        "flow: open-flow",
         f"last_activity: {last_activity}T10:00:00+00:00",
-        f"last_consolidated: {last_consolidated or 'null'}",
     ]
     af.write(os.path.join(cdir, "project.md"), "---\n" + "\n".join(fm) + "\n---\n")
-    if decision_log_lines:
-        af.write(os.path.join(cdir, "knowledge", "decision-log.md"),
-                 "\n".join(f"- decision {i}" for i in range(decision_log_lines)))
     return cdir
 
 
 class NewProjectDefaultTests(unittest.TestCase):
-    def test_cli_defaults_to_neutral_project_management_open_flow(self):
+    def test_cli_defaults_to_neutral_project_management(self):
         with tempfile.TemporaryDirectory() as tmp, \
-             patch.object(af, "AUDIT_DB", os.path.join(tmp, "audit.db")), \
+             patch.object(af, "RUN_LOG", os.path.join(tmp, "af-runs.jsonl")), \
              patch.object(af, "cmd_new_project") as command, \
              patch.object(sys, "argv", ["af", "new-project", "anything"]):
             af.main()
 
         args = command.call_args.args[0]
         self.assertEqual(args.domain, "project-mgmt")
-        self.assertEqual(args.flow, "open-flow")
+        self.assertFalse(hasattr(args, "flow"))
+
+    def test_scaffold_writes_no_flow_key_and_no_lessons_file(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.object(af, "PROJECTS", os.path.join(tmp, "workspace", "projects")), \
+             contextlib.redirect_stdout(io.StringIO()):
+            af.cmd_new_project(types.SimpleNamespace(slug="scaffold", domain="marketing", name=None))
+            cdir = os.path.join(tmp, "workspace", "projects", "scaffold")
+            cfm, _ = af.split_fm(af.read(os.path.join(cdir, "project.md")))
+            self.assertFalse(af.has_field(cfm, "flow"))
+            self.assertEqual(af.get_scalar(cfm, "current_phase"), "active")
+            self.assertEqual(sorted(os.listdir(cdir)), ["activity.md", "knowledge", "project.md", "sources"])
 
 
 class ProjectStateContractTests(unittest.TestCase):
@@ -78,7 +83,6 @@ class ProjectStateContractTests(unittest.TestCase):
             "domain: project-mgmt\n"
             f"status: {status}\n"
             "current_phase: active\n"
-            "flow: open-flow\n"
             "last_activity: 2026-07-19T10:00:00-07:00\n"
             f"{terminal}"
             "deliverables: {}\n"
@@ -87,6 +91,10 @@ class ProjectStateContractTests(unittest.TestCase):
 
     def test_minimal_active_index_needs_no_null_placeholders(self):
         self.write_project()
+        self.assertEqual(af.check_project(self.cdir), [])
+
+    def test_legacy_flow_and_build_repo_keys_are_silently_accepted(self):
+        self.write_project(terminal="flow: marketing-solo-flow\nbuild_repo: C:/code/app\n")
         self.assertEqual(af.check_project(self.cdir), [])
 
     def test_complete_requires_completed_at(self):
@@ -98,7 +106,7 @@ class ProjectStateContractTests(unittest.TestCase):
         self.assertTrue(any("completed_at is present but status is active" in i for i in af.check_project(self.cdir)))
 
 
-class DreamNoteTests(unittest.TestCase):
+class ActivitySizeNoteTests(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.root = self._tmp.name
@@ -107,72 +115,25 @@ class DreamNoteTests(unittest.TestCase):
         self.addCleanup(self._patch.stop)
         self.addCleanup(self._tmp.cleanup)
 
-    def test_fresh_active_project_gets_no_note(self):
-        cdir = make_project(self.root, "fresh", created_at=days_ago(3), last_activity=days_ago(1))
-        self.assertIsNone(af.dream_note(cdir))
-
-    def test_old_consolidation_on_active_project_fires(self):
-        cdir = make_project(self.root, "longrun", created_at=days_ago(90),
-                            last_activity=days_ago(2), last_consolidated=days_ago(45))
-        note = af.dream_note(cdir)
-        self.assertIsNotNone(note)
-        self.assertIn("45d since last consolidation", note)
-
-    def test_old_consolidation_on_idle_project_stays_quiet(self):
-        cdir = make_project(self.root, "idle", created_at=days_ago(90),
-                            last_activity=days_ago(30), last_consolidated=days_ago(45))
-        self.assertIsNone(af.dream_note(cdir))
-
-    def test_bloated_log_fires_regardless_of_age(self):
-        cdir = make_project(self.root, "bloated", created_at=days_ago(3),
-                            last_activity=days_ago(1), decision_log_lines=350)
-        note = af.dream_note(cdir)
-        self.assertIsNotNone(note)
-        self.assertIn("knowledge/decision-log.md 350 lines (cap 300)", note)
-
-    def test_non_active_project_never_fires(self):
-        cdir = make_project(self.root, "done", status="complete", created_at=days_ago(90),
-                            last_activity=days_ago(1), decision_log_lines=350)
-        self.assertIsNone(af.dream_note(cdir))
-
-    def test_null_last_consolidated_falls_back_to_creation_age(self):
-        cdir = make_project(self.root, "neverdreamed", created_at=days_ago(60),
+    def chatty(self, slug, lines, status="active"):
+        cdir = make_project(self.root, slug, status=status, created_at=days_ago(90),
                             last_activity=days_ago(1))
-        note = af.dream_note(cdir)
-        self.assertIsNotNone(note)
-        self.assertIn("60d since project creation", note)
+        af.write(os.path.join(cdir, "activity.md"),
+                 "".join(f"2026-07-01 — note: event {i}\n" for i in range(lines)))
+        return cdir
 
-    def test_creation_age_fallback_starts_at_30_days(self):
-        recent = make_project(self.root, "twentynine", created_at=days_ago(29),
-                              last_activity=days_ago(1))
-        due = make_project(self.root, "thirty", created_at=days_ago(30),
-                           last_activity=days_ago(1))
-        self.assertIsNone(af.dream_note(recent))
-        self.assertIn("30d since project creation", af.dream_note(due))
+    def test_fresh_active_project_gets_no_note(self):
+        cdir = make_project(self.root, "fresh", created_at=days_ago(90), last_activity=days_ago(1))
+        self.assertIsNone(af.activity_size_note(cdir))
 
     def test_activity_archive_threshold_is_200_lines(self):
-        cdir = make_project(self.root, "chatty", created_at=days_ago(3),
-                            last_activity=days_ago(1))
-        activity = os.path.join(cdir, "activity.md")
-        af.write(
-            activity,
-            "".join(f"2026-07-01 — note: event {i}\n" for i in range(200)),
-        )
-        self.assertIsNone(af.dream_note(cdir))
+        self.assertIsNone(af.activity_size_note(self.chatty("at-cap", 200)))
+        note = af.activity_size_note(self.chatty("over-cap", 201))
+        self.assertIn("activity.md 201 lines, over 200; archive the tail to knowledge/_archive/", note)
+        self.assertNotIn("skills", note)
 
-        af.write(activity, af.read(activity) + "2026-07-01 — note: event 200\n")
-        note = af.dream_note(cdir)
-        self.assertIsNotNone(note)
-        self.assertIn("activity.md 201 lines (cap 200)", note)
-
-    def test_bloated_project_md_fires(self):
-        cdir = make_project(self.root, "trackerheavy", created_at=days_ago(3),
-                            last_activity=days_ago(1))
-        path = os.path.join(cdir, "project.md")
-        af.write(path, af.read(path) + "\n".join(f"- plan line {i}" for i in range(300)))
-        note = af.dream_note(cdir)
-        self.assertIsNotNone(note)
-        self.assertIn("project.md", note)
+    def test_non_active_project_never_fires(self):
+        self.assertIsNone(af.activity_size_note(self.chatty("done", 400, status="complete")))
 
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -199,7 +160,7 @@ deliverables:
     last_updated: 2026-05-01
 ---
 
-> Rows archived from project.md by knowledge_consolidation passes.
+> Published rows archived from project.md.
 """
 
 
@@ -324,7 +285,6 @@ created_at: 2026-07-01
 domain: marketing
 status: active
 current_phase: active
-flow: open-flow
 last_activity: 2026-07-01T10:00:00+00:00
 deliverables:
   {row}:
@@ -746,7 +706,7 @@ class PublishCommandTests(unittest.TestCase):
             "---\n"
             f"name: {slug}\nslug: {slug}\nschema_version: {af.PROJECT_SCHEMA_VERSION}\n"
             f"created_at: 2026-07-19\ndomain: {domain}\nstatus: active\n"
-            "current_phase: active\nflow: open-flow\nlast_activity: 2026-07-19T10:00:00-07:00\n"
+            "current_phase: active\nlast_activity: 2026-07-19T10:00:00-07:00\n"
             f"deliverables:\n  {row}:\n    status: {status}\n    file: {rel}\n"
             "    last_updated: 2026-07-19\n---\n",
         )
@@ -879,7 +839,7 @@ class BinaryHeadTests(unittest.TestCase):
             "---\n"
             f"name: deckproj\nslug: deckproj\nschema_version: {af.PROJECT_SCHEMA_VERSION}\n"
             "created_at: 2026-08-12\ndomain: project-mgmt\nstatus: active\n"
-            "current_phase: active\nflow: open-flow\nlast_activity: 2026-08-12T10:00:00-07:00\n"
+            "current_phase: active\nlast_activity: 2026-08-12T10:00:00-07:00\n"
             f"deliverables:\n  session-deck:\n    status: drafting\n    file: {self.REL}\n"
             "    last_updated: 2026-08-12\n---\n",
         )
@@ -971,7 +931,6 @@ class LifecycleCompositionSmokeTests(unittest.TestCase):
     def test_new_project_through_publish_and_doctor(self):
         self.run_cli(
             "new-project", "lifecycle-smoke", "--domain", "project-mgmt",
-            "--flow", "open-flow",
         )
         self.run_cli(
             "draft", "lifecycle-smoke", "brief", "--file", "brief/brief-v1.md",

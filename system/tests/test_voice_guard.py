@@ -32,7 +32,7 @@ class GuardFixture(unittest.TestCase):
     def project(self, head_rel, plain_row=False):
         fm = [
             "name: vg-demo", "slug: vg-demo", "schema_version: 2026-07-19-v2", "created_at: 2026-09-01",
-            "domain: marketing", "status: active", "current_phase: active", "flow: open-flow",
+            "domain: marketing", "status: active", "current_phase: active",
             "last_activity: 2026-09-01T10:00:00+00:00", "deliverables:", "  essay:",
             "    status: drafting", f"    file: {head_rel}",
         ]

@@ -10,18 +10,18 @@ Before any nontrivial action, classify the current task and read exactly one rou
 
 | Task class | Read | Examples |
 |---|---|---|
-| Project execution | [`AGENTS.operator.md`](AGENTS.operator.md) | Project state, research, strategy, deliverables, delivery, retros, pipeline work |
+| Project execution | [`AGENTS.operator.md`](AGENTS.operator.md) | Project state, research, strategy, deliverables, delivery, closeout, pipeline work |
 | System construction | [`AGENTS.builder.md`](AGENTS.builder.md) | `system/` or `library/` architecture, templates, processes, skills, schemas, hooks, runtime, agent rules |
 
 The selected router governs that task. If the task class materially changes, stop and read the new router before continuing. Do not merge both routers into working context preemptively, and never rewrite this root file to change modes.
 
 ## Universal Invariants
 
-- **Files are memory.** Project Markdown/frontmatter is the source of truth for project state. SQLite has exactly two sanctioned uses: the append-only system audit, and the gitignored retrieval index (`system/index/`) — a derived cache, rebuildable, never truth.
+- **Files are memory.** Project Markdown/frontmatter is the source of truth for project state. SQLite has exactly one sanctioned use: the gitignored retrieval index (`system/index/`) — a derived cache, rebuildable, never truth.
 - **Buttons own mechanics.** Use `python system/af.py` for state transitions it owns. Do not recreate those transitions with hand edits.
 - **Named inputs must be read.** When a router, template, process, task, or user names an input, read it before relying on it. A link is a route, not loaded context.
 - **Lazy-load deliberately.** Read the smallest file set that resolves the task. Follow the selected router to catalogs and owners; do not load whole directories or historical material by default.
-- **Keep files single-purpose.** Put state, deliverable content, procedures, reusable capabilities, and audit history in their declared owners.
+- **Keep files single-purpose.** Put state, deliverable content, procedures, and reusable capabilities in their declared owners.
 - **Verify before claiming success.** Use the cheapest evidence proportionate to the risk: targeted searches, tests, schema checks, renders, or artifact inspection.
 - **Preserve operator work.** Treat existing edits and untracked files as user-owned unless the task clearly says otherwise.
 - **Say what you mean.** Every output, chat replies included: no mannered prose (a metaphor or flourish where a literal phrase exists, "a dial worth turning" for "a parameter worth varying"), no clause that props up a claim already made, one idea per paragraph. The model's drift is denser prose than the reader needs; when a literal phrase is available, use it. User-voiced text adds the operator's calibration in `library/context/operator/voice/`.

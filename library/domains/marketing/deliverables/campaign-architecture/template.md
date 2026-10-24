@@ -6,8 +6,7 @@ The full execution plan, post by post. Lives where the rubber meets the road: ev
 
 ## Depends On
 
-- **Standard Flow:** Campaign Brief ready + Research Artifact ready
-- **Solo Flow:** Concurrent Research Artifact (`phase-1-research/research-artifact-v{N}.md`)
+- Research Artifact ready, plus Campaign Brief ready when the plan has a strategy phase; a solo campaign drafts the Research Artifact (`phase-1-research/research-artifact-v{N}.md`) concurrently
 - `positioning.md` loaded (POV anchoring)
 - the `voice/pairs/` examples NOT loaded yet (this is structure, not output copy)
 
@@ -48,9 +47,9 @@ The full execution plan, post by post. Lives where the rubber meets the road: ev
 
 ## Draft Frontmatter Convention
 
-Standard deliverable frontmatter per `library/process/project-frontmatter.md`. Canonical file path depends on the selected flow:
-- Standard Flow: `phase-3-planning/campaign-architecture/draft-v{N}.md`
-- Solo Flow: `phase-1-research/campaign-architecture/draft-v{N}.md`
+Standard deliverable frontmatter per `library/process/project-frontmatter.md`. Canonical file path follows the plan's phase folders ([campaign phase checklist](../../production.md)):
+- With a strategy phase: `phase-3-planning/campaign-architecture/draft-v{N}.md`
+- Solo campaign: `phase-1-research/campaign-architecture/draft-v{N}.md`
 
 ## Readiness Criteria
 

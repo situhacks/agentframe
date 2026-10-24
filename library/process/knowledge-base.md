@@ -11,10 +11,9 @@ workspace/projects/{slug}/
 └── knowledge/             # Agent-OWNED, distilled truth (entity pages, decisions)
     ├── people/            # Per-project stakeholder overlay pages
     ├── meetings/          # Meeting notes and meeting index
-    ├── decision-log.md    # Dated append-only log of decisions
-    ├── raid-log.md        # Risk, Assumption, Issue, Dependency log
-    ├── workback-schedule.md  # Milestone WBS planned backward from deadlines
-    └── _archive/          # Dream-pass output: stale/closed entries
+    ├── decision-log.md    # Born on the first real decision (see below)
+    ├── raid-log.md        # Born on the first real risk (see below)
+    └── _archive/          # Stale or closed entries moved out of live files
 ```
 
 ## Storage Principles
@@ -40,21 +39,13 @@ When the operator pastes a new transcript, brief, or document:
 
 ### Pulling MeetCap transcripts
 
-MeetCap (`~/Documents/MeetCap` by default; the meetcap project's `build_repo` app is authoritative) drops speaker-attributed transcripts into a rolling folder — oldest deleted beyond `keep_last`, so an unpulled transcript can disappear. Speakers read `Me` / `Them` by default and `SPEAKER_NN` when clustering was switched on; the transcript's `diarized:` frontmatter says which, so `Them` is never silently assumed to be one person. When the operator references recent meetings ("check my recent transcripts", "from today's call"):
+MeetCap (`~/Documents/MeetCap` by default; the app in the meetcap project's `repo:` is authoritative) drops speaker-attributed transcripts into a rolling folder — oldest deleted beyond `keep_last`, so an unpulled transcript can disappear. Speakers read `Me` / `Them` by default and `SPEAKER_NN` when clustering was switched on; the transcript's `diarized:` frontmatter says which, so `Them` is never silently assumed to be one person. When the operator references recent meetings ("check my recent transcripts", "from today's call"):
 1. List that folder newest-first and confirm which transcript(s) match the meeting in question.
 2. File each through the standard ingest workflow above: copy into `sources/meeting-{date}-{slug}.md`, register in `sources/INDEX.md`, set frontmatter `project:` from `unassigned` to this project's slug.
 3. Distill decisions/actions into `knowledge/` as usual. Do not edit the MeetCap folder itself; copying is the durability act.
 
-**Person facts route project-first, always.** New facts about a person land in this project's `knowledge/people/{person-slug}.md` overlay — never directly in `library/context/people/`. Promotion to the global layer is a judgment call that happens only inside the dream pass ([`project-consolidate`](../../system/skills/project-consolidate/SKILL.md)), where cross-project evidence is visible.
+**Person facts route project-first, always.** New facts about a person land in this project's `knowledge/people/{person-slug}.md` overlay — never directly in `library/context/people/`. Promotion to the global layer is a judgment call made at project closeout ([`project-flow.md`](project-flow.md)).
 
-## Living Governance Docs
+## Logs Are Born From Evidence
 
-**When these exist — instantiation is flow-driven, not automatic:**
-
-- Under **`project-mgmt-open-flow`** they are derived at kickoff from the charter (see [`project-mgmt-open-flow.md`](flows/project-mgmt-open-flow.md)).
-- Under **`open-flow`** (the default, including PM one-offs) none are created at kickoff; a doc is born only when the ingest workflow above has real evidence for it — a decision creates `decision-log.md`, a risk creates `raid-log.md`. A pure one-off creates none.
-
-1. **`knowledge/raid-log.md`:** Holds open risks, assumptions, issues, and dependencies. Every entry has exactly one named owner. Stale entries are flagged during weekly reviews. Replaces separate risk registries.
-2. **`knowledge/decision-log.md`:** Dated append-only log: `Decision` · `Rationale` · `Owner`.
-3. **`knowledge/stakeholder-map.md`:** Cross-references global person profiles and links roles to their per-project stakeholder overlay pages at `knowledge/people/{person-slug}.md`.
-4. **`knowledge/workback-schedule.md`:** Milestones/tasks planned backward from deadlines. Updated continuously; does not use deliverable readiness state.
+No `knowledge/` log is created at kickoff. A `knowledge/decision-log.md` (dated, append-only: decision, rationale, owner) or `knowledge/raid-log.md` (risks, assumptions, issues, dependencies, one named owner each) is born the first time the ingest workflow has a real decision or risk to record. A one-off project creates neither.

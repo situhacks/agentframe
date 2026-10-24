@@ -7,7 +7,6 @@ Use this when adding, retiring, or materially reshaping a deliverable type.
 - `library/deliverables/_meta/template-authoring.md`
 - Existing `library/deliverables/*/template.md` files relevant to the proposed type
 - `system/skills/deliverable-scaffolding/SKILL.md` when adding a new deliverable type
-- `system/skills/system-improvement/SKILL.md` when patching an existing template
 
 ## Procedure
 
@@ -15,11 +14,10 @@ Use this when adding, retiring, or materially reshaping a deliverable type.
 2. **Locate before inventing:** compare with existing deliverable families. Refuse a new type at 70%+ overlap unless the operator approves the taxonomy cost.
 3. **Pick the change path:**
    - New deliverable type: run `deliverable-scaffolding`.
-   - Existing deliverable patch: run `system-improvement`.
-   - Retiring a deliverable type: handle as a bespoke Builder decision and log the migration plan.
-4. **Keep ownership clean:** templates own artifact shape and hard constraints; campaign flows own phase sequence; process files own reusable procedures. Size budget: 900 words (`af doctor` flags overages) — over budget, cut before adding.
-5. **Verify:** confirm the template can be discovered by registry, flow, or deliverable pointer.
-6. **Log:** append `system_changes` rows for scaffold, patch, retirement, or wire-up.
+   - Existing deliverable patch: edit the template under the Builder pre-write gate.
+   - Retiring a deliverable type: handle as a bespoke Builder decision; the commit's `MIGRATION:` line names what replaces it.
+4. **Keep ownership clean:** templates own artifact shape and hard constraints; the project plan owns phase sequence; process files own reusable procedures. Size budget: 900 words (`af doctor` flags overages) — over budget, cut before adding.
+5. **Verify:** confirm the template can be discovered by pack, catalog, or deliverable pointer.
 
 ## Refusal Checks
 

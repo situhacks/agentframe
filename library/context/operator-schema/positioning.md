@@ -2,9 +2,9 @@
 
 > **Canonical shape for `library/context/operator/positioning.md`.** The setup process ([`operator-context-setup.md`](../../process/operator-context-setup.md)) generates the operator's filled-in file from this shape; the bracketed prompts are the generation questions. The operator's file is gitignored (private).
 
-The outward-facing strategic anchor for any user-voiced or strategic deliverable. Narrative + Content Pillars + Audience + POV Stances + Angles + Current Quarter Goals are the pieces that evolve through system retros and quarterly meta-retros.
+The outward-facing strategic anchor for any user-voiced or strategic deliverable. Narrative + Content Pillars + Audience + POV Stances + Angles + Current Quarter Goals are the pieces that evolve as projects close and quarters turn.
 
-This file is the "what am I saying outward?" surface; [`profile.md`](profile.md) is the "who am I?" surface (biography, role, active projects). Keep them apart — they have different cadences (positioning: per-campaign-retro; profile: rare).
+This file is the "what am I saying outward?" surface; [`profile.md`](profile.md) is the "who am I?" surface (biography, role, active projects). Keep them apart — they have different cadences (positioning: per project closeout; profile: rare).
 
 ---
 
@@ -34,7 +34,7 @@ If a post doesn't ladder up to this, question it. The narrative is the spine; wi
 
 ## POV Stances (the takes that make your content yours)
 
-These are the contrarian or pointed positions that earn engagement. Refresh quarterly via system retro.
+These are the contrarian or pointed positions that earn engagement. Refresh them quarterly.
 
 - **[Stance 1]** — [The take, in one sentence. Why you hold it.]
 - **[Stance 2]** — [Same.]
@@ -69,9 +69,8 @@ Tracks what content is supposed to move the needle on this quarter. Referenced b
 
 ## Updates to this file
 
-Patches log to `system/audit/agentframe.db` `system_changes`. Updates fire from:
-- **System retro patch** — POV stances or narrative refinement when a campaign-cycle pattern surfaces them.
-- **Quarterly meta-retro** — Current Quarter Goals table fully replaced; baseline updated.
-- **Campaign retro insight** — angles list refined when an angle proves repeatedly effective or repeatedly missing.
+Updates fire from:
+- **Project closeout** ([`project-flow.md`](../../process/project-flow.md)) — POV stances, narrative, or angles refined when the closing project surfaced a pattern (an angle that proved repeatedly effective or repeatedly missing), on the operator's yes.
+- **Quarterly reset** — Current Quarter Goals table fully replaced; baseline updated.
 
 Operator-self updates (role, employer, location, active projects) belong in `profile.md`, NOT here.

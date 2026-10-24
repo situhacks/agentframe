@@ -8,13 +8,13 @@ staging area, never a cited layer.
 
 ## When to load
 
-- A project closeout or system retro runs — harvest is a closing step, sibling of `deliverable-harvest`.
+- A project closes out ([`project-flow.md`](project-flow.md)) or an application reaches a terminal stage — harvest is a closing step beside `deliverable-harvest` and `voice-harvest`.
 - Ad hoc: the operator names a win, ships a milestone, or asks to update the resume/bank.
 - An interview round finishes — the playbook pass below runs even when the round produced no bankable win.
 
 ## Procedure
 
-1. **Identify the material wins** in the retro or named source: shipped outcomes, decisions that paid off, metrics moved. Skip routine execution.
+1. **Identify the material wins** in the closing project or named source: shipped outcomes, decisions that paid off, metrics moved. Skip routine execution.
 2. **Bank each win at the layers it earns** (one fact, one home):
    - `proof-points.md` — the verified number/link, with source and date. Numbers live only here; the other layers cite the proof-point ID.
    - `master-cv.md` — a resume-ready CDO bullet (context → decision/trade-off → quantified outcome) under the right role, citing the proof-point.

@@ -1,6 +1,6 @@
 # Research And Signals
 
-Shared kickoff procedure for any project flow's research phase. Owns workspace-context definition, the live MCP scan, and the research-method offer. Loaded from each flow's Phase 1 (`marketing-solo-flow.md` Phase `1-setup-research`, `marketing-standard-flow.md` Phase 1 - Research). Deliverable shape and readiness criteria belong to the calling flow and to [`library/deliverables/research-artifact/template.md`](../domains/marketing/deliverables/research-artifact/template.md).
+Shared kickoff procedure for a project's research phase. Owns workspace-context definition, the live MCP scan, and the research-method offer. Loaded at kickoff when the plan opens with research ([`project-flow.md`](project-flow.md)). Deliverable shape and readiness criteria belong to [`library/deliverables/research-artifact/template.md`](../domains/marketing/deliverables/research-artifact/template.md).
 
 ## Workspace-Context Definition
 
@@ -13,7 +13,7 @@ Check the connected MCP servers for approved workspace-context tools; do not mai
 When the operator starts a new project:
 
 1. Check the connected MCP servers for approved workspace-context tools. If useful context is available, scan only approved lightweight metadata first (for example: message subjects, event titles, doc titles, timestamps, and folder names; not bodies or full document contents unless the operator approves). Ignore social/content tool matches for project idea sourcing. If the surface is unavailable or not useful, say so before falling back to local positioning or operator-provided ideas.
-2. Build a short candidate list with the operator and cite provenance for each direction. The calling flow owns where this list is saved (typically `phase-1-research/idea-bank.md`) and the per-candidate shape.
+2. Build a short candidate list with the operator and cite provenance for each direction. Save it as `phase-1-research/idea-bank.md` unless the plan names another path: per candidate a title, a 1-3 sentence thesis, and one provenance line, then the selected pick in one line.
 3. Let the operator pick the top direction for deeper research.
 
 ## Research Method Offer

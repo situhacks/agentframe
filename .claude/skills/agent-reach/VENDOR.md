@@ -72,4 +72,3 @@ written inside this repository.
 3. Update the pin above, reinstall via the pinned archive URL, re-run the scoped `--channels` install.
 4. Run `agent-reach skill --uninstall` and verify the three native skill paths are gone.
 5. Smoke test: one credential-free channel and one credentialed channel.
-6. Append a `system_changes` row through `system/audit/writer.py`.

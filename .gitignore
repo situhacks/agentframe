@@ -48,9 +48,6 @@ workspace/board/
 
 # === Runtime / generated state ===
 system/logs/
-system/audit/*.db
-system/audit/*.db-shm
-system/audit/*.db-wal
 
 # === Retrieval index (derived cache, per-machine; never truth) ===
 system/index/vault.db

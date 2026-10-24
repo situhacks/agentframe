@@ -22,7 +22,7 @@ Use this order unless a specific deliverable earns a different shape:
 Optional sections are not headings to copy into every template. Add one only when the section itself changes what a future agent loads, writes, verifies, routes, exports, or asks the operator to decide.
 
 - `Feedback / Handoff` — only when this deliverable needs a specific external feedback or handoff path beyond ordinary operator iteration. Do not add generic tracker state.
-- `Humanizer Pass` — only for public-facing deliverables where prose is likely to ship (typically Phase 4 production artifacts). Name the trigger surface and scope. If the deliverable is internal, omit the section.
+- `Humanizer Pass` — only for public-facing deliverables where prose is likely to ship (typically production artifacts such as post ingredients). Name the trigger surface and scope. If the deliverable is internal, omit the section.
 - `Publish / Export Mechanics` — non-trivial format generation, published-state reconciliation, or publish records owned by this deliverable. Keep simple format notes in `Feedback / Handoff`; keep reusable mechanics in process or export files.
 - `Exceptions / Branches` — state-changing branches that alter the normal path, such as stop, route upstream, waive, cancel, or defer. Not examples. If the item is always true, make it a hard constraint. If it is source loading, put it in `Inputs`. If it is required before readiness, put it in `Readiness Criteria`.
 
@@ -31,12 +31,12 @@ Do not create placeholder sections to say a thing does not apply.
 ## Ownership Rules
 
 - Templates own artifact shape and hard constraints.
-- Campaign flows own phase sequence and which deliverables appear in a flow.
+- The project plan owns phase sequence and which deliverables appear in it ([`project-flow.md`](../../process/project-flow.md)).
 - Process files own reusable procedures.
 - Skills own change mechanics or reusable technical techniques.
 - `AGENTS*.md` owns routing and cross-cutting invariants only.
 
-This file is loaded when authoring or materially reshaping templates, not during ordinary campaign drafting. It tells template authors not to add audit-history, root-cause, or changelog sections to runtime templates. The actual patch-history write is owned by the structural-change or system-improvement process through `system_changes`.
+This file is loaded when authoring or materially reshaping templates, not during ordinary campaign drafting. It tells template authors not to add history, root-cause, or changelog sections to runtime templates. A template's history is its git log.
 
 ## Grounding Discipline
 
@@ -65,5 +65,4 @@ The filename carries the version number (no `current_version` / `version_history
 
 1. Compare against existing deliverable families.
 2. If an existing template covers 70%+ of the job, extend it or add a subtype convention instead of creating a new type.
-3. If the new template belongs in a campaign flow, wire the flow separately through `library/process/flows/`.
-4. Log the scaffold or material reshape in `system_changes`.
+3. If the new template belongs to a domain pack, list it in that pack's `pack.md` deliverable row.

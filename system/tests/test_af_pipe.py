@@ -99,7 +99,7 @@ class TestSaveAndStart(PipeBase):
 
     def test_new_project_refuses_pipeline_topology(self):
         with self.assertRaises(SystemExit):
-            quiet(af.cmd_new_project, SimpleNamespace(slug="acme", domain="careers", flow="open-flow", name=None))
+            quiet(af.cmd_new_project, SimpleNamespace(slug="acme", domain="careers", name=None))
 
 
 class TestStageMachine(PipeBase):

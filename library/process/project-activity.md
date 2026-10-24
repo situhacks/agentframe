@@ -21,7 +21,7 @@ An optional `## Attention` block sits directly under the activity title. Keep on
 - [ ] 2026-07-18 | waiting | Client reply on [deck](phase-4-demo/demo-deck-v1.md)
 ```
 
-`kind` is `due`, `waiting`, `meeting`, `decision`, or `review`. Check the item when it resolves. Governed projects retain full risk/decision/schedule detail in `knowledge/`; Attention is only the shortlist.
+`kind` is `due`, `waiting`, `meeting`, `decision`, or `review`. Check the item when it resolves. Full risk and decision detail lives in `knowledge/` when the project keeps it; Attention is only the shortlist.
 
 ### Material events
 
@@ -29,7 +29,7 @@ Use one line per event:
 
 `{YYYY-MM-DD HH:MM} — {event_type}: {short result lead}; {resume-useful consequence, path, state change, or reason}`
 
-Use a snake_case `event_type` and keep the line under about 200 characters. Log readiness, publication, overrides, plan changes, retros, cancellations, consolidations, and structural decisions. Do not log chat turns or ordinary drafting iteration; version files own `changes_from_v{N}`.
+Use a snake_case `event_type` and keep the line under about 200 characters. Log readiness, publication, overrides, plan changes, cancellations, closeout, and structural decisions. Do not log chat turns or ordinary drafting iteration; version files own `changes_from_v{N}`.
 
 Buttons write `artifact_drafted`, `artifact_versioned`, `ready`, `publish`, and other mechanical receipts. Agents do not duplicate them.
 
@@ -39,9 +39,7 @@ Canonical agent-written shapes:
 - `cancellation: project cancelled; reason "{one-line reason}"`
 - `frontmatter_manual_edit: {field} corrected from {old} to {new}; {reason}.`
 - `plan_revised: {short result lead}; {minimum useful consequence}. Reason: "{reason}"`
-- `knowledge_consolidation: dream pass completed; {what changed}.`
-- `build_started: {repo path}; stub written, build-log created.`
-- `build_graduated: {repo path}; context compiled into repo; {one-line what shipped}.`
+- `project_closed: {one-line outcome}; harvests run, folder moved to completed/.`
 
 ## Verification Or Logging
 

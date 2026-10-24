@@ -2,7 +2,7 @@
 """AgentFrame state-transition CLI — the buttons.
 
 Owns the MECHANICS of project state changes. Binds to the
-project-frontmatter schema only — never to flows, templates, or content.
+project-frontmatter schema only — never to templates or content.
 The spine is a generic engine; everything domain-specific lives in a pack
 under library/domains/{domain}/ which this host reads and dispatches to. The
 spine names no domain.
@@ -17,9 +17,8 @@ Commands:
   python system/af.py version <project> <deliverable-slug> [--artifact <artifact-name>]
   python system/af.py draft <project> <deliverable-slug> (--file <project-relative-v1.md> | --artifact <artifact-name>)
   python system/af.py adopt <project> <deliverable-slug> --file <existing-project-relative.md>
-  python system/af.py new-project <slug> [--domain project-mgmt] [--flow open-flow] [--name NAME]
+  python system/af.py new-project <slug> [--domain project-mgmt] [--name NAME]
   python system/af.py doctor [project|pipeline|studio]
-  python system/af.py feedback <project> [--mark-harvested [--note TEXT]]
   python system/af.py index update [--rebuild]|status|eval [--k N]
   python system/af.py search "<query>" [-n LIMIT] [--json]
   python system/af.py pipe save --company C --role R --url U [--ats A] [--source S] [--posted D] [--deadline D] [--salary S] [--slug K]
@@ -49,11 +48,11 @@ import argparse
 import datetime
 import glob
 import importlib.util
+import json
 import os
 import re
 import shutil
 import sys
-import time
 import types
 
 # The retrieval index is imported on demand by _indexer(): a syntax error mid-edit in
@@ -106,14 +105,9 @@ TOPOLOGY_SURFACES = {
     "studio": "workspace/studio/ (use 'af studio new')",
 }
 DEFAULT_DOMAIN = "project-mgmt"
-DEFAULT_FLOW = "open-flow"
-FLOWS = {"marketing-solo-flow": "1-research-and-architecture",
-         "marketing-standard-flow": "1-research",
-         "open-flow": "active",
-         "project-mgmt-open-flow": "active"}
 
 
-_LAST_ERROR = None  # the refusal main() records in af_runs
+_LAST_ERROR = None  # the refusal main() records in the run log
 
 
 def die(msg):
@@ -530,7 +524,7 @@ def cmd_ready(args):
     print("  [ ] Humanizer pass run, when the template declares it (public-facing prose)")
     print("  [ ] Voice was loaded for this deliverable's drafting (confirm if session resumed)")
     print("  [ ] User-voiced? Run voice-harvest now (system/skills/voice-harvest/SKILL.md;")
-    print("      gate: library/process/voice-mini-retro.md) - work to do, not a box to tick")
+    print("      gate: library/process/ready-event.md) - work to do, not a box to tick")
     print("  [ ] Remaining follow-ups surfaced (feedback, export, publish)")
 
 
@@ -673,8 +667,6 @@ def cmd_version(args):
     print("    the change is genuinely whole-body.")
     print("  - Every content change to a head versions first, copyedits included (deliverable-versioning.md).")
     print(f"  - The operator's feedback on this draft is narration: it goes in the new head's changes_from_v{n}.")
-    print("    Append a feedback-log.md line only for a lesson that outlives this deliverable (agent")
-    print("    behaviour or shape), one line: the lesson, then the evidence.")
 
 
 # ---------------------------------------------------------------- draft
@@ -864,14 +856,13 @@ def cmd_new_project(args):
 
     name = args.name or slug.replace("-", " ").title()
     write(os.path.join(cdir, "project.md"), read(skel_path).format(
-        name=name, slug=slug, date=today(), domain=args.domain, phase=FLOWS[args.flow], flow=args.flow, ts=now_iso()))
-    write(os.path.join(cdir, "feedback-log.md"), "")
-    append_activity(cdir, f"project_started: {name} scaffolded ({args.domain}, {args.flow})")
+        name=name, slug=slug, date=today(), domain=args.domain, ts=now_iso()))
+    append_activity(cdir, f"project_started: {name} scaffolded ({args.domain})")
 
-    print(f"af new-project: workspace/projects/{slug}/ scaffolded ({args.domain}, {args.flow}, phase {FLOWS[args.flow]})")
+    print(f"af new-project: workspace/projects/{slug}/ scaffolded ({args.domain})")
     print("\nJudgment (stays with the agent):")
-    print(f"  - Load library/process/flows/{args.flow}.md and run its kickoff")
-    print("    (research offer / plan proposal / pack-owned kickoff steps — flow-owned, not script-owned).")
+    print("  - Load library/process/project-flow.md and run its kickoff: propose the plan")
+    print("    (objective, phases if any, runway, parked) for the operator to narrow.")
 
 
 # ---------------------------------------------------------------- pipe (pipeline topology)
@@ -1436,16 +1427,9 @@ def check_pipeline():
 
 # ---------------------------------------------------------------- doctor
 
-# Dream-pass nudge thresholds. Doctor owns WHEN to nudge (deterministic
-# mechanics); the project-consolidate skill owns what a dream pass does.
-DREAM_AGE_DAYS = 30            # active project this far past consolidation/creation → nudge
-DREAM_ACTIVE_WINDOW_DAYS = 14  # ...but only if it saw activity this recently
 ACTIVITY_LINE_CAP = 200        # chars; longer reads as narration, not an event line
 ACTIVITY_LINE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}( \d{2}:\d{2})?\s*[—-]\s*[a-z][a-z0-9_]*:\s")
-DREAM_LINE_CAPS = (("knowledge/decision-log.md", 300),
-                   ("knowledge/raid-log.md", 300),
-                   ("activity.md", 200),
-                   ("project.md", 250))
+ACTIVITY_ARCHIVE_LINES = 200   # activity.md past this many lines → archive-the-tail note
 MEDIA_MANIFEST_FIELDS = ("shipped_media", "exports")
 MEDIA_PREVIEW_EXTS = {".html", ".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg",
                       ".pdf", ".mp4", ".mov", ".webm", ".pptx", ".docx"}
@@ -1898,15 +1882,10 @@ def media_manifest_notes(cdir):
     return notes
 
 
-def dream_note(cdir):
-    """One informational line when a project looks due for a dream pass.
-
-    Never an issue and never affects the exit code: bloated-but-valid books
-    are still valid. Fires on an active project when an append-only file
-    exceeds its cap, or when consolidation (falling back to project creation)
-    is >=DREAM_AGE_DAYS old and the project is still being worked
-    (last_activity within the window).
-    """
+def activity_size_note(cdir):
+    """One informational line when an active project's activity.md outgrows
+    ACTIVITY_ARCHIVE_LINES. Never an issue and never affects the exit code:
+    a long log is still a valid log."""
     rel = os.path.relpath(cdir, ROOT).replace("\\", "/")
     try:
         cfm, _ = split_fm(read(os.path.join(cdir, "project.md")), "project.md")
@@ -1914,28 +1893,14 @@ def dream_note(cdir):
         return None
     if get_scalar(cfm, "status") != "active":
         return None
-
-    today_d = datetime.date.today()
-    signals = []
-    for relpath, cap in DREAM_LINE_CAPS:
-        p = os.path.join(cdir, relpath)
-        if os.path.isfile(p):
-            lines = len(read(p).splitlines())
-            if lines > cap:
-                signals.append(f"{relpath} {lines} lines (cap {cap})")
-
-    last_consolidated = parse_iso_date(get_scalar(cfm, "last_consolidated"))
-    base = last_consolidated or parse_iso_date(get_scalar(cfm, "created_at"))
-    age = (today_d - base).days if base else None
-    last_act = parse_iso_date(get_scalar(cfm, "last_activity"))
-    steadily_worked = last_act is not None and (today_d - last_act).days <= DREAM_ACTIVE_WINDOW_DAYS
-    if age is not None and age >= DREAM_AGE_DAYS and steadily_worked:
-        age_label = "last consolidation" if last_consolidated else "project creation"
-        signals.insert(0, f"{age}d since {age_label}")
-
-    if not signals:
+    path = os.path.join(cdir, "activity.md")
+    if not os.path.isfile(path):
         return None
-    return f"{rel}: dream pass recommended — " + "; ".join(signals) + " (offer system/skills/project-consolidate)"
+    lines = len(read(path).splitlines())
+    if lines <= ACTIVITY_ARCHIVE_LINES:
+        return None
+    return (f"{rel}: activity.md {lines} lines, over {ACTIVITY_ARCHIVE_LINES}; "
+            "archive the tail to knowledge/_archive/")
 
 
 def activity_notes(cdir):
@@ -1943,7 +1908,7 @@ def activity_notes(cdir):
     only (timestamp/event-type prefix, line length), never event vocabulary,
     so any domain can introduce event types freely. Active projects only —
     completed history won't change, and a permanent alarm is noise (same
-    contract as dream_note)."""
+    contract as activity_size_note)."""
     path = os.path.join(cdir, "activity.md")
     if not os.path.isfile(path):
         return []
@@ -1969,86 +1934,6 @@ def activity_notes(cdir):
     if overlong:
         notes.append(f"{rel}: activity.md {overlong} line(s) over {ACTIVITY_LINE_CAP} chars — iteration narration belongs in the version files' changes_from_vN, not here")
     return notes
-
-
-# --------------------------------------------------- feedback log (lessons)
-
-FEEDBACK_LOG = "feedback-log.md"
-# A harvest closes with this heading; everything below the last one is the
-# unharvested tail. The date is the harvest date, the rest of the line is free.
-FEEDBACK_HARVESTED_RE = re.compile(r"^## harvested (\d{4}-\d{2}-\d{2})\b")
-# One lesson per line: "- YYYY-MM-DD — lesson, then evidence". Older logs also
-# carry "YYYY-MM-DD — ...", "## YYYY-MM-DD — ..." and "- **bold** ..." shapes.
-FEEDBACK_ENTRY_RE = re.compile(r"^(?:- |## )?(?:\*\*)?\d{4}-\d{2}-\d{2}\b|^- \*\*")
-
-
-def feedback_tail(cdir):
-    """Split feedback-log.md at its last `## harvested YYYY-MM-DD` heading.
-    Returns (tail_lines, entry_count, last_harvest_date). No heading: the whole
-    file is the tail and the date is None. No file: ([], 0, None)."""
-    path = os.path.join(cdir, FEEDBACK_LOG)
-    if not os.path.isfile(path):
-        return [], 0, None
-    lines = read(path).splitlines()
-    start, last = 0, None
-    for i, line in enumerate(lines):
-        m = FEEDBACK_HARVESTED_RE.match(line)
-        if m:
-            start, last = i + 1, m.group(1)
-    tail = lines[start:]
-    while tail and not tail[0].strip():
-        tail.pop(0)
-    while tail and not tail[-1].strip():
-        tail.pop()
-    count = sum(1 for line in tail if FEEDBACK_ENTRY_RE.match(line.strip()))
-    return tail, count, last
-
-
-def feedback_notes(cdir):
-    """Doctor note: lessons an active project logged and no harvest has mined.
-    A count, never an issue — running the harvest is the operator's call.
-    Completed projects are skipped (same contract as activity_notes)."""
-    try:
-        cfm, _ = split_fm(read(os.path.join(cdir, "project.md")), "project.md")
-    except SystemExit:
-        return []
-    if get_scalar(cfm, "status") != "active":
-        return []
-    _, count, last = feedback_tail(cdir)
-    if not count:
-        return []
-    rel = os.path.relpath(cdir, ROOT).replace("\\", "/")
-    since = f"since the {last} harvest" if last else "never harvested"
-    return [f"{rel}: feedback-log.md {count} unharvested lesson(s), {since} — "
-            f"`af feedback {os.path.basename(cdir)}` reads them before drafting; a harvest marks them with --mark-harvested"]
-
-
-def cmd_feedback(args):
-    """Print the unharvested tail of a project's feedback log, or close a
-    harvest by appending the watermark heading below it."""
-    cdir = project_dir(args.project)
-    rel = os.path.relpath(cdir, ROOT).replace("\\", "/")
-    path = os.path.join(cdir, FEEDBACK_LOG)
-    tail, count, last = feedback_tail(cdir)
-    if args.mark_harvested:
-        if not os.path.isfile(path):
-            die(f"{rel}/{FEEDBACK_LOG} does not exist; nothing to mark")
-        note = (args.note or "").strip()
-        heading = f"## harvested {today()}" + (f" — {note}" if note else "")
-        text = read(path).rstrip("\n")
-        write(path, (f"{text}\n\n" if text else "") + heading + "\n")
-        append_activity(cdir, f"feedback_harvested: {count} lesson(s) above the watermark mined" + (f"; {note}" if note else ""))
-        print(f"af feedback: {rel}/{FEEDBACK_LOG} watermark written ({heading}); {count} lesson(s) now below it")
-        print("\nJudgment (stays with the agent):")
-        print("  - A promoted lesson lives in its target (template, voice file, process, rule); the log line is the")
-        print("    paper trail, not the rule. Anything you chose not to promote stays mined all the same.")
-        print("  - Record the harvest as a system_changes row (voice_harvest / deliverable_harvest) via system/audit/writer.py.")
-        return
-    since = f"since the {last} harvest" if last else "never harvested"
-    print(f"af feedback: {rel}/{FEEDBACK_LOG} — {count} unharvested lesson(s), {since}")
-    if count:
-        print()
-        print("\n".join(tail))
 
 
 def cmd_voice_bundle(args):
@@ -2092,7 +1977,7 @@ def check_project(cdir):
 
     required = (
         "name", "slug", "schema_version", "created_at", "domain",
-        "status", "current_phase", "flow", "last_activity",
+        "status", "current_phase", "last_activity",
     )
     for field in required:
         if get_scalar(cfm, field) in (None, ""):
@@ -2126,9 +2011,6 @@ def check_project(cdir):
         for f in fm_list(desc, "extension_fields"):
             if not has_field(cfm, f):
                 issues.append(f"{rel}: domain '{domain}' requires field '{f}' (missing)")
-    flow = get_scalar(cfm, "flow")
-    if flow and flow not in FLOWS:
-        issues.append(f"{rel}: flow '{flow}' is not registered in system/af.py")
 
     for slug in all_rows(cfm):
         st, f = row_get(cfm, slug, "status"), row_get(cfm, slug, "file")
@@ -2193,7 +2075,7 @@ def check_project(cdir):
     return issues
 
 
-# System-surface checks (full doctor runs only). Same contract as dream notes:
+# System-surface checks (full doctor runs only). Same contract as project notes:
 # issues are broken invariants (dead links), notes are drift alarms the
 # operator judges (size budgets, voice mirror staleness) — never auto-fixed.
 PERSONA_WORD_BUDGET = 1700    # AGENTS.builder.md / AGENTS.operator.md
@@ -2206,7 +2088,7 @@ VOICE_SCHEMA = os.path.join(ROOT, "library", "context", "operator-schema", "voic
 LINK_SCAN_GLOBS = ("AGENTS.md", "AGENTS.builder.md", "AGENTS.operator.md",
                    "library/process/**/*.md", "library/deliverables/**/*.md",
                    "library/domains/**/*.md", "library/assets/README.md",
-                   "system/audit/README.md", "system/skills/README.md",
+                   "system/skills/README.md",
                    "system/skills/*/SKILL.md", ".claude/skills/*/SKILL.md")
 
 LINK_PATTERN = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
@@ -2417,21 +2299,13 @@ def check_system():
             + button_notes())
 
 
-# ------------------------------------------------------- buttons (af_runs telemetry)
+# ------------------------------------------------------- buttons (run log)
 
-AUDIT_DB = None            # None = the writer's default (system/audit/agentframe.db); tests repoint it
+RUN_LOG = os.path.join(ROOT, "system", "logs", "af-runs.jsonl")  # gitignored; tests repoint it
 BUTTON_WINDOW_DAYS = 14
 # Exit 1 from these means findings, not a refused transition.
 READ_ONLY_VERBS = {"doctor", "index", "search", "pipe board"}
 SUBCOMMAND_VERBS = {"index", "pipe", "studio"}
-
-
-def _audit_writer():
-    try:
-        from system.audit import writer
-    except ModuleNotFoundError:  # direct ``python system/af.py`` execution
-        from audit import writer
-    return writer
 
 
 def verb_of(argv):
@@ -2443,14 +2317,36 @@ def verb_of(argv):
     return toks[0]
 
 
-def log_run(verb, argv, exit_code, error, started):
-    """Best-effort append to af_runs; a logging failure never touches the button's outcome."""
+def log_run(verb, argv, exit_code, refusal=None, crash=None):
+    """Best-effort JSON line per run; a logging failure never touches the button's outcome."""
+    row = {"ts": datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat(),
+           "verb": verb, "argv": list(argv), "exit": exit_code}
+    if refusal:
+        row["refusal"] = refusal
+    if crash:
+        row["crash"] = crash
     try:
-        _audit_writer().append_af_run(
-            db_path=AUDIT_DB, verb=verb, argv=" ".join(argv), exit_code=exit_code, error=error,
-            duration_ms=int((time.monotonic() - started) * 1000))
+        os.makedirs(os.path.dirname(RUN_LOG), exist_ok=True)
+        with open(RUN_LOG, "a", encoding="utf-8") as f:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
     except Exception:
         pass
+
+
+def read_runs(since):
+    """Run-log rows at or after a UTC datetime, oldest first; unreadable lines are skipped."""
+    if not os.path.isfile(RUN_LOG):
+        return []
+    rows = []
+    with open(RUN_LOG, encoding="utf-8") as f:
+        for line in f:
+            try:
+                row = json.loads(line)
+                if datetime.datetime.fromisoformat(row["ts"]) >= since:
+                    rows.append(row)
+            except (ValueError, KeyError, TypeError):
+                continue
+    return rows
 
 
 def open_backlog_rows_naming_af():
@@ -2472,20 +2368,19 @@ def button_notes():
     af.py-defect share reads its numerator from here instead of from memory.
     """
     try:
-        since = (datetime.datetime.now(datetime.timezone.utc)
-                 - datetime.timedelta(days=BUTTON_WINDOW_DAYS)).replace(microsecond=0).isoformat()
-        runs = _audit_writer().query_af_runs(db_path=AUDIT_DB, since=since)
-    except Exception:
+        runs = read_runs(datetime.datetime.now(datetime.timezone.utc)
+                         - datetime.timedelta(days=BUTTON_WINDOW_DAYS))
+    except OSError:
         return []
     refusals, crashes, usage = {}, {}, 0
     for r in runs:
-        verb = r["verb"]
-        if r["exit_code"] == 0 or verb in READ_ONLY_VERBS or verb.split(" ")[0] in READ_ONLY_VERBS:
+        verb = str(r.get("verb", "?"))
+        if not r.get("exit") or verb in READ_ONLY_VERBS or verb.split(" ")[0] in READ_ONLY_VERBS:
             continue
-        if r["error"] == "usage":
+        if r.get("refusal") == "usage":
             usage += 1
             continue
-        bucket = crashes if r["exit_code"] >= 2 else refusals
+        bucket = crashes if r.get("crash") else refusals
         bucket[verb] = bucket.get(verb, 0) + 1
     if not refusals and not crashes:
         return []
@@ -2518,14 +2413,13 @@ def cmd_doctor(args):
     all_issues, notes = [], []
     for d in dirs:
         all_issues += check_project(d)
-        note = dream_note(d)
+        note = activity_size_note(d)
         if note:
             notes.append(note)
         notes += media_manifest_notes(d)
         notes += empty_head_notes(d)
         notes += binary_head_notes(d)
         notes += activity_notes(d)
-        notes += feedback_notes(d)
     if args.project in (None, "pipeline"):
         pipe_issues, pipe_notes = check_pipeline()
         all_issues += pipe_issues
@@ -2594,24 +2488,24 @@ OPERATOR_STUDIO_VERBS = {"new", "stage", "post"}
 
 
 def main():
-    """Run one button and log its outcome to af_runs, whatever the outcome."""
+    """Run one button and append its outcome to the run log, whatever the outcome."""
     global _LAST_ERROR
     argv = sys.argv[1:]
     if not argv or "-h" in argv or "--help" in argv:
         return _run()
-    _LAST_ERROR, verb, started, code, error = None, verb_of(argv), time.monotonic(), 0, None
+    _LAST_ERROR, verb, code, refusal, crash = None, verb_of(argv), 0, None, None
     try:
         _run()
     except SystemExit as e:
         code = e.code if isinstance(e.code, int) else (0 if e.code is None else 1)
         if code:
-            error = _LAST_ERROR or ("usage" if code == 2 else None)
+            refusal = _LAST_ERROR or ("usage" if code == 2 else None)
         raise
     except BaseException as e:  # a crash is the one outcome worth more than a refusal
-        code, error = 2, f"{type(e).__name__}: {e}"
+        code, crash = 2, f"{type(e).__name__}: {e}"
         raise
     finally:
-        log_run(verb, argv, code, error, started)
+        log_run(verb, argv, code, refusal, crash)
 
 
 def _run():
@@ -2639,13 +2533,9 @@ def _run():
     s.add_argument("--file", required=True); s.add_argument("--workstream")
     s.add_argument("--export"); s.add_argument("--notes"); s.set_defaults(fn=cmd_adopt)
     s = sub.add_parser("new-project");     s.add_argument("slug")
-    s.add_argument("--flow", default=DEFAULT_FLOW, choices=sorted(FLOWS)); s.add_argument("--domain", default=DEFAULT_DOMAIN)
+    s.add_argument("--domain", default=DEFAULT_DOMAIN)
     s.add_argument("--name"); s.set_defaults(fn=cmd_new_project)
     s = sub.add_parser("doctor");          s.add_argument("project", nargs="?"); s.set_defaults(fn=cmd_doctor)
-    s = sub.add_parser("feedback");        s.add_argument("project")
-    s.add_argument("--mark-harvested", action="store_true", help="close a harvest: append the '## harvested YYYY-MM-DD' watermark")
-    s.add_argument("--note", help="one line for the watermark heading: what was promoted where")
-    s.set_defaults(fn=cmd_feedback)
     s = sub.add_parser("voice")
     vsub = s.add_subparsers(dest="voice_cmd", required=True)
     vb = vsub.add_parser("bundle", help="write the voice system to one file for a single read")

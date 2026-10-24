@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`workspace/projects/{slug}/project.md` frontmatter is the compact index a fresh agent reads before opening project detail. It answers four questions: what project is this, which domain and flow route it, what state is current, and which file is the current head of each deliverable.
+`workspace/projects/{slug}/project.md` frontmatter is the compact index a fresh agent reads before opening project detail. It answers four questions: what project is this, which domain routes it, what state is current, and which file is the current head of each deliverable.
 
 The index is not a history log or a substitute for deliverable content. A small amount of duplication is deliberate: tracker `status` and `file` let an agent reconstruct the working set without scanning folders, and `af doctor` keeps that cache synchronized with each head file.
 
@@ -15,7 +15,7 @@ Load for project state, continuity, dependency, routing, and next-action decisio
 ## Procedure
 
 1. Read `project.md` frontmatter and run `python system/af.py doctor <project-slug>`.
-2. Use `domain`, `flow`, `current_phase`, and the deliverable tracker to route the task.
+2. Use `domain`, `current_phase`, and the deliverable tracker to route the task.
 3. Read the `project.md` body when onboarding into the project or when its thesis, plan, or open project-level notes affect the decision.
 4. Follow only the relevant `deliverables.{slug}.file` pointer. That head is canonical content; lower-numbered versions are history.
 5. Read [`project-activity.md`](project-activity.md) only for event rationale, unresolved Attention items, or an activity write.
@@ -32,8 +32,7 @@ Load for project state, continuity, dependency, routing, and next-action decisio
 | `created_at` | Stable creation date used for age and ordering. |
 | `domain` | Resolves the domain pack and deliverable templates. |
 | `status` | Project lifecycle: `active`, `complete`, or `cancelled`. |
-| `current_phase` | Current position in the selected flow; `open-flow` may use a project-defined phase id from the body plan. |
-| `flow` | Resolves the phase map under [`flows/`](flows/README.md). |
+| `current_phase` | Free text: the plan's current phase id from the body plan ([`project-flow.md`](project-flow.md)), or `active`. |
 | `last_activity` | Cheap project-freshness signal; buttons update it with state/content work. |
 | `deliverables` | Current working-set map; `{}` is valid before the first deliverable exists. |
 
@@ -45,11 +44,10 @@ Load for project state, continuity, dependency, routing, and next-action decisio
 |---|---|
 | `channels` | The project names global channel profiles that future work should load. |
 | `stakeholders` | The project names global people profiles with project overlays. |
-| `last_consolidated` | The first [`project-consolidate`](../../system/skills/project-consolidate/SKILL.md) pass runs. |
 | `shipped_at` | A domain needs the project's first ship date as a summary/index value. |
 | `completed_at` / `cancelled_at` | The matching terminal transition occurs. |
 | `quarterly_goals_advanced` | The project actively references current positioning goals. |
-| `build_repo` / `build_graduated_at` | [`technical-build.md`](technical-build.md) owns an external build. |
+| `repo` | The project works in a code repository: its path or URL. A pointer only, with no lifecycle. |
 
 Domain packs may add current routing or state fields through `pack.md`. Marketing adds `post_manifest` when a real manifest moment occurs; it is absent for marketing work with no post manifest.
 
@@ -72,11 +70,11 @@ deliverables:
 
 Working directives, open questions, deferral reasons, publish data, exports, and version history live in the head deliverable or its prior versions. Do not add those to the tracker.
 
-Published rows older than 30 days may move to `knowledge/_archive/deliverables-archive.md` through `project-consolidate`. The archive preserves row shape so domain code can derive all-time facts without frontmatter counters.
+Published rows older than 30 days may move to `knowledge/_archive/deliverables-archive.md` when the tracker grows long. The archive preserves row shape so domain code can derive all-time facts without frontmatter counters.
 
 ## Verification Or Logging
 
-`af doctor` validates active projects plus the live pipeline: schema version, required fields, lifecycle timestamps, domain/flow resolution, tracker rows, numeric head pointers, artifact status, optional channel/stakeholder pointers, and domain extensions. It reports drift and never auto-fixes; it also notes unharvested `feedback-log.md` lessons on active projects (`af feedback <slug>` reads them). Completed snapshots are excluded from the default scan.
+`af doctor` validates active projects plus the live pipeline: schema version, required fields, lifecycle timestamps, domain resolution, tracker rows, numeric head pointers, artifact status, optional channel/stakeholder pointers, and domain extensions. It reports drift and never auto-fixes; it also notes an active project's `activity.md` past 200 lines. Completed snapshots are excluded from the default scan.
 
 An approved manual correction appends `frontmatter_manual_edit` using [`project-activity.md`](project-activity.md). Button-owned transitions write their own state and activity receipts.
 

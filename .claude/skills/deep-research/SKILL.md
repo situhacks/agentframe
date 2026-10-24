@@ -124,5 +124,5 @@ Write `report.md` on the main session model:
 
 ## Output contract
 
-- **Called from a project flow's research phase:** load the flow's research deliverable template (marketing: `library/domains/marketing/deliverables/research-artifact/template.md`) and use its "Output Shape" as the report structure — the template is the single source of truth for shape; do not paraphrase it. Record `research_method: native-deep-research` in the artifact frontmatter. Deliverable naming/versioning belongs to the calling flow and `library/process/deliverable-versioning.md`.
+- **Called from a project's research phase:** load the plan's research deliverable template (marketing: `library/domains/marketing/deliverables/research-artifact/template.md`) and use its "Output Shape" as the report structure — the template is the single source of truth for shape; do not paraphrase it. Record `research_method: native-deep-research` in the artifact frontmatter. Deliverable naming/versioning belongs to the calling flow and `library/process/deliverable-versioning.md`.
 - **Ad hoc:** default shape — executive summary, one section per dimension, contradictions & limitations, sources.

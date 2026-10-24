@@ -4,7 +4,7 @@
 
 The operator-self file. Who you are in real life — biography, role, location, active projects, primary identity sources. Mostly static; updates are rare and almost always sync events from your primary source of truth, not authored content.
 
-This file is the "who am I?" surface; [`positioning.md`](positioning.md) is the "what am I saying outward?" surface. Keep them apart — they have different cadences (this file: rare; positioning: per-campaign-retro).
+This file is the "who am I?" surface; [`positioning.md`](positioning.md) is the "what am I saying outward?" surface. Keep them apart — they have different cadences (this file: rare; positioning: per project closeout).
 
 ---
 
@@ -40,4 +40,4 @@ This is the slowest-cadence operator file. Update only when:
 - A new active project starts or an existing one is killed (occasional).
 - The "who am I" framing materially shifts (rare; if frequent, the framing wasn't true to begin with).
 
-Patches log to `system/audit/agentframe.db` `system_changes`. Per-campaign positioning shifts (POV stances, angles, content pillars, quarterly goals) belong in `positioning.md`, NOT here.
+Per-campaign positioning shifts (POV stances, angles, content pillars, quarterly goals) belong in `positioning.md`, NOT here.

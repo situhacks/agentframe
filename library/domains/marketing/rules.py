@@ -21,7 +21,7 @@ def _manifest_ingredients(cfm):
     return [i.strip() for i in m.group(1).split(",") if i.strip()]
 
 
-# Tracker rows the dream pass moved out of project.md. Same row shape as the
+# Published tracker rows moved out of project.md. Same row shape as the
 # DELIVERABLES block; publish receipts derive totals across both locations.
 ARCHIVE_REL = os.path.join("knowledge", "_archive", "deliverables-archive.md")
 

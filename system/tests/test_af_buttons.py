@@ -1,6 +1,6 @@
 """Buttons report on themselves.
 
-Every run lands in af_runs whatever the outcome; a broken indexer never blocks a state
+Every run lands in the run log whatever the outcome; a broken indexer never blocks a state
 transition; the messages that used to send agents into a draft/adopt retry loop name the
 route; an assembly-record row is not schema drift; and the doctor buttons note reads the log.
 """
@@ -8,6 +8,7 @@ import builtins
 import contextlib
 import datetime
 import io
+import json
 import os
 import sys
 import tempfile
@@ -16,9 +17,6 @@ import unittest
 from unittest.mock import patch
 
 from system import af
-from system.audit import writer
-
-EPOCH = "1970-01-01T00:00:00+00:00"
 
 
 def write(path, text):
@@ -31,50 +29,61 @@ def quiet(fn, *a, **kw):
         return fn(*a, **kw)
 
 
-class TempDB(unittest.TestCase):
+class TempLog(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
-        self.db = os.path.join(self._tmp.name, "audit.db")
-        p = patch.object(af, "AUDIT_DB", self.db)
+        self.log = os.path.join(self._tmp.name, "logs", "af-runs.jsonl")
+        p = patch.object(af, "RUN_LOG", self.log)
         p.start()
         self.addCleanup(p.stop)
         self.addCleanup(self._tmp.cleanup)
 
     def runs(self):
-        return writer.query_af_runs(db_path=self.db, since=EPOCH)
+        if not os.path.isfile(self.log):
+            return []
+        with open(self.log, encoding="utf-8") as f:
+            return [json.loads(line) for line in f if line.strip()]
 
-    def add(self, verb, exit_code, error=None, days_ago=0):
-        at = (datetime.datetime.now(datetime.timezone.utc)
-              - datetime.timedelta(days=days_ago)).replace(microsecond=0).isoformat()
-        writer.append_af_run(db_path=self.db, verb=verb, argv=verb, exit_code=exit_code,
-                             error=error, created_at=at)
+    def add(self, verb, exit_code, refusal=None, crash=None, days_ago=0):
+        row = {"ts": (datetime.datetime.now(datetime.timezone.utc)
+                      - datetime.timedelta(days=days_ago)).replace(microsecond=0).isoformat(),
+               "verb": verb, "argv": verb.split(), "exit": exit_code}
+        if refusal:
+            row["refusal"] = refusal
+        if crash:
+            row["crash"] = crash
+        os.makedirs(os.path.dirname(self.log), exist_ok=True)
+        with open(self.log, "a", encoding="utf-8") as f:
+            f.write(json.dumps(row) + "\n")
 
 
-class RunLog(TempDB):
+class RunLog(TempLog):
     def test_refusal_lands_with_its_message(self):
         with patch.object(sys, "argv", ["af", "ready", "no-such-project", "x"]), \
              contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             af.main()
         rows = self.runs()
         self.assertEqual(len(rows), 1)
-        self.assertEqual((rows[0]["verb"], rows[0]["exit_code"]), ("ready", 1))
-        self.assertTrue(rows[0]["error"])
-        self.assertNotIn("af: ERROR", rows[0]["error"])
+        self.assertEqual((rows[0]["verb"], rows[0]["exit"]), ("ready", 1))
+        self.assertEqual(rows[0]["argv"], ["ready", "no-such-project", "x"])
+        self.assertTrue(rows[0]["refusal"])
+        self.assertNotIn("af: ERROR", rows[0]["refusal"])
 
-    def test_success_lands_with_exit_zero(self):
+    def test_success_lands_with_exit_zero_and_creates_the_folder(self):
         with patch.object(af, "cmd_new_project"), \
              patch.object(sys, "argv", ["af", "new-project", "anything"]):
             af.main()
         row = self.runs()[0]
-        self.assertEqual((row["verb"], row["exit_code"], row["error"]), ("new-project", 0, None))
-        self.assertGreaterEqual(row["duration_ms"], 0)
+        self.assertEqual((row["verb"], row["exit"]), ("new-project", 0))
+        self.assertNotIn("refusal", row)
+        self.assertTrue(datetime.datetime.fromisoformat(row["ts"]).tzinfo)
 
     def test_usage_error_is_labelled_usage(self):
         with patch.object(sys, "argv", ["af", "draft", "p", "d"]), \
              contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             af.main()
         row = self.runs()[0]
-        self.assertEqual((row["verb"], row["exit_code"], row["error"]), ("draft", 2, "usage"))
+        self.assertEqual((row["verb"], row["exit"], row["refusal"]), ("draft", 2, "usage"))
 
     def test_crash_is_recorded_and_still_raised(self):
         def boom(args):
@@ -84,11 +93,14 @@ class RunLog(TempDB):
              self.assertRaises(RuntimeError):
             af.main()
         row = self.runs()[0]
-        self.assertEqual(row["exit_code"], 2)
-        self.assertEqual(row["error"], "RuntimeError: kaboom")
+        self.assertEqual(row["exit"], 2)
+        self.assertEqual(row["crash"], "RuntimeError: kaboom")
 
     def test_logging_failure_never_changes_the_outcome(self):
-        with patch.object(af, "_audit_writer", side_effect=RuntimeError("db down")), \
+        blocker = os.path.join(self._tmp.name, "blocker")
+        with open(blocker, "w") as f:
+            f.write("a file where the log folder should be")
+        with patch.object(af, "RUN_LOG", os.path.join(blocker, "af-runs.jsonl")), \
              patch.object(af, "cmd_new_project"), \
              patch.object(sys, "argv", ["af", "new-project", "anything"]):
             af.main()  # no exception escapes
@@ -142,7 +154,7 @@ class TempProject(unittest.TestCase):
         write(os.path.join(self.cdir, "project.md"),
                  "---\nname: campaign\nslug: campaign\nschema_version: 2026-07-19-v2\n"
                  f"created_at: 2026-09-01\ndomain: {domain}\nstatus: active\ncurrent_phase: active\n"
-                 "flow: open-flow\nlast_activity: 2026-09-09T10:00:00-07:00\n"
+                 "last_activity: 2026-09-09T10:00:00-07:00\n"
                  "deliverables:\n" + rows + "---\n")
 
     def fm(self):
@@ -238,18 +250,25 @@ class AssemblyRecordRows(TempProject):
         self.assertEqual(len(self._issues("project-mgmt")), 1)
 
 
-class ButtonNotes(TempDB):
+class ButtonNotes(TempLog):
     def test_silent_when_nothing_failed(self):
         self.add("draft", 0)
         self.add("doctor", 1)             # findings, not a refusal
         self.add("search", 1)
         self.assertEqual(af.button_notes(), [])
 
+    def test_silent_when_the_log_is_missing_or_garbled(self):
+        self.assertEqual(af.button_notes(), [])
+        os.makedirs(os.path.dirname(self.log), exist_ok=True)
+        with open(self.log, "w", encoding="utf-8") as f:
+            f.write("not json\n{}\n")
+        self.assertEqual(af.button_notes(), [])
+
     def test_counts_refusals_crashes_and_slips_by_verb(self):
         self.add("draft", 1, "already has a version chain")
         self.add("draft", 1, "repo-root-relative")
         self.add("adopt", 1, "status must be drafting")
-        self.add("draft", 2, "SyntaxError: mid-edit")
+        self.add("draft", 2, crash="SyntaxError: mid-edit")
         self.add("version", 2, "usage")
         self.add("pipe board", 1)
         notes = af.button_notes()

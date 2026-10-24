@@ -16,6 +16,11 @@ Load when the operator signals that a deliverable is good enough to use/share or
 4. Run `python system/af.py ready <project-slug> <deliverable-slug-or-path>`. The button updates artifact and tracker state together, runs any domain readiness hook, and records the event.
 5. Work the printed checklist and surface unresolved follow-ups. If later feedback changes the deliverable materially, run `af version`; small corrections may update the ready head in place.
 
+## Voice Harvest Gate
+
+- A user-voiced deliverable runs [`voice-harvest`](../../system/skills/voice-harvest/SKILL.md) after the transition and again when `af publish` lands the final. It is work to do, not a box to tick.
+- Skip silently when the folder holds no `{name}-v1.md` snapshot (back-fills, hand-written one-offs) or the change was a small correction to an already-ready head.
+
 ## Verification Or Logging
 
 Run `python system/af.py doctor <project-slug>` after the transition. The artifact and tracker must both read `ready`, the pointer must name the numeric head, and required exports must resolve.

@@ -20,7 +20,6 @@ created_at: 2026-07-07
 domain: marketing
 status: active
 current_phase: active
-flow: open-flow
 last_activity: 2026-07-07T12:00:00-07:00
 post_manifest:
   ingredients: [body-copy, image-prompts]

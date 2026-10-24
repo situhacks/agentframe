@@ -3,7 +3,7 @@
 Builds the operator's personal context the first time. Reached when the agent goes to
 load operator context (`library/context/operator/`) and finds a surface missing. Owns
 the initial generation; per-surface updates afterward fire from their own cadences
-(system retro, quarterly meta-retro, profile sync — each surface's schema documents its
+(harvests at publish or closeout, profile sync — each surface's schema documents its
 own "Updates to this file" rules).
 
 The operator context has four surfaces, each with a canonical shape under

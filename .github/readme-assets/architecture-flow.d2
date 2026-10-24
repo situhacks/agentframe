@@ -32,7 +32,7 @@ operator: "OPERATOR  ·  runs the work" {
   project: "project.md\nstate · tracker · deps" { class: state }
   activity: "activity.md\nmaterial-event log" { class: state }
   substrate: "sources/ + knowledge/\ninputs · distilled truth" { class: state }
-  flow: "selected flow" { class: node }
+  plan: "project flow\nplan · runway" { class: node }
   process: "process\n(loads per step)" { class: node }
   skill: "skill / tool\n(loads on demand)" { class: node }
   draft: "deliverable\ndraft → version\nyour voice · prompt lives here" { class: node }
@@ -41,8 +41,8 @@ operator: "OPERATOR  ·  runs the work" {
 
   project -> activity: logged to { class: soft }
   project -> substrate: draws on { class: soft }
-  project -> flow: { class: link }
-  flow -> process: { class: link }
+  project -> plan: { class: link }
+  plan -> process: { class: link }
   process -> skill: needs a capability { class: link }
   process -> draft: produces { class: link }
   draft -> lock: { class: link }
@@ -67,4 +67,4 @@ persona -> operator.project: Operator { class: link }
 persona -> builder: Builder { class: link }
 
 operator.deliver -> builder: "harvest → voice · templates · processes" { class: link }
-builder -> operator.flow: shapes future runs { class: soft }
+builder -> operator.plan: shapes future runs { class: soft }

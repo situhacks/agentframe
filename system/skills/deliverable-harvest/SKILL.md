@@ -2,16 +2,13 @@
 name: deliverable-harvest
 version: 0.1.0
 description: |
-  Extract deliverable-SHAPE feedback from campaign source material and route it
-  to the right home: template-patch candidates, local-deliverable promotions, and
-  builder-backlog recurrence watches. Input-agnostic: a deliverable's version
-  trail, a session transcript, or the live chat. Mines the same sources as
-  voice-harvest but with a structure lens — what the operator repeatedly added,
-  removed, or restructured (sections, tables, what belongs in a v1, weight,
-  format) rather than how sentences sound. Asks depth up front (diffs-only /
-  +transcript / +chat) to respect token budget. Proposes findings
-  first-pass-then-approve; never patches templates directly (routes to
-  system-improvement).
+  Extract deliverable-SHAPE feedback from finished work into template patches,
+  local-deliverable promotions, and builder-backlog recurrence watches, at
+  ready or publish time and at project closeout. Reads the version trail (v1
+  to head, with the operator's hand edits), the published copy against the
+  ready copy, and the operator's words in the session, with a structure lens:
+  sections, tables, what belongs in a v1, weight, format. Proposes every
+  finding in one batched review; applies the approved ones on the operator's yes.
 allowed-tools:
   - Read
   - Write
@@ -24,46 +21,48 @@ allowed-tools:
 
 # Deliverable Harvest: Extract Shape Feedback Into the System
 
-Deliverable templates only stay good if they absorb how the operator actually corrected the work. This skill reads a campaign's correction record and extracts the **shape signal**: structure, sections, format, weight, and what-belongs-where — the feedback that should become template patches instead of being re-taught every campaign.
+Deliverable templates only stay good if they absorb how the operator actually corrected the work. This skill reads a deliverable's correction record and extracts the **shape signal**: structure, sections, format, weight, and what-belongs-where — the feedback that should become template patches instead of being re-taught every project.
 
-The highest-signal sources are the operator's manual edits and the big structural redirects ("v1 copy should not contain imagery notes," "the table needs two aligned columns"). Voice-level signal (cadence, word choice) is NOT this skill's job — that's `voice-harvest`.
+The highest-signal sources are the operator's manual edits and the big structural redirects ("v1 copy should not contain imagery notes," "the table needs two aligned columns"). Voice-level signal (cadence, word choice) is `voice-harvest`'s job.
+
+It runs at `af ready` or `af publish` on a deliverable the operator shaped, and at project closeout over every published head not yet harvested ([`project-flow.md`](../../../library/process/project-flow.md)). The operator can also ask for it directly.
 
 ## Shared-read rule (mutual awareness with voice-harvest)
 
-`voice-harvest` and this skill mine the **same sources with different lenses**. At Step 1, if the operator wants both (typical at a campaign retro), **read the sources once and run both extraction passes** — never re-read per skill. When invoked alone, offer the other lens in one line ("same sources carry voice signal — harvest that too?") and drop it if declined.
+`voice-harvest` and this skill mine the **same sources with different lenses**. When both run, read the sources once, run both extraction passes, and present one combined review. When invoked alone, offer the other lens in one line ("same sources carry voice signal — harvest that too?") and drop it if declined.
 
 ## The procedure
 
-### Step 1 — Scope sources and depth (ASK)
+### Step 1 — Read the sources
 
-Identify the material (which deliverables, which trails), then ask the operator how deep, same tiers as voice-harvest: **1 — diffs only** (cheap; consecutive `v{n}→v{n+1}`, weighted to operator-edit transitions and big early structural rewrites) · **2 — + session transcripts** (rich, token-heavy) · **3 — + live chat** (only valid in the session that did the work). Default Tier 1. In a possibly-fresh session (retro weeks later), disk sources only — don't claim chat memory you don't have.
+- **Version trail:** list `{name}-v1 … {name}-v{N}` and walk consecutive `v{n}→v{n+1}` diffs, weighted to the operator's hand-edit copies (a verbatim copy he edited in place, so its diff isolates his keystrokes) and the big early structural rewrites. Each head's `changes_from_v{N}` field carries the operator's feedback on that draft.
+- **Published versus ready:** when the deliverable shipped, diff the live copy (the published URL or the platform draft) against the ready head. What changed between them is late operator correction.
+- **The operator's words in the session:** structural direction he gave in this conversation, when the session did the work. In a fresh or compacted session, read disk only; don't claim chat memory you don't have.
 
-### Step 2 — Read and extract shape deltas
+### Step 2 — Extract shape deltas
 
-Start with the feedback log's unharvested tail (`python system/af.py feedback {slug}`): shape lessons the operator already named are parked there. Then walk the sources for **structure changes**: sections added/removed/reordered, format conversions (prose→table, list→prose), weight/length corrections, content-placement rules ("X doesn't belong in this deliverable/version"), sequencing feedback ("settle the skeleton before prose"), and any operator statement about what the deliverable SHOULD contain. Also scan the project directory for the presence of any `_local/` directories indicating project-local ad-hoc deliverables. Discard voice-level deltas (route those to voice-harvest) and one-off content fixes (typos, facts).
+Walk the sources for **structure changes**: sections added/removed/reordered, format conversions (prose→table, list→prose), weight/length corrections, content-placement rules ("X doesn't belong in this deliverable/version"), sequencing feedback ("settle the skeleton before prose"), and any operator statement about what the deliverable SHOULD contain. Discard voice-level deltas (voice-harvest's) and one-off content fixes (typos, facts).
 
 ### Step 3 — Cluster and classify
 
 Collapse repeats into one candidate each. Per distinct finding:
 
-- **Generalizable template gap** (test: *would the next campaign hit this with the current template?*) → **template-patch candidate**, named to its target `library/deliverables/{type}/template.md` section.
-- **Already covered by the template but violated anyway** → **recurrence signal**: the template rule didn't fire. Log/update a `BB-*` watch in `system/builder-backlog.md` (first time = watch; matches a prior watch = confirmed, needs a structural fix, not a sharper-worded template line).
-- **Local deliverable promotion candidate** (test: *is this ad-hoc `_local` deliverable type reusable across other projects in this domain?* and *does it cover less than 70% of any existing template?*) → **promotion candidate**, target path `library/domains/{domain}/deliverables/{type}/template.md` (where `{domain}` is the active project's domain).
-- **Project-specific, not generalizable** → nothing to route. A per-piece correction already lives in that version's `changes_from_vN`; a production note the project's next deliverable needs goes in the `project.md` body. Do not copy either into `feedback-log.md`.
+- **Generalizable template gap** (test: *would the next project hit this with the current template?*) → **template-patch candidate**, named to its target `template.md` section.
+- **Already covered by the template but violated anyway** → **recurrence signal**: the template rule didn't fire. Grep `system/builder-backlog.md` for a prior watch: first time = new `BB-*` watch; matches a prior watch = confirmed, needs a structural fix, not a sharper-worded template line.
+- **Local deliverable promotion candidate** (scan the project's `_local/` folders; test: *is this type reusable across other projects in this domain?* and *does it cover less than 70% of any existing template?*) → **promotion candidate**, target `library/domains/{domain}/deliverables/{type}/template.md` (the active project's domain).
+- **Project-specific, not generalizable** → nothing to route. A per-piece correction already lives in that version's `changes_from_vN`; a production note the project's next deliverable needs goes in the `project.md` body.
 
-### Step 4 — Propose (FIRST-PASS-THEN-APPROVE)
+### Step 4 — One batched review, then apply
 
-Surface all candidates grouped by destination: template-patch candidates (with target file + section), promotion candidates, backlog watches. The operator approves, edits, or drops each. 
-- **Approved template patches** route to `system/skills/system-improvement/SKILL.md` (which owns the patch discipline).
-- **Approved local promotions** write directly to the domain's pack directory (`library/domains/{domain}/deliverables/`) and are logged. This Operator-owned exception **must** still apply the `agentframe-structure` authoring standard (correct sections, purpose, readiness criteria, etc.).
+Surface every candidate in one review, grouped by destination: template patches (target file, section, proposed text), promotion candidates, backlog watches. The operator approves, edits, or drops each. On his yes:
+- **Template patches:** apply under the Builder pre-write gate in `AGENTS.builder.md` — name the tendency the patch counters, find the prior rule on the topic (if it has patch history, name why the prior shape failed), and keep the template inside its size budget.
+- **Local promotions:** write the template to the pack's `deliverables/` folder, applying `library/deliverables/_meta/template-authoring.md`.
+- **Backlog watches:** append or update the `BB-*` entries.
 
-### Step 5 — Log
-
-Append one `system_changes` row via `system/audit/writer.py`: findings count by destination (including promotions), sources mined (tier), deliverables covered. Backlog entries were written in Step 3; the audit row records the harvest ran. Then close the log with `python system/af.py feedback {slug} --mark-harvested --note "..."`, once per shared read, so a pass that ran both lenses marks once.
+Report what landed where; a silent pass is a valid outcome.
 
 ## Boundaries
 
-- **No direct template edits** — system-improvement owns the patch loop.
+- **No edits before the operator's yes** — findings are proposals until the review approves them.
 - **No voice extraction** — voice-harvest owns it; share the read, split the lenses.
-- **No strategy/performance judgments** — campaign-retro territory.
-- Findings are proposals until the operator approves; silent pass is a valid outcome (say so).
+- **No strategy or performance judgments** — those stay in the project.

@@ -14,7 +14,7 @@ Placement rule before anything else: **he shot it and another surface could plau
 
 ## Procedure
 
-The tool owns the deterministic steps; the reviewing agent owns the judgment fields. The agent may be any harness that can view the media (Gemini takes video natively; Claude works from the keyframes the tool extracts).
+The tool owns the deterministic steps; the reviewing agent owns the judgment fields. The agent may be any harness that can view the media (Gemini takes video natively; Claude works from the keyframes the tool extracts). Intake ends at the filled cards; cut lists, edit decisions, scripts, and renders run on the session model, never inside the review call.
 
 ### 1. Receive
 
@@ -61,6 +61,11 @@ python system/tools/media_intake.py render && python system/af.py index update
 ```
 
 **Nothing runs on this machine.** Both paths call Gemini in Google's cloud; a Claude session without either can still review from the extracted keyframes. No local vision model is part of intake.
+
+Any direct Gemini call (a re-review, a one-off clip) keeps the connector's fence:
+
+- Call `system/tools/agy_call.py`, never bare `agy` and never with `--dangerously-skip-permissions`; print mode does not gate file writes, so the tool's disposable read-only workspace is the only fence.
+- Name each media file by absolute path in the prompt; `@file` does not attach media in print mode and sends the agent searching the filesystem.
 
 ### 5. Report
 

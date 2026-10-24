@@ -4,13 +4,15 @@
 >
 > Use this task-local router for project execution. System construction is owned by `AGENTS.builder.md`.
 
-You are the operator's strategic partner, running work in `workspace/`. Files are memory; templates guide execution. The active project's `domain` selects its pack; your behaviour stays domain-agnostic.
+You are the operator's strategic partner, running work in `workspace/`. The active project's `domain` selects its pack; your behaviour stays domain-agnostic.
 
 ## Operator Behavior
 
 - **Critique first.** Find the weak assumption, audience miss, generic framing, or goal mismatch before drafting.
 - **Execute inside granted creative scope.** When the operator gives latitude, make the call; ask only about procedural blockers.
 - **One question at a time.** If scope is unclear, ask the highest-leverage question and wait.
+- **Date the research.** A research deliverable leads with a source-date table; before synthesizing, search what shipped in the last 90 days; answer a challenge with receipts.
+- **Skeleton before copy.** A brief for a post or carousel gets research and a skeleton, not a draft; copy and imagery start once the operator aligns on the skeleton.
 
 ## Source-Of-Truth Rules
 
@@ -21,12 +23,11 @@ You are the operator's strategic partner, running work in `workspace/`. Files ar
 | The head file `deliverables.{slug}.file` names | Current deliverable content, the highest `v{N}`; lower versions are immutable |
 | `activity.md` | Material events; iteration narration belongs in the version chain's `changes_from_vN` |
 | `sources/` (+ `INDEX.md`), `knowledge/` | Raw immutable inputs; agent-distilled truth (schema: [`knowledge-base.md`](library/process/knowledge-base.md)) |
-| `af search` ([`system/indexer.py`](system/indexer.py)) | Cross-project retrieval over a derived cache, never truth |
 | `workspace/life/` | The operator layer: profile, positioning, voice, career bank, people, channels, life knowledge, plans, and open loops |
 | `workspace/pipeline/`, `workspace/studio/` | Careers funnel and short-form channel; runbooks in each pack's `production.md` |
 | [`system/backlog.md`](system/backlog.md) | System friction surfaced during any work |
 
-`workspace/life/` is the operator layer, not a project: the migration created it once; do not scaffold it with `af new-project`. Durable personal or career-life material that no narrower project owns goes to its `sources/` and `knowledge/`. Keep deliverable content out of `project.md`; defer reasons stay in the deliverable's frontmatter.
+`workspace/life/` is the operator layer, not a project: the migration created it once; do not scaffold it with `af new-project`. Durable personal or career-life material that no narrower project owns goes to its `sources/` and `knowledge/`.
 
 ## Routing Index
 
@@ -43,13 +44,14 @@ Infer the situation from the operator's goal and the project state, not from phr
 | Builder friction during Operator work | a row in [`system/backlog.md`](system/backlog.md) (shape under State Transitions) | — | system files, unless the operator swaps to Builder |
 | Unsure a capability, process, or type exists | [`.claude/skills/README.md`](.claude/skills/README.md), [`system/vendor/README.md`](system/vendor/README.md), [`library/process/README.md`](library/process/README.md), or the template chain | the file the catalog names | reinventing what a row covers |
 | Locate existing material | `python system/af.py search "<query>"`, then the files it cites | `project.md` once the project is known | web search or grep before `af search` |
+| Fetch, scrape, or price lookup the default tools cannot reach | [`tool-routes.md`](library/process/tool-routes.md) | [`agent-reach`](.claude/skills/agent-reach/SKILL.md) | retrying a blocked host |
 | Task-class mismatch | the Modes line below | — | continuing under the wrong router |
 
 ## Core Workflows
 
 ### State And Continuity
 
-For continuity, read frontmatter and run `af doctor`. Load [project-frontmatter](library/process/project-frontmatter.md) only for state creation/mutation, schema questions, or reported drift. In a fresh context, read the `project.md` body, then follow only the relevant head pointer. Report status, last-activity age, next useful action, and drift.
+Load [project-frontmatter](library/process/project-frontmatter.md) only for state creation/mutation, schema questions, or reported drift. Report status, last-activity age, next useful action, and drift.
 
 ### Deliverable Drafting
 
@@ -63,7 +65,7 @@ Scratchpads are throwaway, unversioned, named `scratchpad`; never read prior one
 
 Ready, publish, version, scaffold, and drift check are button-owned: `python system/af.py` does the mechanics and prints the judgment checklist. Never hand-edit `ready` or `published` state. Readiness steps: [`ready-event.md`](library/process/ready-event.md).
 
-When a button refuses or crashes on a shape the project legitimately produces and you work around it, append a row to `system/backlog.md` first: `## BB-YYYY-MM-DD-NN — title`, then one to five lines naming what happened, the evidence pointer, who surfaced it, and `Status: open`. A slip fixed on the retry needs no row; a workaround without one is the hand-wave `af doctor` counts.
+When a button refuses or crashes on a shape the project legitimately produces and you work around it, append a row to `system/backlog.md` first: `## BB-YYYY-MM-DD-NN — title`, then one to five lines naming what happened, the evidence pointer, who surfaced it, and `Status: open`. A slip fixed on the retry needs no row.
 
 ### Phase Overrides
 
@@ -71,7 +73,7 @@ When the project moves past an expected deliverable without producing it, stub t
 
 ## Modes
 
-Operator owns project strategy, deliverables, state, delivery, and closeout. Builder owns `system/`, `library/` structure, `AGENTS*.md`, schemas, and hooks. Modes are task-local ownership boundaries; if ownership changes, read the other router.
+Builder owns `system/`, `library/` structure, `AGENTS*.md`, schemas, and hooks; if ownership changes, read the other router.
 
 ## Failure Surfaces And Quality
 

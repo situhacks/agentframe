@@ -12,4 +12,14 @@ Available image-creation paths for AgentFrame. Load this when a project or post 
 
 ## Record convention
 
-Prompts and their iteration trail are owned by the post's `image-prompts-v{N}.md` — shape, constraints, and readiness criteria in [`library/deliverables/image-prompts/template.md`](../deliverables/image-prompts/template.md). Working renders and variants land in the post's `images/` or `visuals/` folder beside it; approved finals land in the deliverable folder's `media/` and are recorded in the owning deliverable's `exports[]` frontmatter. Gemini API docs own prompt best practices; the design language owns the reusable treatment block the prompts build on.
+Prompts and their iteration trail are owned by the post's `image-prompts-v{N}.md` — shape, constraints, and readiness criteria in [`library/deliverables/image-prompts/template.md`](../deliverables/image-prompts/template.md). Working renders and variants land in the post's `images/` or `visuals/` folder beside it; approved finals land in the deliverable folder's `media/` and are recorded in the owning deliverable's `exports[]` frontmatter. Gemini API docs own general prompt practice; the design language owns the reusable treatment block the prompts build on.
+
+## Nano Banana prompts
+
+- Name known products, styles, and palettes plainly ("GMK Modern Dolch Light palette"); the model searches, and a paragraph describing a known mark reads worse than its name.
+- Keep internal names (project slugs, design-language file names) out of prompts; they mean nothing to the model.
+- A mark newer than the model's training renders wrong from its name: download the real artwork, look at it, and describe its shape, colour, and features plainly.
+- Mix photoreal physical objects (index cards, foil stars, vinyl stickers, sticky notes, folders) with flat UI screenshots and real type; an all-flat vector slide reads as AI slop.
+- Name each sticker and star on the slide that carries it and say "each appearing once"; a shared style line that lists them scatters them over every slide.
+- When type sits over a generated plate, reprompt with an exact band (artwork between two height percentages, side and bottom margins, nothing touching an edge, one even background colour) instead of padding, mirroring, or re-cutting the plate.
+- Check every render for seams and hard cut-offs, and flag them before the operator reviews it.

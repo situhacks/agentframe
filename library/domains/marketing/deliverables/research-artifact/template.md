@@ -12,8 +12,10 @@ Capture the accepted research for a detailed campaign before strategy work begin
 
 ## Output Shape
 
-Use these as directional headings, not a rigid schema. The same section block is injected into research prompts as the required return structure, so keep it tight and self-contained.
+Use these as directional headings, not a rigid schema, except that Source Dates and Last 90 Days always open the artifact. The same section block is injected into research prompts as the required return structure, so keep it tight and self-contained.
 
+- **Source Dates** — a table of every source with its publication date and grade: `primary`, `secondary`, or `unverified` (auto-captions, forum threads, a claim resting on one non-primary source).
+- **Last 90 Days** — what shipped in the fast-moving layer (models, releases, products) in the 90 days before the artifact date, searched before synthesis even when the authoritative studies are older, and which findings it changes.
 - **Campaign Direction** — selected idea, working angle, and why it is worth exploring.
 - **Market Context** — what is happening, why now, and what makes the topic timely.
 - **Audience Signals** — who seems to care, what they are trying to do, and what pressures or objections matter.

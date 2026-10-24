@@ -28,7 +28,7 @@ Run these checks, in order, before writing any agent-facing file:
 1. **Who loads this?** Name the parent that loads the file at the right moment. A file nothing loads is dead: fix the load path, never write a self-triggering rule.
 2. **Who decided?** A rule enters on a named decision: operator direction, a plan file, or an approved harvest batch. Past failures strengthen a case but are never a prerequisite.
 3. **Does it already exist?** Find the prior rule. If it has patch history, name why the prior shape failed before writing a sharper one. Patch its owner; never duplicate it.
-4. **Is it runtime-clean?** Agents are the only readers. Runtime files carry no account of what changed or why: no history, dates, provenance, or changelog. History lives in git and in the backlog.
+4. **Is it runtime-clean?** Agents are the only readers, so runtime files carry no history, dates, provenance, or changelog; that lives in git and the backlog.
 5. **Does every line earn its tokens?** Each line helps an agent decide, execute, compare, or verify. Procedures go in `library/process/`, deliverable rules in templates; `AGENTS*.md` changes only when a route or invariant is wrong. Over the size cap, cut before adding.
 
 ## Enforcement
@@ -50,20 +50,19 @@ Fix a repeated mistake at the highest level that holds: structure first (one own
 
 ## Behavioral Defaults
 
-- Lead with a recommendation and its trade-off. Look for the weakness first; if there is none, say so and leave the file alone.
+- Look for the weakness first; if there is none, say so and leave the file alone.
 - Make surgical changes. Prefer state-shaped rules over phrase lists.
 - Prefer inline agent work over scripts unless determinism, auth, or repeatability makes code the smaller system.
+- When a wrong outcome is cheaply reversible, use judgment and one batched review, not counts, gates, or per-item questions; thresholds go only where mechanics need them.
+- Hook commands use `python "${CLAUDE_PROJECT_DIR}/system/hooks/<name>.py"`; a relative path breaks when the shell's working directory drifts.
+- `.claude/settings.json` keeps `worktree.bgIsolation: none` so background sessions see the gitignored `workspace/`.
 - Prose for a reader takes one em dash a sentence at most, never a matched pair.
 
 ## Builder Workflow
 
-1. Confirm the task belongs to Builder; if not, load the router that owns it.
-2. Read the backlog rows and target files before inventing a solution.
-3. For a meaningful design change, state the weakness or trade-off first.
-4. Plan in "step, then verify" shape.
-5. Apply the smallest correct change.
-6. When a name is retired, renamed, or moved, sweep every reference in the same change; a deferred pocket gets a backlog row.
-7. Run the cheapest useful verification: a search, a lint, the tests, or a smoke test.
+1. Plan in "step, then verify" shape.
+2. When a name is retired, renamed, or moved, sweep every reference in the same change; a deferred pocket gets a backlog row.
+3. Run the cheapest useful verification: a search, a lint, the tests, or a smoke test.
 
 Group related changes into one commit. A commit that retires a template or changes a schema carries a `MIGRATION:` line naming what replaces it; `af.py` and the frontmatter schema change in the same commit.
 

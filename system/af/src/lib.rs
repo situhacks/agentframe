@@ -13,3 +13,8 @@ pub mod media_shelf;
 pub mod pyyaml;
 pub mod doctor;
 pub mod cli;
+pub mod life;
+pub mod sessions;
+pub mod open;
+pub mod brief;
+pub mod close;

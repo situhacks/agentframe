@@ -88,6 +88,25 @@ enum Cmd {
     Doctor {
         project: Option<String>,
     },
+    Session {
+        #[command(subcommand)]
+        cmd: crate::sessions::SessionCmd,
+    },
+    Open {
+        #[command(subcommand)]
+        cmd: crate::open::OpenCmd,
+    },
+    Brief {
+        #[arg(long)]
+        json: bool,
+        #[arg(long)]
+        write: bool,
+    },
+    Close {
+        slug: String,
+        #[arg(long)]
+        force: bool,
+    },
 }
 
 /// The repo root: `AF_ROOT`, else the nearest ancestor of the binary, then of the working
@@ -175,6 +194,10 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> R<i32> {
         }
         Cmd::NewProject { slug, domain, name } => cmds::cmd_new_project(ctx, &slug, &domain, name.as_deref()).map(|_| 0),
         Cmd::Doctor { project } => doctor::cmd_doctor(ctx, project.as_deref()),
+        Cmd::Session { cmd } => crate::sessions::run(ctx, cmd),
+        Cmd::Open { cmd } => crate::open::run(ctx, cmd),
+        Cmd::Brief { json, write } => crate::brief::cmd_brief(ctx, json, write),
+        Cmd::Close { slug, force } => crate::close::cmd_close(ctx, &slug, force),
     }
 }
 

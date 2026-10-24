@@ -19,6 +19,10 @@ Stage R1 of the port planned in `.claude/plans/2026-10-23-life-os-PLAN.md` secti
 | `pipe` | not started (R2+); doctor's pipeline checks are ported |
 | `studio` | not started (R2+); doctor's studio checks are ported |
 | `system/hooks/*` | not started (R2+) |
+| `session register / list / stop / end / bundle` (R6, new) | built to `.claude/plans/2026-10-24-af-life-verbs-SPEC.md`; `src/sessions.rs` |
+| hook handlers `session-start / stop / session-end / notification` (R6, new) | `sessions::hook_*`; hidden `af session hook_*` until R2's `af hook` lands |
+| `open add / close / due`, `brief`, `close` (R6, new) | `src/open.rs`, `src/brief.rs`, `src/close.rs`; shared helpers `src/life.rs` |
+| doctor: life.md cap, open.md grammar, idle rows, workspace remote, stale handoffs (R6) | `life::doctor_checks`, called from `check_system` |
 
 ## Crate layout
 
@@ -57,3 +61,20 @@ Stage R1 of the port planned in `.claude/plans/2026-10-23-life-os-PLAN.md` secti
 - Replace the `rules.py` presence switch in `src/packs/mod.rs` when the packs drop their Python modules.
 - Decide root discovery (keep `AF_ROOT`, or install next to the repo) before wiring `.claude/settings.json` and PATH.
 - Port order suggestion for R2: `pipe` and `studio` (doctor already covers their state), then `index`/`search`, `voice`, hooks.
+
+## R6: life and session verbs (choices where the spec is silent)
+
+- Registry: `stale_after` is a constant 120 minutes. Name segments match `[A-Za-z0-9][A-Za-z0-9_.-]*`, one segment after the prefix. A missing `--model` writes `-`. `--brief` is vault-relative (absolute accepted). A session id resolves to its last row that has not ended, else its last row. `session list` rewrites each stored status to the effective one (live and idle both ways). Lines outside the table, CRLF, and BOM are preserved; new files are LF.
+- Roster: `live_state` is the roster entry's `status` matched on `sessionId`, else `absent`. The `claude` call times out after 5 s. The "unavailable" note goes to stdout in table mode and stderr with `--json`.
+- Handoff check: `written` has minute precision, so a handoff is required when the newest touched mtime, floored to the minute, is later than `written`. An unparseable `written` counts as required. The handoff never counts as its own touched file. With no `Files touched` and no `write_surface`, nothing is required. An ended row never requires a handoff.
+- Stamps: the SessionStart handler stamps `last_seen` and revives an ended row to `live` (a resume). Stop and Notification stamp `last_seen` and set `live` only on rows that have not ended. `af session bundle` is read-only.
+- Hooks: SessionEnd maps `prompt_input_exit` to `exit` and any unknown reason to `other`. Notification finds the row by payload `session_id`, then by `session_name`/`name`/`session_title` against registry names; the hooks docs do not say which id a background-session notification carries. `sessionTitle` goes out on every SessionStart source; the harness applies it on startup, resume, and fork. Handlers take `(ctx, payload)` and never fail: a bad payload yields empty stdout and exit 0.
+- Bundle: the roster line lists rows that have not ended, with their effective status, and runs no `claude` call. An over-cap `life.md` prints `af: life.md is N lines over its cap` before the body (plan 4.2 rule 1).
+- open.md: the grammar applies to every list item (`- `, `* `) under any heading; prose, headings, and HTML comments are free. A `[x]` line is a doctor issue. `n` is the 1-based ordinal of open loops in file order; `due` prints `(Nd, #n)` after each line. Prefix match is case-insensitive on the text, and an exact text match beats prefixes. `--from` defaults to `main`. A missing section is appended as `## <section>`. Text that would not parse back is refused. "Oldest first" sorts by the opened date.
+- Month log: created with no heading. `af open close` appends `closed: <text> → <outcome>` before removing the line, so a failure leaves the loop open rather than lost.
+- Brief: "handoff newer than last_seen" is implemented as the Stop check (`handoff current | handoff stale | no handoff`). The Stop hook stamps `last_seen` after the chat writes its handoff, so the literal comparison would read false on every normal stop. Studio "this week" means dated on or before today+6, passed slots included, state not posted or dropped. Empty sections are omitted except Due and Open. `--write` overwrites today's file.
+- Index age (bundle, brief): the `system/index/vault.db` mtime is over 24 h. No SQLite dependency; R2's index port can swap in `meta.updated_at`.
+- `af close`: `completed_at: <today>` goes on the line after `status:`, and `last_activity` is touched. The activity line is `project_closed: <slug>; folder moved to completed/`. A published row counts as unharvested for a skill when no activity line names both the skill (`deliverable-harvest` or `deliverable_harvest`, likewise voice) and the row slug or file. Refusals: unknown, already closed, target exists, not active, drafting rows; `--force` overrides the last two.
+- Doctor: a handoff with no parseable `written` is a note. The 7-day idle note uses the effective status, so a stored `live` row 10 days old notes too. Remotes come from `workspace/.git/config` (a `gitdir:` file is followed) with no git process.
+- Run log: rows are recorded as verb `session`, `open`, `brief`, `close`. A direct `af session stop` exit 3 is counted as a `session` refusal by `runlog::button_notes`. The merge should exclude it there (`runlog.rs` was outside this stage).
+- Verification: `cargo test` 213 passed (58 new across `tests/sessions_*.rs`, `tests/life_*.rs`; helpers in `tests/life_fx/`). `cargo build --release` has no warnings. Release `af session hook_session_start` takes about 0.035 s and `af doctor` about 0.18 s.

@@ -27,6 +27,8 @@ workspace/
 
 # === Runtime / generated state ===
 system/logs/
+# === Chat registry, briefs, handoffs (runtime state, per machine) ===
+system/sessions/
 
 # === Retrieval index (derived cache, per-machine; never truth) ===
 system/index/vault.db

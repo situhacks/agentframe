@@ -95,6 +95,24 @@ enum Cmd {
     Studio {
         #[command(subcommand)]
         cmd: crate::studio::StudioCmd,
+    Session {
+        #[command(subcommand)]
+        cmd: crate::sessions::SessionCmd,
+    },
+    Open {
+        #[command(subcommand)]
+        cmd: crate::open::OpenCmd,
+    },
+    Brief {
+        #[arg(long)]
+        json: bool,
+        #[arg(long)]
+        write: bool,
+    },
+    Close {
+        slug: String,
+        #[arg(long)]
+        force: bool,
     },
 }
 
@@ -185,6 +203,10 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> R<i32> {
         Cmd::Doctor { project } => doctor::cmd_doctor(ctx, project.as_deref()),
         Cmd::Pipe { cmd } => crate::pipe::dispatch(ctx, cmd).map(|_| 0),
         Cmd::Studio { cmd } => crate::studio::dispatch(ctx, cmd).map(|_| 0),
+        Cmd::Session { cmd } => crate::sessions::run(ctx, cmd),
+        Cmd::Open { cmd } => crate::open::run(ctx, cmd),
+        Cmd::Brief { json, write } => crate::brief::cmd_brief(ctx, json, write),
+        Cmd::Close { slug, force } => crate::close::cmd_close(ctx, &slug, force),
     }
 }
 

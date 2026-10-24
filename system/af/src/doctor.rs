@@ -1031,6 +1031,9 @@ pub fn check_system(ctx: &Ctx) -> R<(Vec<String>, Vec<String>)> {
     notes.extend(design_language_notes(ctx)?);
     notes.extend(media_shelf::media_shelf_notes(ctx));
     notes.extend(runlog::button_notes(ctx));
+    let (li, ln) = crate::life::doctor_checks(ctx)?;
+    issues.extend(li);
+    notes.extend(ln);
     Ok((issues, notes))
 }
 

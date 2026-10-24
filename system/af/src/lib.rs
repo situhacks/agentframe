@@ -15,3 +15,8 @@ pub mod doctor;
 pub mod pipe;
 pub mod studio;
 pub mod cli;
+pub mod life;
+pub mod sessions;
+pub mod open;
+pub mod brief;
+pub mod close;

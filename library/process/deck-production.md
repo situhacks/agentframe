@@ -9,9 +9,8 @@ Default: use **PPT Master** for new PowerPoint creation and exports. Use another
 | Reference-grounded redesign | An existing PPTX is the visual target and named deltas must not simplify or reinterpret its layouts, diagrams, or native object structure | [`reference-grounded-deck-redesign.md`](reference-grounded-deck-redesign.md); uses PPTX natively and PPT Master only for isolated rebuild slides | Verified 1:1 redesign assembled on a source-deck copy |
 | PPT Master | Default for new `.pptx` creation/export from source material, storyboard, Markdown deliverable, research, or an existing deck as source | `system/skills/ppt-master/SKILL.md`; read `system/skills/ppt-master/AGENTS.md` first | Native `.pptx` promoted into the calling deliverable folder |
 | PPTX skill (vendored Anthropic) | Native `.pptx` inspection, validation, small edits, extraction-diff, or slide splicing after a PPT Master round trip | `system/skills/pptx/SKILL.md` | Edited `.pptx` via OOXML or pptxgenjs |
-| Open Design (bundled) | The work benefits from Open Design's interactive revise-in-UI loop, or the project already runs other visuals through Open Design | `system/skills/open-design/SKILL.md` (defaults in [`image-production.md`](image-production.md)) | Exported `.pptx`, PDF, or PNG in the calling deliverable's media location |
 
-Recommend the default route first; name an exception only when it applies. Record a project-wide preference in `project.md` notes when decks recur. Mixing paths after the initial route is normal: generate with PPT Master or Open Design, then edit or splice with the PPTX skill.
+Recommend the default route first; name an exception only when it applies. Record a project-wide preference in `project.md` notes when decks recur. Mixing paths after the initial route is normal: generate with PPT Master, then edit or splice with the PPTX skill.
 
 ## PPT Master handoff
 
@@ -43,10 +42,6 @@ When none is named, the vendor's ordinary identity confirmation governs. Capture
 A slide whose point is a structure — architecture, process, decision, flywheel — is a diagram, and PPT Master has no grammar for one. [`diagram-production.md`](diagram-production.md) owns that route, including the flatten step that lands it as native editable shapes instead of a raster.
 
 Two constraints belong to this route: run `diagram_profile.py` for the named design language *before* any diagram is drawn, since one drawn first arrives in the wrong skin and must be redrawn; and keep charts on PPT Master's Chart executor, so their numbers stay editable.
-
-## Bounded-autonomy runs
-
-A run whose `goal` or `done_when` depends on deck appearance owes rendered visual QA before it may checkpoint, plus a front-loaded confirmation if it needs PPT Master's gate noninteractively. [`deck-bounded-autonomy.md`](deck-bounded-autonomy.md) owns both; ordinary interactive deck work never loads it.
 
 ## Deck rows point at a Markdown head
 

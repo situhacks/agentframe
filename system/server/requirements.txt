@@ -1,4 +1,0 @@
-livereload>=2.6.3
-watchdog>=3.0.0
-PyYAML>=6.0
-google-genai>=0.3.0

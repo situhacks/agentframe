@@ -23,7 +23,7 @@ dark_variant:           # optional — populate when a dark variant is in scope
   background: "<hex>"
 ```
 
-`light_variant` (and `dark_variant` when present) lets document, deck, and page renderers borrow visual signal without parsing the full prose. `category` and `summary` are optional but make Open Design transfer cleaner — see [`transfer-to-open-design.md`](transfer-to-open-design.md).
+`light_variant` (and `dark_variant` when present) lets document, deck, and page renderers borrow visual signal without parsing the full prose. `category` and `summary` are optional; the storybook cover reads them.
 
 ## Authoring
 
@@ -52,15 +52,9 @@ A shared language is a replayable package plus its imagery manifest, never a cop
 
 ## Artifact Shape
 
-1. **Visual Theme & Atmosphere** — one short paragraph on mood, register, and use-cases, under a `# <Title>` line with an optional `> Category:` and one-line `summary` right after, which keeps the artifact OD-transferable.
+1. **Visual Theme & Atmosphere** — one short paragraph on mood, register, and use-cases, under a `# <Title>` line with an optional `> Category:` and one-line `summary` right after.
 2. **Palette** — token table (`token`, `hex`, `role`) with one-line accent rules directly under it.
-3. **Type System** — face table (`face`, `role`, `weights`, `key sizes`) with one-line type rules, then a Font Labels block for Open Design's parser:
-
-   ```
-   Display: <CSS family stack>
-   Body: <CSS family stack>
-   Mono: <CSS family stack>
-   ```
+3. **Type System** — face table (`face`, `role`, `weights`, `key sizes`) with one-line type rules.
 4. **Layout & Composition** — canvas size (e.g. `1080x1080`), safe margin, corner radius, grid hints, and where the hero or cover visual sits.
 5. **Voice & Brand** — one paragraph: tone of voice, this project's brand register, how visual moves and copy tone reinforce each other.
 6. **Emphasis Devices** — each as name, job, never-combine rule.
@@ -68,13 +62,12 @@ A shared language is a replayable package plus its imagery manifest, never a cop
 8. **Treatment block** — the paste-once prompt block downstream image work consumes: the full visual treatment (palette, light, materials, mood, composition grammar) as generator-ready prose. Each `image-prompts-v{N}.md` copies it verbatim and adds per-image deltas.
 9. **Anti-patterns** — project-specific banned moves. System-wide bans live in `library/context/operator/design-language.md`.
 
-Sections without earned content can stay short ("none for this project") rather than padded. No Components or Motion specs by default; a project that earns them puts them in the artifact body or in `transfer-to-open-design.md` as overrides.
+Sections without earned content can stay short ("none for this project") rather than padded. No Components or Motion specs by default; a project that earns them puts them in the artifact body.
 
 ## Companion Artifacts
 
 - `tokens.yaml` — machine-readable token export for render pipelines.
-- `tokens.css` — CSS variables for browser preview and render. All tokens sit inside `:root {}` (plus `[data-theme="dark"]` when a dark variant exists), which keeps the file drop-in-compatible with Open Design's parser.
+- `tokens.css` — CSS variables for browser preview and render. All tokens sit inside `:root {}` (plus `[data-theme="dark"]` when a dark variant exists).
 - When a project renders slides or pages as HTML, this deliverable is the renderer's source: render per Layout & Composition plus `tokens.css`, then screenshot to PNG for delivery.
 - `preview/directions-compare.html` — side-by-side render of the proposed directions; the ready direction's preview lives in this same file with non-picked columns dimmed or removed.
 - `preview/storybook.html` — optional browsable catalog, shape in [`storybook.md`](storybook.md). Present only when generated.
-- [`transfer-to-open-design.md`](transfer-to-open-design.md) — field-by-field mapping into Open Design's 9-section design-system schema. Read on demand, only when the operator wants the project language inside Open Design.

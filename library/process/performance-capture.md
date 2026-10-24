@@ -30,5 +30,5 @@ Every captured row names its `source` (connector tool or `operator`) and `captur
 
 ## Boundaries
 
-- Publishing mechanics belong to the channel's own process file or browser recipe, and published state to `af publish` / `af studio post`.
+- Publishing mechanics belong to the channel's own process file or pack runbook, and published state to `af publish` / `af studio post`.
 - Scoring belongs to the closeout retro template or the pack's runbook (hook scoring in `hooks.md` for studio posts).

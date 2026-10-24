@@ -27,7 +27,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 VERSION_RE = re.compile(r"(.+)-v(\d+)\.md$")
 FRONTMATTER_RE = re.compile(r"\A---\n.*?\n---\n?", re.S)
-PPT_CONFIRMATION_SUFFIX = ".agentframe-confirmation.json"
 
 
 def _deny(reason: str) -> dict:
@@ -105,23 +104,6 @@ def _targets(payload: dict) -> list[tuple[Path, str]]:
 
 
 def _decide_target(path: Path, operation: str) -> dict | None:
-    if path.name.endswith(PPT_CONFIRMATION_SUFFIX):
-        try:
-            path.resolve().relative_to(ROOT.resolve())
-        except ValueError:
-            return None
-        if path.exists():
-            return _deny(
-                f"{path.name} is a sealed PPT confirmation contract and is immutable. "
-                "Create a new run-bound approval instead of editing or overwriting "
-                "this record."
-            )
-        return _deny(
-            f"Do not hand-create {path.name}. Use "
-            "`python system/tools/ppt_master_contract.py seal ...`; the adapter is "
-            "the exclusive creator and refuses overwrite."
-        )
-
     if not _within_managed_work(path):
         return None
 

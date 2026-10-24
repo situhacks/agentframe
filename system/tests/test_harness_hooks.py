@@ -24,7 +24,6 @@ class HarnessHookWiringTests(unittest.TestCase):
         self.assertTrue(any("version_guard.py" in command for command in commands))
         self.assertTrue(any("ppt_master_guard.py" in command for command in commands))
         self.assertTrue(any("voice_guard.py" in command for command in commands))
-        self.assertTrue(any("autonomy_guard.py" in command for command in commands))
         self.assertTrue(any("publish_guard.py" in command for command in commands))
         self.assertIn("SessionStart", config["hooks"])
         # The publish gate is useless unless it sits on the MCP call that ships copy.

@@ -192,7 +192,7 @@ After Step 5's validation expectation is written:
 }
 ```
 
-3. **Router verification.** If the target is `AGENTS.md`, `AGENTS.operator.md`, `AGENTS.builder.md`, or `AGENTS.orchestrator.md`, verify the stable root still routes to exactly one task-local owner and that no instruction asks an agent to copy a router over the root. Log the patch normally; router selection itself is not an audit event.
+3. **Router verification.** If the target is `AGENTS.md`, `AGENTS.operator.md`, or `AGENTS.builder.md`, verify the stable root still routes to exactly one task-local owner and that no instruction asks an agent to copy a router over the root. Log the patch normally; router selection itself is not an audit event.
 
 ## What this skill does NOT do
 

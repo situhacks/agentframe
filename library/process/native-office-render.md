@@ -57,7 +57,6 @@ Inspect the produced PNGs or PDF directly. Treat it as the deck's true appearanc
 - A render is valid evidence only when `probe` showed the app available and the command exited zero.
 - For fidelity-critical work, confirm the PDF embeds the deck's own fonts (no substitution) before trusting it as an origin reference.
 - Keep origin renders and comparison sheets with the deck project, per the redesign process.
-- The preview server's Office viewer uses the same tool through `system/server/lib/surface/convert.py`, which caches per path/mtime/size/converter-version; no separate render step is needed for a browser preview.
 
 ## Boundaries
 

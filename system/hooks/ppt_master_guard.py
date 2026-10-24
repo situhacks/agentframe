@@ -29,10 +29,8 @@ terminators, hidden elements). Upstream classes it advisory, so AgentFrame's
 "fix it before export" stance lives as an overlay rule in AGENTS.md rather than
 as a second, cruder detector here.
 
-Unparseable or unrelated command shapes pass through. Once a repo-contained
-project declares an active sealed confirmation, its recognized confirm/export
-commands fail closed on malformed contracts, drift, or session mismatch.
-`af doctor` remains the backstop for unrelated staging failures.
+Unparseable or unrelated command shapes pass through. `af doctor` remains the
+backstop for staging failures.
 """
 
 from __future__ import annotations
@@ -45,10 +43,6 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-
-sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from system.tools import ppt_master_contract as contract  # noqa: E402
 
 STAGING_REASON = (
     "PPT Master staging guard: this init would create the deck project at {target} - "
@@ -65,14 +59,6 @@ PROMOTE_CONTEXT = (
     "into the calling deliverable folder, keeping its timestamped filename. The "
     "exports/ twin stays frozen as the agent's reference. Versioning and round-trip "
     "rules: library/process/deck-production.md."
-)
-
-CONTRACT_VALID_CONTEXT = (
-    "AgentFrame found a valid sealed Strategist confirmation at {path}. The "
-    "interactive confirmation server is redundant and must not launch. Run "
-    "`python system/tools/ppt_master_contract.py materialize \"{path}\" "
-    "--session-binding {binding}`, read the result, and continue the vendor "
-    "workflow after the confirmation gate."
 )
 
 
@@ -124,9 +110,8 @@ def _fresh_export(project: Path) -> bool:
 def _exported_project(tokens: list[str], cwd: Path) -> Path | None:
     """Project directory for a command that ran the exporter, else None.
 
-    Stricter than `_export_project_path`, which fails open for the PreToolUse contract
-    guard. Here a path we cannot resolve means we cannot observe the outcome, and the
-    hook must stay silent rather than guess.
+    A path we cannot resolve means we cannot observe the outcome, and the hook must
+    stay silent rather than guess.
     """
     idx = _script_index(tokens, "svg_to_pptx.py")
     if idx is None:
@@ -177,166 +162,15 @@ def _staging_guard(tokens: list[str], cwd: Path) -> dict | None:
     return None
 
 
-def _export_project_path(tokens: list[str], cwd: Path) -> Path | None:
-    script_idx = _script_index(tokens, "svg_to_pptx.py")
-    if script_idx is None:
-        return None
-    nxt = tokens[script_idx + 1] if script_idx + 1 < len(tokens) else None
-    if nxt is None or nxt.startswith("-"):
-        return None  # fail open: unusual shape, af doctor backstops
-    return cwd / nxt
-
-
-def _confirm_project_path(tokens: list[str], cwd: Path) -> Path | None:
-    script_idx = _script_index(tokens, "confirm_ui/server.py")
-    if script_idx is None or script_idx + 1 >= len(tokens):
-        return None
-    raw = tokens[script_idx + 1]
-    if raw.startswith("-"):
-        return None
-    rest = tokens[script_idx + 2:]
-    if "--shutdown" in rest:
-        return None
-    launch_stage1 = "--daemon" in rest and "--wait" in rest and "--wait-only" not in rest
-    # Vendor 52e85a0 collapsed the confirmation to two waits: --wait-stage accepts
-    # only {stage1, final} and defaults to final. The pre-refresh "stage2" wait no
-    # longer exists upstream, so treat any recognized stage as a guarded wait.
-    stage_arg = None
-    if "--wait-stage" in rest:
-        after = rest[rest.index("--wait-stage") + 1:rest.index("--wait-stage") + 2]
-        stage_arg = after[0] if after else None
-    wait_only = "--wait-only" in rest and stage_arg in (None, "stage1", "final")
-    if not (launch_stage1 or wait_only):
-        return None
-    return cwd / raw
-
-
-def _payload_binding(payload: dict) -> str | None:
-    session_id = payload.get("session_id")
-    if not session_id:
-        return None
-    try:
-        return contract.autonomy_contract.normalize_session_binding(
-            f"claude:{session_id}"
-        )
-    except ValueError:
-        return None
-
-
-def _contract_candidates(project: Path) -> list[Path]:
-    if not _is_under(project, ROOT):
-        return []
-    return sorted(project.parent.glob(f"{project.name}.*{contract.SUFFIX}"))
-
-
-def _candidate_owner(candidate: Path, project: Path) -> tuple[str | None, str | None]:
-    """Return the owning run's status and binding, even for malformed wrappers."""
-    run_id = candidate.name[
-        len(project.name) + 1:-len(contract.SUFFIX)
-    ]
-    try:
-        projects = ROOT / "workspace" / "projects"
-        project_rel = project.resolve().relative_to(projects.resolve())
-        owner = projects / project_rel.parts[0]
-        run = owner / "knowledge" / "autonomy" / f"{run_id}.md"
-        text = run.read_text(encoding="utf-8-sig")
-    except (OSError, ValueError, IndexError):
-        return None, None
-    if not text.startswith("---\n"):
-        return None, None
-    end = text.find("\n---\n", 4)
-    if end < 0:
-        return None, None
-    fm = text[4:end]
-    return (
-        contract.autonomy_contract.scalar(fm, "status"),
-        contract.autonomy_contract.scalar(fm, "bound_session"),
-    )
-
-
-def _contract_guard(
-    project: Path,
-    payload: dict,
-    *,
-    confirmation_launch: bool,
-) -> dict | None:
-    candidates = _contract_candidates(project)
-    if not candidates:
-        return None
-    binding = _payload_binding(payload)
-    running = []
-    for candidate in candidates:
-        status, owner_binding = _candidate_owner(candidate, project)
-        if status == "running":
-            running.append((candidate, owner_binding))
-    if not running:
-        return None  # historical sealed records do not suppress the normal UI
-    if binding is None:
-        return _deny(
-            "A sealed PPT confirmation was declared, but this hook payload has no "
-            "trusted harness session id. Noninteractive confirmation is unsupported "
-            "on this surface; use the normal vendor gate."
-        )
-    active = [
-        candidate for candidate, owner_binding in running
-        if owner_binding == binding
-    ]
-    if binding is not None and not active:
-        return _deny(
-            "A sealed PPT confirmation is active for this project, but it is bound "
-            "to a different harness session. Use the owning session or the normal "
-            "vendor gate after that run is blocked/completed."
-        )
-    if len(active) != 1:
-        return _deny(
-            f"PPT confirmation contract is ambiguous: found {len(active)} active "
-            f"sealed siblings for {project} and this session."
-        )
-    path = active[0]
-    try:
-        contract.validate_contract(
-            path,
-            expected_session=binding,
-            require_materialized=not confirmation_launch,
-        )
-    except Exception as exc:
-        return _deny(f"Sealed PPT confirmation is invalid: {exc}")
-    if confirmation_launch:
-        return _deny(CONTRACT_VALID_CONTEXT.format(path=path, binding=binding))
-    return None
-
-
 def decide(payload: dict) -> dict | None:
     command = (payload.get("tool_input") or {}).get("command") or ""
-    if (
-        "project_manager.py" not in command
-        and "svg_to_pptx.py" not in command
-        and "confirm_ui/server.py" not in command.replace("\\", "/")
-    ):
+    if "project_manager.py" not in command and "svg_to_pptx.py" not in command:
         return None
     cwd = Path(payload.get("cwd") or ".")
     event = payload.get("hook_event_name") or "PreToolUse"
     tokens = _tokens(command)
 
     if event == "PreToolUse":
-        confirm_project = _confirm_project_path(tokens, cwd)
-        if confirm_project is not None:
-            result = _contract_guard(
-                confirm_project,
-                payload,
-                confirmation_launch=True,
-            )
-            if result:
-                return result
-        export_project = _export_project_path(tokens, cwd)
-        if export_project is not None:
-            result = _contract_guard(
-                export_project,
-                payload,
-                confirmation_launch=False,
-            )
-            if result:
-                return result
         return _staging_guard(tokens, cwd)
 
     if event == "PostToolUse":
@@ -352,24 +186,6 @@ def decide(payload: dict) -> dict | None:
     return None
 
 
-def _recognized_active_contract(payload: dict) -> bool:
-    """Best-effort discriminator for the guard's narrow fail-closed surface."""
-    command = (payload.get("tool_input") or {}).get("command") or ""
-    tokens = _tokens(command)
-    cwd = Path(payload.get("cwd") or ".")
-    project = (
-        _confirm_project_path(tokens, cwd)
-        or _export_project_path(tokens, cwd)
-    )
-    if project is None:
-        return False
-    for candidate in _contract_candidates(project):
-        status, _ = _candidate_owner(candidate, project)
-        if status == "running":
-            return True
-    return False
-
-
 def run(stdin_text: str) -> str | None:
     try:
         payload = json.loads(stdin_text)
@@ -377,14 +193,8 @@ def run(stdin_text: str) -> str | None:
         return None
     try:
         result = decide(payload)
-    except Exception as exc:
-        try:
-            if _recognized_active_contract(payload):
-                result = _deny(f"Active sealed PPT confirmation guard failed: {exc}")
-            else:
-                return None
-        except Exception:
-            return None
+    except Exception:
+        return None
     return json.dumps(result) if result else None
 
 

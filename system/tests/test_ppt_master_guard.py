@@ -51,37 +51,6 @@ class TestStagingGuard(unittest.TestCase):
     def test_unrelated_command_ignored(self):
         self.assertIsNone(guard.decide(payload("git status", guard.ROOT)))
 
-class TestConfirmationCommandShapes(unittest.TestCase):
-    def setUp(self):
-        self.cwd = os.path.join(guard.ROOT, "workspace", "projects", "demo")
-
-    def project_for(self, suffix):
-        command = f"python scripts/confirm_ui/server.py decks/demo {suffix}"
-        return guard._confirm_project_path(guard._tokens(command), guard.Path(self.cwd))
-
-    def test_vendor_wait_shapes_are_recognized(self):
-        # Vendor 52e85a0 accepts only --wait-stage {stage1, final} (default final);
-        # the pre-refresh "stage2" wait no longer exists upstream.
-        for suffix in (
-            "--daemon --wait",
-            "--wait-only --wait-stage stage1",
-            "--wait-only --wait-stage final",
-            "--wait-only",
-        ):
-            with self.subTest(suffix=suffix):
-                self.assertIsNotNone(self.project_for(suffix))
-
-    def test_retired_and_unknown_wait_stages_are_not_confirmation_waits(self):
-        for suffix in ("--wait-only --wait-stage stage2", "--wait-only --wait-stage bogus"):
-            with self.subTest(suffix=suffix):
-                self.assertIsNone(self.project_for(suffix))
-
-    def test_shutdown_and_plain_daemon_are_not_confirmation_waits(self):
-        for suffix in ("--shutdown", "--daemon"):
-            with self.subTest(suffix=suffix):
-                self.assertIsNone(self.project_for(suffix))
-
-
 class TestExportGuard(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -108,10 +77,8 @@ class TestExportGuard(unittest.TestCase):
         return deck
 
     def test_export_is_not_gated_at_pretooluse(self):
-        # The paragraph-split lint was retired at the 52e85a0 refresh: the vendor
-        # checker now reports those runs itself, and AgentFrame's "fix before
-        # export" stance is an overlay rule. Export must pass through untouched
-        # unless a sealed confirmation contract applies.
+        # The vendor checker reports paragraph-split runs itself, and AgentFrame's
+        # "fix before export" stance is an overlay rule. Export passes through untouched.
         self.assertIsNone(guard.decide(self.export_payload()))
 
     def test_post_export_promotion_reminder(self):

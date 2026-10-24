@@ -102,7 +102,7 @@ class RunLog(TempDB):
     def test_subcommand_verbs_keep_their_second_token(self):
         self.assertEqual(af.verb_of(["pipe", "stage", "acme", "applied"]), "pipe stage")
         self.assertEqual(af.verb_of(["draft", "p", "d", "--file", "x-v1.md"]), "draft")
-        self.assertEqual(af.verb_of(["board", "list", "--json"]), "board list")
+        self.assertEqual(af.verb_of(["studio", "post", "clip", "--url", "u"]), "studio post")
         self.assertEqual(af.verb_of([]), "?")
 
 

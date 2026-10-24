@@ -60,35 +60,6 @@ system/index/golden-set.yaml
 system/index/voice/
 system/index/refresh.log
 
-# === Browser harness runtime ===
-system/browser/runs/
-system/browser/workflows/**/runs/
-system/browser/cache/
-system/browser/local/
-system/browser/node_modules/
-system/browser/dist/
-system/browser/.env
-
-# === Open Design local runtime / build artifacts ===
-system/skills/open-design/source/node_modules/
-system/skills/open-design/source/.od/
-system/skills/open-design/source/.od-e2e/
-system/skills/open-design/source/dist/
-system/skills/open-design/source/out/
-system/skills/open-design/source/.next/
-system/skills/open-design/source/.next-*/
-system/skills/open-design/source/.tmp/
-system/skills/open-design/source/test-results/
-system/skills/open-design/source/playwright-report/
-system/skills/open-design/source/e2e/.od-data/
-system/skills/open-design/source/e2e/reports/
-
-# === Open Design — operator content under the source subtree ===
-# gitignore only affects UNTRACKED paths, so upstream-shipped systems/skills
-# (already tracked) stay; anything new the operator adds here stays local.
-system/skills/open-design/source/design-systems/*/
-system/skills/open-design/source/skills/*/
-
 # === Scratch directories anywhere in the tree ===
 **/_scratch/
 
@@ -123,8 +94,3 @@ docs/
 # grandfathered in, but new ones a vendor refresh brings must not be ignored.
 !system/docs/
 !system/docs/**
-
-# === Local surface runtime state (per-machine) ===
-system/server/.surface.lock
-system/server/.surface.log
-system/server/.cache/

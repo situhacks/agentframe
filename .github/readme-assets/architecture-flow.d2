@@ -68,8 +68,3 @@ persona -> builder: Builder { class: link }
 
 operator.deliver -> builder: "harvest → voice · templates · processes" { class: link }
 builder -> operator.flow: shapes future runs { class: soft }
-
-# ---- dashboard reads everything, writes nothing ----
-dashboard: "Workspace\nDashboard\n\nreads the same files\nnever writes" { class: reader }
-operator -> dashboard: { class: soft }
-builder -> dashboard: { class: soft }

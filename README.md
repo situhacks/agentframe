@@ -21,7 +21,6 @@ I built it for my professional and personal work over many weekends, with likely
 - [A real project, step by step](#a-real-project-step-by-step)
 - [At a glance](#at-a-glance)
 - [Architecture](#architecture)
-- [The Workspace Dashboard](#the-workspace-dashboard)
 - [Repository map](#repository-map)
 - [Integrations](#integrations)
 - [Auditability](#auditability)
@@ -77,15 +76,7 @@ AgentFrame keeps its context, working rules, and project state in plain files th
 
 - **Feed finished work back into the system.** When a project closes, harvest passes compare agent drafts with the operator's manual edits and the friction logged along the way. They propose changes to templates, processes, or the voice corpus, but nothing updates itself automatically; at least one short human review step remains.
 
-- **Bound experiments before they run unattended.** A bounded run defines its goal, evidence of completion, write surface, iteration budget, and review points before the agent starts. The contract lives in [`bounded-autonomy.md`](library/process/bounded-autonomy.md); `python system/af.py autonomy` makes it mechanical: a run starts sealed to its charter, records checkpoints as it goes, and ends in a receipt.
-
-### 5. See the workspace without another database
-
-- **Render the workspace from the same files the agents use.** The dashboard covers projects, attention items, the calendar, and the timeline without adding another database or making a model call. It provides a quick operational view while demonstrating that the underlying files are coherent enough to become an interface.
-
-More detail is in [The Workspace Dashboard](#the-workspace-dashboard).
-
-### 6. Find anything you've ever written
+### 5. Find anything you've ever written
 
 - **Search every project at once.** `python system/af.py search "<whatever you half-remember>"` retrieves across projects, plans, templates, and system docs, phrased the way you'd ask rather than the filename you forgot. Ranking fuses exact-match trigram search with an embedding model run locally through Ollama, so exact identifiers and fuzzy meaning both land.
 
@@ -106,7 +97,7 @@ More detail is in [The Workspace Dashboard](#the-workspace-dashboard).
 
 2. Open the folder in Claude Code.
 
-3. Copy `.env.example` to `.env` if you want the optional Gemini integration. The workspace, CLI, project system, and dashboard all run without API keys.
+3. Copy `.env.example` to `.env` and set `GEMINI_API_KEY` if you want Gemini image generation. The workspace, CLI, and project system all run without API keys.
 
 4. Tell the agent: **"Start a new project."** The stable root routes project work to the Operator instructions; under the hood the state transition is:
 
@@ -116,13 +107,6 @@ More detail is in [The Workspace Dashboard](#the-workspace-dashboard).
 
    The agent proposes a plan scaled to your objective. Nothing governed is created unless the work needs it.
 
-5. Optionally, start the Workspace Dashboard:
-
-   ```bash
-   pip install -r system/server/requirements.txt
-   python system/server/run.py --daemon
-   ```
-
 ### Modes
 
 One stable `AGENTS.md` classifier routes each task to a lazy-loaded instruction file with a hard ownership boundary:
@@ -131,10 +115,6 @@ One stable `AGENTS.md` classifier routes each task to a lazy-loaded instruction 
 - **Builder** evolves the templates, packs, processes, personas, CLI, and runtime under `library/` and `system/`.
 
 The root file is never rewritten to change modes. An agent reads only the task-local router it needs, then switches routers if the task's ownership changes.
-
-### Pulling upstream changes
-
-Personal context, projects, pipeline data, the audit database, and the per-machine retrieval index are gitignored, so your working layer never collides with updates. Ask the agent to **"pull upstream AgentFrame updates."** The root routes that system task to Builder; the sync skill walks changes commit by commit, or applies a reviewed bulk migration, without touching the personal layer.
 
 ## What it can run
 
@@ -184,7 +164,7 @@ The marketing pack has the most visual production because it is where this works
 <table>
 <tr>
 <td width="50%" valign="top"><img src=".github/readme-assets/walkthrough-01-cmo-kickoff.png" alt="Project kickoff" /><br/><sub><b>1 · Kickoff.</b> Scaffold the project, load operator context, gather live signals, and choose the research depth.</sub></td>
-<td width="50%" valign="top"><img src=".github/readme-assets/walkthrough-02-research.png" alt="Deep research" /><br/><sub><b>2 · Research.</b> Use Gemini Deep Research or the native multi-role research skill and keep the cited artifact in the project.</sub></td>
+<td width="50%" valign="top"><img src=".github/readme-assets/walkthrough-02-research.png" alt="Deep research" /><br/><sub><b>2 · Research.</b> Use the native multi-role research skill or a Gemini web handoff and keep the cited artifact in the project.</sub></td>
 </tr>
 <tr>
 <td width="50%" valign="top"><img src=".github/readme-assets/walkthrough-03-post-copy.png" alt="Copy in the operator voice" /><br/><sub><b>3 · Draft.</b> Build from templates, the gold voice corpus, register guidance, and project evidence. Every replacement-shaped revision becomes a snapshot.</sub></td>
@@ -203,7 +183,7 @@ The careers pack treats your own career as a long project. It is built first for
 <table>
 <tr>
 <td width="50%" valign="top"><img src=".github/readme-assets/career-walkthrough-01.jpg" alt="The career bank as a grid of durable named files" /><br/><sub><b>1 · Build the career bank.</b> Role expectations, KPIs, proof points, resume bullets, stories, manager context, promotion rubrics, and cycle dates live as durable files.</sub></td>
-<td width="50%" valign="top"><img src=".github/readme-assets/career-walkthrough-02.jpg" alt="A calendar and pipeline board showing upcoming career conversations and dates" /><br/><sub><b>2 · See what's coming.</b> The calendar and pipeline board make upcoming conversations, submission dates, and follow-ups visible next to the rest of the workspace.</sub></td>
+<td width="50%" valign="top"><img src=".github/readme-assets/career-walkthrough-02.jpg" alt="A calendar and pipeline board showing upcoming career conversations and dates" /><br/><sub><b>2 · See what's coming.</b> Cycle dates and the pipeline board keep upcoming conversations, submission dates, and follow-ups in view.</sub></td>
 </tr>
 <tr>
 <td width="50%" valign="top"><img src=".github/readme-assets/career-walkthrough-03.jpg" alt="Completed projects harvested into a running proof-points file" /><br/><sub><b>3 · Gather evidence.</b> Completed projects already contain your wins; harvest passes turn them into proof points and a running impact record instead of a panic the week before review season.</sub></td>
@@ -225,7 +205,6 @@ This is the full capability catalog. AgentFrame does not rebuild every productio
 |---|---|---|
 | `agent-reach` | Read-only reach for sources the default toolchain can't fetch: Reddit, LinkedIn, X, YouTube transcripts, RSS, semantic search | Vendored |
 | `agentframe-structure` | Safely changes flows, deliverable types, defaults, and ownership boundaries | Internal |
-| `browser-harness` | Runs local CDP-driven browser workflows | Vendored |
 | `d2-diagrams` | Auto-laid-out graphs for regenerated topologies | Internal (pinned D2 binary vendored) |
 | `diagram-design` | 39 editorial diagram grammars as self-contained HTML/SVG; flattens to native PowerPoint shapes | Vendored |
 | `deep-research` | Architect → specialist → synthesis research on the agent's own tools | Internal (prompts adapted from upstream) |
@@ -237,12 +216,10 @@ This is the full capability catalog. AgentFrame does not rebuild every productio
 | `humanizer` | Detects and removes common AI-writing patterns | Vendored |
 | `hyperframes` | HTML-to-video composition: Studio, CLI, engine, and routed video skills | Vendored |
 | `job-scout` | Sweeps public ATS feeds against the career search profile, login-free | Adapted |
-| `open-design` | Local-first advanced image and deck runtime | Vendored |
 | `ppt-master` | Converts sources into designed SVG pages and native-editable PowerPoint decks | Vendored |
 | `pptx` | Inspects, validates, and performs native PowerPoint edits | Vendored |
 | `project-consolidate` | Archives stale project detail and promotes durable context | Internal |
 | `system-improvement` | Applies scoped system patches with verification and audit discipline | Internal |
-| `upstream-sync` | Adopts upstream AgentFrame changes without overwriting the personal layer | Internal |
 | `voice-harvest` | Turns finished work and edit deltas into corpus examples and contrastive pairs | Internal |
 
 Vendored skills keep a skill-local `VENDOR.md` with the upstream source and refresh procedure, so pulling the latest community version is a documented step. The live index is [`system/skills/README.md`](system/skills/README.md).
@@ -253,21 +230,18 @@ All AgentFrame-owned. Each loads on demand when the work reaches it.
 
 | Process | What it gives the agent |
 |---|---|
-| `bounded-autonomy` | Goal contracts, budgets, checkpoints, reviewer gates, and stop rules |
-| `browser-fallback` | A controlled browser route when a supported API, connector, or CLI is unavailable |
 | `career-harvest` | Promotion of real project wins into proof points, stories, and resume-bank bullets |
 | `deck-production` | Central deck routing with PPT Master as the default for new PowerPoint work |
 | `deliverable-versioning` | Head pointers, immutable snapshots, and revision judgment |
 | `diagram-production` | Diagram route selection, the native-shape deck handoff, and design-language brand projection |
 | `flow-authoring` | The standard for adding or reshaping project flows |
 | `humanizer-integration` | A calibrated humanization pass where a template calls for it |
-| `image-production` | Path selection across generated imagery, HTML visuals, and Open Design |
+| `image-production` | Path selection across generated imagery, diagrams, and HTML visuals |
 | `knowledge-base` | Source ingestion, living knowledge files, archives, and consolidation rules |
 | `native-office-render` | Renders PPTX/DOCX to pixels or PDF through installed Microsoft Office — the only sanctioned renderer |
 | `ready-event` | Readiness mechanics and the post-ready judgment checklist |
 | `operator-context-setup` | First-run generation of positioning, profile, career, and voice surfaces |
 | `performance-capture` | Connector-first post metrics capture and the raw performance CSV shape |
-| `preview-server` | Start-or-open behaviour, deep links, and preview hygiene for the dashboard |
 | `process-authoring` | The standard for reusable process files |
 | `project-activity` | The material-event trail and Attention items behind every project |
 | `project-frontmatter` | Canonical project state, tracker schema, overrides, and drift checks |
@@ -295,7 +269,7 @@ All AgentFrame-owned, shaped by real use.
 ## Architecture
 
 <p align="center">
-  <img src=".github/readme-assets/architecture-flow.svg" alt="AgentFrame architecture: a coding agent opens a conversation and takes the Operator or Builder persona. In Operator, project.md holds state alongside activity.md and the sources/knowledge substrate; the selected flow loads a process per step, which pulls skills on demand and produces deliverables in your voice, gated for readiness before use or sharing. Finished work harvests back into the Builder surface (templates, processes, domain packs, personas, voice corpus, builder backlog), which shapes future runs. The Workspace Dashboard reads the same files and never writes." width="760" />
+  <img src=".github/readme-assets/architecture-flow.svg" alt="AgentFrame architecture: a coding agent opens a conversation and takes the Operator or Builder persona. In Operator, project.md holds state alongside activity.md and the sources/knowledge substrate; the selected flow loads a process per step, which pulls skills on demand and produces deliverables in your voice, gated for readiness before use or sharing. Finished work harvests back into the Builder surface (templates, processes, domain packs, personas, voice corpus, builder backlog), which shapes future runs." width="760" />
 </p>
 
 The structure follows a few rules that have kept it from turning into a second job to maintain:
@@ -305,34 +279,7 @@ The structure follows a few rules that have kept it from turning into a second j
 - **Files own working truth.** Markdown and media hold project state, context, decisions, and outputs. SQLite has exactly two sanctioned jobs: the append-only system-change audit, and a rebuildable search index that stays a derived cache, never truth.
 - **Sources and knowledge are different things.** Immutable inputs live in `sources/`; distilled working context lives in `knowledge/`.
 - **Prose owns judgment; mechanisms guarantee invariants.** The agent decides what good work is. The CLI and hooks protect state, exports, and repeatable gates.
-- **The dashboard is a reader.** It never becomes a competing state owner. It only shows what's already available in markdown.
 - **Templates hold the reusable knowledge.** Skills and runtimes can be replaced without rewriting the deliverable library.
-
-## The Workspace Dashboard
-
-`python system/server/run.py --daemon` starts or reuses the local server and opens the workspace UI (you can also just ask the agent to turn it on). It reads the workspace files directly, so it does not need a model, an API key, or a second database.
-
-<table>
-<tr>
-<td width="50%" valign="top"><img src=".github/readme-assets/dash-home.jpg" alt="Dashboard home" /><br/><sub><b>Surface · Dashboard.</b> Active projects, attention items, and recent activity, read straight from the workspace files.</sub></td>
-<td width="50%" valign="top"><img src=".github/readme-assets/dash-preview.jpg" alt="Preview workspace" /><br/><sub><b>Surface · Preview.</b> An IDE-style workspace with tabs and splits for markdown, decks, PDFs, images, and video.</sub></td>
-</tr>
-<tr>
-<td width="50%" valign="top"><img src=".github/readme-assets/cal-week.jpg" alt="Week calendar" /><br/><sub><b>Calendar · Week.</b> Work blocks derived from logged activity; the day view zooms into this.</sub></td>
-<td width="50%" valign="top"><img src=".github/readme-assets/cal-month.jpg" alt="Month calendar" /><br/><sub><b>Calendar · Month.</b> Deliverable and shipped-media markers across the month, with hover previews.</sub></td>
-</tr>
-<tr>
-<td width="50%" valign="top"><img src=".github/readme-assets/cal-timeline.jpg" alt="Timeline" /><br/><sub><b>Calendar · Timeline.</b> A multi-month swimlane across projects, active-first.</sub></td>
-<td width="50%" valign="top"></td>
-</tr>
-</table>
-
-Beyond what the tour shows:
-
-- Markdown, text, HTML, image, PDF, video, PPTX, and DOCX viewing in the preview workspace
-- Deliverable and shipped-media markers with hover previews across the calendar
-- Completed-project history and print/PDF calendar output
-- File watching and LiveReload for production work
 
 ## Repository map
 
@@ -351,14 +298,11 @@ agentframe/
 ├── system/
 │   ├── af.py                    # deterministic state-transition CLI
 │   ├── audit/                   # append-only system-change audit
-│   ├── browser/                 # browser runtime and recipes
 │   ├── hooks/                   # deterministic production guards
 │   ├── indexer.py               # hybrid cross-project retrieval behind af index / af search
-│   ├── research/                # Gemini deep-research runtime
-│   ├── server/                  # Workspace Dashboard and preview server
 │   ├── skills/                  # owned and vendored capabilities
-│   ├── tests/                   # CLI, guards, dashboard, and runtime tests
-│   └── tools/                   # pinned local tool binaries
+│   ├── tests/                   # CLI, guard, and runtime tests
+│   └── tools/                   # local helpers and pinned tool binaries
 └── workspace/
     ├── projects/                # open-flow and structured projects
     └── pipeline/                # career board and case folders
@@ -370,8 +314,7 @@ AgentFrame runs locally, and Claude Code provides the model. External services a
 
 | Integration or runtime | Used for |
 |---|---|
-| Gemini | Deep Research and image generation through the local helper |
-| Open Design | Local-first advanced visual and deck production |
+| Gemini | Image generation through the local helper and PPT Master |
 | PPT Master | Native-editable deck generation from source material and SVG |
 | HyperFrames | HTML-to-video composition and rendering |
 | Ollama | Optional local embedding model for cross-project search; without it, search runs keyword-only |
@@ -398,7 +341,6 @@ PRs for templates, process improvements, domain packs, skills, and runtime fixes
 ## References and lineage
 
 - [agentframe-marketing](https://github.com/situhacks/agentframe-marketing), the frozen marketing-only predecessor
-- [Open Design](https://github.com/nexu-io/open-design)
 - [PPT Master](https://github.com/hugohe3/ppt-master)
 - [HyperFrames](https://github.com/heygen-com/hyperframes)
 - [design-extract](https://github.com/Manavarya09/design-extract)

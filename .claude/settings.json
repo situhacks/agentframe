@@ -6,25 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/autonomy_guard.py\""
-          },
-          {
-            "type": "command",
-            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/board_guard.py\" --event sessionstart"
-          },
-          {
-            "type": "command",
             "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/index_refresh.py\""
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/board_guard.py\" --event stop"
           }
         ]
       }
@@ -36,10 +18,6 @@
           {
             "type": "command",
             "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/version_guard.py\""
-          },
-          {
-            "type": "command",
-            "command": "python \"${CLAUDE_PROJECT_DIR}/system/hooks/board_guard.py\" --event pretooluse"
           }
         ]
       },

@@ -13,7 +13,7 @@ Load the first column, then only what the second names. The third column is what
 | A recording arrives to be edited | [`short-form-edit.md`](../../process/short-form-edit.md), the channel profile, the video design language the profile names | `hooks.md` for the hook check; `af search` for cutaways; `studio.md` when the piece needs a frame | other posts' `edit.md` |
 | Plan or script a post or a series | `studio.md`, [`positioning`](../../context/operator/positioning.md), [`voice`](../../context/operator/voice/README.md) | `hooks.md`, `series/{slug}.md`, `ideas.md` | research pulls |
 | Creator study or hook research | `research/whitelist.md` + the study section of `short-form-edit.md` | `hooks.md` to append | posts |
-| Schedule or publish a batch | the browser workflow recipe named by the channel profile, `af studio stage` / `af studio post` | the calendar mirror step below | anything else |
+| Schedule or publish a batch | the channel profile, `af studio stage` / `af studio post` | the calendar mirror step below | anything else |
 | Performance capture | [`performance-capture.md`](../../process/performance-capture.md), `performance.csv`, `hooks.md` | the post's `post.md` | renders |
 
 ## The post
@@ -27,7 +27,7 @@ Load the first column, then only what the second names. The third column is what
 | 4 Decide | Fill `edit.md`: hook, punch-ins, b-roll slots via `af search`, text cards, SFX, captions, end card, platform caption | edit route |
 | 5 Compose and render | HyperFrames project under `video/`; `npx hyperframes check`; render 1080×1920 to `renders/final.mp4`; `af studio stage <slug> cut` | edit route + spine |
 | 6 QC | First three seconds, safe zones, duration, size, no watermark. **The operator watches the render before it is scheduled** | operator |
-| 7 Schedule | The channel's browser workflow recipe uploads and schedules; human gate before the final click unless the run is authorized; `af studio stage <slug> scheduled`; mirror the slot to the operator's calendar (below) | recipe + spine |
+| 7 Schedule | Upload and schedule through Claude Code's own browser and computer-use skills, with the operator's sign-ins, and ask before any send; `af studio stage <slug> scheduled`; mirror the slot to the operator's calendar (below) | agent + spine |
 | 8 Post | When live: `af studio post <slug> --url U [--posted-at T]` writes the receipt | spine |
 | 9 Measure | Around day 14 `af doctor studio` nudges; capture per `performance-capture.md` into `performance.csv`, `unknown, not zero` for what no surface exposes; stamp `metrics_captured_at` | operator + process |
 | 10 Learn | Score the hook row in `hooks.md`; propose next week's hooks from what retained. One batched weekly review, no thresholds | agent |

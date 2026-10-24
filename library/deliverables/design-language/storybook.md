@@ -4,20 +4,20 @@ An **optional** single-file HTML catalog of a project's design language — a br
 
 One storybook per design language. It is a companion to `design-language-v{N}.md`, not a replacement — the `.md` is the source of truth; the storybook is the visual view of it.
 
-**Not versioned.** The storybook is a *rendered view*, like `tokens.css` — a single `storybook.html` that is regenerated when the language changes, always reflecting the current (highest) `design-language-v{N}.md`. The version history already lives in the language's `v{N}` chain; do not create `storybook-v{N}.html`. Static filename, dynamically current content. It is the Design group's default/current file in the preview server.
+**Not versioned.** The storybook is a *rendered view*, like `tokens.css` — a single `storybook.html` that is regenerated when the language changes, always reflecting the current (highest) `design-language-v{N}.md`. The version history already lives in the language's `v{N}` chain; do not create `storybook-v{N}.html`. Static filename, dynamically current content.
 
 ## When It Exists
 
 - The operator asks to see the design language rendered, not just read it.
 - During direction selection, to compare candidates richly (an upgrade of `preview/directions-compare.html`).
-- As the pinned reference for a ready language (surfaces at the top of the preview server's Design section).
+- As the pinned reference for a ready language.
 
 A language with no storybook is normal and fully valid. Absence is never an error.
 
 ## File Shape (hard rules)
 
 - **One self-contained `.html` file** at `preview/storybook.html`, beside the design language.
-- **Links `tokens.css` relatively** — `<link rel="stylesheet" href="assets/tokens.css">`. Never inline token values. This keeps token edits reflecting live under the preview server and lets the file open standalone via `file://`.
+- **Links `tokens.css` relatively** — `<link rel="stylesheet" href="assets/tokens.css">`. Never inline token values. This keeps token edits reflecting live and lets the file open standalone via `file://`.
 - **Google Fonts import allowed** (matches existing preview HTML).
 - Renders correctly both standalone (`file://`) and served.
 - No build step, no external JS dependencies beyond fonts.
@@ -38,12 +38,12 @@ Sections with no earned content collapse to a short "none for this project" note
 
 Both paths satisfy this same standard, so they are interchangeable:
 
-- **Script (default, low-cost):** `python -m system.server.lib.storybook <design-language-folder>`. Deterministic render from `tokens.yaml` + heading-extracted prose from the `.md`. Fails loudly on schema drift (named error, no partial file) — see the script's validation.
+- **Script (default, low-cost):** `python -m system.tools.storybook <design-language-folder>`. Deterministic render from `tokens.yaml` + heading-extracted prose from the `.md`. Fails loudly on schema drift (named error, no partial file) — see the script's validation.
 - **Agent-authored (fallback):** when the script can't run (schema the script doesn't cover, or the script is archived), author the HTML directly against this standard. Same file shape, same sections.
 
 ## Tokens Schema It Reads
 
-The script and any parser read the canonical `tokens.yaml` schema documented in `system/server/lib/tokens_to_css.py`. `type` roles are project-defined keys (e.g. `display/body/mono` or `primary/annotation/mono`), iterated generically — there is no fixed role enum. Project-specific token sections the standard doesn't name (e.g. `highlighter`, `nano-banana`) are passed over gracefully, not errored.
+The script and any parser read the canonical `tokens.yaml` schema documented in `system/tools/tokens_to_css.py`. `type` roles are project-defined keys (e.g. `display/body/mono` or `primary/annotation/mono`), iterated generically — there is no fixed role enum. Project-specific token sections the standard doesn't name (e.g. `highlighter`, `nano-banana`) are passed over gracefully, not errored.
 
 ## Not In This Companion
 

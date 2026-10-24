@@ -8,11 +8,11 @@ Capture the accepted research for a detailed campaign before strategy work begin
 
 - `phase-1-research/idea-bank.md`
 - Selected campaign direction from the operator
-- Gemini Deep Research API output or operator-provided Gemini web output
+- Native deep-research output, operator-provided Gemini web output, or manual sources
 
 ## Output Shape
 
-Use these as directional headings, not a rigid schema. The same section block is injected into Gemini DR prompts as the required return structure, so keep it tight and self-contained.
+Use these as directional headings, not a rigid schema. The same section block is injected into research prompts as the required return structure, so keep it tight and self-contained.
 
 - **Campaign Direction** — selected idea, working angle, and why it is worth exploring.
 - **Market Context** — what is happening, why now, and what makes the topic timely.
@@ -38,15 +38,11 @@ last_updated: <ISO-8601 timestamp>
 current_version: <integer>
 version_history:
   - {v: <int>, date: <YYYY-MM-DD>, note: "<one-line reason>"}
-research_method: <gemini_deep_research_api | gemini_web_handoff | manual_sources>
+research_method: <native-deep-research | gemini_web_handoff | manual_sources>
 source_material:
   - {path: <relative path>, kind: <raw_export | uploaded_source | transcript | pasted_text>}
 ---
 ```
-
-## Exceptions / Branches
-
-For API runs, preserve Gemini's native interaction JSON under `source-material/` and use `system/research/gemini_deep_research.py` to extract the Markdown handoff. If extraction fails, keep the raw JSON and ask for Builder help; do not fabricate a research artifact from an unknown response shape.
 
 ## Readiness Criteria
 

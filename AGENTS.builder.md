@@ -27,9 +27,6 @@ The durable product is the deliverable library. Harness machinery is scaffolding
 | Flow, deliverable-type, or process-structure change | [`.claude/skills/agentframe-structure/SKILL.md`](.claude/skills/agentframe-structure/SKILL.md), then the authoring standard/reference it routes to | Project content unless the task is a schema/migration job |
 | Persona/rule/template/process change | Existing target file, nearby pattern files, [`system/audit/README.md`](system/audit/README.md) if logging/querying is needed | Project deliverables |
 | Audit/telemetry work | [`system/audit/README.md`](system/audit/README.md), `system/audit/schema.sql`, relevant audit modules/tests | Markdown project content except fixtures |
-| Browser/runtime work | `system/browser/README.md`, relevant workflow recipe; `system/skills/browser-harness/SKILL.md` for browser-control mechanics | Project copy/spec files |
-| Visual/server machinery | Relevant `system/server/` docs and adjacent code | Project content unless explicitly part of a fixture |
-| Pulling upstream AgentFrame updates into this copy | [`system/skills/upstream-sync/SKILL.md`](system/skills/upstream-sync/SKILL.md) | Gitignored personal layer (operator context, projects, backlog, audit DB) — sync never touches it |
 | Deliverable drafting, iteration, or review requested | Stop and read [`AGENTS.operator.md`](AGENTS.operator.md); it governs that task | Using Builder rules to draft project deliverables |
 | Need a capability, process, or deliverable type and unsure one exists | The matching catalog: [`system/skills/README.md`](system/skills/README.md) (skills), [`library/process/README.md`](library/process/README.md) (processes), `library/deliverables/` + domain packs (templates) — then the named file | Reinventing a capability, process, or template a catalog row already provides |
 | Task-class mismatch | Modes table below | Continuing under the wrong router |
@@ -82,7 +79,7 @@ Run these checks, in order, before writing any agent-facing file:
 6. When the change retires, renames, or moves a concept, sweep the repo for stale references in the same commit; a deliberately deferred pocket gets a `BB-*` row, not silence.
 7. Run the cheapest useful verification: targeted search, lints, tests, or artifact smoke test.
 8. Log system changes in `system/audit/agentframe.db` when the change affects system behavior, schema, templates, process files, or personas, using a `change_type` from the canonical list in `system/audit/README.md`; extend that list deliberately, not per-row.
-9. Commits to master are adoption units for downstream copies (`upstream-sync` walks them commit by commit): group related changes into one coherent commit, and when a commit retires a template or changes a schema, add a `MIGRATION:` line to the commit body saying what replaces it.
+9. Group related changes into one coherent commit, and when a commit retires a template or changes a schema, add a `MIGRATION:` line to the commit body saying what replaces it.
 
 ---
 
@@ -108,16 +105,11 @@ Modes are task-local ownership boundaries, not mutable repository state. The roo
 | `library/domains/` | Domain packs (`marketing`, `project-mgmt`, `careers`, `creator`): skeletons, `pack.md`, optional `deliverables/`, `production.md` |
 | `library/context/` | Operator positioning/profile/voice (`operator/`), plus shared `channels/`, `people/`, `_meta/` |
 | `library/assets/` | Reusable assets: `logos/`, `design-languages/` packages (ppt-master identity + imagery manifest, optional `video/`), the operator's `media/` shelf, third-party `audio/` (schema: `library/assets/README.md`) |
-| `workspace/board.md` + `workspace/board/` | Work-in-flight index across projects: cards, briefs, receipts, monthly archive, orchestrator binding; owned by `af board`; gitignored personal layer |
-| `system/af.py` | Deterministic CLI (ready, publish, version, draft, new-project, autonomy, doctor, pipe, index/search, board) |
-| `system/board.py` | Board grammar, lanes, deterministic sync and sweep, receipts, archive, session binding; `system/hooks/board_guard.py` is its hook face (session-start sync, Stop backstop receipt, orchestrator write guard) |
+| `system/af.py` | Deterministic CLI (ready, publish, version, draft, new-project, doctor, pipe, index/search) |
 | `.claude/skills/` + `system/skills/` | Builder + Operator skills: AgentFrame-owned skills Claude discovers natively in `.claude/skills/`, vendored runtimes and the rest in `system/skills/`; catalog of what each does + when to load at `system/skills/README.md` |
 | `system/audit/` | SQLite audit/telemetry exception |
 | `system/indexer.py` + `system/index/` | Cross-project retrieval substrate behind `af index` / `af search`; the index DB is a gitignored derived cache, rebuildable, never truth |
-| `system/hooks/` | Deterministic guard logic (version safety, ppt-master staging / export promotion, pre-publish readiness, voice lint, board, autonomy pin), wired through `.claude/settings.json` |
-| `system/browser/` | Browser automation runtime |
-| `system/research/` | Deep-research runtime (`gemini_deep_research`) |
-| `system/server/` | Preview server |
+| `system/hooks/` | Deterministic guard logic (version safety, ppt-master staging / export promotion, pre-publish readiness, voice lint), wired through `.claude/settings.json` |
 | `system/builder-backlog.md` | Cross-project queue of Builder work (unresolved only) |
 | `system/builder-backlog-completed.md` | Resolved `BB-*` archive (moved from active on closeout) |
 | `.claude/plans/` | Design plans and specs (local-only) |

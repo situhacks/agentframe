@@ -100,23 +100,6 @@ class VersionGuardTests(unittest.TestCase):
         self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "deny")
         self.assertIn("af.py draft", out["hookSpecificOutput"]["permissionDecisionReason"])
 
-    def test_sealed_ppt_confirmation_is_immutable(self):
-        sealed = self.root / "workspace" / "projects" / "demo" / "deck.run.agentframe-confirmation.json"
-        sealed.write_text("{}\n", encoding="utf-8")
-        out = guard.decide(payload(sealed, tool="Edit"))
-        self.assertIn(
-            "sealed PPT confirmation",
-            out["hookSpecificOutput"]["permissionDecisionReason"],
-        )
-
-    def test_sealed_ppt_confirmation_must_be_created_by_adapter(self):
-        target = self.root / "workspace" / "projects" / "demo" / "deck.run.agentframe-confirmation.json"
-        out = guard.decide(payload(target, tool="Write"))
-        self.assertIn(
-            "ppt_master_contract.py seal",
-            out["hookSpecificOutput"]["permissionDecisionReason"],
-        )
-
     def test_non_versioned_and_non_project_files_pass(self):
         self.assertIsNone(guard.decide(payload(self.folder / "post-FINAL.md")))
         self.assertIsNone(guard.decide(payload(self.root / "README-v1.md")))

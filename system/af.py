@@ -22,7 +22,6 @@ Commands:
   python system/af.py feedback <project> [--mark-harvested [--note TEXT]]
   python system/af.py index update [--rebuild]|status|eval [--k N]
   python system/af.py search "<query>" [-n LIMIT] [--json]
-  python system/af.py autonomy init|check|start|checkpoint|finish|migrate ...
   python system/af.py pipe save --company C --role R --url U [--ats A] [--source S] [--posted D] [--deadline D] [--salary S] [--slug K]
   python system/af.py pipe start <slug>
   python system/af.py pipe stage <slug> <stage> [--offered-role TITLE]
@@ -31,13 +30,6 @@ Commands:
   python system/af.py studio new <slug> [--date D] [--platform P] [--series S] [--from FILE] [--name NAME]
   python system/af.py studio stage <slug> <state>
   python system/af.py studio post <slug> --url U [--posted-at T]
-  python system/af.py board init|add|dispatch|sync|approve|return|resume|close|drop|reopen|list|bind|unbind ...
-
-`board` verbs drive the work-in-flight index (workspace/board.md): one card per
-bounded slice of work across every project, four lanes (Queued, In progress,
-Needs you, Done), receipts from worker sessions, and a deterministic `sync`
-that converts anything that stopped moving into a Needs-you card and archives
-what the operator stopped caring about. See system/board.py for the grammar.
 
 `pipe` verbs drive the pipeline-topology surface (workspace/pipeline/): a
 stage-based funnel whose board (pipeline.md `applications:` rows) is the single
@@ -57,27 +49,15 @@ import argparse
 import datetime
 import glob
 import importlib.util
-import json
 import os
 import re
 import shutil
 import sys
 import time
 import types
-from pathlib import Path
-
-try:
-    from system import autonomy_contract
-except ModuleNotFoundError:  # direct ``python system/af.py`` execution
-    import autonomy_contract
 
 # The retrieval index is imported on demand by _indexer(): a syntax error mid-edit in
 # indexer.py must not take every state button down with it.
-
-try:
-    from system import board as workboard
-except ModuleNotFoundError:  # direct ``python system/af.py`` execution
-    import board as workboard
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROJECTS = os.path.join(ROOT, "workspace", "projects")
@@ -131,13 +111,6 @@ FLOWS = {"marketing-solo-flow": "1-research-and-architecture",
          "marketing-standard-flow": "1-research",
          "open-flow": "active",
          "project-mgmt-open-flow": "active"}
-
-AUTONOMY_SCHEMA_VERSION = autonomy_contract.SCHEMA_VERSION
-AUTONOMY_STATUSES = {"proposed", "running", "blocked", "review", "complete"}
-AUTONOMY_LEVELS = {"plan-only", "assisted", "unattended"}
-AUTONOMY_REVIEWER_MODES = {"independent", "same-context", "human"}
-AUTONOMY_COMPLETION_GATES = {"human", "independent-review"}
-AUTONOMY_MODEL_TIERS = {"premium", "workhorse", "economical", "current", "none"}
 
 
 _LAST_ERROR = None  # the refusal main() records in af_runs
@@ -267,7 +240,14 @@ def has_field(fm, key):
 
 def fm_list(fm, key):
     """Parse an inline or simple block string list from frontmatter."""
-    return autonomy_contract.list_value(fm, key)
+    inline = re.search(rf"^{re.escape(key)}:\s*\[(.*?)\]\s*$", fm, re.M)
+    if inline:
+        return [item.strip().strip("'\"") for item in inline.group(1).split(",") if item.strip()]
+    block = re.search(rf"^{re.escape(key)}:\s*$\n((?:[ \t]+-[ \t]+.*(?:\n|$))*)", fm, re.M)
+    if not block:
+        return []
+    return [line.strip()[2:].strip().strip("'\"")
+            for line in block.group(1).splitlines() if line.strip().startswith("- ")]
 
 
 def deliverables_span(fm):
@@ -892,581 +872,6 @@ def cmd_new_project(args):
     print("\nJudgment (stays with the agent):")
     print(f"  - Load library/process/flows/{args.flow}.md and run its kickoff")
     print("    (research offer / plan proposal / pack-owned kickoff steps — flow-owned, not script-owned).")
-
-
-# ---------------------------------------------------------------- bounded autonomy
-
-def autonomy_run_id(value):
-    if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", value or ""):
-        die(f"autonomy run id '{value}' is not folder-safe (use lowercase letters, numbers, hyphens)")
-    return value
-
-
-def autonomy_ref(project, run_id, must_exist=True):
-    cdir = project_dir(project)
-    if state_doc(cdir) != "project.md":
-        die("bounded autonomy runs belong to workspace projects, not pipeline applications")
-    run_id = autonomy_run_id(run_id)
-    path = os.path.join(cdir, "knowledge", "autonomy", f"{run_id}.md")
-    if must_exist and not os.path.isfile(path):
-        die(f"autonomy run '{run_id}' not found at {os.path.relpath(path, ROOT)}")
-    return cdir, path
-
-
-def autonomy_int(fm, key, issues, label, minimum=0):
-    raw = get_scalar(fm, key)
-    try:
-        value = int(raw)
-    except (TypeError, ValueError):
-        issues.append(f"{label}: field '{key}' must be an integer")
-        return None
-    if value < minimum:
-        issues.append(f"{label}: field '{key}' must be >= {minimum}")
-    return value
-
-
-def autonomy_inline_list(values):
-    return "[" + ", ".join(values) + "]"
-
-
-def autonomy_add_field(fm, key, value):
-    if has_field(fm, key):
-        return set_scalar(fm, key, value)
-    return fm.rstrip() + f"\n{key}: {value}"
-
-
-def autonomy_hash_state(fm):
-    return autonomy_contract.stored_and_observed(fm, ROOT)
-
-
-def autonomy_drift_issues(fm, label):
-    stored, observed, issues = autonomy_hash_state(fm)
-    out = [f"{label}: {issue}" for issue in issues]
-    if stored is None:
-        out.append(f"{label}: contract_sha256 is not sealed")
-    elif observed is not None and stored != observed:
-        out.append(
-            f"{label}: contract hash drift (stored={stored}, observed={observed})"
-        )
-    return out
-
-
-def autonomy_issues(
-    path,
-    expected_project=None,
-    require_ready=True,
-    check_hash=False,
-):
-    label = os.path.relpath(path, ROOT).replace("\\", "/")
-    if not os.path.isfile(path):
-        return [f"{label}: file missing"]
-    try:
-        fm, body = split_fm(read(path), label)
-    except SystemExit:
-        return [f"{label}: missing or invalid frontmatter"]
-
-    issues = []
-    schema = get_scalar(fm, "schema_version")
-    status = get_scalar(fm, "status")
-    if schema != AUTONOMY_SCHEMA_VERSION and status == "complete":
-        # Completed v1 runs are historical records. They are never pinned,
-        # resumed, or silently rewritten just to satisfy the current schema.
-        if get_scalar(fm, "run_id") != os.path.splitext(os.path.basename(path))[0]:
-            issues.append(f"{label}: legacy complete run_id must match filename")
-        if expected_project and get_scalar(fm, "project") != expected_project:
-            issues.append(f"{label}: legacy complete project must be '{expected_project}'")
-        return issues
-
-    required = (
-        "schema_version", "run_id", "project", "status", "autonomy_level", "goal",
-        "done_when", "context_sources", "frozen_context", "allowed_paths", "verification",
-        "bound_session", "contract_sha256", "prohibited_effects", "max_iterations",
-        "max_subagents", "subagents_used", "iteration", "planner_tier", "executor_tier", "reviewer_tier",
-        "reviewer_mode", "completion_gate", "started_at", "last_checkpoint", "completed_at",
-        "blocked_reason", "completion_evidence", "approved_by",
-    )
-    for field in required:
-        if not has_field(fm, field):
-            issues.append(f"{label}: required field '{field}' missing")
-
-    if schema != AUTONOMY_SCHEMA_VERSION:
-        issues.append(f"{label}: schema_version must be {AUTONOMY_SCHEMA_VERSION}")
-    if get_scalar(fm, "run_id") != os.path.splitext(os.path.basename(path))[0]:
-        issues.append(f"{label}: run_id must match filename")
-    if expected_project and get_scalar(fm, "project") != expected_project:
-        issues.append(f"{label}: project must be '{expected_project}'")
-
-    level = get_scalar(fm, "autonomy_level")
-    reviewer_mode = get_scalar(fm, "reviewer_mode")
-    completion_gate = get_scalar(fm, "completion_gate")
-    if status not in AUTONOMY_STATUSES:
-        issues.append(f"{label}: status '{status}' invalid")
-    if level not in AUTONOMY_LEVELS:
-        issues.append(f"{label}: autonomy_level '{level}' invalid")
-    if reviewer_mode not in AUTONOMY_REVIEWER_MODES:
-        issues.append(f"{label}: reviewer_mode '{reviewer_mode}' invalid")
-    if completion_gate not in AUTONOMY_COMPLETION_GATES:
-        issues.append(f"{label}: completion_gate '{completion_gate}' invalid")
-    for field in ("planner_tier", "executor_tier", "reviewer_tier"):
-        if get_scalar(fm, field) not in AUTONOMY_MODEL_TIERS:
-            issues.append(f"{label}: {field} '{get_scalar(fm, field)}' invalid")
-
-    prohibited = fm_list(fm, "prohibited_effects")
-    if prohibited != list(autonomy_contract.PROHIBITED_EFFECTS):
-        issues.append(
-            f"{label}: prohibited_effects must equal the AgentFrame v2 invariant set"
-        )
-
-    context_sources = {
-        value.replace("\\", "/") for value in fm_list(fm, "context_sources")
-    }
-    frozen_context = [
-        value.replace("\\", "/") for value in fm_list(fm, "frozen_context")
-    ]
-    for frozen in frozen_context:
-        if frozen not in context_sources:
-            issues.append(
-                f"{label}: frozen_context path is not also in context_sources: {frozen}"
-            )
-    if require_ready or status != "proposed":
-        _, frozen_issues = autonomy_contract.resolve_frozen_files(
-            ROOT,
-            frozen_context,
-        )
-        issues.extend(f"{label}: {issue}" for issue in frozen_issues)
-
-    max_iterations = autonomy_int(fm, "max_iterations", issues, label, minimum=1)
-    max_subagents = autonomy_int(fm, "max_subagents", issues, label, minimum=0)
-    subagents_used = autonomy_int(fm, "subagents_used", issues, label, minimum=0)
-    iteration = autonomy_int(fm, "iteration", issues, label, minimum=0)
-    if max_iterations is not None and iteration is not None and iteration > max_iterations:
-        issues.append(f"{label}: iteration {iteration} exceeds max_iterations {max_iterations}")
-    if max_subagents is not None and subagents_used is not None and subagents_used > max_subagents:
-        issues.append(f"{label}: subagents_used {subagents_used} exceeds max_subagents {max_subagents}")
-
-    if require_ready or status != "proposed":
-        for field in ("goal", "done_when"):
-            if get_scalar(fm, field) in (None, "", "null"):
-                issues.append(f"{label}: readiness field '{field}' is unresolved")
-        for field in ("context_sources", "allowed_paths", "verification"):
-            if not fm_list(fm, field):
-                issues.append(f"{label}: readiness list '{field}' is empty")
-
-    if level == "unattended":
-        if reviewer_mode != "independent":
-            issues.append(f"{label}: unattended runs require reviewer_mode: independent")
-        if max_subagents is not None and max_subagents < 1:
-            issues.append(f"{label}: unattended runs require max_subagents >= 1")
-
-    binding = get_scalar(fm, "bound_session")
-    digest = get_scalar(fm, "contract_sha256")
-    if binding not in (None, "", "null"):
-        try:
-            autonomy_contract.normalize_session_binding(binding)
-        except ValueError as exc:
-            issues.append(f"{label}: {exc}")
-    if digest not in (None, "", "null") and not re.fullmatch(r"[0-9a-f]{64}", digest):
-        issues.append(f"{label}: contract_sha256 must be a lowercase SHA-256 digest")
-    if status in {"running", "review", "complete"}:
-        if binding in (None, "", "null"):
-            issues.append(f"{label}: status '{status}' requires bound_session")
-        if digest in (None, "", "null"):
-            issues.append(f"{label}: status '{status}' requires contract_sha256")
-    if check_hash and status in {"running", "review", "complete"}:
-        issues.extend(autonomy_drift_issues(fm, label))
-
-    started = get_scalar(fm, "started_at")
-    completed = get_scalar(fm, "completed_at")
-    evidence = get_scalar(fm, "completion_evidence")
-    approved_by = get_scalar(fm, "approved_by")
-    blocked_reason = get_scalar(fm, "blocked_reason")
-    if status in {"running", "blocked", "review", "complete"} and started in (None, "", "null"):
-        issues.append(f"{label}: status '{status}' requires started_at")
-    if status == "blocked" and blocked_reason in (None, "", "null"):
-        issues.append(f"{label}: blocked status requires blocked_reason")
-    if status in {"review", "complete"} and evidence in (None, "", "null"):
-        issues.append(f"{label}: status '{status}' requires completion_evidence")
-    if status == "complete":
-        if completed in (None, "", "null"):
-            issues.append(f"{label}: complete status requires completed_at")
-        if approved_by not in {"operator", "reviewer"}:
-            issues.append(f"{label}: complete status requires approved_by: operator|reviewer")
-
-    for heading in ("## Context", "## Plan", "## Model Routing", "## Checkpoints"):
-        if heading not in body:
-            issues.append(f"{label}: body missing '{heading}'")
-    return issues
-
-
-def autonomy_project_slug(cdir, require_active=True):
-    fm, _ = split_fm(read(os.path.join(cdir, "project.md")), "project.md")
-    if require_active and get_scalar(fm, "status") != "active":
-        die("bounded autonomy requires an active project")
-    return get_scalar(fm, "slug")
-
-
-def autonomy_save(path, fm, body):
-    write(path, join_fm(fm, body))
-
-
-def autonomy_touch(cdir):
-    path = os.path.join(cdir, "project.md")
-    fm, body = split_fm(read(path), "project.md")
-    write(path, join_fm(touch_lifecycle(fm), body))
-
-
-def autonomy_checkpoint_body(body, iteration, outcome, summary, evidence=None):
-    line = f"- {now_iso()} | iteration {iteration} | {outcome} | {' '.join(summary.split())}"
-    if evidence:
-        line += f" | evidence: {' '.join(evidence.split())}"
-    return body.rstrip() + "\n" + line + "\n"
-
-
-def cmd_autonomy_init(args):
-    cdir, path = autonomy_ref(args.project, args.run_id, must_exist=False)
-    project = autonomy_project_slug(cdir)
-    if os.path.exists(path):
-        die(f"autonomy run already exists: {os.path.relpath(path, ROOT)}")
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    fm = f"""schema_version: {AUTONOMY_SCHEMA_VERSION}
-run_id: {args.run_id}
-project: {project}
-status: proposed
-autonomy_level: {args.level}
-goal: null
-done_when: null
-context_sources: []
-frozen_context: []
-allowed_paths: []
-verification: []
-bound_session: null
-contract_sha256: null
-prohibited_effects: {autonomy_inline_list(autonomy_contract.PROHIBITED_EFFECTS)}
-max_iterations: 6
-max_subagents: 6
-subagents_used: 0
-iteration: 0
-planner_tier: premium
-executor_tier: workhorse
-reviewer_tier: premium
-reviewer_mode: independent
-completion_gate: human
-started_at: null
-last_checkpoint: null
-completed_at: null
-blocked_reason: null
-completion_evidence: null
-approved_by: null"""
-    body = f"""
-# Bounded Autonomy Run — {args.run_id}
-
-## Context
-
-Describe the source material, constraints, and decisions the run must preserve.
-
-## Plan
-
-Write independently checkable work units before starting.
-
-## Model Routing
-
-Record requested roles and the actual/inherited models the harness provided.
-
-## Checkpoints
-
-"""
-    autonomy_save(path, fm, body)
-    rel = os.path.relpath(path, ROOT).replace("\\", "/")
-    print(f"af autonomy init: {rel} -> proposed")
-    print("  complete the run contract, then run: af autonomy check <project> <run-id>")
-
-
-def cmd_autonomy_check(args):
-    cdir, path = autonomy_ref(args.project, args.run_id)
-    project = autonomy_project_slug(cdir, require_active=False)
-    issues = autonomy_issues(
-        path,
-        expected_project=project,
-        require_ready=True,
-        check_hash=True,
-    )
-    if issues:
-        print(f"af autonomy check: {len(issues)} issue(s)", file=sys.stderr)
-        for issue in issues:
-            print(f"  - {issue}", file=sys.stderr)
-        sys.exit(1)
-    fm, _ = split_fm(read(path), path)
-    print(f"af autonomy check: {args.run_id} is valid ({get_scalar(fm, 'status')})")
-
-
-def autonomy_binding_conflicts(binding, exclude_path=None):
-    conflicts = []
-    root = Path(PROJECTS)
-    if not root.is_dir():
-        return conflicts
-    excluded = Path(exclude_path).resolve() if exclude_path else None
-    for candidate in root.rglob("knowledge/autonomy/*.md"):
-        try:
-            if excluded and candidate.resolve() == excluded:
-                continue
-            fm, _ = split_fm(read(candidate), str(candidate))
-        except (OSError, SystemExit):
-            continue
-        if (
-            get_scalar(fm, "schema_version") == AUTONOMY_SCHEMA_VERSION
-            and get_scalar(fm, "status") == "running"
-            and get_scalar(fm, "bound_session") == binding
-        ):
-            conflicts.append(candidate)
-    return conflicts
-
-
-def cmd_autonomy_start(args):
-    cdir, path = autonomy_ref(args.project, args.run_id)
-    project = autonomy_project_slug(cdir)
-    issues = autonomy_issues(path, expected_project=project, require_ready=True)
-    if issues:
-        die("autonomy readiness failed:\n  - " + "\n  - ".join(issues))
-    fm, body = split_fm(read(path), path)
-    prior = get_scalar(fm, "status")
-    if prior not in {"proposed", "blocked"}:
-        die(f"autonomy start requires proposed|blocked, found '{prior}'")
-    if prior == "blocked" and not args.resume_reason:
-        die("resuming a blocked run requires --resume-reason")
-    raw_binding = getattr(args, "session_binding", None)
-    if not raw_binding:
-        die("autonomy start requires --session-binding claude:<session-id>")
-    try:
-        binding = autonomy_contract.normalize_session_binding(raw_binding)
-    except ValueError as exc:
-        die(str(exc))
-    conflicts = autonomy_binding_conflicts(binding, exclude_path=path)
-    if conflicts:
-        rels = ", ".join(os.path.relpath(item, ROOT) for item in conflicts)
-        die(f"session binding already owns a running autonomy run: {rels}")
-    iteration = int(get_scalar(fm, "iteration"))
-    max_iterations = int(get_scalar(fm, "max_iterations"))
-    if iteration >= max_iterations:
-        die(f"iteration budget exhausted ({iteration}/{max_iterations}); raise max_iterations deliberately before resuming")
-
-    prior_binding = get_scalar(fm, "bound_session")
-    prior_digest = get_scalar(fm, "contract_sha256")
-    fm = set_scalar(fm, "bound_session", yaml_quote(binding), path)
-    digest, hash_issues = autonomy_contract.observed_sha256(fm, ROOT)
-    if hash_issues or digest is None:
-        die("cannot seal autonomy contract:\n  - " + "\n  - ".join(hash_issues))
-    fm = set_scalar(fm, "contract_sha256", digest, path)
-
-    when = now_iso()
-    fm = set_scalar(fm, "status", "running", path)
-    if get_scalar(fm, "started_at") in (None, "", "null"):
-        fm = set_scalar(fm, "started_at", when, path)
-    fm = set_scalar(fm, "last_checkpoint", when, path)
-    fm = set_scalar(fm, "blocked_reason", "null", path)
-    if prior == "blocked":
-        detail = args.resume_reason
-        if prior_binding not in (None, "", "null") or prior_digest not in (None, "", "null"):
-            detail += (
-                f"; rebound {prior_binding or 'null'} -> {binding}; "
-                f"resealed {prior_digest or 'null'} -> {digest}"
-            )
-        body = autonomy_checkpoint_body(body, iteration, "resumed", detail)
-    autonomy_save(path, fm, body)
-    autonomy_touch(cdir)
-    event = "autonomy_started" if prior == "proposed" else "autonomy_resumed"
-    detail = (
-        f"{args.run_id} running; level={get_scalar(fm, 'autonomy_level')}, "
-        f"session={binding}, contract={digest}, budget={iteration}/{max_iterations}"
-    )
-    if args.resume_reason:
-        detail += f". Reason: \"{' '.join(args.resume_reason.split())}\""
-    append_activity(cdir, f"{event}: {detail}")
-    print(f"af autonomy start: {args.run_id} -> running ({iteration}/{max_iterations})")
-
-
-def cmd_autonomy_checkpoint(args):
-    cdir, path = autonomy_ref(args.project, args.run_id)
-    project = autonomy_project_slug(cdir)
-    issues = autonomy_issues(path, expected_project=project, require_ready=True)
-    if issues:
-        die("autonomy state invalid:\n  - " + "\n  - ".join(issues))
-    fm, body = split_fm(read(path), path)
-    if get_scalar(fm, "status") != "running":
-        die(f"autonomy checkpoint requires running, found '{get_scalar(fm, 'status')}'")
-    drift = autonomy_drift_issues(
-        fm,
-        os.path.relpath(path, ROOT).replace("\\", "/"),
-    )
-    if drift:
-        if args.outcome != "blocked":
-            die(
-                "autonomy contract drift blocks this transition; quarantine with "
-                "`checkpoint --outcome blocked`:\n  - " + "\n  - ".join(drift)
-            )
-        stored, observed, hash_issues = autonomy_hash_state(fm)
-        when = now_iso()
-        reason = (
-            f"contract drift quarantine: {args.summary}; "
-            f"stored={stored or 'null'}; observed={observed or 'unavailable'}"
-        )
-        if hash_issues:
-            reason += "; " + "; ".join(hash_issues)
-        fm = set_scalar(fm, "status", "blocked", path)
-        fm = set_scalar(fm, "last_checkpoint", when, path)
-        fm = set_scalar(fm, "blocked_reason", yaml_quote(reason), path)
-        iteration = int(get_scalar(fm, "iteration"))
-        body = autonomy_checkpoint_body(
-            body,
-            iteration,
-            "blocked",
-            reason,
-            args.evidence,
-        )
-        autonomy_save(path, fm, body)
-        autonomy_touch(cdir)
-        append_activity(
-            cdir,
-            f"autonomy_blocked: {args.run_id} quarantined at iteration "
-            f"{iteration}; stored={stored or 'null'}; "
-            f"observed={observed or 'unavailable'}",
-        )
-        print(
-            f"af autonomy checkpoint: {args.run_id} -> blocked "
-            f"(contract drift quarantined; counters unchanged)"
-        )
-        return
-    if args.outcome == "review" and not args.evidence:
-        die("review checkpoint requires --evidence")
-    if args.subagents_spawned < 0:
-        die("--subagents-spawned must be >= 0")
-
-    iteration = int(get_scalar(fm, "iteration")) + 1
-    max_iterations = int(get_scalar(fm, "max_iterations"))
-    subagents_used = int(get_scalar(fm, "subagents_used")) + args.subagents_spawned
-    max_subagents = int(get_scalar(fm, "max_subagents"))
-    when = now_iso()
-    outcome = args.outcome
-    fm = set_scalar(fm, "iteration", str(iteration), path)
-    fm = set_scalar(fm, "subagents_used", str(subagents_used), path)
-    fm = set_scalar(fm, "last_checkpoint", when, path)
-
-    if subagents_used > max_subagents:
-        outcome = "blocked"
-        reason = f"subagent budget exceeded ({subagents_used}/{max_subagents}): {args.summary}"
-        fm = set_scalar(fm, "status", "blocked", path)
-        fm = set_scalar(fm, "blocked_reason", yaml_quote(reason), path)
-    elif outcome == "review":
-        fm = set_scalar(fm, "status", "review", path)
-        fm = set_scalar(fm, "completion_evidence", yaml_quote(args.evidence), path)
-    elif outcome == "blocked":
-        fm = set_scalar(fm, "status", "blocked", path)
-        fm = set_scalar(fm, "blocked_reason", yaml_quote(args.summary), path)
-    elif iteration >= max_iterations:
-        outcome = "blocked"
-        reason = f"iteration budget exhausted ({iteration}/{max_iterations}): {args.summary}"
-        fm = set_scalar(fm, "status", "blocked", path)
-        fm = set_scalar(fm, "blocked_reason", yaml_quote(reason), path)
-
-    body = autonomy_checkpoint_body(body, iteration, outcome, args.summary, args.evidence)
-    autonomy_save(path, fm, body)
-    autonomy_touch(cdir)
-    if outcome == "blocked":
-        append_activity(cdir, f"autonomy_blocked: {args.run_id} blocked at iteration {iteration}; {get_scalar(fm, 'blocked_reason')}")
-    elif outcome == "review":
-        append_activity(cdir, f"autonomy_review_ready: {args.run_id} reached review at iteration {iteration}; evidence recorded in knowledge/autonomy/{args.run_id}.md")
-    print(f"af autonomy checkpoint: {args.run_id} -> {get_scalar(fm, 'status')} "
-          f"({iteration}/{max_iterations} iterations; {subagents_used}/{max_subagents} subagents)")
-
-
-def cmd_autonomy_finish(args):
-    cdir, path = autonomy_ref(args.project, args.run_id)
-    project = autonomy_project_slug(cdir)
-    issues = autonomy_issues(
-        path,
-        expected_project=project,
-        require_ready=True,
-        check_hash=True,
-    )
-    if issues:
-        die("autonomy state invalid:\n  - " + "\n  - ".join(issues))
-    fm, body = split_fm(read(path), path)
-    if get_scalar(fm, "status") != "review":
-        die(f"autonomy finish requires review, found '{get_scalar(fm, 'status')}'")
-    gate = get_scalar(fm, "completion_gate")
-    if gate == "human" and args.approved_by != "operator":
-        die("completion_gate: human requires --approved-by operator")
-    if args.approved_by == "reviewer" and get_scalar(fm, "reviewer_mode") != "independent":
-        die("reviewer approval requires reviewer_mode: independent")
-
-    when = now_iso()
-    fm = set_scalar(fm, "status", "complete", path)
-    fm = set_scalar(fm, "completed_at", when, path)
-    fm = set_scalar(fm, "last_checkpoint", when, path)
-    fm = set_scalar(fm, "approved_by", args.approved_by, path)
-    iteration = int(get_scalar(fm, "iteration"))
-    body = autonomy_checkpoint_body(body, iteration, "complete", f"approved by {args.approved_by}")
-    autonomy_save(path, fm, body)
-    autonomy_touch(cdir)
-    append_activity(cdir, f"autonomy_completed: {args.run_id} complete after {iteration} iteration(s); approved_by={args.approved_by}")
-    print(f"af autonomy finish: {args.run_id} -> complete (approved by {args.approved_by})")
-
-
-def cmd_autonomy_migrate(args):
-    cdir, path = autonomy_ref(args.project, args.run_id)
-    project = autonomy_project_slug(cdir, require_active=False)
-    fm, body = split_fm(read(path), path)
-    if get_scalar(fm, "project") != project:
-        die(f"legacy autonomy project must be '{project}'")
-    if get_scalar(fm, "schema_version") == AUTONOMY_SCHEMA_VERSION:
-        die("autonomy run already uses the current schema")
-
-    status = get_scalar(fm, "status")
-    if status == "complete":
-        print(
-            f"af autonomy migrate: {args.run_id} is a legacy complete record; "
-            "accepted read-only and left unchanged"
-        )
-        return
-    if status not in {"proposed", "blocked", "running", "review"}:
-        die(f"legacy autonomy status '{status}' cannot be migrated")
-    if status in {"running", "review"} and not args.quarantine:
-        die(
-            f"legacy {status} run has no trustworthy contract seal; rerun with "
-            "--quarantine to move it to blocked without inventing authority"
-        )
-
-    fm = set_scalar(fm, "schema_version", AUTONOMY_SCHEMA_VERSION, path)
-    fm = autonomy_add_field(fm, "frozen_context", "[]")
-    fm = autonomy_add_field(fm, "bound_session", "null")
-    fm = autonomy_add_field(fm, "contract_sha256", "null")
-    fm = autonomy_add_field(
-        fm,
-        "prohibited_effects",
-        autonomy_inline_list(autonomy_contract.PROHIBITED_EFFECTS),
-    )
-    when = now_iso()
-    if status in {"running", "review"}:
-        reason = (
-            f"legacy {status} run quarantined during {AUTONOMY_SCHEMA_VERSION} "
-            "migration; deliberately resume with a session binding to re-freeze"
-        )
-        fm = set_scalar(fm, "status", "blocked", path)
-        fm = set_scalar(fm, "blocked_reason", yaml_quote(reason), path)
-        fm = set_scalar(fm, "last_checkpoint", when, path)
-        iteration = int(get_scalar(fm, "iteration") or "0")
-        body = autonomy_checkpoint_body(body, iteration, "blocked", reason)
-
-    autonomy_save(path, fm, body)
-    autonomy_touch(cdir)
-    append_activity(
-        cdir,
-        f"autonomy_migrated: {args.run_id} -> {get_scalar(fm, 'status')}; "
-        f"schema={AUTONOMY_SCHEMA_VERSION}; contract unsealed",
-    )
-    print(
-        f"af autonomy migrate: {args.run_id} -> {get_scalar(fm, 'status')} "
-        f"({AUTONOMY_SCHEMA_VERSION}; contract unsealed)"
-    )
 
 
 # ---------------------------------------------------------------- pipe (pipeline topology)
@@ -2785,15 +2190,6 @@ def check_project(cdir):
         issues += rules.check(make_ctx(), cdir, cfm)
     issues += media_manifest_issues(cdir, cfm)
     issues += state_truth_issues(cdir, cfm)
-    autonomy_dir = os.path.join(cdir, "knowledge", "autonomy")
-    if os.path.isdir(autonomy_dir):
-        for path in sorted(glob.glob(os.path.join(autonomy_dir, "*.md"))):
-            issues += autonomy_issues(
-                path,
-                expected_project=get_scalar(cfm, "slug"),
-                require_ready=False,
-                check_hash=True,
-            )
     return issues
 
 
@@ -3026,8 +2422,8 @@ def check_system():
 AUDIT_DB = None            # None = the writer's default (system/audit/agentframe.db); tests repoint it
 BUTTON_WINDOW_DAYS = 14
 # Exit 1 from these means findings, not a refused transition.
-READ_ONLY_VERBS = {"doctor", "index", "search", "autonomy check", "pipe board", "board list"}
-SUBCOMMAND_VERBS = {"index", "pipe", "studio", "board", "autonomy"}
+READ_ONLY_VERBS = {"doctor", "index", "search", "pipe board"}
+SUBCOMMAND_VERBS = {"index", "pipe", "studio"}
 
 
 def _audit_writer():
@@ -3064,7 +2460,7 @@ def open_backlog_rows_naming_af():
         return 0
     active = read(path).split("## Active entries", 1)[-1]
     rows = re.split(r"(?m)^(?=- id: BB-|## BB-)", active)
-    pat = re.compile(r"af\.py|\baf (ready|publish|version|draft|adopt|pipe|studio|board|new-project)\b")
+    pat = re.compile(r"af\.py|\baf (ready|publish|version|draft|adopt|pipe|studio|new-project)\b")
     return sum(1 for r in rows if re.match(r"(- id: |## )BB-", r) and pat.search(r))
 
 
@@ -3148,12 +2544,6 @@ def cmd_doctor(args):
         all_issues += sys_issues
         notes += sys_notes
         system_scope = " + system surfaces"
-        if workboard.exists(ROOT):
-            try:
-                notes += [f"board: {n}" for n in workboard.issues(ROOT, workboard.load(ROOT, strict=False))]
-            except workboard.BoardError as exc:
-                all_issues.append(f"board: {exc}")
-            system_scope += " + board"
     system_scope += pipeline_scope + studio_scope
     for n in notes:
         print(f"af doctor: note — {n}")
@@ -3201,172 +2591,6 @@ def cmd_search(args):
 OPERATOR_VERBS = {"ready", "publish", "version", "draft", "adopt", "new-project"}
 OPERATOR_PIPE_VERBS = {"save", "start", "stage"}
 OPERATOR_STUDIO_VERBS = {"new", "stage", "post"}
-OPERATOR_AUTONOMY_VERBS = {"init", "start", "checkpoint", "finish"}
-
-
-# ------------------------------------------------------- board (work in flight)
-
-def _board_load():
-    try:
-        return workboard.load(ROOT)
-    except workboard.BoardError as exc:
-        die(str(exc))
-
-
-def _board_roster(args):
-    return None if getattr(args, "no_roster", False) else workboard.roster(ROOT)
-
-
-def _board_card_line(card):
-    bits = [card.id, card.project, card.deliverable, f"@{card.owner}"]
-    for key in ("ask", "reason", "session", "note"):
-        if card.fields.get(key):
-            bits.append(f"{key}: {card.fields[key]}")
-    return " · ".join(bits)
-
-
-def cmd_board_init(args):
-    workboard.init(ROOT)
-    rel = os.path.relpath(workboard.paths(ROOT)["board"], ROOT).replace(os.sep, "/")
-    print(f"af board init: {rel} ready (lanes: {', '.join(workboard.LANES)})")
-
-
-def cmd_board_add(args):
-    b = _board_load()
-    try:
-        card = workboard.add(ROOT, b, project=args.project, deliverable=args.deliverable, by=args.by,
-                             owner=args.owner, goal=args.goal or "", done_when=args.done_when or "",
-                             note=args.note or "", model=getattr(args, "model", None))
-    except workboard.BoardError as exc:
-        die(str(exc))
-    workboard.save(ROOT, b)
-    print(f"af board add: {card.id} -> Queued ({card.project} · {card.deliverable}); "
-          f"brief workspace/board/{card.fields.get('brief')}")
-    print("  next: fill the brief, then 'af board dispatch " + card.id + " [--launch]'")
-
-
-def cmd_board_dispatch(args):
-    b = _board_load()
-    try:
-        card = workboard.dispatch(b, args.card_id, session=args.session, rows=_board_roster(args), force=args.force)
-    except workboard.BoardError as exc:
-        die(str(exc))
-    # Record the lane move before launching: a launch that starts a worker but
-    # fails to report its id must never leave a live worker behind a Queued card.
-    workboard.save(ROOT, b)
-    if args.launch:
-        # precedence: --model for this dispatch, the model agreed on the card, then the board's fallback
-        model = args.model or card.fields.get("model") or b.meta.get("worker_model") or workboard.DEFAULT_META["worker_model"]
-        card.fields["model"] = model
-        try:
-            card.fields["session"] = workboard.launch_background(ROOT, card, model=model)
-        except workboard.BoardError as exc:
-            card.fields["note"] = workboard._clean("launch attempted; session id unknown, sync will reconcile")
-            workboard.save(ROOT, b)
-            die(str(exc))
-        workboard.save(ROOT, b)
-    how = "launched claude --bg" if args.launch else "attached"
-    session = card.fields.get("session") or "no session id yet"
-    print(f"af board dispatch: {card.id} -> In progress ({how}; owner @{card.owner}; session {session})")
-    if not args.launch and not card.fields.get("session"):
-        print(f"  note: no live session named '{card.owner}' in the roster; rename the chat or pass --session <id>")
-
-
-def cmd_board_sync(args):
-    if not workboard.exists(ROOT):
-        if args.quiet:
-            return
-        die("no board yet: run 'af board init'")
-    b = _board_load()
-    events = workboard.sync(ROOT, b, rows=_board_roster(args))
-    workboard.save(ROOT, b)
-    if args.quiet:
-        return
-    for event in events:
-        print(f"af board sync: {event}")
-    waiting = len(b.lanes["Needs you"])
-    print(f"af board sync: {len(events)} change(s); {waiting} card(s) need you")
-
-
-def _board_transition(args, fn, label):
-    b = _board_load()
-    try:
-        card = fn(b)
-    except workboard.BoardError as exc:
-        die(str(exc))
-    workboard.save(ROOT, b)
-    print(f"af board {label}: {_board_card_line(card)} -> {card.lane}{' (closed)' if card.done and card.lane == 'Done' else ''}")
-
-
-def cmd_board_approve(args):
-    b = _board_load()
-    before = b.find(args.card_id)
-    summary = before.fields.get("reason", "") if before else ""
-    try:
-        card = workboard.approve(b, args.card_id)
-    except workboard.BoardError as exc:
-        die(str(exc))
-    workboard.save(ROOT, b)
-    note = ""
-    cdir = os.path.join(PROJECTS, card.project)
-    if os.path.isfile(os.path.join(cdir, "project.md")):
-        append_activity(cdir, f"board_closed: {card.id} {card.deliverable}; {summary or 'approved by the operator'}")
-        note = "; activity line appended"
-    print(f"af board approve: {_board_card_line(card)} -> Done (closed{note})")
-
-
-def cmd_board_bind(args):
-    if not workboard.exists(ROOT):
-        die("no board yet: run 'af board init'")
-    try:
-        record = workboard.bind(ROOT, args.session_key)
-    except workboard.BoardError as exc:
-        die(str(exc))
-    print(f"af board bind: orchestrator = {record['session']} (writes confined to workspace/board/ while bound)")
-
-
-def cmd_board_unbind(args):
-    print("af board unbind: released" if workboard.unbind(ROOT) else "af board unbind: nothing was bound")
-
-
-def cmd_board_return(args):
-    _board_transition(args, lambda b: workboard.return_(b, args.card_id, args.feedback, ROOT), "return")
-
-
-def cmd_board_resume(args):
-    _board_transition(args, lambda b: workboard.resume(b, args.card_id), "resume")
-
-
-def cmd_board_close(args):
-    _board_transition(args, lambda b: workboard.close(b, args.card_id), "close")
-
-
-def cmd_board_drop(args):
-    _board_transition(args, lambda b: workboard.drop(ROOT, b, args.card_id, note=args.note or ""), "drop")
-
-
-def cmd_board_reopen(args):
-    _board_transition(args, lambda b: workboard.reopen(ROOT, b, args.card_id), "reopen")
-
-
-def cmd_board_list(args):
-    b = _board_load()
-    rows = _board_roster(args)
-    snap = workboard.snapshot(ROOT, b, rows=rows)
-    if args.json:
-        print(json.dumps(snap, indent=2))
-        return
-    for lane in snap["lanes"]:
-        print(f"{lane['name']} ({len(lane['cards'])})")
-        for c in lane["cards"]:
-            extra = []
-            if c.get("ask"):
-                extra.append(f"{c['ask']}: {c.get('reason', '')}")
-            if c.get("state"):
-                extra.append(c["state"])
-            print(f"  {c['id']}  {c['project']} · {c['deliverable']}  [{'; '.join(extra)}]")
-    bound = workboard.bound_session(ROOT)
-    print(f"{snap['open']} open · {snap['waiting_on_you']} waiting on you · orchestrator: {bound or 'unbound'}")
 
 
 def main():
@@ -3441,22 +2665,6 @@ def _run():
     s = sub.add_parser("search")
     s.add_argument("query"); s.add_argument("-n", "--limit", type=int, default=8)
     s.add_argument("--json", action="store_true"); s.set_defaults(fn=cmd_search)
-    s = sub.add_parser("autonomy")
-    asub = s.add_subparsers(dest="autonomy_cmd", required=True)
-    aa = asub.add_parser("init"); aa.add_argument("project"); aa.add_argument("run_id")
-    aa.add_argument("--level", choices=sorted(AUTONOMY_LEVELS), default="assisted"); aa.set_defaults(fn=cmd_autonomy_init)
-    aa = asub.add_parser("check"); aa.add_argument("project"); aa.add_argument("run_id"); aa.set_defaults(fn=cmd_autonomy_check)
-    aa = asub.add_parser("start"); aa.add_argument("project"); aa.add_argument("run_id")
-    aa.add_argument("--session-binding", required=True)
-    aa.add_argument("--resume-reason"); aa.set_defaults(fn=cmd_autonomy_start)
-    aa = asub.add_parser("checkpoint"); aa.add_argument("project"); aa.add_argument("run_id")
-    aa.add_argument("--outcome", choices=("continue", "blocked", "review"), required=True)
-    aa.add_argument("--summary", required=True); aa.add_argument("--evidence")
-    aa.add_argument("--subagents-spawned", type=int, required=True); aa.set_defaults(fn=cmd_autonomy_checkpoint)
-    aa = asub.add_parser("finish"); aa.add_argument("project"); aa.add_argument("run_id")
-    aa.add_argument("--approved-by", choices=("operator", "reviewer"), required=True); aa.set_defaults(fn=cmd_autonomy_finish)
-    aa = asub.add_parser("migrate"); aa.add_argument("project"); aa.add_argument("run_id")
-    aa.add_argument("--quarantine", action="store_true"); aa.set_defaults(fn=cmd_autonomy_migrate)
 
     s = sub.add_parser("pipe")
     psub = s.add_subparsers(dest="pipe_cmd", required=True)
@@ -3490,30 +2698,6 @@ def _run():
     st = ssub.add_parser("stage"); st.add_argument("slug"); st.add_argument("state"); st.set_defaults(fn=cmd_studio_stage)
     sp = ssub.add_parser("post"); sp.add_argument("slug"); sp.add_argument("--url", required=True)
     sp.add_argument("--posted-at"); sp.set_defaults(fn=cmd_studio_post)
-
-    s = sub.add_parser("board")
-    bsub = s.add_subparsers(dest="board_cmd", required=True)
-    bi = bsub.add_parser("init"); bi.set_defaults(fn=cmd_board_init)
-    ba = bsub.add_parser("add"); ba.add_argument("project"); ba.add_argument("deliverable")
-    ba.add_argument("--by", choices=workboard.BY_VALUES, default="orchestrator"); ba.add_argument("--owner")
-    ba.add_argument("--goal"); ba.add_argument("--done-when", dest="done_when"); ba.add_argument("--note")
-    ba.add_argument("--model", help="model agreed for this card at the go (opus, sonnet, ...)")
-    ba.set_defaults(fn=cmd_board_add)
-    bd = bsub.add_parser("dispatch"); bd.add_argument("card_id"); bd.add_argument("--session")
-    bd.add_argument("--launch", action="store_true"); bd.add_argument("--model")
-    bd.add_argument("--force", action="store_true"); bd.add_argument("--no-roster", action="store_true")
-    bd.set_defaults(fn=cmd_board_dispatch)
-    bs = bsub.add_parser("sync"); bs.add_argument("--quiet", action="store_true")
-    bs.add_argument("--no-roster", action="store_true"); bs.set_defaults(fn=cmd_board_sync)
-    for name, fn in (("approve", cmd_board_approve), ("resume", cmd_board_resume),
-                     ("close", cmd_board_close), ("reopen", cmd_board_reopen)):
-        bx = bsub.add_parser(name); bx.add_argument("card_id"); bx.set_defaults(fn=fn)
-    br = bsub.add_parser("return"); br.add_argument("card_id"); br.add_argument("feedback"); br.set_defaults(fn=cmd_board_return)
-    bdr = bsub.add_parser("drop"); bdr.add_argument("card_id"); bdr.add_argument("--note"); bdr.set_defaults(fn=cmd_board_drop)
-    bl = bsub.add_parser("list"); bl.add_argument("--json", action="store_true")
-    bl.add_argument("--no-roster", action="store_true"); bl.set_defaults(fn=cmd_board_list)
-    bb = bsub.add_parser("bind"); bb.add_argument("session_key"); bb.set_defaults(fn=cmd_board_bind)
-    bu = bsub.add_parser("unbind"); bu.set_defaults(fn=cmd_board_unbind)
 
     args = p.parse_args()
     args.fn(args)

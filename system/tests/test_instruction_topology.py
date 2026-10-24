@@ -16,7 +16,6 @@ class InstructionTopologyCharacterizationTests(unittest.TestCase):
         root = text("AGENTS.md")
         self.assertNotEqual(root, text("AGENTS.operator.md"))
         self.assertNotEqual(root, text("AGENTS.builder.md"))
-        self.assertIn("AGENTS.orchestrator.md", root)
         self.assertIn("AGENTS.operator.md", root)
         self.assertIn("AGENTS.builder.md", root)
         self.assertIn("read exactly one router", root)
@@ -35,7 +34,7 @@ class InstructionTopologyCharacterizationTests(unittest.TestCase):
 
     def test_marketing_production_has_no_pseudo_links(self):
         production = text("library/domains/marketing/production.md")
-        for pseudo_link in ("[voice]", "[positioning]", "[preview-server]"):
+        for pseudo_link in ("[voice]", "[positioning]"):
             self.assertNotIn(pseudo_link, production)
         self.assertIn("[`voice`](../../context/operator/voice/README.md)", production)
 

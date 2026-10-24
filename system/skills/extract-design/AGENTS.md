@@ -10,7 +10,7 @@ Vendored thin skill (see `VENDOR.md`); `SKILL.md` documents the upstream CLI. Th
 |---|---|
 | `*-variables.css` | Basis for `tokens.css` (already `:root {}`-shaped; rename variables to our token names) |
 | `*-design-tokens.json` / `*-design-language.md` | Source material for the palette/type/spacing sections and the treatment block |
-| Motion / component / brand-voice data | Only relevant when transferring to Open Design (its schema wants Motion + Components + Voice); our DL template omits them by default |
+| Motion / component / brand-voice data | Our DL template omits them by default; use only when a project earns them |
 | `*-tailwind.config.js`, `*-theme.js`, `*-shadcn-theme.css`, `*-figma-variables.json` | Unused in AgentFrame — don't copy them into the campaign |
 
 - **Dark variants.** Add `--dark` when the campaign's design language has a dark variant in scope.

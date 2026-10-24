@@ -6,21 +6,9 @@ Available image-creation paths for AgentFrame. Load this when a project or post 
 |---|---|---|---|
 | D2 diagram renderer | A flow, decision tree, handoff, or system explainer is primarily a graph of nodes and edges. | Calling deliverable; load [`diagram-production.md`](diagram-production.md) | `diagram.d2` plus a derived SVG beside the owning visual artifact |
 | HTML render + browser screenshot | Slide-shaped visuals from tokens/layout are enough (covers, diagrams, doc-style panels). | `design-language` (tokens + layout guidance) | `carousel-slide-{i}.html` and manual PNG screenshots in the post's `visuals/` |
-| Gemini Nano Banana 2 (`gemini-3.1-flash-image-preview`) | Default raster generation for standard illustrations and fast A/B/C variants. | `image-prompts` | `image-variant-{a|b|c}.png` via `system/server/lib/image_generate.py` |
-| Gemini Nano Banana Pro (`gemini-3-pro-image-preview`) | Prompt fidelity and text-in-image quality matter more than speed (hero or leadership-facing visuals). | `image-prompts` | `image-variant-{a|b|c}.png` via `system/server/lib/image_generate.py` |
-| Open Design (bundled) | You want higher-fidelity designed outputs, or you want to render a whole social carousel as a single design pass. | `image-prompts` | Exported files (HTML / PNG / PDF / PPTX / ZIP) saved to the calling post's `visuals/imports/`; use `system/skills/open-design/SKILL.md` |
+| Gemini Nano Banana 2 (`gemini-3.1-flash-image-preview`) | Default raster generation for standard illustrations and fast A/B/C variants. | `image-prompts` | `image-variant-{a|b|c}.png` via `system/tools/image_generate.py` |
+| Gemini Nano Banana Pro (`gemini-3-pro-image-preview`) | Prompt fidelity and text-in-image quality matter more than speed (hero or leadership-facing visuals). | `image-prompts` | `image-variant-{a|b|c}.png` via `system/tools/image_generate.py` |
 | External / stock / operator-provided | Existing assets are already the right fit; no model generation needed. The operator's own captures live on the shared media shelf (`library/assets/media/`, schema in [`library/assets/README.md`](../assets/README.md)) and are found with `python system/af.py search "<scene>"`; reference the card's path, never copy the file. | calling deliverable | Referenced asset path(s) in the post folder |
-
-### Open Design mode + skill defaults
-
-When the Open Design path is picked, stage the project with these defaults (operator can override):
-
-| Calling deliverable shape | OD mode | OD skillId | Why |
-|---|---|---|---|
-| `image-prompts` single image (e.g. 1080x1080 LinkedIn hero) | `image` | `canvas-design` | Image-mode skill for posters, illustrations, and static pieces. Custom canvas sizes are first-class. |
-| Square social carousel (ready slide copy + design language) | `image` | `canvas-design` per slide | Best canvas fidelity for LinkedIn/IG square slides. Stage one project per slide, or one project iterated slide-by-slide, so every slide honors the project DL. |
-| Content-heavy carousel, 16:9 acceptable | `deck` | `simple-deck` | Bulk slide generation in one project. Use only when the operator confirms 16:9 is acceptable. |
-| Deck / PPT long-form presentation | `deck` | `magazine-web-ppt` | OD's bundled deck default. PPTX/PDF export is first-class; route through [`deck-production.md`](deck-production.md) if native PowerPoint editability matters more than visual style. |
 
 ## Record convention
 

@@ -15,13 +15,13 @@ For raw footage, generated assets, or audio, let the upstream HyperFrames route 
 
 Give HyperFrames only the context that changes the video: audience, claim, CTA, platform, ready visual identity, available assets, and delivery constraints. Keep the source-of-truth brief in `video-spec-v{N}.md`.
 
-Use the upstream project's own file formats. `SCRIPT.md` and `STORYBOARD.md` exist only when the selected HyperFrames workflow calls for them; their shape is owned by `hyperframes-core`, not AgentFrame.
+Use the upstream project's own file formats. `SPEC.md`, `STORYBOARD.md`, `SCRIPT.md` and `REVIEW.md` exist only when the upstream work loop calls for them; their shape is owned by the upstream `hyperframes` skill's references, not AgentFrame.
 
 ## Delivery
 
 1. Build the selected HyperFrames project under the calling post's `video/` folder.
 2. Use Studio when interactive visual review or timeline feedback is useful.
-3. Run `npx hyperframes check` before review, then preview and render through the selected upstream workflow.
+3. Run `npx hyperframes check --json` before review, then preview and render through the upstream work loop.
 4. Record final render paths in the ready `video-spec-v{N}.md` and the post's `shipped_media[]`.
 5. Reconcile the published post and project state through the normal ready and publish paths.
 

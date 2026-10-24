@@ -9,9 +9,11 @@
  * Unsafe: `!` followed by `>` later in the same text block
  */
 
-import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { dirname, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parse as parseYaml, YAMLParseError } from "yaml";
+import type { RegistryManifest } from "../packages/core/src/index.js";
 
 const REPO_ROOT = join(import.meta.dirname, "..");
 // Every location that ships SKILL.md files gets linted. `skills/` is the
@@ -256,6 +258,263 @@ function lintInlinePatterns(file: string, stripped: string): Violation[] {
     .flatMap((line, i) => (line ? matchDangerousPatterns(file, line, i + 1) : []));
 }
 
+// ---------------------------------------------------------------------------
+// Registry-item references in hand-maintained snapshots
+// ---------------------------------------------------------------------------
+//
+// A skill doc that snapshots part of the component registry rots in silence:
+// nothing fails when an item is renamed or dropped, and the agent that follows
+// the doc runs `hyperframes add <gone>` and dies. A doc opts into this check
+// with a marker line, after which every registry-item-shaped identifier in a
+// backtick span must name a real item in registry/registry.json:
+//
+//   <!-- registry-items: allow=some-suffix,another-suffix -->
+//
+// Opt-in rather than repo-wide on purpose. Kebab-case backticks are also CSS
+// properties, `data-*` attributes, skill directory names, script names, and
+// motion-graphics category names, and a check that flags those is a check
+// people turn off. `allow=` carries the few non-item identifiers a snapshot
+// legitimately names (bare suffixes under a spelled-out prefix, ids the doc
+// itself marks as hand-authored).
+//
+// TWO KNOWN BLIND SPOTS, both deliberate, both false NEGATIVES (this check
+// never invents a violation, it only misses some):
+//
+//  1. Identifiers outside a backtick span are not seen. A bare `bar-chart-race`
+//     in prose slipped past this check while it was a live defect elsewhere.
+//  2. Single-word item names are not seen, because the pattern below requires a
+//     hyphen. Measured on the six currently-marked files: dropping the hyphen
+//     requirement would monitor 3 more real items (`glitch`, `flowchart`,
+//     `typewriter`) and force 46 new allow= entries for ordinary prose words
+//     ("add", "line", "name", "height", "text"). A 15:1 noise ratio is how a
+//     check gets switched off, so the hyphen requirement stays.
+const REGISTRY_MARKER = /<!--\s*registry-items:\s*(?:allow=([^\s]*))?\s*-->/;
+// Shared by matchAll (registry rule) and replace (doc-ref rule); both leave
+// lastIndex at 0. Never call .exec/.test on it — that would poison matchAll.
+const INLINE_CODE_SPAN = /`([^`\n]+)`/g;
+const REGISTRY_ITEM_ID = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$/;
+
+function registryItemNames(): Set<string> {
+  const raw = readFileSync(join(REPO_ROOT, "registry", "registry.json"), "utf-8");
+  // The cast describes the file; it does not validate it. The runtime filter and
+  // the throw below are what actually stop us linting against an empty set.
+  const parsed = JSON.parse(raw) as RegistryManifest;
+  const names = (parsed.items ?? []).map((item) => item.name).filter((name) => Boolean(name));
+  if (names.length === 0) {
+    throw new Error("registry/registry.json parsed to zero item names — refusing to lint blind.");
+  }
+  return new Set(names);
+}
+
+/** `null` when the file is not marked as a registry snapshot; otherwise its violations. */
+export function lintRegistryItemRefs(content: string, known: Set<string>): LineViolation[] | null {
+  // Marker detection ignores fenced blocks so a doc that *documents* the marker
+  // syntax in an example does not arm the check on itself. The scan below still
+  // reads full content, so ids inside fenced examples stay covered.
+  const marker = stripFencedBlocks(content).match(REGISTRY_MARKER);
+  if (!marker) return null;
+  const allowed = new Set((marker[1] ?? "").split(",").filter(Boolean));
+  return content.split("\n").flatMap((line, index) => {
+    const dead = [...new Set([...line.matchAll(INLINE_CODE_SPAN)].map((m) => (m[1] ?? "").trim()))]
+      .filter((token) => REGISTRY_ITEM_ID.test(token))
+      .filter((token) => !known.has(token) && !allowed.has(token));
+    return dead.map((token) =>
+      violation(
+        index + 1,
+        `"${token}" is not an item in registry/registry.json, but this file is marked as a registry snapshot. Correct the name, remove it, or add it to the marker's allow= list if it is legitimately not an item.`,
+        line.trim(),
+      ),
+    );
+  });
+}
+
+// Cross-references between skill docs: relative link targets, and backticked `./` or `../` .md/.html paths, must
+// resolve from the referencing file; `#anchor`s into .md files must match a GitHub heading slug. Bare backticked
+// paths like `references/<name>.md` are skill-root shorthand and deliberately unchecked.
+
+interface DocRef {
+  line: number;
+  target: string;
+  text: string;
+}
+
+const INLINE_LINK = /\[[^\]\n]*\]\(\s*(<[^>\n]*>|[^)\s]+)(?:\s+(?:"[^"]*"|'[^']*'))?\s*\)/g;
+// CommonMark: `[id]: dest` optionally followed by a quoted title and nothing
+// else, so a prose line like `[Label]: describes the thing` is not a definition.
+const REFERENCE_DEFINITION =
+  /^ {0,3}\[([^\]^][^\]]*)\]:\s*(<[^>\n]*>|\S+)(?:\s+(?:"[^"]*"|'[^']*'|\([^)\n]*\)))?\s*$/;
+const BACKTICK_RELATIVE_PATH = /`(\.\.?\/[^`\s]+\.(?:md|html)(?:#[^`\s]*)?)`/g;
+const HAS_URI_SCHEME = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
+const PLACEHOLDER_CHARS = /[{}*$<>]/;
+const ATX_HEADING = /^ {0,3}#{1,6}\s+(.*?)(?:\s+#+)?\s*$/;
+
+function unwrapTarget(raw: string): string {
+  return raw.startsWith("<") && raw.endsWith(">") ? raw.slice(1, -1) : raw;
+}
+
+function backtickTargets(line: string): string[] {
+  return [...line.matchAll(BACKTICK_RELATIVE_PATH)].map((m) => m[1] ?? "");
+}
+
+function proseTargets(prose: string): string[] {
+  const definition = REFERENCE_DEFINITION.exec(prose);
+  const links = [...prose.matchAll(INLINE_LINK)].map((m) => unwrapTarget(m[1] ?? ""));
+  return definition ? [unwrapTarget(definition[2] ?? ""), ...links] : links;
+}
+
+function docRefsInLine(line: string, lineNumber: number): DocRef[] {
+  // Inline code is stripped before scanning for link syntax so a doc that
+  // *documents* `[text](path)` is not read as linking to `path`.
+  const prose = line.replace(INLINE_CODE_SPAN, "");
+  // One violation per dead target per line: a link whose text is the backticked target names it twice.
+  const targets = new Set([...backtickTargets(line), ...proseTargets(prose)]);
+  const text = line.trim();
+  return [...targets].map((target) => ({ line: lineNumber, target, text }));
+}
+
+function isCheckableTarget(target: string): boolean {
+  return (
+    target.length > 0 &&
+    !HAS_URI_SCHEME.test(target) &&
+    !target.startsWith("/") &&
+    !PLACEHOLDER_CHARS.test(target)
+  );
+}
+
+function slugify(heading: string): string {
+  return heading
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s_-]/gu, "")
+    .replace(/\s/g, "-");
+}
+
+function dedupedSlug(seen: Map<string, number>, base: string): string {
+  const count = seen.get(base) ?? 0;
+  seen.set(base, count + 1);
+  return count === 0 ? base : `${base}-${count}`;
+}
+
+/** GitHub-style anchor slugs for every ATX heading outside fenced blocks. */
+export function headingSlugs(content: string): Set<string> {
+  const seen = new Map<string, number>();
+  const slugs = new Set<string>();
+  for (const line of stripFencedBlocks(content).split("\n")) {
+    const heading = ATX_HEADING.exec(line);
+    if (heading) slugs.add(dedupedSlug(seen, slugify(heading[1] ?? "")));
+  }
+  return slugs;
+}
+
+function decodeTarget(target: string): string {
+  try {
+    return decodeURIComponent(target);
+  } catch {
+    return target;
+  }
+}
+
+function anchorViolation(
+  ref: DocRef,
+  anchor: string,
+  targetLabel: string,
+  targetContent: string,
+): LineViolation | null {
+  if (headingSlugs(targetContent).has(decodeTarget(anchor).toLowerCase())) return null;
+  return violation(
+    ref.line,
+    `Anchor "#${anchor}" does not match any heading in ${targetLabel}.`,
+    ref.text,
+  );
+}
+
+function splitAnchor(target: string): { path: string; anchor: string | null } {
+  const hash = target.indexOf("#");
+  // A bare trailing `#` links to the top of the target, not to a heading.
+  if (hash === -1 || hash === target.length - 1) {
+    return { path: target.replace(/#$/, ""), anchor: null };
+  }
+  return { path: target.slice(0, hash), anchor: target.slice(hash + 1) };
+}
+
+type TargetRead = { kind: "missing" } | { kind: "directory" } | { kind: "file"; content: string };
+
+const MISSING_TARGET_CODES = new Set(["ENOENT", "ENOTDIR"]);
+
+function classifyReadError(err: unknown): TargetRead {
+  const code = (err as NodeJS.ErrnoException).code ?? "";
+  if (MISSING_TARGET_CODES.has(code)) return { kind: "missing" };
+  if (code === "EISDIR") return { kind: "directory" };
+  throw err;
+}
+
+// Read-and-classify in one syscall rather than stat-then-read, so the answer
+// cannot change between the check and the read.
+function readTarget(resolved: string): TargetRead {
+  try {
+    return { kind: "file", content: readFileSync(resolved, "utf-8") };
+  } catch (err) {
+    return classifyReadError(err);
+  }
+}
+
+function missingViolation(ref: DocRef, label: string): LineViolation {
+  return violation(
+    ref.line,
+    `Cross-reference "${ref.target}" does not resolve: ${label} does not exist.`,
+    ref.text,
+  );
+}
+
+function anchoredTargetViolation(
+  ref: DocRef,
+  anchor: string,
+  resolved: string,
+  label: string,
+): LineViolation | null {
+  const target = readTarget(resolved);
+  if (target.kind === "missing") return missingViolation(ref, label);
+  // A directory has no headings; existence is all that can be checked.
+  if (target.kind === "directory") return null;
+  return anchorViolation(ref, anchor, label, target.content);
+}
+
+function checkTargetPath(
+  ref: DocRef,
+  resolved: string,
+  anchor: string | null,
+): LineViolation | null {
+  const label = relative(REPO_ROOT, resolved);
+  // Only Markdown targets have heading slugs; an `.html#id` fragment is not checked.
+  if (anchor === null || !resolved.endsWith(".md")) {
+    return statSync(resolved, { throwIfNoEntry: false }) ? null : missingViolation(ref, label);
+  }
+  return anchoredTargetViolation(ref, anchor, resolved, label);
+}
+
+function checkDocRef(ref: DocRef, filePath: string, content: string): LineViolation | null {
+  const { path, anchor } = splitAnchor(ref.target);
+  if (path.length === 0) {
+    return anchor === null ? null : anchorViolation(ref, anchor, "this file", content);
+  }
+  return checkTargetPath(ref, resolve(dirname(filePath), decodeTarget(path)), anchor);
+}
+
+/** Violations for relative cross-references in `content` (located at `filePath`) that do not resolve. */
+export function lintDocRefs(filePath: string, content: string): LineViolation[] {
+  return stripFencedBlocks(content)
+    .split("\n")
+    .flatMap((line, index) => docRefsInLine(line, index + 1))
+    .filter((ref) => isCheckableTarget(ref.target))
+    .flatMap((ref) => checkDocRef(ref, filePath, content) ?? []);
+}
+
+function collectMarkdownFiles(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true, recursive: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
+    .map((entry) => join(entry.parentPath, entry.name));
+}
+
 function lintFile(filePath: string): Violation[] {
   const raw = readFileSync(filePath, "utf-8");
   const file = relative(process.cwd(), filePath);
@@ -269,30 +528,71 @@ function lintFile(filePath: string): Violation[] {
 // Main
 // ---------------------------------------------------------------------------
 
-const files: string[] = [];
-for (const dir of SKILLS_DIRS) {
-  if (!statSync(dir, { throwIfNoEntry: false })?.isDirectory()) continue;
-  files.push(...collectSkillFiles(dir));
-}
-if (files.length === 0) {
-  console.log("No SKILL.md files found across skills/, .claude/skills/, .agents/skills/.");
-  process.exit(0);
+type Report = (file: string, violations: LineViolation[]) => void;
+
+/** Doc cross-references and registry snapshots for every markdown file; returns the snapshot count. */
+function lintMarkdownFiles(paths: string[], knownItems: Set<string>, report: Report): number {
+  let snapshotsChecked = 0;
+  for (const path of paths) {
+    const content = readFileSync(path, "utf-8");
+    const file = relative(process.cwd(), path);
+    report(file, lintDocRefs(path, content));
+    const found = lintRegistryItemRefs(content, knownItems);
+    if (found === null) continue;
+    snapshotsChecked++;
+    report(file, found);
+  }
+  return snapshotsChecked;
 }
 
-let totalViolations = 0;
+function main(): void {
+  const skillsDirs = SKILLS_DIRS.filter((dir) =>
+    statSync(dir, { throwIfNoEntry: false })?.isDirectory(),
+  );
+  const files = skillsDirs.flatMap(collectSkillFiles);
+  if (files.length === 0) {
+    console.log("No SKILL.md files found across skills/, .claude/skills/, .agents/skills/.");
+    process.exit(0);
+  }
 
-for (const file of files) {
-  const violations = lintFile(file);
-  for (const v of violations) {
-    console.error(`${v.file}:${v.line}: ${v.message}`);
-    console.error(`  ${v.text}\n`);
-    totalViolations++;
+  let totalViolations = 0;
+  const report: Report = (file, violations) => {
+    for (const v of violations) {
+      console.error(`${file}:${v.line}: ${v.message}`);
+      console.error(`  ${v.text}\n`);
+    }
+    totalViolations += violations.length;
+  };
+
+  for (const file of files) {
+    report(relative(process.cwd(), file), lintFile(file));
+  }
+
+  const knownItems = registryItemNames();
+  const markdownFiles = skillsDirs.flatMap(collectMarkdownFiles);
+  const snapshotsChecked = lintMarkdownFiles(markdownFiles, knownItems, report);
+
+  if (totalViolations > 0) {
+    console.error(`\n${totalViolations} skill lint error(s) found.`);
+    process.exit(1);
+  }
+  console.log(
+    `Checked ${files.length} skill file(s), cross-references in ${markdownFiles.length} markdown file(s), and ${snapshotsChecked} registry snapshot(s) against ${knownItems.size} registry items — no issues found.`,
+  );
+}
+
+// Tests import the checkers, so main() runs only as the entry point. argv[1] is realpath'd to match import.meta.url,
+// which the ESM loader realpaths; otherwise a symlinked checkout would skip main() and exit 0.
+function isEntryPoint(): boolean {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return realpathSync(resolve(entry)) === fileURLToPath(import.meta.url);
+  } catch {
+    return false;
   }
 }
 
-if (totalViolations > 0) {
-  console.error(`\n${totalViolations} skill lint error(s) found.`);
-  process.exit(1);
-} else {
-  console.log(`Checked ${files.length} skill file(s) — no issues found.`);
+if (isEntryPoint()) {
+  main();
 }

@@ -45,6 +45,7 @@ import {
   detectTransfer,
   extractAllVideoFrames,
   extractMediaMetadata,
+  isVideoPastTimelineEnd,
   isHdrColorSpace,
   resolveProjectRelativeSrc,
   runVideoExtractionWithRetry,
@@ -56,6 +57,8 @@ import {
   type RenderJob,
 } from "../../renderOrchestrator.js";
 import { materializeExtractedFramesForCompiledDir, type CompositionMetadata } from "../shared.js";
+import { REMOTE_MEDIA_SUBDIR } from "../../htmlCompiler.js";
+import { resolveRenderFpsConfig } from "../../fileServer.js";
 import type { ProducerLogger } from "../../../logger.js";
 import { encoderFailureError } from "../encoderInterruption.js";
 import {
@@ -82,6 +85,8 @@ export interface ExtractVideosStageInput {
    * passes `true` so the planDir is self-contained.
    */
   materializeSymlinks?: boolean;
+  deferRangeExtraction?: boolean;
+  urlByAbsentLocalPath?: ReadonlyMap<string, string>;
 }
 
 export interface ExtractVideosStageResult {
@@ -110,18 +115,6 @@ export interface ExtractVideosStageResult {
    * extraction telemetry checkpoint has been emitted.
    */
   failureToEnforce: VideoExtractionStageError | null;
-}
-
-/**
- * Whether the extract stage should COPY frames into the compiled dir instead of
- * symlinking them. Windows without Developer Mode / Administrator can't create
- * symlinks (`symlinkSync` throws EPERM), which failed local video renders; copy
- * there instead. Elsewhere symlinking is cheaper, so keep it. (The distributed
- * `plan()` path already forces copying for a different reason — a self-contained
- * planDir — by passing `materializeSymlinks: true` explicitly.)
- */
-export function shouldCopyExtractedFrames(platform: NodeJS.Platform): boolean {
-  return platform === "win32";
 }
 
 export type VideoExtractionStageErrorCode = "VIDEO_SOURCE_UNRENDERABLE" | "VIDEO_EXTRACTION_FAILED";
@@ -393,10 +386,15 @@ export async function runExtractVideosStage(
     abortSignal,
     assertNotAborted,
     materializeSymlinks,
+    deferRangeExtraction,
+    urlByAbsentLocalPath,
   } = input;
 
   const stage2Start = Date.now();
   const extractionPolicy = resolveVideoExtractionPolicy();
+  composition.videos = composition.videos.filter(
+    (video) => !isVideoPastTimelineEnd(video, composition.duration),
+  );
 
   let frameLookup: FrameLookupTable | null = null;
   let extractionResult: Awaited<ReturnType<typeof extractAllVideoFrames>> | null = null;
@@ -508,12 +506,16 @@ export async function runExtractVideosStage(
         fps: job.config.fps,
         outputDir: join(compiledDir, "__hyperframes_video_frames"),
         format: job.config.videoFrameFormat ?? "auto",
+        toneMapHdrToSdr: job.config.hdrMode === "force-sdr",
         timelineEnd: composition.duration,
         maxTransientRetries: extractionPolicy.maxTransientRetries,
         collectProbeFailures: extractionPolicy.failureMode === "enforce",
+        deferRangeExtraction,
+        contentKeyedDirs: [join(compiledDir, REMOTE_MEDIA_SUBDIR)],
+        urlByAbsentLocalPath,
       },
       abortSignal,
-      { extractCacheDir: cfg.extractCacheDir, extractCacheMaxBytes: cfg.extractCacheMaxBytes },
+      cfg,
       compiledDir,
     );
     extractionResult.phaseBreakdown.transientRetries =
@@ -527,7 +529,11 @@ export async function runExtractVideosStage(
     });
 
     if (extractionResult.extracted.length > 0) {
-      frameLookup = createFrameLookupTable(composition.videos, extractionResult.extracted);
+      frameLookup = createFrameLookupTable(
+        composition.videos,
+        extractionResult.extracted,
+        resolveRenderFpsConfig(job.config.fps).value,
+      );
     }
     videoReadinessSkipIds = collectVideoReadinessSkipIds(
       nativeHdrVideoIds,
@@ -568,7 +574,7 @@ export function appendAutoDetectedVideoAudio(
   for (const ext of extracted) {
     if (!ext.metadata.hasAudio) continue;
     const video = composition.videos.find((v) => v.id === ext.videoId);
-    if (!video || !video.hasAudio || existingAudioSrcs.has(video.src)) continue;
+    if (!video || !video.hasAudio || video.hidden || existingAudioSrcs.has(video.src)) continue;
     composition.audios.push({
       id: `${video.id}-audio`,
       src: video.src,

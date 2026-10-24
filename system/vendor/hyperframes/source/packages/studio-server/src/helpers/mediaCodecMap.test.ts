@@ -11,6 +11,8 @@ import {
   proxyVariantFor,
   resolveProxyVariantRequest,
   scanProjectMediaCodecMap,
+  shouldPrewarmProxy,
+  type AssetCodecFacts,
 } from "./mediaCodecMap.js";
 
 // Any real, existing file works as a stand-in ffprobe path — the runner
@@ -20,7 +22,10 @@ import {
 const FAKE_FFPROBE_PATH = process.execPath;
 
 function makeRunner(
-  codecByPath: Record<string, string | { codecName: string; pixFmt?: string }>,
+  codecByPath: Record<
+    string,
+    string | { codecName: string; pixFmt?: string; tags?: Record<string, string> }
+  >,
 ): FfprobeRunner {
   return (_command, args) => {
     const filePath = args[args.length - 1] ?? "";
@@ -32,6 +37,7 @@ function makeRunner(
             codec_type: "video",
             codec_name: normalized.codecName,
             pix_fmt: normalized.pixFmt,
+            tags: normalized.tags,
           },
         ]
       : [];
@@ -92,7 +98,7 @@ describe("probeAssetCodec", () => {
     expect(facts).toEqual({
       codecName: "hevc",
       browserHostile: true,
-      representativeMime: BROWSER_HOSTILE_CODECS.hevc,
+      representativeMime: BROWSER_HOSTILE_CODECS.hevc?.representativeMime,
       hasAlpha: false,
     });
   });
@@ -122,7 +128,7 @@ describe("probeAssetCodec", () => {
     expect(facts).toEqual({
       codecName: "vp9",
       browserHostile: true,
-      representativeMime: BROWSER_HOSTILE_CODECS.vp9,
+      representativeMime: BROWSER_HOSTILE_CODECS.vp9?.representativeMime,
       hasAlpha: false,
     });
   });
@@ -162,6 +168,23 @@ describe("probeAssetCodec", () => {
     });
   });
 
+  it("flags a VP9 whose alpha is only in the ALPHA_MODE tag, so it gets the VP8 proxy", async () => {
+    const project = tmpProject();
+    const videoPath = join(project, "cutout.webm");
+    writeFileSync(videoPath, "fake video bytes");
+
+    // What ffprobe prints for a libvpx-vp9 yuva420p encode.
+    const facts = await probeAssetCodec(
+      videoPath,
+      makeRunner({
+        [videoPath]: { codecName: "vp9", pixFmt: "yuv420p", tags: { ALPHA_MODE: "1" } },
+      }),
+    );
+
+    expect(facts?.hasAlpha).toBe(true);
+    expect(proxyVariantFor(facts!)).toBe("vp8");
+  });
+
   it("returns null (never throws) when ffprobe is unresolvable", async () => {
     const project = tmpProject();
     const videoPath = join(project, "clip.mp4");
@@ -169,6 +192,84 @@ describe("probeAssetCodec", () => {
     process.env.HYPERFRAMES_FFPROBE_PATH = join(project, "missing-ffprobe");
 
     await expect(probeAssetCodec(videoPath)).resolves.toBeNull();
+  });
+
+  it("probes again after ffprobe failed instead of caching the failure", async () => {
+    const project = tmpProject();
+    const videoPath = join(project, "clip.mp4");
+    writeFileSync(videoPath, "fake video bytes");
+    const cache = createMediaCodecProbeCache();
+    process.env.HYPERFRAMES_FFPROBE_PATH = join(project, "missing-ffprobe");
+    await expect(probeAssetCodec(videoPath, undefined, cache)).resolves.toBeNull();
+
+    const facts = await probeAssetCodec(videoPath, makeRunner({ [videoPath]: "hevc" }), cache);
+
+    expect(facts?.codecName).toBe("hevc");
+  });
+});
+
+describe("BROWSER_HOSTILE_CODECS representative mimes", () => {
+  // Pinned because nulling one is silent and expensive: the runtime skips
+  // `canPlayType` when the mime is null (packages/core/src/runtime/mediaProxy.ts,
+  // `maybeProxyProactively`) and proxies on EVERY browser, reinstating exactly
+  // the transcodes the pre-warm split removed.
+  it.each(["hevc", "av1", "vp9"])("keeps a canPlayType probe for %s", (codecName) => {
+    expect(typeof BROWSER_HOSTILE_CODECS[codecName]?.representativeMime).toBe("string");
+  });
+
+  it("has no representative mime for prores, which is never decodable", () => {
+    expect(BROWSER_HOSTILE_CODECS.prores?.representativeMime).toBeNull();
+  });
+});
+
+describe("shouldPrewarmProxy", () => {
+  function facts(codecName: string): AssetCodecFacts {
+    return { codecName, browserHostile: true, representativeMime: null, hasAlpha: false };
+  }
+
+  it.each(["hevc", "prores", "theora"])(
+    "pre-warms %s, which has no cross-platform browser decode",
+    (codecName) => {
+      expect(shouldPrewarmProxy(facts(codecName))).toBe(true);
+    },
+  );
+
+  it.each(["vp9", "av1"])(
+    "does not pre-warm %s, which every mainstream engine decodes itself",
+    (codecName) => {
+      expect(shouldPrewarmProxy(facts(codecName))).toBe(false);
+    },
+  );
+
+  it("does not pre-warm a browser-safe codec", () => {
+    expect(
+      shouldPrewarmProxy({
+        codecName: "h264",
+        browserHostile: false,
+        representativeMime: null,
+        hasAlpha: false,
+      }),
+    ).toBe(false);
+  });
+
+  // `shouldPrewarmProxy` alone cannot catch a missing `Object.hasOwn` guard —
+  // `.prewarm === true` is already strict against `Object.prototype.constructor`.
+  // The input that misbehaves goes through `codecFactsFor`, which would report
+  // an ordinary asset as browser-hostile.
+  it("does not treat a codec named after an Object.prototype key as hostile", async () => {
+    const project = tmpProject();
+    const videoPath = join(project, "clip.mp4");
+    writeFileSync(videoPath, "fake video bytes");
+
+    const facts = await probeAssetCodec(videoPath, makeRunner({ [videoPath]: "constructor" }));
+
+    expect(facts).toEqual({
+      codecName: "constructor",
+      browserHostile: false,
+      representativeMime: null,
+      hasAlpha: false,
+    });
+    expect(shouldPrewarmProxy(facts!)).toBe(false);
   });
 });
 
@@ -254,6 +355,17 @@ describe("resolveProxyVariantRequest", () => {
 });
 
 describe("scanProjectMediaCodecMap", () => {
+  it("probes the actual quoted source with mixed literal and escaped percent spelling", async () => {
+    const project = tmpProject();
+    const videoPath = join(project, "it's 100%.mp4");
+    writeFileSync(videoPath, "fake video bytes");
+    const html = `<video title="src='fake.mp4'" data-src="lazy.mp4" src="it&#39;s%20100%.mp4"></video>`;
+    const map = await scanProjectMediaCodecMap(project, [{ html }], {
+      runner: makeRunner({ [videoPath]: "hevc" }),
+    });
+    expect(Object.keys(map)).toEqual(["/it's 100%.mp4"]);
+  });
+
   it("omits an asset from the map (no throw) when ffprobe is unresolvable", async () => {
     const project = tmpProject();
     writeFileSync(join(project, "clip.mp4"), "fake video bytes");

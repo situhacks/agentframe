@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
-import { readStudioFileChangePath } from "../components/editor/manualEdits";
+import {
+  mergeFileChangePayloads,
+  readFileChangeAffectedCompositions,
+  readFileChangeAffectsPreview,
+  readFileChangeField,
+  readStudioFileChangePath,
+} from "../components/editor/manualEdits";
 import { StudioFileConflictError } from "../utils/studioSaveDiagnostics";
 import type { ExternalConflictSnapshot } from "../utils/externalConflictStorage";
 import { isSelfWriteEcho } from "./sdkSelfWriteRegistry";
@@ -56,7 +62,21 @@ interface ExternalFileChangeCoordinatorOptions {
   readProjectFile: (path: string) => Promise<string>;
   onUseExternalFile?: (path: string, content: string) => void;
   resetSaveQueues?: () => void;
-  onAcceptedPersistedFileChange: (path: string) => void;
+  onAcceptedPersistedFileChange: (
+    path: string,
+    affectedCompositions: readonly string[] | null,
+  ) => void;
+  /**
+   * Called alongside `reloadPreview`/`reloadSdkSession` on every accepted
+   * external change. The file tree (`useFileTree`) is only ever refreshed
+   * from Studio's OWN file operations (create/delete/rename/upload) — an
+   * external change (an agent writing outside Studio) reloads the preview
+   * and the SDK session but, without this, never the listing. A composition
+   * an agent removed or replaced then stays in the tree until the user does
+   * a Studio-side file op or reloads the tab; clicking it opens a session
+   * that can never resolve (`reason: "absent"`, proven stale-tree 2026-09-23).
+   */
+  refreshFileTree?: () => void | Promise<void>;
 }
 
 export interface ExternalFileChangeCoordinatorHandle {
@@ -81,25 +101,43 @@ function testHotAdapter(): HotTestAdapter | null {
     : null;
 }
 
-function readFileChangeContent(payload: unknown): string | null {
-  if (!payload || typeof payload !== "object") return null;
-  const record = payload as Record<string, unknown>;
-  if (typeof record.content === "string") return record.content;
-  return "data" in record ? readFileChangeContent(record.data) : null;
+const readFileChangeContent = (payload: unknown) => readFileChangeField(payload, "content");
+const readFileChangeVersion = (payload: unknown) => readFileChangeField(payload, "version");
+const readFileChangeWriteToken = (payload: unknown) => readFileChangeField(payload, "writeToken");
+
+/**
+ * Decode one delivery into the payload shape every reader above assumes.
+ *
+ * SSE delivers a `MessageEvent` whose `data` is a JSON string; the hot-reload
+ * transports deliver the payload object. This is the only place that difference
+ * exists: a reader handed an undecoded envelope reports every field as absent,
+ * which is indistinguishable from a field that is genuinely unset.
+ */
+function decodeFileChange(delivery: unknown): unknown {
+  // Structural, not `instanceof`: a polyfilled or cross-realm event must still decode.
+  const data = (delivery as { data?: unknown } | null)?.data;
+  if (typeof data !== "string") return delivery;
+  try {
+    return JSON.parse(data);
+  } catch {
+    logReload("file-change", { path: null, why: "unparseable payload" });
+    return null;
+  }
 }
 
-function readFileChangeVersion(payload: unknown): string | null {
-  if (!payload || typeof payload !== "object") return null;
-  const record = payload as Record<string, unknown>;
-  if (typeof record.version === "string") return record.version;
-  return "data" in record ? readFileChangeVersion(record.data) : null;
-}
-
-function readFileChangeWriteToken(payload: unknown): string | null {
-  if (!payload || typeof payload !== "object") return null;
-  const record = payload as Record<string, unknown>;
-  if (typeof record.writeToken === "string") return record.writeToken;
-  return "data" in record ? readFileChangeWriteToken(record.data) : null;
+export function sseFileChangeChannel(
+  onDelivery: (delivery: unknown) => void,
+  onReconnect: () => void,
+): () => void {
+  const eventSource = new EventSource("/api/events");
+  eventSource.addEventListener("file-change", onDelivery);
+  // Reopening the stream does not replay changes missed during a disconnect.
+  let opened = false;
+  eventSource.addEventListener("open", () => {
+    if (opened) onReconnect();
+    opened = true;
+  });
+  return () => eventSource.close();
 }
 
 function eventIdentity(path: string, payload: unknown): string | null {
@@ -128,16 +166,26 @@ export function useExternalFileChangeCoordinator({
   onUseExternalFile,
   resetSaveQueues,
   onAcceptedPersistedFileChange,
+  refreshFileTree,
 }: ExternalFileChangeCoordinatorOptions): ExternalFileChangeCoordinatorHandle {
-  const [blocked, setBlocked] = useState<ExternalFileChangeBlockedState | null>(null);
+  const [blocked, setBlockedState] = useState<ExternalFileChangeBlockedState | null>(null);
   const generationRef = useRef(0);
   const mountedRef = useRef(true);
   const lastEventIdentityRef = useRef<string | null>(null);
-  const blockedRef = useRef(blocked);
+  const blockedRef = useRef<ExternalFileChangeBlockedState | null>(null);
   const snapshotWriteTailRef = useRef<Promise<void>>(Promise.resolve());
   const drainingRef = useRef(false);
   const pendingPayloadRef = useRef<{ payload: unknown } | null>(null);
-  blockedRef.current = blocked;
+  // A newer blocked change replaces the held one, so it inherits what the held one owed.
+  const setBlocked = useCallback((next: ExternalFileChangeBlockedState | null) => {
+    const held = blockedRef.current;
+    const current =
+      next && held
+        ? { ...next, payload: mergeFileChangePayloads(held.payload, next.payload) }
+        : next;
+    blockedRef.current = current;
+    setBlockedState(current);
+  }, []);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -148,10 +196,14 @@ export function useExternalFileChangeCoordinator({
   }, []);
 
   useEffect(() => {
+    pendingPayloadRef.current = null;
+  }, [projectId]);
+
+  useEffect(() => {
     generationRef.current += 1;
     setBlocked(null);
     lastEventIdentityRef.current = null;
-  }, [projectId, activeCompPath]);
+  }, [projectId, activeCompPath, setBlocked]);
 
   useEffect(() => {
     if (!projectId || !recoveryFilePath || !loadConflictSnapshot) return;
@@ -195,15 +247,28 @@ export function useExternalFileChangeCoordinator({
     return () => {
       cancelled = true;
     };
-  }, [loadConflictSnapshot, projectId, recoveryFilePath]);
+  }, [loadConflictSnapshot, projectId, recoveryFilePath, setBlocked]);
 
-  const reloadAcceptedGeneration = useCallback(
-    (path: string) => {
-      logReload("reload", { path, by: "external-change coordinator" });
-      reloadPreview();
+  // What a settled change owes: thumbnails (unless its own write's echo brings them), then reloads.
+  const deliverOwed = useCallback(
+    (owed: unknown, accept = true) => {
+      const path = readStudioFileChangePath(owed) ?? ".";
+      const affectsPreview = readFileChangeAffectsPreview(owed);
+      if (accept) onAcceptedPersistedFileChange(path, readFileChangeAffectedCompositions(owed));
+      logReload(affectsPreview ? "reload" : "file-tree only", {
+        path,
+        by: "external-change coordinator",
+      });
+      if (affectsPreview) reloadPreview();
       reloadSdkSession(path);
+      // Fire-and-forget: a failed refresh leaves the tree as stale as it was,
+      // which is the status quo this exists to improve on, not a new failure
+      // mode to surface. The `absent`-triggered fallback in useSdkSession
+      // covers the case where this call is missed entirely (server restart,
+      // a watcher event the SSE never delivered).
+      void refreshFileTree?.();
     },
-    [reloadPreview, reloadSdkSession],
+    [onAcceptedPersistedFileChange, reloadPreview, reloadSdkSession, refreshFileTree],
   );
 
   const persistSnapshotInOrder = useCallback(async (write: () => Promise<void>) => {
@@ -222,41 +287,59 @@ export function useExternalFileChangeCoordinator({
       if (!path) return;
 
       const generation = ++generationRef.current;
+      const savingPath = getPendingCandidate?.()?.path;
       const result = await drainPendingChanges();
       if (!mountedRef.current || generation !== generationRef.current) return;
 
       if (result.status === "clean") {
         const previousBlocked = blockedRef.current;
-        if (previousBlocked?.status === "failed" && deleteConflictSnapshot) {
+        // Only saving the failed draft's file retires its copy; restored drafts are never queued.
+        if (
+          previousBlocked?.status === "failed" &&
+          !previousBlocked.recovered &&
+          previousBlocked.path === savingPath &&
+          deleteConflictSnapshot
+        ) {
           try {
-            await deleteConflictSnapshot(projectId!, path);
+            await deleteConflictSnapshot(projectId!, previousBlocked.path);
           } catch (error) {
             if (mountedRef.current && generation === generationRef.current) {
-              setBlocked({ ...previousBlocked, generation, error });
+              setBlocked({
+                ...previousBlocked,
+                generation,
+                error,
+                payload: mergeFileChangePayloads(payload, previousBlocked.payload),
+              });
             }
             return;
           }
         }
         if (!mountedRef.current || generation !== generationRef.current) return;
         setBlocked(null);
-        onAcceptedPersistedFileChange(path);
-        reloadAcceptedGeneration(path);
+        const restored = previousBlocked?.status === "failed" && previousBlocked.recovered;
+        deliverOwed(
+          previousBlocked && !restored
+            ? mergeFileChangePayloads(previousBlocked.payload, payload)
+            : payload,
+        );
         return;
       }
-      const content = readFileChangeContent(payload);
       if (result.status === "failed") {
+        // The draft names the file to recover; the payload stays the scope to reload.
         const candidate = getPendingCandidate?.();
-        const studioContent = candidate?.path === path ? candidate.content : null;
+        const failedPath = candidate?.path ?? (path === "." ? (recoveryFilePath ?? path) : path);
+        const studioContent = candidate?.content ?? null;
+        const external = failedPath === path ? payload : null;
         let error = result.error;
         if (studioContent != null && persistFailureSnapshot) {
           try {
             await persistSnapshotInOrder(() =>
               persistFailureSnapshot(
                 projectId!,
-                path,
+                failedPath,
                 studioContent,
-                readFileChangeVersion(payload),
-                content,
+                readFileChangeVersion(external),
+                readFileChangeContent(external),
                 result.error,
               ),
             );
@@ -273,7 +356,7 @@ export function useExternalFileChangeCoordinator({
         setBlocked({
           status: "failed",
           generation,
-          path,
+          path: failedPath,
           error,
           payload,
           studioContent,
@@ -288,7 +371,7 @@ export function useExternalFileChangeCoordinator({
         setBlocked({
           status: "failed",
           generation,
-          path,
+          path: result.error.filePath,
           error,
           payload,
           studioContent: result.error.attemptedContent,
@@ -301,16 +384,20 @@ export function useExternalFileChangeCoordinator({
     },
     [
       drainPendingChanges,
+      setBlocked,
       projectId,
       deleteConflictSnapshot,
       getPendingCandidate,
+      recoveryFilePath,
       persistConflictSnapshot,
       persistFailureSnapshot,
       persistSnapshotInOrder,
-      reloadAcceptedGeneration,
-      onAcceptedPersistedFileChange,
+      deliverOwed,
     ],
   );
+
+  const drainOnePendingRef = useRef(drainOnePending);
+  drainOnePendingRef.current = drainOnePending;
 
   const startDrainLoop = useCallback(async () => {
     if (drainingRef.current) return;
@@ -320,18 +407,34 @@ export function useExternalFileChangeCoordinator({
         const pending = pendingPayloadRef.current;
         if (!pending) break;
         pendingPayloadRef.current = null;
-        await drainOnePending(pending.payload);
+        await drainOnePendingRef.current(pending.payload);
       }
     } finally {
       drainingRef.current = false;
     }
-  }, [drainOnePending]);
+  }, []);
 
   const processChange = useCallback(
     // fallow-ignore-next-line complexity
     (payload: unknown) => {
       const path = readStudioFileChangePath(payload);
-      if (!path || !projectId) return;
+      if (!path || !projectId) {
+        logReload("file-change", { path: null, why: path ? "no project" : "no path in payload" });
+        return;
+      }
+      // `/api/events` is one connection per SERVER, not per project: under the
+      // CLI host, a tab left open from a `preview` run that has since exited
+      // shares this stream with whatever project now runs on that port. Both
+      // commonly use the same default composition path, so without this check
+      // a stale tab reloads its preview (which then 404s — the CLI host is
+      // single-project, so it can't resolve the OTHER project it's serving)
+      // and re-reads its own composition on every save the CURRENT project
+      // makes. Absent field (older server, one release of skew) still passes.
+      const deliveredProjectId = readFileChangeField(payload, "projectId");
+      if (deliveredProjectId && deliveredProjectId !== projectId) {
+        logReload("suppressed", { path, why: "other project" });
+        return;
+      }
       pendingTimelineEditPathRef.current.delete(path);
 
       const content = readFileChangeContent(payload);
@@ -347,7 +450,7 @@ export function useExternalFileChangeCoordinator({
       const ownWriteToken = consumeStudioWriteToken(token);
       const ownContentEcho = content != null && isSelfWriteEcho(path, content);
       if (ownWriteToken || ownContentEcho) {
-        onAcceptedPersistedFileChange(path);
+        onAcceptedPersistedFileChange(path, readFileChangeAffectedCompositions(payload));
         logReload("suppressed", {
           path,
           why: ownWriteToken ? "own write token" : "own content echo",
@@ -355,14 +458,26 @@ export function useExternalFileChangeCoordinator({
         return;
       }
 
-      pendingPayloadRef.current = { payload };
+      const waiting = pendingPayloadRef.current?.payload;
+      const waitingChangeOutranksThis =
+        waiting != null &&
+        readFileChangeAffectsPreview(waiting) &&
+        !readFileChangeAffectsPreview(payload);
+      if (!waitingChangeOutranksThis) {
+        pendingPayloadRef.current = {
+          payload: waiting == null ? payload : mergeFileChangePayloads(waiting, payload),
+        };
+      }
       void startDrainLoop();
     },
     [projectId, pendingTimelineEditPathRef, startDrainLoop, onAcceptedPersistedFileChange],
   );
 
+  const processChangeRef = useRef(processChange);
+  processChangeRef.current = processChange;
   useEffect(() => {
-    const handler = (payload?: unknown) => processChange(payload);
+    // One decoder for all three transports; the rungs only choose the channel.
+    const handler = (delivery?: unknown) => processChangeRef.current(decodeFileChange(delivery));
     const adapter = testHotAdapter();
     if (adapter) {
       adapter.on("hf:file-change", handler);
@@ -372,10 +487,9 @@ export function useExternalFileChangeCoordinator({
       import.meta.hot.on("hf:file-change", handler);
       return () => import.meta.hot?.off?.("hf:file-change", handler);
     }
-    const eventSource = new EventSource("/api/events");
-    eventSource.addEventListener("file-change", handler);
-    return () => eventSource.close();
-  }, [processChange]);
+    const catchUp = () => processChangeRef.current({ path: "." });
+    return sseFileChangeChannel(handler, catchUp);
+  }, []);
 
   const retry = useCallback(async () => {
     const current = blockedRef.current;
@@ -401,17 +515,16 @@ export function useExternalFileChangeCoordinator({
       onUseExternalFile?.(path, external);
       await deleteConflictSnapshot?.(projectId, path);
       setBlocked(null);
-      onAcceptedPersistedFileChange(path);
-      reloadAcceptedGeneration(path);
+      deliverOwed(current.payload);
     },
     [
       deleteConflictSnapshot,
+      setBlocked,
       discardPendingChanges,
       onUseExternalFile,
-      onAcceptedPersistedFileChange,
       projectId,
       readProjectFile,
-      reloadAcceptedGeneration,
+      deliverOwed,
       resetSaveQueues,
     ],
   );
@@ -461,14 +574,18 @@ export function useExternalFileChangeCoordinator({
     resetSaveQueues?.();
     await deleteConflictSnapshot?.(projectId, conflict.filePath);
     setBlocked(null);
-    reloadAcceptedGeneration(conflict.filePath);
+    deliverOwed(
+      mergeFileChangePayloads(current.payload, { path: conflict.filePath, affectsPreview: true }),
+      readStudioFileChangePath(current.payload) !== conflict.filePath,
+    );
   }, [
     deleteConflictSnapshot,
+    setBlocked,
     discardPendingChanges,
     overwriteConflict,
     projectId,
     readProjectFile,
-    reloadAcceptedGeneration,
+    deliverOwed,
     resetSaveQueues,
   ]);
 

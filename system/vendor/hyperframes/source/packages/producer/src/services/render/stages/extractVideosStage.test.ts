@@ -15,7 +15,6 @@ import {
   buildHdrProbeStageError,
   resolveVideoExtractionPolicy,
   safeVideoExtractionSourceLogMetadata,
-  shouldCopyExtractedFrames,
   VideoExtractionStageError,
 } from "./extractVideosStage.js";
 import { EncoderInterruptedError } from "../encoderInterruption.js";
@@ -115,6 +114,15 @@ describe("appendAutoDetectedVideoAudio", () => {
     expect(composition.audios).toHaveLength(0);
   });
 
+  it("skips a hidden video so a track hidden in Studio stays silent in the render", () => {
+    const composition = {
+      videos: [makeVideo({ hidden: true })],
+      audios: [] as never[],
+    };
+    appendAutoDetectedVideoAudio(composition, [makeExtracted("v1", true)]);
+    expect(composition.audios).toHaveLength(0);
+  });
+
   it("skips when the source file has no audio track", () => {
     const composition = { videos: [makeVideo()], audios: [] as never[] };
     appendAutoDetectedVideoAudio(composition, [makeExtracted("v1", false)]);
@@ -207,17 +215,6 @@ describe("HDR probe src resolution (PRINFRA-349)", () => {
     } finally {
       rmSync(projectDir, { recursive: true, force: true });
     }
-  });
-});
-
-describe("shouldCopyExtractedFrames", () => {
-  it("copies frames on Windows (symlinkSync throws EPERM without Developer Mode)", () => {
-    expect(shouldCopyExtractedFrames("win32")).toBe(true);
-  });
-
-  it("symlinks on macOS and Linux (cheaper, symlinks allowed)", () => {
-    expect(shouldCopyExtractedFrames("darwin")).toBe(false);
-    expect(shouldCopyExtractedFrames("linux")).toBe(false);
   });
 });
 

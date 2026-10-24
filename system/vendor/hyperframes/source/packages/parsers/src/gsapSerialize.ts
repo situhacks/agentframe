@@ -47,6 +47,10 @@ export function editabilityForProvenance(provenance?: GsapProvenance): KeyframeE
   return "unroll";
 }
 
+export function authorsKeyframes(anim: GsapAnimation): boolean {
+  return anim.keyframes !== undefined || anim.hasUnresolvedKeyframes === true;
+}
+
 export interface GsapAnimation {
   id: string;
   targetSelector: string;
@@ -57,9 +61,17 @@ export interface GsapAnimation {
   properties: Record<string, number | string>;
   fromProperties?: Record<string, number | string>;
   duration?: number;
+  /** A `duration` was authored but is not a static number: unknown, not the 0.5s default. */
+  durationUnresolved?: boolean;
   ease?: string;
   /** Non-editable GSAP config (stagger, yoyo, repeat, etc.) preserved for round-trips. */
   extras?: Record<string, unknown>;
+  inspectionTiming?: {
+    repeat: number | null;
+    repeatDelay: number | null;
+    delay: number | null;
+    stagger: { each: number } | { amount: number } | null;
+  };
   /** Native GSAP keyframes data — present when the tween uses keyframes: { ... }. */
   keyframes?: GsapKeyframesData;
   /** Arc motion path config — present when the tween uses motionPath for curved position interpolation. */
@@ -68,6 +80,7 @@ export interface GsapAnimation {
   hasUnresolvedKeyframes?: boolean;
   /** True when the tween's target selector couldn't be statically resolved (dynamic). */
   hasUnresolvedSelector?: boolean;
+  hasPartialSelector?: boolean;
   /** Absolute start time computed by walking the timeline chain (handles +=, -=, <, >, labels). */
   resolvedStart?: number;
   /** True when no position arg was authored — the tween is sequentially placed by GSAP. */
@@ -141,6 +154,7 @@ export interface GsapKeyframesData<K extends GsapPercentageKeyframe = GsapPercen
   keyframes: K[];
   ease?: string;
   easeEach?: string;
+  fromMotionPath?: true;
 }
 
 export interface ArcPathSegment {
@@ -222,6 +236,12 @@ export interface SplitAnimationsResult {
 
 // ── Serialization ───────────────────────────────────────────────────────────
 
+/**
+ * Construct executable JavaScript from trusted composition-author inputs.
+ * __raw: values, preamble, postamble, and timelineVar are code-bearing inputs
+ * and are deliberately not sanitized. Never populate them from untrusted data.
+ * Quoting ordinary values does not sandbox authored code or its side effects.
+ */
 export function serializeGsapAnimations(
   animations: GsapAnimation[],
   timelineVar = "tl",
@@ -236,7 +256,7 @@ export function serializeGsapAnimations(
   });
   // fallow-ignore-next-line complexity
   const lines = sorted.map((anim) => {
-    const selector = `"${anim.targetSelector}"`;
+    const selector = JSON.stringify(anim.targetSelector);
     const props: Record<string, number | string> = { ...anim.properties };
     if (anim.duration !== undefined) props.duration = anim.duration;
     if (anim.ease) props.ease = anim.ease;
@@ -250,7 +270,7 @@ export function serializeGsapAnimations(
         propsStr = propsStr.slice(0, -2) + `, ${extrasStr} }`;
       }
     }
-    const posStr = typeof anim.position === "string" ? `"${anim.position}"` : anim.position;
+    const posStr = JSON.stringify(anim.position);
     switch (anim.method) {
       case "set":
         // A global set is a base `gsap.set` — off the timeline, no position arg.
@@ -306,6 +326,12 @@ export function serializeValue(value: unknown): string {
   }
   if (typeof value === "string") return JSON.stringify(value);
   return String(value);
+}
+
+export function plainPercentKey(percentage: number): string {
+  const text =
+    Math.abs(percentage) < 1e-6 ? percentage.toFixed(20).replace(/\.?0+$/, "") : String(percentage);
+  return `${text}%`;
 }
 
 export function safeJsKey(key: string): string {

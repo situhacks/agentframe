@@ -4,8 +4,11 @@ import { usePlayerStore } from "../player";
 import { getTimelineElementLabel } from "../utils/studioHelpers";
 import { trackStudioRazorSplit } from "../telemetry/events";
 import { canSplitElementAt, selectSplittableElements } from "../utils/timelineElementSplit";
+import { linkedMembersOf } from "../player/components/audioClipLink";
+import { isLinkedSelectionOn } from "../utils/linkedClipPreferences";
 import { buildAtomicCutIntents, runAtomicCutTransaction } from "../utils/razorSplitTransaction";
 import type { RecordEditInput } from "./timelineEditingHelpers";
+import { useFreezeFrame } from "./useFreezeFrame";
 
 interface UseRazorSplitOptions {
   projectId: string | null;
@@ -15,7 +18,6 @@ interface UseRazorSplitOptions {
   writeProjectFile: (path: string, content: string, expectedContent?: string) => Promise<void>;
   observeProjectFileVersion?: (path: string, version: string | null) => void;
   recordEdit: (input: RecordEditInput) => Promise<void>;
-  domEditSaveTimestampRef: React.MutableRefObject<number>;
   reloadPreview: () => void;
   forceReloadSdkSession?: () => void;
   isRecordingRef?: React.RefObject<boolean>;
@@ -28,7 +30,6 @@ export function useRazorSplit({
   writeProjectFile,
   observeProjectFileVersion,
   recordEdit,
-  domEditSaveTimestampRef,
   reloadPreview,
   forceReloadSdkSession,
   isRecordingRef,
@@ -62,9 +63,6 @@ export function useRazorSplit({
           ? "Split timeline clip"
           : `Split ${requestedCount} clips at ${splitTime.toFixed(2)}s`;
 
-      // Server writes arrive through the watcher before React can refresh. Keep
-      // the existing short self-write window active for this owned transaction.
-      domEditSaveTimestampRef.current = Date.now();
       const result = await runAtomicCutTransaction({
         projectId: pid,
         intents,
@@ -91,7 +89,6 @@ export function useRazorSplit({
     },
     [
       activeCompPath,
-      domEditSaveTimestampRef,
       observeProjectFileVersion,
       recordEdit,
       showToast,
@@ -108,7 +105,16 @@ export function useRazorSplit({
       }
       if (!canSplitElementAt(element, splitTime)) return;
       try {
-        const result = await runCut([element], splitTime, "single");
+        const members = linkedMembersOf(
+          element,
+          usePlayerStore.getState().elements,
+          isLinkedSelectionOn(),
+        );
+        const result = await runCut(
+          members.filter((member) => canSplitElementAt(member, splitTime)),
+          splitTime,
+          "single",
+        );
         if (!result) return;
         if (result.syncFailed) return;
         showToast(`Split ${getTimelineElementLabel(element)} at ${splitTime.toFixed(2)}s`, "info");
@@ -141,5 +147,17 @@ export function useRazorSplit({
     [isRecordingRef, runCut, showToast],
   );
 
-  return { handleRazorSplit, handleRazorSplitAll };
+  const handleFreezeFrame = useFreezeFrame({
+    projectId,
+    activeCompPath,
+    showToast,
+    writeProjectFile,
+    observeProjectFileVersion,
+    recordEdit,
+    reloadPreview,
+    forceReloadSdkSession,
+    isRecordingRef,
+  });
+
+  return { handleRazorSplit, handleRazorSplitAll, handleFreezeFrame };
 }

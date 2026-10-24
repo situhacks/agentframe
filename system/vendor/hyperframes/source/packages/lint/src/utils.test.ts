@@ -1,8 +1,119 @@
 import { describe, it, expect } from "vitest";
-import { stripCssComments, stripJsComments, stripJsStringLiterals } from "./utils.js";
+import {
+  isAudibleVideoTag,
+  parseHtmlStructure,
+  readAttr,
+  readDecodedAttr,
+  stripCssComments,
+  stripJsComments,
+  stripJsStringLiterals,
+} from "./utils.js";
 
 const scan = (src: string) => stripJsStringLiterals(stripJsComments(src));
 const findsRaf = (src: string) => /requestAnimationFrame\s*\(/.test(scan(src));
+
+describe("HTML attribute values", () => {
+  it.each([
+    { source: `<div title='id="ghost"' id="real">`, name: "id", expected: "real" },
+    {
+      source: `<div title='data-composition-src="ghost.html"'>`,
+      name: "data-composition-src",
+      expected: null,
+    },
+    { source: `<img title='src="ghost.png"' src="real.png">`, name: "src", expected: "real.png" },
+    { source: `<div title='class="ghost"' class="clip">`, name: "class", expected: "clip" },
+    { source: `<div id="scene's-title">`, name: "id", expected: "scene's-title" },
+    { source: `<div title='scene "title"'>`, name: "title", expected: 'scene "title"' },
+    { source: "<div DATA-START = 0>", name: "data-start", expected: "0" },
+    { source: '<div id="" id="ghost">', name: "id", expected: null },
+    { source: '<video data-hf-id="ghost">', name: "id", expected: null },
+    { source: '<video src="clip.mp4?id=7">', name: "id", expected: null },
+  ])("reads only the real $name from $source", ({ source, name, expected }) => {
+    expect(readAttr(source, name)).toBe(expected);
+  });
+
+  it("preserves raw entity text while the decoded reader resolves character references", () => {
+    const tag = '<img src="image.png?x=1&amp;y=2" title="Say &quot;hello&quot;">';
+    expect(readAttr(tag, "src")).toBe("image.png?x=1&amp;y=2");
+    expect(readDecodedAttr(tag, "src")).toBe("image.png?x=1&y=2");
+    expect(readAttr(tag, "title")).toBe("Say &quot;hello&quot;");
+    expect(readDecodedAttr(tag, "title")).toBe('Say "hello"');
+  });
+
+  it("preserves the empty-value contract for raw and decoded reads", () => {
+    expect(readAttr('<video muted="">', "muted")).toBeNull();
+    expect(readDecodedAttr('<video muted="">', "muted")).toBe("");
+    expect(readAttr("<video muted>", "muted")).toBeNull();
+    expect(readDecodedAttr("<video muted>", "muted")).toBe("");
+  });
+});
+
+describe("parseHtmlStructure source ranges", () => {
+  it("does not include ignored markup inside a preceding malformed closing tag", () => {
+    const source = "<p>x</p ignored<noise><span>y</span>";
+    const tags = parseHtmlStructure(source).tags;
+    expect(tags[1]).toMatchObject({ name: "span", raw: "<span>", attrs: "", index: 22 });
+  });
+
+  it("keeps a less-than inside a malformed tag name in the original source range", () => {
+    const tags = parseHtmlStructure("<div<foo>body</div<foo>").tags;
+    expect(tags.map(({ name, raw, attrs, index }) => ({ name, raw, attrs, index }))).toEqual([
+      { name: "div<foo", raw: "<div<foo>", attrs: "", index: 0 },
+    ]);
+  });
+
+  it("uses the original name boundary when Unicode lowercasing changes its length", () => {
+    const source = '<Aİİİ data-check="<" data-flag=x>body</Aİİİ>';
+    const tags = parseHtmlStructure(source).tags;
+    expect(tags.map(({ name, raw, attrs, index }) => ({ name, raw, attrs, index }))).toEqual([
+      {
+        name: "ai̇i̇i̇",
+        raw: '<Aİİİ data-check="<" data-flag=x>',
+        attrs: ' data-check="<" data-flag=x',
+        index: 0,
+      },
+    ]);
+  });
+
+  it("keeps malformed names and quoted less-than values after a multiline close", () => {
+    const source = '<p>x</p\n  ><div<foo data-expr="a < b">y</div<foo>';
+    const tags = parseHtmlStructure(source).tags;
+    expect(tags[1]).toMatchObject({
+      name: "div<foo",
+      raw: '<div<foo data-expr="a < b">',
+      attrs: ' data-expr="a < b"',
+      index: 11,
+    });
+  });
+
+  it("does not reuse implied-open origins for the following explicit tag", () => {
+    const source = '</p></br><Aİ data-expr="x < y">text</Aİ>';
+    const tags = parseHtmlStructure(source).tags;
+    expect(tags.map(({ name, raw, attrs, index }) => ({ name, raw, attrs, index }))).toEqual([
+      { name: "p", raw: "</p>", attrs: "p", index: 0 },
+      { name: "br", raw: "</br>", attrs: "r", index: 4 },
+      { name: "ai̇", raw: '<Aİ data-expr="x < y">', attrs: ' data-expr="x < y"', index: 9 },
+    ]);
+  });
+
+  it("does not use apparent tags in comments or raw-text scripts as an opening origin", () => {
+    const source = '<!-- <fake> --><script>const text = "<fake>";</script\n ><div<foo>x</div<foo>';
+    const tags = parseHtmlStructure(source).tags;
+    expect(tags.map(({ name, raw, attrs }) => ({ name, raw, attrs }))).toEqual([
+      { name: "script", raw: "<script>", attrs: "" },
+      { name: "div<foo", raw: "<div<foo>", attrs: "" },
+    ]);
+  });
+
+  it("starts each open tag at its own < after a multiline closing tag", () => {
+    const source = `<span data-expr="x < y">A</span\n    ><span>B</span>`;
+    const tags = parseHtmlStructure(source).tags;
+    expect(tags.map(({ raw, index }) => ({ raw, index }))).toEqual([
+      { raw: `<span data-expr="x < y">`, index: 0 },
+      { raw: `<span>`, index: source.indexOf("<span>") },
+    ]);
+  });
+});
 
 describe("stripJsStringLiterals", () => {
   it("blanks a call the composition only renders as text", () => {
@@ -84,21 +195,43 @@ describe("stripJsStringLiterals", () => {
 });
 
 describe("stripJsStringLiterals scaling", () => {
-  it("stays linear in slash-dense input", () => {
-    const time = (n: number) => {
+  // Guards the quadratic backtracking this scanner was rewritten to avoid:
+  // deciding regex-versus-division by re-reading the accumulated output on
+  // every candidate slash.
+  //
+  // Measured in CPU time, not wall time: `process.cpuUsage` counts only work
+  // this process did, so time spent descheduled on a shared runner does not
+  // count. Only the ratio is asserted; an absolute millisecond bound is a
+  // claim about the hardware, and it is how this test failed on unrelated
+  // pull requests. Inputs stay well under 100k characters: above that the
+  // output string's growth adds its own cost and 8x input measures ~20x even
+  // for the linear scan. Inside that range 8x input measures ~8x; a quadratic
+  // scan measures 60x or more.
+  //
+  // Each sample repeats the scan until it has spent at least 50ms: Windows
+  // updates `process.cpuUsage` in ~15.6ms ticks, so one fast scan can read 0.
+  it("stays linear in slash-dense input", { timeout: 30_000 }, () => {
+    const cpuMs = (n: number) => {
       const src = "a=b/c;".repeat(n);
+      stripJsStringLiterals(src); // warm up before the first sample
       let best = Infinity;
-      for (let run = 0; run < 3; run += 1) {
-        const started = performance.now();
-        stripJsStringLiterals(src);
-        best = Math.min(best, performance.now() - started);
+      for (let run = 0; run < 5; run += 1) {
+        const started = process.cpuUsage();
+        let iterations = 0;
+        let spentMs = 0;
+        while (spentMs < 50) {
+          stripJsStringLiterals(src);
+          iterations += 1;
+          const spent = process.cpuUsage(started);
+          spentMs = (spent.user + spent.system) / 1000;
+        }
+        best = Math.min(best, spentMs / iterations);
       }
       return best;
     };
-    const small = Math.max(time(20_000), 0.5);
-    const large = time(160_000);
+    const small = cpuMs(10_000);
+    const large = cpuMs(80_000);
     expect(large / small).toBeLessThan(24);
-    expect(large).toBeLessThan(2_000);
   });
 });
 
@@ -145,5 +278,18 @@ describe("stripCssComments", () => {
       expect(out).not.toContain("/*");
       expect(out).toContain("#a{color:red}");
     }
+  });
+});
+
+describe("isAudibleVideoTag", () => {
+  it("treats an absent marker and the exact value true as audible", () => {
+    expect(isAudibleVideoTag('<video src="a.mp4">')).toBe(true);
+    expect(isAudibleVideoTag('<video data-has-audio="true">')).toBe(true);
+  });
+  it("treats muted, false, empty and non-exact values as silent", () => {
+    expect(isAudibleVideoTag('<video muted data-has-audio="true">')).toBe(false);
+    expect(isAudibleVideoTag('<video data-has-audio="false">')).toBe(false);
+    expect(isAudibleVideoTag('<video data-has-audio="">')).toBe(false);
+    expect(isAudibleVideoTag('<video data-has-audio="TRUE">')).toBe(false);
   });
 });

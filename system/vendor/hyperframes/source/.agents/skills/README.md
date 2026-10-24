@@ -48,3 +48,10 @@ The parallel set at `.claude/skills/` is a byte-identical copy so
 Claude Code users get the same auto-discover behaviour — keep the two
 in sync when editing. A `scripts/check-skill-mirror.mjs` check enforces
 this at CI time.
+
+Each repo-native skill declares `metadata.internal: true`. That excludes it from
+normal `npx skills add` discovery and from `npx skills add ... --all`. A named
+`npx skills add ... --skill <name>` still installs a matching skill regardless of
+`metadata.internal`; no environment variable is needed. `INSTALL_INTERNAL_SKILLS=1`
+opts internal skills into normal discovery and bulk installation. This does not
+change local agent discovery.

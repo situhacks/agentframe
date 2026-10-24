@@ -12,7 +12,7 @@ Spec-first video (a campaign plans a video from a brief) stays with [`video-prod
 - A project post wants a quick cut of raw footage rather than a composed video.
 - A creator study or hook extraction is requested.
 
-Read first: the post's `post.md` and `edit.md`, the channel profile, and the `video/` component of the design language the profile names. Do not load `hyperframes-creative` house style; the design language is the only design input.
+Read first: the post's `post.md` and `edit.md`, the channel profile, and the `video/` component of the design language the profile names. From the upstream `skills/hyperframes/references/look.md`, use only its design-spec rules; the design language is the only design input.
 
 ## Procedure
 
@@ -55,13 +55,13 @@ Fill each section of `edit.md`:
 
 ### 5. Compose
 
-One HyperFrames project per post under `video/`. Base track: `cut.mp4` as a `<video>` element; punch-ins are GSAP scale and translate keyframes on it. Cutaways: clips with `data-media-start` sub-windows, full-frame or picture-in-picture. Text cards: the `talking-head-recut` skill's card pattern, styled from `frame.md`. Captions per the caption path below. Audio: SFX and bed with the ducking keyframes `audio-duck.mjs` emits. Load `system/vendor/hyperframes/SKILL.md` for the engine contract; read `frame.md` from the design language as brand truth.
+One HyperFrames project per post under `video/`. Base track: `cut.mp4` as a `<video>` element; punch-ins are GSAP scale and translate keyframes on it. Cutaways: clips with `data-media-start` sub-windows, full-frame or picture-in-picture. Text cards: the card pattern in the upstream `skills/hyperframes/references/overlays.md`, styled from `frame.md`. Captions per the caption path below. Audio: SFX and bed with the ducking keyframes `audio-duck.mjs` emits. Load `system/vendor/hyperframes/SKILL.md` for the engine contract; read `frame.md` from the design language as brand truth.
 
 ### 6. Render and QC
 
 ```
 npx hyperframes check
-npx hyperframes render --out renders/final.mp4      # 1080x1920
+npx hyperframes render --output renders/final.mp4   # 1080x1920
 ffmpeg -i renders/final.mp4 -af loudnorm=I=-16:TP=-1.5:LRA=11 -c:v copy renders/final-ln.mp4 \
   && mv -f renders/final-ln.mp4 renders/final.mp4
 ```
@@ -74,7 +74,7 @@ Watch the first three seconds and the end card. Confirm captions sit inside the 
 
 In order of preference:
 
-1. `embedded-captions` in the identity the design language names, `anchor` rail by default. Its prepare step mattes the subject; if that is too slow on this machine, stop and use 2.
+1. Word-timed caption groups per the upstream `skills/hyperframes/references/captions.md`, in the identity the design language names, in front of the speaker by default. Text behind the speaker uses a cutout from `npx hyperframes remove-background`; if that matte is too slow on this machine, stop and use 2.
 2. A word-timed ASS track burned by ffmpeg in the identity's font, size and colours. No matting, no engine.
 
 Record which path the post used in `edit.md` so the next post starts there.

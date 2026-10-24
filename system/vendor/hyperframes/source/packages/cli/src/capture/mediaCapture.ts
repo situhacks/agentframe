@@ -8,20 +8,31 @@
  */
 
 import type { Browser, Page } from "puppeteer-core";
-import { mkdirSync, writeFileSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { ensureCaptureDirSync, writeCaptureFileSync } from "./captureFile.js";
 import { join, extname } from "node:path";
 import { isPrivateUrl, safeFetch } from "./assetDownloader.js";
 import { CAPTURE_USER_AGENT } from "./userAgent.js";
+import { MAX_LOTTIE_BYTES, readLottieArchive, validLottieJson } from "./lottieValidation.js";
+import { guardLottiePreviewRequests, LOTTIE_RUNTIME_URL } from "./lottiePreviewRequests.js";
+import {
+  readBoundedResponse,
+  createCaptureDownloadBudget,
+  type DownloadByteBudget,
+} from "./readBoundedResponse.js";
 
 /** Discovered Lottie item from network interception or DOM scan. */
 export interface DiscoveredLottie {
   url: string;
   data?: unknown;
+  /** Internal discovery accounting: avoid charging the same buffered data twice. */
+  dataBudget?: DownloadByteBudget;
   dimensions?: { w: number; h: number };
   frameRate?: number;
 }
 
 interface RemainingBudget {
+  byteBudget?: DownloadByteBudget;
   remainingMs?: () => number;
 }
 
@@ -39,8 +50,11 @@ function liveRemainingMs(budget: RemainingBudget, fallbackMs: number): number {
 export async function saveLottieAnimations(
   discoveredLotties: DiscoveredLottie[],
   lottieDir: string,
+  outputDir: string,
   budget: RemainingBudget = {},
 ): Promise<number> {
+  ensureCaptureDirSync(outputDir, lottieDir);
+  const byteBudget = budget.byteBudget ?? createCaptureDownloadBudget();
   let savedCount = 0;
   const savedHashes = new Set<string>(); // Deduplicate by content
 
@@ -53,6 +67,12 @@ export async function saveLottieAnimations(
       if (lottieItem.data) {
         // Already have the JSON data from network interception
         jsonData = JSON.stringify(lottieItem.data);
+        const size = Buffer.byteLength(jsonData);
+        if (size > MAX_LOTTIE_BYTES) continue;
+        if (lottieItem.dataBudget !== byteBudget) {
+          if (size > byteBudget.remainingBytes) continue;
+          byteBudget.remainingBytes -= size;
+        }
       } else if (lottieItem.url) {
         const requestTimeoutMs = Math.min(10_000, liveRemainingMs(budget, 10_000));
         if (requestTimeoutMs <= 0) break;
@@ -62,36 +82,11 @@ export async function saveLottieAnimations(
           headers: { "User-Agent": CAPTURE_USER_AGENT },
         });
         if (!res || !res.ok) continue;
-        const buf = Buffer.from(await res.arrayBuffer());
-
-        if (lottieItem.url.endsWith(".lottie")) {
-          // dotLottie is a ZIP — extract the animation JSON
-          try {
-            const AdmZip = (await import("adm-zip")).default;
-            const zip = new AdmZip(buf);
-            const entries = zip.getEntries();
-            // Look for animation JSON in both v1 (animations/) and v2 (a/) paths
-            const animEntry = entries.find(
-              (e) =>
-                (e.entryName.startsWith("a/") || e.entryName.startsWith("animations/")) &&
-                e.entryName.endsWith(".json"),
-            );
-            if (animEntry) {
-              jsonData = animEntry.getData().toString("utf-8");
-            }
-          } catch {
-            // adm-zip not available or extraction failed — save raw .lottie
-            const hash = buf.toString("base64").slice(0, 100);
-            if (savedHashes.has(hash)) continue;
-            savedHashes.add(hash);
-            writeFileSync(join(lottieDir, `animation-${savedCount}.lottie`), buf);
-            savedCount++;
-            continue;
-          }
-        } else {
-          // Plain JSON file
-          jsonData = buf.toString("utf-8");
-        }
+        const buf = await readBoundedResponse(res, MAX_LOTTIE_BYTES, byteBudget);
+        if (!buf) continue;
+        jsonData = new URL(lottieItem.url).pathname.endsWith(".lottie")
+          ? (readLottieArchive(buf) ?? undefined)
+          : buf.toString("utf8");
       }
 
       if (jsonData) {
@@ -100,15 +95,9 @@ export async function saveLottieAnimations(
         if (savedHashes.has(hash)) continue;
         savedHashes.add(hash);
 
-        // Validate it's actually Lottie
-        try {
-          const parsed = JSON.parse(jsonData);
-          if (!parsed.layers || !parsed.w) continue;
-        } catch {
-          continue;
-        }
+        if (!validLottieJson(jsonData)) continue;
 
-        writeFileSync(join(lottieDir, `animation-${savedCount}.json`), jsonData, "utf-8");
+        writeCaptureFileSync(join(lottieDir, `animation-${savedCount}.json`), jsonData, "utf-8");
         savedCount++;
       }
     } catch {
@@ -143,7 +132,7 @@ export async function renderLottiePreviews(
     layers: number;
   }> = [];
   const previewDir = join(lottieDir, "previews");
-  mkdirSync(previewDir, { recursive: true });
+  ensureCaptureDirSync(outputDir, previewDir);
 
   for (const file of readdirSync(lottieDir)) {
     if (!file.endsWith(".json")) continue;
@@ -165,6 +154,7 @@ export async function renderLottiePreviews(
         if (liveRemainingMs(budget, 1) <= 0) break;
         previewPage = await chromeBrowser.newPage();
         if (liveRemainingMs(budget, 1) <= 0) break;
+        await guardLottiePreviewRequests(previewPage);
         await previewPage.setViewport({ width: 400, height: 400 });
         const animData = JSON.parse(readFileSync(join(lottieDir, file), "utf-8"));
         const midFrame = Math.floor(((raw.op || 0) - (raw.ip || 0)) * 0.3);
@@ -172,7 +162,7 @@ export async function renderLottiePreviews(
         await previewPage.setContent(
           `<!DOCTYPE html>
 <html><head>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"></script>
+<script src="${LOTTIE_RUNTIME_URL}"></script>
 <style>*{margin:0;padding:0;background:transparent}#c{width:400px;height:400px}</style>
 </head><body><div id="c"></div></body></html>`,
           { waitUntil: "load", timeout: 10000 },
@@ -199,11 +189,8 @@ export async function renderLottiePreviews(
           .waitForFunction(() => (window as any).__READY === true, { timeout: 5000 })
           .catch(() => {});
         if (liveRemainingMs(budget, 1) > 0) {
-          await previewPage.screenshot({
-            path: join(previewDir, previewName),
-            type: "png",
-            omitBackground: true,
-          });
+          const shot = await previewPage.screenshot({ type: "png", omitBackground: true });
+          writeCaptureFileSync(join(previewDir, previewName), shot);
           preview = `assets/lottie/previews/${previewName}`;
         }
       } catch {
@@ -227,7 +214,7 @@ export async function renderLottiePreviews(
     }
   }
   if (manifest.length > 0) {
-    writeFileSync(
+    writeCaptureFileSync(
       join(outputDir, "extracted", "lottie-manifest.json"),
       JSON.stringify(manifest, null, 2),
       "utf-8",
@@ -296,7 +283,7 @@ async function downloadVideoBody(
     }
     if (total < 1024) return null; // too small to be a real video (likely an error blob)
     const safe = /\.[a-z0-9]+$/i.test(filename) ? filename.replace(/[^\w.-]/g, "_") : `video${ext}`;
-    writeFileSync(join(videosDir, safe), Buffer.concat(chunks));
+    writeCaptureFileSync(join(videosDir, safe), Buffer.concat(chunks));
     return `assets/videos/${safe}`;
   } catch {
     return null;
@@ -485,9 +472,9 @@ export async function captureVideoManifest(
   if (merged.length === 0) return;
 
   const videoManifestDir = join(outputDir, "assets", "videos");
-  mkdirSync(videoManifestDir, { recursive: true });
+  ensureCaptureDirSync(outputDir, videoManifestDir);
   const previewDir = join(videoManifestDir, "previews");
-  mkdirSync(previewDir, { recursive: true });
+  ensureCaptureDirSync(outputDir, previewDir);
 
   const videoManifest: Array<{
     index: number;
@@ -535,8 +522,8 @@ export async function captureVideoManifest(
         if (rect && rect.width >= 10) {
           await new Promise((r) => setTimeout(r, 200)); // let decoder settle
           if (liveRemainingMs(opts ?? {}, 1) > 0) {
-            await page.screenshot({
-              path: join(previewDir, previewName),
+            const shot = await page.screenshot({
+              type: "png",
               clip: {
                 x: Math.max(0, rect.x),
                 y: Math.max(0, rect.y),
@@ -544,6 +531,7 @@ export async function captureVideoManifest(
                 height: Math.min(rect.height, 1080),
               },
             });
+            writeCaptureFileSync(join(previewDir, previewName), shot);
             preview = `assets/videos/previews/${previewName}`;
           }
         }
@@ -586,7 +574,7 @@ export async function captureVideoManifest(
   }
 
   if (videoManifest.length > 0) {
-    writeFileSync(
+    writeCaptureFileSync(
       join(outputDir, "extracted", "video-manifest.json"),
       JSON.stringify(videoManifest, null, 2),
       "utf-8",

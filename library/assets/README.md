@@ -66,12 +66,12 @@ A language that dresses video carries a second replayable half, because a deck p
 video/
 ├── frame.md            # HyperFrames design spec: normative frontmatter tokens + composition prose
 ├── caption-skin.html   # the caption treatment
-├── captions.yaml       # identity: <embedded-captions identity | ass-burn>, rail/embed policy, font, colours
+├── captions.yaml       # identity: <caption style per hyperframes references/captions.md | ass-burn>, behind-speaker policy, font, colours
 ├── audio.yaml          # sfx palette and beds, each pointing at a library/assets/audio/ record
 └── lut.cube            # optional colour grade
 ```
 
-`frame.md` follows the vendored HyperFrames design-spec contract (`system/vendor/hyperframes/source/skills/hyperframes-creative/references/design-spec.md`): frontmatter is the normative layer, prose is context. Author it from the operator's references, never by adopting a frame preset wholesale, and state the anti-tells explicitly: radii, density, type, what never appears. `af doctor` notes a `video/` folder missing `frame.md` or `captions.yaml`.
+`frame.md` follows the vendored HyperFrames design-spec contract (`system/vendor/hyperframes/source/skills/hyperframes/references/look.md`, "The project's design spec"): frontmatter is the normative layer, prose is context. Author it from the operator's references, never by adopting a frame preset wholesale, and state the anti-tells explicitly: radii, density, type, what never appears. `af doctor` notes a `video/` folder missing `frame.md` or `captions.yaml`.
 
 ### Capture — how one gets created
 

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { ensureHfIds, mintHfId } from "./hfIds.js";
+import { ensureHfIds, mintHfId, stampHfIdsInPlace, walkCompositionDescendants } from "./hfIds.js";
 import { parseHTML } from "linkedom";
+import { assignHfIds } from "./hfIdAssignment.js";
 
 function ids(html: string): string[] {
   const { document } = parseHTML(html);
@@ -17,7 +18,156 @@ function idOf(html: string, selector: string): string | null {
 
 const doc = (body: string) => `<!doctype html><html><body>${body}</body></html>`;
 
+describe("ensureHfIds fragment detection", () => {
+  it.each([
+    `<!-- Example: <html lang="en"> --><div id="stage"><p id="title">Hello</p></div>`,
+    `<!-- Example: <!doctype html> --><div id="stage"><p id="title">Hello</p></div>`,
+    `<div id="stage" title="<html>"><p id="title">Hello</p></div>`,
+    `<script>const example = "<!doctype html>";</script><div id="stage"><p id="title">Hello</p></div>`,
+  ])("stamps fragments containing document markers in inert text: %s", (html) => {
+    const out = ensureHfIds(html);
+    expect(ids(out)).toHaveLength(2);
+    expect(idOf(out, "#title")).toBe(
+      idOf(ensureHfIds(`<div id="stage"><p id="title">Hello</p></div>`), "#title"),
+    );
+    expect(out).not.toContain("<head>");
+    expect(out).not.toContain("<body>");
+    expect(ensureHfIds(out)).toBe(out);
+  });
+
+  it("preserves a full document following leading comments", () => {
+    const out = ensureHfIds(`<!-- note --><html><body><p id="title">Hello</p></body></html>`);
+    expect(out).toContain("<html>");
+    expect(idOf(out, "#title")).toMatch(/^hf-[a-z0-9]{4}$/);
+    expect(ensureHfIds(out)).toBe(out);
+  });
+});
+
+describe("stampHfIdsInPlace keeps the source's own formatting", () => {
+  it.each(["script", "style"])("keeps source offsets after expanding Unicode near %s", (tag) => {
+    const html = `<div DATA-X='KeepCase'>${"İ".repeat(20)}<${tag}>/* İ <span> */</${tag.toUpperCase()} \n><p class='KeepMe'>after</p></div>`;
+    const out = stampHfIdsInPlace(html);
+    expect(out.replace(/ data-hf-id="hf-[a-z0-9]{4}"/g, "")).toBe(html);
+    expect(ids(out)).toEqual(ids(ensureHfIds(html)));
+    expect(stampHfIdsInPlace(out)).toBe(out);
+  });
+
+  it("only inserts ids into a composition written without whitespace", () => {
+    const html =
+      '<template id="s-template"><div data-composition-id="s" data-start="0" data-duration="4"><style>#t{color:red}</style><img src="a.png"/><input disabled><p class=\'t\' id=t>Hi<br></p></div></template>';
+    const out = stampHfIdsInPlace(html);
+    expect(out.replace(/ data-hf-id="hf-[a-z0-9]{4}"/g, "")).toBe(html);
+    expect(ids(out.replace(/<\/?template[^>]*>/g, ""))).toHaveLength(5);
+    expect(stampHfIdsInPlace(out)).toBe(out);
+  });
+
+  it("only inserts ids into a full document with comments, scripts and SVG", () => {
+    const html = `<!DOCTYPE html>\n<html>\n<head><meta charset="UTF-8"><script>if(a<b){x="<div>"}</script></head>\n<body>\n  <!-- <span> -->\n  <div id="root" data-composition-id="main"><svg viewBox="0 0 10 10"><path d="M0 0"/></svg></div>\n</body>\n</html>\n`;
+    const out = stampHfIdsInPlace(html);
+    expect(out.replace(/ data-hf-id="hf-[a-z0-9]{4}"/g, "")).toBe(html);
+    expect(ids(out)).toEqual(ids(ensureHfIds(html)));
+    expect(idOf(out, "path")).toMatch(/^hf-/);
+  });
+
+  it("keeps an astral character from shifting the minted id", () => {
+    const html = `<div title='😀' data-hf-id=""><span>Hello</span></div>`;
+    const out = stampHfIdsInPlace(html);
+    expect(out).toContain(`title='😀' data-hf-id="`);
+    expect(out).not.toMatch(/data-hf-id=hf-/);
+    expect(ids(out)).toEqual(ids(ensureHfIds(html)));
+  });
+
+  it("does not mint an id inside another attribute's quotes", () => {
+    const html = `<div title=' data-hf-id=""' data-hf-id=""><p data-hf-id="">Hi</p></div>`;
+    const out = stampHfIdsInPlace(html);
+    expect(out).toContain(`title=' data-hf-id=""'`);
+    expect(out.replace(/data-hf-id="hf-[a-z0-9]{4}"/g, 'data-hf-id=""')).toBe(html);
+    expect(ids(out)).toEqual(ids(ensureHfIds(html)));
+  });
+
+  it("fills an empty data-hf-id instead of leaving it blank", () => {
+    const html = `<div data-hf-id=""><p data-hf-id="">Hello</p></div>`;
+    const out = stampHfIdsInPlace(html);
+    expect(out.replace(/data-hf-id="hf-[a-z0-9]{4}"/g, 'data-hf-id=""')).toBe(html);
+    expect(out).not.toMatch(/data-hf-id=""\s+data-hf-id=/);
+    expect(ids(out)).toEqual(ids(ensureHfIds(html)));
+    expect(ids(out).every((id) => /^hf-[a-z0-9]{4}$/.test(id))).toBe(true);
+  });
+
+  it("does not treat a longer tag name as the end of a script or style", () => {
+    const script = `<div><script>s="</scripts>"</script><span>x</span></div>`;
+    const styled = `<div><style>/* </styles */</style><span>x</span></div>`;
+    for (const html of [script, styled]) {
+      const out = stampHfIdsInPlace(html);
+      expect(out.replace(/ data-hf-id="hf-[a-z0-9]{4}"/g, "")).toBe(html);
+      expect(ids(out)).toEqual(ids(ensureHfIds(html)));
+    }
+    const stray = `<div><script>s="</scripts><p>"</script></p><span>x</span></div>`;
+    const stamped = stampHfIdsInPlace(stray);
+    expect(stamped).toContain(`s="</scripts><p>"</script>`);
+    expect(stamped).not.toMatch(/scripts><p>" data-hf-id/);
+    expect(ids(stamped)).toEqual(ids(ensureHfIds(stray)));
+  });
+});
+
 describe("ensureHfIds", () => {
+  it("ignores HTML attribute case and editor state while retaining pinned IDs", () => {
+    const lower = doc(`<div id="x" data-start="2" data-hf-state="a">hello</div>`);
+    const upper = doc(`<DIV ID="x" DATA-START="2" DATA-HF-STATE="b">hello</DIV>`);
+    expect(ids(ensureHfIds(upper))).toEqual(ids(ensureHfIds(lower)));
+    const pinned = ensureHfIds(doc(`<DIV DATA-HF-ID="pinned" DATA-START="2">hello</DIV>`));
+    expect(
+      new DOMParser()
+        .parseFromString(pinned, "text/html")
+        .querySelector("[data-start]")
+        ?.getAttribute("data-hf-id"),
+    ).toBe("pinned");
+  });
+
+  it.each([
+    `<TEMPLATE DATA-COMPOSITION-ID="sub"><DIV ID="x" DATA-START="2">hello</DIV></TEMPLATE>`,
+    `<TEMPLATE><DIV DATA-COMPOSITION-ID="sub"><DIV ID="x" DATA-START="2">hello</DIV></DIV></TEMPLATE>`,
+  ])("assigns matching IDs inside mixed-case composition templates: %s", (body) => {
+    const html = doc(body);
+    const native = new DOMParser().parseFromString(html, "text/html");
+    assignHfIds(native.body);
+    const persisted = new DOMParser().parseFromString(ensureHfIds(html), "text/html");
+    const collect = (document: Document): string[] => {
+      const result: string[] = [];
+      walkCompositionDescendants(document.body, (el) => {
+        if (el.tagName.toLowerCase() !== "template")
+          result.push(el.getAttribute("data-hf-id") ?? "missing");
+      });
+      return result;
+    };
+    expect(collect(native).length).toBeGreaterThan(0);
+    expect(collect(native)).not.toContain("missing");
+    expect(collect(native)).toEqual(collect(persisted));
+  });
+
+  it.each([
+    '<svg><linearGradient VIEWBOX="0 0 1 1"></linearGradient></svg>',
+    '<svg><linearGradient GRADIENTUNITS="userSpaceOnUse"></linearGradient></svg>',
+    '<svg><linearGradient ID="g" CLASS="paint" ARIA-LABEL="Gradient" DATA-HF-STATE="ignored"></linearGradient></svg>',
+    '<svg><linearGradient DATA-HF-ID="pinned" VIEWBOX="0 0 1 1"></linearGradient></svg>',
+  ])("matches persisted IDs for mixed-case SVG attributes: %s", (body) => {
+    const html = doc(body);
+    const native = new DOMParser().parseFromString(html, "text/html");
+    assignHfIds(native.body);
+    const persisted = new DOMParser().parseFromString(ensureHfIds(html), "text/html");
+    const collect = (document: Document) =>
+      Array.from(document.querySelectorAll("svg, linearGradient")).map((el) =>
+        el.getAttribute("data-hf-id"),
+      );
+    expect(collect(native)).toHaveLength(2);
+    expect(collect(native)).not.toContain(null);
+    expect(collect(native)).toEqual(collect(persisted));
+    expect(ensureHfIds(ensureHfIds(html))).toBe(ensureHfIds(html));
+    const gradient = persisted.querySelector("linearGradient");
+    if (body.includes("VIEWBOX")) expect(gradient?.getAttribute("viewBox")).toBe("0 0 1 1");
+    if (body.includes("DATA-HF-ID")) expect(gradient?.getAttribute("data-hf-id")).toBe("pinned");
+  });
+
   it("mints a hf- id on every editable element node in body", () => {
     const html = `<!doctype html><html><body>
       <div class="card"><h1>Hi</h1><img src="a.png"><span>x</span></div>

@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -9,10 +17,24 @@ import {
   safeFetch,
   toStandaloneSvg,
 } from "./assetDownloader.js";
+import { CaptureDirRefusedError } from "./captureErrors.js";
 import type { DesignTokens } from "./types.js";
 import type { IconCandidate } from "./faviconRanker.js";
 import { CAPTURE_USER_AGENT } from "./userAgent.js";
 import sharp from "sharp";
+import { publicRequest } from "./publicNetwork.js";
+import { loadSharp } from "../utils/optionalPackages.js";
+
+vi.mock("./publicNetwork.js", () => ({ publicRequest: vi.fn() }));
+vi.mock("../utils/optionalPackages.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../utils/optionalPackages.js")>();
+  return { ...actual, loadSharp: vi.fn(actual.loadSharp) };
+});
+
+// Exercise production URL/redirect checks while replacing only the socket transport.
+function mockRequest(implementation: (url: string, init?: RequestInit) => Promise<Response>) {
+  vi.mocked(publicRequest).mockImplementation((url, init) => implementation(String(url), init));
+}
 
 describe("isPrivateUrl — SSRF denylist (security: F-003)", () => {
   it("blocks loopback, private, and metadata IPv4", () => {
@@ -22,6 +44,11 @@ describe("isPrivateUrl — SSRF denylist (security: F-003)", () => {
       "http://172.16.0.1/",
       "http://192.168.1.1/",
       "http://169.254.169.254/", // cloud metadata
+      "http://100.64.0.1/",
+      "http://192.0.0.1/",
+      "http://198.18.0.1/",
+      "http://224.0.0.1/",
+      "http://240.0.0.1/",
     ]) {
       expect(isPrivateUrl(u), u).toBe(true);
     }
@@ -38,6 +65,8 @@ describe("isPrivateUrl — SSRF denylist (security: F-003)", () => {
       "http://[::ffff:169.254.169.254]/", // IPv4-mapped metadata
       "http://[fd00::1]/", // unique-local fc00::/7
       "http://[fe80::1]/", // link-local fe80::/10
+      "http://[fec0::1]/",
+      "http://[ff02::1]/",
     ]) {
       expect(isPrivateUrl(u), u).toBe(true);
     }
@@ -56,12 +85,14 @@ describe("isPrivateUrl — SSRF denylist (security: F-003)", () => {
 
   it("allows ordinary public URLs", () => {
     expect(isPrivateUrl("https://example.com/logo.png")).toBe(false);
+    expect(isPrivateUrl("http://example.com./logo.png")).toBe(false);
+    expect(isPrivateUrl("http://notlocalhost.example/logo.png")).toBe(false);
     expect(isPrivateUrl("https://cdn.jsdelivr.net/a.svg")).toBe(false);
   });
 });
 
 describe("safeFetch — re-validates the denylist on every redirect hop (security: F-002)", () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => vi.mocked(publicRequest).mockReset());
 
   it("blocks a public URL that redirects to a private/metadata host", async () => {
     const fetchMock = vi.fn(async (input: string, _init?: RequestInit) => {
@@ -74,7 +105,7 @@ describe("safeFetch — re-validates the denylist on every redirect hop (securit
       // The metadata host must NEVER be fetched.
       throw new Error(`safeFetch followed a redirect to a private host: ${input}`);
     });
-    vi.stubGlobal("fetch", fetchMock);
+    mockRequest(fetchMock);
 
     const res = await safeFetch("https://public.example/logo.png");
     expect(res).toBeNull();
@@ -89,16 +120,57 @@ describe("safeFetch — re-validates the denylist on every redirect hop (securit
         return new Response(null, { status: 301, headers: { location: "https://b.example/y" } });
       return new Response("ok", { status: 200 });
     });
-    vi.stubGlobal("fetch", fetchMock);
+    mockRequest(fetchMock);
 
     const res = await safeFetch("https://a.example/x");
     expect(res?.status).toBe(200);
     expect(await res?.text()).toBe("ok");
   });
 
+  it("blocks localhost and internal DNS aliases initially and after redirects", async () => {
+    for (const host of [
+      "localhost.",
+      "foo.localhost",
+      "FOO.LOCALHOST.",
+      "db.internal.",
+      "svc.local.",
+    ]) {
+      const target = `http://${host}/private`;
+      const fetchMock = vi.fn(
+        async () =>
+          new Response(null, {
+            status: 302,
+            headers: { location: target },
+          }),
+      );
+      mockRequest(fetchMock);
+      expect(isPrivateUrl(target), target).toBe(true);
+      expect(await safeFetch(target), target).toBeNull();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(await safeFetch("https://public.example/asset"), target).toBeNull();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("cancels redirect bodies before validating the next hop", async () => {
+    const canceled = vi.fn();
+    mockRequest(
+      vi.fn(
+        async () =>
+          new Response(new ReadableStream({ cancel: canceled }), {
+            status: 302,
+            headers: { location: "http://169.254.169.254/metadata" },
+          }),
+      ),
+    );
+    expect(await safeFetch("https://public.example/asset")).toBeNull();
+    expect(canceled).toHaveBeenCalledOnce();
+    expect(publicRequest).toHaveBeenCalledTimes(1);
+  });
+
   it("returns null when the initial URL is private", async () => {
     const fetchMock = vi.fn(async () => new Response("ok"));
-    vi.stubGlobal("fetch", fetchMock);
+    mockRequest(fetchMock);
     const res = await safeFetch("http://169.254.169.254/");
     expect(res).toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
@@ -142,12 +214,12 @@ describe("toStandaloneSvg — scraped inline SVGs must survive as .svg files", (
 });
 
 describe("downloadAndRewriteFonts — attempt caps", () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => vi.mocked(publicRequest).mockReset());
 
   async function expectFailedFontAttempts(css: string, expectedAttempts: number): Promise<void> {
     const dir = mkdtempSync(join(tmpdir(), "hf-font-attempts-"));
     const fetchMock = vi.fn(async () => new Response("failed", { status: 503 }));
-    vi.stubGlobal("fetch", fetchMock);
+    mockRequest(fetchMock);
 
     try {
       await downloadAndRewriteFonts(css, dir);
@@ -179,7 +251,7 @@ describe("downloadAndRewriteFonts — attempt caps", () => {
     const dir = mkdtempSync(join(tmpdir(), "hf-font-budget-"));
     const css = "@font-face { font-family: Budget; src: url(https://fonts.example/budget.woff2); }";
     const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
+    mockRequest(fetchMock);
 
     try {
       await downloadAndRewriteFonts(css, dir, { remainingMs: () => 0 });
@@ -226,7 +298,7 @@ const OPENAI_ICONS: IconCandidate[] = [
 ];
 
 describe("drop counts — why a referenced asset is not in the capture", () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => vi.mocked(publicRequest).mockReset());
 
   /** `n` @font-face rules, each naming a DIFFERENT family, so only the global cap can bite. */
   function fontCss(n: number): string {
@@ -242,7 +314,7 @@ describe("drop counts — why a referenced asset is not in the capture", () => {
     // ever have said "some".
     await withTempDir(async (dir) => {
       const fetchMock = vi.fn();
-      vi.stubGlobal("fetch", fetchMock);
+      mockRequest(fetchMock);
       const { drops } = await downloadAndRewriteFonts(fontCss(4), dir, { remainingMs: () => 0 });
       expect(fetchMock).not.toHaveBeenCalled();
       expect(drops["budget-exhausted"]).toBe(4);
@@ -254,10 +326,7 @@ describe("drop counts — why a referenced asset is not in the capture", () => {
   it("separates the faces the global cap refused from the ones that failed", async () => {
     // 35 declared, cap 30: 30 are attempted and every attempt 503s, 5 are never reached.
     await withTempDir(async (dir) => {
-      vi.stubGlobal(
-        "fetch",
-        vi.fn(async () => new Response("no", { status: 503 })),
-      );
+      mockRequest(vi.fn(async () => new Response("no", { status: 503 })));
       const { drops } = await downloadAndRewriteFonts(fontCss(35), dir);
       expect(drops["cap-reached"]).toBe(5);
       expect(drops.unavailable).toBe(30);
@@ -268,10 +337,7 @@ describe("drop counts — why a referenced asset is not in the capture", () => {
   it("counts the faces the per-family cap refused", async () => {
     // 10 rules, all one family, per-family cap 6: 6 attempted, 4 refused.
     await withTempDir(async (dir) => {
-      vi.stubGlobal(
-        "fetch",
-        vi.fn(async () => new Response("no", { status: 503 })),
-      );
+      mockRequest(vi.fn(async () => new Response("no", { status: 503 })));
       const css = Array.from(
         { length: 10 },
         (_, i) =>
@@ -287,14 +353,27 @@ describe("drop counts — why a referenced asset is not in the capture", () => {
     // The whole point of the tally: this page declared one face and we have it. A reader can now
     // tell this apart from a page that declared thirty and got truncated to one.
     await withTempDir(async (dir) => {
-      vi.stubGlobal(
-        "fetch",
-        vi.fn(async () => new Response(new Uint8Array(2048), { status: 200 })),
+      mockRequest(
+        vi.fn(
+          async () =>
+            new Response(
+              new Uint8Array(
+                readFileSync(
+                  new URL(
+                    "../../../../docs/public/catalog/assets/a634cb9e7783af7e.woff2",
+                    import.meta.url,
+                  ),
+                ),
+              ),
+              { status: 200 },
+            ),
+        ),
       );
       const { css, drops } = await downloadAndRewriteFonts(fontCss(1), dir);
       expect(css).toContain("assets/fonts/font-0.woff2");
       expect(drops).toEqual({
         "size-floor": 0,
+        "size-ceiling": 0,
         "budget-exhausted": 0,
         "cap-reached": 0,
         unavailable: 0,
@@ -303,11 +382,20 @@ describe("drop counts — why a referenced asset is not in the capture", () => {
   });
 
   it("counts an image dropped for being under the raster floor", async () => {
-    // 9 KB is under the 10 KB floor. Nothing lands, and the reason is now on the record.
+    // A valid small PNG is under the 10 KB floor; preserve the recorded drop reason.
     await withTempDir(async (dir) => {
-      vi.stubGlobal(
-        "fetch",
-        vi.fn(async () => new Response(new Uint8Array(9000), { status: 200 })),
+      mockRequest(
+        vi.fn(
+          async () =>
+            new Response(
+              new Uint8Array(
+                await sharp({ create: { width: 2, height: 2, channels: 4, background: "red" } })
+                  .png()
+                  .toBuffer(),
+              ),
+              { status: 200 },
+            ),
+        ),
       );
       const { assets, drops } = await downloadAssets(tokensWithNoSvgs(), dir, [
         { type: "Image", url: "https://cdn.example/hero.png", contexts: ["img[src]"] },
@@ -321,7 +409,7 @@ describe("drop counts — why a referenced asset is not in the capture", () => {
   it("counts every catalogued image the budget never let it reach", async () => {
     await withTempDir(async (dir) => {
       const fetchMock = vi.fn();
-      vi.stubGlobal("fetch", fetchMock);
+      mockRequest(fetchMock);
       const catalog = Array.from({ length: 7 }, (_, i) => ({
         type: "Image",
         url: `https://cdn.example/img-${i}.png`,
@@ -355,10 +443,36 @@ describe("drop counts — why a referenced asset is not in the capture", () => {
       expect(drops["cap-reached"]).toBe(4);
     });
   });
+
+  it("writes an inline SVG logo over 10 KB whole, and skips one over the size cap uncut", async () => {
+    await withTempDir(async (dir) => {
+      const shapes = (n: number) =>
+        Array.from({ length: n }, (_, i) => `<path d="M${i} 0h1v10h-1z"/>`).join("");
+      const logo = `<svg viewBox="0 0 3000 10">${shapes(3000)}</svg>`;
+      const huge = `<svg viewBox="0 0 1 10">${shapes(1)}<desc>${"x".repeat(3 * 1024 * 1024)}</desc></svg>`;
+      expect(logo.length).toBeGreaterThan(10_000);
+      const { assets, drops } = await downloadAssets(
+        {
+          svgs: [
+            { outerHTML: logo, isLogo: true },
+            { outerHTML: huge, isLogo: false },
+          ],
+          sections: [],
+          ogImage: "",
+        } as unknown as DesignTokens,
+        dir,
+      );
+      expect(assets).toHaveLength(1);
+      const written = readFileSync(join(dir, assets[0]!.localPath), "utf-8");
+      expect(written).toBe(toStandaloneSvg(logo));
+      expect(written.endsWith("</svg>")).toBe(true);
+      expect(drops["size-ceiling"]).toBe(1);
+    });
+  });
 });
 
 describe("asset fetches present the same identity as the page navigation", () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => vi.mocked(publicRequest).mockReset());
 
   /**
    * Measured against the real origin: `GET /favicon.svg` answers `403 text/html` to
@@ -374,7 +488,8 @@ describe("asset fetches present the same identity as the page navigation", () =>
           headers: { "content-type": "text/html" },
         });
       }
-      const body = new Uint8Array(4096);
+      const body =
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24"/></svg>';
       return new Response(body, { status: 200, headers: { "content-type": "image/svg+xml" } });
     });
   }
@@ -383,7 +498,7 @@ describe("asset fetches present the same identity as the page navigation", () =>
     // With a bot UA the ranker's winner 403s and the capture silently falls through to the
     // next candidate, so the file on disk is chosen by the CDN rather than by the ranker.
     await withTempDir(async (dir) => {
-      vi.stubGlobal("fetch", serveLikeAnAntiBotEdge());
+      mockRequest(serveLikeAnAntiBotEdge());
       const { icons } = await downloadAssets(tokensWithNoSvgs(), dir, [], OPENAI_ICONS);
       expect(icons.headline?.file).toBe("assets/favicon.svg");
       expect(icons.icons[0]?.url).toBe("https://openai.example/favicon.svg");
@@ -393,7 +508,7 @@ describe("asset fetches present the same identity as the page navigation", () =>
   it("sends one User-Agent for every asset request", async () => {
     await withTempDir(async (dir) => {
       const fetchMock = serveLikeAnAntiBotEdge();
-      vi.stubGlobal("fetch", fetchMock);
+      mockRequest(fetchMock);
       await downloadAssets(tokensWithNoSvgs(), dir, [], OPENAI_ICONS);
       const agents = fetchMock.mock.calls.map((call) =>
         new Headers(call[1]?.headers).get("user-agent"),
@@ -404,8 +519,24 @@ describe("asset fetches present the same identity as the page navigation", () =>
   });
 });
 
+async function testIco(): Promise<Buffer> {
+  const png = await sharp({ create: { width: 16, height: 16, channels: 4, background: "red" } })
+    .png()
+    .toBuffer();
+  const header = Buffer.alloc(22);
+  header.writeUInt16LE(1, 2);
+  header.writeUInt16LE(1, 4);
+  header[6] = 16;
+  header[7] = 16;
+  header.writeUInt16LE(1, 10);
+  header.writeUInt16LE(32, 12);
+  header.writeUInt32LE(png.length, 14);
+  header.writeUInt32LE(22, 18);
+  return Buffer.concat([header, png]);
+}
+
 describe("declared icons — keep them all, headline the bare mark", () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => vi.mocked(publicRequest).mockReset());
 
   /** A mark knocked out of a full-bleed rounded rect: the shape openai.com's favicon.svg has. */
   const BADGE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180">
@@ -447,11 +578,10 @@ describe("declared icons — keep them all, headline the bare mark", () => {
 
   it("writes one file per declared icon, named for its rel and sizes", async () => {
     await withTempDir(async (dir) => {
-      vi.stubGlobal(
-        "fetch",
+      mockRequest(
         serve({
           "favicon.svg": BADGE_SVG,
-          "favicon.ico": Buffer.from("not a decodable ico"),
+          "favicon.ico": await testIco(),
           "apple-icon.png": await solidPng(1),
         }),
       );
@@ -470,11 +600,10 @@ describe("declared icons — keep them all, headline the bare mark", () => {
     // opaque tile. openai.com declares no bare mark at all, so the headline falls back to the
     // ranker and the manifest has to say so rather than implying a preference was satisfied.
     await withTempDir(async (dir) => {
-      vi.stubGlobal(
-        "fetch",
+      mockRequest(
         serve({
           "favicon.svg": BADGE_SVG,
-          "favicon.ico": Buffer.from("not a decodable ico"),
+          "favicon.ico": await testIco(),
           "apple-icon.png": await solidPng(1),
         }),
       );
@@ -494,10 +623,7 @@ describe("declared icons — keep them all, headline the bare mark", () => {
     // PNG does, and shape is what the brand band needs. Under the old rule this lands
     // assets/favicon.svg.
     await withTempDir(async (dir) => {
-      vi.stubGlobal(
-        "fetch",
-        serve({ "favicon.svg": BADGE_SVG, "apple-icon.png": await solidPng(0) }),
-      );
+      mockRequest(serve({ "favicon.svg": BADGE_SVG, "apple-icon.png": await solidPng(0) }));
       const { icons } = await downloadAssets(tokensWithNoSvgs(), dir, [], [
         { rel: "icon", href: "https://x.test/favicon.svg", sizes: null, type: "image/svg+xml" },
         {
@@ -519,7 +645,7 @@ describe("declared icons — keep them all, headline the bare mark", () => {
 
   it("headlines the SVG when it is the bare mark", async () => {
     await withTempDir(async (dir) => {
-      vi.stubGlobal("fetch", serve({ "favicon.svg": BARE_SVG }));
+      mockRequest(serve({ "favicon.svg": BARE_SVG }));
       const { icons } = await downloadAssets(tokensWithNoSvgs(), dir, [], [
         { rel: "icon", href: "https://x.test/favicon.svg", sizes: null, type: "image/svg+xml" },
       ] as IconCandidate[]);
@@ -529,11 +655,208 @@ describe("declared icons — keep them all, headline the bare mark", () => {
 
   it("keeps assets/favicon.<ext> so a stem match still finds the icon", async () => {
     await withTempDir(async (dir) => {
-      vi.stubGlobal("fetch", serve({ "favicon.svg": BARE_SVG }));
+      mockRequest(serve({ "favicon.svg": BARE_SVG }));
       const { assets } = await downloadAssets(tokensWithNoSvgs(), dir, [], [
         { rel: "icon", href: "https://x.test/favicon.svg", sizes: null, type: "image/svg+xml" },
       ] as IconCandidate[]);
       expect(assets.map((a) => a.localPath)).toContain("assets/favicon.svg");
+    });
+  });
+});
+
+describe("capture download security boundaries", () => {
+  it("preserves two different fonts whose URL extensions canonicalize to the same name", async () => {
+    await withTempDir(async (dir) => {
+      const first = readFileSync(
+        new URL("../../../../docs/public/catalog/assets/a634cb9e7783af7e.woff2", import.meta.url),
+      );
+      const second = readFileSync(
+        new URL("../../../../docs/public/catalog/assets/8963f64fa28dc4ae.woff2", import.meta.url),
+      );
+      expect(first.equals(second)).toBe(false);
+      mockRequest(
+        vi.fn(
+          async (url: string) =>
+            new Response(new Uint8Array(url.endsWith(".ttf") ? first : second)),
+        ),
+      );
+      const css =
+        "@font-face{font-family:A;src:url(https://fonts.example/site.ttf)} @font-face{font-family:B;src:url(https://fonts.example/site.woff2)}";
+      const result = await downloadAndRewriteFonts(css, dir);
+      expect(result.css).toContain("assets/fonts/site.woff2");
+      expect(result.css).toContain("assets/fonts/site-2.woff2");
+      expect(readFileSync(join(dir, "assets/fonts/site.woff2"))).toEqual(first);
+      expect(readFileSync(join(dir, "assets/fonts/site-2.woff2"))).toEqual(second);
+    });
+  });
+
+  it("shares the capture byte budget between fonts and icons", async () => {
+    await withTempDir(async (dir) => {
+      const bytes = readFileSync(
+        new URL("../../../../docs/public/catalog/assets/a634cb9e7783af7e.woff2", import.meta.url),
+      );
+      const fetchMock = vi.fn(async () => new Response(new Uint8Array(bytes)));
+      mockRequest(fetchMock);
+      const byteBudget = { remainingBytes: bytes.length };
+      await downloadAndRewriteFonts(
+        "@font-face{font-family:A;src:url(https://fonts.example/site.woff2)}",
+        dir,
+        { byteBudget },
+      );
+      const result = await downloadAssets(tokensWithNoSvgs(), dir, [], OPENAI_ICONS, {
+        byteBudget,
+      });
+      expect(result.icons.icons).toEqual([]);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(byteBudget.remainingBytes).toBe(0);
+    });
+  });
+
+  afterEach(() => vi.mocked(publicRequest).mockReset());
+
+  it("canonicalizes an icon ADS suffix and its promoted copy while preserving SVG bytes", async () => {
+    await withTempDir(async (dir) => {
+      const body =
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24"/></svg>';
+      mockRequest(vi.fn(async () => new Response(body)));
+      const { icons } = await downloadAssets(
+        tokensWithNoSvgs(),
+        dir,
+        [],
+        [
+          {
+            rel: "icon",
+            href: "https://public.example/favicon.svg:payload",
+            sizes: null,
+            type: null,
+          },
+        ],
+      );
+      expect(icons.icons[0]?.file).toBe("assets/icon-icon-unsized.svg");
+      expect(icons.headline?.file).toBe("assets/favicon.svg");
+      expect(readFileSync(join(dir, "assets/favicon.svg"), "utf8")).toBe(body);
+    });
+  });
+
+  it("does not publish arbitrary bytes as an OG image", async () => {
+    await withTempDir(async (dir) => {
+      mockRequest(vi.fn(async () => new Response(new Uint8Array(6000).fill(65))));
+      const tokens = tokensWithNoSvgs();
+      tokens.ogImage = "https://public.example/og.jpg::$DATA";
+      const { assets, drops } = await downloadAssets(tokens, dir);
+      expect(assets).toEqual([]);
+      expect(drops.unavailable).toBe(1);
+      expect(readdirSync(join(dir, "assets"))).not.toContain("og-image.jpg::$DATA");
+    });
+  });
+
+  it.each(["font.woff2:ads", "CON.woff2"])(
+    "writes valid font %s under a safe name and rewrites CSS",
+    async (name) => {
+      await withTempDir(async (dir) => {
+        const bytes = readFileSync(
+          new URL("../../../../docs/public/catalog/assets/a634cb9e7783af7e.woff2", import.meta.url),
+        );
+        mockRequest(vi.fn(async () => new Response(new Uint8Array(bytes))));
+        const source = `@font-face{font-family:Demo;src:url(https://public.example/${name})}`;
+        const result = await downloadAndRewriteFonts(source, dir);
+        const names = readdirSync(join(dir, "assets/fonts"));
+        expect(names).toHaveLength(1);
+        expect(names[0]).not.toMatch(/:|^CON\./i);
+        expect(result.css).toContain(`assets/fonts/${names[0]}`);
+        expect(readFileSync(join(dir, "assets/fonts", names[0]!))).toEqual(bytes);
+      });
+    },
+  );
+
+  it("leaves invalid font URLs unchanged and records their rejection", async () => {
+    await withTempDir(async (dir) => {
+      mockRequest(vi.fn(async () => new Response(new Uint8Array(2048))));
+      const source = "@font-face{font-family:Demo;src:url(https://public.example/font.woff2)}";
+      const result = await downloadAndRewriteFonts(source, dir);
+      expect(result.css).toBe(source);
+      expect(result.drops.unavailable).toBe(1);
+      expect(readdirSync(join(dir, "assets/fonts"))).toEqual([]);
+    });
+  });
+});
+
+describe("a planted directory link inside the capture directory (#4304)", () => {
+  // Creating symlinks needs elevated rights on Windows.
+  const posixOnly = it.skipIf(process.platform === "win32");
+
+  function plantedLink(root: string, link: string): { outputDir: string; outside: string } {
+    const outputDir = join(root, "capture");
+    const outside = join(root, "outside");
+    mkdirSync(join(outputDir, link, ".."), { recursive: true });
+    mkdirSync(outside);
+    symlinkSync(outside, join(outputDir, link));
+    return { outputDir, outside };
+  }
+
+  posixOnly.each(["assets", "assets/svgs"])(
+    "refuses to write page-derived assets through a planted %s/ symlink",
+    async (link) => {
+      await withTempDir(async (root) => {
+        const { outputDir, outside } = plantedLink(root, link);
+        const svgs = [
+          {
+            outerHTML: `<svg viewBox="0 0 10 10"><rect width="10" height="10" fill="#abc"/></svg>`,
+            isLogo: false,
+          },
+        ];
+
+        await expect(
+          downloadAssets({ svgs, sections: [], ogImage: "" } as unknown as DesignTokens, outputDir),
+        ).rejects.toThrow(/outside the capture directory/);
+        expect(readdirSync(outside)).toEqual([]);
+      });
+    },
+  );
+
+  posixOnly("refuses a dangling assets/ symlink before its svgs folder", async () => {
+    await withTempDir(async (root) => {
+      const outputDir = join(root, "capture");
+      const target = join(root, "missing");
+      mkdirSync(outputDir);
+      symlinkSync(target, join(outputDir, "assets"));
+
+      await expect(
+        downloadAssets(
+          { svgs: [], sections: [], ogImage: "" } as unknown as DesignTokens,
+          outputDir,
+        ),
+      ).rejects.toThrow(CaptureDirRefusedError);
+      expect(existsSync(target)).toBe(false);
+    });
+  });
+
+  posixOnly("refuses to create the fonts directory through a planted assets/ symlink", async () => {
+    await withTempDir(async (root) => {
+      const { outputDir, outside } = plantedLink(root, "assets");
+
+      await expect(downloadAndRewriteFonts("", outputDir)).rejects.toThrow(
+        /outside the capture directory/,
+      );
+      expect(readdirSync(outside)).toEqual([]);
+    });
+  });
+});
+
+describe("downloadAssets without sharp", () => {
+  afterEach(() => vi.mocked(publicRequest).mockReset());
+
+  it("fails the download instead of counting every image unavailable", async () => {
+    vi.mocked(loadSharp).mockRejectedValueOnce(new Error("sharp is not installed"));
+    await withTempDir(async (dir) => {
+      const fetchMock = vi.fn();
+      mockRequest(fetchMock);
+      await expect(
+        downloadAssets(tokensWithNoSvgs(), dir, [
+          { type: "Image", url: "https://cdn.example/hero.png", contexts: ["img[src]"] },
+        ] as never),
+      ).rejects.toThrow("sharp is not installed");
+      expect(fetchMock).not.toHaveBeenCalled();
     });
   });
 });

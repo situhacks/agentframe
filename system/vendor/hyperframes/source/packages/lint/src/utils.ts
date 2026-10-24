@@ -2,6 +2,8 @@
 // Nothing in this file should emit findings — it only parses and extracts.
 
 import { Parser } from "htmlparser2";
+import { parse, type CallExpression, type Comment, type Program } from "acorn";
+import { base, recursive, simple } from "acorn-walk";
 
 export type OpenTag = {
   raw: string;
@@ -13,6 +15,9 @@ export type OpenTag = {
 };
 
 export type ExtractedBlock = {
+  contentStart?: number;
+  file?: string;
+  rootRelativePath?: string;
   attrs: string;
   content: string;
   raw: string;
@@ -34,15 +39,14 @@ export const TIMELINE_REGISTRY_ASSIGN_PATTERN =
 // missed `window.__timelines[spec.id] = tl`, a pattern the shipped
 // code-particle-assemble/code-3d-extrude registry blocks actually use,
 // making gsap_timeline_not_registered false-fire on correctly registered
-// timelines. The computed-key alternative is deliberately non-capturing:
-// its text isn't a literal composition id, so callers reading group 1/2
-// (readRegisteredTimelineCompositionId) must keep falling back to null for it.
+// timelines. The computed-key alternative is non-capturing; remaining
+// callers only `.test()` this pattern.
 export const WINDOW_TIMELINE_ASSIGN_PATTERN =
   /window\.__timelines(?:\[\s*(?:["']([^"']+)["']|[A-Za-z_$][\w$.]*)\s*\]|\.\s*([A-Za-z_$][\w$]*))\s*=\s*([A-Za-z_$][\w$]*)/i;
 export const INVALID_SCRIPT_CLOSE_PATTERN = /<script[^>]*>[\s\S]*?<\s*\/\s*script(?!>)/i;
 
 const TIMELINE_REGISTRY_KEY_PATTERN =
-  /window\.__timelines(?:\[\s*["']([^"']+)["']\s*\]|\.\s*([A-Za-z_$][\w$]*))\s*=/g;
+  /window\.__timelines(?:\[\s*["']([^"']+)["']\s*\]|\.\s*([A-Za-z_$][\w$]*))\s*(?:\?\?|\|\||&&)?=/g;
 
 // The `window.__timelines = { ... }` object-literal body (group 1), captured so its
 // `key: value` entries can be scanned for registered keys.
@@ -70,12 +74,37 @@ export function parseHtmlStructure(source: string): {
     contentStart: number;
     index: number;
   }> = [];
+  let explicitOpenTag: { index: number; nameEnd: number } | null = null;
   const parser: Parser = new Parser(
     {
-      onopentag(name) {
-        const index = parser.startIndex;
+      onopentagname(name) {
+        // startIndex can still point into the preceding close. Bound this scan by
+        // HTML name delimiters, not '<' (which can occur in a malformed name).
+        // Keep the raw name end too: Unicode lowercasing can change UTF-16 length.
+        let tokenStart = parser.endIndex - 1;
+        while (
+          tokenStart >= parser.startIndex &&
+          !/[\t\n\f\r />]/.test(source.charAt(tokenStart))
+        ) {
+          tokenStart -= 1;
+        }
+        const index = source.indexOf("<", tokenStart + 1);
+        explicitOpenTag =
+          index >= 0 &&
+          index < parser.endIndex &&
+          source.slice(index + 1, parser.endIndex).toLowerCase() === name
+            ? { index, nameEnd: parser.endIndex }
+            : null;
+      },
+      onopentag(name, _attrs, isImplied) {
+        const origin = !isImplied ? explicitOpenTag : null;
+        const index = origin?.index ?? parser.startIndex;
+        explicitOpenTag = null;
         const raw = source.slice(index, parser.endIndex + 1);
-        const attrs = raw.slice(name.length + 1, -1).replace(/\s*\/$/, "");
+        const rawAttrs = origin
+          ? source.slice(origin.nameEnd, parser.endIndex)
+          : raw.slice(name.length + 1, -1);
+        const attrs = rawAttrs.replace(/\s*\/$/, "");
         const tag = { raw, name, attrs, index };
         tags.push(tag);
         const sameNameStack = openTagsByName.get(name) ?? [];
@@ -97,6 +126,7 @@ export function parseHtmlStructure(source: string): {
         blocks[name].push({
           attrs: block.attrs,
           content: source.slice(block.contentStart, parser.startIndex),
+          contentStart: block.contentStart,
           raw: source.slice(block.index, parser.endIndex + 1),
           index: block.index,
         });
@@ -119,18 +149,18 @@ export function findHtmlTag(tags: readonly OpenTag[]): OpenTag | null {
   return tags.find((tag) => tag.name === "html") ?? null;
 }
 
+const hasCompositionMarker = (tag: OpenTag): boolean =>
+  Boolean(
+    readDecodedAttr(tag.raw, "data-composition-id") ||
+    readAttr(tag.raw, "data-width") ||
+    readAttr(tag.raw, "data-height"),
+  );
+
 // fallow-ignore-next-line complexity
 export function findRootTag(source: string, parsedTags?: readonly OpenTag[]): OpenTag | null {
   const tags = parsedTags ?? parseHtmlStructure(source).tags;
   const bodyTag = tags.find((tag) => tag.name === "body");
-  if (
-    bodyTag &&
-    (readDecodedAttr(bodyTag.raw, "data-composition-id") ||
-      readAttr(bodyTag.raw, "data-width") ||
-      readAttr(bodyTag.raw, "data-height"))
-  ) {
-    return bodyTag;
-  }
+  if (bodyTag && hasCompositionMarker(bodyTag)) return bodyTag;
   const bodyStart = bodyTag ? bodyTag.index + bodyTag.raw.length : 0;
   const bodyEnd = bodyTag?.closeIndex ?? source.length;
   const bodyTags = tags.filter((tag) => tag.index >= bodyStart && tag.index < bodyEnd);
@@ -142,6 +172,7 @@ export function findRootTag(source: string, parsedTags?: readonly OpenTag[]): Op
   for (const tag of bodyTags) {
     if (tag.index < skipBefore) continue;
     if (["script", "style", "meta", "link", "title"].includes(tag.name)) continue;
+    if ((tag.name === "html" || tag.name === "head") && !hasCompositionMarker(tag)) continue;
     // A leading <svg> block (icon/gradient/filter <defs>, referenced by url(#id)
     // from elsewhere in the document) is shared visual plumbing, not the
     // composition root — two independent reports of this being mistaken for
@@ -150,12 +181,7 @@ export function findRootTag(source: string, parsedTags?: readonly OpenTag[]): Op
     // the composition markers itself, so an intentionally SVG-rooted composition
     // (data-composition-id/data-width/data-height directly on the <svg>) is
     // still eligible as the root.
-    if (
-      tag.name === "svg" &&
-      !readDecodedAttr(tag.raw, "data-composition-id") &&
-      !readAttr(tag.raw, "data-width") &&
-      !readAttr(tag.raw, "data-height")
-    ) {
+    if (tag.name === "svg" && !hasCompositionMarker(tag)) {
       // No closing tag found (malformed HTML) — skip everything rather than
       // risk returning one of the svg's own children as the root.
       skipBefore = tag.endIndex ?? Infinity;
@@ -166,28 +192,88 @@ export function findRootTag(source: string, parsedTags?: readonly OpenTag[]): Op
   return null;
 }
 
+/**
+ * Whether a tag's attribute text contains a `<` outside any quoted value.
+ *
+ * A legitimate attribute value may itself contain a raw `<` (e.g.
+ * `data-expr="x < y"`) — that's fine, htmlparser2 (and browsers) parse it as
+ * ordinary attribute text. But a `<` OUTSIDE any quotes means a following
+ * start tag never got its own `<`: the HTML tokenizer swallowed it as bogus
+ * attribute-name text on the tag currently open, and the intended element
+ * never becomes a real node. `<img src="a.png" <div class="hl">` is exactly
+ * this: `attrs` comes back as ` src="a.png" <div class="hl"` and the `.hl`
+ * div silently never renders.
+ */
+export function hasUnquotedLessThan(attrs: string): boolean {
+  let quote: '"' | "'" | null = null;
+  for (const ch of attrs) {
+    if (quote) {
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+    } else if (ch === "<") {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function readAttr(tagSource: string, attr: string): string | null {
-  if (!tagSource) return null;
-  const escaped = attr.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  // `(?<![\w-])` not `\b`: a plain `\b` boundary treats the hyphen in a longer
-  // attribute as a word break, so reading "id" would wrongly match the trailing
-  // `id="…"` inside `data-hf-id="…"` (and "width" inside `data-width`, etc.).
-  // The lookbehind requires the match to start a fresh attribute name.
-  const match = tagSource.match(new RegExp(`(?<![\\w-])${escaped}\\s*=\\s*["']([^"']+)["']`, "i"));
-  return match?.[1] || null;
+  return readAttributeValue(tagSource, attr, false) || null;
+}
+
+export function hasAttrName(tagSource: string, attr: string): boolean {
+  return readDecodedAttr(tagSource, attr) !== null;
+}
+
+// An explicit data-has-audio is authoritative for the compiler; only the exact value "true" means audible.
+export function isAudibleVideo(attr: (name: string) => string | null): boolean {
+  if (attr("muted") !== null) return false;
+  const declared = attr("data-has-audio");
+  return declared === null || declared === "true";
+}
+
+export function isAudibleVideoTag(tagSource: string): boolean {
+  return isAudibleVideo((name) => readDecodedAttr(tagSource, name));
+}
+
+export function mediaTimeWindow(tagSource: string): { start: number; end: number } | null {
+  const start = Number(readAttr(tagSource, "data-start"));
+  const duration = Number(readAttr(tagSource, "data-duration"));
+  if (!readAttr(tagSource, "data-start") || !readAttr(tagSource, "data-duration")) return null;
+  if (!Number.isFinite(start) || !Number.isFinite(duration)) return null;
+  return { start, end: start + duration };
+}
+
+export function mediaWindowsOverlap(
+  a: { start: number; end: number } | null,
+  b: { start: number; end: number } | null,
+): boolean {
+  if (!a || !b) return true;
+  return a.start < b.end && b.start < a.end;
 }
 
 /** Read an HTML attribute using browser-equivalent character-reference decoding. */
 export function readDecodedAttr(tagSource: string, attr: string): string | null {
+  return readAttributeValue(tagSource, attr, true);
+}
+
+function readAttributeValue(
+  tagSource: string,
+  attr: string,
+  decodeEntities: boolean,
+): string | null {
   if (!tagSource) return null;
   let value: string | null = null;
   const parser = new Parser(
     {
-      onattribute(name, decodedValue) {
-        if (value === null && name.toLowerCase() === attr.toLowerCase()) value = decodedValue;
+      onattribute(name, attributeValue) {
+        if (value === null && name.toLowerCase() === attr.toLowerCase()) value = attributeValue;
       },
     },
-    { decodeEntities: true, lowerCaseAttributeNames: false, lowerCaseTags: true },
+    { decodeEntities, lowerCaseAttributeNames: false, lowerCaseTags: true },
   );
   parser.end(tagSource);
   return value;
@@ -301,15 +387,26 @@ function readTimelineRegistryTopLevelKeys(source: string): string[] {
   return keys;
 }
 
-export function getInlineScriptSyntaxError(source: string): string | null {
+export function getInlineScriptSyntaxError(
+  source: string,
+): { message: string; offset?: number } | null {
   if (!source.trim()) return null;
   try {
-    // eslint-disable-next-line no-new-func
-    new Function(source);
+    // Match the former Function-body grammar (including top-level return), without eval.
+    parse(source, {
+      ecmaVersion: "latest",
+      sourceType: "script",
+      allowReturnOutsideFunction: true,
+    });
     return null;
   } catch (error) {
-    if (error instanceof Error) return error.message;
-    return String(error);
+    return {
+      message: error instanceof Error ? error.message : String(error),
+      offset:
+        error instanceof SyntaxError && "pos" in error && typeof error.pos === "number"
+          ? error.pos
+          : undefined,
+    };
   }
 }
 
@@ -461,6 +558,104 @@ function scanJsComments(source: string): { out: string; balanced: boolean } {
 
 export function stripJsComments(source: string): string {
   return scanJsComments(source).out;
+}
+
+// A GreenSock banner, or the producer's inlined-source comment when its URL path is an npm gsap dist file.
+function isGsapLibraryComment(comment: Comment): boolean {
+  if (comment.type !== "Block") return false;
+  const { value } = comment;
+  const src = /^\s*inlined:\s*(\S+)\s*$/.exec(value)?.[1]?.split(/[?#]/)[0];
+  return (
+    (value.startsWith("!") && /\bGreenSock\b/.test(value)) ||
+    (src !== undefined && /(?:^|\/)gsap(?:@[^/]+)?\/dist\/[^/]+\.js$/.test(src))
+  );
+}
+
+/** GSAP's UMD wrapper `function (g, f) { ...define.amd... }(this, function (e) {...})`, AMD in its own body. */
+function isUmdWrapperCall(call: CallExpression): boolean {
+  const [scope, factory] = call.arguments;
+  if (
+    call.callee.type !== "FunctionExpression" ||
+    call.arguments.length !== 2 ||
+    scope?.type !== "ThisExpression" ||
+    factory?.type !== "FunctionExpression"
+  )
+    return false;
+  let checksAmd = false;
+  recursive(call.callee.body, null, {
+    Function() {},
+    MemberExpression(member, state, visit) {
+      if (
+        !member.computed &&
+        member.object.type === "Identifier" &&
+        member.object.name === "define" &&
+        member.property.type === "Identifier" &&
+        member.property.name === "amd"
+      )
+        checksAmd = true;
+      base.MemberExpression?.(member, state, visit);
+    },
+  });
+  return checksAmd;
+}
+
+/**
+ * A GSAP banner belongs only to the wrapper right after it. A banner inside a factory exempts nothing:
+ * a bundler (Rollup ESM to UMD) puts it in the same factory as author code.
+ */
+function bannerOwner(
+  banner: Comment,
+  source: string,
+  commentAt: Map<number, Comment>,
+  wrappers: CallExpression[],
+): CallExpression | undefined {
+  let next = banner.end;
+  for (;;) {
+    while (/[\s!;(]/.test(source[next] ?? "")) next++;
+    const comment = commentAt.get(next);
+    if (!comment) break;
+    next = comment.end;
+  }
+  return wrappers.find((call) => call.start === next);
+}
+
+/** Offsets of inlined GSAP library code: the UMD wrapper call each GSAP banner belongs to. */
+function findInlinedGsapLibrarySpans(source: string): Array<[number, number]> {
+  if (!/GreenSock|inlined:/.test(source)) return [];
+  const comments: Comment[] = [];
+  let program: Program;
+  try {
+    program = parse(source, {
+      ecmaVersion: "latest",
+      sourceType: "script",
+      allowReturnOutsideFunction: true,
+      onComment: comments,
+    });
+  } catch {
+    return [];
+  }
+  const banners = comments.filter(isGsapLibraryComment);
+  const wrappers: CallExpression[] = [];
+  simple(program, {
+    CallExpression(call) {
+      if (isUmdWrapperCall(call)) wrappers.push(call);
+    },
+  });
+  const commentAt = new Map(comments.map((comment) => [comment.start, comment]));
+  const owners = new Set<CallExpression>();
+  for (const banner of banners) {
+    const owner = bannerOwner(banner, source, commentAt, wrappers);
+    if (owner) owners.add(owner);
+  }
+  return [...owners].map((call): [number, number] => [call.start, call.end]);
+}
+
+export function blankInlinedGsapLibrary(source: string): string {
+  let out = source;
+  for (const [start, end] of findInlinedGsapLibrarySpans(source)) {
+    out = out.slice(0, start) + " ".repeat(end - start) + out.slice(end);
+  }
+  return out;
 }
 
 export function stripJsCode(source: string): string {
@@ -701,7 +896,10 @@ export function stripCssComments(source: string): string {
 // `/<!--[\s\S]*?-->/` regex: that pattern backtracks O(n²) on inputs with many
 // unterminated "<!--" (CodeQL js/polynomial-redos). An unterminated "<!--" with
 // no closing "-->" is kept verbatim, matching the prior regex's no-match behavior.
-function stripHtmlCommentsOnce(source: string): string {
+function stripHtmlCommentsOnce(
+  source: string,
+  removed?: (start: number, end: number) => void,
+): string {
   let out = "";
   let i = 0;
   for (;;) {
@@ -710,6 +908,7 @@ function stripHtmlCommentsOnce(source: string): string {
     const end = source.indexOf("-->", start + 4);
     if (end < 0) return out + source.slice(i);
     out += source.slice(i, start);
+    removed?.(start, end + 3);
     i = end + 3;
   }
 }
@@ -718,11 +917,16 @@ function stripHtmlCommentsOnce(source: string): string {
 // comment can splice adjacent markers into a fresh, complete <!-- … --> (e.g.
 // "<<!-- -->!-- … -->" → "<!-- … -->"), which would otherwise survive and let a
 // commented-out <template>/tag hijack the linter's tag scan.
-export function stripHtmlComments(source: string): string {
+export function stripHtmlComments(
+  source: string,
+  pass?: (ranges: Array<[number, number]>) => void,
+): string {
   let out = source;
   for (let prev = ""; prev !== out; ) {
     prev = out;
-    out = stripHtmlCommentsOnce(out);
+    const ranges: Array<[number, number]> = [];
+    out = stripHtmlCommentsOnce(out, pass ? (start, end) => ranges.push([start, end]) : undefined);
+    if (ranges.length) pass?.(ranges);
   }
   return out;
 }
@@ -756,14 +960,13 @@ export function truncateSnippet(value: string, maxLength = 220): string | undefi
 
 /**
  * Matches a media tag carrying a real `src` attribute, capturing the tag name in
- * group 1 and the src value in group 2.
- *
- * The leading whitespace before `src` is load-bearing: `\bsrc\s*=` also matches
- * the tail of `data-var-src="bg"` (a hyphen/`s` boundary is a word boundary), and
- * since `[^>]*` is greedy it wins over a real `src` earlier in the same tag. Every
- * element using a variable binding was therefore reported as referencing a missing
- * file named after the variable id.
+ * group 1 and the quoted src in group 2; {@link mediaSrcOf} reads its value.
+ * `src` must follow whitespace so the tail of `data-var-src="bg"` is not read as one.
  */
 export function mediaSrcTagRe(tagAlternation: string): RegExp {
-  return new RegExp(`<(${tagAlternation})\\b[^>]*\\ssrc\\s*=\\s*["']([^"']+)["'][^>]*>`, "gi");
+  return new RegExp(`<(${tagAlternation})\\b[^>]*\\ssrc\\s*=\\s*("[^"]*"|'[^']*')[^>]*>`, "gi");
+}
+
+export function mediaSrcOf(match: RegExpExecArray): string {
+  return readDecodedAttr(match[0], "src") ?? "";
 }

@@ -2,7 +2,6 @@ import {
   closeSync,
   existsSync,
   fstatSync,
-  mkdtempSync,
   openSync,
   readSync,
   readdirSync,
@@ -10,7 +9,10 @@ import {
   rmSync,
 } from "node:fs";
 import { basename, dirname, extname, join, resolve } from "node:path";
+import { HLS_MASTER_PLAYLIST, HLS_VIDEO_PLAYLIST } from "@hyperframes/engine";
 import { extractMediaMetadata } from "../../utils/ffprobe.js";
+import type { RenderOutputFormat } from "./renderFormat.js";
+import { TRANSACTION_BACKUP, createOwnedRenderDir } from "./renderDirOwner.js";
 
 export type ArtifactKind = "file" | "directory";
 
@@ -40,6 +42,8 @@ const defaultFileSystem: ArtifactTransactionFileSystem = {
 export interface ArtifactDurationProbeResult {
   durationSeconds: number;
   frames?: number;
+  width?: number;
+  height?: number;
 }
 
 /**
@@ -59,18 +63,18 @@ async function defaultArtifactDurationProbe(path: string): Promise<ArtifactDurat
   // Forward the probed frame count when ffprobe reported one. The frame
   // count check (#3395) catches the multi-worker encode mode where the
   // container duration is reported correctly but the decoded stream is
-  // shorter; without forwarding frames here, the caller's `expectedFrames`
-  // is silently dropped (the assertion short-circuits on `undefined`). A
-  // probe that cannot determine frames returns `undefined` — the caller
-  // treats that as "no answer" and does not throw.
+  // shorter. When the demuxer cannot determine frames, the frame-count check
+  // is skipped quietly and duration validation still applies.
   return {
     durationSeconds: meta.durationSeconds,
     frames: meta.frames,
+    width: meta.width,
+    height: meta.height,
   };
 }
 
 /**
- * Caller-supplied expectation for file-artifact validation. The transaction
+ * Caller-supplied expectation for artifact validation. The transaction
  * still does the readable-non-empty check; this layer adds a duration /
  * frame-count comparison against the values the pipeline already held.
  *
@@ -81,14 +85,68 @@ async function defaultArtifactDurationProbe(path: string): Promise<ArtifactDurat
  *
  * `toleranceSeconds` defaults to a single frame at `fps` (or 20 ms when fps
  * is unknown) so that a normal container-level last-frame rounding does not
- * trip the gate. Multi-frame drops (e.g. the 326-frame / 11s truncation in
- * #3395) still fail.
+ * trip the gate. Multi-frame drops beyond that tolerance still fail.
+ *
+ * `probeTarget` / `requiredFiles` exist for directory artifacts. A `"file"`
+ * artifact is its own probe target; a directory has no single one, so an HLS
+ * output names its video playlist (`probeTarget: "video.m3u8"`) and the files
+ * that must be present (`requiredFiles: ["master.m3u8"]`). Without
+ * `probeTarget`, an `expectedFrames` value instead checks the top-level PNG
+ * frame files. Directory artifacts without either keep their historical
+ * readable-non-empty check.
  */
 export interface ArtifactValidationExpectation {
   expectedDurationSeconds: number;
   fps?: number;
   expectedFrames?: number;
+  /** The output size the render was asked for; a route that ignores it must not publish. */
+  expectedWidth?: number;
+  expectedHeight?: number;
   toleranceSeconds?: number;
+  /** Path relative to the staging directory to run the duration probe against. */
+  probeTarget?: string;
+  /** Paths relative to the staging directory that must exist as non-empty files. */
+  requiredFiles?: readonly string[];
+}
+
+/**
+ * The per-format expectation the render pipeline hands `validate()`, or
+ * `undefined` when the format has nothing probeable.
+ *
+ * - `png-sequence`: count exported PNG frames without a duration probe.
+ *   `expectedDurationSeconds` is carried by the shared expectation but is
+ *   unused for this directory format.
+ * - `gif`: no expectation. The GIF encoder writes `outputPath` itself without a
+ *   frame-accurate duration the pipeline could compare against.
+ * - `hls`: the directory's `video.m3u8` is the probe target and `master.m3u8`
+ *   must exist. `expectedFrames` is passed through but is inert — ffprobe
+ *   reports no frame count through the hls demuxer — so duration carries the
+ *   gate.
+ * - everything else: the staged file itself, duration + frame count.
+ */
+export function buildArtifactExpectation(input: {
+  outputFormat: RenderOutputFormat;
+  durationSeconds: number;
+  fps: number;
+  expectedFrames: number | undefined;
+  width?: number;
+  height?: number;
+}): ArtifactValidationExpectation | undefined {
+  if (input.outputFormat === "gif") return undefined;
+  if (!Number.isFinite(input.durationSeconds) || input.durationSeconds <= 0) return undefined;
+  const expectation: ArtifactValidationExpectation = {
+    expectedDurationSeconds: input.durationSeconds,
+    fps: input.fps,
+    expectedFrames: input.expectedFrames,
+    expectedWidth: input.width,
+    expectedHeight: input.height,
+  };
+  if (input.outputFormat !== "hls") return expectation;
+  return {
+    ...expectation,
+    probeTarget: HLS_VIDEO_PLAYLIST,
+    requiredFiles: [HLS_MASTER_PLAYLIST],
+  };
 }
 
 function createSiblingTransactionDirectory(destination: string): string {
@@ -98,7 +156,7 @@ function createSiblingTransactionDirectory(destination: string): string {
   // mkdtemp reserves the directory atomically and creates it with private
   // permissions. Keeping it beside the destination preserves same-filesystem
   // rename semantics without exposing predictable files in a shared temp dir.
-  return mkdtempSync(join(parent, `.${stem}.hf-transaction-`));
+  return createOwnedRenderDir(join(parent, `.${stem}.hf-transaction-`));
 }
 
 function assertReadableNonEmptyFile(path: string): void {
@@ -179,16 +237,34 @@ function assertFrameCountWithinTolerance(
   expectedFrames: number,
   probedFrames: number | undefined,
   stagingPath: string,
+  toleranceFrames = 1,
 ): void {
   if (probedFrames === undefined || !Number.isFinite(probedFrames) || probedFrames <= 0) {
     return;
   }
   const shortfall = expectedFrames - probedFrames;
-  if (shortfall <= 1) return;
+  if (shortfall <= toleranceFrames) return;
   throw new Error(
     `Render artifact is truncated: expected ${expectedFrames} frames, ` +
       `probed ${probedFrames} frames ` +
       `(shortfall ${shortfall} frames). Artifact: ${stagingPath}`,
+  );
+}
+
+function assertSizeMatches(
+  expected: ArtifactValidationExpectation,
+  probed: ArtifactDurationProbeResult,
+  stagingPath: string,
+): void {
+  const { expectedWidth: width, expectedHeight: height } = expected;
+  if (width === undefined || height === undefined) return;
+  if (probed.width === undefined || probed.height === undefined) return;
+  // A 4:2:0 encode pads an odd side up by one pixel.
+  const fits = (want: number, got: number): boolean => got === want || got === want + (want % 2);
+  if (fits(width, probed.width) && fits(height, probed.height)) return;
+  throw new Error(
+    `Render artifact has the wrong size: expected ${width}x${height}, ` +
+      `probed ${probed.width}x${probed.height}. Artifact: ${stagingPath}`,
   );
 }
 
@@ -201,10 +277,12 @@ function assertFrameCountWithinTolerance(
  * ordinary failures.
  *
  * When the caller passes an `expected` expectation to `validate()`, the
- * transaction additionally probes the staged file's container duration (and
- * decoded frame count when available) and rejects any artifact that is
- * significantly shorter than what the pipeline asked for. The readable-non-
- * empty check is unchanged; this is a second gate on top.
+ * transaction additionally probes the staged artifact's container duration
+ * (and decoded frame count when available) and rejects any artifact that is
+ * significantly shorter than what the pipeline asked for. A directory artifact
+ * is probed only when `expected.probeTarget` names a file inside it.
+ * Without a directory probe target, the expectation instead checks exported
+ * PNG frame files. The readable-non-empty check is a separate gate.
  */
 export class ArtifactTransaction {
   readonly destinationPath: string;
@@ -223,7 +301,7 @@ export class ArtifactTransaction {
     this.destinationPath = resolve(destinationPath);
     this.transactionDirectory = createSiblingTransactionDirectory(this.destinationPath);
     this.stagingPath = join(this.transactionDirectory, basename(this.destinationPath));
-    this.backupPath = join(this.transactionDirectory, "backup");
+    this.backupPath = join(this.transactionDirectory, TRANSACTION_BACKUP);
     this.durationProbe = durationProbe;
   }
 
@@ -233,6 +311,11 @@ export class ArtifactTransaction {
       if (expected) await this.assertArtifactDuration(expected);
       return;
     }
+    const files = this.assertReadableNonEmptyDirectory();
+    if (expected) await this.assertDirectoryExpectation(expected, files);
+  }
+
+  private assertReadableNonEmptyDirectory(): string[] {
     let files: string[];
     try {
       files = collectDirectoryFiles(this.stagingPath);
@@ -245,37 +328,85 @@ export class ArtifactTransaction {
       throw new Error(`Render artifact directory is empty: ${this.stagingPath}`);
     }
     for (const file of files) assertReadableNonEmptyFile(file);
+    return files;
   }
 
-  private async assertArtifactDuration(expected: ArtifactValidationExpectation): Promise<void> {
+  /**
+   * The named-entry and duration gates a directory artifact opts into. A
+   * directory with a probe target checks duration; one without a probe target
+   * checks the exported PNG frame count when the caller supplied it.
+   */
+  private async assertDirectoryExpectation(
+    expected: ArtifactValidationExpectation,
+    files: readonly string[],
+  ): Promise<void> {
+    for (const required of expected.requiredFiles ?? []) {
+      const path = join(this.stagingPath, required);
+      if (!existsSync(path)) {
+        throw new Error(`Render artifact directory is missing ${required}: ${this.stagingPath}`);
+      }
+      assertReadableNonEmptyFile(path);
+    }
+    if (expected.probeTarget !== undefined) {
+      await this.assertArtifactDuration(expected, join(this.stagingPath, expected.probeTarget));
+      return;
+    }
+    if (expected.expectedFrames === undefined) return;
+    // Audio sidecars and unrelated nested files are not captured frames.
+    const frameCount = files.filter(
+      (file) => dirname(file) === this.stagingPath && /^frame_\d+\.png$/.test(basename(file)),
+    ).length;
+    if (frameCount === 0) {
+      throw new Error(
+        `Render artifact is truncated: expected ${expected.expectedFrames} frames, ` +
+          `probed 0 frames. Artifact: ${this.stagingPath}`,
+      );
+    }
+    // PNG counting tolerance stays separate from the one-frame video gate:
+    // https://github.com/heygen-com/hyperframes/pull/3574
+    assertFrameCountWithinTolerance(
+      expected.expectedFrames,
+      frameCount,
+      this.stagingPath,
+      Math.max(1, Math.ceil(expected.expectedFrames * 0.002)),
+    );
+  }
+
+  private async assertArtifactDuration(
+    expected: ArtifactValidationExpectation,
+    probePath: string = this.stagingPath,
+  ): Promise<void> {
     const expectedSeconds = expected.expectedDurationSeconds;
     if (!Number.isFinite(expectedSeconds) || expectedSeconds <= 0) return;
 
-    const probed = await this.runDurationProbe();
-    assertUsableProbedDuration(probed.durationSeconds, expectedSeconds, this.stagingPath);
+    const probed = await this.runDurationProbe(probePath);
+    assertUsableProbedDuration(probed.durationSeconds, expectedSeconds, probePath);
 
     const toleranceSeconds = durationToleranceSeconds(expected);
     assertDurationWithinTolerance(
       expectedSeconds,
       probed.durationSeconds,
       toleranceSeconds,
-      this.stagingPath,
+      probePath,
     );
 
     if (expected.expectedFrames !== undefined) {
-      assertFrameCountWithinTolerance(expected.expectedFrames, probed.frames, this.stagingPath);
+      // ffprobe reports `nb_frames=N/A` through the hls demuxer, so a playlist
+      // without frame metadata relies on the duration check above.
+      assertFrameCountWithinTolerance(expected.expectedFrames, probed.frames, probePath);
     }
+    assertSizeMatches(expected, probed, probePath);
   }
 
-  private async runDurationProbe(): Promise<ArtifactDurationProbeResult> {
+  private async runDurationProbe(probePath: string): Promise<ArtifactDurationProbeResult> {
     try {
-      return await this.durationProbe(this.stagingPath);
+      return await this.durationProbe(probePath);
     } catch (error) {
       // Probe failure means we cannot assert; do not silently pass a gate the
       // caller asked for. Surfacing the probe error keeps the truncate-then-
       // succeed failure mode from regressing back into "validation passes".
       throw new Error(
-        `Render artifact duration probe failed for ${this.stagingPath}: ${
+        `Render artifact duration probe failed for ${probePath}: ${
           error instanceof Error ? error.message : String(error)
         }`,
         { cause: error },
@@ -362,4 +493,12 @@ export class ArtifactTransaction {
       // because best-effort cleanup of its private transaction directory failed.
     }
   }
+}
+
+export async function commitArtifactTransaction(
+  transaction: ArtifactTransaction,
+  assertNotAborted: () => void,
+): Promise<void> {
+  assertNotAborted();
+  await transaction.commit();
 }

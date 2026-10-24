@@ -6,10 +6,9 @@ import { describe, expect, it } from "vitest";
 
 const REPO_ROOT = join(fileURLToPath(new URL(".", import.meta.url)), "..", "..", "..", "..");
 const read = (...parts: string[]): string => readFileSync(join(REPO_ROOT, ...parts), "utf8");
-
-describe("hyperframes-core contract docs", () => {
-  it("keeps a runnable root in the minimal composition skeleton", () => {
-    const minimal = read("skills", "hyperframes-core", "references", "minimal-composition.md");
+describe("hyperframes contract docs", () => {
+  it("keeps a runnable root in the format reference's skeleton", () => {
+    const minimal = read("skills", "hyperframes", "references", "format.md");
 
     // Structural pin: the skeleton must still declare a root the runtime can find
     // and size. The prose around it is deliberately not pinned: asserting exact
@@ -22,18 +21,17 @@ describe("hyperframes-core contract docs", () => {
   });
 
   it("teaches check as the canonical quality gate", () => {
-    const skill = read("skills", "hyperframes-core", "SKILL.md");
-    const brief = read("skills", "hyperframes-core", "references", "brief-contract.md");
+    const skill = read("skills", "hyperframes", "SKILL.md");
 
-    expect(skill).toContain("`npx hyperframes check`");
-    expect(brief).toContain("`hyperframes check`");
-    expect(brief).not.toContain("`lint` / `validate` / `inspect`");
+    expect(skill).toContain("`npx hyperframes check --json`");
+    expect(skill).not.toContain("`lint` / `validate` / `inspect`");
   });
 
   it("requires actionable reproduction packets in CLI defect feedback", () => {
-    const skill = read("skills", "hyperframes-cli", "SKILL.md");
+    const skill = read("skills", "hyperframes-cli", "references", "feedback.md");
     const renderReference = read("skills", "hyperframes-cli", "references", "preview-render.md");
 
+    expect(read("skills", "hyperframes-cli", "SKILL.md")).toContain("`references/feedback.md`");
     expect(skill).toContain("reproduction packet");
     expect(renderReference).toContain("REPRO COMMAND:");
     expect(renderReference).toContain("EXPECTED / ACTUAL:");
@@ -42,8 +40,17 @@ describe("hyperframes-core contract docs", () => {
     expect(renderReference).toContain("WORKAROUND:");
   });
 
+  it("sends missing features and host-app friction as ratingless comments", () => {
+    const skill = read("skills", "hyperframes-cli", "references", "feedback.md");
+
+    expect(skill).toContain(
+      'npx hyperframes feedback --comment "MISSING FEATURE: <what the person asked for, in their words, with names, clients, figures and paths left out> | WORKAROUND:',
+    );
+    expect(skill).toMatch(/HYPERFRAMES_CLIENT[^\n]*npx hyperframes feedback --comment "HOST APP:/);
+  });
+
   it("mandates a composition-structure block for visual-defect feedback", () => {
-    const skill = read("skills", "hyperframes-cli", "SKILL.md");
+    const skill = read("skills", "hyperframes-cli", "references", "feedback.md");
     const renderReference = read("skills", "hyperframes-cli", "references", "preview-render.md");
 
     // Skill teaches the mandate at a high level.
@@ -57,7 +64,7 @@ describe("hyperframes-core contract docs", () => {
   });
 
   it("teaches safe cloud archive size remediation", () => {
-    const skill = read("skills", "hyperframes-cli", "SKILL.md");
+    const skill = read("skills", "hyperframes-cli", "references", "conventions.md");
     const cloudReference = read("skills", "hyperframes-cli", "references", "cloud.md");
 
     expect(skill).toContain("cloud render --dry-run --json");
@@ -86,10 +93,10 @@ describe("media treatment routing documentation", () => {
     const mediaUse = read("skills", "media-use", "SKILL.md");
     const treatments = read("skills", "media-use", "references", "media-treatments.md");
 
-    expect(router).toContain("dark/flat/boring footage");
-    expect(router).toContain("`/media-use`");
+    expect(router).toContain("`npx hyperframes media-treatment` (`/media-use`), never CSS filters");
+    expect(mediaUse).toContain("footage is dark, flat or dull");
     expect(mediaUse).toContain("references/media-treatments.md");
-    expect(mediaUse).toContain("`hyperframes media-treatment`");
+    expect(mediaUse).toContain("`npx hyperframes media-treatment`");
     expect(treatments).toContain("Persist pixel settings with `hyperframes media-treatment`");
     expect(treatments).toContain("apply to the entire selected real `<img>` or");
     expect(treatments).toContain("external segmentation/tracking tool");
@@ -130,6 +137,31 @@ describe("media treatment routing documentation", () => {
       expect(template).toContain("Load `/media-use`");
       expect(template).toContain("do not improvise equivalent CSS/SVG filters or overlays");
     }
+  });
+
+  it("routes every skill that builds visuals through the live catalog search", () => {
+    // The search instruction once lived only in hyperframes-cli and
+    // hyperframes-registry, both loaded on demand, so an agent that never thought
+    // to search could not reach the doc telling it to search.
+    for (const file of [
+      ["skills", "slideshow", "SKILL.md"],
+      ["skills", "remotion-to-hyperframes", "SKILL.md"],
+    ]) {
+      const doc = read(...file);
+      expect(doc, file.join("/")).toContain("npx hyperframes catalog --query");
+      // "I forgot to install the components" was the wrong self-diagnosis that
+      // hid this bug. Every copy of the instruction has to kill it on the spot.
+      expect(doc, file.join("/")).toContain("nothing installed");
+    }
+    expect(read("skills", "hyperframes", "SKILL.md")).toContain(
+      "search the registry (`/hyperframes-registry`)",
+    );
+
+    // The symptom-triggered description is the other half of the fix: the skill
+    // has to be reachable from the user naming an effect, not from the command.
+    const registrySkill = read("skills", "hyperframes-registry", "SKILL.md");
+    expect(registrySkill).toContain("Use it before hand-building any named visual");
+    expect(registrySkill).toContain("CRT scanlines");
   });
 
   it("gives agents a process-owned preview lifecycle in new project instructions", () => {

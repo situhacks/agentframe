@@ -5,7 +5,9 @@
  * resolution) as the single source of truth for images. Favicon links are passed separately.
  */
 
-import { writeFileSync, mkdirSync } from "node:fs";
+import { isBlockedNetworkHost } from "@hyperframes/engine";
+import { publicRequest } from "./publicNetwork.js";
+import { ensureCaptureDirSync, writeCaptureFileSync } from "./captureFile.js";
 import { join, extname } from "node:path";
 import { createHash } from "node:crypto";
 import type { DesignTokens, DownloadedAsset } from "./types.js";
@@ -13,8 +15,17 @@ import type { CatalogedAsset } from "./assetCataloger.js";
 import { CAPTURE_USER_AGENT } from "./userAgent.js";
 import { rankIconCandidates, type IconCandidate } from "./faviconRanker.js";
 import { classifyIcon, type IconShape } from "./iconClassifier.js";
+import {
+  readBoundedResponse,
+  createCaptureDownloadBudget,
+  type DownloadByteBudget,
+} from "./readBoundedResponse.js";
+import { captureFontExtension, captureFontFilename } from "./captureFontValidation.js";
+import { captureImageExtension } from "./captureImageValidation.js";
+import { loadSharp } from "../utils/optionalPackages.js";
 
 interface DownloadBudgetOptions {
+  byteBudget?: DownloadByteBudget;
   remainingMs?: () => number;
 }
 
@@ -31,6 +42,8 @@ interface DownloadBudgetOptions {
 export type AssetDropReason =
   /** Fetched, then judged too small to be a real asset rather than a spacer or tracking pixel. */
   | "size-floor"
+  /** Larger than any one asset may be; skipped whole, never cut. */
+  | "size-ceiling"
   /** The post-navigation clock ran out before this one was reached. */
   | "budget-exhausted"
   /** A per-run or per-family limit was already met. */
@@ -42,7 +55,13 @@ export type AssetDropCounts = Record<AssetDropReason, number>;
 
 /** A tally with every reason at zero — the shape a caller merges into. */
 export function noDrops(): AssetDropCounts {
-  return { "size-floor": 0, "budget-exhausted": 0, "cap-reached": 0, unavailable: 0 };
+  return {
+    "size-floor": 0,
+    "size-ceiling": 0,
+    "budget-exhausted": 0,
+    "cap-reached": 0,
+    unavailable: 0,
+  };
 }
 
 /** Sum two tallies. Used to fold the font pass and the asset pass into one capture-wide count. */
@@ -189,13 +208,15 @@ async function fetchAndInspectIcon(
   stem: string,
   outputDir: string,
   timeoutMs: number,
+  byteBudget?: DownloadByteBudget,
 ): Promise<{ record: IconRecord; buffer: Buffer } | null> {
-  const ext = extname(new URL(icon.href).pathname) || ".ico";
-  const buffer = await fetchBuffer(icon.href, timeoutMs);
+  const buffer = await fetchBuffer(icon.href, timeoutMs, 2 * 1024 * 1024, byteBudget);
   if (!buffer) return null;
+  const ext = await captureImageExtension(buffer);
+  if (!ext) return null;
 
   const file = `assets/${stem}${ext}`;
-  writeFileSync(join(outputDir, file), buffer);
+  writeCaptureFileSync(join(outputDir, file), buffer);
   const verdict = await classifyIcon(buffer, ext);
   return {
     buffer,
@@ -224,7 +245,7 @@ function promoteHeadline(
   if (!chosen) return null;
 
   const file = `assets/favicon${extname(chosen.file)}`;
-  writeFileSync(join(outputDir, file), bytesByFile.get(chosen.file)!);
+  writeCaptureFileSync(join(outputDir, file), bytesByFile.get(chosen.file)!);
   manifest.headline = {
     file,
     source: chosen.file,
@@ -271,6 +292,7 @@ async function downloadDeclaredIcons(
         stem,
         outputDir,
         Math.min(10_000, remainingMs),
+        options.byteBudget,
       );
       if (!got) {
         drops.unavailable++;
@@ -302,17 +324,20 @@ export async function downloadAssets(
   faviconLinks?: IconCandidate[],
   options: DownloadBudgetOptions = {},
 ): Promise<{ assets: DownloadedAsset[]; drops: AssetDropCounts; icons: IconManifest }> {
+  await loadSharp("website capture");
+  options = { ...options, byteBudget: options.byteBudget ?? createCaptureDownloadBudget() };
   const assetsDir = join(outputDir, "assets");
-  mkdirSync(assetsDir, { recursive: true });
+  ensureCaptureDirSync(outputDir, assetsDir);
 
   const assets: DownloadedAsset[] = [];
   const drops = noDrops();
   const downloadedUrls = new Set<string>();
   let icons: IconManifest = emptyIconManifest();
 
-  mkdirSync(join(outputDir, "assets", "svgs"), { recursive: true });
+  ensureCaptureDirSync(outputDir, join(outputDir, "assets", "svgs"));
   const usedSvgNames = new Set<string>();
   const MAX_INLINE_SVGS = 30;
+  const MAX_INLINE_SVG_BYTES = 2 * 1024 * 1024;
   drops["cap-reached"] += Math.max(0, tokens.svgs.length - MAX_INLINE_SVGS);
   for (let i = 0; i < tokens.svgs.length && i < MAX_INLINE_SVGS; i++) {
     const svg = tokens.svgs[i]!;
@@ -322,6 +347,10 @@ export async function downloadAssets(
     }
     // Hash the bytes that actually land on disk, so the filename still can't drift from content.
     const svgFile = toStandaloneSvg(svg.outerHTML);
+    if (Buffer.byteLength(svgFile, "utf-8") > MAX_INLINE_SVG_BYTES) {
+      drops["size-ceiling"]++;
+      continue;
+    }
     const slug = svgContentHashSlug(svgFile, !!svg.isLogo);
     let finalSlug = slug;
     let suffix = 2;
@@ -333,7 +362,7 @@ export async function downloadAssets(
     const name = `${finalSlug}.svg`;
     const localPath = `assets/svgs/${name}`;
     try {
-      writeFileSync(join(outputDir, localPath), svgFile, "utf-8");
+      writeCaptureFileSync(join(outputDir, localPath), svgFile, "utf-8");
       assets.push({ url: "", localPath, type: "svg" });
     } catch {
       drops.unavailable++;
@@ -405,14 +434,22 @@ export async function downloadAssets(
     const results = await Promise.allSettled(
       batch.map(async ({ url, isPoster, catalog }) => {
         const parsedUrl = new URL(url);
-        const pathExt = extname(parsedUrl.pathname);
-        const ext = pathExt && pathExt.length <= 5 ? pathExt : ".jpg";
-        const buffer = await fetchBuffer(url, Math.min(10_000, remainingMs));
+        const buffer = await fetchBuffer(
+          url,
+          Math.min(10_000, remainingMs),
+          20 * 1024 * 1024,
+          options.byteBudget,
+        );
         if (!buffer) {
           drops.unavailable++;
           return null;
         }
-        const isSvg = ext === ".svg" || url.includes(".svg");
+        const ext = await captureImageExtension(buffer);
+        if (!ext) {
+          drops.unavailable++;
+          return null;
+        }
+        const isSvg = ext === ".svg";
         const minSize = isSvg ? 200 : 10000;
         if (buffer.length < minSize) {
           drops["size-floor"]++;
@@ -451,7 +488,7 @@ export async function downloadAssets(
         const name = `${slug}${ext}`;
         usedNames.add(slug);
         const localPath = `assets/${name}`;
-        writeFileSync(join(outputDir, localPath), buffer);
+        writeCaptureFileSync(join(outputDir, localPath), buffer);
         assets.push({ url, localPath, type: "image" });
         imgIdx++;
       } catch {
@@ -464,18 +501,23 @@ export async function downloadAssets(
   if (tokens.ogImage && !downloadedUrls.has(normalizeUrl(tokens.ogImage))) {
     const remainingMs = options.remainingMs?.() ?? 10_000;
     try {
-      const ext = extname(new URL(tokens.ogImage).pathname) || ".jpg";
-      const localPath = `assets/og-image${ext}`;
       if (remainingMs <= 0) {
         drops["budget-exhausted"]++;
       } else {
-        const buffer = await fetchBuffer(tokens.ogImage, Math.min(10_000, remainingMs));
-        if (!buffer) {
+        const buffer = await fetchBuffer(
+          tokens.ogImage,
+          Math.min(10_000, remainingMs),
+          20 * 1024 * 1024,
+          options.byteBudget,
+        );
+        const ext = buffer && (await captureImageExtension(buffer));
+        if (!buffer || !ext) {
           drops.unavailable++;
         } else if (buffer.length <= 5000) {
           drops["size-floor"]++;
         } else {
-          writeFileSync(join(outputDir, localPath), buffer);
+          const localPath = `assets/og-image${ext}`;
+          writeCaptureFileSync(join(outputDir, localPath), buffer);
           assets.push({ url: tokens.ogImage, localPath, type: "image" });
         }
       }
@@ -513,8 +555,9 @@ export async function downloadAndRewriteFonts(
   outputDir: string,
   options: DownloadBudgetOptions = {},
 ): Promise<{ css: string; drops: AssetDropCounts }> {
+  options = { ...options, byteBudget: options.byteBudget ?? createCaptureDownloadBudget() };
   const assetsDir = join(outputDir, "assets", "fonts");
-  mkdirSync(assetsDir, { recursive: true });
+  ensureCaptureDirSync(outputDir, assetsDir);
   const drops = noDrops();
 
   const fontUrlRegex = /url\(['"]?(https?:\/\/[^'")\s]+\.(?:woff2?|ttf|otf)[^'")\s]*?)['"]?\)/g;
@@ -552,6 +595,7 @@ export async function downloadAndRewriteFonts(
     return aLatin - bLatin;
   });
 
+  const usedFontNames = new Set<string>();
   let rewritten = css;
   let count = 0;
 
@@ -575,14 +619,18 @@ export async function downloadAndRewriteFonts(
     count++;
 
     try {
-      const urlObj = new URL(fontUrl);
-      const filename = urlObj.pathname.split("/").pop() || `font-${count}.woff2`;
-      const localPath = join(assetsDir, filename);
-      const relativePath = `assets/fonts/${filename}`;
-
-      const buffer = await fetchBuffer(fontUrl, Math.min(10_000, remainingMs));
-      if (buffer) {
-        writeFileSync(localPath, buffer);
+      const buffer = await fetchBuffer(
+        fontUrl,
+        Math.min(10_000, remainingMs),
+        10 * 1024 * 1024,
+        options.byteBudget,
+      );
+      const extension = buffer && captureFontExtension(buffer);
+      if (buffer && extension) {
+        const filename = captureFontFilename(fontUrl, extension, usedFontNames);
+        const localPath = join(assetsDir, filename);
+        const relativePath = `assets/fonts/${filename}`;
+        writeCaptureFileSync(localPath, buffer);
         rewritten = rewritten.split(fontUrl).join(relativePath);
       } else {
         drops.unavailable++;
@@ -595,61 +643,17 @@ export async function downloadAndRewriteFonts(
   return { css: rewritten, drops };
 }
 
-// Reserved/loopback/private IPv4 blocks as [firstOctet, secondOctetLo, secondOctetHi].
-const PRIVATE_V4_BLOCKS: ReadonlyArray<readonly [number, number, number]> = [
-  [0, 0, 255], // 0.0.0.0/8 (incl. 0.0.0.0, which routes to localhost)
-  [10, 0, 255], // 10.0.0.0/8
-  [127, 0, 255], // 127.0.0.0/8 loopback
-  [172, 16, 31], // 172.16.0.0/12
-  [192, 168, 168], // 192.168.0.0/16
-  [169, 254, 254], // 169.254.0.0/16 link-local (cloud metadata)
-];
-
-/** True for a dotted-quad IPv4 literal in a loopback/private/reserved range. */
-function isPrivateIpv4(host: string): boolean {
-  const octets = host.split(".").map(Number);
-  if (octets.length !== 4) return false;
-  const [a, b] = octets as [number, number, number, number];
-  return PRIVATE_V4_BLOCKS.some(([first, lo, hi]) => a === first && b >= lo && b <= hi);
-}
-
-/** True for a bracketed IPv6 hostname in a loopback/private/reserved range. */
-function isPrivateIpv6(bracketed: string): boolean {
-  const addr = bracketed.replace(/^\[|\]$/g, "").toLowerCase();
-  if (addr === "::1" || addr === "::") return true; // loopback / unspecified
-  const mapped = /^::ffff:(.+)$/.exec(addr); // IPv4-mapped ::ffff:a.b.c.d or ::ffff:hhhh:hhhh
-  if (mapped) {
-    const tail = mapped[1]!;
-    if (tail.includes(".")) return isPrivateIpv4(tail);
-    const hex = tail.split(":");
-    if (hex.length === 2) {
-      const n = ((parseInt(hex[0]!, 16) << 16) | parseInt(hex[1]!, 16)) >>> 0;
-      return isPrivateIpv4(
-        [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255].join("."),
-      );
-    }
-  }
-  if (/^f[cd]/.test(addr)) return true; // fc00::/7 unique-local
-  if (/^fe[89ab]/.test(addr)) return true; // fe80::/10 link-local
-  return false;
-}
-
 /**
  * Block requests to private/internal hosts to prevent SSRF. WHATWG URL parsing
  * canonicalizes alternate IPv4 encodings (decimal/octal/hex) to dotted-quad
  * before we see them, so only dotted IPv4 and bracketed IPv6 literals reach the
- * classifiers below.
+ * shared engine classifier.
  */
 export function isPrivateUrl(url: string): boolean {
   try {
     const u = new URL(url);
     if (u.protocol !== "http:" && u.protocol !== "https:") return true; // no file:, etc.
-    const hostname = u.hostname;
-    if (hostname === "localhost") return true;
-    if (hostname.endsWith(".internal") || hostname.endsWith(".local")) return true;
-    if (hostname.startsWith("[")) return isPrivateIpv6(hostname);
-    if (/^\d+(\.\d+){3}$/.test(hostname)) return isPrivateIpv4(hostname);
-    return false;
+    return isBlockedNetworkHost(u.hostname);
   } catch {
     return true; // reject unparseable URLs
   }
@@ -669,10 +673,11 @@ export async function safeFetch(url: string, init?: RequestInit): Promise<Respon
   let current = url;
   for (let hop = 0; hop <= MAX_FETCH_REDIRECTS; hop++) {
     if (isPrivateUrl(current)) return null;
-    const res = await fetch(current, { ...init, redirect: "manual" });
+    const res = await publicRequest(current, { ...init, redirect: "manual" });
     if (res.status >= 300 && res.status < 400) {
       const loc = res.headers.get("location");
       if (!loc) return res;
+      await res.body?.cancel().catch(() => {});
       try {
         current = new URL(loc, current).toString();
       } catch {
@@ -685,7 +690,13 @@ export async function safeFetch(url: string, init?: RequestInit): Promise<Respon
   return null; // too many redirects
 }
 
-async function fetchBuffer(url: string, timeoutMs = 10_000): Promise<Buffer | null> {
+async function fetchBuffer(
+  url: string,
+  timeoutMs: number,
+  maxBytes: number,
+  budget: DownloadByteBudget = createCaptureDownloadBudget(),
+): Promise<Buffer | null> {
+  if (budget.remainingBytes <= 0) return null;
   try {
     const res = await safeFetch(url, {
       signal: AbortSignal.timeout(timeoutMs),
@@ -697,8 +708,7 @@ async function fetchBuffer(url: string, timeoutMs = 10_000): Promise<Buffer | nu
     if (ct.includes("text/xml") || ct.includes("text/html") || ct.includes("application/xml")) {
       return null;
     }
-    const ab = await res.arrayBuffer();
-    return Buffer.from(ab);
+    return await readBoundedResponse(res, maxBytes, budget);
   } catch {
     return null;
   }

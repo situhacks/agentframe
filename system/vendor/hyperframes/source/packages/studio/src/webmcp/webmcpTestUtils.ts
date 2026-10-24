@@ -5,10 +5,13 @@
  * existing `hooks/domSelectionTestHarness.ts` convention.
  */
 
+import { isHtmlElement } from "@hyperframes/core/runtime/dom-realm";
 import { expect } from "vitest";
 import type { DomEditSelection } from "../components/editor/domEditingTypes";
 import type { ToolFailure, ToolResult } from "./toolResult";
+import type { StudioLookSnapshot } from "./tools/lookTools";
 import type { SelectionToolDeps } from "./tools/selectionTools";
+import type { StudioAgentToolsDeps } from "./useStudioAgentTools";
 import { mintElementHandle } from "./handles";
 import type { TargetedWriteDeps } from "./writeCoordinator";
 
@@ -29,8 +32,7 @@ export function previewDoc(html: string): Document {
 export function previewElement(html: string, id: string): HTMLElement {
   const doc = previewDoc(html);
   const element = doc.getElementById(id);
-  const HTMLElementCtor = doc.defaultView?.HTMLElement;
-  if (!HTMLElementCtor || !(element instanceof HTMLElementCtor)) {
+  if (!isHtmlElement(element)) {
     throw new Error(`expected preview element #${id}`);
   }
   return element;
@@ -125,4 +127,58 @@ export function expectFailure(result: ToolResult<unknown>): ToolFailure {
   expect(result.ok, `expected failure, got ${JSON.stringify(result)}`).toBe(false);
   if (result.ok) throw new Error("unreachable");
   return result;
+}
+
+/** A Studio snapshot with nothing in it; override only what the test is about. */
+export function lookSnapshot(overrides: Partial<StudioLookSnapshot> = {}): StudioLookSnapshot {
+  return {
+    projectId: "demo",
+    compositionPath: "index.html",
+    currentTime: 0,
+    duration: 10,
+    isPlaying: false,
+    elements: [],
+    scene: { status: "ready", items: [], drillInItem: null },
+    selection: null,
+    selectionAnimationCount: 0,
+    history: { canUndo: false, canRedo: false, undoLabel: null, redoLabel: null },
+    ...overrides,
+  };
+}
+
+/** Full `useStudioAgentTools` deps with inert defaults; override only what the test is about. */
+export function studioAgentToolsDeps(
+  overrides: Partial<StudioAgentToolsDeps> = {},
+): StudioAgentToolsDeps {
+  return {
+    getSnapshot: () => lookSnapshot(),
+    getPreviewDocument: () => null,
+    buildSelection: async () => null,
+    applySelection: () => undefined,
+    requestSeek: () => undefined,
+    readPlayhead: () => ({ currentTime: 0, duration: 10, isPlaying: false }),
+    getProjectId: () => "demo",
+    getCompositionPath: () => "index.html",
+    probeFrame: async () => ({ ok: true, status: 200 }),
+    wait: async () => undefined,
+    getCurrentSelection: () => null,
+    getWriteBlockedReason: () => null,
+    setText: async () => ({ ok: true }),
+    setStyle: async () => ({ ok: true }),
+    readBox: () => ({ x: 0, y: 0, width: 100, height: 50 }),
+    moveTo: async () => undefined,
+    resizeTo: async () => undefined,
+    rotateTo: async () => undefined,
+    addAnimation: async () => true,
+    updateAnimation: async () => true,
+    addKeyframe: async () => undefined,
+    deleteAnimation: async () => true,
+    getAnimationsForSelection: async () => [],
+    getGsapDiagnostics: () => ({
+      animations: [],
+      multipleTimelines: false,
+      unsupportedTimelinePattern: false,
+    }),
+    ...overrides,
+  };
 }

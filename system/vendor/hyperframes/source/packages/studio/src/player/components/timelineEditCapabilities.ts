@@ -2,6 +2,7 @@ export interface TimelineEditCapabilities {
   canMove: boolean;
   canTrimStart: boolean;
   canTrimEnd: boolean;
+  readOnly?: boolean;
 }
 
 function isDeterministicTimelineWindow(input: {
@@ -23,8 +24,12 @@ function isDeterministicTimelineWindow(input: {
   return ["video", "audio", "img"].includes(input.tag.toLowerCase());
 }
 
-export function hasPatchableTimelineTarget(input: { domId?: string; selector?: string }): boolean {
-  return Boolean(input.domId || input.selector);
+export function hasPatchableTimelineTarget(input: {
+  domId?: string;
+  hfId?: string;
+  selector?: string;
+}): boolean {
+  return Boolean(input.domId || input.hfId || input.selector);
 }
 
 export function getTimelineEditCapabilities(input: {
@@ -32,15 +37,15 @@ export function getTimelineEditCapabilities(input: {
   kind?: "video" | "audio" | "image" | "element" | "composition";
   duration: number;
   domId?: string;
+  hfId?: string;
   selector?: string;
   compositionSrc?: string;
   playbackStart?: number;
   playbackStartAttr?: "media-start" | "playback-start";
   sourceDuration?: number;
-  timingSource?: "authored" | "implicit";
   timelineLocked?: boolean;
 }): TimelineEditCapabilities {
-  if (input.timingSource === "implicit" || input.timelineLocked) {
+  if (input.timelineLocked) {
     return { canMove: false, canTrimStart: false, canTrimEnd: false };
   }
 

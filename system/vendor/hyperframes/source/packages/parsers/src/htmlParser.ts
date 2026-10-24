@@ -13,7 +13,8 @@ import type {
 } from "./types.js";
 import { validateCompositionGsap } from "./gsapSerialize";
 import { parseCompositionVariables } from "./compositionVariables.js";
-import { ensureHfIds, walkCompositionDescendants } from "./hfIds.js";
+import { walkCompositionDescendants } from "./hfIds.js";
+import { assignHfIds } from "./hfIdAssignment.js";
 import { parseGsapScriptAcornForWrite } from "./gsapParserAcorn.js";
 import { queryByAttr } from "./utils/cssSelector.js";
 import { removeAnimationFromScript } from "./gsapWriterAcorn.js";
@@ -178,9 +179,8 @@ function resolveResolutionFromDimensions(width: number, height: number): CanvasR
 }
 
 export function parseHtml(html: string): ParsedHtml {
-  const withIds = ensureHfIds(html);
   const parser = new DOMParser();
-  const doc = parser.parseFromString(withIds, "text/html");
+  const doc = parser.parseFromString(html, "text/html");
 
   const elements: TimelineElement[] = [];
   const keyframes: Record<string, Keyframe[]> = {};
@@ -190,6 +190,7 @@ export function parseHtml(html: string): ParsedHtml {
   if (!htmlEl) {
     throw new CompositionHtmlParseError("parseHtml: input HTML is empty or could not be parsed");
   }
+  if (doc.body) assignHfIds(doc.body);
   const customStylesAttr = htmlEl.getAttribute("data-custom-styles");
   let customStyles: string | null = null;
   if (customStylesAttr) {
@@ -268,7 +269,7 @@ export function parseHtml(html: string): ParsedHtml {
 
     if (type === "text") {
       const textEl = el.firstElementChild;
-      const content = textEl?.textContent || name;
+      const content = textEl?.textContent ?? name;
       const color = el.getAttribute("data-color") || undefined;
       const fontSizeAttr = el.getAttribute("data-font-size");
       const fontSize = fontSizeAttr ? parseInt(fontSizeAttr, 10) : undefined;
@@ -616,11 +617,13 @@ export function updateElementInHtml(
   }
 
   // Handle hasAudio property for videos
-  if ("hasAudio" in updates) {
+  if (el.tagName.toLowerCase() === "video" && "hasAudio" in updates) {
     if (updates.hasAudio === true) {
       el.setAttribute("data-has-audio", "true");
-    } else {
+      el.removeAttribute("muted");
+    } else if (updates.hasAudio === false) {
       el.removeAttribute("data-has-audio");
+      el.setAttribute("muted", "");
     }
   }
 
@@ -671,12 +674,10 @@ export function addElementToHtml(
     case "video": {
       const mediaEl = element as TimelineMediaElement;
       newEl = doc.createElement("video");
-      newEl.setAttribute("muted", "");
       newEl.setAttribute("playsinline", "");
       applyMediaAttrs(newEl, mediaEl);
-      if (mediaEl.hasAudio) {
-        newEl.setAttribute("data-has-audio", "true");
-      }
+      if (mediaEl.hasAudio) newEl.setAttribute("data-has-audio", "true");
+      else newEl.setAttribute("muted", "");
       break;
     }
     case "image": {
@@ -802,11 +803,19 @@ export function extractCompositionMetadata(html: string): CompositionMetadata {
   const durationStr = htmlEl.getAttribute("data-composition-duration");
   const compositionDuration = durationStr ? parseFloat(durationStr) : null;
 
-  // TODO(template-var-carriers): reads `<html>` only. A template/fragment comp
-  // that declares variables on its `[data-composition-id]` root div (the
-  // dual-carrier contract from #2081) reports no variables when its metadata is
-  // extracted standalone (e.g. CLI --variables validation of a sub-comp file).
-  const variables = parseCompositionVariables(htmlEl);
+  // Declarations live on <html> or on the composition root (inside its <template> when
+  // templated); like the runtime, read both and let the root's win on a shared id.
+  const root = (doc.querySelector("template")?.content ?? doc).querySelector(
+    "[data-composition-id]",
+  );
+  const variables = [
+    ...new Map(
+      [
+        ...parseCompositionVariables(htmlEl),
+        ...(root && root !== htmlEl ? parseCompositionVariables(root) : []),
+      ].map((v) => [v.id, v]),
+    ).values(),
+  ];
 
   return {
     compositionId,

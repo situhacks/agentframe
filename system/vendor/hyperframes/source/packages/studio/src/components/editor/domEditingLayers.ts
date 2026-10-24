@@ -1,3 +1,6 @@
+import { PREVIEW_ONLY_ATTRS } from "@hyperframes/core/studio-preview-mark";
+import { knownSourceAnswer, probeSourceElement, type ProbeTarget } from "./probeSourceElement";
+import { isAudibleVideoNode } from "../../player/lib/timelineElementHelpers";
 import type { PatchOperation } from "../../utils/sourcePatcher";
 import {
   resolveEditingAffordances,
@@ -21,20 +24,17 @@ import {
   getInlineStyles,
   getSelectorIndex,
   getSourceFileForElement,
+  isEditableTextLeaf,
   isHtmlElement,
-  isTextBearingTag,
 } from "./domEditingDom";
 import {
   findElementForSelection,
-  getDomLayerPatchTarget,
-  getDirectLayerChildren,
   getSelectionCandidate,
+  isDomLayerElement,
 } from "./domEditingElement";
 import { isCompositionRootLayer } from "./domEditingRootLayer";
-
-export function isEditableTextLeaf(el: HTMLElement): boolean {
-  return isTextBearingTag(el.tagName.toLowerCase()) && el.children.length === 0;
-}
+import { withSelectorIndexPass } from "../../utils/sourceScopedSelectorIndex";
+import { type DomEditLayerWalkCache, readDomEditLayerWalkEntry } from "./domEditLayerWalkCache";
 
 function sameTagChildIndex(el: HTMLElement): number {
   let index = 0;
@@ -56,6 +56,8 @@ function getTextFieldLabel(
   return `Text ${index + 1}`;
 }
 
+const NOT_COPIED_ATTRS = new Set<string>(["style", ...PREVIEW_ONLY_ATTRS]);
+
 function buildTextField(
   el: HTMLElement,
   index: number,
@@ -71,7 +73,7 @@ function buildTextField(
     value: el.textContent ?? "",
     tagName,
     attributes: Array.from(el.attributes)
-      .filter((attribute) => attribute.name !== "style")
+      .filter((attribute) => !NOT_COPIED_ATTRS.has(attribute.name))
       .map((attribute) => ({
         name: attribute.name,
         value: attribute.value,
@@ -246,6 +248,7 @@ export function domEditSelectionToFacts(
     hasEditableText: selection.textFields.length > 0,
     hasTimingStart: selection.dataAttributes.start != null,
     animationCount,
+    hasAudio: isAudibleVideoNode(selection.element),
   };
 }
 
@@ -281,31 +284,6 @@ export function resolveDomEditCapabilities(args: {
   ).capabilities;
 }
 
-async function probeSourceElement(
-  projectId: string,
-  sourceFile: string,
-  target: { id?: string; hfId?: string; selector?: string; selectorIndex?: number },
-): Promise<boolean> {
-  try {
-    const response = await fetch(
-      `/api/projects/${projectId}/file-mutations/probe-element/${encodeURIComponent(sourceFile)}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ target }),
-      },
-    );
-    if (!response.ok) return true;
-    const data = await response.json();
-    if (data && typeof data === "object" && "exists" in data && data.exists === false) {
-      return false;
-    }
-    return true;
-  } catch {
-    return true;
-  }
-}
-
 // fallow-ignore-next-line complexity
 export async function resolveDomEditSelection(
   startEl: HTMLElement | null,
@@ -313,6 +291,7 @@ export async function resolveDomEditSelection(
     projectId?: string | null;
     skipSourceProbe?: boolean;
     exactTarget?: boolean;
+    previous?: DomEditSelection | null;
   },
 ): Promise<DomEditSelection | null> {
   if (!startEl) return null;
@@ -355,14 +334,14 @@ export async function resolveDomEditSelection(
       isCompositionRootLayer(current, doc, computedStyles);
     const textFields = collectDomEditTextFields(current);
     const isInsideLocked = Boolean(findClosestByAttribute(current, ["data-timeline-locked"]));
-    let existsInSource: boolean | undefined;
-    if (!options.skipSourceProbe && options.projectId && (current.id || selector || hfId)) {
-      const probeTarget: { id?: string; hfId?: string; selector?: string; selectorIndex?: number } =
-        {};
-      if (current.id) probeTarget.id = current.id;
-      if (hfId) probeTarget.hfId = hfId;
-      if (selector) probeTarget.selector = selector;
-      if (selectorIndex != null) probeTarget.selectorIndex = selectorIndex;
+    const probeTarget: ProbeTarget = {};
+    if (current.id) probeTarget.id = current.id;
+    if (hfId) probeTarget.hfId = hfId;
+    if (selector) probeTarget.selector = selector;
+    if (selectorIndex != null) probeTarget.selectorIndex = selectorIndex;
+    let existsInSource = knownSourceAnswer(options.previous, current, sourceFile, probeTarget);
+    const probe = existsInSource === undefined && !options.skipSourceProbe;
+    if (probe && options.projectId && (current.id || selector || hfId)) {
       existsInSource = await probeSourceElement(options.projectId, sourceFile, probeTarget);
     }
     const capabilities = resolveEditingAffordances(
@@ -405,6 +384,7 @@ export async function resolveDomEditSelection(
       computedStyles,
       textFields,
       capabilities,
+      existsInSource,
     };
   }
 
@@ -445,7 +425,7 @@ export function countDomEditChildLayers(
   const visit = (el: HTMLElement) => {
     for (const child of Array.from(el.children)) {
       if (!isHtmlElement(child)) continue;
-      if (getDomLayerPatchTarget(child, options.activeCompositionPath)) {
+      if (isDomLayerElement(child)) {
         count += 1;
         if (count >= maxCount) return;
       }
@@ -466,23 +446,26 @@ export function collectDomEditLayerItems(
   root: HTMLElement | null | undefined,
   options: DomEditContextOptions,
   maxItems = Number.POSITIVE_INFINITY,
+  cache?: DomEditLayerWalkCache,
 ): DomEditLayerItem[] {
   if (!root) return [];
+  cache?.beginWalk(options.activeCompositionPath);
 
   const items: DomEditLayerItem[] = [];
   // fallow-ignore-next-line complexity
   const visit = (el: HTMLElement, depth: number) => {
     if (items.length >= maxItems) return;
 
-    const target = getDomLayerPatchTarget(el, options.activeCompositionPath);
-    if (target) {
+    const entry = readDomEditLayerWalkEntry(el, options.activeCompositionPath, cache);
+    if (entry) {
+      const { target } = entry;
       items.push({
         key: getDomEditLayerKey(target),
         element: el,
-        label: buildElementLabel(el),
+        label: entry.label,
         tagName: el.tagName.toLowerCase(),
         depth,
-        childCount: getDirectLayerChildren(el, options).length,
+        childCount: entry.childCount,
         id: target.id ?? undefined,
         hfId: target.hfId ?? undefined,
         selector: target.selector ?? undefined,
@@ -491,7 +474,7 @@ export function collectDomEditLayerItems(
       });
     }
 
-    const nextDepth = target ? depth + 1 : depth;
+    const nextDepth = entry ? depth + 1 : depth;
     for (const child of Array.from(el.children)) {
       if (!isHtmlElement(child)) continue;
       visit(child, nextDepth);
@@ -499,9 +482,25 @@ export function collectDomEditLayerItems(
     }
   };
 
-  // Drilled into a group → show only its members; otherwise the whole tree.
-  for (const el of groupScopedLayerRoots(root, options.activeGroupElement ?? null)) visit(el, 0);
+  // Every item resolves its selector's occurrence index, and unshared that is a
+  // whole-document query per element — quadratic once a composition repeats a
+  // card or tile class. The walk is one synchronous read of a document it does
+  // not mutate, so one index per selector serves the whole of it. The pass lives
+  // here rather than in each caller because this function owns the loop.
+  withSelectorIndexPass(root.ownerDocument, () => {
+    // Drilled into a group → show only its members; otherwise the whole tree.
+    for (const el of groupScopedLayerRoots(root, options.activeGroupElement ?? null)) visit(el, 0);
+  });
   return items;
+}
+
+export function liveLayerElement(
+  layer: DomEditLayerItem,
+  doc: Document | null | undefined,
+  activeCompositionPath: string | null,
+): HTMLElement {
+  if (layer.element.isConnected || !doc) return layer.element;
+  return findElementForSelection(doc, layer, activeCompositionPath) ?? layer.element;
 }
 
 // ─── Patch operations ────────────────────────────────────────────────────────

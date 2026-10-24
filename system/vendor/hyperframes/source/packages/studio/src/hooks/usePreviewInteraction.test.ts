@@ -224,12 +224,17 @@ describe("usePreviewInteraction", () => {
     cleanup();
   });
 
-  it("resumes playback when a click resolves to nothing (dead-zone / deselect)", async () => {
-    usePlayerStore.setState({ isPlaying: true });
+  // The deselect resume asks the PLAYER to play; it must never move the store's
+  // flag on its own. The runtime really was paused (playerPause below), so a bare
+  // setIsPlaying(true) leaves the button reading "playing" over a stopped runtime
+  // with nothing able to reconcile the two.
+  it("requests a real resume when a click resolves to nothing (dead-zone / deselect)", async () => {
+    usePlayerStore.setState({ isPlaying: true, playbackRequest: null });
+    const playerPause = vi.fn();
     const applyDomSelection = vi.fn();
     const resolveDomSelectionFromPreviewPoint = vi.fn(async () => null);
     const { canvas, cleanup } = renderHarness({
-      previewIframe: createPreviewIframe(vi.fn()),
+      previewIframe: createPreviewIframe(playerPause),
       resolveDomSelectionFromPreviewPoint,
       applyDomSelection,
     });
@@ -237,12 +242,15 @@ describe("usePreviewInteraction", () => {
     await dispatchMouseDown(canvas, {});
 
     expect(applyDomSelection).toHaveBeenCalledWith(null, { revealPanel: false });
-    expect(usePlayerStore.getState().isPlaying).toBe(true);
+    expect(playerPause).toHaveBeenCalled();
+    expect(usePlayerStore.getState().playbackRequest).toMatchObject({ playing: true });
+    // Only the player's own play() may raise this, once the runtime is running.
+    expect(usePlayerStore.getState().isPlaying).toBe(false);
     cleanup();
   });
 
   it("does not resume playback on deselect when it was already paused", async () => {
-    usePlayerStore.setState({ isPlaying: false });
+    usePlayerStore.setState({ isPlaying: false, playbackRequest: null });
     const applyDomSelection = vi.fn();
     const resolveDomSelectionFromPreviewPoint = vi.fn(async () => null);
     const { canvas, cleanup } = renderHarness({
@@ -255,6 +263,60 @@ describe("usePreviewInteraction", () => {
 
     expect(applyDomSelection).toHaveBeenCalledWith(null, { revealPanel: false });
     expect(usePlayerStore.getState().isPlaying).toBe(false);
+    expect(usePlayerStore.getState().playbackRequest).toBeNull();
     cleanup();
   });
+});
+
+describe("a refused move's toast", () => {
+  it("gives the refusal's own reason first, else the selection's", () => {
+    const showToast = vi.fn();
+    let blocked!: (selection: DomEditSelection, reason?: string) => void;
+    function Harness() {
+      blocked = usePreviewInteraction({
+        captionEditMode: false,
+        compositionLoading: false,
+        previewIframeRef: { current: null },
+        showToast,
+        applyDomSelection: vi.fn(),
+        resolveDomSelectionFromPreviewPoint: vi.fn(async () => null),
+        resolveAllDomSelectionsFromPreviewPoint: vi.fn(async () => []),
+        updateDomEditHoverSelection: vi.fn(),
+        setActiveGroupElement: vi.fn(),
+      }).handleBlockedDomMove;
+      return null;
+    }
+    const root = createRoot(document.createElement("div"));
+    act(() => root.render(React.createElement(Harness)));
+    const selection = makeSelection("Box", document.createElement("div"));
+    selection.capabilities.reasonIfDisabled = "Locked layer.";
+    blocked(selection, "Studio can't read it.");
+    blocked(selection);
+    act(() => root.unmount());
+    expect(showToast.mock.calls).toEqual([
+      ["Studio can't read it.", "info"],
+      ["Locked layer.", "info"],
+    ]);
+  });
+});
+
+vi.mock("../utils/studioTelemetry", () => ({ trackStudioEvent: vi.fn() }));
+import { trackStudioEvent } from "../utils/studioTelemetry";
+it("counts additive preview selection only after resolving a hit", async () => {
+  vi.mocked(trackStudioEvent).mockClear();
+  const selection = makeSelection("Card", document.createElement("div"));
+  const applyDomSelection = vi.fn();
+  const { canvas, cleanup } = renderHarness({
+    previewIframe: createPreviewIframe(vi.fn()),
+    resolveDomSelectionFromPreviewPoint: vi.fn(async () => selection),
+    applyDomSelection,
+  });
+  await dispatchMouseDown(canvas, { shiftKey: true });
+  expect(applyDomSelection).toHaveBeenCalledWith(selection, { additive: true });
+  expect(trackStudioEvent).toHaveBeenCalledExactlyOnceWith("feature_used", {
+    feature: "multi_select",
+    surface: "preview",
+    method: "button",
+  });
+  cleanup();
 });

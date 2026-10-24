@@ -71,3 +71,6 @@ docs/
 # grandfathered in, but new ones a vendor refresh brings must not be ignored.
 !system/docs/
 !system/docs/**
+# hyperframes ships its own docs tree under the vendored source; the root docs/ rule must not hide it
+!system/vendor/hyperframes/source/docs/
+!system/vendor/hyperframes/source/docs/**

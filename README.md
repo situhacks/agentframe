@@ -124,7 +124,7 @@ Third-party tools live in `system/vendor/`, each with a `VENDOR.md` that pins th
 
 | Event | What `af hook` does |
 |---|---|
-| `session-start` | Prints the chat's role, brief, last handoff, and for main the whole of `life.md` and the due loops; renames the tab to the registered name; refreshes a stale search index in the background |
+| `session-start` | Prints the chat's role, brief, last handoff, and for main the whole of `life.md` and the due loops; has an unregistered chat ask whether it is main, a side chat, or a one-off; renames the tab to the registered name; refreshes a stale search index in the background |
 | `pre-tool-use` | Ends any shell command that runs `git push` (exit 2); blocks edits to old versions, published heads, and hand-made version files; blocks `af ready` on hard voice findings; keeps deck projects out of the vendor folder; refuses a Substack push until its row is ready |
 | `post-tool-use` | Prints the voice lint after `af version` and reminds the agent to promote a deck export |
 | `stop` | Asks a registered side chat or worker for its handoff before it stops, once |

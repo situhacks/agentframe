@@ -22,6 +22,8 @@ pub const STALE_AFTER_MINUTES: i64 = 120;
 pub const IDLE_NOTE_DAYS: i64 = 7;
 pub const END_REASONS: [&str; 5] = ["clear", "resume", "logout", "exit", "other"];
 pub const NAME_GRAMMAR: &str = "main, life/<topic>, project/<slug>, system/<topic>, worker/<slug>";
+/// The side-chat names of the grammar, as the off-system directive offers them.
+pub const SIDE_NAMES: [&str; 3] = ["life/<topic>", "project/<slug>", "system/<topic>"];
 
 // ------------------------------------------------------------------ names
 
@@ -635,6 +637,36 @@ pub fn bundle(ctx: &Ctx, session_id: &str) -> R<(String, Option<Row>)> {
     bundle_with(ctx, session_id, None)
 }
 
+/// The `main` row when it is live.
+pub fn live_main(reg: &Registry, now: NaiveDateTime) -> Option<Row> {
+    reg.rows().into_iter().find(|r| r.name == "main" && effective_status(r, now) == "live")
+}
+
+/// What an unregistered chat does in its first reply: ask whether it is main, a side
+/// chat, or a one-off. With a live `main`, main is not on offer.
+pub fn off_system_directive(session_id: &str, main: Option<&Row>) -> String {
+    let [l, p, s] = SIDE_NAMES;
+    let side = format!(
+        "make it a side chat (name it {l}, {p}, or {s}; register it with \"af session register <name> --session {session_id}\", \
+write system/sessions/<name>/brief.md, and tell him to send main the name)"
+    );
+    let one_off = "keep it a one-off (nothing is registered; it must not write loops, life pages, or handoffs)";
+    let ask = "Before anything else, ask the operator in one line, lettered:";
+    let tail = "If he answers with a task instead of a letter, treat it as (C) and say so in your first sentence.";
+    match main {
+        None => format!(
+            "af: this chat is not registered and main is not running. {ask} (A) make this chat main, (B) {side}, or (C) {one_off}. {tail}"
+        ),
+        Some(m) => {
+            let seen = parse_ts(&m.last_seen).map(|t| t.format("%H:%M").to_string()).unwrap_or_else(|| m.last_seen.clone());
+            format!(
+                "af: this chat is not registered. main is live ({}, last seen {seen}); this chat cannot be main. {ask} (B) {side}, or (C) {one_off}. {tail}",
+                m.name
+            )
+        }
+    }
+}
+
 /// The bundle, led by the index-refresh line when the session-start hook spawned a
 /// refresh (which then stands in for the index age line).
 pub fn bundle_with(ctx: &Ctx, session_id: &str, refresh: Option<&str>) -> R<(String, Option<Row>)> {
@@ -646,10 +678,7 @@ pub fn bundle_with(ctx: &Ctx, session_id: &str, refresh: Option<&str>) -> R<(Str
     }
     match &row {
         Some(r) => parts.push(format!("af: you are {} ({})", r.name, r.role)),
-        None => parts.push(format!(
-            "af: unregistered session; register with \"af session register <name> --session {session_id}\" or stay ad hoc\n\
-af: names are {NAME_GRAMMAR}; classify the task first (AGENTS.md: project work -> AGENTS.operator.md, system work -> AGENTS.builder.md, anything else -> main)"
-        )),
+        None => parts.push(off_system_directive(session_id, live_main(&reg, life::now()).as_ref())),
     }
     let is_main = row.as_ref().map(|r| r.role == "main").unwrap_or(false);
     if is_main {

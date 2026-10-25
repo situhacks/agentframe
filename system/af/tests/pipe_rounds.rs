@@ -106,11 +106,11 @@ fn test_folder_and_readme_from_pack_skeleton() {
         &fx,
         &slug,
         "2",
-        &["--with", "Charles Duckworth, Senior Director", "--type", "hiring-manager", "--at", "2026-09-02T10:00:00-07:00"],
+        &["--with", "Dana Whitfield, Senior Director", "--type", "hiring-manager", "--at", "2026-09-02T10:00:00-07:00"],
     );
     assert!(fx.path(&format!("{}/round-2-charles", app_dir_rel(&slug, false))).is_dir());
     let text = readme(&fx, &slug, "round-2-charles");
-    assert!(text.contains("Charles Duckworth, Senior Director"));
+    assert!(text.contains("Dana Whitfield, Senior Director"));
     assert!(text.contains("hiring-manager"));
     assert!(text.contains("round 1")); // {prev} resolves to the prior round
     assert!(!text.contains("{people}"));
@@ -120,10 +120,10 @@ fn test_folder_and_readme_from_pack_skeleton() {
 fn test_panel_lists_every_person() {
     let fx = pfx();
     let slug = started(&fx);
-    round(&fx, &slug, "3", &["--with", "Dave McKellar, Partner", "--with", "Jeff O'Neill, Senior Manager", "--type", "panel"]);
+    round(&fx, &slug, "3", &["--with", "Priya Natarajan, Partner", "--with", "Sam Okafor, Senior Manager", "--type", "panel"]);
     let text = readme(&fx, &slug, "round-3-dave");
-    assert!(text.contains("Dave McKellar"));
-    assert!(text.contains("Jeff O'Neill"));
+    assert!(text.contains("Priya Natarajan"));
+    assert!(text.contains("Sam Okafor"));
 }
 
 #[test]
@@ -138,7 +138,7 @@ fn test_unnamed_interviewer_is_called_out() {
 fn test_first_round_prev_points_at_application_root() {
     let fx = pfx();
     let slug = started(&fx);
-    round(&fx, &slug, "1", &["--with", "Mike Duffy, Recruiter"]);
+    round(&fx, &slug, "1", &["--with", "Lee Marchetti, Recruiter"]);
     assert!(readme(&fx, &slug, "round-1-mike").contains("the application root"));
 }
 
@@ -146,8 +146,8 @@ fn test_first_round_prev_points_at_application_root() {
 fn test_duplicate_round_refused() {
     let fx = pfx();
     let slug = started(&fx);
-    round(&fx, &slug, "1", &["--with", "Mike Duffy, Recruiter"]);
-    fx.refused(&["pipe", "round", &slug, "1", "--with", "Mike Duffy, Recruiter"]);
+    round(&fx, &slug, "1", &["--with", "Lee Marchetti, Recruiter"]);
+    fx.refused(&["pipe", "round", &slug, "1", "--with", "Lee Marchetti, Recruiter"]);
 }
 
 #[test]
@@ -155,14 +155,14 @@ fn test_terminal_stage_refused() {
     let fx = pfx();
     let slug = started(&fx);
     stage(&fx, &slug, "dropped");
-    fx.refused(&["pipe", "round", &slug, "1", "--with", "Mike Duffy, Recruiter"]);
+    fx.refused(&["pipe", "round", &slug, "1", "--with", "Lee Marchetti, Recruiter"]);
 }
 
 #[test]
 fn test_missing_application_folder_refused() {
     let fx = pfx();
     let slug = save(&fx, "no-folder-yet");
-    fx.refused(&["pipe", "round", &slug, "1", "--with", "Mike Duffy, Recruiter"]);
+    fx.refused(&["pipe", "round", &slug, "1", "--with", "Lee Marchetti, Recruiter"]);
 }
 
 // ------------------------------------------------------------------ TestArchive

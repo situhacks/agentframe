@@ -65,7 +65,7 @@ Scratchpads are throwaway, unversioned, named `scratchpad`; never read prior one
 
 Ready, publish, version, scaffold, and drift check are button-owned: `af` does the mechanics and prints the judgment checklist. Never hand-edit `ready` or `published` state. Readiness steps: [`ready-event.md`](library/process/ready-event.md).
 
-When a button refuses or crashes on a shape the project legitimately produces and you work around it, append a row to `system/backlog.md` first: `## BB-YYYY-MM-DD-NN — title`, then one to five lines naming what happened, the evidence pointer, who surfaced it, and `Status: open`. A slip fixed on the retry needs no row.
+When a button refuses or crashes on a shape the project legitimately produces and you work around it, append a row to `system/backlog.md` first, in the shape of [`library/schema/backlog.md`](library/schema/backlog.md). A slip fixed on the retry needs no row.
 
 ### Phase Overrides
 

@@ -93,6 +93,9 @@ AgentFrame's own skills live in `.claude/skills/`, where Claude Code finds them.
 | `d2-diagrams` | Renders auto-laid-out graphs with the D2 CLI | You, or a process file |
 | `extract-design` | Pulls colours, type, and tokens from a live website | You, or a template |
 | `gym` | Coaches a workout session from your private fitness log | You |
+| `catchup` | Your return after time away: the brief, the one thing that matters this week, and a decision on every due loop | You |
+| `file` | Files a path, the inbox, Gmail threads, or your last message into sources and knowledge pages, and raises loops | You |
+| `upgrade` | Hands backlog rows to a builder in its own worktree, shows you its report and diff, and merges on your yes | You |
 
 Skills marked "You" are hidden from the model's skill list, so their descriptions do not load into every chat. You run them as `/name`.
 
@@ -128,6 +131,15 @@ Third-party tools live in `system/vendor/`, each with a `VENDOR.md` that pins th
 | `session-end`, `notification` | Stamp the registry row ended or last seen |
 
 A `permissions.deny` rule for `git push` sits beside the hooks, and the pre-tool-use hook ends any shell command that runs `git push` with exit 2: the push is always yours.
+
+### Schedules
+
+One Windows Task Scheduler job, `AgentFrame consolidation`, runs every Sunday at 18:00 while you are logged on. It runs the `consolidator` role headless over `workspace/life/`: each knowledge page's current facts are rebuilt from its timeline, old timeline entries are archived, and loop closures are proposed but not made. It commits nothing. The report lands in `system/logs/consolidation-<date>.md`, and a loop nudges you on Monday to review it with `git -C workspace diff --stat`. Register it once from your own checkout with `powershell -NoProfile -ExecutionPolicy Bypass -File system/tools/register-weekly-consolidation.ps1`; it prints the next run time, and rerunning it replaces the job.
+
+| Script | What it does |
+|---|---|
+| `system/tools/consolidate-weekly.ps1` | One consolidation run: the headless `claude -p` call, the log file, the Monday review loop |
+| `system/tools/register-weekly-consolidation.ps1` | Creates or replaces the Sunday 18:00 task and prints its next run |
 
 ## Quick start
 
@@ -177,7 +189,7 @@ agentframe/
 │   └── assets/               # design languages, logos, media shelf (instances gitignored)
 ├── system/
 │   ├── af/                   # the af crate: buttons, hooks, search, voice bundle and lint
-│   ├── tools/                # media, render, diagram, and export helpers (Python, PowerShell)
+│   ├── tools/                # media, render, diagram, export, and schedule helpers (Python, PowerShell)
 │   ├── vendor/               # vendored runtimes
 │   ├── docs/                 # PPT Master's upstream docs
 │   └── tests/                # tests for the tools
@@ -205,7 +217,7 @@ The repository is public. The shapes travel; your content never does. These path
 
 ## In progress
 
-Still ahead: the life systems (groceries and flyer deals first, then calendar and money), each with its own skill under `workspace/life/systems/`, and the self-repair loop, where main hands backlog rows to a builder worker and shows you its report.
+Still ahead: the life systems (groceries and flyer deals first, then calendar and money), each with its own skill under `workspace/life/systems/`, and a cloud variant of `/upgrade` that runs the builder on the tracked repository and lands a branch for you to merge.
 
 ## Credits
 

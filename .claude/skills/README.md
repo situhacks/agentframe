@@ -13,6 +13,9 @@ AgentFrame-owned skills. Claude Code discovers every folder here. A skill marked
 | [`d2-diagrams/`](d2-diagrams/SKILL.md) | Auto-laid-out D2 graphs rendered to SVG with the vendored D2 CLI | A graph is regenerated from changing source and its layout must re-solve itself ([`diagram-production.md`](../../library/process/diagram-production.md)) | Operator; agents by path |
 | [`extract-design/`](extract-design/SKILL.md) | Website design-language extraction through `designlang`: tokens, type, colour, accessibility scores | A design language needs evidence from a live site (the `design-language` template's on-ramp) | Operator; agents by path |
 | [`gym/`](gym/SKILL.md) | One coached fitness session over the private fitness system in `workspace/life/systems/fitness/`: sync, the day's card, set logging, readback, progression | The operator opens a gym session with `/gym` | Operator only |
+| [`catchup/`](catchup/SKILL.md) | The return after time away: the written brief, the briefer's judgment against the quarter plan, and a resolve, re-date, or leave answer for every due loop | The operator is back after days away and runs `/catchup` | Operator only |
+| [`file/`](file/SKILL.md) | The one ingest entry: a path, the inbox, Gmail threads, or the last message filed as source records and distilled by the `filer` role | Any input should become durable truth in the life layer or a project | Operator only |
+| [`upgrade/`](upgrade/SKILL.md) | The self-repair loop: open backlog rows to `builder` worktrees, plain-language reports, merge on the operator's yes | The operator wants backlog rows fixed and runs `/upgrade` | Operator only |
 
 Provenance: `agent-reach`, `doc-export`, and `extract-design` adapt upstream work and carry a `VENDOR.md`; `deep-research` carries `PROVENANCE.md`.
 

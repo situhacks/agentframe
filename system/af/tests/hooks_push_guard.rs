@@ -1,10 +1,12 @@
-//! The push block: a Bash or PowerShell command that runs `git push` ends the pre-tool-use
-//! hook with exit 2. Post-tool-use never blocks; the Edit and Write events never see it.
+//! The push gate: a Bash or PowerShell command that runs `git push` turns the pre-tool-use
+//! hook into a permission prompt. Post-tool-use never asks; the Edit and Write events never
+//! see it; an ask outranks the other guards' contexts.
 
 mod common;
 
-use afcore::hooks::{dispatch, push_guard, HookCtx};
-use serde_json::json;
+use afcore::hooks::{combine, context, dispatch, push_guard, HookCtx};
+use afcore::pyjson::dumps;
+use serde_json::{json, Value};
 
 fn repo() -> HookCtx {
     HookCtx::new(&common::repo_root().to_string_lossy())
@@ -12,6 +14,10 @@ fn repo() -> HookCtx {
 
 fn bash(command: &str, event: &str, tool: &str) -> String {
     json!({"hook_event_name": event, "tool_name": tool, "tool_input": {"command": command}, "cwd": "."}).to_string()
+}
+
+fn as_json(v: afcore::pyjson::PyVal) -> Value {
+    serde_json::from_str(&dumps(&v)).unwrap()
 }
 
 #[test]
@@ -49,11 +55,15 @@ fn test_non_push_forms_pass() {
 }
 
 #[test]
-fn test_pre_tool_use_push_exits_2_for_bash_and_powershell() {
+fn test_pre_tool_use_push_asks_for_bash_and_powershell() {
     let h = repo();
     for tool in ["Bash", "PowerShell"] {
-        assert_eq!(dispatch(&h, "pre-tool-use", &bash("git push origin master", "PreToolUse", tool)), Err(2), "{tool}");
-        assert_eq!(dispatch(&h, "pre-tool-use", &bash("cd a && git push", "PreToolUse", tool)), Err(2), "{tool}");
+        for cmd in ["git push origin master", "cd a && git push"] {
+            let v = as_json(dispatch(&h, "pre-tool-use", &bash(cmd, "PreToolUse", tool)).unwrap().unwrap());
+            assert_eq!(v["hookSpecificOutput"]["permissionDecision"], "ask", "{tool}: {cmd}");
+            assert_eq!(v["hookSpecificOutput"]["permissionDecisionReason"], push_guard::REASON);
+            assert_eq!(v["hookSpecificOutput"]["hookEventName"], "PreToolUse");
+        }
     }
 }
 
@@ -63,4 +73,12 @@ fn test_push_passes_post_tool_use_and_other_tools() {
     assert_eq!(dispatch(&h, "post-tool-use", &bash("git push origin master", "PostToolUse", "Bash")), Ok(None));
     assert_eq!(dispatch(&h, "pre-tool-use", &bash("git push", "PreToolUse", "Edit")), Ok(None));
     assert_eq!(dispatch(&h, "pre-tool-use", &bash("git status && git log -1", "PreToolUse", "Bash")), Ok(None));
+}
+
+#[test]
+fn test_an_ask_outranks_contexts_when_guards_combine() {
+    let ask = push_guard::decide(&json!({"tool_input": {"command": "git push"}})).unwrap();
+    let v = as_json(combine(vec![context("PreToolUse", "a note"), ask, context("PreToolUse", "another")]).unwrap());
+    assert_eq!(v["hookSpecificOutput"]["permissionDecision"], "ask");
+    assert!(push_guard::decide(&json!({"tool_input": {"command": "git status"}})).is_none());
 }

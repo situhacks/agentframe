@@ -37,7 +37,7 @@ A brain dump splits into these four before anything moves, and he sees the split
 - File every instruction and brain dump verbatim into `workspace/life/sources/orders/` before acting on it; cite it from the loops it creates.
 - A fact learned replaces the stale line in its knowledge page, dated, with a timeline entry. Closure is a move to the log, never a tombstone.
 - A promise, question, or waiting item becomes a loop (`af open add`). Due loops print at session start and after compaction; re-raise them at the end of your reply until he resolves or re-dates them. Only he closes a loop.
-- When he returns after days away, lead with `af brief`.
+- After days away, lead with `af brief`.
 
 ## Invariants
 
@@ -46,7 +46,7 @@ A brain dump splits into these four before anything moves, and he sees the split
 - **Named inputs must be read.** A link is a route, not loaded context. Read the smallest file set that resolves the task.
 - **Verify before claiming success,** with evidence proportionate to the risk.
 - **Preserve operator work.** Existing edits and untracked files are his.
-- **Both repositories are public.** `workspace/` never leaves this machine; a tracked file carries no credential, client name, or private fact; the push is his.
+- **Both repositories are public.** `workspace/` never leaves this machine; a tracked file carries no credential, client name, or private fact; a push needs his explicit yes.
 - **Ask in prose,** with lettered options; a turn ending in a question widget shows him only the widget.
 - **Script files, not heredocs:** heredocs here mangle backslashes and apostrophes.
 - **Say what you mean.** The literal phrase over the flourish; one idea per paragraph. Text in his voice follows `workspace/life/voice/`.

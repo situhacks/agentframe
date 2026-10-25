@@ -114,7 +114,7 @@ Third-party tools live in `system/vendor/`, each with a `VENDOR.md` that pins th
 ### Sessions and open loops
 
 - `af session register <name>` puts a chat in `system/sessions/registry.md` with its role, brief, and handoff. Names follow `main`, `life/<topic>`, `project/<slug>`, `system/<topic>`, `worker/<slug>`.
-- `af open add` raises a loop in `workspace/life/open.md` with an optional nudge date; due loops print at every main session start.
+- `af open add` raises a loop in `workspace/life/open.md` with an optional nudge date; due loops print at every main session start. `af open close` moves a loop to the month log with its outcome, and `af open redate` changes its nudge date in place.
 - `af brief` is the catch-up after days away: due loops, chats waiting, backlog, boards. It costs no tokens.
 - Nine subagent roles in `.claude/agents/` (reader, researcher, filer, writer, reviewer, auditor, briefer, consolidator, builder) carry a pinned model and a narrow tool set.
 
@@ -125,12 +125,12 @@ Third-party tools live in `system/vendor/`, each with a `VENDOR.md` that pins th
 | Event | What `af hook` does |
 |---|---|
 | `session-start` | Prints the chat's role, brief, last handoff, and for main the whole of `life.md` and the due loops; has an unregistered chat ask whether it is main, a side chat, or a one-off; renames the tab to the registered name; refreshes a stale search index in the background |
-| `pre-tool-use` | Ends any shell command that runs `git push` (exit 2); blocks edits to old versions, published heads, and hand-made version files; blocks `af ready` on hard voice findings; keeps deck projects out of the vendor folder; refuses a Substack push until its row is ready |
+| `pre-tool-use` | Turns any shell command that runs `git push` into a permission prompt; blocks edits to old versions, published heads, and hand-made version files; blocks `af ready` on hard voice findings; keeps deck projects out of the vendor folder; refuses a Substack push until its row is ready |
 | `post-tool-use` | Prints the voice lint after `af version` and reminds the agent to promote a deck export |
 | `stop` | Asks a registered side chat or worker for its handoff before it stops, once |
 | `session-end`, `notification` | Stamp the registry row ended or last seen |
 
-A `permissions.deny` rule for `git push` sits beside the hooks, and the pre-tool-use hook ends any shell command that runs `git push` with exit 2: the push is always yours.
+A push happens only on your explicit yes. A `permissions.ask` rule for `git push` prompts you for every push, in bypass-permissions mode too, and the pre-tool-use hook turns a push buried in a compound command into the same prompt. `AGENTS.md` carries the rule for the model.
 
 ### Schedules
 
@@ -178,7 +178,7 @@ agentframe/
 ├── AGENTS.builder.md         # system construction and build hygiene
 ├── AGENTS.worker.md          # the overlay for unattended background runs
 ├── .claude/
-│   ├── settings.json         # hook wiring and the push deny
+│   ├── settings.json         # hook wiring and the Opus compaction window
 │   ├── agents/               # subagent roles
 │   └── skills/               # AgentFrame-owned skills
 ├── library/

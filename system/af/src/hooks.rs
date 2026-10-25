@@ -55,6 +55,18 @@ pub fn deny(reason: &str) -> PyVal {
     )])
 }
 
+/// A permission prompt: Claude Code shows the reason and waits for the operator's yes.
+pub fn ask(reason: &str) -> PyVal {
+    PyVal::dict(vec![(
+        "hookSpecificOutput",
+        PyVal::dict(vec![
+            ("hookEventName", PyVal::s("PreToolUse")),
+            ("permissionDecision", PyVal::s("ask")),
+            ("permissionDecisionReason", PyVal::s(reason)),
+        ]),
+    )])
+}
+
 pub fn context(event: &str, text: &str) -> PyVal {
     PyVal::dict(vec![(
         "hookSpecificOutput",
@@ -80,13 +92,15 @@ fn field<'a>(items: &'a [(String, PyVal)], key: &str) -> Option<&'a str> {
 }
 
 /// Several guards on one event, as Claude Code combines several hook commands: the first
-/// deny wins; otherwise the additional contexts join in wiring order.
+/// deny wins, then the first ask; otherwise the additional contexts join in wiring order.
 pub fn combine(results: Vec<PyVal>) -> Option<PyVal> {
     if results.len() <= 1 {
         return results.into_iter().next();
     }
-    if let Some(d) = results.iter().find(|r| inner(r).and_then(|i| field(i, "permissionDecision")) == Some("deny")) {
-        return Some(d.clone());
+    for decision in ["deny", "ask"] {
+        if let Some(d) = results.iter().find(|r| inner(r).and_then(|i| field(i, "permissionDecision")) == Some(decision)) {
+            return Some(d.clone());
+        }
     }
     let event = results.iter().find_map(|r| inner(r).and_then(|i| field(i, "hookEventName"))).unwrap_or("PreToolUse").to_string();
     let texts: Vec<&str> = results.iter().filter_map(|r| inner(r).and_then(|i| field(i, "additionalContext"))).collect();
@@ -109,7 +123,7 @@ pub fn dispatch(h: &HookCtx, event: &str, stdin_text: &str) -> Result<Option<PyV
         ("pre-tool-use", "Edit" | "Write") => results.extend(version_guard::decide(h, &payload)),
         ("pre-tool-use" | "post-tool-use", "Bash" | "PowerShell") => {
             if event == "pre-tool-use" {
-                push_guard::check(&payload)?;
+                results.extend(push_guard::decide(&payload));
             }
             results.extend(ppt_guard::decide(h, &payload));
             results.extend(voice_guard::decide(h, &payload));

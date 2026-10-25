@@ -49,6 +49,7 @@ A brain dump splits into these four before anything moves, and he sees the split
 - **Both repositories are public.** `workspace/` never leaves this machine; a tracked file carries no credential, client name, or private fact; a push needs his explicit yes.
 - **Ask in prose,** with lettered options; a turn ending in a question widget shows him only the widget.
 - **Script files, not heredocs:** heredocs here mangle backslashes and apostrophes.
+- **Fix it when you find it.** An inconsistency, a stale reference, or a loose connection found mid-task is fixed in the same pass, or dispatched now. The backlog holds work that cannot be done yet, never known debt.
 - **Say what you mean.** The literal phrase over the flourish; one idea per paragraph. Text in his voice follows `workspace/life/voice/`.
 
 When you do not know, say what is uncertain and read the smallest routed source that can resolve it.

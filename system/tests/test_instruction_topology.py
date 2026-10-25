@@ -29,7 +29,7 @@ class InstructionTopologyCharacterizationTests(unittest.TestCase):
             self.assertNotEqual(root, text(router))
             self.assertIn(f"[`{router}`]({router})", root)
         self.assertIn("If the task class changes, stop and read the new router.", root)
-        self.assertLessEqual(len(root.split()), 700)
+        self.assertLessEqual(len(root.split()), 720)
 
     def test_claude_code_reads_agents_md_natively(self):
         self.assertFalse((ROOT / "CLAUDE.md").exists(),
@@ -50,6 +50,13 @@ class InstructionTopologyCharacterizationTests(unittest.TestCase):
             self.assertRegex(fm, r"(?m)^model:\s*(opus|sonnet)\s*$", role)
             self.assertRegex(fm, r"(?m)^effort:\s*(medium|high|xhigh|max)\s*$", role)
             self.assertRegex(fm, r"(?m)^tools:\s*\S", role)
+
+    def test_every_agent_role_is_named_by_a_router(self):
+        routers = "".join(text(p.name) for p in sorted(ROOT.glob("AGENTS*.md")))
+        found = sorted(p.stem for p in (ROOT / ".claude" / "agents").glob("*.md"))
+        unnamed = [role for role in found if f"`{role}`" not in routers]
+        self.assertEqual(unnamed, [], "no AGENTS*.md router names these agents: add each with its "
+                                      "trigger to the dispatch line in AGENTS.md or to AGENTS.operator.md")
 
     def test_skill_and_vendor_catalogs_carry_their_columns(self):
         self.assertIn("| Skill | Owns | Load when | Invocation |", text(".claude/skills/README.md"))

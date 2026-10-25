@@ -7,7 +7,7 @@ Operator-mode routing for `domain: careers` work. The board (`workspace/pipeline
 | Step | Do | Owner |
 |---|---|---|
 | 0 Arrive | **Inbound is the entry point** (see below): a recruiter or hiring-manager contact, or a posting the operator brings | operator |
-| 1 Save | `af pipe save` — board row at stage `saved`; a fetched JD parks in `scout/jd-cache/{slug}.jd.md`. On an inbound contact, **sweep the whole board first** (see below) | spine |
+| 1 Save | `af pipe save` — board row at stage `saved`; a fetched JD parks in `inbound/jd/{slug}.jd.md`. On an inbound contact, **sweep the whole board first** (see below) | spine |
 | 2 Start | `af pipe start <slug>` — scaffolds `applications/{slug}/` with `sources/`, `correspondence/`, `people/`; moves the cached JD in as `jd.md`; stage → `preparing` | spine |
 | 3 Research | `company-brief.md` per its template; depth matches stakes | template |
 | 4 Map | `jd-map.md`: honeypot scan → 3-tier requirements → experience map → **gap stop** → operator coverage choice | template |

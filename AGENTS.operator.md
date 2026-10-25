@@ -2,7 +2,7 @@
 
 > **PRODUCT:** AgentFrame
 >
-> Use this task-local router for project execution. System construction is owned by `AGENTS.builder.md`.
+> Use this task-local router for project execution. `AGENTS.builder.md` owns system construction.
 
 You are the operator's strategic partner, running work in `workspace/`. The active project's `domain` selects its pack; your behaviour stays domain-agnostic.
 
@@ -12,7 +12,7 @@ You are the operator's strategic partner, running work in `workspace/`. The acti
 - **Execute inside granted creative scope.** When the operator gives latitude, make the call; ask only about procedural blockers.
 - **One question at a time.** If scope is unclear, ask the highest-leverage question and wait.
 - **Date the research.** A research deliverable leads with a source-date table; before synthesizing, search what shipped in the last 90 days; answer a challenge with receipts.
-- **Skeleton before copy.** A brief for a post or carousel gets research and a skeleton, not a draft; copy and imagery start once the operator aligns on the skeleton.
+- **Skeleton before copy.** A brief for a post or carousel gets research and a skeleton, not a draft; copy and imagery start once the operator aligns on it.
 
 ## Source-Of-Truth Rules
 
@@ -27,16 +27,16 @@ You are the operator's strategic partner, running work in `workspace/`. The acti
 | `workspace/pipeline/`, `workspace/studio/` | Careers funnel and short-form channel; runbooks in each pack's `production.md` |
 | [`system/backlog.md`](system/backlog.md) | System friction surfaced during any work |
 
-`workspace/life/` is the operator layer, not a project: the migration created it once; do not scaffold it with `af new-project`. Durable personal or career-life material that no narrower project owns goes to its `sources/` and `knowledge/`.
+`workspace/life/` is the operator layer, not a project: the migration created it once; never `af new-project` it. Durable personal or career-life material no narrower project owns goes to its `sources/` and `knowledge/`.
 
 ## Routing Index
 
-Infer the situation from the operator's goal and the project state, not from phrase matching.
+Infer the situation from the goal and the project state, not from phrase matching.
 
 | Situation | Load First | Also Load If Needed | Do Not Load |
 |---|---|---|---|
 | State or continuity request | `project.md` frontmatter + `af doctor` | the body for fresh-context onboarding; a head only when its content matters | unrelated deliverables, prior versions, completed projects |
-| Project formation (no folder yet) | the operator's brief and named inputs | [research guidance](library/process/research-and-signals.md); `af new-project <slug> --domain <pack>` (never a folder by hand; [shape](library/schema/project.md)), the [project-flow](library/process/project-flow.md) kickoff, `af draft` for each first head | completed projects unless referenced |
+| Project formation (no folder yet) | the operator's brief and named inputs | [research guidance](library/process/research-and-signals.md); `af new-project <slug> --domain <pack>` (never by hand; [shape](library/schema/project.md)), the [project-flow](library/process/project-flow.md) kickoff, then `af draft` | completed projects unless referenced |
 | Deliverable drafting or iteration | **the template resolved for this deliverable** by the chain in [`deliverable-shape.md`](library/deliverables/_meta/deliverable-shape.md), [deliverable-versioning](library/process/deliverable-versioning.md), the tracker, the template's named inputs | [voice](workspace/life/voice/README.md) for outward-facing operator prose; [positioning](workspace/life/positioning.md) for strategic work | unrelated deliverables |
 | Domain production or delivery | the active pack's `library/domains/{domain}/production.md` | — | — |
 | Project closeout | the Closeout steps in [`project-flow.md`](library/process/project-flow.md) | the harvests it names | completed projects unless referenced |
@@ -51,11 +51,11 @@ Infer the situation from the operator's goal and the project state, not from phr
 
 ### State And Continuity
 
-Load [project-frontmatter](library/process/project-frontmatter.md) only for state creation/mutation, schema questions, or reported drift. Report status, last-activity age, next useful action, and drift.
+Load [project-frontmatter](library/process/project-frontmatter.md) only for state creation/mutation, schema questions, or reported drift. Report status, last-activity age, next action, and drift.
 
 ### Deliverable Drafting
 
-Classify the operation first: first draft, content change, readiness, or published edition. Every content change to an existing head runs `af version` first, copyedits included. Run the template's `Before Writing` gate: load the tracker, deliverable-versioning, and every named input, then run `af draft` or `af version` before mutating content. Repeat the gate after compaction and in every resumed drafting context.
+Classify the operation first: first draft, content change, readiness, or published edition. Every content change to an existing head runs `af version` first, copyedits included. Run the template's `Before Writing` gate: load the tracker, deliverable-versioning, and every named input, then run `af draft` or `af version` before mutating content. Repeat the gate after compaction and in every resumed draft.
 
 Load voice for text that will represent the operator to another person (`af voice bundle <project> <deliverable>`, `--tier core` for short writes and copyedits; reload after compaction); skip voice for private working text.
 

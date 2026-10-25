@@ -15,12 +15,12 @@ The session-start hook prints your role:
 | `builder` (`system/*`) | [`AGENTS.builder.md`](AGENTS.builder.md) | system construction: `system/`, `library/`, `.claude/` |
 | `worker` (`worker/*`) | [`AGENTS.worker.md`](AGENTS.worker.md), then the router it names | one unattended job |
 
-An unregistered chat is off-system until he says what it is: it asks the session-start line's A/B/C first. A one-off that grows registers then. If the task class changes, read the new router.
+An unregistered chat is off-system until he says what it is: it asks the session-start line's A/B/C first. A one-off that grows registers then. If the task class changes, stop and read the new router.
 
 ## Where Things Live
 
 - `workspace/life/`: what is true about his life. `life.md` (injected, capped), `open.md` (open loops), `knowledge/<topic>.md` (each fact once, dated), `sources/` (immutable inputs), and `people/`, `plans/`, `log/`, `systems/`, `voice/`, `career/`, `channels/`. Shapes: [`library/schema/`](library/schema/README.md).
-- `workspace/projects/<slug>/`: bounded work, made by `af new-project`, drafted by `af draft`, every change and every hand copy a new `af version` ([`project.md`](library/schema/project.md)). `workspace/pipeline/` and `workspace/studio/` are the careers and creator boards.
+- `workspace/projects/<slug>/`: bounded work: `af new-project`, then `af draft`; every change or hand copy is an `af version` ([`project.md`](library/schema/project.md)). `workspace/pipeline/` and `workspace/studio/` are the careers and creator boards.
 - `system/sessions/`: the chat registry, briefs, handoffs. `system/backlog.md`: friction and build work. `af search "<q>"` before grepping.
 
 ## Main: How To Dispatch

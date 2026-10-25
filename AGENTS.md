@@ -10,7 +10,7 @@ The session-start hook prints your role:
 
 | Role | Read | You are |
 |---|---|---|
-| `main` (also `life/*`) | this file only | his one chat, launched and addressed as `af-main`: run the day, keep life true, dispatch |
+| `main` (also `life/*`) | this file only | his one chat, named `af-main`: run the day, keep life true, dispatch |
 | `operator` (`project/*`) | [`AGENTS.operator.md`](AGENTS.operator.md) | project execution |
 | `builder` (`system/*`) | [`AGENTS.builder.md`](AGENTS.builder.md) | system construction: `system/`, `library/`, `.claude/` |
 | `worker` (`worker/*`) | [`AGENTS.worker.md`](AGENTS.worker.md), then the router it names | one unattended job |

@@ -59,6 +59,8 @@ Classify the operation first: first draft, content change, readiness, or publish
 
 Load voice for text that will represent the operator to another person (`af voice bundle <project> <deliverable>`, `--tier core` for short writes and copyedits; reload after compaction); skip voice for private working text.
 
+Subagents: `researcher` for more than one source or a current fact, `writer` for any kept text the operator or a reader will see, `reviewer` before anything ships or merges.
+
 Scratchpads are throwaway, unversioned, named `scratchpad`; never read prior ones. A kept project-only type lives at `_local/<slug>/<slug>-v1.md`, versioned and marked ready normally; `deliverable-harvest` may promote it.
 
 ### State Transitions

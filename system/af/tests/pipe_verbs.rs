@@ -36,7 +36,7 @@ fn board_fm(fx: &Fx) -> String {
 }
 
 fn jd_cache(slug: &str) -> String {
-    format!("workspace/pipeline/scout/jd-cache/{slug}.jd.md")
+    format!("workspace/pipeline/inbound/jd/{slug}.jd.md")
 }
 
 fn adir(fx: &Fx, slug: &str) -> String {

@@ -281,7 +281,7 @@ pub fn app_is_archived(ctx: &Ctx, slug: &str) -> bool {
 }
 
 pub fn jd_cache_path(ctx: &Ctx, slug: &str) -> String {
-    join_all(&[&ctx.pipeline, "scout", "jd-cache", &format!("{slug}.jd.md")])
+    join_all(&[&ctx.pipeline, "inbound", "jd", &format!("{slug}.jd.md")])
 }
 
 /// `shutil.move(src, dst)` for a destination that does not exist.
@@ -352,7 +352,7 @@ pub fn cmd_pipe_save(ctx: &Ctx, a: &SaveArgs) -> R<()> {
     write_board(ctx, &fm, &body)?;
     outln!("af pipe save: {slug} -> saved (board row; no folder until start){reopened}");
     outln!("\nJudgment (stays with the agent):");
-    outln!("  - Cache the verbatim JD at workspace/pipeline/scout/jd-cache/{slug}.jd.md now — postings vanish.");
+    outln!("  - Cache the verbatim JD at workspace/pipeline/inbound/jd/{slug}.jd.md now — postings vanish.");
     outln!("  - Committing to it? 'af pipe start {slug}' scaffolds the sprint folder.");
     Ok(())
 }

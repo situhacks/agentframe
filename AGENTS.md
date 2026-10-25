@@ -19,15 +19,15 @@ An unregistered chat is off-system until he says what it is: it asks the session
 
 ## Where Things Live
 
-- `workspace/life/`: what is true about his life. `life.md` (injected into main, capped), `open.md` (open loops), `knowledge/<topic>.md` (each fact once, dated), `sources/` (immutable inputs; `sources/orders/` holds his instructions verbatim), and `people/`, `plans/`, `log/`, `systems/`, `voice/`, `career/`, `channels/`. Shapes: [`library/schema/`](library/schema/README.md).
+- `workspace/life/`: what is true about his life. `life.md` (injected into main, capped), `open.md` (open loops), `knowledge/<topic>.md` (each fact once, dated), `sources/` (immutable inputs; `orders/` holds his instructions verbatim), and `people/`, `plans/`, `log/`, `systems/`, `voice/`, `career/`, `channels/`. Shapes: [`library/schema/`](library/schema/README.md).
 - `workspace/projects/<slug>/`: bounded work. `workspace/pipeline/` and `workspace/studio/` are the careers and creator boards.
 - `system/sessions/`: the chat registry, briefs, handoffs. `system/backlog.md`: friction and build work. `af search "<q>"` finds anything before grepping.
 
 ## Main: How To Dispatch
 
 - **Inline**: a one-file answer, a state change, filing one source, a short reply.
-- **Subagent** (`.claude/agents/`, role-pinned): a read across many files, research, a draft, a review, a consolidation, a test run. Never read a transcript or a long deliverable yourself; send a reader.
-- **Side chat** (interactive, registered): multi-session deep work he wants to sit inside. Write `system/sessions/<name>/brief.md`, register the name with the model you recommend and why, give him the name to open, and send the first message once it exists.
+- **Subagent** (`.claude/agents/`, role-pinned): `reader` for files or a transcript you should not load, `filer` for every ingest, `researcher` for more than one source or a current fact, `writer` for any kept text he or a reader will see, `reviewer` before anything ships or merges, `auditor` for tests and lints, `briefer` for the catch-up, `consolidator` for the weekly compile. Never read a transcript or long deliverable yourself.
+- **Side chat** (interactive, registered): multi-session deep work he wants to sit inside. Write `system/sessions/<name>/brief.md`, register the name with the model you recommend and why, give him the name, and send the first message once it exists.
 - **Background worker** (`claude --bg --session-id <uuid> --agent <role> --name worker/<x> --model <m>`): bounded unattended work with a done-when. First `af session register worker/<x> --session <uuid> --model <m> --brief <path>` with a new UUID, so its first SessionStart prints its brief. Ask for `notify_when_idle` in your first message; read its `handoff.md` and `report.md`, not its transcript.
 
 A brain dump splits into these four before anything moves, and he sees the split. You are Opus; propose Opus for deep writing, builds, and anything a client sees, Sonnet for mechanical or read-heavy work, Fable only when he opens a planning session.
@@ -50,5 +50,3 @@ A brain dump splits into these four before anything moves, and he sees the split
 - **Ask in prose,** with lettered options; a turn ending in a question widget shows him only the widget.
 - **Script files, not heredocs:** heredocs here mangle backslashes and apostrophes.
 - **Say what you mean.** The literal phrase over the flourish; one idea per paragraph. Text in his voice follows `workspace/life/voice/`.
-
-When you do not know, say what is uncertain and read the smallest routed source that can resolve it.

@@ -45,7 +45,7 @@ One row per matched offer, with exactly these keys:
 
 `per_lb`: import `parse_price` from `GRO/check_flyers.py` and call it as `parse_price({"name": flyer_line, "price": price}, {"current_price": price, "price_text": <the page's unit text, such as "/lb">, "description": pack})`; it returns `(price, unit, per_lb, pack)`, and liquids count as water. Multipacks by weight or volume (`8 x 796 ml`) are counted in full by the parser. Leave per_lb empty when no weight is known; the row is still accepted.
 
-`verdict` is free text, judged against the item's `good` and `stock_up` in watch.json. For a `basis: lb` item, at or below `stock_up` per lb is `STOCK UP`, at or below `good` is `good`, otherwise `meh`; with no per-lb it is `size unknown`. For a `basis: each` item, judge the price of one unit (a case price divided by its stated count, as `pack_count` in check_flyers.py does) the same way.
+`verdict`: call `verdict(spec, price, unit, per_lb, pack)` from `GRO/check_flyers.py` with the item's watch.json entry as `spec` and the pack text; it applies the item's `good` and `stock_up` for all three bases (`lb` per pound, `unit` per unit, `each` per item of a multipack) and returns the text to store (`STOCK UP`, `good`, `meh`, or `size unknown`). Do not restate the thresholds.
 
 ## 5. Append
 

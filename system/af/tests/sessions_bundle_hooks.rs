@@ -211,6 +211,24 @@ fn session_start_for_an_unregistered_chat_has_no_title() {
 }
 
 #[test]
+fn an_unregistered_chat_is_asked_once_then_only_reminded_after_compaction_or_resume() {
+    let fx = main_fixture();
+    for source in ["startup", "clear"] {
+        let v = context(&sessions::hook_session_start(&fx.ctx(), &format!(r#"{{"session_id":"s-new","source":"{source}"}}"#)));
+        let ctx = v["hookSpecificOutput"]["additionalContext"].as_str().unwrap();
+        assert!(ctx.starts_with("af: this chat is not registered") && ctx.contains("Before anything else"), "{source}: {ctx}");
+    }
+    for source in ["compact", "resume"] {
+        let v = context(&sessions::hook_session_start(&fx.ctx(), &format!(r#"{{"session_id":"s-new","source":"{source}"}}"#)));
+        let ctx = v["hookSpecificOutput"]["additionalContext"].as_str().unwrap();
+        assert!(ctx.starts_with(sessions::OFF_SYSTEM_REMINDER), "{source}: {ctx}");
+        assert!(!ctx.contains("(A)") && !ctx.contains("Before anything else"), "{source}: {ctx}");
+    }
+    let v = context(&sessions::hook_session_start(&fx.ctx(), r#"{"session_id":"s-main","source":"compact"}"#));
+    assert!(v["hookSpecificOutput"]["additionalContext"].as_str().unwrap().starts_with("af: you are main (main)"));
+}
+
+#[test]
 fn session_start_ignores_a_bad_payload() {
     let fx = main_fixture();
     assert_eq!(sessions::hook_session_start(&fx.ctx(), "not json"), HookOutput::quiet());

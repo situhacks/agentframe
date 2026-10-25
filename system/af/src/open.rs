@@ -189,6 +189,13 @@ pub enum OpenCmd {
         #[arg(long)]
         outcome: String,
     },
+    /// Change a loop's nudge date in place; its opened date, text, and source stay
+    Redate {
+        target: String,
+        /// a date (YYYY-MM-DD) or +Nd from today
+        #[arg(long)]
+        nudge: String,
+    },
     /// Loops whose nudge date is today or earlier, oldest first
     Due {
         #[arg(long)]
@@ -202,6 +209,7 @@ pub fn run(ctx: &Ctx, cmd: OpenCmd) -> R<i32> {
             cmd_add(ctx, &text, nudge.as_deref(), from.as_deref(), section.as_deref())
         }
         OpenCmd::Close { target, outcome } => cmd_close(ctx, &target, &outcome),
+        OpenCmd::Redate { target, nudge } => cmd_redate(ctx, &target, &nudge),
         OpenCmd::Due { json } => cmd_due(ctx, json),
     }
 }
@@ -269,15 +277,9 @@ pub fn cmd_add(ctx: &Ctx, text: &str, nudge: Option<&str>, from: Option<&str>, s
     Ok(0)
 }
 
-pub fn cmd_close(ctx: &Ctx, target: &str, outcome: &str) -> R<i32> {
-    let outcome = life::one_line(outcome);
-    if outcome.is_empty() {
-        die!("--outcome needs the result, in a few words");
-    }
-    let mut doc = match OpenDoc::load(ctx)? {
-        Some(d) => d,
-        None => die!("{OPEN_REL} not found"),
-    };
+/// The one open loop `target` names: its number, or a text prefix (an exact match wins
+/// over longer loops that share the prefix).
+fn find_target(doc: &OpenDoc, target: &str) -> R<Loop> {
     let t = target.trim();
     let hit: Loop = if !t.is_empty() && t.chars().all(|c| c.is_ascii_digit()) {
         let n: usize = t.parse().unwrap_or(0);
@@ -304,11 +306,46 @@ pub fn cmd_close(ctx: &Ctx, target: &str, outcome: &str) -> R<i32> {
             }
         }
     };
+    Ok(hit)
+}
+
+pub fn cmd_close(ctx: &Ctx, target: &str, outcome: &str) -> R<i32> {
+    let outcome = life::one_line(outcome);
+    if outcome.is_empty() {
+        die!("--outcome needs the result, in a few words");
+    }
+    let mut doc = match OpenDoc::load(ctx)? {
+        Some(d) => d,
+        None => die!("{OPEN_REL} not found"),
+    };
+    let hit = find_target(&doc, target)?;
     // Log first: a failure after the append leaves the loop open, never lost.
     let rel = life::append_log(ctx, "closed", &format!("{} → {outcome}", hit.text))?;
     doc.lines.remove(hit.line_idx);
     doc.save()?;
     outln!("af open close: #{} {} → {outcome} (moved to {rel})", hit.n, hit.text);
+    Ok(0)
+}
+
+/// `af open redate <target> --nudge <date|+Nd>`: the loop keeps its opened date, text,
+/// section, and source; only the nudge changes. The month log records the re-date.
+pub fn cmd_redate(ctx: &Ctx, target: &str, nudge: &str) -> R<i32> {
+    let today = crate::core::today_date();
+    let new = match parse_nudge(nudge, today) {
+        Some(d) => d,
+        None => die!("--nudge needs a date (YYYY-MM-DD) or +Nd, not '{nudge}'"),
+    };
+    let mut doc = match OpenDoc::load(ctx)? {
+        Some(d) => d,
+        None => die!("{OPEN_REL} not found"),
+    };
+    let hit = find_target(&doc, target)?;
+    let was = hit.nudge.map(|d| d.format("%Y-%m-%d").to_string()).unwrap_or_else(|| "none".to_string());
+    let line = format_open(hit.opened, &hit.text, Some(new), &hit.from);
+    doc.lines[hit.line_idx] = line.clone();
+    doc.save()?;
+    let rel = life::append_log(ctx, "redated", &format!("{} → nudge {} (was {was})", hit.text, new.format("%Y-%m-%d")))?;
+    outln!("af open redate: #{} {} → nudge {} (was {was}; logged in {rel})", hit.n, hit.text, new.format("%Y-%m-%d"));
     Ok(0)
 }
 

@@ -17,7 +17,7 @@ Catch-up mode. The operator is back after time away and wants to know what is ou
    He can answer all at once (`1a paid it, 2b +7d, 3c`). Nothing else happens in this chat until he answers: no other work, no new loops, no edits.
 5. Apply his answers with the `af open` verbs, addressing each loop by a text prefix from the JSON, since loop numbers shift after every close:
    - Resolve: `af open close "<text prefix>" --outcome "<his words>"`.
-   - Re-date: `af open close "<text prefix>" --outcome "re-dated to <date>"`, then `af open add "<same text>" --nudge <date> --from <same from> --section "<same section>"`.
+   - Re-date: `af open redate "<text prefix>" --nudge <date or +Nd>`; the loop keeps its opened date, text, section, and source.
    - Leave: no command.
 
    If a close refuses an ambiguous prefix, rerun it with a longer prefix. Never edit `open.md` by hand.

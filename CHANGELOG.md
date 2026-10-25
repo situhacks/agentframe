@@ -21,6 +21,12 @@ Notable changes to AgentFrame. Full release notes also live on the [GitHub relea
 - The main chat: `AGENTS.md` is rewritten as main's instruction and role table, `AGENTS.worker.md` is the overlay for background runs, and nine subagent roles live in `.claude/agents/`. `CLAUDE.md` is gone; Claude Code reads `AGENTS.md` natively.
 - The sessions registry and open loops: `af session` (register, list, stop, end, bundle), `af open` (add, close, due), `af brief`, and `af close`, with their shapes in `library/schema/`. The Stop hook asks a registered side chat or worker for its handoff once before it stops.
 - `/gym` is a skill in `.claude/skills/gym/`, hidden from the model.
+- An unregistered chat is told at session start to ask, in its first reply, whether it is main (offered only when no main is live), a side chat, or a one-off; a task given instead of a letter makes it a one-off. `af hook` takes exactly one event.
+- A background worker is registered before launch with a fixed `--session-id`, so its first session start prints its brief.
+- `/catchup`, `/file`, and `/upgrade`: catching up after time away, the one ingest entry (a path, the inbox, Gmail threads, or the last message), and the self-repair loop that hands backlog rows to a builder worktree and merges on the operator's yes.
+- Schemas for source records, knowledge pages, and one backlog row shape, with done rows moving to `system/backlog-completed.md`. MIGRATION: rewrite old-format rows in `system/backlog.md` into the new shape.
+- `af open redate <loop> --nudge <date or +Nd>` changes a loop's nudge date in place; `/catchup` uses it for the re-date answer.
+- A weekly headless consolidation of the life layer, run by Task Scheduler on Sundays at 18:00 as a registered worker session, with a Monday review loop.
 
 ## v0.1.0 — a context workspace for any kind of work
 

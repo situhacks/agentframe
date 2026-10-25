@@ -66,6 +66,18 @@ fn close_refuses_a_project_that_is_not_active_unless_forced() {
 }
 
 #[test]
+fn forced_close_of_a_complete_project_keeps_its_completed_at() {
+    let fx = project(&[]);
+    let (cfm, body) = split_fm(&fx.read(PM), "project.md").unwrap();
+    let cfm = set_scalar(&cfm, "status", "complete", "project.md").unwrap().replace("status: complete", "status: complete\ncompleted_at: 2026-09-03");
+    fx.write(PM, &join_fm(&cfm, &body));
+    fx.ok(&["close", "acme", "--force"]);
+    let moved = fx.read("workspace/projects/completed/acme/project.md");
+    assert!(moved.contains("completed_at: 2026-09-03"), "{moved}");
+    assert_eq!(moved.matches("completed_at:").count(), 1);
+}
+
+#[test]
 fn close_refuses_drafting_deliverables_unless_forced() {
     let fx = project(&[("essay", "drafting"), ("post", "ready")]);
     let err = fx.refused(&["close", "acme"]);

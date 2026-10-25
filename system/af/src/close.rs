@@ -37,9 +37,13 @@ pub fn unharvested(cfm: &str, activity: &str) -> Vec<(String, String, Vec<&'stat
     out
 }
 
-/// Put `completed_at` right after the top-level `status:` line (or replace it).
+/// Put `completed_at` right after the top-level `status:` line. A project closed earlier
+/// by hand (`--force` on a `complete` row) keeps the date it already carries.
 fn stamp_completed(cfm: &str, date: &str) -> R<String> {
     if fm::has_field(cfm, "completed_at") {
+        if get_scalar(cfm, "completed_at").map(|v| !v.trim().is_empty()).unwrap_or(false) {
+            return Ok(cfm.to_string());
+        }
         return set_scalar(cfm, "completed_at", date, "project.md");
     }
     let re = fm::rx(r"(?m)^status:.*$");

@@ -667,9 +667,18 @@ write system/sessions/<name>/brief.md, and tell him to send main the name)"
     }
 }
 
+/// After a compaction or a resume the question was already asked once in this chat.
+pub const OFF_SYSTEM_REMINDER: &str = "af: this chat is still unregistered: a one-off unless he said otherwise earlier in this chat. Do not ask again; write no loops, life pages, or handoffs.";
+
 /// The bundle, led by the index-refresh line when the session-start hook spawned a
 /// refresh (which then stands in for the index age line).
 pub fn bundle_with(ctx: &Ctx, session_id: &str, refresh: Option<&str>) -> R<(String, Option<Row>)> {
+    bundle_with_source(ctx, session_id, refresh, None)
+}
+
+/// `bundle_with`, knowing the SessionStart `source`: an unregistered chat gets the A/B/C
+/// question on `startup` and `clear`, and only the reminder on `compact` and `resume`.
+pub fn bundle_with_source(ctx: &Ctx, session_id: &str, refresh: Option<&str>, source: Option<&str>) -> R<(String, Option<Row>)> {
     let reg = Registry::load(ctx)?;
     let row = reg.find_session(session_id);
     let mut parts: Vec<String> = Vec::new();
@@ -678,6 +687,7 @@ pub fn bundle_with(ctx: &Ctx, session_id: &str, refresh: Option<&str>) -> R<(Str
     }
     match &row {
         Some(r) => parts.push(format!("af: you are {} ({})", r.name, r.role)),
+        None if matches!(source, Some("compact") | Some("resume")) => parts.push(OFF_SYSTEM_REMINDER.to_string()),
         None => parts.push(off_system_directive(session_id, live_main(&reg, life::now()).as_ref())),
     }
     let is_main = row.as_ref().map(|r| r.role == "main").unwrap_or(false);
@@ -770,7 +780,9 @@ pub fn hook_session_start_with(ctx: &Ctx, payload_text: &str, refresh: Option<&s
     if id.is_empty() {
         return alone();
     }
-    let (text, row) = match bundle_with(ctx, id, refresh) {
+    let source = field(&p, "source");
+    let source = if source.is_empty() { None } else { Some(source) };
+    let (text, row) = match bundle_with_source(ctx, id, refresh, source) {
         Ok(b) => b,
         Err(_) => return alone(),
     };

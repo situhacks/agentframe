@@ -43,9 +43,9 @@ One row per matched offer, with exactly these keys:
 | `verdict` | the rule below |
 | `pack` | the name plus the size text the page shows, such as `8 x 796 ml` |
 
-`per_lb`: import `parse_price` from `GRO/check_flyers.py` and call it as `parse_price({"name": flyer_line, "price": price}, {"current_price": price, "price_text": <the page's unit text, such as "/lb">, "description": pack})`; it returns `(price, unit, per_lb, pack)`, and liquids count as water. One correction: for a multipack sold by volume, it weighs only one unit (`8 x 796 ml` reads as 796 g), so divide that row's per_lb by the count. Leave per_lb empty when no weight is known; the row is still accepted.
+`per_lb`: import `parse_price` from `GRO/check_flyers.py` and call it as `parse_price({"name": flyer_line, "price": price}, {"current_price": price, "price_text": <the page's unit text, such as "/lb">, "description": pack})`; it returns `(price, unit, per_lb, pack)`, and liquids count as water. Multipacks by weight or volume (`8 x 796 ml`) are counted in full by the parser. Leave per_lb empty when no weight is known; the row is still accepted.
 
-`verdict` is free text, judged against the item's `good` and `stock_up` in watch.json. For a `basis: lb` item, at or below `stock_up` per lb is `STOCK UP`, at or below `good` is `good`, otherwise `meh`; with no per-lb it is `size unknown`. For a `basis: unit` item, judge the price of one unit (a case price divided by its count) the same way.
+`verdict` is free text, judged against the item's `good` and `stock_up` in watch.json. For a `basis: lb` item, at or below `stock_up` per lb is `STOCK UP`, at or below `good` is `good`, otherwise `meh`; with no per-lb it is `size unknown`. For a `basis: each` item, judge the price of one unit (a case price divided by its stated count, as `pack_count` in check_flyers.py does) the same way.
 
 ## 5. Append
 

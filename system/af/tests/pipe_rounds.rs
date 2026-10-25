@@ -108,8 +108,8 @@ fn test_folder_and_readme_from_pack_skeleton() {
         "2",
         &["--with", "Dana Whitfield, Senior Director", "--type", "hiring-manager", "--at", "2026-09-02T10:00:00-07:00"],
     );
-    assert!(fx.path(&format!("{}/round-2-charles", app_dir_rel(&slug, false))).is_dir());
-    let text = readme(&fx, &slug, "round-2-charles");
+    assert!(fx.path(&format!("{}/round-2-dana", app_dir_rel(&slug, false))).is_dir());
+    let text = readme(&fx, &slug, "round-2-dana");
     assert!(text.contains("Dana Whitfield, Senior Director"));
     assert!(text.contains("hiring-manager"));
     assert!(text.contains("round 1")); // {prev} resolves to the prior round
@@ -121,7 +121,7 @@ fn test_panel_lists_every_person() {
     let fx = pfx();
     let slug = started(&fx);
     round(&fx, &slug, "3", &["--with", "Priya Natarajan, Partner", "--with", "Sam Okafor, Senior Manager", "--type", "panel"]);
-    let text = readme(&fx, &slug, "round-3-dave");
+    let text = readme(&fx, &slug, "round-3-priya");
     assert!(text.contains("Priya Natarajan"));
     assert!(text.contains("Sam Okafor"));
 }
@@ -139,7 +139,7 @@ fn test_first_round_prev_points_at_application_root() {
     let fx = pfx();
     let slug = started(&fx);
     round(&fx, &slug, "1", &["--with", "Lee Marchetti, Recruiter"]);
-    assert!(readme(&fx, &slug, "round-1-mike").contains("the application root"));
+    assert!(readme(&fx, &slug, "round-1-lee").contains("the application root"));
 }
 
 #[test]

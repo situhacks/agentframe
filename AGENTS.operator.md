@@ -36,7 +36,7 @@ Infer the situation from the operator's goal and the project state, not from phr
 | Situation | Load First | Also Load If Needed | Do Not Load |
 |---|---|---|---|
 | State or continuity request | `project.md` frontmatter + `af doctor` | the body for fresh-context onboarding; a head only when its content matters | unrelated deliverables, prior versions, completed projects |
-| Project formation (no folder yet) | the operator's brief and named inputs | [research guidance](library/process/research-and-signals.md); scaffold, then the [project-flow](library/process/project-flow.md) kickoff | completed projects unless referenced |
+| Project formation (no folder yet) | the operator's brief and named inputs | [research guidance](library/process/research-and-signals.md); `af new-project <slug> --domain <pack>` (never a folder by hand; [shape](library/schema/project.md)), the [project-flow](library/process/project-flow.md) kickoff, `af draft` for each first head | completed projects unless referenced |
 | Deliverable drafting or iteration | **the template resolved for this deliverable** by the chain in [`deliverable-shape.md`](library/deliverables/_meta/deliverable-shape.md), [deliverable-versioning](library/process/deliverable-versioning.md), the tracker, the template's named inputs | [voice](workspace/life/voice/README.md) for outward-facing operator prose; [positioning](workspace/life/positioning.md) for strategic work | unrelated deliverables |
 | Domain production or delivery | the active pack's `library/domains/{domain}/production.md` | — | — |
 | Project closeout | the Closeout steps in [`project-flow.md`](library/process/project-flow.md) | the harvests it names | completed projects unless referenced |

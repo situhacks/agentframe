@@ -42,7 +42,7 @@ Fix a repeated mistake at the highest level that holds: structure first (one own
 | Rule | Enforced by |
 |---|---|
 | Version before editing a deliverable head; voice hard findings block ready; PPT Master projects stage outside the vendor tree; a Substack push needs a ready row | `af hook pre-tool-use` |
-| Size caps, dead links, state truth | `af doctor` |
+| Size caps, dead links, state truth, project shape | `af doctor` |
 | A registered chat writes its handoff before stopping | `af hook stop` |
 | Button refusals stay visible | `system/logs/af-runs.jsonl`, counted by `af doctor` |
 

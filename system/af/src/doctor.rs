@@ -391,6 +391,83 @@ pub fn binary_head_notes(ctx: &Ctx, cdir: &str) -> R<Vec<String>> {
     Ok(notes)
 }
 
+/// Folders directly under workspace/projects/ that carry no project.md: invisible to every
+/// button, guard, and check, so they are an issue. `completed/` and dot-folders are skipped.
+pub fn stray_project_folder_issues(ctx: &Ctx) -> R<Vec<String>> {
+    let mut issues = Vec::new();
+    for d in stray_project_folders(ctx)? {
+        issues.push(format!(
+            "{}: folder under workspace/projects/ with no project.md; create projects with af new-project, and register an existing draft with af adopt",
+            ctx.rel(&d)?
+        ));
+    }
+    Ok(issues)
+}
+
+pub fn stray_project_folders(ctx: &Ctx) -> R<Vec<String>> {
+    let mut out = Vec::new();
+    if !pyos::isdir(&ctx.projects) {
+        return Ok(out);
+    }
+    for d in pyos::sorted_listdir(&ctx.projects)? {
+        let p = join(&ctx.projects, &d);
+        if d == "completed" || d.starts_with('.') || !pyos::isdir(&p) {
+            continue;
+        }
+        if !pyos::isfile(&join(&p, "project.md")) {
+            out.push(p);
+        }
+    }
+    Ok(out)
+}
+
+/// A `status: drafting` markdown file that is neither named `{name}-v{N}.md` nor pointed at
+/// by a tracker row sits outside the version chain: the guard, `af version`, and harvest
+/// cannot see it. `sources/`, `knowledge/`, dot-folders, and scratchpads are skipped.
+pub fn unchained_draft_notes(ctx: &Ctx, cdir: &str) -> R<Vec<String>> {
+    let mut notes = Vec::new();
+    if !pyos::isdir(cdir) {
+        return Ok(notes);
+    }
+    let pointed: Vec<String> = match read_optional_fm(&join(cdir, "project.md"))? {
+        Some((cfm, _)) => all_rows(&cfm)
+            .iter()
+            .filter_map(|s| row_get(&cfm, s, "file"))
+            .map(|f| f.replace('\\', "/").trim_start_matches("./").to_string())
+            .collect(),
+        None => Vec::new(),
+    };
+    let walker = walkdir::WalkDir::new(cdir).sort_by_file_name().into_iter().filter_entry(|e| {
+        e.depth() == 0 || !walk_is_dir(e) || {
+            let name = e.file_name().to_string_lossy();
+            !(name.starts_with('.') || (e.depth() == 1 && (name == "sources" || name == "knowledge")))
+        }
+    });
+    for e in walker.flatten() {
+        if walk_is_dir(&e) {
+            continue;
+        }
+        let name = e.file_name().to_string_lossy().into_owned();
+        if !name.to_lowercase().ends_with(".md") || is_versioned(&name).is_some() || name.contains("scratchpad") {
+            continue;
+        }
+        let path = e.path().to_string_lossy().into_owned();
+        let rel_in = pyos::relpath(&path, cdir)?.replace('\\', "/");
+        if pointed.contains(&rel_in) {
+            continue;
+        }
+        if let Some((dfm, _)) = read_optional_fm(&path)? {
+            if get_scalar(&dfm, "status").as_deref() == Some("drafting") {
+                notes.push(format!(
+                    "{}: drafting file outside the version chain; af adopt it or name it {{name}}-v{{N}}.md",
+                    ctx.rel(&path)?
+                ));
+            }
+        }
+    }
+    Ok(notes)
+}
+
 // ------------------------------------------------------------------ project
 
 pub fn check_project(ctx: &Ctx, cdir: &str) -> R<Vec<String>> {
@@ -1065,6 +1142,13 @@ pub fn cmd_doctor(ctx: &Ctx, project: Option<&str>) -> R<i32> {
         notes.extend(empty_head_notes(ctx, d)?);
         notes.extend(binary_head_notes(ctx, d)?);
         notes.extend(activity_notes(ctx, d)?);
+        notes.extend(unchained_draft_notes(ctx, d)?);
+    }
+    if project.is_none() {
+        for d in stray_project_folders(ctx)? {
+            notes.extend(unchained_draft_notes(ctx, &d)?);
+        }
+        all_issues.extend(stray_project_folder_issues(ctx)?);
     }
     let mut pipeline_scope = "";
     let mut studio_scope = "";

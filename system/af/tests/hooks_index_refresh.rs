@@ -74,7 +74,7 @@ fn test_main_never_fails_the_session() {
     let r = R::new();
     r.fx.write("AGENTS.md", "# root\n");
     r.fx.write("system/index/vault.db", "not a database");
-    let o = r.fx.af().args(["hook", "session-start", "--harness", "claude", "--cursor-native"]).output().unwrap();
+    let o = r.fx.af().args(["hook", "session-start"]).output().unwrap();
     assert_eq!(o.status.code(), Some(0));
     assert!(o.stdout.is_empty());
 }

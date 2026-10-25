@@ -25,7 +25,7 @@ Write each script to the scratchpad with the Write tool and run it; set `PYTHONI
 - **Flight cash fares.** Search engines and airline pages give only undated "from" fares. Use `fast-flights` (Python 3.12): `get_flights(create_query(flights=[FlightQuery(date=..., from_airport=..., to_airport=...)], trip="one-way", currency="CAD", exclude_basic_economy=...))`, run with `python -I` from a neutral directory.
 - **Basic economy.** Run the fare query with and without `exclude_basic_economy`; Air Canada's domestic bereavement fares exclude Basic.
 - **Points fares.** Report cash fares only; a points price needs a logged-in airline session.
-- **gifsicle.** It is the npm shim `gifsicle.cmd`, and Python's `subprocess` does not try PATHEXT, so pass it `shutil.which("gifsicle") or shutil.which("gifsicle.cmd")`.
+- **gifsicle.** npm installs it as the wrapper script `gifsicle.cmd`, and Python's `subprocess` does not try PATHEXT, so pass it `shutil.which("gifsicle") or shutil.which("gifsicle.cmd")`.
 - **GIF size.** `gifsicle -O3 --lossy=60` roughly halves a Pillow-written GIF with no visible loss and merges identical hold frames.
 
 ## Verification

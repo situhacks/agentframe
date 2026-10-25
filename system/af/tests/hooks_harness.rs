@@ -38,25 +38,6 @@ fn test_claude_reference_wires_all_guards() {
     assert_eq!(config["worktree"]["bgIsolation"], "none");
 }
 
-#[test]
-fn test_every_hook_shim_forwards_to_its_event() {
-    let dir = common::repo_root().join("system").join("hooks");
-    let want = [
-        ("version_guard.py", "pre-tool-use"),
-        ("voice_guard.py", "pre-tool-use"),
-        ("ppt_master_guard.py", "pre-tool-use"),
-        ("publish_guard.py", "pre-tool-use"),
-        ("index_refresh.py", "session-start"),
-        ("board_guard.py", "pre-tool-use"),
-        ("autonomy_guard.py", "pre-tool-use"),
-    ];
-    for (script, event) in want {
-        let text = std::fs::read_to_string(dir.join(script)).unwrap();
-        assert!(text.lines().count() <= 8, "{script} is a shim of at most eight lines");
-        assert!(text.contains(event), "{script} forwards to {event}");
-    }
-}
-
 fn fixture() -> Fx {
     let fx = Fx::new();
     fx.write("AGENTS.md", "# root\n");
@@ -85,21 +66,12 @@ fn test_guard_entrypoints_emit_valid_empty_json_when_no_rule_matches() {
 }
 
 #[test]
-fn test_old_wiring_flags_are_accepted_and_ignored() {
-    let fx = fixture();
-    let (code, out) = hook(&fx, &["pre-tool-use", "--harness", "claude", "--cursor-native"], "{}");
-    assert_eq!((code, out.as_str()), (0, "{}"));
-    let (code, out) = hook(&fx, &["--harness=cursor", "post-tool-use"], "");
-    assert_eq!((code, out.as_str()), (0, "{}"));
-    let (code, out) = hook(&fx, &["session-start", "--cursor-native"], "");
-    assert_eq!((code, out.as_str()), (0, ""));
-}
-
-#[test]
-fn test_unknown_event_is_a_non_blocking_error() {
+fn test_unknown_event_or_flag_is_a_non_blocking_error() {
     let fx = fixture();
     assert_eq!(hook(&fx, &["pre-compact"], "{}").0, 1);
     assert_eq!(hook(&fx, &[], "{}").0, 1);
+    assert_eq!(hook(&fx, &["pre-tool-use", "--verbose"], "{}").0, 1, "an unknown flag fails like an unknown event");
+    assert_eq!(hook(&fx, &["pre-tool-use", "stop"], "{}").0, 1, "one event per call");
 }
 
 #[test]

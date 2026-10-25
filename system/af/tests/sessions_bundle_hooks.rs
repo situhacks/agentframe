@@ -89,13 +89,67 @@ fn bundle_for_an_operator_chat_skips_the_main_parts() {
     }
 }
 
+fn directive(out: &str) -> &str {
+    out.split("\n\n").next().unwrap().trim_end()
+}
+
+fn assert_side_and_one_off(d: &str, sid: &str) {
+    assert!(d.contains("Before anything else, ask the operator in one line, lettered:"), "{d}");
+    assert!(d.contains("(B) make it a side chat (name it life/<topic>, project/<slug>, or system/<topic>;"), "{d}");
+    assert!(d.contains(&format!("\"af session register <name> --session {sid}\"")), "{d}");
+    assert!(d.contains("write system/sessions/<name>/brief.md, and tell him to send main the name)"), "{d}");
+    assert!(d.contains("(C) keep it a one-off (nothing is registered; it must not write loops, life pages, or handoffs)"), "{d}");
+    assert!(d.ends_with("If he answers with a task instead of a letter, treat it as (C) and say so in your first sentence."), "{d}");
+    assert!(d.split_whitespace().count() < 120, "{} words", d.split_whitespace().count());
+}
+
 #[test]
-fn bundle_for_an_unregistered_session_gives_the_register_line_and_classifier() {
+fn bundle_for_an_unregistered_chat_without_a_live_main_offers_main_side_or_one_off() {
+    let fx = main_fixture();
+    write_registry(&fx, &[row("main", "main", "s-main", &ts(-300), "live")]);
+    let out = fx.ok(&["session", "bundle", "--session", "s-new"]);
+    let d = directive(&out);
+    assert!(d.starts_with("af: this chat is not registered and main is not running."), "{d}");
+    assert!(d.contains("lettered: (A) make this chat main, (B) "), "{d}");
+    assert_side_and_one_off(d, "s-new");
+    assert!(!out.contains("lives in the city") && !out.contains("sessions:"), "{out}");
+    let empty = Fx::new();
+    assert!(empty.ok(&["session", "bundle", "--session", "s-x"]).starts_with("af: this chat is not registered and main is not running."));
+}
+
+#[test]
+fn bundle_for_an_unregistered_chat_with_a_live_main_offers_side_or_one_off() {
     let fx = main_fixture();
     let out = fx.ok(&["session", "bundle", "--session", "s-new"]);
-    assert!(out.contains("af: unregistered session; register with \"af session register <name> --session s-new\" or stay ad hoc"));
-    assert!(out.contains("AGENTS.operator.md") && out.contains("AGENTS.builder.md"));
-    assert!(!out.contains("lives in the city"));
+    let d = directive(&out);
+    let seen = &ts(-5)[11..];
+    assert!(
+        d.starts_with(&format!("af: this chat is not registered. main is live (main, last seen {seen}); this chat cannot be main.")),
+        "{d}"
+    );
+    assert!(!d.contains("(A)"), "{d}");
+    assert!(d.contains("lettered: (B) "), "{d}");
+    assert_side_and_one_off(d, "s-new");
+}
+
+#[test]
+fn bundle_for_a_registered_chat_names_it_with_no_directive() {
+    let fx = main_fixture();
+    for (sid, who) in [("s-acme", "af: you are project/acme (operator)"), ("s-main", "af: you are main (main)")] {
+        let out = fx.ok(&["session", "bundle", "--session", sid]);
+        assert!(out.starts_with(who), "{out}");
+        assert!(!out.contains("not registered") && !out.contains("Before anything else"), "{out}");
+    }
+}
+
+#[test]
+fn side_names_are_the_grammar_minus_main_and_worker() {
+    for name in sessions::SIDE_NAMES {
+        assert!(sessions::NAME_GRAMMAR.contains(name), "{name}");
+        let concrete = name.replace("<topic>", "x").replace("<slug>", "x");
+        assert!(sessions::valid_name(&concrete), "{concrete}");
+        assert!(["main", "operator", "builder"].contains(&sessions::role_of(&concrete)), "{concrete}");
+    }
 }
 
 #[test]
@@ -152,7 +206,7 @@ fn session_start_for_an_unregistered_chat_has_no_title() {
     let fx = main_fixture();
     let v = context(&sessions::hook_session_start(&fx.ctx(), r#"{"session_id":"s-new","source":"startup"}"#));
     assert!(v["hookSpecificOutput"].get("sessionTitle").is_none());
-    assert!(v["hookSpecificOutput"]["additionalContext"].as_str().unwrap().contains("unregistered session"));
+    assert!(v["hookSpecificOutput"]["additionalContext"].as_str().unwrap().contains("this chat is not registered"));
     assert_eq!(registry_rows(&fx).len(), 3);
 }
 
@@ -173,7 +227,7 @@ fn af_hook_session_start_runs_the_handler() {
     let out = fx.af().args(["hook", "session-start"]).write_stdin(r#"{"session_id":"s-fresh","source":"startup"}"#).output().unwrap();
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert!(v["hookSpecificOutput"].get("sessionTitle").is_none());
-    assert!(v["hookSpecificOutput"]["additionalContext"].as_str().unwrap().starts_with("af: unregistered session"));
+    assert!(v["hookSpecificOutput"]["additionalContext"].as_str().unwrap().starts_with("af: this chat is not registered"));
 }
 
 #[test]

@@ -129,24 +129,14 @@ fn emit(o: crate::sessions::HookOutput) -> i32 {
     o.exit
 }
 
-/// `af hook <event> [--harness X] [--cursor-native]`: one process start per event.
+/// `af hook <event>`: one process start per event.
 pub fn main(args: &[String]) -> i32 {
-    let mut event: Option<&str> = None;
-    let mut i = 0;
-    while i < args.len() {
-        let a = args[i].as_str();
-        if a == "--harness" {
-            i += 2;
-            continue;
+    let event = match args {
+        [e] if EVENTS.contains(&e.as_str()) => e.as_str(),
+        _ => {
+            out::err_line(&format!("af hook: give one event: {}", EVENTS.join(", ")));
+            return 1;
         }
-        if !a.starts_with('-') && event.is_none() {
-            event = Some(a);
-        }
-        i += 1;
-    }
-    let Some(event) = event.filter(|e| EVENTS.contains(e)) else {
-        out::err_line(&format!("af hook: give one event: {}", EVENTS.join(", ")));
-        return 1;
     };
     let h = HookCtx::new(&crate::cli::discover_root());
     let mut buf = Vec::new();

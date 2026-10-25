@@ -6,7 +6,7 @@ Operator-mode routing for `domain: careers` work. The board (`workspace/pipeline
 
 | Step | Do | Owner |
 |---|---|---|
-| 0 Arrive | **Inbound is the default entry point** (see below). Outbound: the `job-scout` skill (operator-invoked, never scheduled) sweeps the watchlist → triage report in `pipeline/scout/` | operator / `.claude/skills/job-scout/` |
+| 0 Arrive | **Inbound is the entry point** (see below): a recruiter or hiring-manager contact, or a posting the operator brings | operator |
 | 1 Save | `af pipe save` — board row at stage `saved`; a fetched JD parks in `scout/jd-cache/{slug}.jd.md`. On an inbound contact, **sweep the whole board first** (see below) | spine |
 | 2 Start | `af pipe start <slug>` — scaffolds `applications/{slug}/` with `sources/`, `correspondence/`, `people/`; moves the cached JD in as `jd.md`; stage → `preparing` | spine |
 | 3 Research | `company-brief.md` per its template; depth matches stakes | template |
@@ -45,7 +45,7 @@ Lever:      https://api.lever.co/v0/postings/{org}?mode=json
 
 Read for: a better-fitting req than the one named; contradictions between a posting's structured fields and its body text (a `"Remote": true` req whose body demands relocation); and publish dates, since a req open eight months is either a high bar or evergreen — a real call question. On Windows, pipe these through Python with explicit `encoding='utf-8'` and `sys.stdout.reconfigure(encoding='utf-8')`; default cp1252 raises `UnicodeDecodeError` on curly quotes.
 
-This is scoped to one company already in play, triggered by an inbound contact. It is not a watchlist sweep and does not revive `job-scout`.
+This is scoped to one company already in play, triggered by an inbound contact. It is not a sweep of other companies.
 
 ## Where files live
 
@@ -75,7 +75,7 @@ Freeform careers files are **not versioned**. No `-v{N}` filename on a brief, sh
 
 ## Screen traits worth evidencing
 
-When the watchlist names the screen: Workday Illuminate / Phenom — outcomes in context beat keyword density, and applying via the company career site feeds engagement ranking. Eightfold-style screens — evidence learnability and adjacent-skill progression. Voice-agent screens (Ezra, Talent Llama) — expect a structured verbal screen at `interviewing`; prep from the jd-map, not the resume.
+When the posting or the search profile names the screen: Workday Illuminate / Phenom — outcomes in context beat keyword density, and applying via the company career site feeds engagement ranking. Eightfold-style screens — evidence learnability and adjacent-skill progression. Voice-agent screens (Ezra, Talent Llama) — expect a structured verbal screen at `interviewing`; prep from the jd-map, not the resume.
 
 ## Career sessions (internal, ongoing)
 

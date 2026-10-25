@@ -9,7 +9,7 @@ def text(rel):
     return (ROOT / rel).read_text(encoding="utf-8-sig")
 
 
-OPERATOR_ONLY_SKILLS = ("deliverable-harvest", "voice-harvest", "doc-export", "job-scout",
+OPERATOR_ONLY_SKILLS = ("deliverable-harvest", "voice-harvest", "doc-export",
                         "d2-diagrams", "extract-design", "gym", "catchup", "file", "upgrade")
 AGENT_ROLES = ("reader", "researcher", "filer", "writer", "reviewer", "auditor", "briefer",
                "consolidator", "builder")

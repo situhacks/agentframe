@@ -89,7 +89,6 @@ AgentFrame's own skills live in `.claude/skills/`, where Claude Code finds them.
 | `deliverable-harvest` | Turns your edits on finished work into proposed template changes | You, or a process file |
 | `voice-harvest` | Turns your edits on finished work into proposed voice pairs and corpus pieces | You, or a process file |
 | `doc-export` | Exports a resume or cover letter as ATS-safe PDF and DOCX | You, or the careers pack |
-| `job-scout` | Sweeps public job boards against your search profile | You |
 | `d2-diagrams` | Renders auto-laid-out graphs with the D2 CLI | You, or a process file |
 | `extract-design` | Pulls colours, type, and tokens from a live website | You, or a template |
 | `gym` | Coaches a workout session from your private fitness log | You |

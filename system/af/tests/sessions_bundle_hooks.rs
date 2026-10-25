@@ -110,7 +110,7 @@ fn bundle_for_an_unregistered_chat_without_a_live_main_offers_main_side_or_one_o
     let out = fx.ok(&["session", "bundle", "--session", "s-new"]);
     let d = directive(&out);
     assert!(d.starts_with("af: this chat is not registered and main is not running."), "{d}");
-    assert!(d.contains("lettered: (A) make this chat main (register it with \"af session register af-main --session s-new\"), (B) "), "{d}");
+    assert!(d.contains("lettered: (A) make this chat main (rename it af-main with /rename af-main and register it with \"af session register af-main --session s-new\"), (B) "), "{d}");
     assert_side_and_one_off(d, "s-new");
     assert!(!out.contains("lives in the city") && !out.contains("sessions:"), "{out}");
     let empty = Fx::new();
@@ -388,7 +388,13 @@ fn the_main_chat_resolves_by_role_under_af_main_and_the_legacy_main_name() {
         assert!(directive(&d).contains(&format!("main is live ({name}, last seen ")), "{d}");
         let own = fx.ok(&["session", "bundle", "--session", "s-main"]);
         assert!(own.starts_with(&format!("af: you are {name} (main)")), "{own}");
-        assert_eq!(own.contains("relaunch this chat"), name == sessions::LEGACY_MAIN_NAME, "{own}");
+        assert_eq!(
+            own.contains(
+                "Rename this chat to af-main (VS Code: /rename af-main), then run \"af session register af-main --session s-main\" and \"af session end main --reason other\"."
+            ),
+            name == sessions::LEGACY_MAIN_NAME,
+            "{own}"
+        );
     }
 }
 
@@ -399,5 +405,5 @@ fn a_life_chat_alone_is_not_the_live_main() {
     let reg = sessions::Registry::load(&fx.ctx()).unwrap();
     assert!(sessions::live_main(&reg, afcore::life::now()).is_none());
     let d = fx.ok(&["session", "bundle", "--session", "s-new"]);
-    assert!(directive(&d).contains("(A) make this chat main (register it with \"af session register af-main --session s-new\""), "{d}");
+    assert!(directive(&d).contains("(A) make this chat main (rename it af-main with /rename af-main and register it with \"af session register af-main --session s-new\""), "{d}");
 }

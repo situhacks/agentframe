@@ -22,7 +22,7 @@ pub const STALE_AFTER_MINUTES: i64 = 120;
 pub const IDLE_NOTE_DAYS: i64 = 7;
 pub const END_REASONS: [&str; 5] = ["clear", "resume", "logout", "exit", "other"];
 pub const NAME_GRAMMAR: &str = "af-main, life/<topic>, project/<slug>, system/<topic>, worker/<slug>";
-/// The main chat's launch and registry name. Not `main`: SendMessage reserves that word for
+/// The main chat's name (its VS Code session title) and registry name. Not `main`: SendMessage reserves that word for
 /// the sender's own conversation, so side chats could not address it.
 pub const MAIN_NAME: &str = "af-main";
 /// The main chat's earlier name, still accepted so an existing row keeps working.
@@ -46,16 +46,18 @@ pub fn role_of(name: &str) -> &'static str {
 }
 
 /// Whether a row is the main chat: role `main` and no topic (`life/*` shares the role but is
-/// a side chat). The launch name does not matter, so `af-main` and a legacy `main` both are.
+/// a side chat). The chat's name does not matter, so `af-main` and a legacy `main` both are.
 pub fn is_main_chat(row: &Row) -> bool {
     row.role == "main" && !row.name.contains('/')
 }
 
-/// What a main chat still registered under the reserved name is told at session start.
-pub fn main_rename_line() -> String {
+/// What a main chat still registered under the reserved name is told at session start. The
+/// chat's name is its VS Code session title, so a rename in place moves it; no relaunch.
+pub fn main_rename_line(session_id: &str) -> String {
     format!(
-        "af: side chats cannot SendMessage a chat named {LEGACY_MAIN_NAME}. Ask the operator to relaunch this chat as \
-\"claude --name {MAIN_NAME}\"; the new chat registers with \"af session register {MAIN_NAME} --session <its id>\"."
+        "af: side chats cannot SendMessage a chat named {LEGACY_MAIN_NAME}. Rename this chat to {MAIN_NAME} \
+(VS Code: /rename {MAIN_NAME}), then run \"af session register {MAIN_NAME} --session {session_id}\" and \
+\"af session end {LEGACY_MAIN_NAME} --reason other\"."
     )
 }
 
@@ -656,7 +658,7 @@ pub fn bundle(ctx: &Ctx, session_id: &str) -> R<(String, Option<Row>)> {
     bundle_with(ctx, session_id, None)
 }
 
-/// The main chat's row when it is live, found by role whatever its launch name.
+/// The main chat's row when it is live, found by role whatever its name.
 pub fn live_main(reg: &Registry, now: NaiveDateTime) -> Option<Row> {
     reg.rows().into_iter().find(|r| is_main_chat(r) && effective_status(r, now) == "live")
 }
@@ -674,7 +676,7 @@ write system/sessions/<name>/brief.md, and tell him to send main the name)"
     let tail = "If he answers with a task instead of a letter, treat it as (C) and say so in your first sentence.";
     match main {
         None => format!(
-            "af: this chat is not registered and main is not running. {ask} (A) make this chat main (register it with \"af session register {MAIN_NAME} --session {session_id}\"), (B) {side}, or (C) {one_off}. {tail}"
+            "af: this chat is not registered and main is not running. {ask} (A) make this chat main (rename it {MAIN_NAME} with /rename {MAIN_NAME} and register it with \"af session register {MAIN_NAME} --session {session_id}\"), (B) {side}, or (C) {one_off}. {tail}"
         ),
         Some(m) => {
             let seen = parse_ts(&m.last_seen).map(|t| t.format("%H:%M").to_string()).unwrap_or_else(|| m.last_seen.clone());
@@ -708,7 +710,7 @@ pub fn bundle_with_source(ctx: &Ctx, session_id: &str, refresh: Option<&str>, so
         Some(r) => {
             parts.push(format!("af: you are {} ({})", r.name, r.role));
             if is_main_chat(r) && r.name == LEGACY_MAIN_NAME {
-                parts.push(main_rename_line());
+                parts.push(main_rename_line(session_id));
             }
         }
         None if matches!(source, Some("compact") | Some("resume")) => parts.push(OFF_SYSTEM_REMINDER.to_string()),

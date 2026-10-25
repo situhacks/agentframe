@@ -1,5 +1,5 @@
 //! The doctor additions: life.md cap, open.md grammar, stale registry rows, a remote on
-//! the private repo, and stale handoffs.
+//! the private repo, stale handoffs, and source-id collisions.
 
 mod common;
 mod life_fx;
@@ -115,4 +115,87 @@ fn a_handoff_older_than_its_folder_is_a_note() {
 
     fx.write(h, "no frontmatter\n");
     assert!(any_contains(&check(&fx).1, "no parseable 'written' stamp"));
+}
+
+fn order(fx: &Fx, name: &str, id: &str) {
+    fx.write(&format!("workspace/life/sources/orders/{name}"), &format!("---\nid: {id}\ntype: order\n---\nverbatim\n"));
+}
+
+fn index(fx: &Fx, rows: &[(&str, &str)]) {
+    let body: String = rows.iter().map(|(id, f)| format!("| `{id}` | [`{f}`]({f}) | 2026-10-25 | one line |\n")).collect();
+    fx.write("workspace/life/sources/INDEX.md", &format!("# Source Index\n\n| ID | File | Date | Description |\n|---|---|---|---|\n{body}"));
+}
+
+#[test]
+fn a_clean_sources_tree_is_quiet() {
+    let fx = Fx::new();
+    order(&fx, "order-2026-10-25-01-dump.md", "src-2026-10-25-01");
+    fx.write("workspace/life/sources/document-2026-10-25-snapshot.pdf", "%PDF");
+    fx.write("workspace/life/sources/research/2026-10-25-x.md", "---\nid: research-2026-10-25-x\n---\nnotes\n");
+    fx.write("workspace/life/sources/inbox/order-2026-10-25-later.md", "no frontmatter yet\n");
+    index(
+        &fx,
+        &[
+            ("src-2026-10-25-01", "orders/order-2026-10-25-01-dump.md"),
+            ("src-2026-10-25-02", "document-2026-10-25-snapshot.pdf"),
+        ],
+    );
+    assert_eq!(check(&fx), (vec![], vec![]));
+}
+
+/// The 2026-10-25 collision: the filer took -02 for a PDF, a side chat filed an order as
+/// -02 too, and another order named -02- carried id -04.
+#[test]
+fn duplicate_source_ids_and_order_name_mismatches_are_issues() {
+    let fx = Fx::new();
+    fx.write("workspace/life/sources/document-2026-10-25-snapshot.pdf", "%PDF");
+    order(&fx, "order-2026-10-25-02-gmail.md", "src-2026-10-25-02");
+    order(&fx, "order-2026-10-25-02-fix.md", "src-2026-10-25-04");
+    order(&fx, "order-2026-10-25-dump.md", "src-2026-10-25-01");
+    index(
+        &fx,
+        &[
+            ("src-2026-10-25-01", "orders/order-2026-10-25-dump.md"),
+            ("src-2026-10-25-02", "document-2026-10-25-snapshot.pdf"),
+            ("src-2026-10-25-04", "orders/order-2026-10-25-02-fix.md"),
+            ("src-2026-10-25-04", "orders/order-2026-10-25-02-fix.md"),
+        ],
+    );
+    let (i, n) = check(&fx);
+    assert_eq!(i.len(), 4, "{i:?}");
+    assert!(
+        any_contains(
+            &i,
+            "workspace/life/sources: id src-2026-10-25-02 names 2 files: document-2026-10-25-snapshot.pdf (INDEX.md:6), orders/order-2026-10-25-02-gmail.md (frontmatter)"
+        ),
+        "{i:?}"
+    );
+    assert!(any_contains(&i, "workspace/life/sources/INDEX.md: id src-2026-10-25-04 has 2 rows (lines 7, 8)"), "{i:?}");
+    assert!(
+        any_contains(&i, "workspace/life/sources/orders/order-2026-10-25-02-fix.md: id src-2026-10-25-04 but the name carries 2026-10-25-02"),
+        "{i:?}"
+    );
+    assert!(
+        any_contains(&i, "workspace/life/sources/orders/order-2026-10-25-dump.md: id src-2026-10-25-01 but the name carries no date-NN"),
+        "{i:?}"
+    );
+    assert!(n.is_empty(), "{n:?}");
+
+    let (code, out, _) = fx.run(&["doctor"]);
+    assert_eq!(code, 1);
+    assert!(out.contains("id src-2026-10-25-02 names 2 files"), "{out}");
+}
+
+#[test]
+fn a_source_id_missing_from_the_index_is_a_note() {
+    let fx = Fx::new();
+    order(&fx, "order-2026-10-25-01-dump.md", "src-2026-10-25-01");
+    order(&fx, "order-2026-10-25-02-more.md", "src-2026-10-25-02");
+    index(&fx, &[("src-2026-10-25-01", "orders/order-2026-10-25-01-dump.md")]);
+    let (i, n) = check(&fx);
+    assert!(i.is_empty(), "{i:?}");
+    assert_eq!(
+        n,
+        vec!["workspace/life/sources/orders/order-2026-10-25-02-more.md: id src-2026-10-25-02 has no INDEX.md row; add one".to_string()]
+    );
 }

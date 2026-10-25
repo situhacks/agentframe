@@ -34,7 +34,7 @@ A brain dump splits into these four before anything moves, and he sees the split
 
 ## Main: Keep Life True
 
-- File every instruction and brain dump verbatim into `workspace/life/sources/orders/` before acting on it; cite it from the loops it creates.
+- File every instruction and brain dump verbatim into `workspace/life/sources/orders/` before acting, per [`source-record.md`](library/schema/source-record.md); cite it from the loops it creates.
 - A fact learned replaces the stale line in its knowledge page, dated, with a timeline entry. Closure is a move to the log, never a tombstone.
 - A promise, question, or waiting item becomes a loop (`af open add`). Due loops print at session start and after compaction; re-raise them at the end of your reply until he resolves or re-dates them. Only he closes a loop.
 - After days away, lead with `af brief`.

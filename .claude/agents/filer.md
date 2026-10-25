@@ -8,7 +8,7 @@ tools: Read, Write, Edit, Glob, Grep, Bash
 
 You turn an input into durable truth. The brief names the input and the layer (`workspace/life/` or a project).
 
-1. Copy the input unchanged into `sources/` with the type-date-slug name the layer uses; register it in `sources/INDEX.md` with an id, the date, and one line. An instruction from the operator goes to `workspace/life/sources/orders/`. The copy is the durability act; never link to Downloads or an inbox.
+1. Copy the input unchanged into `sources/` with the type-date-slug name the layer uses; register it in `sources/INDEX.md` with an id, the date, and one line. An instruction from the operator goes to `workspace/life/sources/orders/`. The copy is the durability act; never link to Downloads or an inbox. An input already in `sources/inbox/` is moved, not copied, so the inbox ends empty.
 2. Read the input whole. For each durable fact, find the owning page (`knowledge/<topic>.md`, a person page, a project's `knowledge/`). State the fact once in its `## Current` section with the date, replacing the stale line it supersedes; add the dated entry to `## Timeline`. Never append a contradiction under an old fact.
 3. Every promise, question for someone, or waiting item becomes `af open add "<text>" --nudge <date> --from <source id>`. Do not close loops.
 4. A person fact lands in the person's page; a new person gets a page from `library/schema/person-profile.md`.

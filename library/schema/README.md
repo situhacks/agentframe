@@ -1,6 +1,6 @@
 # `library/schema/`
 
-The public shapes of the operator's private files. Each schema is the single source an agent generates or checks a private file against; nothing here holds the operator's content. The private files live under `workspace/life/`, and the chat registry under `system/sessions/`; both are gitignored and stay outside the tracked tree.
+The public shapes of the operator's private files. Each schema is the single source an agent generates or checks a private file against; nothing here holds the operator's content. The private files live under `workspace/life/`, the chat registry under `system/sessions/`, and the backlog in `system/`; all are gitignored and stay outside the tracked tree.
 
 | Schema | Shapes the private file | Filled by |
 |---|---|---|
@@ -11,7 +11,10 @@ The public shapes of the operator's private files. Each schema is the single sou
 | [`channel-profile.md`](channel-profile.md) | `workspace/life/channels/{channel}/profile.md` | by hand when a channel first ships |
 | [`life.md`](life.md) | `workspace/life/life.md`, injected into every main session | main and the consolidator, by hand; `af doctor` holds the cap |
 | [`open-loops.md`](open-loops.md) | `workspace/life/open.md` and the month log in `workspace/life/log/` | `af open` |
+| [`source-record.md`](source-record.md) | A filed source in `workspace/life/sources/` or a project's `sources/`, and its `INDEX.md` row | the `filer` role, through `/file` |
+| [`knowledge-page.md`](knowledge-page.md) | `workspace/life/knowledge/<slug>.md` and a project's compiled knowledge pages | the `filer` writes; the `consolidator` recompiles weekly |
 | [`sessions-registry.md`](sessions-registry.md) | `system/sessions/registry.md` | `af session` and `af hook` |
 | [`handoff.md`](handoff.md) | `system/sessions/<name>/brief.md` and `handoff.md` | main writes the brief; the chat writes its handoff |
+| [`backlog.md`](backlog.md) | `system/backlog.md` (open rows) and `system/backlog-completed.md` (done rows) | any chat appends; `/upgrade` moves a row on merge |
 
 Change a shape here, never in a copy. A link from a schema into `workspace/life/` points at a private file and does not resolve in a clean checkout.

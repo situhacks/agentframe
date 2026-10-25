@@ -10,7 +10,8 @@ def text(rel):
 
 
 OPERATOR_ONLY_SKILLS = ("deliverable-harvest", "voice-harvest", "doc-export",
-                        "d2-diagrams", "extract-design", "gym", "catchup", "file", "upgrade")
+                        "d2-diagrams", "extract-design", "gym", "catchup", "file", "upgrade",
+                        "price-read", "cook")
 AGENT_ROLES = ("reader", "researcher", "filer", "writer", "reviewer", "auditor", "briefer",
                "consolidator", "builder")
 MODEL_INVOCABLE_SKILLS = ("agent-reach", "deep-research")

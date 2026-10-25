@@ -5,12 +5,13 @@ Shapes `system/sessions/registry.md` (runtime state, gitignored). Owned by `af s
 ```
 | name | role | session_id | model | started | last_seen | status | handoff |
 |---|---|---|---|---|---|---|---|
-| main | main | <uuid> | opus | 2026-10-25T09:12 | 2026-10-25T17:40 | live | system/sessions/main/handoff.md |
+| af-main | main | <uuid> | opus | 2026-10-25T09:12 | 2026-10-25T17:40 | live | system/sessions/af-main/handoff.md |
 ```
 
 - One row per name. Re-registering a name replaces its row and keeps its folder.
-- `name`: `main`, `life/<topic>`, `project/<slug>`, `system/<topic>`, or `worker/<slug>`; a segment is `[A-Za-z0-9][A-Za-z0-9_.-]*`.
-- `role` follows the prefix: `main` and `life/*` are `main`, `project/*` is `operator`, `system/*` is `builder`, `worker/*` is `worker`.
+- `name`: the chat's launch name (`claude --name`), which other chats address with `SendMessage`: `af-main`, `life/<topic>`, `project/<slug>`, `system/<topic>`, or `worker/<slug>`; a segment is `[A-Za-z0-9][A-Za-z0-9_.-]*`. The main chat is never named `main`, which `SendMessage` reserves for the sender itself; a legacy `main` row still resolves, and its session start asks for the relaunch.
+- The main chat is the row whose role is `main` and whose name has no `/`; `life/*` rows share the role but are side chats.
+- `role` follows the prefix: `af-main`, a legacy `main`, and `life/*` are `main`, `project/*` is `operator`, `system/*` is `builder`, `worker/*` is `worker`.
 - `model`: what main proposed, or `-`.
 - `status`: `live` (a hook touched the row within two hours), `idle` (older, not ended), or `ended <ts> <reason>` with reason `clear`, `resume`, `logout`, `exit`, or `other`.
 - Timestamps are local ISO minutes.

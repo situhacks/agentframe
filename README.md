@@ -112,7 +112,7 @@ Third-party tools live in `system/vendor/`, each with a `VENDOR.md` that pins th
 
 ### Sessions and open loops
 
-- `af session register <name>` puts a chat in `system/sessions/registry.md` with its role, brief, and handoff. Names follow `main`, `life/<topic>`, `project/<slug>`, `system/<topic>`, `worker/<slug>`.
+- `af session register <name>` puts a chat in `system/sessions/registry.md` with its role, brief, and handoff. Names follow `af-main` (the main chat), `life/<topic>`, `project/<slug>`, `system/<topic>`, `worker/<slug>`.
 - `af open add` raises a loop in `workspace/life/open.md` with an optional nudge date; due loops print at every main session start. `af open close` moves a loop to the month log with its outcome, and `af open redate` changes its nudge date in place.
 - `af brief` is the catch-up after days away: due loops, chats waiting, backlog, boards. It costs no tokens.
 - Nine subagent roles in `.claude/agents/` (reader, researcher, filer, writer, reviewer, auditor, briefer, consolidator, builder) carry a pinned model and a narrow tool set.

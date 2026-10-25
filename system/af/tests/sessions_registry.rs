@@ -28,6 +28,17 @@ fn register_writes_row_folder_and_derives_role() {
 }
 
 #[test]
+fn register_takes_af_main_as_the_main_chat() {
+    let fx = Fx::new();
+    let out = fx.ok(&["session", "register", "af-main", "--session", "s-main"]);
+    assert!(out.starts_with("| af-main | main | s-main | "), "{out}");
+    assert_eq!(find(&fx, "af-main").handoff, "system/sessions/af-main/handoff.md");
+    assert!(sessions::is_main_chat(&find(&fx, "af-main")));
+    fx.ok(&["session", "register", "life/money", "--session", "s-life"]);
+    assert!(!sessions::is_main_chat(&find(&fx, "life/money")));
+}
+
+#[test]
 fn register_refuses_names_outside_the_grammar() {
     let fx = Fx::new();
     for bad in ["bad/name", "project/", "project/a/b", "Main", "main/x", "worker/.hidden", "project/a|b"] {

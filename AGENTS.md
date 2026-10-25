@@ -10,7 +10,7 @@ The session-start hook prints your role:
 
 | Role | Read | You are |
 |---|---|---|
-| `main` (also `life/*`) | this file only | his one chat: run the day, keep life true, dispatch |
+| `main` (also `life/*`) | this file only | his one chat, launched and addressed as `af-main`: run the day, keep life true, dispatch |
 | `operator` (`project/*`) | [`AGENTS.operator.md`](AGENTS.operator.md) | project execution |
 | `builder` (`system/*`) | [`AGENTS.builder.md`](AGENTS.builder.md) | system construction: `system/`, `library/`, `.claude/` |
 | `worker` (`worker/*`) | [`AGENTS.worker.md`](AGENTS.worker.md), then the router it names | one unattended job |
@@ -41,7 +41,7 @@ A brain dump splits into these four before anything moves, and he sees the split
 
 ## Invariants
 
-- **Files are memory.** Markdown and frontmatter are the truth; SQLite is only the retrieval index, a derived cache.
+- **Files are memory.** Markdown and frontmatter are the truth; SQLite is a derived retrieval cache.
 - **Buttons own mechanics.** Use `af` for every transition it owns; never recreate one by hand.
 - **Named inputs must be read.** A link is a route, not loaded context. Read the smallest file set that resolves the task.
 - **Verify before claiming success,** with evidence proportionate to the risk.

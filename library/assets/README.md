@@ -135,14 +135,14 @@ library/assets/media/
 
 ```yaml
 sha256: <hex>                 # identity; the card filename is its first 12 characters
-path: 2026/2026-09-06-toronto-move-03.mov   # relative to root, or absolute when registered in place
+path: 2026/2026-09-06-city-move-03.mov   # relative to root, or absolute when registered in place
 kind: video                   # video | photo
 source: operator
 licence: operator
 restriction: none             # none | private | reference-only  (private never ships in a post)
 captured_at: 2026-09-06T18:42:00-04:00
-location: "Toronto, ON"
-batch: 2026-09-06-toronto-move
+location: "Hamilton, ON"
+batch: 2026-09-06-city-move
 duration: 14.2                # seconds, video only
 orientation: portrait         # portrait | landscape | square
 dimensions: "1080x1920"

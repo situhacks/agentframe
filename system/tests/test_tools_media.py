@@ -67,7 +67,7 @@ class TestIntakeHelpers(unittest.TestCase):
         self.assertGreater(media_intake.hamming(ha, hc), media_intake.NEAR_DUP_HAMMING)
 
     def test_slugify(self):
-        self.assertEqual(media_intake.slugify("Toronto Move, Sept 2026!"), "toronto-move-sept-2026")
+        self.assertEqual(media_intake.slugify("City Move, Sept 2026!"), "city-move-sept-2026")
 
     def test_browser_codecs_exclude_hevc(self):
         self.assertIn("h264", media_intake.BROWSER_CODECS)

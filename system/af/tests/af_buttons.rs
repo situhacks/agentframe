@@ -182,11 +182,11 @@ fn assembly_issues(domain: &str) -> Vec<String> {
     let fx = tfx();
     campaign(
         &fx,
-        "  post-2-banyan:\n    status: drafting\n    file: posts/post-2-banyan/post-FINAL.md\n    last_updated: 2026-09-07\n",
+        "  post-2-launch:\n    status: drafting\n    file: posts/post-2-launch/post-FINAL.md\n    last_updated: 2026-09-07\n",
         domain,
     );
     fx.write(
-        "workspace/projects/campaign/posts/post-2-banyan/post-FINAL.md",
+        "workspace/projects/campaign/posts/post-2-launch/post-FINAL.md",
         "---\nstatus: drafting\nlast_updated: 2026-09-07\n---\n",
     );
     doctor::check_project(&fx.ctx(), &fx.p("workspace/projects/campaign"))

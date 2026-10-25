@@ -242,16 +242,16 @@ fn test_drops_live_rows_and_stamps_the_board() {
     fx.write(&jd_cache(&done), "jd");
     start(&fx, &done);
     stage(&fx, &done, "dropped");
-    let out = fx.ok(&["pipe", "close-search", "--reason", "Banyan accepted"]);
+    let out = fx.ok(&["pipe", "close-search", "--reason", "Offer accepted"]);
     let fm = board_fm(&fx);
     assert_eq!(get_scalar(&fm, "search_status").as_deref(), Some("closed"));
     assert_eq!(get_scalar(&fm, "search_closed_at"), Some(today()));
-    assert_eq!(get_scalar(&fm, "search_closed_reason").as_deref(), Some("Banyan accepted"));
+    assert_eq!(get_scalar(&fm, "search_closed_reason").as_deref(), Some("Offer accepted"));
     assert_eq!(row_get(&fm, &live, "stage").as_deref(), Some("dropped"));
     assert_eq!(row_get(&fm, &saved, "stage").as_deref(), Some("dropped"));
     assert!(out.contains("live-one (preparing)"), "{out}");
     let activity = fx.read(&format!("{}/activity.md", app_dir_rel(&live, false)));
-    assert!(activity.contains("search closed: Banyan accepted"), "{activity}");
+    assert!(activity.contains("search closed: Offer accepted"), "{activity}");
 }
 
 #[test]

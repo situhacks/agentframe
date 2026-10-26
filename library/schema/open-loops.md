@@ -16,7 +16,7 @@ Shapes `workspace/life/open.md` and the closed lines in `workspace/life/log/<YYY
 - Every list item under any heading must parse; `af doctor` reports one that does not, and any `[x]` line left in the file.
 - Nothing closed stays in `open.md`. `af open close` appends `- YYYY-MM-DD HH:MM · closed: <text> → <outcome>` to the month log, then removes the line.
 - The month log is append-only: `- YYYY-MM-DD HH:MM · <kind>: <text>`, kind one of `closed`, `redated`, `decision`, `event`, `project_closed`, `session_ended`.
-- Only the operator closes or re-dates a loop; an agent proposes the closure.
+- An agent closes or re-dates a loop itself when the work is done, the question is answered, or the date has plainly moved, with an outcome that says how, and names it in its reply. A loop that needs the operator's decision waits for him. (Operator's rule, 2026-10-25: be proactive on what is reversible.)
 
 | Verb | Effect |
 |---|---|

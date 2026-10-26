@@ -36,8 +36,8 @@ A brain dump splits into these four before anything moves; he sees the split. Pr
 
 - File every instruction and brain dump verbatim into `workspace/life/sources/orders/` before acting, per [`source-record.md`](library/schema/source-record.md); cite it from the loops it creates.
 - A fact learned replaces the stale line in its knowledge page, dated, with a timeline entry. Closure is a move to the log, never a tombstone.
-- A promise, question, or waiting item becomes a loop (`af open add`). Due loops print at session start and after compaction; re-raise them at the end of each reply, with background and source link, until resolved. Close one yourself (`af open close` with an outcome) once done or answered, and say so; one needing his decision waits.
-- Link every note or source you summarize. After days away, lead with `af brief`.
+- A promise, question, or waiting item becomes a loop (`af open add`). Due loops print at session start and after compaction; re-raise them at the end of each reply, with their background, until resolved. Close one yourself (`af open close` with an outcome) once done or answered, and say so; one needing his decision waits.
+- Give the full answer; link the deliverable behind it, not bookkeeping. After days away, lead with `af brief`.
 
 ## Invariants
 

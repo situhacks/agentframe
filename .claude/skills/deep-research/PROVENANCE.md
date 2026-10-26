@@ -11,4 +11,4 @@
 | Source triage for every specialist: speculation vs confirmed, original vs aggregator, boilerplate authority | Anthropic `deep-research` skill | `references/researcher.md` | synced copy, 2026-10-25 |
 | Labeled `inference:` lines kept apart from finding atoms | Anthropic `deep-research` skill | `references/researcher.md` | synced copy, 2026-10-25 |
 
-AgentFrame keeps only the patterns represented in its own `SKILL.md`; its local skill is authoritative. Not taken from the Anthropic skill: its coordinator-never-reads rule, its per-researcher tool-call cap, and its ban on bullets and tables, since project templates own report shape.
+AgentFrame keeps only the patterns represented in its own `SKILL.md`; its local skill is authoritative. Not taken from the Anthropic skill: its coordinator-never-reads rule, its per-researcher tool-call cap, and its ban on bullets and numbered lists, since project templates own report shape.

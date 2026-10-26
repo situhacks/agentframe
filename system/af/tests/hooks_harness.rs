@@ -36,7 +36,7 @@ fn test_claude_reference_wires_all_guards() {
     let deny = config["permissions"]["deny"].as_array().cloned().unwrap_or_default();
     assert!(!deny.iter().any(|d| d.as_str().unwrap_or("").contains("git push")), "a push is a prompt, not a deny: {deny:?}");
     assert_eq!(config["permissions"]["ask"], serde_json::json!(["Bash(git push)", "Bash(git push *)"]));
-    assert_eq!(config["modelSettings"]["claude-opus-5-5"]["autoCompactWindow"], 200000);
+    assert!(config.get("modelSettings").is_none(), "compaction windows are the operator's, set per chat with /autocompact");
     assert_eq!(config["worktree"]["bgIsolation"], "none");
 }
 

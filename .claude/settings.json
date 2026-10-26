@@ -92,10 +92,5 @@
   },
   "worktree": {
     "bgIsolation": "none"
-  },
-  "modelSettings": {
-    "claude-opus-5-5": {
-      "autoCompactWindow": 200000
-    }
   }
 }

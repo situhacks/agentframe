@@ -21,14 +21,19 @@ pub const SEPARATOR: &str = "|---|---|---|---|---|---|---|---|";
 pub const STALE_AFTER_MINUTES: i64 = 120;
 pub const IDLE_NOTE_DAYS: i64 = 7;
 pub const END_REASONS: [&str; 5] = ["clear", "resume", "logout", "exit", "other"];
-pub const NAME_GRAMMAR: &str = "main, life/<topic>, project/<slug>, system/<topic>, worker/<slug>";
+pub const NAME_GRAMMAR: &str = "af-main, life/<topic>, project/<slug>, system/<topic>, worker/<slug>";
+/// The main chat's name (its VS Code session title) and registry name. Not `main`: SendMessage reserves that word for
+/// the sender's own conversation, so side chats could not address it.
+pub const MAIN_NAME: &str = "af-main";
+/// The main chat's earlier name, still accepted so an existing row keeps working.
+pub const LEGACY_MAIN_NAME: &str = "main";
 /// The side-chat names of the grammar, as the off-system directive offers them.
 pub const SIDE_NAMES: [&str; 3] = ["life/<topic>", "project/<slug>", "system/<topic>"];
 
 // ------------------------------------------------------------------ names
 
 pub fn valid_name(name: &str) -> bool {
-    rx(r"\A(?:main|(?:life|project|system|worker)/[A-Za-z0-9][A-Za-z0-9_.-]*)\z").is_match(name)
+    rx(r"\A(?:af-main|main|(?:life|project|system|worker)/[A-Za-z0-9][A-Za-z0-9_.-]*)\z").is_match(name)
 }
 
 pub fn role_of(name: &str) -> &'static str {
@@ -38,6 +43,22 @@ pub fn role_of(name: &str) -> &'static str {
         "worker" => "worker",
         _ => "main",
     }
+}
+
+/// Whether a row is the main chat: role `main` and no topic (`life/*` shares the role but is
+/// a side chat). The chat's name does not matter, so `af-main` and a legacy `main` both are.
+pub fn is_main_chat(row: &Row) -> bool {
+    row.role == "main" && !row.name.contains('/')
+}
+
+/// What a main chat still registered under the reserved name is told at session start. The
+/// chat's name is its VS Code session title, so a rename in place moves it; no relaunch.
+pub fn main_rename_line(session_id: &str) -> String {
+    format!(
+        "af: side chats cannot SendMessage a chat named {LEGACY_MAIN_NAME}. Rename this chat to {MAIN_NAME} \
+(VS Code: /rename {MAIN_NAME}), then run \"af session register {MAIN_NAME} --session {session_id}\" and \
+\"af session end {LEGACY_MAIN_NAME} --reason other\"."
+    )
 }
 
 pub fn session_rel(name: &str) -> String {
@@ -637,9 +658,9 @@ pub fn bundle(ctx: &Ctx, session_id: &str) -> R<(String, Option<Row>)> {
     bundle_with(ctx, session_id, None)
 }
 
-/// The `main` row when it is live.
+/// The main chat's row when it is live, found by role whatever its name.
 pub fn live_main(reg: &Registry, now: NaiveDateTime) -> Option<Row> {
-    reg.rows().into_iter().find(|r| r.name == "main" && effective_status(r, now) == "live")
+    reg.rows().into_iter().find(|r| is_main_chat(r) && effective_status(r, now) == "live")
 }
 
 /// What an unregistered chat does in its first reply: ask whether it is main, a side
@@ -655,7 +676,7 @@ write system/sessions/<name>/brief.md, and tell him to send main the name)"
     let tail = "If he answers with a task instead of a letter, treat it as (C) and say so in your first sentence.";
     match main {
         None => format!(
-            "af: this chat is not registered and main is not running. {ask} (A) make this chat main, (B) {side}, or (C) {one_off}. {tail}"
+            "af: this chat is not registered and main is not running. {ask} (A) make this chat main (rename it {MAIN_NAME} with /rename {MAIN_NAME} and register it with \"af session register {MAIN_NAME} --session {session_id}\"), (B) {side}, or (C) {one_off}. {tail}"
         ),
         Some(m) => {
             let seen = parse_ts(&m.last_seen).map(|t| t.format("%H:%M").to_string()).unwrap_or_else(|| m.last_seen.clone());
@@ -686,7 +707,12 @@ pub fn bundle_with_source(ctx: &Ctx, session_id: &str, refresh: Option<&str>, so
         parts.push(line.to_string());
     }
     match &row {
-        Some(r) => parts.push(format!("af: you are {} ({})", r.name, r.role)),
+        Some(r) => {
+            parts.push(format!("af: you are {} ({})", r.name, r.role));
+            if is_main_chat(r) && r.name == LEGACY_MAIN_NAME {
+                parts.push(main_rename_line(session_id));
+            }
+        }
         None if matches!(source, Some("compact") | Some("resume")) => parts.push(OFF_SYSTEM_REMINDER.to_string()),
         None => parts.push(off_system_directive(session_id, live_main(&reg, life::now()).as_ref())),
     }

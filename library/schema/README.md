@@ -7,6 +7,7 @@ The public shapes of the operator's private files. Each schema is the single sou
 | [`operator/`](operator/README.md) `positioning.md`, `profile.md`, `design-language.md` | `workspace/life/{surface}.md` | [`operator-context-setup.md`](../process/operator-context-setup.md) |
 | [`operator/voice/`](operator/voice/README.md) | `workspace/life/voice/`; `af doctor` notes a method file that drifts from its mirror here | [`voice-setup.md`](../process/voice-setup.md), then `voice-harvest` |
 | [`operator/career/`](operator/career/README.md) | `workspace/life/career/`, the career bank | [`career-harvest.md`](../process/career-harvest.md) |
+| [`project.md`](project.md) | `workspace/projects/<slug>/`: `project.md`, `activity.md`, `sources/`, `knowledge/`, versioned deliverables; `af doctor` reports a folder with no `project.md` | `af new-project`, then `af draft` and `af version` |
 | [`person-profile.md`](person-profile.md) | `workspace/life/people/{slug}.md` | closeout promotion in [`project-flow.md`](../process/project-flow.md) |
 | [`channel-profile.md`](channel-profile.md) | `workspace/life/channels/{channel}/profile.md` | by hand when a channel first ships |
 | [`life.md`](life.md) | `workspace/life/life.md`, injected into every main session | main and the consolidator, by hand; `af doctor` holds the cap |

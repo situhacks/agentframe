@@ -289,9 +289,137 @@ pub fn workspace_remotes(ctx: &Ctx) -> Vec<(String, String)> {
     out
 }
 
+pub const SOURCES_REL: &str = "workspace/life/sources";
+
+/// One INDEX.md row's id cell and the file it links, relative to `sources/`, with its line.
+fn index_rows(text: &str) -> Vec<(String, String, usize)> {
+    let link = rx(r"\]\(([^)]+)\)");
+    let mut out = Vec::new();
+    for (i, line) in text.lines().enumerate() {
+        if !line.trim_start().starts_with('|') {
+            continue;
+        }
+        let cells: Vec<&str> = line.split('|').collect();
+        if cells.len() < 3 {
+            continue;
+        }
+        let id = cells[1].trim().trim_matches('`').trim();
+        if id.is_empty() || id.eq_ignore_ascii_case("id") || id.chars().all(|c| matches!(c, '-' | ':' | ' ')) {
+            continue;
+        }
+        let cell = cells[2].trim();
+        let file = match link.captures(cell) {
+            Some(c) => c[1].to_string(),
+            None => cell.trim_matches('`').to_string(),
+        };
+        out.push((id.to_string(), file.trim_start_matches("./").to_string(), i + 1));
+    }
+    out
+}
+
+/// Source ids under `workspace/life/sources/`: an id naming two files, an id on two INDEX
+/// rows, or an order whose name's date-NN differs from its id is an issue; a `src-` id with
+/// no INDEX row is a note.
+pub fn source_id_checks(ctx: &Ctx) -> R<(Vec<String>, Vec<String>)> {
+    use std::collections::BTreeMap;
+    let (mut issues, mut notes) = (Vec::new(), Vec::new());
+    let root = vpath(ctx, SOURCES_REL);
+    if !pyos::isdir(&root) {
+        return Ok((issues, notes));
+    }
+    let mut files: Vec<String> = Vec::new();
+    let mut err = None;
+    pyos::walk(&root, &mut |dirpath, _, filenames| {
+        for f in filenames {
+            match pyos::relpath(&pyos::join(dirpath, f), &root) {
+                Ok(r) => files.push(r.replace('\\', "/")),
+                Err(e) => {
+                    err.get_or_insert(e);
+                }
+            }
+        }
+    });
+    if let Some(e) = err {
+        return Err(e);
+    }
+    files.sort();
+
+    let src_id = rx(r"^src-(\d{4}-\d{2}-\d{2}-\d{2,})$");
+    let order_name = rx(r"^orders/order-(\d{4}-\d{2}-\d{2}-\d{2,})-");
+    // id -> file -> where the claim was made
+    let mut claims: BTreeMap<String, BTreeMap<String, Vec<String>>> = BTreeMap::new();
+    let mut fm_ids: Vec<(String, String)> = Vec::new();
+    for rel in &files {
+        if rel == "INDEX.md" || !rel.ends_with(".md") {
+            continue;
+        }
+        let bytes = std::fs::read(vpath(ctx, &format!("{SOURCES_REL}/{rel}"))).unwrap_or_default();
+        let text = String::from_utf8_lossy(&bytes);
+        let Some((fm_text, _)) = fm::split_fm_optional(text.trim_start_matches('\u{feff}')) else {
+            continue;
+        };
+        let Some(id) = fm::get_scalar(&fm_text, "id").filter(|s| !s.is_empty()) else {
+            continue;
+        };
+        claims.entry(id.clone()).or_default().entry(rel.clone()).or_default().push("frontmatter".to_string());
+        fm_ids.push((rel.clone(), id.clone()));
+        if let (true, Some(c)) = (rel.starts_with("orders/"), src_id.captures(&id)) {
+            let want = &c[1];
+            match order_name.captures(rel) {
+                Some(n) if &n[1] == want => {}
+                Some(n) => issues.push(format!(
+                    "{SOURCES_REL}/{rel}: id {id} but the name carries {}; an order's name and id share one date-NN",
+                    &n[1]
+                )),
+                None => issues.push(format!(
+                    "{SOURCES_REL}/{rel}: id {id} but the name carries no date-NN; name it order-{want}-<slug>.md"
+                )),
+            }
+        }
+    }
+
+    let index_text = match TextFile::load(&vpath(ctx, &format!("{SOURCES_REL}/INDEX.md")))? {
+        Some(t) => t.text,
+        None => String::new(),
+    };
+    let rows = index_rows(&index_text);
+    let mut row_lines: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+    for (id, file, line) in &rows {
+        claims.entry(id.clone()).or_default().entry(file.clone()).or_default().push(format!("INDEX.md:{line}"));
+        row_lines.entry(id.clone()).or_default().push(*line);
+    }
+
+    for (id, by_file) in &claims {
+        if by_file.len() > 1 {
+            let named: Vec<String> = by_file.iter().map(|(f, o)| format!("{f} ({})", o.join(", "))).collect();
+            issues.push(format!(
+                "{SOURCES_REL}: id {id} names {} files: {}; keep it on the first filed and give each other the next unused src-<date>-NN",
+                by_file.len(),
+                named.join(", ")
+            ));
+        }
+    }
+    for (id, lines) in &row_lines {
+        if lines.len() > 1 {
+            let ls: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
+            issues.push(format!("{SOURCES_REL}/INDEX.md: id {id} has {} rows (lines {}); keep one row per source", lines.len(), ls.join(", ")));
+        }
+    }
+    for (rel, id) in &fm_ids {
+        if src_id.is_match(id) && !row_lines.contains_key(id) {
+            notes.push(format!("{SOURCES_REL}/{rel}: id {id} has no INDEX.md row; add one"));
+        }
+    }
+    Ok((issues, notes))
+}
+
 /// The life-layer and sessions checks `af doctor` adds to the system surfaces.
 pub fn doctor_checks(ctx: &Ctx) -> R<(Vec<String>, Vec<String>)> {
     let (mut issues, mut notes) = (Vec::new(), Vec::new());
+
+    let (si, sn) = source_id_checks(ctx)?;
+    issues.extend(si);
+    notes.extend(sn);
 
     if let Some((_, lines, cap)) = life_body(ctx)? {
         if lines > cap {

@@ -9,7 +9,7 @@ Shapes for the operator's career capital under `workspace/life/career/` (persona
 | `proof-points.md` | [proof-points.md](proof-points.md) | numbers ledger: verified metrics/links with source + date |
 | `stories/` | [stories/README.md](stories/README.md) | narrative layer: one STAR+R arc per file, ROSTER first line |
 | `tracks/` | [tracks/README.md](tracks/README.md) | per-track framing and tone (e.g. startup vs enterprise) |
-| `search-profile.md` | [search-profile.md](search-profile.md) | active-search config: targets, dealbreakers, the scout watchlist |
+| `search-profile.md` | [search-profile.md](search-profile.md) | active-search config: targets, dealbreakers, round capture |
 | `interview-playbook.md` | [interview-playbook.md](interview-playbook.md) | standing cross-round reminders: repeating patterns, do-not-say phrases, drill-set openers, standing cautions — read before every round, appended after |
 | `harvests/` | [harvests.md](harvests.md) | staging for raw material that arrived from elsewhere (work-instance exports, review PDFs, sent rubrics) and has not been distilled into the layers yet |
 | `employers/` | [employers.md](employers.md) | per-employer relationship page: leveling rubric, KPIs, cycle calendar, expectations (compiled truth + timeline) |

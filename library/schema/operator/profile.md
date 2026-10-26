@@ -18,7 +18,7 @@ This file is the "who am I?" surface; [`positioning.md`](positioning.md) is the 
 
 ## Primary source of truth
 
-[Pointer to your durable identity notes — Obsidian, Notion, a private file. The agent loads profile from this file; the source of truth is yours to own.]
+[Pointer to your durable identity notes — Notion, a private file. The agent loads profile from this file; the source of truth is yours to own.]
 
 Anything in this file that's narrative-of-self should mirror what's in your primary source. If they diverge, the primary source wins; this file gets re-synced.
 

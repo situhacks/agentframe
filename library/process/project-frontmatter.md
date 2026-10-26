@@ -4,7 +4,7 @@
 
 `workspace/projects/{slug}/project.md` frontmatter is the compact index a fresh agent reads before opening project detail. It answers four questions: what project is this, which domain routes it, what state is current, and which file is the current head of each deliverable.
 
-The index is not a history log or a substitute for deliverable content. A small amount of duplication is deliberate: tracker `status` and `file` let an agent reconstruct the working set without scanning folders, and `af doctor` keeps that cache synchronized with each head file.
+The folder around it is shaped by [`library/schema/project.md`](../schema/project.md). The index is not a history log or a substitute for deliverable content. A small amount of duplication is deliberate: tracker `status` and `file` let an agent reconstruct the working set without scanning folders, and `af doctor` keeps that cache synchronized with each head file.
 
 **Schema version:** `2026-07-19-v2` (v5). Active projects migrate forward; completed project snapshots keep the schema and vocabulary they closed with and are read as historical context, not validated as current live books.
 

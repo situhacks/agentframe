@@ -230,7 +230,7 @@ AgentFrame vendors or adapts these projects. Each keeps its licence and upstream
 - [D2](https://github.com/terrastruct/d2)
 - [design-extract](https://github.com/Manavarya09/design-extract) (`designlang`)
 - [Agent Reach](https://github.com/Panniantong/Agent-Reach)
-- [LunonAI deep research](https://github.com/LunonAI/lunon-deep-research), [deer-flow](https://github.com/bytedance/deer-flow), and [open_deep_research](https://github.com/langchain-ai/open_deep_research), which inform `deep-research`
+- [LunonAI deep research](https://github.com/LunonAI/lunon-deep-research), [deer-flow](https://github.com/bytedance/deer-flow), [open_deep_research](https://github.com/langchain-ai/open_deep_research), and Anthropic's deep-research skill, which inform `deep-research`
 
 The marketing-only predecessor is [agentframe-marketing](https://github.com/situhacks/agentframe-marketing).
 

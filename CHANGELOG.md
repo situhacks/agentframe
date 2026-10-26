@@ -27,6 +27,7 @@ Notable changes to AgentFrame. Full release notes also live on the [GitHub relea
 - Schemas for source records, knowledge pages, and one backlog row shape, with done rows moving to `system/backlog-completed.md`. MIGRATION: rewrite old-format rows in `system/backlog.md` into the new shape.
 - `af open redate <loop> --nudge <date or +Nd>` changes a loop's nudge date in place; `/catchup` uses it for the re-date answer.
 - A weekly headless consolidation of the life layer, run by Task Scheduler on Sundays at 18:00 as a registered worker session, with a Monday review loop.
+- The `deep-research` writer leads with the bottom line, uses headers that state each section's finding, interprets the data and takes positions, and ends on new insight only. Every specialist triages its sources for speculation, aggregators, and boilerplate authority, and may add labeled `inference:` lines kept apart from its atoms. Adapted from Anthropic's deep-research skill, with no new waves, roles, or budget.
 
 ## v0.1.0 — a context workspace for any kind of work
 

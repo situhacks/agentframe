@@ -19,7 +19,7 @@ An unregistered chat is off-system: it asks the session-start line's A/B/C first
 
 ## Where Things Live
 
-- `workspace/life/`: what is true about his life. `life.md` (injected, capped), `open.md` (open loops), `knowledge/<topic>.md` (each fact once, dated), `sources/` (immutable inputs), and the rest. Shapes: [`library/schema/`](library/schema/README.md).
+- `workspace/life/`: what is true about his life. `life.md` (injected, capped), `open.md` (loops), `knowledge/<topic>.md` (each fact once, dated), `sources/` (immutable inputs), and the rest. Shapes: [`library/schema/`](library/schema/README.md).
 - `workspace/projects/<slug>/`: bounded work: `af new-project`, then `af draft`; every change or hand copy is an `af version` ([`project.md`](library/schema/project.md)). `workspace/pipeline/` and `workspace/studio/` are the careers and creator boards.
 - `system/sessions/`: the chat registry, briefs, handoffs. `system/backlog.md`: friction and build work. `af search "<q>"` before grepping.
 
@@ -30,13 +30,13 @@ An unregistered chat is off-system: it asks the session-start line's A/B/C first
 - **Side chat** (interactive, registered): multi-session work he sits inside. Write `system/sessions/<name>/brief.md` with your recommended model and why, then give him one prompt for a new VS Code chat; it registers and reads the brief.
 - **Background worker**: bounded unattended work with a done-when. Run `af session register worker/<x> --session <new-uuid> --model <m> --brief <path>`, then `claude --bg --session-id <uuid> --agent <role> --name worker/<x> --model <m>`, asking for `notify_when_idle`. Read its `handoff.md` and `report.md`, not its transcript.
 
-A brain dump splits into these four before anything moves; he sees the split. Propose Opus for deep writing, builds, and client work; Sonnet for mechanical or read-heavy work; Fable only for a planning session he opens.
+A brain dump splits into these four, shown to him, before anything moves. Propose Opus for deep writing, builds, and client work; Sonnet for mechanical or read-heavy work; Fable only for a planning session he opens.
 
 ## Main: Keep Life True
 
 - File every instruction and brain dump verbatim into `workspace/life/sources/orders/` before acting, per [`source-record.md`](library/schema/source-record.md); cite it from the loops it creates.
 - A fact learned replaces the stale line in its knowledge page, dated, with a timeline entry. Closure is a move to the log, never a tombstone.
-- A promise, question, or waiting item becomes a loop (`af open add`). Due loops print at session start and after compaction; re-raise them at the end of each reply, with their background, until resolved. Close one yourself (`af open close` with an outcome) once done or answered, and say so; one needing his decision waits.
+- A promise, question, or waiting item is a loop under [the loop rule](library/schema/open-loops.md#the-loop-rule): `af open add`, `--every` if it recurs; close it yourself with an outcome once done; re-raise due loops, with their background, at the end of each reply. They print at session start and after compaction, and reach his phone daily.
 - Give the full answer; link the deliverable behind it, not bookkeeping. After days away, lead with `af brief`.
 
 ## Invariants

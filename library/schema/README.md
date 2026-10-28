@@ -11,7 +11,7 @@ The public shapes of the operator's private files. Each schema is the single sou
 | [`person-profile.md`](person-profile.md) | `workspace/life/people/{slug}.md` | closeout promotion in [`project-flow.md`](../process/project-flow.md) |
 | [`channel-profile.md`](channel-profile.md) | `workspace/life/channels/{channel}/profile.md` | by hand when a channel first ships |
 | [`life.md`](life.md) | `workspace/life/life.md`, injected into every main session | main and the consolidator, by hand; `af doctor` holds the cap |
-| [`open-loops.md`](open-loops.md) | `workspace/life/open.md` and the month log in `workspace/life/log/` | `af open` |
+| [`open-loops.md`](open-loops.md), the one reminder mechanism and the loop rule every chat follows | `workspace/life/open.md` and the month log in `workspace/life/log/` | `af open add`, `close`, `redate`, `due`; `--every` makes a loop recur; `system/tools/push-due-loops.ps1` sends due loops to his phone |
 | [`source-record.md`](source-record.md) | A filed source in `workspace/life/sources/` or a project's `sources/`, and its `INDEX.md` row | the `filer` role, through `/file` |
 | [`knowledge-page.md`](knowledge-page.md) | `workspace/life/knowledge/<slug>.md` and a project's compiled knowledge pages | the `filer` writes; the `consolidator` recompiles weekly |
 | [`sessions-registry.md`](sessions-registry.md) | `system/sessions/registry.md` | `af session` and `af hook` |

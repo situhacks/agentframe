@@ -16,7 +16,7 @@ Catch-up mode. The operator is back after time away and wants to know what is ou
 
    He can answer all at once (`1a paid it, 2b +7d, 3c`). Nothing else happens in this chat until he answers: no other work, no new loops, no edits.
 5. Apply his answers with the `af open` verbs, addressing each loop by a text prefix from the JSON, since loop numbers shift after every close:
-   - Resolve: `af open close "<text prefix>" --outcome "<his words>"`.
+   - Resolve: `af open close "<text prefix>" --outcome "<his words>"`. Closing a recurring loop (one with `every` in the JSON) re-dates it a period on; add `--final` when he says it is over for good.
    - Re-date: `af open redate "<text prefix>" --nudge <date or +Nd>`; the loop keeps its opened date, text, section, and source.
    - Leave: no command.
 

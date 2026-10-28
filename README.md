@@ -113,7 +113,7 @@ Third-party tools live in `system/vendor/`, each with a `VENDOR.md` that pins th
 ### Sessions and open loops
 
 - `af session register <name>` puts a chat in `system/sessions/registry.md` with its role, brief, and handoff. Names follow `af-main` (the main chat), `life/<topic>`, `project/<slug>`, `system/<topic>`, `worker/<slug>`.
-- `af open add` raises a loop in `workspace/life/open.md` with an optional nudge date; due loops print at every main session start. `af open close` moves a loop to the month log with its outcome, and `af open redate` changes its nudge date in place.
+- `af open add` raises a loop in `workspace/life/open.md` with an optional nudge date, and `--every monthly`, `weekly`, or `Nd` makes it recur; due loops print at every main session start. `af open close` moves a loop to the month log with its outcome (a recurring loop is logged and re-dated one period on; `--final` ends it), and `af open redate` changes its nudge date in place. Open loops are the only reminder mechanism.
 - `af brief` is the catch-up after days away: due loops, chats waiting, backlog, boards. It costs no tokens.
 - Nine subagent roles in `.claude/agents/` (reader, researcher, filer, writer, reviewer, auditor, briefer, consolidator, builder) carry a pinned model and a narrow tool set.
 
@@ -139,6 +139,10 @@ One Windows Task Scheduler job, `AgentFrame consolidation`, runs every Sunday at
 |---|---|
 | `system/tools/consolidate-weekly.ps1` | One consolidation run: the headless `claude -p` call, the log file, the Monday review loop |
 | `system/tools/register-weekly-consolidation.ps1` | Creates or replaces the Sunday 18:00 task and prints its next run |
+| `system/tools/push-due-loops.ps1` | One reminder push: `af open due --json` as headings and bullets, posted to Discord through `system/tools/notify.py`; `-DryRun` prints instead |
+| `system/tools/register-daily-reminders.ps1` | Creates or replaces the daily 08:30 task `AgentFrame reminders` and prints its next run |
+
+A second job, `AgentFrame reminders`, runs `push-due-loops.ps1` every day at 08:30 while you are logged on, and at the next logon if the PC was off. It posts nothing when nothing is due. The Discord credentials go in `system/tools/.env`, which git ignores; `notify.py` names the variables. Register it the same way, with `system/tools/register-daily-reminders.ps1`.
 
 ## Quick start
 

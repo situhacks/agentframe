@@ -1,7 +1,8 @@
-//! `workspace/life/open.md`: the open-loop grammar and `af open add | close | due`.
+//! `workspace/life/open.md`: the open-loop grammar and `af open add | close | redate | due`.
 //!
-//! `- [ ] 2026-10-24 · text · nudge 2026-10-27 · from: src-2026-10-23-02`
-//! A loop is closed by moving it to the month log; nothing closed stays in open.md.
+//! `- [ ] 2026-10-24 · text · nudge 2026-10-27 · every monthly · from: src-2026-10-23-02`
+//! A loop is closed by moving it to the month log; nothing closed stays in open.md. A loop
+//! with `every <period>` is logged as closed and re-dated one period on instead.
 
 use crate::core::{today_date, Ctx};
 use crate::die;
@@ -27,33 +28,66 @@ pub struct Loop {
     pub opened: NaiveDate,
     pub text: String,
     pub nudge: Option<NaiveDate>,
+    /// The recurrence period (`monthly`, `weekly`, or `Nd`); only a nudged loop carries one.
+    pub every: Option<String>,
     pub from: String,
     pub raw: String,
 }
+
+/// One parsed loop line: (opened, text, nudge, every, from).
+pub type Parsed = (NaiveDate, String, Option<NaiveDate>, Option<String>, String);
+
+const PERIOD: &str = r"monthly|weekly|[1-9]\d{0,3}d";
 
 fn date(s: &str) -> Option<NaiveDate> {
     NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()
 }
 
-/// (opened, text, nudge, from) of an open loop line; None when it does not parse.
-pub fn parse_open(line: &str) -> Option<(NaiveDate, String, Option<NaiveDate>, String)> {
-    let re = rx(r"\A- \[ \] (\d{4}-\d{2}-\d{2}) · (.+?)(?: · nudge (\d{4}-\d{2}-\d{2}))? · from: (\S(?:.*\S)?)\z");
+/// The parts of an open loop line; None when it does not parse. Text carrying a
+/// ` · nudge ` or ` · every ` token is a misplaced or misspelt field, not text.
+pub fn parse_open(line: &str) -> Option<Parsed> {
+    let re = rx(&format!(
+        r"\A- \[ \] (\d{{4}}-\d{{2}}-\d{{2}}) · (.+?)(?: · nudge (\d{{4}}-\d{{2}}-\d{{2}})(?: · every ({PERIOD}))?)? · from: (\S(?:.*\S)?)\z"
+    ));
     let c = re.captures(line.trim_end())?;
     let opened = date(&c[1])?;
     let nudge = match c.get(3) {
         Some(m) => Some(date(m.as_str())?),
         None => None,
     };
-    Some((opened, c[2].trim().to_string(), nudge, c[4].to_string()))
+    let text = c[2].trim().to_string();
+    if text.contains(" · nudge ") || text.contains(" · every ") {
+        return None;
+    }
+    Some((opened, text, nudge, c.get(4).map(|m| m.as_str().to_string()), c[5].to_string()))
 }
 
-pub fn format_open(opened: NaiveDate, text: &str, nudge: Option<NaiveDate>, from: &str) -> String {
+pub fn format_open(opened: NaiveDate, text: &str, nudge: Option<NaiveDate>, every: Option<&str>, from: &str) -> String {
     let mut s = format!("- [ ] {} · {text}", opened.format("%Y-%m-%d"));
     if let Some(n) = nudge {
         s.push_str(&format!(" · nudge {}", n.format("%Y-%m-%d")));
+        if let Some(e) = every {
+            s.push_str(&format!(" · every {e}"));
+        }
     }
     s.push_str(&format!(" · from: {from}"));
     s
+}
+
+/// A valid recurrence period, normalised to lower case.
+pub fn parse_every(v: &str) -> Option<String> {
+    let v = v.trim().to_lowercase();
+    rx(&format!(r"\A(?:{PERIOD})\z")).is_match(&v).then_some(v)
+}
+
+/// The nudge one period after `from`: monthly is the same day next month, clamped to the
+/// month's last day; weekly is seven days; `Nd` is N days.
+pub fn next_nudge(from: NaiveDate, every: &str) -> Option<NaiveDate> {
+    match every {
+        "monthly" => from.checked_add_months(chrono::Months::new(1)),
+        "weekly" => from.checked_add_signed(chrono::Duration::days(7)),
+        d => from.checked_add_signed(chrono::Duration::days(d.strip_suffix('d')?.parse().ok()?)),
+    }
 }
 
 fn heading(line: &str) -> Option<(usize, String)> {
@@ -100,13 +134,14 @@ impl OpenDoc {
                 continue;
             }
             match parse_open(line) {
-                Some((opened, text, nudge, from)) => loops.push(Loop {
+                Some((opened, text, nudge, every, from)) => loops.push(Loop {
                     n: loops.len() + 1,
                     line_idx: i,
                     section: section.clone(),
                     opened,
                     text,
                     nudge,
+                    every,
                     from,
                     raw: line.trim_end().to_string(),
                 }),
@@ -114,7 +149,7 @@ impl OpenDoc {
                     let why = if t.starts_with("- [x]") || t.starts_with("- [X]") {
                         "closed loop left in open.md (af open close moves it to the month log)"
                     } else {
-                        "line does not parse as '- [ ] YYYY-MM-DD · text[ · nudge YYYY-MM-DD] · from: <id>'"
+                        "line does not parse as '- [ ] YYYY-MM-DD · text[ · nudge YYYY-MM-DD[ · every monthly|weekly|Nd]] · from: <id>'"
                     };
                     bad.push((i + 1, t.to_string(), why.to_string()));
                 }
@@ -160,7 +195,7 @@ pub fn due_line(l: &Loop, age: i64) -> String {
 pub fn loop_json(l: &Loop, age: Option<i64>) -> Value {
     let mut v = json!({
         "n": l.n, "section": l.section, "opened": l.opened.format("%Y-%m-%d").to_string(), "text": l.text,
-        "nudge": l.nudge.map(|n| n.format("%Y-%m-%d").to_string()), "from": l.from,
+        "nudge": l.nudge.map(|n| n.format("%Y-%m-%d").to_string()), "every": l.every, "from": l.from,
     });
     if let Some(a) = age {
         v["age_days"] = json!(a);
@@ -178,16 +213,22 @@ pub enum OpenCmd {
         /// a date (YYYY-MM-DD) or +Nd from today
         #[arg(long)]
         nudge: Option<String>,
+        /// recur: monthly, weekly, or Nd; closing re-dates the loop one period on
+        #[arg(long)]
+        every: Option<String>,
         #[arg(long)]
         from: Option<String>,
         #[arg(long)]
         section: Option<String>,
     },
-    /// Close a loop by number or text prefix and move it to the month log
+    /// Close a loop by number or text prefix and move it to the month log (a recurring loop is re-dated)
     Close {
         target: String,
         #[arg(long)]
         outcome: String,
+        /// end a recurring loop for good instead of re-dating it
+        #[arg(long = "final")]
+        final_: bool,
     },
     /// Change a loop's nudge date in place; its opened date, text, and source stay
     Redate {
@@ -205,10 +246,10 @@ pub enum OpenCmd {
 
 pub fn run(ctx: &Ctx, cmd: OpenCmd) -> R<i32> {
     match cmd {
-        OpenCmd::Add { text, nudge, from, section } => {
-            cmd_add(ctx, &text, nudge.as_deref(), from.as_deref(), section.as_deref())
+        OpenCmd::Add { text, nudge, every, from, section } => {
+            cmd_add(ctx, &text, nudge.as_deref(), every.as_deref(), from.as_deref(), section.as_deref())
         }
-        OpenCmd::Close { target, outcome } => cmd_close(ctx, &target, &outcome),
+        OpenCmd::Close { target, outcome, final_ } => cmd_close(ctx, &target, &outcome, final_),
         OpenCmd::Redate { target, nudge } => cmd_redate(ctx, &target, &nudge),
         OpenCmd::Due { json } => cmd_due(ctx, json),
     }
@@ -221,7 +262,14 @@ pub fn parse_nudge(v: &str, today: NaiveDate) -> Option<NaiveDate> {
     date(v.trim())
 }
 
-pub fn cmd_add(ctx: &Ctx, text: &str, nudge: Option<&str>, from: Option<&str>, section: Option<&str>) -> R<i32> {
+pub fn cmd_add(
+    ctx: &Ctx,
+    text: &str,
+    nudge: Option<&str>,
+    every: Option<&str>,
+    from: Option<&str>,
+    section: Option<&str>,
+) -> R<i32> {
     let today = today_date();
     let text = life::one_line(text);
     if text.is_empty() {
@@ -234,15 +282,23 @@ pub fn cmd_add(ctx: &Ctx, text: &str, nudge: Option<&str>, from: Option<&str>, s
         },
         None => None,
     };
+    let every = match every {
+        Some(v) => match parse_every(v) {
+            Some(_) if nudge.is_none() => die!("--every needs --nudge: the first date the loop comes due"),
+            Some(e) => Some(e),
+            None => die!("--every takes monthly, weekly, or Nd (N days, 1 or more), got '{v}'"),
+        },
+        None => None,
+    };
     let from = life::one_line(from.unwrap_or(DEFAULT_FROM));
     let section = life::one_line(section.unwrap_or(DEFAULT_SECTION));
     if section.is_empty() || from.is_empty() {
         die!("--section and --from may not be empty");
     }
-    let line = format_open(today, &text, nudge, &from);
+    let line = format_open(today, &text, nudge, every.as_deref(), &from);
     match parse_open(&line) {
-        Some((_, t, n, f)) if t == text && n == nudge && f == from => {}
-        _ => die!("the loop text breaks the open.md grammar (it may not contain ' · nudge ' or ' · from: '): {text}"),
+        Some((_, t, n, e, f)) if t == text && n == nudge && e == every && f == from => {}
+        _ => die!("the loop text breaks the open.md grammar (it may not contain ' · nudge ', ' · every ', or ' · from: '): {text}"),
     }
     let path = vpath(ctx, OPEN_REL);
     let file = TextFile::load(&path)?.unwrap_or_else(|| TextFile::new(""));
@@ -309,7 +365,9 @@ fn find_target(doc: &OpenDoc, target: &str) -> R<Loop> {
     Ok(hit)
 }
 
-pub fn cmd_close(ctx: &Ctx, target: &str, outcome: &str) -> R<i32> {
+/// `af open close <target> --outcome <text> [--final]`: a one-off loop moves to the month
+/// log; a recurring one is logged and re-dated one period on, unless `--final` ends it.
+pub fn cmd_close(ctx: &Ctx, target: &str, outcome: &str, final_: bool) -> R<i32> {
     let outcome = life::one_line(outcome);
     if outcome.is_empty() {
         die!("--outcome needs the result, in a few words");
@@ -319,11 +377,28 @@ pub fn cmd_close(ctx: &Ctx, target: &str, outcome: &str) -> R<i32> {
         None => die!("{OPEN_REL} not found"),
     };
     let hit = find_target(&doc, target)?;
+    let next = match (hit.nudge, hit.every.as_deref()) {
+        (_, Some(_)) if final_ => None,
+        (Some(n), Some(e)) => match next_nudge(n, e) {
+            Some(d) => Some(d),
+            None => die!("cannot compute the next nudge for '{}' (every {e} from {n})", hit.text),
+        },
+        _ => None,
+    };
     // Log first: a failure after the append leaves the loop open, never lost.
-    let rel = life::append_log(ctx, "closed", &format!("{} → {outcome}", hit.text))?;
+    if let Some(next) = next {
+        let next_s = next.format("%Y-%m-%d").to_string();
+        let rel = life::append_log(ctx, "closed", &format!("{} → {outcome} (next nudge {next_s})", hit.text))?;
+        doc.lines[hit.line_idx] = format_open(hit.opened, &hit.text, Some(next), hit.every.as_deref(), &hit.from);
+        doc.save()?;
+        outln!("af open close: #{} {} → {outcome} (logged in {rel}; recurs, next nudge {next_s})", hit.n, hit.text);
+        return Ok(0);
+    }
+    let fin = if hit.every.is_some() { " (final)" } else { "" };
+    let rel = life::append_log(ctx, "closed", &format!("{} → {outcome}{fin}", hit.text))?;
     doc.lines.remove(hit.line_idx);
     doc.save()?;
-    outln!("af open close: #{} {} → {outcome} (moved to {rel})", hit.n, hit.text);
+    outln!("af open close: #{} {} → {outcome}{fin} (moved to {rel})", hit.n, hit.text);
     Ok(0)
 }
 
@@ -341,7 +416,7 @@ pub fn cmd_redate(ctx: &Ctx, target: &str, nudge: &str) -> R<i32> {
     };
     let hit = find_target(&doc, target)?;
     let was = hit.nudge.map(|d| d.format("%Y-%m-%d").to_string()).unwrap_or_else(|| "none".to_string());
-    let line = format_open(hit.opened, &hit.text, Some(new), &hit.from);
+    let line = format_open(hit.opened, &hit.text, Some(new), hit.every.as_deref(), &hit.from);
     doc.lines[hit.line_idx] = line.clone();
     doc.save()?;
     let rel = life::append_log(ctx, "redated", &format!("{} → nudge {} (was {was})", hit.text, new.format("%Y-%m-%d")))?;

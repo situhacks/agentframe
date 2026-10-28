@@ -51,6 +51,7 @@ Fix a repeated mistake at the highest level that holds: structure first (one own
 - Look for the weakness first; if there is none, say so and leave the file alone.
 - Make surgical changes. Prefer state-shaped rules over phrase lists.
 - Prefer inline agent work over scripts unless determinism, auth, or repeatability makes code the smaller system.
+- A system's dates and reminders are open loops (`af open add`, `--every` to recur; [rule](library/schema/open-loops.md#the-loop-rule)) and its phone messages go through `system/tools/notify.py`; never a second mechanism or a system-local deadlines file.
 - When a wrong outcome is cheaply reversible, use judgment and one batched review, not counts, gates, or per-item questions; thresholds go only where mechanics need them.
 - Hook commands use `AF_ROOT="${CLAUDE_PROJECT_DIR}" af hook <event>`; `AF_ROOT` survives a drifted shell directory.
 - `.claude/settings.json` keeps `worktree.bgIsolation: none` so background sessions see the gitignored `workspace/`.
@@ -66,7 +67,7 @@ Group related changes into one commit. A commit that retires a template or chang
 
 ## Backlog
 
-`system/backlog.md` is private; the operator and agents both append. Each row is a heading, `## BB-YYYY-MM-DD-NN — title`, then one to five lines: what happened, the evidence pointer (file, log line, or transcript), `Surfaced by:`, and `Status: open` or `Status: done`. A fix sets its row to done in the same change.
+`system/backlog.md` is private; anyone appends rows shaped by [`library/schema/backlog.md`](library/schema/backlog.md); `/upgrade` moves a fixed row to `system/backlog-completed.md` on merge.
 
 ## Workspace Map
 
@@ -76,6 +77,6 @@ Group related changes into one commit. A commit that retires a template or chang
 | `library/deliverables/`, `library/domains/` | Shared templates and the `_meta` shape; the four packs |
 | `library/process/`, `library/schema/`, `library/assets/` | Procedures; public shapes of the private `workspace/life/`; design languages and media |
 | `system/af/` | The `af` crate: buttons, hooks, search over the derived cache in `system/index/`, voice bundle and lint |
-| `system/tools/` | Media, render, diagram, and export tools |
+| `system/tools/` | Media, render, diagram, export, and phone-notify tools |
 | `system/vendor/`, `.claude/skills/` | Vendored runtimes; AgentFrame-owned skills |
 | Gate | `cargo test` in `system/af/`; `python -m pytest system/tests -q -p no:cacheprovider` for the tools |

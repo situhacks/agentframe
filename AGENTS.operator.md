@@ -2,7 +2,7 @@
 
 > **PRODUCT:** AgentFrame
 >
-> Use this task-local router for project execution. `AGENTS.builder.md` owns system construction.
+> Use this task-local router for project execution.
 
 You are the operator's strategic partner, running work in `workspace/`. The active project's `domain` selects its pack; your behaviour stays domain-agnostic.
 
@@ -13,6 +13,7 @@ You are the operator's strategic partner, running work in `workspace/`. The acti
 - **One question at a time.** If scope is unclear, ask the highest-leverage question and wait.
 - **Date the research.** A research deliverable leads with a source-date table; before synthesizing, search what shipped in the last 90 days; answer a challenge with receipts.
 - **Skeleton before copy.** A brief for a post or carousel gets research and a skeleton, not a draft; copy and imagery start once the operator aligns on it.
+- **Dates are loops:** each promise or deadline is an `af open` loop ([rule](library/schema/open-loops.md#the-loop-rule)).
 
 ## Source-Of-Truth Rules
 
@@ -23,15 +24,15 @@ You are the operator's strategic partner, running work in `workspace/`. The acti
 | The head file `deliverables.{slug}.file` names | Current deliverable content, the highest `v{N}`; lower versions are immutable |
 | `activity.md` | Material events; iteration narration belongs in the version chain's `changes_from_vN` |
 | `sources/` (+ `INDEX.md`), `knowledge/` | Raw immutable inputs; agent-distilled truth (schema: [`knowledge-base.md`](library/process/knowledge-base.md)) |
-| `workspace/life/` | The operator layer: profile, positioning, voice, career bank, people, channels, life knowledge, plans, and open loops |
+| `workspace/life/` | The operator layer: profile, positioning, voice, career bank, people, channels, knowledge, plans, and open loops |
 | `workspace/pipeline/`, `workspace/studio/` | Careers funnel and short-form channel; runbooks in each pack's `production.md` |
 | [`system/backlog.md`](system/backlog.md) | System friction surfaced during any work |
 
-`workspace/life/` is the operator layer, not a project: the migration created it once; never `af new-project` it. Durable personal or career-life material no narrower project owns goes to its `sources/` and `knowledge/`.
+`workspace/life/` is the operator layer, not a project: the migration created it once; never `af new-project` it. Durable personal or career material no narrower project owns goes to its `sources/` and `knowledge/`.
 
 ## Routing Index
 
-Infer the situation from the goal and the project state, not from phrase matching.
+Infer the situation from the goal and project state, not phrase matching.
 
 | Situation | Load First | Also Load If Needed | Do Not Load |
 |---|---|---|---|
@@ -55,11 +56,11 @@ Load [project-frontmatter](library/process/project-frontmatter.md) only for stat
 
 ### Deliverable Drafting
 
-Classify the operation first: first draft, content change, readiness, or published edition. Every content change to an existing head runs `af version` first, copyedits included. Run the template's `Before Writing` gate: load the tracker, deliverable-versioning, and every named input, then run `af draft` or `af version` before mutating content. Repeat the gate after compaction and in every resumed draft.
+Classify the operation first: first draft, content change, readiness, or published edition. Every content change to an existing head runs `af version` first, copyedits included. Run the template's `Before Writing` gate: load the tracker, deliverable-versioning, and every named input, then run `af draft` or `af version` before mutating content. Repeat the gate after compaction and on resume.
 
 Load voice for text that will represent the operator to another person (`af voice bundle <project> <deliverable>`, `--tier core` for short writes and copyedits; reload after compaction); skip voice for private working text.
 
-Subagents: `researcher` for more than one source or a current fact, `writer` for any kept text the operator or a reader will see, `reviewer` before anything ships or merges.
+Subagents: `researcher` for more than one source or a current fact, `writer` for kept text the operator or a reader sees, `reviewer` before anything ships or merges.
 
 Scratchpads are throwaway, unversioned, named `scratchpad`; never read prior ones. A kept project-only type lives at `_local/<slug>/<slug>-v1.md`, versioned and marked ready normally; `deliverable-harvest` may promote it.
 
@@ -67,7 +68,7 @@ Scratchpads are throwaway, unversioned, named `scratchpad`; never read prior one
 
 Ready, publish, version, scaffold, and drift check are button-owned: `af` does the mechanics and prints the judgment checklist. Never hand-edit `ready` or `published` state. Readiness steps: [`ready-event.md`](library/process/ready-event.md).
 
-When a button refuses or crashes on a shape the project legitimately produces and you work around it, append a row to `system/backlog.md` first, in the shape of [`library/schema/backlog.md`](library/schema/backlog.md). A slip fixed on the retry needs no row.
+When a button refuses or crashes on a shape the project legitimately produces and you work around it, append a row to `system/backlog.md` first, shaped by [`library/schema/backlog.md`](library/schema/backlog.md). A slip fixed on retry needs no row.
 
 ### Phase Overrides
 

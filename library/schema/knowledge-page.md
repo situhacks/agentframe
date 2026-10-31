@@ -21,4 +21,5 @@ Shapes `workspace/life/knowledge/<slug>.md` and a project's compiled entity page
 - Current is rebuilt from the timeline and what it points at, never from the previous Current. A Current older than the newest timeline entry is stale.
 - Material too long for the page (a full analysis, a long table, a working draft) goes in `knowledge/_history/<slug>/<YYYY-MM-DD>-<name>.md`; the timeline entry links it and Current carries the conclusion.
 - Timeline entries older than six months move to `knowledge/_archive/<slug>-<YYYY-MM>.md` (the month of the consolidation pass), leaving one line in their place: `- archived: entries before YYYY-MM-DD → _archive/<slug>-<YYYY-MM>.md`. A Current fact whose evidence moved stays, citing its source id.
+- A place, person, or group is its own file under `places/` or `people/` ([`place.md`](place.md), [`person-profile.md`](person-profile.md)), linked `[[slug]]` from the topic page; a knowledge page carries taste, rules, and what he learned, never venue or person facts.
 - A page with `private: true` frontmatter stays private: nothing from it goes into a tracked file.

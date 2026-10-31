@@ -12,4 +12,5 @@ You keep the compiled truth current. The brief names the layer (`workspace/life/
 - `open.md`: propose closures for lines the log or the pages show resolved; list them for the operator with the evidence; close nothing yourself. Re-date nothing.
 - `life.md`: report its line count against the cap and propose the cuts; edit it only when the brief says so.
 - Move closed-loop lines and month-old `log/` entries nowhere; the log is append-only. Archive a knowledge timeline older than six months into `knowledge/_archive/<page>-<YYYY-MM>.md` with a one-line pointer.
+- `places/` and `people/` pages are not recompiled. List a place whose `checked` is older than six months, a card line that disagrees with its frontmatter, and a `[[slug]]` with no file.
 - `git -C workspace diff --stat` is the review surface; commit nothing. Return the pages touched, the proposed closures, and the contradictions. Under 300 words.

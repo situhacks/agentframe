@@ -260,15 +260,15 @@ fn merge_from_a_bare_label_fixes_the_drift_the_doctor_reports() {
 #[test]
 fn rename_moves_the_id_and_keeps_the_old_one_as_an_alt() {
     let fx = vault();
-    let out = fx.ok(&["tag", "rename", "quiet", "talkable"]);
-    assert!(out.starts_with("af tag rename: quiet -> talkable · active · 2 page(s) rewritten; quiet stays an alt label"), "{out}");
-    assert_eq!(tags_of(&fx, "workspace/life/places/noodle-house.md"), vec!["noodles", "talkable", "price-low"]);
+    let out = fx.ok(&["tag", "rename", "quiet", "serene"]);
+    assert!(out.starts_with("af tag rename: quiet -> serene · active · 2 page(s) rewritten; quiet stays an alt label"), "{out}");
+    assert_eq!(tags_of(&fx, "workspace/life/places/noodle-house.md"), vec!["noodles", "serene", "price-low"]);
     let reg = registry(&fx);
-    let t = reg.get("talkable").unwrap();
+    let t = reg.get("serene").unwrap();
     assert_eq!((t.status.as_str(), t.facet.as_str(), t.scope.as_str()), ("active", "vibe", "You can hear the table"));
     assert_eq!(t.alt, vec!["hushed", "quiet"]);
-    assert_eq!(reg.get("quiet").unwrap().merged_into.as_deref(), Some("talkable"));
-    assert!(fx.ok(&["tag", "match", "calm"]).contains("talkable · active · vibe · via merged from 'quiet'"));
+    assert_eq!(reg.get("quiet").unwrap().merged_into.as_deref(), Some("serene"));
+    assert!(fx.ok(&["tag", "match", "calm"]).contains("serene · active · vibe · via merged from 'quiet'"));
     assert!(fx.refused(&["tag", "rename", "noodles", "pastry"]).contains("already exists; af tag merge noodles --into pastry"));
     assert!(fx.refused(&["tag", "rename", "noodles", "Up"]).contains("not a tag slug"));
 }
@@ -420,4 +420,42 @@ fn a_stale_view_a_missing_registry_and_a_broken_one_are_reported() {
     assert!(any_contains(&issues, "workspace/life/tags.yaml does not parse"), "{issues:?}");
     let err = fx.refused(&["tag", "match", "x"]);
     assert!(err.contains("tag 'quiet' names facet 'mood', which is not declared under facets"), "{err}");
+}
+
+// ------------------------------------------------------------------ list forms
+
+/// `tags:` on a hand-written page may be a block list (indented or not) or a flow list
+/// wrapped over lines. A write replaces the whole field; it never leaves orphan item lines.
+#[test]
+fn add_rewrites_block_and_wrapped_tag_lists_as_one_field() {
+    let fx = vault();
+    let forms = [
+        ("block-indented", "tags:\n  - noodles\n  - quiet\n"),
+        ("block-flush", "tags:\n- noodles\n- quiet\n"),
+        ("flow-wrapped", "tags: [noodles,\n  quiet]\n"),
+        ("flow-wrapped-each", "tags: [\n  noodles,\n  quiet,\n]\n"),
+    ];
+    for (slug, field) in forms {
+        let rel = format!("workspace/life/places/{slug}.md");
+        fx.write(&rel, &format!("---\nprivate: true\nkind: restaurant\narea: harbour\n{field}status: want\n---\n# {slug}\nRestaurant · noodles · quiet\n"));
+        assert_eq!(tags_of(&fx, &rel), vec!["noodles", "quiet"], "{slug}: read");
+        ok(&fx, &["tag", "add", &rel, "price-low"]);
+        assert_eq!(fx.fm(&rel), "private: true\nkind: restaurant\narea: harbour\ntags: [noodles, quiet, price-low]\nstatus: want", "{slug}: write");
+        assert_eq!(fx.body(&rel), format!("# {slug}\nRestaurant · noodles · quiet\n"), "{slug}: body");
+    }
+    // a field this parser cannot own is refused, not clobbered
+    let rel = "workspace/life/places/odd.md";
+    fx.write(rel, "---\nprivate: true\nkind: restaurant\narea: harbour\ntags: [noodles]\n  - quiet\nstatus: want\n---\n# odd\n");
+    let err = fx.refused(&["tag", "add", rel, "price-low"]);
+    assert!(err.contains("tags: field is followed by an indented line"), "{err}");
+    assert!(fx.read(rel).contains("tags: [noodles]\n  - quiet\n"));
+}
+
+#[test]
+fn merge_stays_inside_one_facet() {
+    let fx = vault();
+    let err = fx.refused(&["tag", "merge", "noodles", "--into", "quiet"]);
+    assert!(err.contains("'noodles' is in facet 'cuisine' and 'quiet' in facet 'vibe'; a merge stays inside one facet"), "{err}");
+    assert_eq!(registry(&fx).get("noodles").unwrap().status, "active");
+    assert_eq!(tags_of(&fx, "workspace/life/places/noodle-house.md"), vec!["noodles", "quiet", "price-low"]);
 }

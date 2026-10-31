@@ -36,11 +36,12 @@ pub struct Filter {
     pub kind: Option<String>,
     pub area: Option<String>,
     pub ptype: Option<String>,
+    pub status: Option<String>,
 }
 
 impl Filter {
     pub fn is_empty(&self) -> bool {
-        self.tags.is_empty() && self.kind.is_none() && self.area.is_none() && self.ptype.is_none()
+        self.tags.is_empty() && self.kind.is_none() && self.area.is_none() && self.ptype.is_none() && self.status.is_none()
     }
 
     /// One line naming the filter: `tags [a, b] · kind restaurant`.
@@ -58,6 +59,9 @@ impl Filter {
         if let Some(t) = &self.ptype {
             parts.push(format!("type {t}"));
         }
+        if let Some(s) = &self.status {
+            parts.push(format!("status {s}"));
+        }
         parts.join(" · ")
     }
 }
@@ -67,7 +71,7 @@ fn apply_filter(con: &rusqlite::Connection, f: &Filter) -> R<usize> {
     con.execute_batch("CREATE TEMP TABLE IF NOT EXISTS filt(path TEXT PRIMARY KEY); DELETE FROM filt").map_err(sql)?;
     let mut sql_text = String::from("INSERT INTO filt(path) SELECT path FROM files WHERE 1=1");
     let mut args: Vec<String> = Vec::new();
-    for (col, val) in [("kind", &f.kind), ("area", &f.area), ("\"type\"", &f.ptype)] {
+    for (col, val) in [("kind", &f.kind), ("area", &f.area), ("\"type\"", &f.ptype), ("status", &f.status)] {
         if let Some(v) = val {
             sql_text.push_str(&format!(" AND {col} = ?"));
             args.push(v.clone());

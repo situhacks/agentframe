@@ -13,7 +13,7 @@
 use crate::core::{parse_iso_date, today, today_date, Ctx};
 use crate::die;
 use crate::error::R;
-use crate::fm::{fm_list_values, get_scalar, rx, split_fm_optional};
+use crate::fm::{fm_list_span, fm_list_values, get_scalar, rx, split_fm_optional};
 use crate::index::embed::embed_texts;
 use crate::life::{vpath, TextFile};
 use crate::out;
@@ -490,7 +490,10 @@ pub fn scan_pages(ctx: &Ctx) -> R<Vec<Page>> {
     Ok(pages)
 }
 
-/// Rewrite the `tags:` field (inline form) on one page, leaving every other line as it is.
+/// Rewrite the `tags:` field on one page as an inline list, leaving every other line as it is.
+/// The whole field goes: a block list (indented or flush) or a flow list wrapped over lines is
+/// replaced as one unit, so no item line is ever left behind. A field this parser cannot own
+/// (an indented line after it that is not part of it) is refused, not clobbered.
 pub fn write_page_tags(path: &str, tags: &[String]) -> R<()> {
     let mut file = match TextFile::load(path)? {
         Some(f) => f,
@@ -501,28 +504,18 @@ pub fn write_page_tags(path: &str, tags: &[String]) -> R<()> {
         None => die!("{path} has no frontmatter block"),
     };
     let line = format!("tags: [{}]", tags.join(", "));
-    let lines: Vec<String> = fm.split('\n').map(|s| s.to_string()).collect();
-    let mut out: Vec<String> = Vec::with_capacity(lines.len() + 1);
-    let mut i = 0;
-    let mut replaced = false;
-    while i < lines.len() {
-        if !replaced && (lines[i] == "tags:" || lines[i].starts_with("tags:")) && !lines[i].starts_with("tags:-") {
-            out.push(line.clone());
-            replaced = true;
-            i += 1;
-            // a block list under it
-            while i < lines.len() && rx(r"\A[ \t]+-[ \t]").is_match(&lines[i]) {
-                i += 1;
+    let new_fm = match fm_list_span(&fm, "tags") {
+        Some((s, e)) => {
+            let after = &fm[e..];
+            let next = after.strip_prefix('\n').unwrap_or(after).lines().next().unwrap_or("");
+            if next.starts_with(' ') || next.starts_with('\t') || rx(r"\A-([ \t]|$)").is_match(next) {
+                die!("{path}: the tags: field is followed by an indented line that is not part of it ({next:?}); fix the frontmatter by hand, then rerun");
             }
-            continue;
+            format!("{}{line}{after}", &fm[..s])
         }
-        out.push(lines[i].clone());
-        i += 1;
-    }
-    if !replaced {
-        out.push(line);
-    }
-    file.text = format!("---\n{}\n---\n{body}", out.join("\n"));
+        None => format!("{}\n{line}", fm.trim_end_matches('\n')),
+    };
+    file.text = format!("---\n{new_fm}\n---\n{body}");
     file.save(path)
 }
 
@@ -781,6 +774,12 @@ pub fn cmd_merge(ctx: &Ctx, from: &str, into: &str) -> R<i32> {
     let kind = if let Some(f) = reg.get(&from) {
         if f.status == "merged" && f.merged_into.as_deref() != Some(to.id.as_str()) {
             die!("tag '{from}' is already merged into '{}'", f.merged_into.clone().unwrap_or_default());
+        }
+        if f.facet != to.facet {
+            die!(
+                "'{from}' is in facet '{}' and '{}' in facet '{}'; a merge stays inside one facet (af tag deprecate {from}, then af tag add the pages)",
+                f.facet, to.id, to.facet
+            );
         }
         "tag"
     } else if let Some(o) = reg.by_alt(&from) {
@@ -1391,10 +1390,10 @@ mod tests {
 
     #[test]
     fn slugs_normalize_and_vary() {
-        assert_eq!(normalize("Sharing Plates!"), "sharing-plates");
-        assert_eq!(normalize("  R&B "), "r-b");
+        assert_eq!(normalize("Noodle Bowls!"), "noodle-bowls");
+        assert_eq!(normalize("  Q&A "), "q-a");
         assert_eq!(normalize("---"), "");
-        assert!(valid_slug("19-plus") && valid_slug("a") && valid_slug("222"));
+        assert!(valid_slug("4k-screen") && valid_slug("a") && valid_slug("42"));
         assert!(!valid_slug("Bad") && !valid_slug("a--b") && !valid_slug("a-") && !valid_slug(""));
         let v = variants("patios");
         assert!(v.contains(&"patio".to_string()));
@@ -1408,11 +1407,11 @@ mod tests {
             facets: vec![Facet { name: "cuisine".into(), applies: "places".into(), single: false }, Facet { name: "price".into(), applies: "places".into(), single: true }],
             tags: vec![
                 Tag { id: "noodles".into(), facet: "cuisine".into(), status: "active".into(), alt: vec!["noodle".into()], scope: "Noodle houses; not \"ramen-only\" bars".into(), broader: None, since: Some("2026-01-02".into()), merged_into: None },
-                Tag { id: "222".into(), facet: "price".into(), status: "merged".into(), alt: vec![], scope: String::new(), broader: None, since: None, merged_into: Some("noodles".into()) },
+                Tag { id: "42".into(), facet: "price".into(), status: "merged".into(), alt: vec![], scope: String::new(), broader: None, since: None, merged_into: Some("noodles".into()) },
             ],
         };
         let text = reg.render_yaml();
-        assert!(text.contains("  - id: \"222\"\n"), "{text}");
+        assert!(text.contains("  - id: \"42\"\n"), "{text}");
         assert!(text.contains("    alt: [noodle]\n"));
         let back = Registry::parse(&text).unwrap();
         assert_eq!(back.facets, reg.facets);

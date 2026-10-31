@@ -240,15 +240,15 @@ fn rebuild_starts_from_empty_tables() {
 
 fn tagged_vault() -> Fx {
     let fx = vault();
-    let place = |slug: &str, kind: &str, area: &str, tags: &str, card: &str| {
+    let place = |slug: &str, kind: &str, area: &str, tags: &str, status: &str, card: &str| {
         fx.write(
             &format!("workspace/life/places/{slug}.md"),
-            &format!("---\nprivate: true\nkind: {kind}\narea: {area}\ntags: [{tags}]\nstatus: want\n---\n# {slug}\n{card}\n\n## What it is\nzebra launch dinner spot\n"),
+            &format!("---\nprivate: true\nkind: {kind}\narea: {area}\ntags: [{tags}]\nstatus: {status}\n---\n# {slug}\n{card}\n\n## What it is\nzebra launch dinner spot\n"),
         );
     };
-    place("noodle-house", "restaurant", "harbour", "noodles, quiet", "Restaurant · noodles · quiet · [[harbour]]");
-    place("second-bowl", "restaurant", "market", "noodles, loud", "Restaurant · noodles · loud · [[market]]");
-    place("corner-bakery", "cafe", "harbour", "pastry, quiet", "Cafe · pastry · quiet · [[harbour]]");
+    place("noodle-house", "restaurant", "harbour", "noodles, quiet", "want", "Restaurant · noodles · quiet · [[harbour]]");
+    place("second-bowl", "restaurant", "market", "noodles, loud", "been", "Restaurant · noodles · loud · [[market]]");
+    place("corner-bakery", "cafe", "harbour", "pastry, quiet", "want", "Cafe · pastry · quiet · [[harbour]]");
     fx.write(
         "workspace/life/people/sam-example.md",
         "---\nprivate: true\nname: Sam Example\ntype: person\ntags:\n  - boardgames\n  - quiet\n---\n# Sam Example\nzebra launch friend\n",
@@ -323,6 +323,10 @@ fn filters_narrow_before_ranking_and_list_without_a_query() {
     assert_eq!(got, vec!["corner-bakery.md", "noodle-house.md"]);
     let (_, out, _) = dead(&fx, &["search", "zebra", "--type", "person", "--json"]);
     assert_eq!(paths(&out), vec!["sam-example.md"]);
+    let (_, out, _) = dead(&fx, &["search", "zebra", "--status", "been", "--json"]);
+    assert_eq!(paths(&out), vec!["second-bowl.md"]);
+    let (_, out, _) = dead(&fx, &["search", "zebra", "--status", "want", "--tag", "noodles", "--json"]);
+    assert_eq!(paths(&out), vec!["noodle-house.md"]);
     // no query: the admitted pages by path, the first chunk (card line) as the snippet
     let (code, out, _) = dead(&fx, &["search", "--tag", "quiet"]);
     assert_eq!(code, 0);
@@ -334,7 +338,7 @@ fn filters_narrow_before_ranking_and_list_without_a_query() {
     // neither a query nor a filter is a usage error
     let (code, _, err) = dead(&fx, &["search"]);
     assert_eq!(code, 2);
-    assert!(err.contains("a query or a filter (--tag, --kind, --area, --type) is required"), "{err}");
+    assert!(err.contains("a query or a filter (--tag, --kind, --area, --type, --status) is required"), "{err}");
 }
 
 #[test]

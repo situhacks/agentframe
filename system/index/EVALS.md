@@ -34,7 +34,7 @@ Two layers:
 
 ## Exact Fields
 
-The indexer stores `tags`, `kind`, `area`, `type`, and `status` from frontmatter as exact fields (`files` columns and `file_tags`). `af search --tag <id> [--tag <id>] [--kind <k>] [--area <a>] [--type <t>]` fills the admitted set first and ranks only inside it; with no query it lists the admitted pages by path. Tags are the long-term retrieval key for place and person pages ([`library/schema/tags.md`](../../library/schema/tags.md)); text and embeddings stay the fallback, and an unfiltered query ranks exactly as before. A database from before the fields gains the columns on connect and their values on the next update, with no re-embedding.
+The indexer stores `tags`, `kind`, `area`, `type`, and `status` from frontmatter as exact fields (`files` columns and `file_tags`). `af search --tag <id> [--tag <id>] [--kind <k>] [--area <a>] [--type <t>] [--status <s>]` fills the admitted set first and ranks only inside it; with no query it lists the admitted pages by path. Tags are the long-term retrieval key for place and person pages ([`library/schema/tags.md`](../../library/schema/tags.md)); text and embeddings stay the fallback, and an unfiltered query ranks exactly as before. A database from before the fields gains the columns on connect and their values on the next update, with no re-embedding.
 
 ## Refresh
 

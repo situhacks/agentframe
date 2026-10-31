@@ -9,12 +9,12 @@ kind: restaurant        # restaurant, bar, club, cafe, venue, shop, gym, park, s
 area: west-end          # slug of a kind: area page
 address: 12 Example St
 transit: Red line, then the 12 bus
-tags: [italian, sharing-plates, group]   # registry ids only; af tag match first
+tags: [ramen, counter-seats, big-table]   # registry ids only; af tag match first
 status: want            # candidate, want, been, regular, avoid, closed
 checked: 2026-10-27     # hours and prices last confirmed
 ---
-# Trattoria Example
-Restaurant · Italian sharing · [[west-end]] · 12 Example St · 12 bus · want
+# Ramen Example
+Restaurant · ramen at the counter, one big table · [[west-end]] · 12 Example St · 12 bus · want
 
 ## What it is
 ## Practical
@@ -26,7 +26,7 @@ Restaurant · Italian sharing · [[west-end]] · 12 Example St · 12 bus · want
 ```
 
 - The slug is the file stem, kebab-case from the name; one file per venue. The same address under a new name is the same file, with "formerly X" in What it is. Run `af search "<name>"` before creating one.
-- The card line, the first body line under the title, repeats kind, tags, area, address, transit, and status in prose; it is what a text query matches, so keep it in step with the frontmatter. `kind`, `area`, `status`, and `tags` are also exact fields: `af search --tag <id> [--kind <k>] [--area <a>]` filters on them before ranking, and lists the pages with no query.
+- The card line, the first body line under the title, repeats kind, tags, area, address, transit, and status in prose; it is what a text query matches, so keep it in step with the frontmatter. `kind`, `area`, `status`, and `tags` are also exact fields: `af search --tag <id> [--kind <k>] [--area <a>] [--status <s>]` filters on them before ranking, and lists the pages with no query.
 - `tags` carries only ids from the registry ([`tags.md`](tags.md)): before writing one, `af tag match "<phrase>" --facet <f>` and write what it returns; on `none`, `af tag propose <slug> --facet <f> --scope "<one line>"` and write that. Three to eight tags on a venue, one per single-valued facet (price), none that repeat a field. `af tag add <page> <tag>...` does the check and the write on an existing page.
 - Durable facts carry no dates. Perishable facts (hours, prices, menu) sit in Practical and are covered by `checked`; re-check before recommending a place not checked in six months. A venue that closes becomes `status: closed` with one line in What it is; the file stays.
 - His take holds his words, near-verbatim, each with the date he said them. The agent's description and reasoning are the other sections.

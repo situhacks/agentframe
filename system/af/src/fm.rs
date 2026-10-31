@@ -250,27 +250,54 @@ pub fn fm_list(fm: &str, key: &str) -> Vec<String> {
     }
 }
 
-/// `fm_list_values(fm, key)`: inline or block-list values, cleaned.
-pub fn fm_list_values(fm: &str, key: &str) -> Vec<String> {
-    let inline = fm_list(fm, key);
-    if !inline.is_empty() {
-        return inline;
-    }
-    let re = rx(&format!(r"(?m)^\s*{}:\s*$", esc(key)));
-    let m = match re.find(fm) {
-        None => return Vec::new(),
-        Some(m) => m,
-    };
-    let rest = &fm[m.end()..];
-    let nxt = rx(r"(?m)^\S").find(rest);
-    let block = &rest[..nxt.map(|n| n.start()).unwrap_or(rest.len())];
-    let item = rx(r"^\s*-\s*(.*?)\s*\n?\z");
-    let mut values = Vec::new();
-    for line in py_splitlines(block) {
-        if let Some(c) = item.captures(&line) {
-            values.push(clean_value(&c[1]));
+/// Byte range of the whole top-level `key:` list field in `fm`: the head line plus the block
+/// items under it (indented or flush) or the rest of a flow list wrapped over lines. The range
+/// ends before the newline that follows the field. None when the key is absent.
+pub fn fm_list_span(fm: &str, key: &str) -> Option<(usize, usize)> {
+    let head = rx(&format!(r"(?m)^{}:(.*)$", esc(key))).captures(fm)?;
+    let whole = head.get(0).unwrap();
+    let value = head[1].trim();
+    let item = rx(r"\A[ \t]*-([ \t]|$)");
+    let wrapped_flow = value.starts_with('[') && !value.contains(']');
+    let block = value.is_empty();
+    let mut end = whole.end();
+    while (wrapped_flow || block) && fm[end..].starts_with('\n') {
+        let start = end + 1;
+        let stop = fm[start..].find('\n').map(|i| start + i).unwrap_or(fm.len());
+        let line = fm[start..stop].trim_end_matches('\r');
+        if block && !item.is_match(line) {
+            break;
+        }
+        end = stop;
+        if wrapped_flow && line.contains(']') {
+            break;
         }
     }
+    Some((whole.start(), end))
+}
+
+/// `fm_list_values(fm, key)`: the values of a top-level list field in any form it is written:
+/// `key: [a, b]`, the same wrapped over lines, or a block list (indented or flush), cleaned.
+pub fn fm_list_values(fm: &str, key: &str) -> Vec<String> {
+    let (s, e) = match fm_list_span(fm, key) {
+        None => return Vec::new(),
+        Some(span) => span,
+    };
+    let field = &fm[s..e];
+    let after = &field[field.find(':').map(|i| i + 1).unwrap_or(field.len())..];
+    let value = after.trim();
+    let values: Vec<String> = if let Some(inner) = value.strip_prefix('[') {
+        let inner = match inner.rfind(']') {
+            Some(i) => &inner[..i],
+            None => inner,
+        };
+        inner.split(',').map(clean_value).collect()
+    } else if value.starts_with('-') {
+        let item = rx(r"\A\s*-\s*(.*)\z");
+        value.lines().filter_map(|l| item.captures(l.trim_end_matches('\r')).map(|c| clean_value(&c[1]))).collect()
+    } else {
+        Vec::new()
+    };
     values.into_iter().filter(|v| !v.is_empty()).collect()
 }
 

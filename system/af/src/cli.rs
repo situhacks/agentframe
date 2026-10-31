@@ -155,6 +155,9 @@ enum Cmd {
         /// Only pages with this frontmatter `type`
         #[arg(long = "type")]
         type_: Option<String>,
+        /// Only pages with this frontmatter `status`
+        #[arg(long)]
+        status: Option<String>,
     },
     /// The tag registry: match, propose, promote, merge, rename, deprecate, lint, stats
     Tag {
@@ -253,10 +256,10 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> R<i32> {
         Cmd::Brief { json, write } => crate::brief::cmd_brief(ctx, json, write),
         Cmd::Close { slug, force } => crate::close::cmd_close(ctx, &slug, force),
         Cmd::Index { cmd } => crate::index::cmd_index(&ctx.root, &cmd),
-        Cmd::Search { query, limit, json, tag, kind, area, type_ } => {
-            let filter = crate::index::rank::Filter { tags: tag, kind, area, ptype: type_ };
+        Cmd::Search { query, limit, json, tag, kind, area, type_, status } => {
+            let filter = crate::index::rank::Filter { tags: tag, kind, area, ptype: type_, status };
             if query.is_none() && filter.is_empty() {
-                let msg = "af search: a query or a filter (--tag, --kind, --area, --type) is required";
+                let msg = "af search: a query or a filter (--tag, --kind, --area, --type, --status) is required";
                 out::err_line(msg);
                 return Err(AfError::Usage(msg.to_string()));
             }

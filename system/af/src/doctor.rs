@@ -1110,6 +1110,9 @@ pub fn check_system(ctx: &Ctx) -> R<(Vec<String>, Vec<String>)> {
     let (li, ln) = crate::life::doctor_checks(ctx)?;
     issues.extend(li);
     notes.extend(ln);
+    let (ti, tn) = crate::tags::doctor_checks(ctx)?;
+    issues.extend(ti);
+    notes.extend(tn);
     Ok((issues, notes))
 }
 

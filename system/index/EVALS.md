@@ -32,6 +32,10 @@ Two layers:
 - Usage format outweighs model choice: the query prefix alone moved recall@5 from 62% to 86%. Read the model card before a bake-off.
 - A fusion-weight sweep that stays flat within noise at this set size is a plateau. Stop tuning.
 
+## Exact Fields
+
+The indexer stores `tags`, `kind`, `area`, `type`, and `status` from frontmatter as exact fields (`files` columns and `file_tags`). `af search --tag <id> [--tag <id>] [--kind <k>] [--area <a>] [--type <t>] [--status <s>]` fills the admitted set first and ranks only inside it; with no query it lists the admitted pages by path. Tags are the long-term retrieval key for place and person pages ([`library/schema/tags.md`](../../library/schema/tags.md)); text and embeddings stay the fallback, and an unfiltered query ranks exactly as before. A database from before the fields gains the columns on connect and their values on the next update, with no re-embedding.
+
 ## Refresh
 
 `af hook session-start` runs on SessionStart and spawns `af index update` detached when the index is more than a day old. It never builds from cold and never blocks.
@@ -40,7 +44,7 @@ Two layers:
 
 Replace this section when `af index eval` produces a new number; do not append.
 
-- recall@5 = 21/23 (91%), MRR = 0.591, gate 86%, corpus 1,423 files / 13,400 chunks, all embedded with qwen3-embedding:0.6b.
+- recall@5 = 21/23 (91%), MRR = 0.645, gate 86%, corpus 1,565 files / 13,957 chunks, all embedded with qwen3-embedding:0.6b. Measured 2026-10-30 with the exact-field index; the unfiltered number is identical to the previous binary on the same index.
 - Ranking classes: `_archive/` 0.45; `workspace/life/` outside `_history/` and `sources/` 1.5 (`life`); `knowledge/` 1.5; `sources/` and `_local/` 1.15; `.claude/plans/` 1.05; routers 1.15. Prior versions rank down 0.55; tracker heads 1.9; registered sources 1.25.
-- The two open misses: a project post plan outranked by the campaign's own brief and messaging draft for a generic query, and a long voice-register query whose extra words pull toward FDE material; both are query-shape misses, not corpus or path misses. Nineteen golden paths moved with the life migration and the set follows the new paths.
+- The two open misses: a project post plan outranked by the campaign's own brief and messaging draft for a generic query, and a long voice-register query whose extra words pull toward FDE material; both are query-shape misses, not corpus or path misses. Nineteen golden paths moved with the life migration and eight followed three projects into `projects/completed/`; the set follows the new paths (before that edit the stale paths read as 16/23).
 

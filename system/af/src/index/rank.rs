@@ -28,6 +28,91 @@ pub struct Hit {
     pub why: Vec<&'static str>,
 }
 
+/// Exact-field filters applied before ranking: every `--tag` must be on the page (AND), and
+/// `kind`, `area`, `type` must equal the frontmatter value.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Filter {
+    pub tags: Vec<String>,
+    pub kind: Option<String>,
+    pub area: Option<String>,
+    pub ptype: Option<String>,
+    pub status: Option<String>,
+}
+
+impl Filter {
+    pub fn is_empty(&self) -> bool {
+        self.tags.is_empty() && self.kind.is_none() && self.area.is_none() && self.ptype.is_none() && self.status.is_none()
+    }
+
+    /// One line naming the filter: `tags [a, b] · kind restaurant`.
+    pub fn describe(&self) -> String {
+        let mut parts = Vec::new();
+        if !self.tags.is_empty() {
+            parts.push(format!("tags [{}]", self.tags.join(", ")));
+        }
+        if let Some(k) = &self.kind {
+            parts.push(format!("kind {k}"));
+        }
+        if let Some(a) = &self.area {
+            parts.push(format!("area {a}"));
+        }
+        if let Some(t) = &self.ptype {
+            parts.push(format!("type {t}"));
+        }
+        if let Some(s) = &self.status {
+            parts.push(format!("status {s}"));
+        }
+        parts.join(" · ")
+    }
+}
+
+/// Fill the session table `filt(path)` with the files the filter admits; the count.
+fn apply_filter(con: &rusqlite::Connection, f: &Filter) -> R<usize> {
+    con.execute_batch("CREATE TEMP TABLE IF NOT EXISTS filt(path TEXT PRIMARY KEY); DELETE FROM filt").map_err(sql)?;
+    let mut sql_text = String::from("INSERT INTO filt(path) SELECT path FROM files WHERE 1=1");
+    let mut args: Vec<String> = Vec::new();
+    for (col, val) in [("kind", &f.kind), ("area", &f.area), ("\"type\"", &f.ptype), ("status", &f.status)] {
+        if let Some(v) = val {
+            sql_text.push_str(&format!(" AND {col} = ?"));
+            args.push(v.clone());
+        }
+    }
+    for t in &f.tags {
+        sql_text.push_str(" AND path IN (SELECT path FROM file_tags WHERE tag = ?)");
+        args.push(t.clone());
+    }
+    let n = con.execute(&sql_text, rusqlite::params_from_iter(args.iter())).map_err(sql)?;
+    Ok(n)
+}
+
+/// `af search --tag ...` with no query: the admitted pages, by path, each with its first
+/// chunk (the card line on a place page) as the snippet.
+pub fn list_filtered(root: &str, filter: &Filter, limit: i64) -> R<Vec<Hit>> {
+    let con = connect(root)?;
+    apply_filter(&con, filter)?;
+    let mut hits = Vec::new();
+    {
+        let mut st = con
+            .prepare("SELECT f.path, c.breadcrumb, c.body FROM filt f LEFT JOIN chunks c ON c.path = f.path AND c.ord = 0 ORDER BY f.path")
+            .map_err(sql)?;
+        let rows = st
+            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?, r.get::<_, Option<String>>(2)?)))
+            .map_err(sql)?;
+        for row in rows {
+            let (path, crumb, body) = row.map_err(sql)?;
+            hits.push(Hit {
+                path,
+                breadcrumb: crumb.unwrap_or_default(),
+                snippet: snippet(&body.unwrap_or_default(), &[]),
+                score: 0.0,
+                why: vec!["filter"],
+            });
+        }
+    }
+    drop(con);
+    Ok(py_take(hits, limit))
+}
+
 /// `path_boost(rel)`: most-specific-path-wins class boosts -> (multiplier, tag).
 pub fn path_boost(rel: &str) -> (f64, &'static str) {
     let p = rel.replace('\\', "/").to_lowercase();
@@ -160,8 +245,9 @@ pub fn query_text(query: &str) -> String {
     }
 }
 
-/// Semantic retriever: chunk paths by cosine, best first, top POOL_SIZE (a path may repeat).
-fn semantic(con: &rusqlite::Connection, query: &str, embedder: Embedder) -> Result<Vec<String>, String> {
+/// Semantic retriever: chunk paths by cosine, best first, top POOL_SIZE (a path may repeat);
+/// with a filter, only admitted paths are scored.
+fn semantic(con: &rusqlite::Connection, query: &str, embedder: Embedder, allowed: Option<&HashSet<String>>) -> Result<Vec<String>, String> {
     let qvec = embedder(&[query_text(query)]).map_err(|e| e.class)?;
     let qarr: Vec<f32> = qvec.first().ok_or("IndexError")?.iter().map(|x| *x as f32).collect();
     let qnorm = fsum(qarr.iter().map(|x| (*x as f64) * (*x as f64))).sqrt();
@@ -171,6 +257,11 @@ fn semantic(con: &rusqlite::Connection, query: &str, embedder: Embedder) -> Resu
     let mut carr: Vec<f32> = Vec::new();
     while let Some(r) = rows.next().map_err(|_| "OperationalError".to_string())? {
         let path: String = r.get(0).map_err(|_| "TypeError".to_string())?;
+        if let Some(a) = allowed {
+            if !a.contains(&path) {
+                continue;
+            }
+        }
         let blob = r.get_ref(1).map_err(|_| "TypeError".to_string())?;
         let blob = blob.as_blob().map_err(|_| "TypeError".to_string())?;
         let norm: f64 = r.get(2).map_err(|_| "TypeError".to_string())?;
@@ -194,7 +285,21 @@ fn semantic(con: &rusqlite::Connection, query: &str, embedder: Embedder) -> Resu
 
 /// `search(root, query, limit)`: hybrid ranked hits.
 pub fn search(root: &str, query: &str, limit: i64, embedder: Embedder) -> R<Vec<Hit>> {
+    search_filtered(root, query, limit, embedder, &Filter::default())
+}
+
+/// `search` over the pages a filter admits; an empty filter is the plain search.
+pub fn search_filtered(root: &str, query: &str, limit: i64, embedder: Embedder, filter: &Filter) -> R<Vec<Hit>> {
     let con = connect(root)?;
+    let allowed: Option<HashSet<String>> = if filter.is_empty() {
+        None
+    } else {
+        apply_filter(&con, filter)?;
+        let mut st = con.prepare("SELECT path FROM filt").map_err(sql)?;
+        let rows = st.query_map([], |r| r.get::<_, String>(0)).map_err(sql)?;
+        Some(rows.collect::<Result<_, _>>().map_err(sql)?)
+    };
+    let in_filt = if allowed.is_some() { " AND path IN (SELECT path FROM filt)" } else { "" };
     let tokens = tokenize(query);
     let good: Vec<String> = tokens.iter().filter(|t| t.chars().count() >= 3).map(|t| format!("\"{}\"", t.replace('"', "\"\""))).collect();
     let shorts: Vec<&String> = tokens.iter().filter(|t| (1..3).contains(&t.chars().count())).collect();
@@ -204,7 +309,9 @@ pub fn search(root: &str, query: &str, limit: i64, embedder: Embedder) -> R<Vec<
     let mut first_seen: Vec<String> = Vec::new();
     if !good.is_empty() {
         let mut st = con
-            .prepare("SELECT path, breadcrumb, body, bm25(chunks_fts) FROM chunks_fts WHERE chunks_fts MATCH ? ORDER BY bm25(chunks_fts) LIMIT ?")
+            .prepare(&format!(
+                "SELECT path, breadcrumb, body, bm25(chunks_fts) FROM chunks_fts WHERE chunks_fts MATCH ?{in_filt} ORDER BY bm25(chunks_fts) LIMIT ?"
+            ))
             .map_err(sql)?;
         let rows = st
             .query_map(rusqlite::params![good.join(" OR "), POOL_SIZE], |r| {
@@ -229,7 +336,7 @@ pub fn search(root: &str, query: &str, limit: i64, embedder: Embedder) -> R<Vec<
     lexical_order.sort_by(|a, b| best[a].0.partial_cmp(&best[b].0).unwrap_or(std::cmp::Ordering::Equal));
     for short in &shorts {
         let mut st = con
-            .prepare_cached("SELECT path, breadcrumb, body FROM chunks WHERE instr(lower(body), ?) > 0 LIMIT 25")
+            .prepare_cached(&format!("SELECT path, breadcrumb, body FROM chunks WHERE instr(lower(body), ?) > 0{in_filt} LIMIT 25"))
             .map_err(sql)?;
         let rows = st
             .query_map([short.as_str()], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?)))
@@ -247,7 +354,7 @@ pub fn search(root: &str, query: &str, limit: i64, embedder: Embedder) -> R<Vec<
     let mut semantic_order: Vec<String> = Vec::new();
     let emb_count: i64 = con.query_row("SELECT COUNT(*) FROM embeddings", [], |r| r.get(0)).map_err(sql)?;
     if emb_count != 0 && tokens.iter().any(|t| t.chars().count() >= 3) {
-        match semantic(&con, query, embedder) {
+        match semantic(&con, query, embedder, allowed.as_ref()) {
             Ok(order) => semantic_order = order,
             Err(class) => out::err_line(&format!("af search: note — semantic scoring unavailable ({class}); keyword-only this run")),
         }
@@ -314,6 +421,9 @@ pub fn search(root: &str, query: &str, limit: i64, embedder: Embedder) -> R<Vec<
         }
         if best.contains_key(path) {
             why.push("bm25");
+        }
+        if allowed.is_some() {
+            why.push("filter");
         }
         if why.is_empty() {
             why.push("fused");

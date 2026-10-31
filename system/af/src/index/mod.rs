@@ -135,23 +135,35 @@ pub fn hits_json(hits: &[rank::Hit]) -> String {
 
 /// `cmd_search_cli(root, query, limit, as_json)` with a given embedder.
 pub fn search_cli(root: &str, query: &str, limit: i64, as_json: bool, embedder: Embedder) -> R<i32> {
+    search_cli_filtered(root, Some(query), limit, as_json, embedder, &rank::Filter::default())
+}
+
+/// `search_cli` with exact-field filters; no query lists the admitted pages by path.
+pub fn search_cli_filtered(root: &str, query: Option<&str>, limit: i64, as_json: bool, embedder: Embedder, filter: &rank::Filter) -> R<i32> {
     let r = store::cmd_update(root, false, true, embedder)?;
     if r.added != 0 || r.updated != 0 || r.removed != 0 {
         out::line(&format!("af index: refreshed first (+{} new · ~{} updated · -{} gone)\n", r.added, r.updated, r.removed));
     }
-    let results = rank::search(root, query, limit, embedder)?;
+    let results = match query {
+        Some(q) => rank::search_filtered(root, q, limit, embedder, filter)?,
+        None => rank::list_filtered(root, filter, limit)?,
+    };
     if as_json {
         out::line(&hits_json(&results));
         return Ok(0);
     }
-    let qr = pyos::py_repr_str(query);
+    let what = match query {
+        Some(q) if filter.is_empty() => pyos::py_repr_str(q),
+        Some(q) => format!("{} with {}", pyos::py_repr_str(q), filter.describe()),
+        None => filter.describe(),
+    };
     if results.is_empty() {
         out::line(&format!(
-            "af search: no hits for {qr} — try fewer or different words, or `af index update` if files changed recently"
+            "af search: no hits for {what} — try fewer or different words, or `af index update` if files changed recently"
         ));
         return Ok(0);
     }
-    out::line(&format!("af search: {} hits for {qr}  (open cited files before relying on snippets)\n", results.len()));
+    out::line(&format!("af search: {} hits for {what}  (open cited files before relying on snippets)\n", results.len()));
     for (i, hit) in results.iter().enumerate() {
         out::line(&format!("{}. [{:7.3}] {}\n   {}", i + 1, hit.score, hit.path, hit.breadcrumb));
         out::line(&format!("   …{}…", hit.snippet));
@@ -160,8 +172,17 @@ pub fn search_cli(root: &str, query: &str, limit: i64, as_json: bool, embedder: 
     Ok(0)
 }
 
-/// `af search "<query>" [-n LIMIT] [--json]`
-pub fn cmd_search(root: &str, query: &str, limit: i64, as_json: bool) -> R<i32> {
+/// `af search ["<query>"] [-n LIMIT] [--json] [--tag t]... [--kind k] [--area a] [--type t]`
+pub fn cmd_search(ctx: &crate::core::Ctx, query: Option<&str>, limit: i64, as_json: bool, mut filter: rank::Filter) -> R<i32> {
     let e = live_embedder();
-    search_cli(root, query, limit, as_json, &e)
+    if !filter.tags.is_empty() {
+        let resolved = crate::tags::resolve_filter_tags(ctx, &filter.tags);
+        for (given, id) in &resolved {
+            if given != id {
+                out::line(&format!("af search: tag '{given}' resolved to '{id}' through {}", crate::tags::REGISTRY_REL));
+            }
+        }
+        filter.tags = resolved.into_iter().map(|(_, id)| id).collect();
+    }
+    search_cli_filtered(&ctx.root, query, limit, as_json, &e, &filter)
 }

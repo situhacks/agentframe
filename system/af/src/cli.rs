@@ -135,13 +135,34 @@ enum Cmd {
         #[command(subcommand)]
         cmd: crate::index::IndexCmd,
     },
-    /// Search the vault (hybrid keyword and embedding ranking)
+    /// Search the vault (hybrid keyword and embedding ranking); exact-field filters narrow
+    /// the candidates before ranking, and list the matching pages when there is no query
     Search {
-        query: String,
+        query: Option<String>,
         #[arg(short = 'n', long, default_value = "8", value_parser = crate::index::py_int, allow_negative_numbers = true)]
         limit: i64,
         #[arg(long)]
         json: bool,
+        /// Only pages carrying this frontmatter tag (repeat for AND)
+        #[arg(long)]
+        tag: Vec<String>,
+        /// Only pages with this frontmatter `kind`
+        #[arg(long)]
+        kind: Option<String>,
+        /// Only pages with this frontmatter `area`
+        #[arg(long)]
+        area: Option<String>,
+        /// Only pages with this frontmatter `type`
+        #[arg(long = "type")]
+        type_: Option<String>,
+        /// Only pages with this frontmatter `status`
+        #[arg(long)]
+        status: Option<String>,
+    },
+    /// The tag registry: match, propose, promote, merge, rename, deprecate, lint, stats
+    Tag {
+        #[command(subcommand)]
+        cmd: crate::tags::TagCmd,
     },
     /// Run a Claude Code hook: session-start, stop, session-end, notification, pre-tool-use,
     /// post-tool-use (payload on stdin)
@@ -235,7 +256,16 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> R<i32> {
         Cmd::Brief { json, write } => crate::brief::cmd_brief(ctx, json, write),
         Cmd::Close { slug, force } => crate::close::cmd_close(ctx, &slug, force),
         Cmd::Index { cmd } => crate::index::cmd_index(&ctx.root, &cmd),
-        Cmd::Search { query, limit, json } => crate::index::cmd_search(&ctx.root, &query, limit, json),
+        Cmd::Search { query, limit, json, tag, kind, area, type_, status } => {
+            let filter = crate::index::rank::Filter { tags: tag, kind, area, ptype: type_, status };
+            if query.is_none() && filter.is_empty() {
+                let msg = "af search: a query or a filter (--tag, --kind, --area, --type, --status) is required";
+                out::err_line(msg);
+                return Err(AfError::Usage(msg.to_string()));
+            }
+            crate::index::cmd_search(ctx, query.as_deref(), limit, json, filter)
+        }
+        Cmd::Tag { cmd } => crate::tags::run(ctx, cmd),
         // `af hook` is intercepted before the parser; the variant exists for --help.
         Cmd::Hook { .. } => Ok(0),
     }

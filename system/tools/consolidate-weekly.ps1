@@ -28,6 +28,8 @@ $logPath = Join-Path $vault $logRel
 $brief = 'Layer: workspace/life/. Pages: all. Pages follow library/schema/knowledge-page.md. ' +
     'Rebuild each Current from its Timeline, archive timeline entries older than six months, ' +
     'propose closures for open.md with the evidence, report life.md against its cap. ' +
+    'Tags: run the tag duties in your role (af tag lint --embed, then --fix; plural and alt-label merges; ' +
+    'add-only backfill of under-tagged pages; semantic merges, splits and deprecations listed for the operator; af tag stats). ' +
     'Do not close or re-date loops, and do not commit. Return your report per your role.'
 
 # Register the run as a worker before it starts, so its first session start prints this
@@ -37,7 +39,7 @@ $sessionId = [guid]::NewGuid().ToString()
 $sessionDir = Join-Path $vault 'system\sessions\worker\consolidation'
 if (-not (Test-Path $sessionDir)) { New-Item -ItemType Directory -Path $sessionDir | Out-Null }
 $briefPath = Join-Path $sessionDir 'brief.md'
-$briefText = "# Brief: worker/consolidation`n`nGoal: the weekly consolidation of workspace/life/.`nDone when: every knowledge page's Current is rebuilt from its Timeline, old entries are archived, closures are proposed, and life.md is reported against its cap.`nWrite surface: workspace/life/knowledge/, workspace/life/knowledge/_archive/, system/sessions/worker/consolidation/.`nContext: library/schema/knowledge-page.md, library/schema/open-loops.md.`n`n$brief`n"
+$briefText = "# Brief: worker/consolidation`n`nGoal: the weekly consolidation of workspace/life/.`nDone when: every knowledge page's Current is rebuilt from its Timeline, old entries are archived, closures are proposed, life.md is reported against its cap, and the tag pass has run (lint, mechanical fixes applied, the rest listed with evidence).`nWrite surface: workspace/life/knowledge/, workspace/life/knowledge/_archive/, workspace/life/tags.yaml and tags-log.md through af tag only, the tags field of workspace/life/places/ and people/ pages through af tag only, system/sessions/worker/consolidation/.`nContext: library/schema/knowledge-page.md, library/schema/open-loops.md, library/schema/tags.md.`n`n$brief`n"
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 [System.IO.File]::WriteAllText($briefPath, $briefText, $utf8)
 & af session register $sessionName --session $sessionId --model claude-sonnet-5-5 --brief $briefPath | Out-Null
@@ -49,7 +51,7 @@ $claudeArgs = @(
     '--model', 'claude-sonnet-5-5',
     '--max-turns', "$MaxTurns",
     '--permission-mode', 'acceptEdits',
-    '--allowedTools', 'Bash(git -C workspace diff *)', 'Bash(git -C workspace status *)', 'Bash(af open due)', 'Bash(af open due *)', 'Bash(af search *)'
+    '--allowedTools', 'Bash(git -C workspace diff *)', 'Bash(git -C workspace status *)', 'Bash(af open due)', 'Bash(af open due *)', 'Bash(af search *)', 'Bash(af tag *)'
 )
 
 $ErrorActionPreference = 'Continue'

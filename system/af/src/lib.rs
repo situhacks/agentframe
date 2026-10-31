@@ -24,3 +24,4 @@ pub mod index;
 pub mod pyjson;
 pub mod voice;
 pub mod hooks;
+pub mod tags;

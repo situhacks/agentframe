@@ -39,11 +39,18 @@ fn char_len(s: &str) -> usize {
 
 /// `split_frontmatter(text)`: (flat frontmatter map, body without frontmatter).
 pub fn split_frontmatter(text: &str) -> (HashMap<String, String>, String) {
+    let (fm, _, body) = split_frontmatter_raw(text);
+    (fm, body)
+}
+
+/// `split_frontmatter` plus the frontmatter block's own text (empty when there is none),
+/// for the list fields the flat map cannot hold.
+pub fn split_frontmatter_raw(text: &str) -> (HashMap<String, String>, String, String) {
     let caps = match fm_re().captures(text) {
         Some(c) => c,
-        None => return (HashMap::new(), text.to_string()),
+        None => return (HashMap::new(), String::new(), text.to_string()),
     };
-    let mut fm = HashMap::new();
+    let mut fm: HashMap<String, String> = HashMap::new();
     for line in py_splitlines(&caps[1]) {
         if let Some((key, val)) = line.split_once(':') {
             let v = py_strip(val).trim_matches('"').trim_matches('\'');
@@ -51,7 +58,7 @@ pub fn split_frontmatter(text: &str) -> (HashMap<String, String>, String) {
         }
     }
     let end = caps.get(0).unwrap().end();
-    (fm, text[end..].to_string())
+    (fm, caps[1].to_string(), text[end..].to_string())
 }
 
 /// `chunk_markdown(body)`: [(breadcrumb titles, text)], split on headings outside code

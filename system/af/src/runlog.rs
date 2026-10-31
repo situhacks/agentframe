@@ -8,7 +8,7 @@ use std::io::Write;
 
 pub const BUTTON_WINDOW_DAYS: i64 = 14;
 pub const READ_ONLY_VERBS: [&str; 4] = ["doctor", "index", "search", "pipe board"];
-pub const SUBCOMMAND_VERBS: [&str; 3] = ["index", "pipe", "studio"];
+pub const SUBCOMMAND_VERBS: [&str; 4] = ["index", "pipe", "studio", "tag"];
 
 pub fn verb_of(argv: &[String]) -> String {
     let toks: Vec<&String> = argv.iter().filter(|t| !t.starts_with('-')).collect();

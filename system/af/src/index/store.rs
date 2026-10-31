@@ -1,10 +1,11 @@
 //! The database and the corpus walk: `connect`, `iter_corpus`, `cmd_update`, `cmd_status`.
 
-use super::chunk::{breadcrumb, chunk_markdown, file_heads, split_frontmatter, version_of};
+use super::chunk::{breadcrumb, chunk_markdown, file_heads, split_frontmatter_raw, version_of};
 use super::embed::{EmbedErr, Embedder, EMBED_BATCH, EMBED_MAX_CHARS, EMBED_MODEL};
 use super::pynum::{fsum, st_mtime};
 use super::{read_text, sql, CORPUS_ROOTS, DB_NAME, INDEX_DIR, SKIP_DIRS_ANYWHERE};
 use crate::error::R;
+use crate::fm::fm_list_values;
 use crate::out;
 use crate::pyos;
 use rusqlite::{params, Connection, OptionalExtension};
@@ -15,7 +16,8 @@ pub const SCHEMA_SQL: &str = "
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS files(
   path TEXT PRIMARY KEY, mtime REAL NOT NULL, size INTEGER NOT NULL,
-  hash TEXT NOT NULL, status TEXT, version INTEGER, is_head INTEGER NOT NULL DEFAULT 1);
+  hash TEXT NOT NULL, status TEXT, version INTEGER, is_head INTEGER NOT NULL DEFAULT 1,
+  kind TEXT, area TEXT, \"type\" TEXT);
 CREATE TABLE IF NOT EXISTS chunks(
   chunk_id INTEGER PRIMARY KEY AUTOINCREMENT,
   path TEXT NOT NULL, ord INTEGER NOT NULL,
@@ -27,7 +29,15 @@ CREATE TABLE IF NOT EXISTS embeddings(
   path TEXT NOT NULL, ord INTEGER NOT NULL,
   dim INTEGER NOT NULL, norm REAL NOT NULL,
   vec BLOB NOT NULL, PRIMARY KEY(path, ord));
+CREATE TABLE IF NOT EXISTS file_tags(
+  path TEXT NOT NULL, tag TEXT NOT NULL, PRIMARY KEY(path, tag));
+CREATE INDEX IF NOT EXISTS file_tags_tag ON file_tags(tag);
 ";
+
+/// The exact frontmatter fields `files` carries beside `status`; a database from before
+/// them gains the columns on connect and their values on the next update.
+pub const FIELD_COLUMNS: [&str; 3] = ["kind", "area", "type"];
+pub const FIELDS_REV: &str = "2";
 
 pub fn index_dir(root: &str) -> String {
     pyos::join_all(&[root, INDEX_DIR[0], INDEX_DIR[1]])
@@ -43,7 +53,61 @@ pub fn connect(root: &str) -> R<Connection> {
     let con = Connection::open(db_path(root)).map_err(sql)?;
     let _: String = con.query_row("PRAGMA journal_mode=WAL", [], |r| r.get(0)).map_err(sql)?;
     con.execute_batch(SCHEMA_SQL).map_err(sql)?;
+    let have: Vec<String> = {
+        let mut st = con.prepare("PRAGMA table_info(files)").map_err(sql)?;
+        let rows = st.query_map([], |r| r.get::<_, String>(1)).map_err(sql)?;
+        rows.collect::<Result<_, _>>().map_err(sql)?
+    };
+    for col in FIELD_COLUMNS {
+        if !have.iter().any(|h| h == col) {
+            con.execute_batch(&format!("ALTER TABLE files ADD COLUMN \"{col}\" TEXT")).map_err(sql)?;
+        }
+    }
     Ok(con)
+}
+
+/// The exact fields of one file: (kind, area, type, tags) from its frontmatter.
+pub fn frontmatter_fields(text: &str) -> (Option<String>, Option<String>, Option<String>, Vec<String>) {
+    let (fm, raw, _) = split_frontmatter_raw(text);
+    let field = |k: &str| fm.get(k).filter(|v| !v.is_empty()).cloned();
+    let mut tags: Vec<String> = Vec::new();
+    for t in fm_list_values(&raw, "tags") {
+        if !tags.contains(&t) {
+            tags.push(t);
+        }
+    }
+    (field("kind"), field("area"), field("type"), tags)
+}
+
+fn write_fields(con: &Connection, rel: &str, text: &str) -> R<()> {
+    let (kind, area, ptype, tags) = frontmatter_fields(text);
+    con.execute("UPDATE files SET kind=?, area=?, \"type\"=? WHERE path=?", params![kind, area, ptype, rel]).map_err(sql)?;
+    con.execute("DELETE FROM file_tags WHERE path = ?", [rel]).map_err(sql)?;
+    let mut ins = con.prepare_cached("INSERT OR IGNORE INTO file_tags(path, tag) VALUES(?,?)").map_err(sql)?;
+    for t in tags {
+        ins.execute(params![rel, t]).map_err(sql)?;
+    }
+    Ok(())
+}
+
+/// Fill the exact fields for every tracked file without touching chunks or vectors: what a
+/// database indexed before the fields existed needs once.
+fn backfill_fields(con: &Connection, root: &str) -> R<usize> {
+    let rels: Vec<String> = {
+        let mut st = con.prepare("SELECT path FROM files").map_err(sql)?;
+        let rows = st.query_map([], |r| r.get::<_, String>(0)).map_err(sql)?;
+        rows.collect::<Result<_, _>>().map_err(sql)?
+    };
+    let mut n = 0;
+    for rel in rels {
+        let full = pyos::join(root, &rel);
+        if !pyos::isfile(&full) {
+            continue;
+        }
+        write_fields(con, &rel, &read_text(&full)?)?;
+        n += 1;
+    }
+    Ok(n)
 }
 
 /// `iter_corpus(root)`: repo-relative forward-slash paths inside the corpus.
@@ -94,7 +158,7 @@ fn hash_of(root: &str, rel: &str) -> R<String> {
 }
 
 fn drop_file_rows(con: &Connection, rel: &str) -> R<()> {
-    for table in ["chunks_fts", "chunks", "embeddings", "files"] {
+    for table in ["chunks_fts", "chunks", "embeddings", "files", "file_tags"] {
         con.execute(&format!("DELETE FROM {table} WHERE path = ?"), [rel]).map_err(sql)?;
     }
     Ok(())
@@ -105,7 +169,7 @@ type Pending = (String, i64, String);
 /// `insert_file(...)`: index one file's chunks; returns the (path, ord, embed text) queue.
 fn insert_file(con: &Connection, root: &str, rel: &str, mtime: f64, size: u64, hash: &str, heads: &HashSet<String>) -> R<Vec<Pending>> {
     let text = read_text(&pyos::join(root, rel))?;
-    let (fm, body) = split_frontmatter(&text);
+    let (fm, _, body) = split_frontmatter_raw(&text);
     let version = version_of(rel);
     drop_file_rows(con, rel)?;
     let mut items = Vec::new();
@@ -122,6 +186,7 @@ fn insert_file(con: &Connection, root: &str, rel: &str, mtime: f64, size: u64, h
         params![rel, mtime, size as i64, hash, fm.get("status"), version, heads.contains(rel) as i64],
     )
     .map_err(sql)?;
+    write_fields(con, rel, &text)?;
     Ok(items)
 }
 
@@ -226,11 +291,14 @@ pub fn cmd_update(root: &str, rebuild: bool, quiet: bool, embedder: Embedder) ->
     let started = std::time::Instant::now();
     let con = connect(root)?;
     if rebuild {
-        for table in ["chunks_fts", "chunks", "files", "embeddings"] {
+        for table in ["chunks_fts", "chunks", "files", "embeddings", "file_tags"] {
             con.execute_batch(&format!("DROP TABLE IF EXISTS {table}")).map_err(sql)?;
         }
         con.execute_batch(SCHEMA_SQL).map_err(sql)?;
     }
+    let fields_rev: Option<String> =
+        con.query_row("SELECT value FROM meta WHERE key='fields_rev'", [], |r| r.get(0)).optional().map_err(sql)?;
+    let needs_fields = fields_rev.as_deref() != Some(FIELDS_REV);
 
     let mut disk: BTreeMap<String, (f64, u64)> = BTreeMap::new();
     let (mut n_md, mut n_txt) = (0usize, 0usize);
@@ -293,6 +361,10 @@ pub fn cmd_update(root: &str, rebuild: bool, quiet: bool, embedder: Embedder) ->
         removed += 1;
     }
     q.flush(&con);
+    if needs_fields {
+        backfill_fields(&con, root)?;
+        con.execute("INSERT OR REPLACE INTO meta(key, value) VALUES('fields_rev', ?)", [FIELDS_REV]).map_err(sql)?;
+    }
 
     // Chunks a failed batch left without vectors: backfill so a refresh self-heals.
     let mut backfilled = 0i64;

@@ -235,3 +235,117 @@ fn rebuild_starts_from_empty_tables() {
     let after: i64 = db(&fx).query_row("SELECT MAX(chunk_id) FROM chunks", [], |r| r.get(0)).unwrap();
     assert_eq!(before, after, "AUTOINCREMENT restarts with the dropped table");
 }
+
+// ------------------------------------------------------------------ exact-field filters
+
+fn tagged_vault() -> Fx {
+    let fx = vault();
+    let place = |slug: &str, kind: &str, area: &str, tags: &str, card: &str| {
+        fx.write(
+            &format!("workspace/life/places/{slug}.md"),
+            &format!("---\nprivate: true\nkind: {kind}\narea: {area}\ntags: [{tags}]\nstatus: want\n---\n# {slug}\n{card}\n\n## What it is\nzebra launch dinner spot\n"),
+        );
+    };
+    place("noodle-house", "restaurant", "harbour", "noodles, quiet", "Restaurant · noodles · quiet · [[harbour]]");
+    place("second-bowl", "restaurant", "market", "noodles, loud", "Restaurant · noodles · loud · [[market]]");
+    place("corner-bakery", "cafe", "harbour", "pastry, quiet", "Cafe · pastry · quiet · [[harbour]]");
+    fx.write(
+        "workspace/life/people/sam-example.md",
+        "---\nprivate: true\nname: Sam Example\ntype: person\ntags:\n  - boardgames\n  - quiet\n---\n# Sam Example\nzebra launch friend\n",
+    );
+    fx
+}
+
+fn paths(out: &str) -> Vec<String> {
+    let hits: Vec<serde_json::Value> = serde_json::from_str(out).unwrap();
+    hits.iter().map(|h| h["path"].as_str().unwrap().rsplit('/').next().unwrap().to_string()).collect()
+}
+
+#[test]
+fn frontmatter_fields_and_tags_are_stored_exactly_and_backfilled_on_an_old_database() {
+    let fx = tagged_vault();
+    dead(&fx, &["index", "update"]);
+    let con = db(&fx);
+    let row: (Option<String>, Option<String>, Option<String>, Option<String>) = con
+        .query_row("SELECT kind, area, \"type\", status FROM files WHERE path = 'workspace/life/places/noodle-house.md'", [], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+        })
+        .unwrap();
+    assert_eq!(row, (Some("restaurant".into()), Some("harbour".into()), None, Some("want".into())));
+    let tags: Vec<String> = con
+        .prepare("SELECT tag FROM file_tags WHERE path = 'workspace/life/people/sam-example.md' ORDER BY tag")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+    assert_eq!(tags, vec!["boardgames", "quiet"], "a block list indexes like an inline one");
+    let ptype: Option<String> =
+        con.query_row("SELECT \"type\" FROM files WHERE path = 'workspace/life/people/sam-example.md'", [], |r| r.get(0)).unwrap();
+    assert_eq!(ptype.as_deref(), Some("person"));
+
+    // a database from before the fields: the columns arrive on connect, the values on the next update,
+    // and the chunks and vectors are left alone
+    con.execute_batch("UPDATE files SET kind = NULL, area = NULL; DELETE FROM file_tags; DELETE FROM meta WHERE key = 'fields_rev'").unwrap();
+    drop(con);
+    let (_, out, _) = dead(&fx, &["index", "update"]);
+    assert!(out.contains("+0 new · ~0 updated"), "{out}");
+    let con = db(&fx);
+    let n: i64 = con.query_row("SELECT COUNT(*) FROM file_tags", [], |r| r.get(0)).unwrap();
+    assert_eq!(n, 8);
+    let kind: Option<String> =
+        con.query_row("SELECT kind FROM files WHERE path = 'workspace/life/places/corner-bakery.md'", [], |r| r.get(0)).unwrap();
+    assert_eq!(kind.as_deref(), Some("cafe"));
+}
+
+#[test]
+fn filters_narrow_before_ranking_and_list_without_a_query() {
+    let fx = tagged_vault();
+    dead(&fx, &["index", "update"]);
+    // the same query without a filter is the plain search (every zebra page)
+    let (_, plain, _) = dead(&fx, &["search", "zebra", "--json", "-n", "50"]);
+    assert_eq!(paths(&plain).len(), 10, "{plain}");
+    let (code, out, err) = dead(&fx, &["search", "zebra", "--tag", "noodles", "--json", "-n", "50"]);
+    assert_eq!(code, 0, "{err}");
+    let mut got = paths(&out);
+    got.sort();
+    assert_eq!(got, vec!["noodle-house.md", "second-bowl.md"]);
+    let hits: Vec<serde_json::Value> = serde_json::from_str(&out).unwrap();
+    assert!(hits[0]["why"].as_array().unwrap().iter().any(|w| w == "filter"), "{out}");
+    // AND across repeated tags; kind and area; a tag on a people page
+    let (_, out, _) = dead(&fx, &["search", "zebra", "--tag", "noodles", "--tag", "quiet", "--json"]);
+    assert_eq!(paths(&out), vec!["noodle-house.md"]);
+    let (_, out, _) = dead(&fx, &["search", "zebra", "--kind", "cafe", "--json"]);
+    assert_eq!(paths(&out), vec!["corner-bakery.md"]);
+    let (_, out, _) = dead(&fx, &["search", "zebra", "--area", "harbour", "--tag", "quiet", "--json"]);
+    let mut got = paths(&out);
+    got.sort();
+    assert_eq!(got, vec!["corner-bakery.md", "noodle-house.md"]);
+    let (_, out, _) = dead(&fx, &["search", "zebra", "--type", "person", "--json"]);
+    assert_eq!(paths(&out), vec!["sam-example.md"]);
+    // no query: the admitted pages by path, the first chunk (card line) as the snippet
+    let (code, out, _) = dead(&fx, &["search", "--tag", "quiet"]);
+    assert_eq!(code, 0);
+    let out = out.replace("\r\n", "\n");
+    assert!(out.starts_with("af search: 3 hits for tags [quiet]  (open cited files before relying on snippets)\n\n1. [  0.000] workspace/life/people/sam-example.md\n"), "{out}");
+    assert!(out.contains("2. [  0.000] workspace/life/places/corner-bakery.md\n   corner-bakery › corner-bakery\n   …Cafe · pastry · quiet · [[harbour]]…\n   why: filter\n"), "{out}");
+    let (_, out, _) = dead(&fx, &["search", "zebra", "--tag", "nothing-here"]);
+    assert!(out.starts_with("af search: no hits for 'zebra' with tags [nothing-here]"), "{out}");
+    // neither a query nor a filter is a usage error
+    let (code, _, err) = dead(&fx, &["search"]);
+    assert_eq!(code, 2);
+    assert!(err.contains("a query or a filter (--tag, --kind, --area, --type) is required"), "{err}");
+}
+
+#[test]
+fn a_tag_filter_resolves_alt_labels_through_the_registry() {
+    let fx = tagged_vault();
+    fx.write(
+        "workspace/life/tags.yaml",
+        "facets:\n  - name: cuisine\n    applies: places\n    cardinality: multi\ntags:\n  - id: noodles\n    facet: cuisine\n    status: active\n    alt: [noodle-bar]\n    scope: \"\"\n",
+    );
+    dead(&fx, &["index", "update"]);
+    let (_, out, _) = dead(&fx, &["search", "--tag", "noodle bar"]);
+    let out = out.replace("\r\n", "\n");
+    assert!(out.starts_with("af search: tag 'noodle bar' resolved to 'noodles' through workspace/life/tags.yaml\naf search: 2 hits for tags [noodles]"), "{out}");
+}

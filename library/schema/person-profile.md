@@ -15,8 +15,11 @@ met: <where and when, e.g. "a friend's birthday, 2026-09">   # friends
 groups: [<group slug>]                             # friends
 profiles: [instagram @handle, linkedin <url>]      # public profiles only
 aliases: [<other spellings>]
+tags: [<interest or closeness ids>]                # registry ids only; af tag match first
 ---
 ```
+
+`tags` carries ids from the registry ([`tags.md`](tags.md)), the people facets only (an interest, a context, a closeness): `af tag match "<phrase>" --facet <f>` per candidate and write what it returns; on `none`, `af tag propose <slug> --facet <f> --scope "<one line>"`. Nothing a field already holds (`groups`, `met`, `title`) is a tag; `af search --tag <id> --type person` filters on them.
 
 Sections, present only when there is something to say:
 

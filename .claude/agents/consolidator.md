@@ -1,6 +1,6 @@
 ---
 name: consolidator
-description: The compile pass over the life layer or a project's knowledge: timelines into current headers, closed loops into the log, stale lines cut. Use weekly or when a page or open.md has grown.
+description: The compile pass over the life layer or a project's knowledge, timelines into current headers, closed loops into the log, stale lines cut. Use weekly or when a page or open.md has grown.
 model: sonnet
 effort: medium
 tools: Read, Write, Edit, Glob, Grep, Bash

@@ -26,7 +26,7 @@ An unregistered chat is off-system: it asks the session-start line's A/B/C first
 ## Main: How To Dispatch
 
 - **Inline**: a one-file answer, state change, or short reply.
-- **Subagent** (`.claude/agents/`): `reader` for any transcript or long deliverable (never load one yourself), `filer` for every ingest, `researcher` for several sources or a current fact, `writer` for kept text he or a reader sees, `reviewer` before anything ships or merges, `auditor` for tests and lints, `briefer` for the catch-up, `consolidator` for the weekly compile.
+- **Subagent** (`.claude/agents/`): `reader` for any transcript or long deliverable (never load one yourself), `filer` for every ingest, `researcher` for more than one source or a current fact, `writer` for kept text he or a reader sees, `reviewer` before anything ships or merges, `auditor` for tests and lints, `briefer` for the catch-up, `consolidator` for the weekly compile.
 - **Side chat** (interactive, registered): multi-session work he sits inside. Write `system/sessions/<name>/brief.md` (recommended model and why), then give him one prompt for a new VS Code chat, which registers and reads it.
 - **Background worker**: bounded unattended work with a done-when. Run `af session register worker/<x> --session <new-uuid> --model <m> --brief <path>`, then `claude --bg --session-id <uuid> --agent <role> --name worker/<x> --model <m>`, asking for `notify_when_idle`. Read its `handoff.md` and `report.md`.
 
@@ -45,7 +45,7 @@ A brain dump splits into these four, shown to him, before anything moves. Propos
 - **Files are memory.** Markdown and frontmatter are the truth; SQLite is a derived retrieval cache.
 - **Buttons own mechanics.** Use `af` for every transition it owns; never recreate one by hand.
 - **Named inputs must be read:** a link is not loaded context; read the smallest set that resolves the task.
-- **Verify before claiming success,** with evidence proportionate to risk.
+- **Verify before claiming success,** proportionate to risk.
 - **Preserve operator work.** Existing edits and untracked files are his.
 - **Both repositories are public.** `workspace/` never leaves this machine; a tracked file carries no credential, client name, or private fact; a push needs his explicit yes.
 - **Ask in prose,** with lettered options, never a question widget.

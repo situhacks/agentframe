@@ -20,7 +20,7 @@ Shapes `workspace/life/open.md` and the closed lines in `workspace/life/log/<YYY
 - An interactive chat (main or a side chat) re-raises due loops at the end of each reply, with their background, until resolved. A worker writes no replies; it records a due loop in its handoff instead.
 - Never keep a deadlines or reminders file inside a system or project folder; each date there is a loop.
 
-Due loops print at the start of every registered interactive chat and after compaction, and reach his phone each morning through `system/tools/push-due-loops.ps1`, which `system/tools/register-daily-reminders.ps1` schedules.
+Due loops print at the start of every registered interactive chat and after compaction, and reach his phone each morning through `system/tools/push-due-loops.ps1`, which `system/tools/register-daily-reminders.ps1` schedules. Card bills need no hand-raised loop: the bills watch raises, re-dates and closes the `Bills` loops from his card emails ([`bills.md`](bills.md)).
 
 ## Grammar
 

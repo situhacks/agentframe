@@ -2,7 +2,8 @@
 //!
 //! `- [ ] 2026-10-24 · text · nudge 2026-10-27 · every monthly · from: src-2026-10-23-02`
 //! A loop is closed by moving it to the month log; nothing closed stays in open.md. A loop
-//! with `every <period>` is logged as closed and re-dated one period on instead.
+//! with `every <period>` is logged as closed and re-dated one period on instead. A loop
+//! with `need` and `detail` fields is an item on the needs list (`crate::needs`).
 
 use crate::core::{today_date, Ctx};
 use crate::die;
@@ -24,14 +25,29 @@ pub struct Loop {
     /// 1-based ordinal among the open loops, in file order (what `af open close <n>` takes).
     pub n: usize,
     pub line_idx: usize,
+    /// The nearest heading.
     pub section: String,
+    /// The enclosing `##` (or `#`) heading, however deep the nearest one is.
+    pub top: String,
     pub opened: NaiveDate,
     pub text: String,
     pub nudge: Option<NaiveDate>,
     /// The recurrence period (`monthly`, `weekly`, or `Nd`); only a nudged loop carries one.
     pub every: Option<String>,
     pub from: String,
+    /// Present on a needs-list item; such a loop carries no nudge.
+    pub need: Option<crate::needs::Need>,
     pub raw: String,
+}
+
+impl Loop {
+    /// The day it comes due: its nudge, or the date of a dated needs item.
+    pub fn due_on(&self) -> Option<NaiveDate> {
+        match &self.need {
+            Some(crate::needs::Need { when: crate::needs::When::On(d), .. }) => Some(*d),
+            _ => self.nudge,
+        }
+    }
 }
 
 /// One parsed loop line: (opened, text, nudge, every, from).
@@ -43,8 +59,9 @@ fn date(s: &str) -> Option<NaiveDate> {
     NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()
 }
 
-/// The parts of an open loop line; None when it does not parse. Text carrying a
-/// ` · nudge ` or ` · every ` token is a misplaced or misspelt field, not text.
+/// The parts of an open loop line, its need fields already lifted off (`needs::split_need`);
+/// None when it does not parse. Text carrying a ` · nudge `, ` · every `, ` · need `, or
+/// ` · detail ` token is a misplaced or misspelt field, not text.
 pub fn parse_open(line: &str) -> Option<Parsed> {
     let re = rx(&format!(
         r"\A- \[ \] (\d{{4}}-\d{{2}}-\d{{2}}) · (.+?)(?: · nudge (\d{{4}}-\d{{2}}-\d{{2}})(?: · every ({PERIOD}))?)? · from: (\S(?:.*\S)?)\z"
@@ -56,7 +73,7 @@ pub fn parse_open(line: &str) -> Option<Parsed> {
         None => None,
     };
     let text = c[2].trim().to_string();
-    if text.contains(" · nudge ") || text.contains(" · every ") {
+    if [" · nudge ", " · every ", " · need ", " · detail "].iter().any(|t| text.contains(t)) {
         return None;
     }
     Some((opened, text, nudge, c.get(4).map(|m| m.as_str().to_string()), c[5].to_string()))
@@ -105,7 +122,18 @@ pub struct OpenDoc {
 }
 
 impl OpenDoc {
+    /// Every reader of the loops comes through here, and every writer through `save`, so
+    /// the needs view follows the date as well as the file.
     pub fn load(ctx: &Ctx) -> R<Option<OpenDoc>> {
+        let doc = OpenDoc::load_raw(ctx)?;
+        if doc.is_some() {
+            crate::needs::refresh(ctx);
+        }
+        Ok(doc)
+    }
+
+    /// `load` without the view: what rendering the view itself reads.
+    pub fn load_raw(ctx: &Ctx) -> R<Option<OpenDoc>> {
         let path = vpath(ctx, OPEN_REL);
         Ok(TextFile::load(&path)?.map(|file| OpenDoc::parse(path, file)))
     }
@@ -115,6 +143,7 @@ impl OpenDoc {
         let mut loops = Vec::new();
         let mut bad = Vec::new();
         let mut section = String::new();
+        let mut top = String::new();
         let mut in_comment = false;
         for (i, line) in lines.iter().enumerate() {
             let t = line.trim();
@@ -126,30 +155,36 @@ impl OpenDoc {
                 in_comment = !t.contains("-->");
                 continue;
             }
-            if let Some((_, h)) = heading(t) {
+            if let Some((level, h)) = heading(t) {
+                if level <= 2 {
+                    top = h.clone();
+                }
                 section = h;
                 continue;
             }
             if !(t.starts_with("- ") || t.starts_with("* ") || t == "-" || t == "*") {
                 continue;
             }
-            match parse_open(line) {
+            let (plain, need) = crate::needs::split_need(line.trim_end());
+            match parse_open(&plain).filter(|p| need.is_none() || p.2.is_none()) {
                 Some((opened, text, nudge, every, from)) => loops.push(Loop {
                     n: loops.len() + 1,
                     line_idx: i,
                     section: section.clone(),
+                    top: top.clone(),
                     opened,
                     text,
                     nudge,
                     every,
                     from,
+                    need,
                     raw: line.trim_end().to_string(),
                 }),
                 None => {
                     let why = if t.starts_with("- [x]") || t.starts_with("- [X]") {
                         "closed loop left in open.md (af open close moves it to the month log)"
                     } else {
-                        "line does not parse as '- [ ] YYYY-MM-DD · text[ · nudge YYYY-MM-DD[ · every monthly|weekly|Nd]] · from: <id>'"
+                        "line does not parse as '- [ ] YYYY-MM-DD · text[ · nudge YYYY-MM-DD[ · every monthly|weekly|Nd] | · need now|on YYYY-MM-DD|when <trigger> · detail needs/<slug>.md] · from: <id>'"
                     };
                     bad.push((i + 1, t.to_string(), why.to_string()));
                 }
@@ -158,12 +193,13 @@ impl OpenDoc {
         OpenDoc { path, file, lines, loops, bad }
     }
 
-    /// Loops whose nudge is today or earlier, oldest first, with their age in days.
+    /// Loops due today or earlier, dated needs items among them, oldest first, with their
+    /// age in days.
     pub fn due(&self, today: NaiveDate) -> Vec<(Loop, i64)> {
         let mut v: Vec<(Loop, i64)> = self
             .loops
             .iter()
-            .filter(|l| matches!(l.nudge, Some(n) if n <= today))
+            .filter(|l| matches!(l.due_on(), Some(n) if n <= today))
             .map(|l| (l.clone(), (today - l.opened).num_days()))
             .collect();
         v.sort_by(|a, b| a.0.opened.cmp(&b.0.opened).then(a.0.n.cmp(&b.0.n)));
@@ -182,9 +218,11 @@ impl OpenDoc {
         out
     }
 
-    fn save(&mut self) -> R<()> {
+    pub fn save(&mut self, ctx: &Ctx) -> R<()> {
         self.file.set_lines(&self.lines);
-        self.file.save(&self.path)
+        self.file.save(&self.path)?;
+        crate::needs::refresh(ctx);
+        Ok(())
     }
 }
 
@@ -195,7 +233,8 @@ pub fn due_line(l: &Loop, age: i64) -> String {
 pub fn loop_json(l: &Loop, age: Option<i64>) -> Value {
     let mut v = json!({
         "n": l.n, "section": l.section, "opened": l.opened.format("%Y-%m-%d").to_string(), "text": l.text,
-        "nudge": l.nudge.map(|n| n.format("%Y-%m-%d").to_string()), "every": l.every, "from": l.from,
+        "nudge": l.due_on().map(|n| n.format("%Y-%m-%d").to_string()), "every": l.every, "from": l.from,
+        "need": l.need.as_ref().map(|n| n.when.field()), "detail": l.need.as_ref().map(|n| n.detail_rel()),
     });
     if let Some(a) = age {
         v["age_days"] = json!(a);
@@ -298,12 +337,19 @@ pub fn cmd_add(
     let line = format_open(today, &text, nudge, every.as_deref(), &from);
     match parse_open(&line) {
         Some((_, t, n, e, f)) if t == text && n == nudge && e == every && f == from => {}
-        _ => die!("the loop text breaks the open.md grammar (it may not contain ' · nudge ', ' · every ', or ' · from: '): {text}"),
+        _ => die!("the loop text breaks the open.md grammar (it may not contain ' · nudge ', ' · every ', ' · need ', ' · detail ', or ' · from: '): {text}"),
     }
     let path = vpath(ctx, OPEN_REL);
     let file = TextFile::load(&path)?.unwrap_or_else(|| TextFile::new(""));
     let mut doc = OpenDoc::parse(path, file);
-    let lines = &mut doc.lines;
+    insert_in_section(&mut doc.lines, &section, &line);
+    doc.save(ctx)?;
+    outln!("{line}");
+    Ok(0)
+}
+
+/// Add `line` at the end of its section, creating the section at the file's end if needed.
+pub fn insert_in_section(lines: &mut Vec<String>, section: &str, line: &str) {
     let h = lines.iter().position(|l| heading(l.trim()).map(|(lv, t)| lv >= 2 && t == section).unwrap_or(false));
     match h {
         Some(h) => {
@@ -312,10 +358,10 @@ pub fn cmd_add(
                 .find(|&k| heading(lines[k].trim()).map(|(lv, _)| lv <= level).unwrap_or(false))
                 .unwrap_or(lines.len());
             match (h + 1..end).rev().find(|&k| !lines[k].trim().is_empty()) {
-                Some(last) => lines.insert(last + 1, line.clone()),
+                Some(last) => lines.insert(last + 1, line.to_string()),
                 None => {
                     lines.insert(h + 1, String::new());
-                    lines.insert(h + 2, line.clone());
+                    lines.insert(h + 2, line.to_string());
                 }
             }
         }
@@ -325,40 +371,43 @@ pub fn cmd_add(
             }
             lines.push(format!("## {section}"));
             lines.push(String::new());
-            lines.push(line.clone());
+            lines.push(line.to_string());
         }
     }
-    doc.save()?;
-    outln!("{line}");
-    Ok(0)
 }
 
 /// The one open loop `target` names: its number, or a text prefix (an exact match wins
 /// over longer loops that share the prefix).
 fn find_target(doc: &OpenDoc, target: &str) -> R<Loop> {
+    find_target_in(doc, target, |_| true, "open loop")
+}
+
+/// `find_target` among the loops `keep` admits; `what` names them in a refusal. A number
+/// keeps its place in the whole file, so it is the number `af open close` takes too.
+pub fn find_target_in(doc: &OpenDoc, target: &str, keep: impl Fn(&Loop) -> bool, what: &str) -> R<Loop> {
     let t = target.trim();
     let hit: Loop = if !t.is_empty() && t.chars().all(|c| c.is_ascii_digit()) {
         let n: usize = t.parse().unwrap_or(0);
-        match doc.loops.iter().find(|l| l.n == n) {
+        match doc.loops.iter().find(|l| l.n == n && keep(l)) {
             Some(l) => l.clone(),
-            None => die!("no open loop #{t} ({} open)", doc.loops.len()),
+            None => die!("no {what} #{t} ({} open)", doc.loops.len()),
         }
     } else {
         let p = t.to_lowercase();
         if p.is_empty() {
             die!("give a loop number or a text prefix");
         }
-        let cands: Vec<&Loop> = doc.loops.iter().filter(|l| l.text.to_lowercase().starts_with(&p)).collect();
+        let cands: Vec<&Loop> = doc.loops.iter().filter(|l| keep(l) && l.text.to_lowercase().starts_with(&p)).collect();
         let exact: Vec<&&Loop> = cands.iter().filter(|l| l.text.to_lowercase() == p).collect();
         match (cands.len(), exact.len()) {
-            (0, _) => die!("no open loop starts with '{t}'"),
+            (0, _) => die!("no {what} starts with '{t}'"),
             (1, _) => cands[0].clone(),
             (_, 1) => (*exact[0]).clone(),
             (k, _) => {
                 for l in &cands {
                     outln!("  #{} {}", l.n, l.raw);
                 }
-                die!("ambiguous prefix '{t}' matches {k} open loops; give the number or a longer prefix")
+                die!("ambiguous prefix '{t}' matches {k} {what}s; give the number or a longer prefix")
             }
         }
     };
@@ -368,15 +417,21 @@ fn find_target(doc: &OpenDoc, target: &str) -> R<Loop> {
 /// `af open close <target> --outcome <text> [--final]`: a one-off loop moves to the month
 /// log; a recurring one is logged and re-dated one period on, unless `--final` ends it.
 pub fn cmd_close(ctx: &Ctx, target: &str, outcome: &str, final_: bool) -> R<i32> {
-    let outcome = life::one_line(outcome);
-    if outcome.is_empty() {
-        die!("--outcome needs the result, in a few words");
-    }
     let mut doc = match OpenDoc::load(ctx)? {
         Some(d) => d,
         None => die!("{OPEN_REL} not found"),
     };
     let hit = find_target(&doc, target)?;
+    close_loop(ctx, &mut doc, &hit, outcome, final_, "af open close")
+}
+
+/// The one way a loop closes, whichever verb named it. A needs item's detail file moves to
+/// `needs/closed/` and the view is rewritten.
+pub fn close_loop(ctx: &Ctx, doc: &mut OpenDoc, hit: &Loop, outcome: &str, final_: bool, verb: &str) -> R<i32> {
+    let outcome = life::one_line(outcome);
+    if outcome.is_empty() {
+        die!("--outcome needs the result, in a few words");
+    }
     let next = match (hit.nudge, hit.every.as_deref()) {
         (_, Some(_)) if final_ => None,
         (Some(n), Some(e)) => match next_nudge(n, e) {
@@ -390,15 +445,22 @@ pub fn cmd_close(ctx: &Ctx, target: &str, outcome: &str, final_: bool) -> R<i32>
         let next_s = next.format("%Y-%m-%d").to_string();
         let rel = life::append_log(ctx, "closed", &format!("{} → {outcome} (next nudge {next_s})", hit.text))?;
         doc.lines[hit.line_idx] = format_open(hit.opened, &hit.text, Some(next), hit.every.as_deref(), &hit.from);
-        doc.save()?;
-        outln!("af open close: #{} {} → {outcome} (logged in {rel}; recurs, next nudge {next_s})", hit.n, hit.text);
+        doc.save(ctx)?;
+        outln!("{verb}: #{} {} → {outcome} (logged in {rel}; recurs, next nudge {next_s})", hit.n, hit.text);
         return Ok(0);
     }
     let fin = if hit.every.is_some() { " (final)" } else { "" };
-    let rel = life::append_log(ctx, "closed", &format!("{} → {outcome}{fin}", hit.text))?;
+    let archive = hit.need.as_ref().and_then(|n| crate::needs::archive_target(ctx, n).map(|to| (n, to)));
+    let kept = archive.as_ref().map(|(_, to)| format!(" (detail: {to})")).unwrap_or_default();
+    // The log, then the line, then the file: a failure at any step leaves the close either
+    // not done at all, or done with the notes still in `needs/`, where doctor names them.
+    let rel = life::append_log(ctx, "closed", &format!("{} → {outcome}{fin}{kept}", hit.text))?;
     doc.lines.remove(hit.line_idx);
-    doc.save()?;
-    outln!("af open close: #{} {} → {outcome}{fin} (moved to {rel})", hit.n, hit.text);
+    doc.save(ctx)?;
+    if let Some((n, to)) = &archive {
+        crate::needs::move_detail(ctx, n, to)?;
+    }
+    outln!("{verb}: #{} {} → {outcome}{fin}{kept} (moved to {rel})", hit.n, hit.text);
     Ok(0)
 }
 
@@ -415,10 +477,13 @@ pub fn cmd_redate(ctx: &Ctx, target: &str, nudge: &str) -> R<i32> {
         None => die!("{OPEN_REL} not found"),
     };
     let hit = find_target(&doc, target)?;
+    if hit.need.is_some() {
+        die!("'{}' is on the needs list and carries no nudge; use af needs move", hit.text);
+    }
     let was = hit.nudge.map(|d| d.format("%Y-%m-%d").to_string()).unwrap_or_else(|| "none".to_string());
     let line = format_open(hit.opened, &hit.text, Some(new), hit.every.as_deref(), &hit.from);
     doc.lines[hit.line_idx] = line.clone();
-    doc.save()?;
+    doc.save(ctx)?;
     let rel = life::append_log(ctx, "redated", &format!("{} → nudge {} (was {was})", hit.text, new.format("%Y-%m-%d")))?;
     outln!("af open redate: #{} {} → nudge {} (was {was}; logged in {rel})", hit.n, hit.text, new.format("%Y-%m-%d"));
     Ok(0)

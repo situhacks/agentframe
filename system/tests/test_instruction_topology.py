@@ -32,6 +32,23 @@ class InstructionTopologyCharacterizationTests(unittest.TestCase):
         self.assertIn("If the task class changes, stop and read the new router.", root)
         self.assertLessEqual(len(root.split()), 720)
 
+    def test_every_reply_ends_with_the_needs_line_and_due_loops_have_an_exit(self):
+        root = text("AGENTS.md")
+        self.assertIn("Every reply to him", root)
+        self.assertIn("or none", root)
+        self.assertIn("`workspace/life/needs.md`", root)
+        self.assertIn("never say a turn started", root)
+        self.assertNotIn("touching or owing", root)
+        self.assertNotIn("re-raise", root)
+        loops = text("library/schema/open-loops.md")
+        self.assertIn("under Do", loops)
+        self.assertNotIn("re-raise", loops)
+        catchup = text(".claude/skills/catchup/SKILL.md")
+        self.assertNotIn("Leave", catchup)
+        self.assertNotIn("leave", catchup.split("---")[1], "the description still offers leave")
+        self.assertIn("**c. Do**", catchup)
+        self.assertNotIn("or leave", text(".claude/skills/README.md"))
+
     def test_claude_code_reads_agents_md_natively(self):
         self.assertFalse((ROOT / "CLAUDE.md").exists(),
                          "a CLAUDE.md in the folder stops Claude Code reading AGENTS.md natively")

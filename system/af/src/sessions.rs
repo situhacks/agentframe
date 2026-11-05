@@ -755,6 +755,9 @@ pub fn bundle_with_source(ctx: &Ctx, session_id: &str, refresh: Option<&str>, so
                 s.push_str(&open::due_line(l, *age));
             }
             parts.push(s);
+            if is_main {
+                parts.push(crate::needs::bundle_block(ctx, &doc));
+            }
         }
     }
     if let Some(r) = &row {

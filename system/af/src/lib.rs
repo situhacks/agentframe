@@ -18,6 +18,7 @@ pub mod cli;
 pub mod life;
 pub mod sessions;
 pub mod open;
+pub mod needs;
 pub mod brief;
 pub mod close;
 pub mod index;

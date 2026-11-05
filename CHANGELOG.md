@@ -4,6 +4,7 @@ Notable changes to AgentFrame. Full release notes also live on the [GitHub relea
 
 ## Unreleased
 
+- `af needs` keeps one list of what main needs the operator to decide, in `workspace/life/needs.md`: a generated view of marked loops in `open.md`, each linking a full detail file, split into Now, Do, and Later. Every reply to him ends with one line naming how many need him now, in place of re-raising due loops.
 - One chat. No rule reserves a tool or work for one chat; each does its job and routes the rest to main. `af session reach` says what a message would meet and checks it arrived, because `SendMessage` answers success for a message that is then held. Workers start with `claude -p`, and their exit wakes the chat that started them.
 - `af place`, `af person`, and `af backlog ready` are new buttons. `af ready` lifts a head's `## Ship` region into `post-FINAL.md`, a deferred ingredient counts as finished, a post row can override the manifest, and a published record stays published. `af draft --file` registers a head written first.
 - A weekly backlog pass (`system/tools/backlog-pass.ps1`) raises a loop naming the ready rows for main to dispatch to a reviewed builder.

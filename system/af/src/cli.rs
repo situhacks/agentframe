@@ -117,7 +117,12 @@ enum Cmd {
         #[command(subcommand)]
         cmd: crate::open::OpenCmd,
     },
-    /// The zero-token catch-up: due loops, chats, backlog, boards
+    /// The needs list: what needs the operator's decision, now or later
+    Needs {
+        #[command(subcommand)]
+        cmd: crate::needs::NeedsCmd,
+    },
+    /// The zero-token catch-up: due loops, needs, chats, backlog, boards
     Brief {
         #[arg(long)]
         json: bool,
@@ -268,6 +273,7 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> R<i32> {
         Cmd::Studio { cmd } => crate::studio::dispatch(ctx, cmd).map(|_| 0),
         Cmd::Session { cmd } => crate::sessions::run(ctx, cmd),
         Cmd::Open { cmd } => crate::open::run(ctx, cmd),
+        Cmd::Needs { cmd } => crate::needs::run(ctx, cmd),
         Cmd::Brief { json, write } => crate::brief::cmd_brief(ctx, json, write),
         Cmd::Close { slug, force } => crate::close::cmd_close(ctx, &slug, force),
         Cmd::Index { cmd } => crate::index::cmd_index(&ctx.root, &cmd),

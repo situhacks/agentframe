@@ -106,6 +106,10 @@ pub fn build(ctx: &Ctx) -> R<(String, Value)> {
     md.push(s);
     js["due"] = Value::Array(due.iter().map(|(l, a)| open::loop_json(l, Some(*a))).collect());
 
+    let (needs_md, needs_js) = crate::needs::brief_parts(ctx, doc.as_ref());
+    md.extend(needs_md);
+    js["needs"] = needs_js;
+
     let sections = doc.as_ref().map(|d| d.by_section()).unwrap_or_default();
     let total: usize = sections.iter().map(|(_, n)| n).sum();
     let mut s = format!("## Open loops ({total})");

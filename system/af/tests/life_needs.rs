@@ -532,3 +532,36 @@ fn a_failed_move_is_reported_after_the_close_stands_and_doctor_names_the_file() 
     let i = issues(&fx);
     assert!(i.iter().any(|m| m.contains("needs/q.md: no open needs item")), "{i:?}");
 }
+
+#[test]
+fn a_number_names_the_loop_even_when_a_slug_is_that_number() {
+    let fx = with_item("first", "First question?", "yes");
+    detail(&fx, "1", "no");
+    fx.ok(&["needs", "add", "Second question?", "--detail", "needs/1.md"]);
+    fx.ok(&["needs", "close", "1", "--outcome", "done"]);
+    let open = fx.read(OPEN);
+    assert!(!open.contains("First question?"), "{open}");
+    assert!(open.contains("Second question?"), "{open}");
+}
+
+#[test]
+fn a_null_or_a_bare_block_header_is_no_recommendation() {
+    for rec in ["~", "null", ">2-"] {
+        let fx = Fx::new();
+        fx.write(
+            "workspace/life/needs/q.md",
+            &format!("---\nnote: an: unquoted colon\nrecommendation: {rec}\n---\n# Q\n"),
+        );
+        let (code, _, _) = fx.run(&["needs", "add", "Q?", "--detail", "needs/q.md"]);
+        assert_ne!(code, 0, "{rec} should read as no recommendation");
+    }
+}
+
+#[test]
+fn doctor_never_advises_deleting_an_orphan_detail_file() {
+    let fx = Fx::new();
+    detail(&fx, "orphan", "yes");
+    let found = issues(&fx).join("\n");
+    assert!(found.contains("needs/closed/"), "{found}");
+    assert!(!found.contains("delete"), "{found}");
+}

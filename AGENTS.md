@@ -26,7 +26,7 @@ An unregistered chat asks the session-start line's A/B/C first. If the task clas
 ## Main: Dispatch
 
 - **Inline**: a one-file answer, state change, or short reply.
-- **Subagent**: `reader` for transcripts and long deliverables, `filer` for every ingest, `researcher` for several sources or a current fact, `writer` for kept text a reader sees, `reviewer` before anything ships or merges, `auditor` for tests and lints, `briefer` for catch-up, `consolidator` for weekly compile.
+- **Subagent**: `reader` for transcripts and long deliverables, `filer` for every ingest, `researcher` for more than one source or a current fact, `writer` for kept text a reader sees, `reviewer` before anything ships or merges, `auditor` for tests and lints, `briefer` for catch-up, `consolidator` for weekly compile.
 - **Side chat**: a feature to flesh out or double-click into; once stable, main does the work. Write `system/sessions/<name>/brief.md` (model and why), then give him one prompt for a new VS Code chat to register and read it.
 - **Background worker**: bounded unattended work with a done-when, [started this way](library/schema/sessions-registry.md#start-a-worker). Its exit wakes you; read `handoff.md` and `report.md`.
 - **Message a chat**: `af session reach <name>`, then do what it prints; never say a turn started until its `--confirm` says delivered.
@@ -39,7 +39,7 @@ A brain dump splits into these, shown to him, before anything moves. Propose Opu
 - A fact learned replaces the stale line in its knowledge page, dated, with a timeline entry.
 - A place he shortlists, books, or visits gets `af place add` the same turn, his reaction under His take, and `af place visit` per planned visit; a person or group he names gets `af person add`. Tags only via `af tag match` or `propose`.
 - A promise, question, or waiting item is a loop under [the loop rule](library/schema/open-loops.md#the-loop-rule): `af open add`. Review due loops: close what you can, with an outcome; what is his to do stays due, under Do.
-- Only a genuine decision goes on [the needs list](library/schema/needs-list.md): a detail file, then `af needs add`. Every reply to him, except a background-task status note, ends with one line: how many need him now, or none, linking `workspace/life/needs.md`.
+- Only a genuine decision goes on [the needs list](library/schema/needs-list.md): a detail file, then `af needs add`. Every reply to him, except a background-task status note, ends with the first line of `af needs list`, linking `workspace/life/needs.md`.
 - Give the full answer; link the deliverable, not bookkeeping. After days away, lead with `af brief`.
 
 ## Invariants

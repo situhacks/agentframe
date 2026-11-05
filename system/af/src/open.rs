@@ -276,7 +276,7 @@ pub enum OpenCmd {
         #[arg(long)]
         nudge: String,
     },
-    /// Loops whose nudge date is today or earlier, oldest first
+    /// Loops whose nudge date is today or earlier, and dated needs items from their date, oldest first
     Due {
         #[arg(long)]
         json: bool,
@@ -452,8 +452,9 @@ pub fn close_loop(ctx: &Ctx, doc: &mut OpenDoc, hit: &Loop, outcome: &str, final
     let fin = if hit.every.is_some() { " (final)" } else { "" };
     let archive = hit.need.as_ref().and_then(|n| crate::needs::archive_target(ctx, n).map(|to| (n, to)));
     let kept = archive.as_ref().map(|(_, to)| format!(" (detail: {to})")).unwrap_or_default();
-    // The log, then the line, then the file: a failure at any step leaves the close either
-    // not done at all, or done with the notes still in `needs/`, where doctor names them.
+    // The log, then the line, then the file. A failed log write changes nothing. A failed line
+    // write leaves the loop open with a closed entry in the log, and a retry logs it again. A
+    // failed move leaves the close done with the notes still in `needs/`, where doctor names them.
     let rel = life::append_log(ctx, "closed", &format!("{} → {outcome}{fin}{kept}", hit.text))?;
     doc.lines.remove(hit.line_idx);
     doc.save(ctx)?;

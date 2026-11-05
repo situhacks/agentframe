@@ -9,7 +9,7 @@ tools: Read, Write, Edit, Glob, Grep, Bash
 You keep the compiled truth current. The brief names the layer (`workspace/life/` or a project) and the pages, or says "all".
 
 - For each page: rebuild `## Current` from the page's full `## Timeline` and the `_history/` and `sources/` it points at, never from the previous header. Each fact once, dated; a superseded fact disappears from Current and stays in the timeline. Flag a contradiction you cannot resolve rather than picking.
-- `open.md`: propose closures for lines the log or the pages show resolved; list them for the operator with the evidence; close nothing yourself. Re-date nothing.
+- `open.md`: propose closures for lines the log or the pages show resolved, each with its evidence, in your return; the caller closes what holds and re-dates what moved.
 - `life.md`: report its line count against the cap and propose the cuts; edit it only when the brief says so.
 - Move closed-loop lines and month-old `log/` entries nowhere; the log is append-only. Archive a knowledge timeline older than six months into `knowledge/_archive/<page>-<YYYY-MM>.md` with a one-line pointer.
 - `places/` and `people/` pages are not recompiled. List a place whose `checked` is older than six months, a card line that disagrees with its frontmatter, and a `[[slug]]` with no file.

@@ -21,14 +21,15 @@ fn manifest_ingredients(cfm: &str) -> Vec<String> {
     }
 }
 
-fn is_post_slug(s: &str) -> bool {
-    rx(r"\Apost-\d+\n?\z").is_match(s)
+/// A post row is one whose file is a post assembly record, whatever the row is called.
+pub fn is_post_row(fm_text: &str, slug: &str) -> bool {
+    row_get(fm_text, slug, "file").is_some_and(|f| f.replace('\\', "/").ends_with("post-FINAL.md"))
 }
 
 pub fn published_posts(fm_text: &str) -> usize {
     all_rows(fm_text)
         .iter()
-        .filter(|s| is_post_slug(s) && row_get(fm_text, s, "status").as_deref() == Some("published"))
+        .filter(|s| is_post_row(fm_text, s) && row_get(fm_text, s, "status").as_deref() == Some("published"))
         .count()
 }
 
@@ -66,7 +67,51 @@ fn old_section(body: &str, ingredient: &str) -> Option<(usize, usize)> {
     Some((p, q))
 }
 
-fn assemble_post_final(post_dir: &str, ready_path: &str, ingredient: &str) -> R<String> {
+/// The shipping text of an ingredient head: what sits under its `## Ship` heading, up to the
+/// next level-2 heading outside a code fence. None when the head declares no such region.
+fn ship_region(body: &str) -> Option<String> {
+    let mut out: Vec<&str> = Vec::new();
+    let (mut inside, mut found, mut fenced) = (false, false, false);
+    for line in body.lines() {
+        if line.trim_start().starts_with("```") {
+            fenced = !fenced;
+        }
+        if !fenced && line.starts_with("## ") {
+            if inside {
+                break;
+            }
+            inside = line[3..].trim() == "Ship";
+            found = found || inside;
+            continue;
+        }
+        if inside {
+            out.push(line);
+        }
+    }
+    if !found {
+        return None;
+    }
+    while out.last().is_some_and(|l| l.trim().is_empty() || l.trim() == "---") {
+        out.pop();
+    }
+    Some(out.join("\n"))
+}
+
+/// What a ready ingredient gave the post record.
+#[derive(PartialEq)]
+enum Lift {
+    Region,
+    /// No `## Ship` heading: the whole head went in.
+    Whole,
+    /// A `## Ship` heading with nothing under it: the record kept what it had.
+    Empty,
+}
+
+fn ship_is_empty(body: &str) -> bool {
+    ship_region(body).is_some_and(|s| s.trim().is_empty())
+}
+
+fn assemble_post_final(post_dir: &str, ready_path: &str, ingredient: &str) -> R<Lift> {
     let pf = join(post_dir, "post-FINAL.md");
     let title = pyos::basename(post_dir);
     if !pyos::isfile(&pf) {
@@ -74,16 +119,21 @@ fn assemble_post_final(post_dir: &str, ready_path: &str, ingredient: &str) -> R<
     }
     let (pfm, mut body) = split_fm(&core::read(&pf)?, "post-FINAL.md")?;
     let (_, src_body) = split_fm(&core::read(ready_path)?, ready_path)?;
+    if ship_is_empty(&src_body) {
+        return Ok(Lift::Empty);
+    }
     let fname = pyos::basename(ready_path);
     let heading = format!("## {} (ready from {fname})", pyos::py_title(&ingredient.replace('-', " ")));
-    let section = format!("{heading}\n{}\n", py_strip(&src_body));
+    let shipping = ship_region(&src_body);
+    let lift = if shipping.is_none() { Lift::Whole } else { Lift::Region };
+    let section = format!("{heading}\n{}\n", py_strip(shipping.as_deref().unwrap_or(&src_body)));
     body = match old_section(&body, ingredient) {
         Some((s, e)) => format!("{}{}\n{}", &body[..s], section, &body[e..]),
         None => format!("{}\n\n{}", body.trim_end_matches('\n'), section),
     };
     let pfm = set_scalar(&pfm, "last_updated", &today(), "post-FINAL.md")?;
     core::write(&pf, &fm::join_fm(&pfm, &body))?;
-    Ok(pf)
+    Ok(lift)
 }
 
 fn under_posts(rel: &str) -> bool {
@@ -110,6 +160,16 @@ pub fn on_draft(cdir: &str, dpath: &str, rel: &str, cfm: String, parent_row: &st
     Ok((cfm, notes))
 }
 
+/// The ingredients this post is assembled from: its row's `ingredients:` override, else the
+/// project manifest's list.
+fn post_ingredients(cfm: &str, cdir: &str, post_dir: &str) -> R<Vec<String>> {
+    let pf_rel = pyos::relpath(&join(post_dir, "post-FINAL.md"), cdir)?.replace('\\', "/");
+    let row = all_rows(cfm).into_iter().find(|r| row_get(cfm, r, "file").as_deref() == Some(pf_rel.as_str()));
+    let own = row.map(|r| fm::list_from_value(row_get(cfm, &r, "ingredients").as_deref())).unwrap_or_default();
+    Ok(if own.is_empty() { manifest_ingredients(cfm) } else { own })
+}
+
+/// Whether every ingredient's head is finished: ready, or deferred on purpose.
 fn post_complete(post_dir: &str, ingredients: &[String], current_ready_path: Option<&str>) -> R<bool> {
     for ing in ingredients {
         let ns = core::versions_in(post_dir, ing);
@@ -123,9 +183,11 @@ fn post_complete(post_dir: &str, ingredients: &[String], current_ready_path: Opt
                 continue;
             }
         }
-        let (bfm, _) = split_fm(&core::read(&best)?, &best)?;
-        if get_scalar(&bfm, "status").as_deref() != Some("ready") {
-            return Ok(false);
+        let (bfm, bbody) = split_fm(&core::read(&best)?, &best)?;
+        match get_scalar(&bfm, "status").as_deref() {
+            Some("deferred") => {}
+            Some("ready") if !ship_is_empty(&bbody) => {}
+            _ => return Ok(false),
         }
     }
     Ok(true)
@@ -145,7 +207,7 @@ pub fn on_ready(cdir: &str, dpath: &str, rel: &str, cfm: String) -> R<(String, V
         Some(c) => c[1].to_string(),
         None => {
             if base == "post-FINAL.md" {
-                let ings = manifest_ingredients(&cfm);
+                let ings = post_ingredients(&cfm, cdir, &post_dir)?;
                 if !ings.is_empty() && !post_complete(&post_dir, &ings, None)? {
                     let mut pending = Vec::new();
                     for i in &ings {
@@ -168,9 +230,28 @@ pub fn on_ready(cdir: &str, dpath: &str, rel: &str, cfm: String) -> R<(String, V
             return Ok((cfm, notes));
         }
     };
-    assemble_post_final(&post_dir, dpath, &ing)?;
+    let pf = join(&post_dir, "post-FINAL.md");
+    if pyos::isfile(&pf) {
+        let (pfm, _) = split_fm(&core::read(&pf)?, "post-FINAL.md")?;
+        if get_scalar(&pfm, "status").as_deref() == Some("published") {
+            notes.push("post-FINAL.md is published and stays as it is; a live change is a new edition".to_string());
+            return Ok((cfm, notes));
+        }
+    }
+    let ings = post_ingredients(&cfm, cdir, &post_dir)?;
+    if !ings.is_empty() && !ings.contains(&ing) {
+        notes.push(format!("{ing} is not one of this post's manifest ingredients; post-FINAL.md not touched"));
+        return Ok((cfm, notes));
+    }
+    let lift = assemble_post_final(&post_dir, dpath, &ing)?;
+    if lift == Lift::Empty {
+        notes.push(format!("{base} has an empty ## Ship region, so post-FINAL.md keeps its earlier text and its current status, which may already be ready; put the shipping text under ## Ship"));
+        return Ok((cfm, notes));
+    }
     notes.push("post-FINAL.md updated".to_string());
-    let ings = manifest_ingredients(&cfm);
+    if lift == Lift::Whole {
+        notes.push(format!("{base} has no ## Ship region, so post-FINAL.md took the whole head; put the shipping text under ## Ship"));
+    }
     let mut cfm = cfm;
     if !ings.is_empty() && post_complete(&post_dir, &ings, Some(dpath))? {
         let pf = join(&post_dir, "post-FINAL.md");

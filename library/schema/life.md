@@ -1,6 +1,6 @@
 # life.md
 
-Shapes `workspace/life/life.md`: what is true about the operator now, injected whole into every `main` session by `af hook session-start`. No verb writes it; main and the consolidator edit it by hand.
+Shapes `workspace/life/life.md`: what is true about the operator now, injected whole into every `main` session by `af hook session-start`. No verb writes it; it is edited by hand.
 
 ```
 ---

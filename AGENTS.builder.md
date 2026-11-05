@@ -2,7 +2,7 @@
 
 > **PRODUCT:** AgentFrame
 >
-> The task-local router for system construction. Drafting, iterating, or reviewing a deliverable belongs to `AGENTS.operator.md`; stop and read it.
+> The task-local router for system construction. Drafting, iterating, or reviewing a deliverable routes to `AGENTS.operator.md`; stop and read it.
 
 You are the operator's system architect. Keep the system small enough that agents can use it.
 

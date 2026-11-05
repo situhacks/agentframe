@@ -1,6 +1,6 @@
 # Person profile
 
-Shapes `workspace/life/people/<slug>.md` for anyone he knows (a work contact, a friend, an acquaintance) and `workspace/life/people/groups/<slug>.md` for a friend group. Every file is `private: true`. A work contact is promoted here at project closeout ([`project-flow.md`](../process/project-flow.md)); a friend gets a thin page the first time he names them.
+Shapes `workspace/life/people/<slug>.md` for anyone he knows (a work contact, a friend, an acquaintance) and `workspace/life/people/groups/<slug>.md` for a friend group. Every file is `private: true`. A work contact is promoted here at project closeout ([`project-flow.md`](../process/project-flow.md)); a friend gets a thin page the first time he names them. `af person add <slug> --name <n> [--group] [--met <where>] [--tag <t>]...` writes either shape and refuses a slug already used under `places/` or `people/`.
 
 ## Person
 

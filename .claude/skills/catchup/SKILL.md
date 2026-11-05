@@ -21,6 +21,7 @@ Catch-up mode. The operator is back after time away and wants to know what is ou
    - Leave: no command.
 
    If a close refuses an ambiguous prefix, rerun it with a longer prefix. Never edit `open.md` by hand.
-6. Run `af open due` and report in one line what is still due, then hand the chat back to him.
+6. Run the visit sweep: list the past seven days of his calendar through the Calendar connector. For each event whose title or location names a page under `workspace/life/places/` (`af place list`), read that page's `## Visits`. Show the events with no row for that date as a lettered list and ask which happened. For each yes, run `af place visit <slug> --date <date> --what "<title>" --from catchup`, which writes the row and raises the verdict loop. With no connector, or nothing to add, say so in one line. Group chats stay out of this.
+7. Run `af open due` and report in one line what is still due, then hand the chat back to him.
 
 Never close or re-date a loop he did not answer for. A loop he resolves with a fact worth keeping (a decision, a date, a person's answer) is a candidate for `/file order`; offer it in one line, do not run it.

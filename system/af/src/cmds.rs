@@ -288,7 +288,11 @@ pub fn cmd_draft(ctx: &Ctx, project: &str, deliverable: &str, artifact: Option<&
                 );
             }
         }
-        if !versions_in(&pyos::dirname(&new_path), &stem).is_empty() {
+        let chain = versions_in(&pyos::dirname(&new_path), &stem);
+        if chain == [1] && pyos::isfile(&new_path) {
+            return register_written_head(ctx, project, deliverable, &new_rel, &new_path);
+        }
+        if !chain.is_empty() {
             let d = pyos::dirname(&new_rel);
             let d = if d.is_empty() { ".".to_string() } else { d };
             die!("deliverable '{stem}' already has a version chain under {d}; {adopt_hint}");
@@ -341,6 +345,19 @@ pub fn cmd_draft(ctx: &Ctx, project: &str, deliverable: &str, artifact: Option<&
     outln!("  - Add any template-specific frontmatter fields before drafting; this command");
     outln!("    creates only the shared status/last_updated container.");
     Ok(())
+}
+
+/// `af draft --file` on a canonical -v1.md written first: give it the shared frontmatter when
+/// it has none and register it through adopt, so write-first is a supported order.
+fn register_written_head(ctx: &Ctx, project: &str, deliverable: &str, rel: &str, path: &str) -> R<()> {
+    let text = read(path)?;
+    if fm::split_fm_optional(&text).is_none() {
+        write(path, &format!("---\nstatus: drafting\nlast_updated: {}\n---\n\n{text}", today()))?;
+    }
+    cmd_adopt(
+        ctx,
+        &AdoptArgs { project, deliverable, file: rel, workstream: None, export: None, notes: None },
+    )
 }
 
 // ------------------------------------------------------------------ adopt

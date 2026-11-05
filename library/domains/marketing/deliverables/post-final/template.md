@@ -13,8 +13,10 @@ The post's assembly record. Each post is built from ingredient deliverables (sli
 
 One file per post: `post-FINAL.md` in the post folder, created in the same turn the post's first ingredient starts drafting. Start that first ingredient with `af draft <campaign> <post-row> --file posts/<folder>/<ingredient>-v1.md`: the button creates the tracker row, and the marketing pack creates this file and points the row at it, so later ingredients start with `--artifact <ingredient>`. Never hand-write the row. The campaign tracker's `post-{n}.file` points here from then on. Not versioned—the ingredient files carry the version trails; this file holds assembled ready content and then the immutable published receipt.
 
-- One section per manifest ingredient, copied verbatim from the ready head version in the ready turn (the ready-event procedure owns this step).
-- Ingredients not yet ready simply aren't there yet.
+- One section per manifest ingredient, copied verbatim in the ready turn from the head's `## Ship` region, or from the whole head when it has none (`af ready` says so). Rejected variants and notes stay outside `## Ship`.
+- Ingredients not yet ready simply aren't there yet. An ingredient stubbed `status: deferred` counts as finished and adds no section.
+- A post that needs a different list from the project's `post_manifest` carries its own on its row: `ingredients: [body-copy]`.
+- Only the post's listed ingredients land here. Once published, the file stays as it is: `af ready` on any head in the folder leaves it alone.
 
 ## Draft Frontmatter Convention
 
@@ -35,5 +37,5 @@ When the operator confirms the live URL ("posted post-1, here's the link"):
 
 ## Readiness Criteria
 
-- Every ingredient named by the manifest for this post is ready and present.
+- Every ingredient named by the manifest or the post's row is ready and present, or deferred.
 - Cross-check across ingredients: the body copy doesn't retell the slides, the cover aligns with the hook, CTA appears once and in the right place.

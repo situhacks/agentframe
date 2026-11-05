@@ -105,6 +105,14 @@ fn test_operator_hyphen_turned_into_em_dash_is_hard() {
 }
 
 #[test]
+fn test_no_frontmatter_field_clears_the_hyphen_finding() {
+    let prev = voiced("All press is good press even the bad ones - right? Another line.");
+    let head = voiced("All press is good press even the bad ones — right? Another line.")
+        .replacen("---\n", "---\nhyphen_conversion_requested: S-13\n", 1);
+    assert_eq!(lint(&head, Some(&prev)).hard_codes(), vec!["hyphen-normalised"]);
+}
+
+#[test]
 fn test_rewritten_sentence_is_not_flagged() {
     let prev = voiced("Sonnet is fine - but do you want to think about it? More.");
     let head = voiced("Sonnet is fine, but do you want to weigh the options? More.");

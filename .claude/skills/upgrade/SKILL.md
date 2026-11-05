@@ -7,7 +7,7 @@ disable-model-invocation: true
 Upgrade mode. The operator picks backlog rows; a `builder` fixes each in its own worktree; nothing lands without his yes. Row shape: [`backlog.md`](../../../library/schema/backlog.md).
 
 1. Read `system/backlog.md`. Every `BB-` row without a `Status: done` line is open; a row in an older shape counts the same. If none is open, say so and stop.
-2. Show the open rows as a lettered list (id, title, `Fix:` line) and ask which to run: letters, or `all`. Wait for his answer.
+2. Show the open rows as a lettered list (id, title, `Fix:` line, and what a `Waits:` line waits on) and ask which to run: letters, or `all`. Wait for his answer.
 3. For each pick, one at a time, dispatch the `builder` role. Its brief carries:
    - the row text whole, its `Verify:` line as the check (an older row without one: the builder writes one and says so);
    - "Write `system/logs/report.md` in your worktree, in plain language: what changed, why, how it was verified, what to watch. Commit nothing. Return the worktree path, its branch, and the report text."

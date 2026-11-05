@@ -44,7 +44,7 @@ The indexer stores `tags`, `kind`, `area`, `type`, and `status` from frontmatter
 
 Replace this section when `af index eval` produces a new number; do not append.
 
-- recall@5 = 21/23 (91%), MRR = 0.645, gate 86%, corpus 1,565 files / 13,957 chunks, all embedded with qwen3-embedding:0.6b. Measured 2026-10-30 with the exact-field index; the unfiltered number is identical to the previous binary on the same index.
+- recall@5 = 26/28 (93%), MRR = 0.683, gate 86%, corpus 1,605 files / 14,063 chunks, all embedded with qwen3-embedding:0.6b. Measured 2026-11-05. A `.claude/` or `.git/` folder under a corpus root is outside the walk, so a leftover worktree cannot double the corpus (with one in the index: 25/28, 0.710).
 - Ranking classes: `_archive/` 0.45; `workspace/life/` outside `_history/` and `sources/` 1.5 (`life`); `knowledge/` 1.5; `sources/` and `_local/` 1.15; `.claude/plans/` 1.05; routers 1.15. Prior versions rank down 0.55; tracker heads 1.9; registered sources 1.25.
 - The two open misses: a project post plan outranked by the campaign's own brief and messaging draft for a generic query, and a long voice-register query whose extra words pull toward FDE material; both are query-shape misses, not corpus or path misses. Nineteen golden paths moved with the life migration and eight followed three projects into `projects/completed/`; the set follows the new paths (before that edit the stale paths read as 16/23).
 

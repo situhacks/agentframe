@@ -30,7 +30,7 @@ It runs on Claude Code only. I built it for my own work and use it every day. It
 Three ideas hold it together.
 
 - **Files are the memory.** Each project keeps its state in `project.md` frontmatter, its raw inputs in `sources/`, what the agent has learned in `knowledge/`, and its deliverables as numbered versions. Nothing important lives only in a chat.
-- **One main chat, one router per role.** `AGENTS.md` is the main chat's instruction: it runs the day from `workspace/life/` and dispatches to subagents, registered side chats, and background workers. Each chat gets its role from the sessions registry at session start and loads one router: `AGENTS.operator.md` for project work, `AGENTS.builder.md` for changes to the system, `AGENTS.worker.md` for unattended runs. The router points at the one file that owns the next step.
+- **One main chat, one router per role.** `AGENTS.md` is the main chat's instruction: it runs the day from `workspace/life/` and dispatches to subagents, registered side chats, and background workers. Any chat can do anything; each does its job and routes the rest back to main. Each chat gets its role from the sessions registry at session start and loads one router: `AGENTS.operator.md` for project work, `AGENTS.builder.md` for changes to the system, `AGENTS.worker.md` for unattended runs. The router points at the one file that owns the next step.
 - **Buttons do the bookkeeping.** `af`, one Rust binary built from `system/af/`, makes the state changes the model should not do by hand and runs every Claude Code hook. The model does the research, the drafting, and the judgment.
 
 <p align="center">
@@ -113,8 +113,10 @@ Third-party tools live in `system/vendor/`, each with a `VENDOR.md` that pins th
 ### Sessions and open loops
 
 - `af session register <name>` puts a chat in `system/sessions/registry.md` with its role, brief, and handoff. Names follow `af-main` (the main chat), `life/<topic>`, `project/<slug>`, `system/<topic>`, `worker/<slug>`.
-- `af open add` raises a loop in `workspace/life/open.md` with an optional nudge date, and `--every monthly`, `weekly`, or `Nd` makes it recur; due loops print at every main session start. `af open close` moves a loop to the month log with its outcome (a recurring loop is logged and re-dated one period on; `--final` ends it), and `af open redate` changes its nudge date in place. Open loops are the only reminder mechanism.
+- `af open add` raises a loop in `workspace/life/open.md` with an optional nudge date, and `--every monthly`, `weekly`, or `Nd` makes it recur; due loops print at every registered interactive chat's start. `af open close` moves a loop to the month log with its outcome (a recurring loop is logged and re-dated one period on; `--final` ends it), and `af open redate` changes its nudge date in place. Open loops are the only reminder mechanism.
 - `af brief` is the catch-up after days away: due loops, chats waiting, backlog, boards. It costs no tokens.
+- `af session reach <name>` says whether a message reaches a chat and starts a turn, and what to do when it will not; `--confirm "<phrase>"` checks one arrived. `SendMessage` answering success proves neither.
+- `af place add|visit|verdict|list` and `af person add` own the mechanics of `workspace/life/places/` and `people/` pages.
 - Nine subagent roles in `.claude/agents/` (reader, researcher, filer, writer, reviewer, auditor, briefer, consolidator, builder) carry a pinned model and a narrow tool set.
 
 ### Hooks
@@ -141,6 +143,8 @@ One Windows Task Scheduler job, `AgentFrame consolidation`, runs every Sunday at
 | `system/tools/register-weekly-consolidation.ps1` | Creates or replaces the Sunday 18:00 task and prints its next run |
 | `system/tools/push-due-loops.ps1` | One reminder push: `af open due --json` as headings and bullets, posted to Discord through `system/tools/notify.py`; `-DryRun` prints instead |
 | `system/tools/register-daily-reminders.ps1` | Creates or replaces the daily 08:30 task `AgentFrame reminders` and prints its next run |
+| `system/tools/backlog-pass.ps1` | One backlog pass: raises a loop naming the oldest rows `af backlog ready` lists, for main to dispatch to a reviewed builder. It starts no builder and runs no git. `-DryRun` prints the loop |
+| `system/tools/register-backlog-pass.ps1` | Creates or replaces the Sunday 20:00 task `AgentFrame backlog pass` and prints its next run |
 
 A second job, `AgentFrame reminders`, runs `push-due-loops.ps1` every day at 08:30 while you are logged on, and at the next logon if the PC was off. It posts nothing when nothing is due. The Discord credentials go in `system/tools/.env`, which git ignores; `notify.py` names the variables. Register it the same way, with `system/tools/register-daily-reminders.ps1`.
 

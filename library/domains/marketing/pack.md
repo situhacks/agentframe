@@ -20,5 +20,5 @@ This pack is the only artifact that knows marketing. The generic spine (`af`) an
 | Scaffold skeleton | [`skeleton.md`](skeleton.md) | the minimal `project.md` index and body `new-project` writes for this domain. |
 | Deliverable templates | [`deliverables/`](deliverables/) | post-final, body-copy, slide-copy, substack-essay, campaign-brief, campaign-architecture, research-artifact, business-brief. |
 | Verb applicability + hooks | `verbs` above + the compiled-in rules ([`marketing.rs`](../../../system/af/src/packs/marketing.rs)) | `ready` runs the post-FINAL assembly hook; generic `publish` calls the marketing receipt hook; `assembly_record` names the unversioned accumulator. |
-| Derived post totals | [`marketing.rs`](../../../system/af/src/packs/marketing.rs) | Publish receipts count published `post-*` rows across the working tracker and archive without persisting a second counter. |
+| Derived post totals | [`marketing.rs`](../../../system/af/src/packs/marketing.rs) | Publish receipts count published rows whose file is a `post-FINAL.md`, across the working tracker and archive, without persisting a second counter. |
 | Persona routing | [`production.md`](production.md) | the post-production / carousel / publish / performance routing the Operator lazy-loads for marketing production work, plus the optional campaign phase checklist. |

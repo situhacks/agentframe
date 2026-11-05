@@ -164,6 +164,21 @@ enum Cmd {
         #[command(subcommand)]
         cmd: crate::tags::TagCmd,
     },
+    /// Backlog rows a builder can work now
+    Backlog {
+        #[command(subcommand)]
+        cmd: crate::backlog::BacklogCmd,
+    },
+    /// Place pages: add, visit, verdict, list
+    Place {
+        #[command(subcommand)]
+        cmd: crate::places::PlaceCmd,
+    },
+    /// Person and group pages: add
+    Person {
+        #[command(subcommand)]
+        cmd: crate::places::PersonCmd,
+    },
     /// Run a Claude Code hook: session-start, stop, session-end, notification, pre-tool-use,
     /// post-tool-use (payload on stdin)
     Hook {
@@ -266,6 +281,9 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> R<i32> {
             crate::index::cmd_search(ctx, query.as_deref(), limit, json, filter)
         }
         Cmd::Tag { cmd } => crate::tags::run(ctx, cmd),
+        Cmd::Backlog { cmd } => crate::backlog::run(ctx, cmd),
+        Cmd::Place { cmd } => crate::places::run_place(ctx, cmd),
+        Cmd::Person { cmd } => crate::places::run_person(ctx, cmd),
         // `af hook` is intercepted before the parser; the variant exists for --help.
         Cmd::Hook { .. } => Ok(0),
     }

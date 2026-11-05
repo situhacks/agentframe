@@ -12,7 +12,7 @@ use crate::fm::{
 };
 use crate::media_shelf;
 use crate::outln;
-use crate::packs::{self, careers, Rules};
+use crate::packs::{self, careers, marketing, Rules};
 use crate::pyglob;
 use crate::pyos::{self, join, join_all, py_splitlines, py_strip};
 use crate::runlog;
@@ -280,7 +280,7 @@ pub fn media_manifest_notes(ctx: &Ctx, cdir: &str) -> R<Vec<String>> {
     };
     let project_ingredients = project_manifest_ingredients(&cfm);
     for slug in all_rows(&cfm) {
-        if !rx(r"\Apost-\d+\n?\z").is_match(&slug) || row_get(&cfm, &slug, "status").as_deref() != Some("published") {
+        if !marketing::is_post_row(&cfm, &slug) || row_get(&cfm, &slug, "status").as_deref() != Some("published") {
             continue;
         }
         let f = match row_get(&cfm, &slug, "file") {
@@ -1113,6 +1113,9 @@ pub fn check_system(ctx: &Ctx) -> R<(Vec<String>, Vec<String>)> {
     let (ti, tn) = crate::tags::doctor_checks(ctx)?;
     issues.extend(ti);
     notes.extend(tn);
+    let (pi, pn) = crate::places::doctor_checks(ctx)?;
+    issues.extend(pi);
+    notes.extend(pn);
     Ok((issues, notes))
 }
 

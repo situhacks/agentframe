@@ -454,6 +454,21 @@ pub enum SessionCmd {
         #[arg(long)]
         session: String,
     },
+    /// Whether a message reaches this chat and starts a turn, and what to do; --confirm checks one arrived
+    Reach {
+        name: String,
+        /// the sending chat's registry name; defaults to the main chat
+        #[arg(long)]
+        from: Option<String>,
+        /// a phrase from a sent message: exit 0 once its Claude read it, 3 until then
+        #[arg(long)]
+        confirm: Option<String>,
+        /// with --confirm: the time reach printed before you sent; an older record does not count
+        #[arg(long)]
+        since: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 pub fn run(ctx: &Ctx, cmd: SessionCmd) -> R<i32> {
@@ -462,6 +477,9 @@ pub fn run(ctx: &Ctx, cmd: SessionCmd) -> R<i32> {
         SessionCmd::List { json } => cmd_list(ctx, json),
         SessionCmd::Stop { name, session } => cmd_stop(ctx, name.as_deref(), session.as_deref()),
         SessionCmd::End { name, session, reason } => cmd_end(ctx, name.as_deref(), session.as_deref(), &reason),
+        SessionCmd::Reach { name, from, confirm, since, json } => {
+            crate::reach::cmd_reach(ctx, &name, from.as_deref(), confirm.as_deref(), since.as_deref(), json)
+        }
         SessionCmd::Bundle { session } => {
             let (text, _) = bundle(ctx, &session)?;
             if !text.is_empty() {
@@ -671,7 +689,7 @@ pub fn off_system_directive(session_id: &str, main: Option<&Row>) -> String {
         "make it a side chat (name it {l}, {p}, or {s}; register it with \"af session register <name> --session {session_id}\", \
 write system/sessions/<name>/brief.md, and tell him to send main the name)"
     );
-    let one_off = "keep it a one-off (nothing is registered; it must not write loops, life pages, or handoffs)";
+    let one_off = "keep it a one-off (nothing is registered; a loop, a life fact, or a handoff it turns up goes to af-main)";
     let ask = "Before anything else, ask the operator in one line, lettered:";
     let tail = "If he answers with a task instead of a letter, treat it as (C) and say so in your first sentence.";
     match main {
@@ -689,7 +707,7 @@ write system/sessions/<name>/brief.md, and tell him to send main the name)"
 }
 
 /// After a compaction or a resume the question was already asked once in this chat.
-pub const OFF_SYSTEM_REMINDER: &str = "af: this chat is still unregistered: a one-off unless he said otherwise earlier in this chat. Do not ask again; write no loops, life pages, or handoffs.";
+pub const OFF_SYSTEM_REMINDER: &str = "af: this chat is still unregistered: a one-off unless he said otherwise earlier in this chat. Do not ask again; a loop, a life fact, or a handoff it turns up goes to af-main.";
 
 /// The bundle, led by the index-refresh line when the session-start hook spawned a
 /// refresh (which then stands in for the index age line).
@@ -727,6 +745,8 @@ pub fn bundle_with_source(ctx: &Ctx, session_id: &str, refresh: Option<&str>, so
                 parts.push(b);
             }
         }
+    }
+    if row.as_ref().is_some_and(|r| r.role != "worker") {
         if let Some(doc) = open::OpenDoc::load(ctx)? {
             let due = doc.due(crate::core::today_date());
             let mut s = format!("open loops: {} open, {} due", doc.loops.len(), due.len());

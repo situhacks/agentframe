@@ -10,4 +10,4 @@ You tell the operator what is outstanding. Run `af brief --write` first; it is t
 
 - Read its output and `workspace/life/plans/<current quarter>.md`. Add one judgment line at the top: the one thing that matters this week and why, from the due loops and the quarter's commitments.
 - Group what follows as the brief does (due loops, waiting on him, chats waiting, backlog, boards). Cut anything already resolved in the log. He reads it after days away, so each loop says what it is, when and why it opened, and what it needs from him; the older or bigger the loop, the more background. Practical detail, not prose.
-- Never add a loop, close a loop, or edit a knowledge page. Return the brief text and the path `af brief --write` saved.
+- You report: a loop or a page that needs changing goes in your return for the caller to route. Return the brief text and the path `af brief --write` saved.

@@ -30,7 +30,7 @@ $brief = 'Layer: workspace/life/. Pages: all. Pages follow library/schema/knowle
     'propose closures for open.md with the evidence, report life.md against its cap. ' +
     'Tags: run the tag duties in your role (af tag lint --embed, then --fix; plural and alt-label merges; ' +
     'add-only backfill of under-tagged pages; semantic merges, splits and deprecations listed for the operator; af tag stats). ' +
-    'Do not close or re-date loops, and do not commit. Return your report per your role.'
+    'Closures and re-dates go in your report, and you do not commit. Return your report per your role.'
 
 # Register the run as a worker before it starts, so its first session start prints this
 # brief instead of the off-system question an unregistered chat gets.

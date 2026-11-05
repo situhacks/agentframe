@@ -23,6 +23,7 @@ The platform caption that ships with the post—body text, CTA, alt text. It dra
 - **Body** — flowing prose, no bullets, hook first.
 - **Alt text** — why the image matters, not "image of…".
 - Hook or body variants while the operator is choosing; remove the losers once picked.
+- The text that goes out sits under `## Ship`; notes, checks, and variants sit outside it. `af ready` lifts only that region into `post-FINAL.md`.
 
 ## Hard Constraints
 

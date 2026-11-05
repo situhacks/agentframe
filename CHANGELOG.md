@@ -4,6 +4,9 @@ Notable changes to AgentFrame. Full release notes also live on the [GitHub relea
 
 ## Unreleased
 
+- One chat. No rule reserves a tool or work for one chat; each does its job and routes the rest to main. `af session reach` says what a message would meet and checks it arrived, because `SendMessage` answers success for a message that is then held. Workers start with `claude -p`, and their exit wakes the chat that started them.
+- `af place`, `af person`, and `af backlog ready` are new buttons. `af ready` lifts a head's `## Ship` region into `post-FINAL.md`, a deferred ingredient counts as finished, a post row can override the manifest, and a published record stays published. `af draft --file` registers a head written first.
+- A weekly backlog pass (`system/tools/backlog-pass.ps1`) raises a loop naming the ready rows for main to dispatch to a reviewed builder.
 - Claude Code only. The Cursor and Codex wiring, the harness manifest, and `af sync-harnesses` are gone.
 - Removed the managed-run daemon and `af automation`, lenses, and the Composio notes. Performance capture lives in `library/process/performance-capture.md`.
 - Removed the board and the orchestrator router, the sealed autonomy contracts, the Workspace Dashboard, the browser harness, open-design, the Gemini research runtime, and upstream-sync.

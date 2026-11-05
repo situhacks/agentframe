@@ -1,6 +1,6 @@
 # Backlog
 
-Shapes `system/backlog.md`, the open rows of system friction, and `system/backlog-completed.md`, the done rows. Both are private. The operator and any agent append rows; `/upgrade` hands them to a `builder` and moves them on merge.
+Shapes `system/backlog.md`, the open rows of system friction, and `system/backlog-completed.md`, the done rows. Both are private. The operator and any agent append rows; `/upgrade` hands them to a `builder`; the [backlog pass](../../README.md#schedules) only lists ready rows in a loop for main to dispatch; a merged row moves to the completed file.
 
 ```
 # Backlog
@@ -12,7 +12,8 @@ Surfaces: system/af/src/open.rs, library/schema/open-loops.md
 Verify: a test re-dates a loop; the line keeps its opened date and parses
 ```
 
-- One row is the heading `## BB-YYYY-MM-DD-NN · <title>` and the four lines `Surfaced:`, `Fix:`, `Surfaces:`, `Verify:`, in that order. No YAML, no status line, no counters.
+- One row is the heading `## BB-YYYY-MM-DD-NN · <title>` and the four lines `Surfaced:`, `Fix:`, `Surfaces:`, `Verify:`, in that order, then `Waits:` when one applies. No YAML, no status line, no counters.
+- `Waits:` names the event or decision the row needs before anyone can do it (the next real deck, a November payment, his call on a design). `af backlog ready` leaves those rows out; delete the line when the wait ends.
 - `YYYY-MM-DD` is the day the row is written; NN is the next free number for that day across both files.
 - `Surfaced:` is one line: which chat or file, when, and the evidence pointer (a log line, a transcript, a path).
 - `Fix:` says what should change in words the operator can approve, not a patch.

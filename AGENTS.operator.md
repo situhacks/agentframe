@@ -76,7 +76,7 @@ When the project moves past an expected deliverable without producing it, stub t
 
 ## Modes
 
-Builder owns `system/`, `library/` structure, `AGENTS*.md`, schemas, and hooks; if ownership changes, read the other router.
+`system/`, `library/` structure, `AGENTS*.md`, schemas, and hooks are builder work: read its router or send to `af-main`.
 
 ## Failure Surfaces And Quality
 

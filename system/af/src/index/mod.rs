@@ -22,9 +22,9 @@ pub const INDEX_DIR: [&str; 2] = ["system", "index"];
 pub const DB_NAME: &str = "vault.db";
 pub const GOLDEN_NAME: &str = "golden-set.yaml";
 pub const CORPUS_ROOTS: [&str; 3] = ["workspace", "library/assets", ".claude/plans"];
-pub const SKIP_DIRS_ANYWHERE: [&str; 12] = [
+pub const SKIP_DIRS_ANYWHERE: [&str; 14] = [
     "_archive", "_scratch", "__pycache__", "node_modules", "snapshots", "runs", "cache", "local", "dist", "out", "source",
-    "references",
+    "references", ".claude", ".git",
 ];
 
 /// The indexer's own `die()`: `af index: ERROR: msg` on stderr, exit 1, and (unlike the

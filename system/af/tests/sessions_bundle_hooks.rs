@@ -78,15 +78,25 @@ fn bundle_prints_the_life_overage_first() {
 }
 
 #[test]
-fn bundle_for_an_operator_chat_skips_the_main_parts() {
+fn bundle_for_an_operator_chat_prints_the_loops_and_skips_the_rest_of_the_main_parts() {
     let fx = main_fixture();
     fx.write("system/sessions/project/acme/brief.md", "---\ngoal: posts\n---\n");
     let out = fx.ok(&["session", "bundle", "--session", "s-acme"]);
     assert!(out.starts_with("af: you are project/acme (operator)"));
     assert!(out.contains("brief (system/sessions/project/acme/brief.md):"));
-    for absent in ["lives in the city", "open loops", "backlog:", "sessions:", "last handoff"] {
+    assert!(out.contains("open loops: 2 open, 1 due"), "the loop rule covers every interactive chat: {out}");
+    for absent in ["lives in the city", "backlog:", "sessions:", "last handoff"] {
         assert!(!out.contains(absent), "{absent} in {out}");
     }
+}
+
+#[test]
+fn bundle_for_a_worker_leaves_the_loops_out() {
+    let fx = main_fixture();
+    fx.ok(&["session", "register", "worker/job", "--session", "s-job"]);
+    let out = fx.ok(&["session", "bundle", "--session", "s-job"]);
+    assert!(out.starts_with("af: you are worker/job (worker)"));
+    assert!(!out.contains("open loops"), "{out}");
 }
 
 fn directive(out: &str) -> &str {
@@ -98,7 +108,7 @@ fn assert_side_and_one_off(d: &str, sid: &str) {
     assert!(d.contains("(B) make it a side chat (name it life/<topic>, project/<slug>, or system/<topic>;"), "{d}");
     assert!(d.contains(&format!("\"af session register <name> --session {sid}\"")), "{d}");
     assert!(d.contains("write system/sessions/<name>/brief.md, and tell him to send main the name)"), "{d}");
-    assert!(d.contains("(C) keep it a one-off (nothing is registered; it must not write loops, life pages, or handoffs)"), "{d}");
+    assert!(d.contains("(C) keep it a one-off (nothing is registered; a loop, a life fact, or a handoff it turns up goes to af-main)"), "{d}");
     assert!(d.ends_with("If he answers with a task instead of a letter, treat it as (C) and say so in your first sentence."), "{d}");
     assert!(d.split_whitespace().count() < 120, "{} words", d.split_whitespace().count());
 }

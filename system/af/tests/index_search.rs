@@ -25,6 +25,7 @@ fn vault() -> Fx {
     fx.write(&format!("{p}/sources/call.md"), "# Call\n\nzebra launch call notes\n");
     fx.write(&format!("{p}/_archive/old.md"), "# Old\n\nzebra launch archived\n");
     fx.write(&format!("{p}/node_modules/x/README.md"), "# skip\n\nzebra launch\n");
+    fx.write("workspace/.claude/worktrees/agent-x/projects/acme/copy.md", "# Stale copy\n\nzebra launch in a worktree\n");
     fx.write("workspace/life/career.md", "# Career\n\nzebra launch in life\n");
     fx.write("workspace/life/voice/v.md", "# Voice\n\nzebra launch voice\n");
     fx.write("library/assets/a.txt", "an ox and a zebra launch asset\n");
@@ -62,7 +63,7 @@ fn update_walks_the_corpus_skips_and_warns_keyword_only() {
         .map(|r| r.unwrap())
         .collect();
     assert!(!paths.contains(&"workspace/projects/acme/_archive/old.md".to_string()));
-    assert!(!paths.iter().any(|p| p.contains("node_modules") || p.contains("life/voice")));
+    assert!(!paths.iter().any(|p| p.contains("node_modules") || p.contains("life/voice") || p.contains("worktrees")));
     assert!(paths.contains(&"library/assets/a.txt".to_string()));
     let (crumb, status): (String, Option<String>) = con
         .query_row(

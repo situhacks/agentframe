@@ -114,10 +114,11 @@ fn tfx() -> Fx {
 // ------------------------------------------------------------------ DraftAdoptRouting
 
 #[test]
-fn test_existing_v1_names_adopt() {
+fn test_existing_chain_names_adopt() {
     let fx = tfx();
     campaign(&fx, "", "marketing");
-    fx.write("workspace/projects/campaign/brief/brief-v1.md", "---\nstatus: drafting\n---\nbody\n");
+    fx.write("workspace/projects/campaign/brief/brief-v1.md", "---\nstatus: superseded\n---\nbody\n");
+    fx.write("workspace/projects/campaign/brief/brief-v2.md", "---\nstatus: drafting\n---\nbody\n");
     let msg = fx.refused(&["draft", "campaign", "brief", "--file", "brief/brief-v1.md"]);
     assert!(msg.contains("af adopt campaign brief --file"));
 }

@@ -12,7 +12,7 @@ Catch-up mode. The operator is back after time away and wants to know what is ou
 4. Run `af open due --json`. If it is empty, say there are no due loops and stop. Otherwise list each due loop numbered, with its text, age, and source, and ask in prose with lettered options for each:
    - **a. Resolve**: he says the outcome in a few words.
    - **b. Re-date**: he gives a date or `+Nd`.
-   - **c. Do**: he still has to do it; it stays due and listed under Do in `workspace/life/needs.md` until he does.
+   - **c. Do**: he still has to do it; it stays due and listed under Do in `workspace/life/needs.md` until he does. A loop under `Waiting on others` stays due but out of Do; main chases it.
    - **d. Decide later**: it needs his decision, not his hands; it moves to the needs list.
 
    He can answer all at once (`1a paid it, 2b +7d, 3c`). Nothing else happens in this chat until he answers: no other work, no new loops, no edits.

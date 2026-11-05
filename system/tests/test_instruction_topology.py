@@ -35,7 +35,7 @@ class InstructionTopologyCharacterizationTests(unittest.TestCase):
     def test_every_reply_ends_with_the_needs_line_and_due_loops_have_an_exit(self):
         root = text("AGENTS.md")
         self.assertIn("Every reply to him", root)
-        self.assertIn("or none", root)
+        self.assertIn("first line of `af needs list`", root)
         self.assertIn("`workspace/life/needs.md`", root)
         self.assertIn("never say a turn started", root)
         self.assertNotIn("touching or owing", root)

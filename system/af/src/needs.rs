@@ -116,7 +116,7 @@ fn recommendation(ctx: &Ctx, rel: &str) -> Option<String> {
     // YAML (an unquoted colon) or the value reads as another type (`yes`).
     let yaml = pyyaml::safe_load(&f, "<unicode string>", false).ok();
     let text = yaml.as_ref().and_then(|v| v.get("recommendation")).and_then(|v| v.as_str()).map(life::one_line);
-    let text = text.or_else(|| fm::get_scalar(&f, "recommendation").filter(|r| !rx(r"\A[>|][+-]?\d?\z").is_match(r)));
+    let text = text.or_else(|| fm::get_scalar(&f, "recommendation").filter(|r| !rx(r"\A([>|][+-]?\d?[+-]?|~|null)\z").is_match(r)));
     text.filter(|r| !r.is_empty())
 }
 
@@ -434,7 +434,7 @@ pub fn cmd_add(ctx: &Ctx, text: &str, detail: &str, on: Option<&str>, when: Opti
 fn find_item(doc: &OpenDoc, target: &str) -> R<Loop> {
     let t = target.trim();
     let marked = |l: &&Loop| l.need.is_some();
-    let by_slug = doc.loops.iter().filter(marked).find(|l| {
+    let by_slug = doc.loops.iter().filter(marked).filter(|_| t.parse::<usize>().is_err()).find(|l| {
         l.need.as_ref().is_some_and(|n| n.detail.trim_start_matches("needs/").trim_end_matches(".md") == t)
     });
     if let Some(l) = by_slug {
@@ -534,7 +534,7 @@ pub fn doctor_checks(ctx: &Ctx) -> R<(Vec<String>, Vec<String>)> {
         let detail = format!("needs/{name}");
         if !seen.contains(&detail.as_str()) {
             issues.push(format!(
-                "{DETAIL_DIR_REL}/{name}: no open needs item uses this detail file; raise it with af needs add, or delete the file"
+                "{DETAIL_DIR_REL}/{name}: no open needs item uses this detail file; raise it with af needs add, or move it to needs/closed/ if its close failed partway"
             ));
         }
     }

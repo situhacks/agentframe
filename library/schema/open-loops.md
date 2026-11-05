@@ -17,7 +17,7 @@ Shapes `workspace/life/open.md` and the closed lines in `workspace/life/log/<YYY
 
 - Raise a promise, a question for someone, or a waiting item with `af open add`, citing its source or chat in `--from`. A recurring need is one loop with `--every`.
 - Close a loop yourself with `af open close` and an outcome that says how, once the work is done or the question answered, and name it in your reply; re-date one whose date has plainly moved. A loop only the operator can decide goes on the [needs list](needs-list.md) with its detail file.
-- An interactive chat (main or a side chat) reviews each due loop that prints: close it, re-date it, or move its decision to the needs list. A worker writes no replies; it records a due loop in its handoff instead.
+- An interactive chat (main or a side chat) reviews each due loop that prints: close what is done or answered, re-date one whose date has plainly moved, move a decision to the needs list, chase what someone else owes. A due loop only he can act on stays open and due, never closed or re-dated to quiet it; it shows under Do in `workspace/life/needs.md` until he does it. A worker writes no replies; it records a due loop in its handoff instead.
 - Never keep a deadlines or reminders file inside a system or project folder; each date there is a loop.
 
 Due loops print at the start of every registered interactive chat and after compaction, and reach his phone each morning through `system/tools/push-due-loops.ps1`, which `system/tools/register-daily-reminders.ps1` schedules. Card bills need no hand-raised loop: the bills watch raises, re-dates and closes the `Bills` loops from his card emails ([`bills.md`](bills.md)).
@@ -36,4 +36,4 @@ Due loops print at the start of every registered interactive chat and after comp
 | `af open add "<text>" [--nudge <date or +Nd>] [--every <monthly, weekly, or Nd>] [--from <id>] [--section "<heading>"]` | Appends a line with today's date (default section `Waiting on the operator`); `--every` needs `--nudge` |
 | `af open close <n or text prefix> --outcome "<text>" [--final]` | Moves the loop to the month log, or re-dates a recurring one a period on; `--final` ends a recurring loop; refuses an ambiguous prefix; a needs item closes as `af needs close` does |
 | `af open redate <n or text prefix> --nudge <date or +Nd>` | Changes the nudge date in place; opened date, text, period, section, and source stay; the log records it |
-| `af open due [--json]` | Loops nudged today or earlier, oldest first, with their age and period |
+| `af open due [--json]` | Loops nudged today or earlier and dated needs items from their date, oldest first, with their age and period; a needs item also carries `need` and `detail` in the JSON |

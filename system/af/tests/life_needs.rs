@@ -183,7 +183,7 @@ fn move_changes_the_state_in_place_and_logs_it() {
 }
 
 #[test]
-fn open_redate_refuses_a_marked_loop_and_a_marked_loop_is_never_due() {
+fn open_redate_refuses_a_marked_loop_and_an_undated_one_is_never_due() {
     let fx = with_item("q", "Decide?", "yes");
     let e = fail(&fx, &["open", "redate", "Decide", "--nudge", "+3d"]);
     assert!(e.contains("use af needs move"), "{e}");
@@ -248,22 +248,74 @@ fn doctor_reports_through_the_verb_and_stays_quiet_on_a_clean_list() {
 }
 
 #[test]
-fn doctor_notes_a_hand_edited_view() {
+fn any_loop_read_overwrites_a_hand_edit_of_the_view() {
     let fx = with_item("q", "Decide?", "yes");
     fx.write(VIEW, "# hand edit\n");
-    assert_eq!(notes(&fx), vec![format!("{VIEW}: differs from open.md and the detail files; run af needs render")]);
-    fx.ok(&["needs", "render"]);
+    fx.ok(&["open", "due"]);
+    assert!(fx.read(VIEW).contains("## Now (1)"), "{}", fx.read(VIEW));
     assert_eq!(notes(&fx), Vec::<String>::new());
 }
 
 #[test]
-fn nothing_is_written_while_the_list_is_empty_and_has_never_been_used() {
+fn a_view_af_cannot_write_is_noted_and_never_stops_a_loop_verb() {
+    let fx = with_item("q", "Decide?", "yes");
+    std::fs::remove_file(fx.path(VIEW)).unwrap();
+    std::fs::create_dir_all(fx.path(VIEW)).unwrap();
+    fx.ok(&["open", "due"]);
+    fx.ok(&["open", "add", "still works"]);
+    let n = notes(&fx);
+    assert_eq!(n.len(), 1, "{n:?}");
+    assert!(n[0].contains("af could not rewrite it"), "{}", n[0]);
+    fail(&fx, &["needs", "render"]);
+}
+
+#[test]
+fn a_non_utf8_view_does_not_crash_doctor_and_is_replaced() {
+    let fx = with_item("q", "Decide?", "yes");
+    fx.write_bytes(VIEW, &[0xFF, 0xFE, 0x00, 0x80]);
+    let (code, out, err) = fx.run(&["doctor"]);
+    assert_eq!(code, 0, "{out}{err}");
+    assert!(fx.read(VIEW).contains("## Now (1)"));
+}
+
+#[test]
+fn a_block_scalar_recommendation_reads_as_its_text() {
+    for (raw, want) in [
+        ("recommendation: >\n  the cheaper\n  plan\n", "the cheaper plan"),
+        ("recommendation: >-\n  the cheaper plan\n", "the cheaper plan"),
+        ("recommendation: |\n  the cheaper\n  plan\n", "the cheaper plan"),
+        ("recommendation: \"quoted: with a colon\"\n", "quoted: with a colon"),
+        ("recommendation: plain: with a colon\n", "plain: with a colon"),
+        ("recommendation: yes\n", "yes"),
+    ] {
+        let fx = Fx::new();
+        fx.write("workspace/life/needs/q.md", &format!("---\nprivate: true\n{raw}---\n# Q\n"));
+        fx.ok(&["needs", "add", "Decide?", "--detail", "needs/q.md"]);
+        assert!(fx.read(VIEW).contains(&format!("· recommend: {want}\n")), "{raw}: {}", fx.read(VIEW));
+    }
+    let fx = Fx::new();
+    fx.write("workspace/life/needs/q.md", "---\nrecommendation: >\n---\n# Q\n");
+    let e = fail(&fx, &["needs", "add", "Decide?", "--detail", "needs/q.md"]);
+    assert!(e.contains("no 'recommendation:'"), "an empty block is no recommendation: {e}");
+}
+
+#[test]
+fn an_empty_list_says_none_and_its_link_resolves() {
     let fx = Fx::new();
     fx.write(OPEN, &format!("- [ ] {} · plain · from: main\n", today()));
+    fx.ok(&["session", "register", "af-main", "--session", "s-main"]);
+    let out = lf(fx.ok(&["needs", "list"]));
+    assert_eq!(out, "needs you: none now, 0 later (workspace/life/needs.md)\n");
+    assert!(fx.read(VIEW).contains("## Now (0)\n\nNothing.\n"), "{}", fx.read(VIEW));
+    let bundle = fx.ok(&["session", "bundle", "--session", "s-main"]);
+    assert!(bundle.contains("needs you: none now, 0 later (workspace/life/needs.md)"), "{bundle}");
+}
+
+#[test]
+fn no_open_md_means_no_view() {
+    let fx = Fx::new();
     fx.ok(&["needs", "render"]);
     assert!(!fx.path(VIEW).exists());
-    let out = fx.ok(&["needs", "list"]);
-    assert!(out.starts_with("needs you: 0 now, 0 later"), "{out}");
 }
 
 #[test]
@@ -275,7 +327,7 @@ fn list_prints_the_counts_then_each_item_with_the_number_open_close_takes() {
     fx.ok(&["needs", "add", "Now one?", "--detail", "needs/a.md"]);
     fx.ok(&["needs", "add", "Later one?", "--detail", "needs/b.md", "--when", "the quote arrives"]);
     let out = lf(fx.ok(&["needs", "list"]));
-    let want = "needs you: 1 now, 1 later (workspace/life/needs.md)\n  \
+    let want = "needs you: 1 now, 0 to do, 1 later (workspace/life/needs.md)\n  \
 #2 Now one? · recommend: yes · workspace/life/needs/a.md\n  \
 #3 when the quote arrives: Later one? · recommend: wait · workspace/life/needs/b.md\n";
     assert_eq!(out, want);
@@ -294,7 +346,7 @@ fn session_start_prints_the_now_items_to_main_and_refreshes_the_view() {
     fx.ok(&["needs", "add", "Dated one?", "--detail", "needs/c.md", "--on", "+5d"]);
 
     let out = lf(fx.ok(&["session", "bundle", "--session", "s-main"]));
-    assert!(out.contains("needs you: 1 now, 2 later (workspace/life/needs.md)\n- Now one? · recommend: take it · workspace/life/needs/a.md"), "{out}");
+    assert!(out.contains("needs you: 1 now, 0 to do, 2 later (workspace/life/needs.md)\n- Now one? · recommend: take it · workspace/life/needs/a.md"), "{out}");
     assert!(!out.contains("Later one?") && !out.contains("Dated one?"), "{out}");
 
     let side = fx.ok(&["session", "bundle", "--session", "s-acme"]);
@@ -305,7 +357,7 @@ fn session_start_prints_the_now_items_to_main_and_refreshes_the_view() {
     let open = fx.read(OPEN).replace(&line, &format!("need on {}", days_ago(1)));
     fx.write(OPEN, &open);
     let hook = afcore::sessions::hook_session_start(&fx.ctx(), r#"{"session_id":"s-main","source":"startup"}"#);
-    assert!(hook.stdout.contains("needs you: 2 now, 1 later"), "{}", hook.stdout);
+    assert!(hook.stdout.contains("needs you: 2 now, 0 to do, 1 later"), "{}", hook.stdout);
     assert!(fx.read(VIEW).contains("## Now (2)"), "{}", fx.read(VIEW));
 }
 
@@ -317,5 +369,166 @@ fn brief_carries_the_list_only_when_it_has_items() {
     detail(&fx, "a", "take it");
     fx.ok(&["needs", "add", "Now one?", "--detail", "needs/a.md"]);
     let out = lf(fx.ok(&["brief"]));
-    assert!(out.contains("## Needs you (1 now, 0 later)\n- Now one? · recommend: take it · workspace/life/needs/a.md"), "{out}");
+    assert!(out.contains("## Needs you (1 now, 0 to do, 0 later)\n- Now one? · recommend: take it · workspace/life/needs/a.md"), "{out}");
+}
+
+// ------------------------------------------------------------------ a date passing
+
+/// A view written while the date was ahead, then the date passes with no af call between.
+fn date_just_passed() -> Fx {
+    let fx = Fx::new();
+    detail(&fx, "d", "rec");
+    fx.ok(&["needs", "add", "Dated?", "--detail", "needs/d.md", "--on", "+5d"]);
+    let open = fx.read(OPEN).replace(&format!("need on {}", days_ahead(5)), &format!("need on {}", days_ago(1)));
+    fx.write(OPEN, &open);
+    assert!(fx.read(VIEW).contains("## Later (1)"), "{}", fx.read(VIEW));
+    fx
+}
+
+#[test]
+fn a_passed_date_reaches_the_view_through_every_loop_read_and_write() {
+    let cases: [&[&str]; 8] = [
+        &["open", "due"],
+        &["open", "due", "--json"],
+        &["brief"],
+        &["brief", "--json"],
+        &["doctor"],
+        &["needs", "list"],
+        &["open", "add", "unrelated"],
+        &["open", "redate", "plain", "--nudge", "+3d"],
+    ];
+    for args in cases {
+        let fx = date_just_passed();
+        let open = fx.read(OPEN);
+        fx.write(OPEN, &format!("{open}- [ ] {} · plain · from: main\n", today()));
+        let (code, out, err) = fx.run(args);
+        assert_eq!(code, 0, "{args:?}: {out}{err}");
+        let view = fx.read(VIEW);
+        assert!(view.contains("## Now (1)\n\n- [Dated?](needs/d.md)"), "{args:?}: {view}");
+    }
+    let fx = date_just_passed();
+    let open = fx.read(OPEN);
+    fx.write(OPEN, &format!("{open}- [ ] {} · plain · from: main\n", today()));
+    fx.ok(&["open", "close", "plain", "--outcome", "done"]);
+    assert!(fx.read(VIEW).contains("## Now (1)"), "{}", fx.read(VIEW));
+}
+
+#[test]
+fn a_dated_item_is_due_from_its_date_and_the_rest_of_the_list_never_is() {
+    let fx = Fx::new();
+    for s in ["today", "past", "ahead", "event", "now"] {
+        detail(&fx, s, "rec");
+    }
+    fx.ok(&["needs", "add", "Today?", "--detail", "needs/today.md", "--on", &today()]);
+    fx.ok(&["needs", "add", "Past?", "--detail", "needs/past.md", "--on", &days_ago(2)]);
+    fx.ok(&["needs", "add", "Ahead?", "--detail", "needs/ahead.md", "--on", "+2d"]);
+    fx.ok(&["needs", "add", "Event?", "--detail", "needs/event.md", "--when", "it happens"]);
+    fx.ok(&["needs", "add", "Now?", "--detail", "needs/now.md"]);
+    let out = fx.ok(&["open", "due"]);
+    assert!(out.contains("Today?") && out.contains("Past?"), "{out}");
+    for absent in ["Ahead?", "Event?", "Now?"] {
+        assert!(!out.contains(absent), "{absent}: {out}");
+    }
+    // The phone push prints `nudge` and needs to know which item this is.
+    let v: serde_json::Value = serde_json::from_str(&fx.ok(&["open", "due", "--json"])).unwrap();
+    let past = v.as_array().unwrap().iter().find(|l| l["text"] == "Past?").unwrap();
+    assert_eq!(past["nudge"], days_ago(2));
+    assert_eq!(past["detail"], "workspace/life/needs/past.md");
+    let plain = fx.ok(&["open", "add", "plain", "--nudge", &today()]);
+    assert!(plain.contains("plain"));
+    let v: serde_json::Value = serde_json::from_str(&fx.ok(&["open", "due", "--json"])).unwrap();
+    let plain = v.as_array().unwrap().iter().find(|l| l["text"] == "plain").unwrap();
+    assert!(plain["detail"].is_null(), "{plain}");
+}
+
+// ------------------------------------------------------------------ Do
+
+fn do_fixture() -> Fx {
+    let fx = Fx::new();
+    fx.write(
+        OPEN,
+        &format!(
+            "# Open loops\n\n## Waiting on the operator\n\n### Admin\n\n\
+- [ ] {o} · Pay the bill · nudge {d} · from: main\n\
+- [ ] {o} · Not yet · nudge {f} · from: main\n\
+- [ ] {o} · No date · from: main\n\n\
+## Bills\n\n\
+- [ ] {o} · Pay the card · nudge {t} · every monthly · from: main\n\n\
+## Waiting on others\n\n\
+- [ ] {o} · Refund from the shop · nudge {d} · from: main\n\n\
+### A subgroup\n\n\
+- [ ] {o} · Reply from a friend · nudge {d} · from: main\n",
+            o = days_ago(9),
+            d = days_ago(2),
+            f = days_ahead(4),
+            t = today()
+        ),
+    );
+    fx
+}
+
+#[test]
+fn do_lists_plain_due_loops_that_are_his_and_leaves_out_what_others_owe() {
+    let fx = do_fixture();
+    fx.ok(&["needs", "render"]);
+    let view = fx.read(VIEW);
+    let (now, do_, later) = (view.find("## Now").unwrap(), view.find("## Do").unwrap(), view.find("## Later").unwrap());
+    assert!(now < do_ && do_ < later, "{view}");
+    assert!(view.contains(&format!("## Do (2)\n\n- Pay the bill · due {}\n- Pay the card · due {}\n", days_ago(2), today())), "{view}");
+    for absent in ["Not yet", "No date", "Refund", "Reply from a friend"] {
+        assert!(!view.contains(absent), "{absent}: {view}");
+    }
+    let out = lf(fx.ok(&["needs", "list"]));
+    assert!(out.starts_with("needs you: 0 now, 2 to do, 0 later (workspace/life/needs.md)\n"), "{out}");
+    assert!(out.contains("Pay the bill · due"), "{out}");
+}
+
+#[test]
+fn a_do_item_leaves_when_it_is_closed_or_redated_and_a_marked_loop_is_never_one() {
+    let fx = do_fixture();
+    fx.ok(&["open", "close", "Pay the bill", "--outcome", "paid"]);
+    assert!(!fx.read(VIEW).contains("Pay the bill"));
+    assert!(fx.read(VIEW).contains("## Do (1)"), "{}", fx.read(VIEW));
+    fx.ok(&["open", "close", "Pay the card", "--outcome", "paid"]);
+    assert!(fx.read(VIEW).contains("## Do (0)\n\nNothing.\n"), "a recurring loop waits for its next date: {}", fx.read(VIEW));
+    detail(&fx, "d", "rec");
+    fx.ok(&["needs", "add", "Dated?", "--detail", "needs/d.md", "--on", &days_ago(1)]);
+    let view = fx.read(VIEW);
+    assert!(view.contains("## Now (1)") && view.contains("## Do (0)"), "{view}");
+}
+
+#[test]
+fn the_summary_counts_do_so_an_action_item_is_never_reported_as_none() {
+    let fx = do_fixture();
+    fx.ok(&["session", "register", "af-main", "--session", "s-main"]);
+    let out = fx.ok(&["session", "bundle", "--session", "s-main"]);
+    assert!(out.contains("needs you: 0 now, 2 to do, 0 later"), "{out}");
+    let brief = lf(fx.ok(&["brief"]));
+    assert!(brief.contains("## Needs you (0 now, 2 to do, 0 later)"), "{brief}");
+}
+
+// ------------------------------------------------------------------ a close that fails
+
+#[test]
+fn a_failed_log_write_leaves_the_item_open_and_its_detail_file_in_place() {
+    let fx = with_item("q", "Decide?", "yes");
+    std::fs::create_dir_all(fx.path(&log_rel())).unwrap();
+    fail(&fx, &["needs", "close", "q", "--outcome", "decided"]);
+    assert!(fx.read(OPEN).contains("Decide?"), "the line stays");
+    assert!(fx.path("workspace/life/needs/q.md").exists(), "the detail file stays");
+    assert!(!fx.path("workspace/life/needs/closed/q.md").exists());
+    assert_eq!(issues(&fx), Vec::<String>::new());
+}
+
+#[test]
+fn a_failed_move_is_reported_after_the_close_stands_and_doctor_names_the_file() {
+    let fx = with_item("q", "Decide?", "yes");
+    fx.write("workspace/life/needs/closed", "a file where the folder belongs\n");
+    let e = fail(&fx, &["needs", "close", "q", "--outcome", "decided"]);
+    assert!(e.contains("needs/q.md"), "{e}");
+    assert!(!fx.read(OPEN).contains("Decide?"), "the close stands");
+    assert!(fx.read(&log_rel()).contains("closed: Decide? → decided"));
+    assert!(fx.path("workspace/life/needs/q.md").exists(), "the notes are not lost");
+    let i = issues(&fx);
+    assert!(i.iter().any(|m| m.contains("needs/q.md: no open needs item")), "{i:?}");
 }

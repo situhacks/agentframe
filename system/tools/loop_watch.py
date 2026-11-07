@@ -73,6 +73,10 @@ class LoopFailure(RuntimeError):
     """A run gave no verdict this watch can stand behind."""
 
 
+class OverRunBudget(Exception):
+    """The morning's total is spent, so no further call may start, a retry included."""
+
+
 # --- Which loops ------------------------------------------------------------
 
 def load_due(text: str) -> list[dict]:
@@ -518,7 +522,7 @@ class Outcome:
     notes: list[str] = field(default_factory=list)
     cost: float = 0.0     # what the result events reported
     uncosted: int = 0     # attempts with no figure, each charged the call cap against the run total
-    undeleted: int = 0    # saved run copies, which hold email bodies, still on disk at the end
+    undeleted: int | None = 0  # saved run copies, which hold email bodies, left on disk; None when unknown
 
     def spent(self) -> float:
         return self.cost + self.uncosted * CALL_BUDGET_USD
@@ -546,12 +550,16 @@ def _final_event(lines: list[str]) -> dict:
 
 def metered(run, out: Outcome):
     """A claude runner that charges every attempt to the run, retries and failures included,
-    since a failed run never gets as far as being parsed. A run stopped by its budget is that
-    loop's failure, not a Gmail fault: a retry would only spend the budget again."""
+    since a failed run never gets as far as being parsed. Any call that raises is charged the cap,
+    since it may have spent before it failed. The run total is checked before every call, so it
+    holds for a retry too. A run stopped by its budget is that loop's failure, not a Gmail fault:
+    a retry would only spend the budget again."""
     def go(prompt: str, max_turns: int, model: str) -> list[str]:
+        if out.spent() >= RUN_BUDGET_USD:
+            raise OverRunBudget
         try:
             lines = run(prompt, max_turns, model)
-        except bw.GmailError:
+        except Exception:
             out.uncosted += 1
             raise
         final = _final_event(lines)
@@ -573,12 +581,12 @@ def watch(out: Outcome, model: str, run_claude, run_af, now: dt.datetime | None 
     run = metered(run_claude, out)
     in_a_row = 0
     for i, loop in enumerate(loops):
-        if out.spent() >= RUN_BUDGET_USD:
+        try:
+            found = check_loop(loop, model, run, out.notes, now, own)
+        except OverRunBudget:
             reason = f"not checked: the run reached its ${RUN_BUDGET_USD:.2f} budget"
             out.failures += [(x["text"], reason) for x in loops[i:]]
             return
-        try:
-            found = check_loop(loop, model, run, out.notes, now, own)
         except bw.GmailError as e:
             out.failures.append((loop["text"], f"Gmail or Claude failed: {e}"))
             in_a_row += 1
@@ -618,7 +626,7 @@ def footer(out: Outcome, now: dt.datetime) -> str:
     cost = f"${out.cost:.2f}" + (f" plus {out.uncosted} run(s) with no figure" if out.uncosted else "")
     return (f"Run {now:%Y-%m-%d %H:%M} · loops checked {out.checked} · with evidence {len(out.evidence)} · "
             f"failures {len(out.failures)} · skipped over the cap {out.over_cap} · cost {cost} · "
-            f"undeleted {out.undeleted}")
+            f"undeleted {'unknown' if out.undeleted is None else out.undeleted}")
 
 
 def render_report(out: Outcome, now: dt.datetime) -> str:
@@ -644,20 +652,55 @@ def _root() -> Path:
 def log(line: str, now: dt.datetime) -> None:
     path = _root() / LOG
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as f:
+    with path.open("a", encoding="utf-8", errors="replace") as f:
         f.write(f"- {now:%Y-%m-%d %H:%M} · {line}\n")
+
+
+def _sweep(out: Outcome) -> None:
+    """The last sweep of a run. It may never stop the report being written."""
+    try:
+        bw.cleanup(None, older_than=0, project_dir=PROJECT_DIR)
+        out.undeleted = len(bw.saved_runs(PROJECT_DIR))
+    except Exception as e:  # noqa: BLE001 - the report must still say what happened
+        out.undeleted = None
+        out.failures.append(("Raw email cleanup", f"the sweep failed ({type(e).__name__}); check {PROJECT_DIR} by hand"))
+        return
+    if out.undeleted:
+        out.failures.append(("Raw email cleanup", f"{out.undeleted} saved run copies holding email could not be "
+                                                  f"deleted from {PROJECT_DIR}; delete them by hand"))
+
+
+def init_report(now: dt.datetime) -> int:
+    """The stub a newly registered task starts from, so a task that dies on its first run goes
+    stale like any other instead of looking like a watch not yet scheduled. A real report stays."""
+    path = _root() / REPORT
+    if path.exists():
+        print(f"{path} already exists; left as it is")
+        return 0
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"{HEADER}\nThe watch is registered and has not run yet.\n\n{footer(Outcome(), now)}\n",
+                        encoding="utf-8", newline="\n")
+    except OSError as e:
+        print(f"could not write the stub report: {e}", file=sys.stderr)
+        return 1
+    print(f"wrote {path}")
+    return 0
 
 
 def main(argv: list[str] | None = None, *, now: dt.datetime | None = None, run_claude=claude, run_af=af_due) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--dry-run", action="store_true", help="read Gmail and print the report; write nothing")
+    p.add_argument("--init-report", action="store_true", help="write the stub report if there is none, and stop")
     p.add_argument("--model", default=MODEL)
     a = p.parse_args(argv)
     try:
-        sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
     except Exception:  # noqa: BLE001
         pass
     now = now or dt.datetime.now()
+    if a.init_report:
+        return init_report(now)
     out = Outcome()
     try:
         bw.cleanup(None, older_than=0, project_dir=PROJECT_DIR)  # a killed run leaves its copies for this one
@@ -665,12 +708,7 @@ def main(argv: list[str] | None = None, *, now: dt.datetime | None = None, run_c
     except Exception as e:  # noqa: BLE001 - a scheduled run must never fail silently
         traceback.print_exc()
         out.failures.append(("The whole run", f"it stopped early ({type(e).__name__}: {e})"))
-    finally:
-        bw.cleanup(None, older_than=0, project_dir=PROJECT_DIR)
-        out.undeleted = len(bw.saved_runs(PROJECT_DIR))
-    if out.undeleted:
-        out.failures.append(("Raw email cleanup", f"{out.undeleted} saved run copies holding email could not be "
-                                                  f"deleted from {PROJECT_DIR}; delete them by hand"))
+    _sweep(out)
     text = render_report(out, now)
     code = 1 if out.failures else 0
     if a.dry_run:
@@ -681,9 +719,9 @@ def main(argv: list[str] | None = None, *, now: dt.datetime | None = None, run_c
     try:
         path = _root() / REPORT
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8", newline="\n")
+        path.write_text(text, encoding="utf-8", errors="replace", newline="\n")
         log(" · ".join([footer(out, now).split(" · ", 1)[1], *out.notes]), now)
-    except OSError as e:
+    except Exception as e:  # noqa: BLE001 - a scheduled run must never fail silently
         print(f"could not write the report: {e}", file=sys.stderr)
         return 1
     print(footer(out, now))

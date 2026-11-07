@@ -33,7 +33,7 @@ SESSION = "0a1b2c3d-0000-4000-8000-000000000001"
 NOW = dt.datetime(2026, 3, 10, 7, 50)
 FOOTER = re.compile(r"(?m)^Run 2026-03-10 07:50 · loops checked (\d+) · with evidence (\d+) · failures (\d+) · "
                     r"skipped over the cap (\d+) · cost \$\d+\.\d\d(?: plus \d+ run\(s\) with no figure)? · "
-                    r"undeleted \d+$")
+                    r"undeleted (?:\d+|unknown)$")
 
 
 def setUpModule():
@@ -834,6 +834,94 @@ class SpendTests(MainBase):
         at = [call(f"g{i}", GET, json.dumps({"id": f"t-{i}", "messages": [MESSAGE]})) for i in range(lw.MAX_GET_THREADS)]
         flat = [e for pair in at for e in pair]
         self.assertIsNotNone(lw.check_loop(loop(), "model", lambda *a: stream(*searched(), *flat, reply=json.dumps(GOOD))))
+
+
+class SurvivalTests(MainBase):
+    def text(self):
+        return self.report.read_text(encoding="utf-8")
+
+    def test_a_sweep_that_raises_still_leaves_a_report_and_a_nonzero_exit(self):
+        with mock.patch.object(bw, "saved_runs", side_effect=PermissionError("denied")):
+            code, _ = self.run_main([loop()], [stream(*searched())])
+        self.assertEqual(code, 1)
+        text = self.text()
+        self.assertIn("Raw email cleanup: the sweep failed (PermissionError)", text)
+        self.assertRegex(text, r"(?m)· undeleted unknown$")
+        self.assertGreaterEqual(self.counts(text)[2], 1)
+
+    def test_only_the_final_sweep_failing_keeps_the_runs_results(self):
+        real, calls = bw.saved_runs, []
+
+        def fails_late(*a, **kw):
+            calls.append(a)
+            if len(calls) > 2:
+                raise PermissionError("denied")
+            return real(*a, **kw)
+        with mock.patch.object(bw, "saved_runs", side_effect=fails_late):
+            code, _ = self.run_main([loop()], [found(GOOD)])
+        self.assertEqual(code, 1)
+        text = self.text()
+        self.assertIn("## Renew the widget licence", text)
+        self.assertIn("the sweep failed", text)
+
+    def test_text_that_cannot_be_encoded_still_leaves_a_report(self):
+        code, _ = self.run_main([loop("Renew the \ud800 licence")], [stream(*searched(), reply="not json")])
+        self.assertEqual(code, 1)
+        self.assertEqual(self.counts(self.text()), (0, 0, 1, 0))
+
+    def test_init_report_writes_a_stub_with_a_readable_footer_and_touches_nothing_else(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = lw.main(["--init-report"], now=NOW, run_claude=None, run_af=None)
+        self.assertEqual(code, 0)
+        text = self.text()
+        self.assertEqual(self.counts(text), (0, 0, 0, 0))
+        self.assertIn("has not run yet", text)
+        self.assertEqual([x.name for x in self.root.rglob("*") if x.is_file()], [lw.REPORT.name])
+
+    def test_init_report_never_overwrites_a_real_report(self):
+        self.report.parent.mkdir(parents=True)
+        self.report.write_text("a real report\n", encoding="utf-8")
+        with contextlib.redirect_stdout(io.StringIO()):
+            code = lw.main(["--init-report"], now=NOW, run_claude=None, run_af=None)
+        self.assertEqual(code, 0)
+        self.assertEqual(self.text(), "a real report\n")
+
+    def test_registering_the_task_writes_the_stub_for_this_vault(self):
+        ps1 = (ROOT / "system" / "tools" / "register-loop-watch.ps1").read_text(encoding="utf-8")
+        self.assertIn("--init-report", ps1)
+        self.assertLess(ps1.index("$env:AF_ROOT = $vault"), ps1.index("--init-report"))
+        self.assertLess(ps1.index("Register-ScheduledTask -TaskName"), ps1.index("--init-report"))
+        self.assertIn("$LASTEXITCODE", ps1)
+
+    def test_any_exception_on_a_call_is_charged_so_the_footer_cannot_read_nothing(self):
+        def boom(prompt):
+            raise RuntimeError("the runner broke")
+        due = [loop(f"Loop {i}") for i in range(25)]
+        code, _ = self.run_main(due, boom)
+        limit = int(lw.RUN_BUDGET_USD / lw.CALL_BUDGET_USD) + 1
+        self.assertEqual(code, 1)
+        self.assertEqual(len(self.prompts), limit)
+        self.assertIn(f"cost $0.00 plus {limit} run(s) with no figure", self.text())
+
+    def test_a_retry_checks_the_run_total_first(self):
+        due = [loop("First"), loop("Second")]
+        code, _ = self.run_main(due, lambda p: stream(gmail="needs-auth", cost=lw.RUN_BUDGET_USD))
+        text = self.text()
+        self.assertEqual(code, 1)
+        self.assertEqual(len(self.prompts), 1, "the retry would have spent past the total")
+        self.assertIn("- First: not checked: the run reached its", text)
+        self.assertIn("- Second: not checked: the run reached its", text)
+        self.assertEqual(self.counts(text), (0, 0, 2, 0))
+
+    def test_the_bills_watch_retry_is_unchanged(self):
+        calls = []
+
+        def flaky(prompt, max_turns, model):
+            calls.append(prompt)
+            return stream(*searched()) if len(calls) == 2 else stream(gmail="needs-auth")
+        self.assertEqual(bw._run(flaky, "p", 1, "m").unreadable, 0)
+        self.assertEqual(len(calls), 2)
 
 
 class HostileEmailTests(MainBase):

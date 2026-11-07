@@ -23,6 +23,11 @@ $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatt
 Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal `
     -Settings $settings -Description 'Daily check of due loops against his email, into a report main reviews' -Force | Out-Null
 
+# The stub report starts the two-day staleness clock, so a task that dies on its first run is seen.
+$env:AF_ROOT = $vault
+& python (Join-Path $PSScriptRoot 'loop_watch.py') --init-report
+if ($LASTEXITCODE -ne 0) { throw "the task is registered, but the stub report could not be written" }
+
 $info = Get-ScheduledTaskInfo -TaskName $taskName
 Write-Output "Registered '$taskName' for $user, working directory $vault"
 Write-Output "Next run: $($info.NextRunTime)"

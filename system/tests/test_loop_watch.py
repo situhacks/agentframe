@@ -577,6 +577,18 @@ class MainTests(MainBase):
         self.run_main([loop()], replies)
         self.assertEqual(seen, [False])
 
+    def test_a_copy_written_during_the_run_is_swept_when_it_ends(self):
+        lw.PROJECT_DIR.mkdir(parents=True, exist_ok=True)
+        written = lw.PROJECT_DIR / "9f8e7d6c-0000-4000-8000-000000000006"
+
+        def replies(prompt):
+            written.mkdir()
+            (written / "toolu_1.txt").write_text("<html>an email</html>", encoding="utf-8")
+            return stream(*searched())
+        self.run_main([loop()], replies)
+        self.assertFalse(written.exists())
+        self.assertRegex(self.report.read_text(encoding="utf-8"), r"(?m)· undeleted 0$")
+
     def test_a_delete_that_fails_is_in_the_footer_the_failures_and_the_exit_code(self):
         lw.PROJECT_DIR.mkdir(parents=True, exist_ok=True)
         stuck = lw.PROJECT_DIR / "9f8e7d6c-0000-4000-8000-000000000005"

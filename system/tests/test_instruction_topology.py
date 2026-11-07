@@ -60,7 +60,7 @@ class InstructionTopologyCharacterizationTests(unittest.TestCase):
         self.assertIn("`researcher` for more than one source", root)
         rule = text("library/schema/open-loops.md").split("## The loop rule")[1].split("## Grammar")[0]
         for phrase in ("Check first, ask second", "Gmail", "the calendar", "any logged-in browser page",
-                       "closes it if they settle it", "goes to him"):
+                       "closes it if they settle it", "goes to him", "[loop watch](loop-watch.md)"):
             self.assertIn(phrase, rule)
         self.assertIn("#the-loop-rule", text("library/schema/needs-list.md"))
 

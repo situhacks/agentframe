@@ -40,6 +40,10 @@ Session start prints one line of counts to a main chat when the report has evide
 
 Evidence for a loop that stays open and due shows up again the next morning, and raises the line again.
 
+## A dead watch
+
+A report whose last run is over 2 days old is stale: the session-start line says so, even after a review, and `af doctor` notes it, as it does a report with no readable footer. Check the `AgentFrame loop watch` task in Task Scheduler. No report at all prints nothing, so a watch not yet scheduled stays quiet.
+
 ## What it checks
 
 `af open due --json`, less needs items, loops under `Waiting on others` at any depth, and Bills loops (the `Pay <card> by <date>: statement of`, `<card> missed a payment: statement of`, and `Bills watch` texts, which the [bills watch](bills.md) owns). At most 25 a run, oldest first; the footer counts the rest, and the newest wait until older loops clear.

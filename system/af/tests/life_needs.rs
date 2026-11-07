@@ -8,6 +8,9 @@ use life_fx::*;
 
 const OPEN: &str = "workspace/life/open.md";
 const VIEW: &str = "workspace/life/needs.md";
+const NOW_HEAD: &str = "| Decision | Recommendation | Notes |\n|---|---|---|\n";
+const DO_HEAD: &str = "| To do | Due | Waiting since |\n|---|---|---|\n";
+const LATER_HEAD: &str = "| When | Decision | Recommendation | Notes |\n|---|---|---|---|\n";
 
 fn log_rel() -> String {
     format!("workspace/life/log/{}.md", month())
@@ -53,7 +56,7 @@ fn add_marks_a_loop_in_its_own_section_and_writes_the_view() {
     let line = format!("- [ ] {} · Which plan to take? · need now · detail needs/plan-choice.md · from: main", today());
     assert_eq!(fx.read(OPEN), format!("## Decisions needed\n\n{line}\n"));
     let view = fx.read(VIEW);
-    assert!(view.contains("## Now (1)\n\n- [Which plan to take?](needs/plan-choice.md) · recommend: the cheaper plan\n"), "{view}");
+    assert!(view.contains(&format!("## Now (1)\n\n{NOW_HEAD}| Which plan to take? | the cheaper plan | [open](needs/plan-choice.md) |\n")), "{view}");
     assert!(view.contains("## Later (0)\n\nNothing.\n"), "{view}");
 }
 
@@ -98,9 +101,9 @@ fn later_groups_by_date_then_trigger_and_a_passed_date_is_now() {
     let later = view.split("## Later (3)").nth(1).expect("three later items");
     let (s, f, e) = (later.find("Soon?").unwrap(), later.find("Far?").unwrap(), later.find("Event?").unwrap());
     assert!(s < f && f < e, "{later}");
-    assert!(later.contains(&format!("- on {}: [Soon?](needs/soon.md) · recommend: rec soon", days_ahead(2))), "{later}");
-    assert!(later.contains("- when the quote arrives: [Event?](needs/event.md) · recommend: rec event"), "{later}");
-    assert!(view.contains("## Now (1)\n\n- [Past?](needs/past.md) · recommend: rec past\n"), "{view}");
+    assert!(later.starts_with(&format!("\n\n{LATER_HEAD}| {} | Soon? | rec soon | [open](needs/soon.md) |\n", days_ahead(2))), "{later}");
+    assert!(later.contains("| the quote arrives | Event? | rec event | [open](needs/event.md) |\n"), "{later}");
+    assert!(view.contains(&format!("## Now (1)\n\n{NOW_HEAD}| Past? | rec past | [open](needs/past.md) |\n")), "{view}");
 }
 
 #[test]
@@ -110,14 +113,47 @@ fn the_view_moves_a_passed_date_to_now_on_render_without_touching_open_md() {
     fx.write(OPEN, &format!("# Open loops\n\n- [ ] {} · Dated? · need on {} · detail needs/d.md · from: main\n", days_ago(9), days_ago(1)));
     let before = fx.read(OPEN);
     fx.ok(&["needs", "render"]);
-    assert!(fx.read(VIEW).contains("## Now (1)\n\n- [Dated?](needs/d.md)"), "{}", fx.read(VIEW));
+    assert!(fx.read(VIEW).contains(&format!("## Now (1)\n\n{NOW_HEAD}| Dated? | rec | [open](needs/d.md) |\n")), "{}", fx.read(VIEW));
     assert_eq!(fx.read(OPEN), before, "the state lives on the line; only the view changes");
 }
 
 #[test]
-fn brackets_in_a_question_do_not_break_its_link() {
+fn a_wikilink_in_a_question_stays_as_written_and_the_link_is_only_in_notes() {
     let fx = with_item("q", "Ask [[a-friend]] or not?", "ask");
-    assert!(fx.read(VIEW).contains(r"- [Ask \[\[a-friend\]\] or not?](needs/q.md)"), "{}", fx.read(VIEW));
+    assert!(fx.read(VIEW).contains("| Ask [[a-friend]] or not? | ask | [open](needs/q.md) |\n"), "{}", fx.read(VIEW));
+}
+
+#[test]
+fn a_pipe_in_any_cell_is_escaped_so_it_cannot_split_the_row() {
+    let fx = Fx::new();
+    detail(&fx, "a", "take a | b");
+    detail(&fx, "b", "wait");
+    fx.ok(&["needs", "add", "Plan a | plan b?", "--detail", "needs/a.md"]);
+    fx.ok(&["needs", "add", "Later | one?", "--detail", "needs/b.md", "--when", "price | stock moves"]);
+    fx.ok(&["open", "add", "Do x | y", "--nudge", &today()]);
+    let view = fx.read(VIEW);
+    assert!(view.contains(r"| Plan a \| plan b? | take a \| b | [open](needs/a.md) |"), "{view}");
+    assert!(view.contains(r"| price \| stock moves | Later \| one? | wait | [open](needs/b.md) |"), "{view}");
+    assert!(view.contains(&format!(r"| Do x \| y | {t} | {t} |", t = today())), "{view}");
+}
+
+#[test]
+fn a_cell_stays_on_one_line_and_a_backslash_cannot_undo_the_escape() {
+    use afcore::needs::cell;
+    assert_eq!(cell("two\nlines\r\nhere"), "two lines here");
+    assert_eq!(cell("para\u{2028}sep"), "para sep");
+    assert_eq!(cell(r"ends with \| pipe"), r"ends with \\\| pipe");
+    assert_eq!(cell(r"C:\temp"), r"C:\\temp");
+}
+
+#[test]
+fn a_missing_detail_file_says_so_in_notes_with_no_dead_link() {
+    let fx = Fx::new();
+    fx.write(OPEN, &format!("- [ ] {} · Gone? · need now · detail needs/gone.md · from: main\n", today()));
+    fx.ok(&["needs", "render"]);
+    let view = fx.read(VIEW);
+    assert!(view.contains("| Gone? | no recommendation written | detail file missing: needs/gone.md |\n"), "{view}");
+    assert!(!view.contains("[open]"), "{view}");
 }
 
 #[test]
@@ -291,7 +327,7 @@ fn a_block_scalar_recommendation_reads_as_its_text() {
         let fx = Fx::new();
         fx.write("workspace/life/needs/q.md", &format!("---\nprivate: true\n{raw}---\n# Q\n"));
         fx.ok(&["needs", "add", "Decide?", "--detail", "needs/q.md"]);
-        assert!(fx.read(VIEW).contains(&format!("· recommend: {want}\n")), "{raw}: {}", fx.read(VIEW));
+        assert!(fx.read(VIEW).contains(&format!("| Decide? | {want} | [open](needs/q.md) |\n")), "{raw}: {}", fx.read(VIEW));
     }
     let fx = Fx::new();
     fx.write("workspace/life/needs/q.md", "---\nrecommendation: >\n---\n# Q\n");
@@ -404,7 +440,7 @@ fn a_passed_date_reaches_the_view_through_every_loop_read_and_write() {
         let (code, out, err) = fx.run(args);
         assert_eq!(code, 0, "{args:?}: {out}{err}");
         let view = fx.read(VIEW);
-        assert!(view.contains("## Now (1)\n\n- [Dated?](needs/d.md)"), "{args:?}: {view}");
+        assert!(view.contains(&format!("## Now (1)\n\n{NOW_HEAD}| Dated? | rec | [open](needs/d.md) |\n")), "{args:?}: {view}");
     }
     let fx = date_just_passed();
     let open = fx.read(OPEN);
@@ -474,7 +510,15 @@ fn do_lists_plain_due_loops_that_are_his_and_leaves_out_what_others_owe() {
     let view = fx.read(VIEW);
     let (now, do_, later) = (view.find("## Now").unwrap(), view.find("## Do").unwrap(), view.find("## Later").unwrap());
     assert!(now < do_ && do_ < later, "{view}");
-    assert!(view.contains(&format!("## Do (2)\n\n- Pay the bill · due {}\n- Pay the card · due {}\n", days_ago(2), today())), "{view}");
+    assert!(
+        view.contains(&format!(
+            "## Do (2)\n\n{DO_HEAD}| Pay the bill | {d} | {o} |\n| Pay the card | {t} | {o} |\n",
+            d = days_ago(2),
+            t = today(),
+            o = days_ago(9)
+        )),
+        "{view}"
+    );
     for absent in ["Not yet", "No date", "Refund", "Reply from a friend"] {
         assert!(!view.contains(absent), "{absent}: {view}");
     }

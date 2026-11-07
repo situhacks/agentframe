@@ -10,7 +10,7 @@ Shapes `workspace/life/systems/loop-watch-report.md`, what the morning check of 
 ## Renew the widget licence
 
 - Verdict: done
-- From: `Widget Shop <orders@widgets.example>`
+- From: `orders@widgets.example (Widget Shop)`
 - Date: 2026-03-08
 - Subject: `Your licence is renewed`
 - Quote: `your licence has been renewed through next March`
@@ -65,19 +65,29 @@ For each loop the model replies with one JSON object:
 
 The script validates each reply. Each of these is a failure for that loop, in the report and the exit code, never read as `nothing`:
 
-- Not exactly that object: not JSON, an unknown verdict, an extra key, a missing field, a date not `YYYY-MM-DD`, a quote under 3 or over 15 words, or `nothing` carrying evidence.
-- A quote found in no email that run fetched, compared by whole words, ignoring markup, case, and punctuation.
-- A sender or subject that is not the quoted email's. The sender agrees on its address or display name, and a subject may differ by a `Re:` or `Fwd:` prefix.
-- An email dated before the loop's window, or with no readable date. The window opens on the loop's opened date. For a recurring loop it opens on the current nudge, because a close re-dates the loop and keeps its opened date, so anything earlier would let last period's receipt settle this period. A payment made ahead of the nudge goes unseen and the loop stays with him.
+- Not exactly that object: not JSON, an unknown verdict, an extra key, a missing field, a date not `YYYY-MM-DD`, a quote under 4 alphabetic words, over 15 words, or over 200 characters, or `nothing` carrying evidence. A sum, an address, and a date do not count as alphabetic words.
+- A quote found in no email that run fetched, compared by whole words, ignoring markup, case, and punctuation, or found only in an email's quoted history: blockquotes, the history blocks mail clients mark, `>` lines, and what follows an `On ... wrote:` or original-message line. An email's matching text over 200 characters also fails.
+- A sender or subject that is not the quoted email's. The sender agrees on its address, because the display name is the sender's to choose, and a subject may differ by a `Re:` or `Fwd:` prefix.
+- An email dated later than now, by more than 10 minutes of clock difference.
+- An email dated before the loop's window, or with no readable date. Gmail's received time counts over a date header when the result has both. The window opens on the loop's opened date. For a recurring loop it opens on the current nudge, because a close re-dates the loop and keeps its opened date, so anything earlier would let last period's receipt settle this period. A payment made ahead of the nudge goes unseen and the loop stays with him.
 - No Gmail search in the run, or more than 3 `get_thread` calls.
-- A reach for any refused tool, which discards the verdict: the email may have steered the model.
-- `nothing` when a fetched thread was too large for the model to read, or a Gmail result came back unreadable, with an error, or in an unknown shape. An empty search is a quiet day.
+- A reach for any refused tool, which discards the verdict: the email may have steered the model. The report says `unexpected tool`, and the log holds the name stripped to letters, digits, underscore, and hyphen.
+- `nothing` when a fetched thread was too large for the model to read, a Gmail call had no result, or a result came back unreadable, naming an error, in an unknown shape, or with a message that has no body. A search is a quiet day only in the exact empty shape: `{}`, or an empty `threads` with a `resultCountEstimate` of 0 and no next page. The log holds an unknown shape's keys, never its content.
 - A run stopped by its $0.15 budget, which is not retried.
 - Gmail or Claude unreachable. Two such loops in a row stop the run, and every loop left counts as failed.
 - The morning's total reaching $1.00, charging every attempt and a run with no cost figure at the $0.15 cap. The run stops, and every loop left is listed as not checked. The oldest loops go first each morning, so a run that keeps reaching the total starves the newest.
 - A saved run copy that could not be deleted, which also counts in the footer.
 
-Quote, From, Date, and Subject are printed from the matched email, never from the model's reply, so nothing the model adds to a quote can reach the report.
+Quote, From, Date, and Subject are printed from the matched email, never from the model's reply, so nothing the model adds to a quote can reach the report. From prints the address in full and first, then the display name capped at 60 characters.
+
+A `done` or `answered` verdict drops to `update`, and the Verdict line says why in fixed words, when:
+
+- The email is his own sent mail: it carries the `SENT` label, or its address is in `workspace/life/systems/loop-watch-self.txt`, an optional private file of his addresses, one a line.
+- Nothing can tell whether it is his own: the result has no labels and that file does not exist. If the report says this often, write the file.
+- Its own text cannot be told from quoted history: a reply, or a message that follows others, with no history marker to show where its own words stop.
+- A newer message in the same thread could change it.
+
+The report is evidence for main, not a decision: a real quote from a newsletter can still pass.
 
 ## Route and limits
 

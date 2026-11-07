@@ -232,7 +232,7 @@ pub fn due_line(l: &Loop, age: i64) -> String {
 
 pub fn loop_json(l: &Loop, age: Option<i64>) -> Value {
     let mut v = json!({
-        "n": l.n, "section": l.section, "opened": l.opened.format("%Y-%m-%d").to_string(), "text": l.text,
+        "n": l.n, "section": l.section, "top": l.top, "opened": l.opened.format("%Y-%m-%d").to_string(), "text": l.text,
         "nudge": l.due_on().map(|n| n.format("%Y-%m-%d").to_string()), "every": l.every, "from": l.from,
         "need": l.need.as_ref().map(|n| n.when.field()), "detail": l.need.as_ref().map(|n| n.detail_rel()),
     });
@@ -281,6 +281,8 @@ pub enum OpenCmd {
         #[arg(long)]
         json: bool,
     },
+    /// Mark the loop watch's report as read; its session-start line stays quiet until the next run
+    WatchReviewed,
 }
 
 pub fn run(ctx: &Ctx, cmd: OpenCmd) -> R<i32> {
@@ -291,6 +293,7 @@ pub fn run(ctx: &Ctx, cmd: OpenCmd) -> R<i32> {
         OpenCmd::Close { target, outcome, final_ } => cmd_close(ctx, &target, &outcome, final_),
         OpenCmd::Redate { target, nudge } => cmd_redate(ctx, &target, &nudge),
         OpenCmd::Due { json } => cmd_due(ctx, json),
+        OpenCmd::WatchReviewed => crate::loop_watch::cmd_reviewed(ctx),
     }
 }
 

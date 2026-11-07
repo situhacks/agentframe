@@ -4,7 +4,7 @@ Shapes what main needs the operator to decide: marked lines in `workspace/life/o
 
 ## The rule
 
-- Review a loop before raising it here; close what you can yourself. Only a decision that is genuinely his goes on the list. Everything else stays an ordinary loop.
+- Review a loop before raising it here: [check first](open-loops.md#the-loop-rule), and close what you can yourself. Only a decision that is genuinely his goes on the list. Everything else stays an ordinary loop.
 - Write the detail file first, then `af needs add`. The question is the line's text; the file holds the rest.
 - Every reply to him, except one that is only a background-task status note, ends with the first line `af needs list` prints, linking `workspace/life/needs.md`. It counts Now and Do, and says none only when both are empty.
 - A due plain loop that is his to act on, not decide, stays a plain loop; it shows under Do by itself. A due loop under `Waiting on others` is main's to chase, so it stays out of Do and prints only in `af open due`.
@@ -42,19 +42,36 @@ recommendation: the cheaper plan
 ## Sources
 ```
 
-- `recommendation` is a few words; the view prints it beside the question. `af needs add` refuses a file without one.
+- `recommendation` is a few words; the view prints it in its own column. `af needs add` refuses a file without one.
 - The body says what the decision is, main's recommendation and why, the options with what each costs him, the background he needs, and links to the sources.
 - The date or trigger lives on the line, never here. Closing moves the file to `needs/closed/`, and the log line names its new path.
 
 ## The view
 
-`workspace/life/needs.md` has `## Now`, `## Do`, and `## Later` sections, one line per item. Now and Later are the marked lines, each question a relative link to its detail file. Do is generated from `af open due`: the plain due loops outside `Waiting on others`. Main reviews those and closes the rest itself, so what stays is his to do.
+`workspace/life/needs.md` has `## Now`, `## Do`, and `## Later` sections, each a table with one row per item, or `Nothing.` when empty. Now and Later are the marked lines; Notes links the detail file, and When holds the date or the trigger. Do is generated from `af open due`: the plain due loops outside `Waiting on others`. Main reviews those and closes the rest itself, so what stays is his to do; Waiting since is the loop's opened date.
 
 ```
-- [Which plan to take?](needs/plan-choice.md) · recommend: the cheaper plan
-- Pay the bill · due 2026-11-03
-- on 2026-12-01: [Renew or move?](needs/renew-or-move.md) · recommend: renew
+## Now (1)
+
+| Decision | Recommendation | Notes |
+|---|---|---|
+| Which plan to take? | the cheaper plan | [open](needs/plan-choice.md) |
+
+## Do (1)
+
+| To do | Due | Waiting since |
+|---|---|---|
+| Pay the bill | 2026-11-03 | 2026-10-24 |
+
+## Later (2)
+
+| When | Decision | Recommendation | Notes |
+|---|---|---|---|
+| 2026-12-01 | Renew or move? | renew | [open](needs/renew-or-move.md) |
+| the quote arrives | Accept the quote? | wait for it | [open](needs/quote.md) |
 ```
+
+A cell is one line, and a `|` or `\` in its text is escaped so it cannot split the row. A missing detail file reads `detail file missing: needs/<slug>.md` in Notes. `af needs list`, session start, and `af brief` print plain lines, not tables.
 
 Every `af` read or write of the loops rewrites it, `af open due` and `af brief` among them, so a date that passes reaches it with no change to `open.md`; the daily phone push runs one even when no chat does. Session start prints the count and the Now items to a main chat, and `af brief` carries the same section.
 

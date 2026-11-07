@@ -171,20 +171,44 @@ fn items(ctx: &Ctx, doc: &OpenDoc, today: NaiveDate) -> (Vec<Item>, Vec<Item>) {
     (now, later)
 }
 
+/// Text fit for a table cell: one line, with a pipe that cannot split the row. A backslash is
+/// escaped too, or one ahead of a pipe would cancel that pipe's escape.
+pub fn cell(text: &str) -> String {
+    life::one_line(text).replace('\\', r"\\").replace('|', r"\|")
+}
+
 fn rec_of(i: &Item) -> String {
     i.rec.clone().unwrap_or_else(|| "no recommendation written".to_string())
 }
 
-fn view_line(i: &Item) -> String {
-    let lead = match &i.need.when {
-        When::Now | When::On(_) if i.need.when.is_now(today_date()) => String::new(),
-        w => format!("{}: ", w.field()),
-    };
-    if !i.detail_exists {
-        return format!("- {lead}{} · detail file missing: {}", i.l.text, i.need.detail);
+/// The Notes cell: the link to the detail file, or what is wrong with it.
+fn notes_cell(i: &Item) -> String {
+    if i.detail_exists {
+        format!("[open]({})", i.need.detail)
+    } else {
+        format!("detail file missing: {}", i.need.detail)
     }
-    let label = i.l.text.replace('[', r"\[").replace(']', r"\]");
-    format!("- {lead}[{label}]({}) · recommend: {}", i.need.detail, rec_of(i))
+}
+
+fn now_row(i: &Item) -> Vec<String> {
+    vec![cell(&i.l.text), cell(&rec_of(i)), notes_cell(i)]
+}
+
+fn when_cell(w: &When) -> String {
+    match w {
+        When::Now => "now".to_string(),
+        When::On(d) => d.format("%Y-%m-%d").to_string(),
+        When::Trigger(t) => cell(t),
+    }
+}
+
+fn later_row(i: &Item) -> Vec<String> {
+    vec![when_cell(&i.need.when), cell(&i.l.text), cell(&rec_of(i)), notes_cell(i)]
+}
+
+fn do_row(l: &Loop) -> Vec<String> {
+    let due = l.due_on().map(|d| d.format("%Y-%m-%d").to_string()).unwrap_or_default();
+    vec![cell(&l.text), due, l.opened.format("%Y-%m-%d").to_string()]
 }
 
 fn todo_line(l: &Loop) -> String {
@@ -192,15 +216,27 @@ fn todo_line(l: &Loop) -> String {
     format!("{} · due {due}", l.text)
 }
 
+fn table_row(cells: &[String]) -> String {
+    format!("| {} |\n", cells.join(" | "))
+}
+
+/// A section: its heading with the count, then its table, or `Nothing.` when it has no rows.
+fn section(title: &str, head: &[&str], rows: Vec<Vec<String>>) -> String {
+    let mut body = String::new();
+    if rows.is_empty() {
+        body.push_str("Nothing.\n");
+    } else {
+        body.push_str(&format!("| {} |\n|{}\n", head.join(" | "), "---|".repeat(head.len())));
+        rows.iter().for_each(|r| body.push_str(&table_row(r)));
+    }
+    format!("\n## {title} ({})\n\n{body}", rows.len())
+}
+
 fn view_text(lists: &Lists) -> String {
-    let group = |title: &str, lines: Vec<String>| {
-        let body = if lines.is_empty() { "Nothing.\n".to_string() } else { format!("{}\n", lines.join("\n")) };
-        format!("\n## {title} ({})\n\n{body}", lines.len())
-    };
     let mut s = String::from(VIEW_HEAD);
-    s.push_str(&group("Now", lists.now.iter().map(view_line).collect()));
-    s.push_str(&group("Do", lists.todo.iter().map(|l| format!("- {}", todo_line(l))).collect()));
-    s.push_str(&group("Later", lists.later.iter().map(view_line).collect()));
+    s.push_str(&section("Now", &["Decision", "Recommendation", "Notes"], lists.now.iter().map(now_row).collect()));
+    s.push_str(&section("Do", &["To do", "Due", "Waiting since"], lists.todo.iter().map(do_row).collect()));
+    s.push_str(&section("Later", &["When", "Decision", "Recommendation", "Notes"], lists.later.iter().map(later_row).collect()));
     s
 }
 

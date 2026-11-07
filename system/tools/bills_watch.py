@@ -67,8 +67,14 @@ DENY_TOOLS = OTHER_SERVERS + tuple(f"mcp__claude_ai_Gmail__{t}" for t in (
     "mark_message_spam", "mark_thread_spam", "unmark_message_spam", "unmark_thread_spam",
     "trash_message", "trash_thread", "untrash_message", "untrash_thread"))
 RUN_DIR = Path(tempfile.gettempdir()) / "agentframe-bills-watch"
-# Claude Code keeps each run's large tool results (whole email bodies) under this folder.
-PROJECT_DIR = Path.home() / ".claude" / "projects" / re.sub(r"[^A-Za-z0-9]", "-", str(RUN_DIR))
+
+
+def project_dir_for(run_dir: Path) -> Path:
+    """Where Claude Code keeps the large tool results (whole email bodies) of a run started in run_dir."""
+    return Path.home() / ".claude" / "projects" / re.sub(r"[^A-Za-z0-9]", "-", str(run_dir))
+
+
+PROJECT_DIR = project_dir_for(RUN_DIR)
 
 # --- Email text -------------------------------------------------------------
 
@@ -645,6 +651,8 @@ class RunResult:
     payloads: list[tuple[str, dict]] = field(default_factory=list)
     refused: list[str] = field(default_factory=list)
     unreadable: int = 0
+    saved: int = 0        # results Claude Code put in a file, so the model saw only a preview
+    final_text: str = ""  # the model's closing reply
     notes: list[str] = field(default_factory=list)
 
 
@@ -680,13 +688,16 @@ def parse_stream(lines: list[str]) -> RunResult:
         elif kind == "user":
             for c in e.get("message", {}).get("content", []):
                 if c.get("type") == "tool_result" and c.get("tool_use_id") in names:
-                    payload = None if c.get("is_error") else _load_payload(_result_text(c.get("content")))
+                    text = _result_text(c.get("content"))
+                    payload = None if c.get("is_error") else _load_payload(text)
                     if payload is None:
                         res.unreadable += 1
                     else:
                         res.payloads.append((names[c["tool_use_id"]], payload))
+                        res.saved += not text.lstrip().startswith("{")
         elif kind == "result":
             final = e
+            res.final_text = e.get("result") or ""
             res.refused += [d.get("tool_name") for d in e.get("permission_denials") or [] if d.get("tool_name")]
     res.refused = list(dict.fromkeys(res.refused))
     if final is None:
@@ -704,13 +715,14 @@ def _session_of(lines: list[str]) -> str | None:
     return None
 
 
-def cleanup(session: str | None, older_than: float = 3600) -> None:
+def cleanup(session: str | None, older_than: float = 3600, project_dir: Path | None = None) -> None:
     """Delete Claude Code's saved copy of a run (its tool results hold whole email bodies),
     and any leftover run folder in the watch's project folder older than an hour."""
-    if not PROJECT_DIR.is_dir():
+    project_dir = project_dir or PROJECT_DIR
+    if not project_dir.is_dir():
         return
     now = time.time()
-    for p in PROJECT_DIR.iterdir():
+    for p in project_dir.iterdir():
         name = p.name[:-6] if p.name.endswith(".jsonl") else p.name
         if not re.fullmatch(r"[0-9a-fA-F]{8}-[0-9a-fA-F-]{27}", name):
             continue  # not a run's folder
@@ -724,21 +736,23 @@ def cleanup(session: str | None, older_than: float = 3600) -> None:
             pass
 
 
-def claude(prompt: str, max_turns: int, model: str) -> list[str]:
+def claude(prompt: str, max_turns: int, model: str, run_dir: Path | None = None,
+           project_dir: Path | None = None) -> list[str]:
     exe = shutil.which("claude")
     if not exe:
         raise GmailError("claude is not on PATH")
-    RUN_DIR.mkdir(exist_ok=True)
+    run_dir = run_dir or RUN_DIR
+    run_dir.mkdir(exist_ok=True)
     args = [exe, "-p", prompt, "--model", model, "--max-turns", str(max_turns),
             "--setting-sources", "local", "--permission-mode", "dontAsk", "--tools", "",
             "--no-session-persistence",
             "--allowedTools", ",".join(READ_TOOLS), "--disallowedTools", ",".join(DENY_TOOLS),
             "--output-format", "stream-json", "--verbose"]
     try:
-        r = subprocess.run(args, cwd=RUN_DIR, capture_output=True, text=True, encoding="utf-8",
+        r = subprocess.run(args, cwd=run_dir, capture_output=True, text=True, encoding="utf-8",
                            timeout=120 + 60 * max_turns)
     except subprocess.TimeoutExpired:
-        cleanup(None, older_than=0)
+        cleanup(None, older_than=0, project_dir=project_dir)
         raise GmailError("the claude run timed out") from None
     if r.returncode != 0 and not r.stdout.strip():
         raise GmailError(f"claude exited {r.returncode}: {one_line(r.stderr, 160)}")
@@ -748,7 +762,7 @@ def claude(prompt: str, max_turns: int, model: str) -> list[str]:
 RETRY_WAIT = 20  # seconds; the connector list sometimes fails to load for one run
 
 
-def _run(run, prompt: str, max_turns: int, model: str) -> RunResult:
+def _run(run, prompt: str, max_turns: int, model: str, project_dir: Path | None = None) -> RunResult:
     for attempt in (1, 2):
         lines = run(prompt, max_turns, model)
         try:
@@ -757,7 +771,7 @@ def _run(run, prompt: str, max_turns: int, model: str) -> RunResult:
             if attempt == 2:
                 raise
         finally:
-            cleanup(_session_of(lines))
+            cleanup(_session_of(lines), project_dir=project_dir)
         time.sleep(RETRY_WAIT)
     raise AssertionError("unreachable")
 

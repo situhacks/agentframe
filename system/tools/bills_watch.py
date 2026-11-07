@@ -652,6 +652,7 @@ class RunResult:
     refused: list[str] = field(default_factory=list)
     unreadable: int = 0
     saved: int = 0        # results Claude Code put in a file, so the model saw only a preview
+    calls: list[str] = field(default_factory=list)  # each allowed tool the model called, refused or not
     final_text: str = ""  # the model's closing reply
     notes: list[str] = field(default_factory=list)
 
@@ -683,6 +684,7 @@ def parse_stream(lines: list[str]) -> RunResult:
                 if c.get("type") == "tool_use":
                     if c.get("name") in READ_TOOLS:
                         names[c["id"]] = c["name"]
+                        res.calls.append(c["name"])
                     else:
                         res.refused.append(c.get("name") or "an unnamed tool")
         elif kind == "user":
@@ -715,19 +717,26 @@ def _session_of(lines: list[str]) -> str | None:
     return None
 
 
+def _run_name(p: Path) -> str | None:
+    """The session id a run's saved copy is named for; None for anything else in the folder."""
+    name = p.name[:-6] if p.name.endswith(".jsonl") else p.name
+    return name if re.fullmatch(r"[0-9a-fA-F]{8}-[0-9a-fA-F-]{27}", name) else None
+
+
+def saved_runs(project_dir: Path | None = None) -> list[Path]:
+    """The runs' saved copies still in a watch's project folder."""
+    project_dir = project_dir or PROJECT_DIR
+    return [p for p in project_dir.iterdir() if _run_name(p)] if project_dir.is_dir() else []
+
+
 def cleanup(session: str | None, older_than: float = 3600, project_dir: Path | None = None) -> None:
     """Delete Claude Code's saved copy of a run (its tool results hold whole email bodies),
     and any leftover run folder in the watch's project folder older than an hour."""
-    project_dir = project_dir or PROJECT_DIR
-    if not project_dir.is_dir():
-        return
     now = time.time()
-    for p in project_dir.iterdir():
-        name = p.name[:-6] if p.name.endswith(".jsonl") else p.name
-        if not re.fullmatch(r"[0-9a-fA-F]{8}-[0-9a-fA-F-]{27}", name):
-            continue  # not a run's folder
+    for p in saved_runs(project_dir):
+        name = _run_name(p)
         try:
-            if name == session or now - p.stat().st_mtime > older_than:
+            if name == session or older_than <= 0 or now - p.stat().st_mtime > older_than:
                 if p.is_dir():
                     shutil.rmtree(p, ignore_errors=True)
                 else:
@@ -737,7 +746,7 @@ def cleanup(session: str | None, older_than: float = 3600, project_dir: Path | N
 
 
 def claude(prompt: str, max_turns: int, model: str, run_dir: Path | None = None,
-           project_dir: Path | None = None) -> list[str]:
+           project_dir: Path | None = None, extra_args: tuple[str, ...] = ()) -> list[str]:
     exe = shutil.which("claude")
     if not exe:
         raise GmailError("claude is not on PATH")
@@ -747,7 +756,7 @@ def claude(prompt: str, max_turns: int, model: str, run_dir: Path | None = None,
             "--setting-sources", "local", "--permission-mode", "dontAsk", "--tools", "",
             "--no-session-persistence",
             "--allowedTools", ",".join(READ_TOOLS), "--disallowedTools", ",".join(DENY_TOOLS),
-            "--output-format", "stream-json", "--verbose"]
+            "--output-format", "stream-json", "--verbose", *extra_args]
     try:
         r = subprocess.run(args, cwd=run_dir, capture_output=True, text=True, encoding="utf-8",
                            timeout=120 + 60 * max_turns)

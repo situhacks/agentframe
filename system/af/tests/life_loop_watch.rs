@@ -40,6 +40,14 @@ fn evidence_prints_one_line_of_counts_to_main_and_no_email_text() {
 }
 
 #[test]
+fn a_footer_carrying_cost_and_undeleted_still_reads() {
+    let fx = main_chat();
+    let with_cost = report(1, 2).replace("skipped over the cap 0\n", "skipped over the cap 0 · cost $0.04 · undeleted 1\n");
+    fx.write(REPORT, &with_cost);
+    assert!(bundle(&fx).contains("loop watch: 1 with email evidence, 2 failed"));
+}
+
+#[test]
 fn a_failed_run_prints_too_so_a_broken_watch_is_never_silent() {
     let fx = main_chat();
     fx.write(REPORT, &report(0, 3));

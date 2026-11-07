@@ -43,7 +43,10 @@ MAX_LOOPS = 25          # loops checked per run, oldest first
 MAX_TURNS = 6           # two searches, three threads, the reply
 MIN_QUOTE_WORDS = 3     # "yes" names no email
 MAX_QUOTE_WORDS = 15
+MAX_GET_THREADS = 3     # threads one loop's run may fetch; the prompt asks, this file holds the line
 STOP_AFTER = 2          # Gmail failures in a row before the rest of the run is given up
+CALL_BUDGET_USD = 0.15  # each claude -p
+RUN_BUDGET_USD = 1.00   # the morning's total; the loops left are reported as not checked
 OTHERS_SECTION = "Waiting on others"
 VERDICTS = ("done", "answered", "update", "nothing")
 EVIDENCE_KEYS = ("sender", "date", "subject", "quote")
@@ -254,7 +257,8 @@ def prompt_for(loop: dict) -> str:
         f"The to-do, as a JSON string: {json.dumps(loop['text'], ensure_ascii=False)}. "
         f"Step 1: call {search} with pageSize 10 and a query of the to-do's few most telling words plus "
         f"after:{since:%Y/%m/%d}. Try a second query only if the first finds nothing relevant. "
-        f"Step 2: call {get} on at most three threads whose sender or subject plainly relates to the to-do. "
+        f"Step 2: call {get} on at most {MAX_GET_THREADS} threads whose sender or subject plainly relates to the "
+        "to-do. "
         "Step 3: call no other tool. Reply with one JSON object and nothing else, no prose and no code fence: "
         '{"verdict": "...", "sender": "...", "date": "YYYY-MM-DD", "subject": "...", "quote": "..."}. '
         "verdict is one of: done, an email shows the thing the to-do tracks has happened; "
@@ -283,13 +287,19 @@ def _well_formed(name: str, payload: dict) -> bool:
     return isinstance(messages, list) and bool(messages)
 
 
-def check_loop(loop: dict, model: str, run) -> Evidence | None:
+def check_loop(loop: dict, model: str, run, notes: list[str] | None = None) -> Evidence | None:
     """The evidence for one loop, or None for nothing found. LoopFailure when the run gives no
     verdict to stand behind; GmailError when Gmail or Claude could not be reached."""
     res = bw._run(run, prompt_for(loop), MAX_TURNS, model, project_dir=PROJECT_DIR)
+    if notes is not None:
+        notes += [n for n in res.notes if n not in notes]
     if res.refused:
         raise LoopFailure(f"the model reached for refused tool `{_code(res.refused[0])}`, so its verdict is discarded; "
                           "check this loop's email by hand")
+    fetches = res.calls.count(bw.READ_TOOLS[1])
+    if fetches > MAX_GET_THREADS:
+        raise LoopFailure(f"the model fetched {fetches} threads, over the limit of {MAX_GET_THREADS}, so its verdict "
+                          "is discarded")
     try:
         v = parse_verdict(res.final_text)
     except Malformed as e:
@@ -313,7 +323,8 @@ def check_loop(loop: dict, model: str, run) -> Evidence | None:
 
 
 def claude(prompt: str, max_turns: int, model: str) -> list[str]:
-    return bw.claude(prompt, max_turns, model, run_dir=RUN_DIR, project_dir=PROJECT_DIR)
+    return bw.claude(prompt, max_turns, model, run_dir=RUN_DIR, project_dir=PROJECT_DIR,
+                     extra_args=("--max-budget-usd", f"{CALL_BUDGET_USD:.2f}"))
 
 
 # --- The run ----------------------------------------------------------------
@@ -325,6 +336,12 @@ class Outcome:
     evidence: list[Evidence] = field(default_factory=list)
     failures: list[tuple[str, str]] = field(default_factory=list)   # (loop text, reason)
     notes: list[str] = field(default_factory=list)
+    cost: float = 0.0     # what the result events reported
+    uncosted: int = 0     # attempts with no figure, each charged the call cap against the run total
+    undeleted: int = 0    # saved run copies, which hold email bodies, still on disk at the end
+
+    def spent(self) -> float:
+        return self.cost + self.uncosted * CALL_BUDGET_USD
 
 
 def af_due() -> str:
@@ -336,12 +353,51 @@ def af_due() -> str:
     return r.stdout
 
 
+def _final_event(lines: list[str]) -> dict:
+    for line in reversed(lines):
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(e, dict) and e.get("type") == "result":
+            return e
+    return {}
+
+
+def metered(run, out: Outcome):
+    """A claude runner that charges every attempt to the run, retries and failures included,
+    since a failed run never gets as far as being parsed. A run stopped by its budget is that
+    loop's failure, not a Gmail fault: a retry would only spend the budget again."""
+    def go(prompt: str, max_turns: int, model: str) -> list[str]:
+        try:
+            lines = run(prompt, max_turns, model)
+        except bw.GmailError:
+            out.uncosted += 1
+            raise
+        final = _final_event(lines)
+        cost = final.get("total_cost_usd")
+        if isinstance(cost, (int, float)) and not isinstance(cost, bool):
+            out.cost += cost
+        else:
+            out.uncosted += 1
+        if "budget" in str(final.get("subtype", "")):
+            bw.cleanup(bw._session_of(lines), project_dir=PROJECT_DIR)
+            raise LoopFailure(f"the run hit its ${CALL_BUDGET_USD:.2f} budget before it answered; check by hand")
+        return lines
+    return go
+
+
 def watch(out: Outcome, model: str, run_claude, run_af) -> None:
     loops, out.over_cap = select_loops(load_due(run_af()))
+    run = metered(run_claude, out)
     in_a_row = 0
     for i, loop in enumerate(loops):
+        if out.spent() >= RUN_BUDGET_USD:
+            reason = f"not checked: the run reached its ${RUN_BUDGET_USD:.2f} budget"
+            out.failures += [(x["text"], reason) for x in loops[i:]]
+            return
         try:
-            found = check_loop(loop, model, run_claude)
+            found = check_loop(loop, model, run, out.notes)
         except bw.GmailError as e:
             out.failures.append((loop["text"], f"Gmail or Claude failed: {e}"))
             in_a_row += 1
@@ -378,8 +434,10 @@ def _code(text: object, limit: int = 200) -> str:
 
 
 def footer(out: Outcome, now: dt.datetime) -> str:
+    cost = f"${out.cost:.2f}" + (f" plus {out.uncosted} run(s) with no figure" if out.uncosted else "")
     return (f"Run {now:%Y-%m-%d %H:%M} · loops checked {out.checked} · with evidence {len(out.evidence)} · "
-            f"failures {len(out.failures)} · skipped over the cap {out.over_cap}")
+            f"failures {len(out.failures)} · skipped over the cap {out.over_cap} · cost {cost} · "
+            f"undeleted {out.undeleted}")
 
 
 def render_report(out: Outcome, now: dt.datetime) -> str:
@@ -420,23 +478,29 @@ def main(argv: list[str] | None = None, *, now: dt.datetime | None = None, run_c
     now = now or dt.datetime.now()
     out = Outcome()
     try:
+        bw.cleanup(None, older_than=0, project_dir=PROJECT_DIR)  # a killed run leaves its copies for this one
         watch(out, a.model, run_claude, run_af)
     except Exception as e:  # noqa: BLE001 - a scheduled run must never fail silently
         traceback.print_exc()
         out.failures.append(("The whole run", f"it stopped early ({type(e).__name__}: {e})"))
     finally:
         bw.cleanup(None, older_than=0, project_dir=PROJECT_DIR)
+        out.undeleted = len(bw.saved_runs(PROJECT_DIR))
+    if out.undeleted:
+        out.failures.append(("Raw email cleanup", f"{out.undeleted} saved run copies holding email could not be "
+                                                  f"deleted from {PROJECT_DIR}; delete them by hand"))
     text = render_report(out, now)
     code = 1 if out.failures else 0
     if a.dry_run:
         print(text)
+        print("".join(f"Note: {n}\n" for n in out.notes), end="")
         print("Dry run. Nothing written, no loop changed.")
         return code
     try:
         path = _root() / REPORT
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8", newline="\n")
-        log(footer(out, now).split(" · ", 1)[1], now)
+        log(" · ".join([footer(out, now).split(" · ", 1)[1], *out.notes]), now)
     except OSError as e:
         print(f"could not write the report: {e}", file=sys.stderr)
         return 1

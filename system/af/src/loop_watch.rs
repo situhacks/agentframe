@@ -25,7 +25,7 @@ fn reviewed(text: &str) -> bool {
 
 /// (with evidence, failures) from the report's footer.
 fn counts(text: &str) -> Option<(u32, u32)> {
-    let re = rx(r"\ARun \d{4}-\d{2}-\d{2} \d{2}:\d{2} · loops checked \d+ · with evidence (\d+) · failures (\d+) · skipped over the cap \d+\z");
+    let re = rx(r"\ARun \d{4}-\d{2}-\d{2} \d{2}:\d{2} · loops checked \d+ · with evidence (\d+) · failures (\d+) · skipped over the cap \d+(?: · .*)?\z");
     let c = text.lines().rev().find_map(|l| re.captures(l))?;
     Some((c[1].parse().ok()?, c[2].parse().ok()?))
 }

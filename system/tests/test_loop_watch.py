@@ -32,7 +32,8 @@ ORDER = "mcp__claude_ai_Questrade__create_order_instruction"
 SESSION = "0a1b2c3d-0000-4000-8000-000000000001"
 NOW = dt.datetime(2026, 3, 10, 7, 50)
 FOOTER = re.compile(r"(?m)^Run 2026-03-10 07:50 · loops checked (\d+) · with evidence (\d+) · failures (\d+) · "
-                    r"skipped over the cap (\d+)$")
+                    r"skipped over the cap (\d+) · cost \$\d+\.\d\d(?: plus \d+ run\(s\) with no figure)? · "
+                    r"undeleted \d+$")
 
 
 def setUpModule():
@@ -60,12 +61,14 @@ GOOD = {"verdict": "done", "sender": "orders@widgets.example", "date": "2026-03-
 NOTHING = {"verdict": "nothing", "sender": "", "date": "", "subject": "", "quote": ""}
 
 
-def stream(*events, reply=json.dumps(NOTHING), gmail="connected", denials=(), subtype="success"):
+def stream(*events, reply=json.dumps(NOTHING), gmail="connected", denials=(), subtype="success", cost=0.01, tools=()):
     init = {"type": "system", "subtype": "init", "session_id": SESSION,
             "mcp_servers": [{"name": "claude.ai Gmail", "status": gmail, "source": "claudeai"}],
-            "tools": list(bw.READ_TOOLS)}
+            "tools": [*bw.READ_TOOLS, *tools]}
     done = {"type": "result", "subtype": subtype, "is_error": subtype != "success", "result": reply,
             "permission_denials": [{"tool_name": t} for t in denials]}
+    if cost is not None:
+        done["total_cost_usd"] = cost
     return [json.dumps(e) for e in (init, *events, done)]
 
 
@@ -354,6 +357,19 @@ class LockdownTests(unittest.TestCase):
             self.assertIn(server, denied)
         self.assertIn("mcp__claude_ai_Gmail__send_message", denied)
         self.assertFalse({SEARCH, GET} & set(denied))
+        self.assertEqual(args[args.index("--max-budget-usd") + 1], f"{lw.CALL_BUDGET_USD:.2f}")
+
+    def test_the_bills_watch_run_carries_no_budget_flag(self):
+        seen = {}
+
+        def fake_run(args, **kw):
+            seen["args"] = args
+            return mock.Mock(returncode=0, stdout="", stderr="")
+        with mock.patch.object(bw.shutil, "which", return_value="claude"), \
+                mock.patch.object(bw.subprocess, "run", side_effect=fake_run), \
+                mock.patch.object(bw, "RUN_DIR", Path(_SANDBOX.name) / "bills-run"):
+            bw.claude("prompt", 4, "model")
+        self.assertNotIn("--max-budget-usd", seen["args"])
 
     def test_its_folders_are_not_the_bills_watchs(self):
         self.assertNotEqual(lw.RUN_DIR, bw.RUN_DIR)
@@ -541,12 +557,104 @@ class MainTests(MainBase):
         text = self.report.read_text(encoding="utf-8")
         self.assertNotIn("Good news", text, "only the quote leaves the email")
 
+    def test_connector_notes_reach_the_log(self):
+        extra = "mcp__claude_ai_Example_Connector__do_thing"
+        self.run_main([loop()], [stream(*searched(), tools=[extra])])
+        log = (self.root / lw.LOG).read_text(encoding="utf-8")
+        self.assertIn("claude_ai_Example_Connector", log)
+        self.assertIn("OTHER_SERVERS", log)
+
+    def test_a_killed_runs_leftovers_are_swept_before_this_run_reads_any_email(self):
+        lw.PROJECT_DIR.mkdir(parents=True, exist_ok=True)
+        leftover = lw.PROJECT_DIR / "9f8e7d6c-0000-4000-8000-000000000004"
+        leftover.mkdir()
+        (leftover / "toolu_1.txt").write_text("<html>an email</html>", encoding="utf-8")
+        seen = []
+
+        def replies(prompt):
+            seen.append(leftover.exists())
+            return stream(*searched())
+        self.run_main([loop()], replies)
+        self.assertEqual(seen, [False])
+
+    def test_a_delete_that_fails_is_in_the_footer_the_failures_and_the_exit_code(self):
+        lw.PROJECT_DIR.mkdir(parents=True, exist_ok=True)
+        stuck = lw.PROJECT_DIR / "9f8e7d6c-0000-4000-8000-000000000005"
+        stuck.mkdir()
+        self.addCleanup(lambda: stuck.rmdir() if stuck.exists() else None)
+        with mock.patch.object(bw.shutil, "rmtree"):
+            code, _ = self.run_main([loop()], [stream(*searched())])
+        text = self.report.read_text(encoding="utf-8")
+        self.assertEqual(code, 1)
+        self.assertRegex(text, r"(?m)· undeleted 1$")
+        self.assertIn("could not be deleted", text)
+        self.assertEqual(self.counts(text)[2], 1)
+
+    def test_a_clean_run_says_undeleted_0(self):
+        self.run_main([loop()], [stream(*searched())])
+        self.assertRegex(self.report.read_text(encoding="utf-8"), r"(?m)· undeleted 0$")
+
     def test_the_log_carries_counts_and_no_email_text(self):
         self.run_main([loop()], [found(GOOD)])
         log = (self.root / lw.LOG).read_text(encoding="utf-8")
         self.assertIn("loops checked 1", log)
         self.assertNotIn(QUOTE, log)
         self.assertNotIn(MESSAGE["subject"], log)
+
+
+class SpendTests(MainBase):
+    def text(self):
+        return self.report.read_text(encoding="utf-8")
+
+    def test_the_footer_carries_what_the_run_cost(self):
+        self.run_main([loop("One"), loop("Two")], [stream(*searched(), cost=0.02), stream(*searched(), cost=0.03)])
+        self.assertIn("· cost $0.05 ·", self.text())
+
+    def test_a_retried_attempt_is_charged_too(self):
+        self.run_main([loop()], [stream(gmail="needs-auth", cost=0.04), stream(*searched(), cost=0.02)])
+        self.assertIn("· cost $0.06 ·", self.text())
+
+    def test_the_run_total_stops_the_run_and_names_what_it_skipped(self):
+        due = [loop("First"), loop("Second"), loop("Third"), loop("Fourth")]
+        code, _ = self.run_main(due, lambda p: stream(*searched(), cost=lw.RUN_BUDGET_USD / 2))
+        self.assertEqual(code, 1)
+        self.assertEqual(len(self.prompts), 2)
+        text = self.text()
+        self.assertEqual(self.counts(text), (2, 0, 2, 0))
+        for skipped in ("- Third: not checked", "- Fourth: not checked"):
+            self.assertIn(skipped, text)
+        self.assertIn(f"${lw.RUN_BUDGET_USD:.2f}", text)
+
+    def test_a_run_with_no_cost_figure_is_charged_the_call_cap_so_the_total_still_holds(self):
+        due = [loop(f"Loop {i}") for i in range(20)]
+        code, _ = self.run_main(due, lambda p: stream(*searched(), cost=None))
+        limit = int(lw.RUN_BUDGET_USD / lw.CALL_BUDGET_USD) + 1
+        self.assertEqual(code, 1)
+        self.assertEqual(len(self.prompts), limit)
+        self.assertIn(f"plus {limit} run(s) with no figure", self.text())
+
+    def test_a_call_over_its_budget_fails_that_loop_without_a_retry_and_the_run_goes_on(self):
+        code, _ = self.run_main([loop("Costly"), loop("Costly too"), loop("Cheap")],
+                                [stream(subtype="error_max_budget_usd", cost=0.2),
+                                 stream(subtype="error_max_budget_usd", cost=0.2), stream(*searched())])
+        text = self.text()
+        self.assertEqual(code, 1)
+        self.assertEqual(len(self.prompts), 3, "no retry, and no stop for two in a row: Gmail is fine")
+        self.assertEqual(self.counts(text), (1, 0, 2, 0))
+        self.assertIn(f"- Costly: the run hit its ${lw.CALL_BUDGET_USD:.2f} budget", text)
+
+    def test_more_thread_fetches_than_the_limit_is_a_failure_whatever_the_verdict(self):
+        over = [call(f"g{i}", GET, json.dumps({"id": f"t-{i}", "messages": [MESSAGE]})) for i in range(lw.MAX_GET_THREADS + 1)]
+        flat = [e for pair in over for e in pair]
+        for reply in (GOOD, NOTHING):
+            with self.subTest(reply["verdict"]), self.assertRaisesRegex(lw.LoopFailure, "limit"):
+                lw.check_loop(loop(), "model", lambda *a: stream(*searched(), *flat, reply=json.dumps(reply)))
+
+    def test_exactly_the_limit_passes(self):
+        self.assertEqual(lw.MAX_GET_THREADS, 3)
+        at = [call(f"g{i}", GET, json.dumps({"id": f"t-{i}", "messages": [MESSAGE]})) for i in range(lw.MAX_GET_THREADS)]
+        flat = [e for pair in at for e in pair]
+        self.assertIsNotNone(lw.check_loop(loop(), "model", lambda *a: stream(*searched(), *flat, reply=json.dumps(GOOD))))
 
 
 class HostileEmailTests(MainBase):

@@ -49,6 +49,21 @@ class InstructionTopologyCharacterizationTests(unittest.TestCase):
         self.assertIn("**c. Do**", catchup)
         self.assertNotIn("or leave", text(".claude/skills/README.md"))
 
+    def test_main_checks_for_the_answer_before_a_due_loop_reaches_him(self):
+        root = text("AGENTS.md")
+        loop_line = next(line for line in root.splitlines() if "#the-loop-rule" in line)
+        for source in ("Gmail", "calendar", "logged-in browser"):
+            self.assertIn(source, loop_line)
+        self.assertIn("can't answer", loop_line)
+        self.assertIn("under Do", loop_line)
+        self.assertIn("close what you can, with an outcome", loop_line)
+        self.assertIn("`researcher` for more than one source", root)
+        rule = text("library/schema/open-loops.md").split("## The loop rule")[1].split("## Grammar")[0]
+        for phrase in ("Check first, ask second", "Gmail", "the calendar", "any logged-in browser page",
+                       "closes it if they settle it", "goes to him"):
+            self.assertIn(phrase, rule)
+        self.assertIn("#the-loop-rule", text("library/schema/needs-list.md"))
+
     def test_claude_code_reads_agents_md_natively(self):
         self.assertFalse((ROOT / "CLAUDE.md").exists(),
                          "a CLAUDE.md in the folder stops Claude Code reading AGENTS.md natively")

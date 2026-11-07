@@ -4,7 +4,7 @@ Shapes what main needs the operator to decide: marked lines in `workspace/life/o
 
 ## The rule
 
-- Review a loop before raising it here; close what you can yourself. Only a decision that is genuinely his goes on the list. Everything else stays an ordinary loop.
+- Review a loop before raising it here: [check first](open-loops.md#the-loop-rule), and close what you can yourself. Only a decision that is genuinely his goes on the list. Everything else stays an ordinary loop.
 - Write the detail file first, then `af needs add`. The question is the line's text; the file holds the rest.
 - Every reply to him, except one that is only a background-task status note, ends with the first line `af needs list` prints, linking `workspace/life/needs.md`. It counts Now and Do, and says none only when both are empty.
 - A due plain loop that is his to act on, not decide, stays a plain loop; it shows under Do by itself. A due loop under `Waiting on others` is main's to chase, so it stays out of Do and prints only in `af open due`.

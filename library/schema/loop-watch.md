@@ -61,14 +61,16 @@ For each loop the model replies with one JSON object:
 
 The script validates each reply. Each of these is a failure for that loop, in the report and the exit code, never read as `nothing`:
 
-- Not exactly that object: not JSON, an unknown verdict, an extra key, a missing field, a date not `YYYY-MM-DD`, a quote over 15 words, or `nothing` carrying evidence.
+- Not exactly that object: not JSON, an unknown verdict, an extra key, a missing field, a date not `YYYY-MM-DD`, a quote under 3 or over 15 words, or `nothing` carrying evidence.
 - A quote found in no email that run fetched, compared by whole words, ignoring markup, case, and punctuation.
+- A sender or subject that is not the quoted email's. The sender agrees on its address or display name, and a subject may differ by a `Re:` or `Fwd:` prefix.
+- An email dated before the loop's window, or with no readable date. The window opens on the loop's opened date. For a recurring loop it opens on the current nudge, because a close re-dates the loop and keeps its opened date, so anything earlier would let last period's receipt settle this period. A payment made ahead of the nudge goes unseen and the loop stays with him.
 - No Gmail search in the run.
 - A reach for any refused tool, which discards the verdict: the email may have steered the model.
-- `nothing` when a fetched thread was too large for the model to read or came back unreadable.
+- `nothing` when a fetched thread was too large for the model to read, or a Gmail result came back unreadable, with an error, or in an unknown shape. An empty search is a quiet day.
 - Gmail or Claude unreachable. Two such loops in a row stop the run, and every loop left counts as failed.
 
-From, Date, and Subject are printed from the matched email, not from the model.
+Quote, From, Date, and Subject are printed from the matched email, never from the model's reply, so nothing the model adds to a quote can reach the report.
 
 ## Route and limits
 

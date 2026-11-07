@@ -124,6 +124,24 @@ fn a_wikilink_in_a_question_stays_as_written_and_the_link_is_only_in_notes() {
 }
 
 #[test]
+fn an_aliased_wikilink_in_the_view_is_no_false_doctor_issue() {
+    // A table needs the pipe escaped, and `[[slug\|alias]]` is how Obsidian reads one there.
+    let fx = with_item("q", "Ask [[a-friend|the friend]] or not?", "ask");
+    assert!(fx.read(VIEW).contains(r"| Ask [[a-friend\|the friend]] or not? | ask |"), "{}", fx.read(VIEW));
+    fx.write("workspace/life/people/a-friend.md", "# A friend\n");
+    let dangling = afcore::tags::dangling_link_issues(&fx.ctx()).unwrap();
+    assert_eq!(dangling, Vec::<String>::new());
+}
+
+#[test]
+fn an_aliased_wikilink_with_no_page_is_still_flagged_by_its_real_slug() {
+    let fx = with_item("q", "Ask [[no-such-page|the friend]] or not?", "ask");
+    let dangling = afcore::tags::dangling_link_issues(&fx.ctx()).unwrap();
+    assert!(dangling.iter().any(|i| i.contains("needs.md: [[no-such-page]] has no page")), "{dangling:?}");
+    assert!(!dangling.iter().any(|i| i.contains('\\')), "{dangling:?}");
+}
+
+#[test]
 fn a_pipe_in_any_cell_is_escaped_so_it_cannot_split_the_row() {
     let fx = Fx::new();
     detail(&fx, "a", "take a | b");

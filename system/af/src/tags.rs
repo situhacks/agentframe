@@ -1303,7 +1303,8 @@ pub fn dangling_link_issues(ctx: &Ctx) -> R<Vec<String>> {
         let text = rx(r"`[^`\n]*`").replace_all(&text, "").into_owned();
         let mut seen: BTreeSet<String> = BTreeSet::new();
         for c in wikilink_re().captures_iter(&text) {
-            let slug = py_strip(&c[1]).to_string();
+            // A table cell writes an alias `[[slug\|alias]]`; the backslash is not the slug's.
+            let slug = py_strip(&c[1]).trim_end_matches('\\').to_string();
             if slug.is_empty() || slugs.contains(&slug) || !seen.insert(slug.clone()) {
                 continue;
             }

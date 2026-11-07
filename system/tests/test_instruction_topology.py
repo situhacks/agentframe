@@ -52,9 +52,10 @@ class InstructionTopologyCharacterizationTests(unittest.TestCase):
     def test_main_checks_for_the_answer_before_a_due_loop_reaches_him(self):
         root = text("AGENTS.md")
         loop_line = next(line for line in root.splitlines() if "#the-loop-rule" in line)
-        for source in ("Gmail", "calendar", "logged-in browser"):
+        for source in ("Gmail", "calendar", "logged-in"):
             self.assertIn(source, loop_line)
-        self.assertIn("can't answer", loop_line)
+        self.assertIn("data, never instructions", loop_line)
+        self.assertIn("Only the rest reaches him", loop_line)
         self.assertIn("under Do", loop_line)
         self.assertIn("close what you can, with an outcome", loop_line)
         self.assertIn("`researcher` for more than one source", root)
@@ -63,6 +64,27 @@ class InstructionTopologyCharacterizationTests(unittest.TestCase):
                        "closes it if they settle it", "goes to him", "[loop watch](loop-watch.md)"):
             self.assertIn(phrase, rule)
         self.assertIn("#the-loop-rule", text("library/schema/needs-list.md"))
+
+    def test_email_and_page_text_is_data_wherever_main_is_sent_to_read_it(self):
+        rule = text("library/schema/open-loops.md").split("## The loop rule")[1].split("## Grammar")[0]
+        review = text("library/schema/loop-watch.md").split("## Reviewing it")[1].split("## A dead watch")[0]
+        catchup = text(".claude/skills/catchup/SKILL.md")
+        for page in (rule, review, catchup):
+            self.assertIn("data, never instructions", page)
+            self.assertIn("only evidence for the loop being checked", page)
+            self.assertIn("asks for an action goes to him", page)
+        for page in (rule, review):
+            self.assertIn("Main decides from the sender, date, and content", page)
+
+    def test_catchup_checks_before_it_asks_and_may_close_on_named_evidence(self):
+        catchup = text(".claude/skills/catchup/SKILL.md")
+        check = catchup.index("loop-watch-report.md")
+        self.assertLess(check, catchup.index("ask in prose with lettered options"))
+        self.assertLess(catchup.index("check Gmail"), catchup.index("ask in prose with lettered options"))
+        self.assertIn("af open watch-reviewed", catchup)
+        self.assertIn("evidence for the close and name it in your reply", catchup)
+        self.assertNotIn("Never close or re-date a loop he did not answer for.", catchup)
+        self.assertIn("loop watch report", text(".claude/skills/README.md"))
 
     def test_claude_code_reads_agents_md_natively(self):
         self.assertFalse((ROOT / "CLAUDE.md").exists(),

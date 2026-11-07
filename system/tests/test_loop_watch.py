@@ -33,7 +33,7 @@ SESSION = "0a1b2c3d-0000-4000-8000-000000000001"
 NOW = dt.datetime(2026, 3, 10, 7, 50)
 FOOTER = re.compile(r"(?m)^Run 2026-03-10 07:50 · loops checked (\d+) · with evidence (\d+) · failures (\d+) · "
                     r"skipped over the cap (\d+) · cost \$\d+\.\d\d(?: plus \d+ run\(s\) with no figure)? · "
-                    r"undeleted \d+$")
+                    r"undeleted (?:\d+|unknown)$")
 
 
 def setUpModule():
@@ -53,7 +53,7 @@ def loop(text="Renew the widget licence", opened="2026-03-01", section="Waiting 
 
 
 MESSAGE = {"id": "m-1", "date": "2026-03-08T16:00:00Z", "sender": "Widget Shop <orders@widgets.example>",
-           "subject": "Your licence is renewed",
+           "subject": "Your licence is renewed", "labelIds": ["INBOX"],
            "htmlBody": "<p>Good news: your licence has been <b>renewed</b> through next March.</p>"}
 QUOTE = "your licence has been renewed through next March"
 GOOD = {"verdict": "done", "sender": "orders@widgets.example", "date": "2026-03-08",
@@ -164,6 +164,10 @@ class VerdictTests(unittest.TestCase):
             "a long quote": json.dumps({**GOOD, "quote": " ".join(["word"] * 16)}),
             "a one-word quote": json.dumps({**GOOD, "quote": "yes"}),
             "a two-word quote": json.dumps({**GOOD, "quote": "yes please"}),
+            "a three-word quote": json.dumps({**GOOD, "quote": "thank you for"}),
+            "figures, an address and a date": json.dumps({**GOOD, "quote": "$1,204.50 orders@widgets.example 2026-03-08 #4471"}),
+            "three words padded with figures": json.dumps({**GOOD, "quote": "paid $1,204.50 on 2026-03-08 by #4471"}),
+            "a quote over the character cap": json.dumps({**GOOD, "quote": " ".join(["internationalisation"] * 15)}),
             "a quote of only punctuation": json.dumps({**GOOD, "quote": "..."}),
             "a quote of only a tag": json.dumps({**GOOD, "quote": "<one two three four>"}),
             "nothing with evidence": json.dumps({**NOTHING, "quote": QUOTE}),
@@ -172,8 +176,11 @@ class VerdictTests(unittest.TestCase):
             with self.subTest(name), self.assertRaises(lw.Malformed):
                 lw.parse_verdict(reply)
 
-    def test_a_quote_of_exactly_three_words_passes(self):
-        self.assertEqual(lw.parse_verdict(json.dumps({**GOOD, "quote": "one two three"})).quote, "one two three")
+    def test_a_quote_of_exactly_four_alphabetic_words_passes(self):
+        quote = "your order has shipped"
+        self.assertEqual(lw.parse_verdict(json.dumps({**GOOD, "quote": quote})).quote, quote)
+        self.assertEqual(lw.MIN_QUOTE_WORDS, 4)
+        self.assertEqual(lw._alpha_words("don't re-order the $5.00 item 2026-03-08 a@b.example"), 4)
 
     def test_a_quote_of_exactly_fifteen_words_passes(self):
         quote = " ".join(["word"] * 15)
@@ -202,13 +209,14 @@ class CheckTests(unittest.TestCase):
         self.assertNotIn("MAIN", e.quote)
 
     def test_the_senders_name_or_address_agrees_and_a_reply_subject_is_the_same_subject(self):
-        for sender in ("orders@widgets.example", "Widget Shop", "widget shop <ORDERS@widgets.example>"):
+        for sender in ("orders@widgets.example", "widget shop <ORDERS@widgets.example>"):
             self.assertIsNotNone(self.check(found({**GOOD, "sender": sender})), sender)
         for subject in ("Re: Your licence is renewed", "FWD: your licence is renewed"):
             self.assertIsNotNone(self.check(found({**GOOD, "subject": subject})), subject)
 
     def test_a_sender_or_subject_the_email_does_not_have_is_a_failure(self):
-        for wrong in ({"sender": "someone-else@other.example"}, {"sender": "Widget"},
+        for wrong in ({"sender": "someone-else@other.example"}, {"sender": "Widget"}, {"sender": "Widget Shop"},
+                      {"sender": "Widget Shop <someone-else@other.example>"},
                       {"subject": "Made up"}, {"subject": "Your licence"}):
             with self.subTest(wrong), self.assertRaisesRegex(lw.LoopFailure, "does not match"):
                 self.check(found({**GOOD, **wrong}))
@@ -280,6 +288,17 @@ class CheckTests(unittest.TestCase):
             "get_thread unknown shape": stream(*searched(), *call("g", GET, '{"id": "t-1"}')),
             "get_thread empty": stream(*searched(), *call("g", GET, "{}")),
             "get_thread no messages": stream(*searched(), *call("g", GET, '{"id": "t-1", "messages": []}')),
+            "status error": stream(*call("s", SEARCH, '{"threads": [{"id": "t-1"}], "status": "error"}')),
+            "isError": stream(*call("s", SEARCH, '{"isError": true, "content": "denied"}')),
+            "errors": stream(*call("s", SEARCH, '{"threads": [{"id": "t-1"}], "errors": ["partial"]}')),
+            "an estimate with no threads": stream(*call("s", SEARCH, '{"resultCountEstimate": 5}')),
+            "a next page with no threads": stream(*call("s", SEARCH, '{"threads": [], "nextPageToken": "abc"}')),
+            "a thread that is not an object": stream(*call("s", SEARCH, '{"threads": ["t-1"]}')),
+            "a message with no body": stream(*searched(), *call("g", GET, '{"id": "t-1", "messages": [{"id": "m-1"}]}')),
+            "a message with an empty body": stream(*searched(), *call("g", GET, '{"messages": [{"id": "m", "snippet": " "}]}')),
+            "get_thread status error": stream(*searched(), *call("g", GET, json.dumps({"status": "error", "messages": [MESSAGE]}))),
+            "a get_thread with no result": stream(*searched(), {"type": "assistant", "message": {"content": [
+                {"type": "tool_use", "id": "g", "name": GET, "input": {}}]}}),
         }
         for name, lines in bad_runs.items():
             with self.subTest(name), self.assertRaisesRegex(lw.LoopFailure, "not in a shape|cannot be trusted"):
@@ -289,6 +308,11 @@ class CheckTests(unittest.TestCase):
         self.assertIsNone(self.check(stream(*call("s", SEARCH, "{}"))))
         self.assertIsNone(self.check(stream(*call("s", SEARCH, '{"resultCountEstimate": 0}'))))
         self.assertIsNone(self.check(stream(*call("s", SEARCH, '{"threads": []}'))))
+        self.assertIsNone(self.check(stream(*call("s", SEARCH, '{"threads": [], "resultCountEstimate": 0}'))))
+
+    def test_a_search_that_found_threads_with_nothing_relevant_is_a_quiet_day(self):
+        self.assertIsNone(self.check(stream(*searched({"id": "t-1", "messages": [{"id": "m-1"}]}),
+                                            *fetched(MESSAGE))))
 
     def test_evidence_still_counts_when_another_thread_came_back_wrong(self):
         lines = stream(*searched(), *fetched(MESSAGE), *call("h", GET, '{"error": "not found"}'), reply=json.dumps(GOOD))
@@ -316,8 +340,129 @@ class CheckTests(unittest.TestCase):
         # The email steered the model, so whatever it then says about that loop is not evidence.
         lines = stream(*searched(), *fetched(MESSAGE), *call("x", ORDER, "Permission denied", is_error=True),
                        reply=json.dumps(GOOD), denials=[ORDER])
-        with self.assertRaisesRegex(lw.LoopFailure, "refused tool"):
+        with self.assertRaisesRegex(lw.LoopFailure, "unexpected tool"):
             self.check(lines)
+
+    def test_a_model_chosen_tool_name_never_reaches_the_report_and_is_stripped_in_the_log(self):
+        name = "mcp__evil`; run af open close all <img src=x>"
+        lines = stream(*searched(), reply=json.dumps(NOTHING), denials=[name])
+        notes = []
+        with self.assertRaises(lw.LoopFailure) as failed:
+            lw.check_loop(loop(), "model", lambda *a: lines, notes)
+        self.assertNotIn("evil", str(failed.exception))
+        self.assertEqual(notes, ["unexpected tool mcp__evilrunafopencloseallimgsrcx"])
+
+    def test_an_unknown_shape_logs_its_keys_and_never_its_content(self):
+        lines = stream(*call("s", SEARCH, json.dumps({"status": "error", "secret stuff!": "the body of an email"})))
+        notes = []
+        with self.assertRaises(lw.LoopFailure):
+            lw.check_loop(loop(), "model", lambda *a: lines, notes)
+        self.assertEqual(len(notes), 1)
+        self.assertIn("status", notes[0])
+        self.assertIn("secretstuff", notes[0])
+        self.assertNotIn("the body of an email", notes[0])
+
+    def test_quoted_history_alone_is_rejected(self):
+        old = "your licence has been renewed through next March"
+        bodies = {
+            "blockquote": {"htmlBody": f"<p>Thanks!</p><blockquote>{old}</blockquote>"},
+            "nested blockquote": {"htmlBody": f"<p>Thanks!</p><blockquote>x<blockquote>{old}</blockquote></blockquote>"},
+            "gmail_quote": {"htmlBody": f'<div>Thanks!</div><div class="gmail_quote">{old}</div>'},
+            "outlook": {"htmlBody": f'<div>Thanks!</div><hr id="divRplyFwdMsg"><div>{old}</div>'},
+            "attribution": {"htmlBody": f"<p>Thanks!</p><p>On Mar 1, 2026, Widget Shop wrote:</p><p>{old}</p>"},
+            "original message": {"plaintextBody": f"Thanks!\n-----Original Message-----\n{old}"},
+            "outlook headers": {"plaintextBody": f"Thanks!\nFrom: Widget Shop\nSent: Mar 1\n{old}"},
+            "angle lines": {"plaintextBody": f"Thanks!\n> {old}\n"},
+        }
+        for name, body in bodies.items():
+            message = {k: v for k, v in MESSAGE.items() if k != "htmlBody"}
+            message.update(subject="Re: Your licence is renewed", **body)
+            reply = {**GOOD, "subject": "Re: Your licence is renewed"}
+            with self.subTest(name), self.assertRaisesRegex(lw.LoopFailure, "quoted history"):
+                self.check(found(reply, message))
+
+    def test_a_quote_in_the_emails_own_text_above_its_history_stands_as_done(self):
+        own = {**MESSAGE, "subject": "Re: Your licence is renewed",
+               "htmlBody": f"<p>{QUOTE}</p><blockquote>Is it renewed yet?</blockquote>"}
+        e = self.check(found({**GOOD, "subject": "Re: Your licence is renewed"}, own))
+        self.assertEqual((e.verdict, e.capped), ("done", None))
+
+    def test_a_reply_with_no_history_marker_drops_to_update(self):
+        # The client may have quoted in a way this cannot see, so its words may not be new.
+        reply = {**MESSAGE, "subject": "Re: Your licence is renewed"}
+        e = self.check(found({**GOOD, "subject": "Re: Your licence is renewed"}, reply))
+        self.assertEqual(e.verdict, "update")
+        self.assertIn("quoted history", e.capped)
+
+    def test_a_later_message_in_the_thread_drops_a_quote_to_update(self):
+        later = {**MESSAGE, "id": "m-2", "date": "2026-03-09T16:00:00Z", "htmlBody": "<p>Actually it was cancelled.</p>",
+                 "subject": "Re: Your licence is renewed"}
+        e = self.check(found(GOOD, MESSAGE, later))
+        self.assertEqual(e.verdict, "update")
+        self.assertIn("newer message", e.capped)
+
+    def test_an_email_dated_later_than_now_is_a_failure(self):
+        now = dt.datetime(2026, 3, 8, 9, 0)
+        later_today = {**MESSAGE, "date": "2026-03-08T23:30:00+00:00"}
+        with self.assertRaisesRegex(lw.LoopFailure, "later than now"):
+            lw.check_loop(loop(), "model", lambda *a: found(GOOD, later_today), now=now)
+        self.assertIsNotNone(lw.check_loop(loop(), "model", lambda *a: found(GOOD), now=dt.datetime(2026, 3, 10)))
+
+    def test_gmails_own_received_time_beats_a_date_header_the_sender_wrote(self):
+        stamp = int(dt.datetime(2026, 2, 1, tzinfo=dt.timezone.utc).timestamp() * 1000)
+        forged = {**MESSAGE, "date": "2026-03-08T16:00:00Z", "internalDate": str(stamp)}
+        with self.assertRaisesRegex(lw.LoopFailure, "before 2026-03-01"):
+            self.check(found(GOOD, forged))
+
+    def test_his_own_sent_mail_is_update_at_most(self):
+        sent = {**MESSAGE, "labelIds": ["SENT"]}
+        for verdict in ("done", "answered"):
+            e = self.check(found({**GOOD, "verdict": verdict}, sent))
+            self.assertEqual(e.verdict, "update")
+            self.assertIn("his own", e.capped)
+
+    def test_his_address_marks_his_own_mail_even_without_a_label(self):
+        unlabelled = {k: v for k, v in MESSAGE.items() if k != "labelIds"}
+        e = lw.check_loop(loop(), "model", lambda *a: found(GOOD, unlabelled), own={"orders@widgets.example"})
+        self.assertEqual(e.verdict, "update")
+        self.assertIn("his own", e.capped)
+        e = lw.check_loop(loop(), "model", lambda *a: found(GOOD, unlabelled), own={"me@home.example"})
+        self.assertEqual((e.verdict, e.capped), ("done", None))
+
+    def test_mail_that_cannot_be_told_from_his_own_is_update_at_most(self):
+        unlabelled = {k: v for k, v in MESSAGE.items() if k != "labelIds"}
+        e = self.check(found(GOOD, unlabelled))
+        self.assertEqual(e.verdict, "update")
+        self.assertIn("could not tell", e.capped)
+
+    def test_an_update_verdict_is_never_marked_as_capped(self):
+        sent = {**MESSAGE, "labelIds": ["SENT"]}
+        e = self.check(found({**GOOD, "verdict": "update"}, sent))
+        self.assertEqual((e.verdict, e.capped), ("update", None))
+
+    def test_a_quote_whose_matched_text_runs_over_the_character_cap_is_a_failure(self):
+        padded = {**MESSAGE, "htmlBody": "<p>your licence has been " + "-" * 400 + " renewed now</p>"}
+        with self.assertRaisesRegex(lw.LoopFailure, "over .* characters"):
+            self.check(found({**GOOD, "quote": "your licence has been renewed now"}, padded))
+
+    def test_a_long_display_name_cannot_hide_the_address(self):
+        name = "Your Real Bank Customer Care " * 20
+        e = lw.Evidence("l", "done", f"{name}<x@evil.example>", dt.date(2026, 3, 8), "s", "q")
+        line = lw.sender_line(e.sender)
+        self.assertTrue(line.startswith("x@evil.example ("), line)
+        self.assertLessEqual(len(line), len("x@evil.example ()") + lw.MAX_NAME_CHARS)
+
+    def test_a_long_address_prints_in_full_and_a_bad_one_is_no_address(self):
+        long_address = "a" * 180 + "@widgets.example"
+        self.assertEqual(lw.sender_line(f"Shop <{long_address}>"), f"{long_address} (Shop)")
+        self.assertEqual(lw.sender_line(long_address), long_address)
+        self.assertIsNone(lw.address_of("Widget Shop"))
+        self.assertIsNone(lw.address_of("x" * 300 + "@widgets.example"))
+
+    def test_an_email_with_no_address_in_its_sender_is_a_failure(self):
+        nameless = {**MESSAGE, "sender": "Widget Shop"}
+        with self.assertRaisesRegex(lw.LoopFailure, "does not match"):
+            self.check(found({**GOOD, "sender": "Widget Shop"}, nameless))
 
     def test_a_malformed_reply_is_a_failure_never_nothing(self):
         with self.assertRaisesRegex(lw.LoopFailure, "malformed"):
@@ -432,10 +577,32 @@ class MainTests(MainBase):
         self.assertNotIn("Hear back from the gym", text)
         self.assertIn("- Verdict: done", text)
         self.assertIn(f"- Quote: `{QUOTE}`", text)
-        self.assertIn(f"- From: `{MESSAGE['sender']}`", text)
+        self.assertIn("- From: `orders@widgets.example (Widget Shop)`", text)
         self.assertIn(f"- Subject: `{MESSAGE['subject']}`", text)
         self.assertIn("untrusted", text)
         self.assertEqual(self.counts(text), (2, 1, 0, 0))
+
+    def test_a_capped_verdict_says_so_in_the_report(self):
+        sent = {**MESSAGE, "labelIds": ["SENT"]}
+        self.run_main([loop()], [found(GOOD, sent)])
+        self.assertIn("- Verdict: update (the model said done; it is from his own sent mail)",
+                      self.report.read_text(encoding="utf-8"))
+
+    def test_his_address_file_is_read_when_it_exists(self):
+        path = self.root / lw.SELF_FILE
+        path.parent.mkdir(parents=True)
+        path.write_text("# his addresses\nOrders@Widgets.example\n\n", encoding="utf-8")
+        self.assertEqual(lw.own_addresses(), {"orders@widgets.example"})
+        unlabelled = {k: v for k, v in MESSAGE.items() if k != "labelIds"}
+        self.run_main([loop()], [found(GOOD, unlabelled)])
+        self.assertIn("- Verdict: update (the model said done; it is from his own sent mail)",
+                      self.report.read_text(encoding="utf-8"))
+
+    def test_an_unknown_shape_reaches_the_log_by_its_keys(self):
+        self.run_main([loop()], [stream(*call("s", SEARCH, json.dumps({"isError": True, "content": "email words"})))])
+        log = (self.root / lw.LOG).read_text(encoding="utf-8")
+        self.assertIn("isError", log)
+        self.assertNotIn("email words", log)
 
     def test_one_run_per_loop_so_an_email_touches_only_its_own_verdict(self):
         self.run_main([loop("First loop"), loop("Second loop")], [stream(*searched()), stream(*searched())])
@@ -667,6 +834,94 @@ class SpendTests(MainBase):
         at = [call(f"g{i}", GET, json.dumps({"id": f"t-{i}", "messages": [MESSAGE]})) for i in range(lw.MAX_GET_THREADS)]
         flat = [e for pair in at for e in pair]
         self.assertIsNotNone(lw.check_loop(loop(), "model", lambda *a: stream(*searched(), *flat, reply=json.dumps(GOOD))))
+
+
+class SurvivalTests(MainBase):
+    def text(self):
+        return self.report.read_text(encoding="utf-8")
+
+    def test_a_sweep_that_raises_still_leaves_a_report_and_a_nonzero_exit(self):
+        with mock.patch.object(bw, "saved_runs", side_effect=PermissionError("denied")):
+            code, _ = self.run_main([loop()], [stream(*searched())])
+        self.assertEqual(code, 1)
+        text = self.text()
+        self.assertIn("Raw email cleanup: the sweep failed (PermissionError)", text)
+        self.assertRegex(text, r"(?m)· undeleted unknown$")
+        self.assertGreaterEqual(self.counts(text)[2], 1)
+
+    def test_only_the_final_sweep_failing_keeps_the_runs_results(self):
+        real, calls = bw.saved_runs, []
+
+        def fails_late(*a, **kw):
+            calls.append(a)
+            if len(calls) > 2:
+                raise PermissionError("denied")
+            return real(*a, **kw)
+        with mock.patch.object(bw, "saved_runs", side_effect=fails_late):
+            code, _ = self.run_main([loop()], [found(GOOD)])
+        self.assertEqual(code, 1)
+        text = self.text()
+        self.assertIn("## Renew the widget licence", text)
+        self.assertIn("the sweep failed", text)
+
+    def test_text_that_cannot_be_encoded_still_leaves_a_report(self):
+        code, _ = self.run_main([loop("Renew the \ud800 licence")], [stream(*searched(), reply="not json")])
+        self.assertEqual(code, 1)
+        self.assertEqual(self.counts(self.text()), (0, 0, 1, 0))
+
+    def test_init_report_writes_a_stub_with_a_readable_footer_and_touches_nothing_else(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = lw.main(["--init-report"], now=NOW, run_claude=None, run_af=None)
+        self.assertEqual(code, 0)
+        text = self.text()
+        self.assertEqual(self.counts(text), (0, 0, 0, 0))
+        self.assertIn("has not run yet", text)
+        self.assertEqual([x.name for x in self.root.rglob("*") if x.is_file()], [lw.REPORT.name])
+
+    def test_init_report_never_overwrites_a_real_report(self):
+        self.report.parent.mkdir(parents=True)
+        self.report.write_text("a real report\n", encoding="utf-8")
+        with contextlib.redirect_stdout(io.StringIO()):
+            code = lw.main(["--init-report"], now=NOW, run_claude=None, run_af=None)
+        self.assertEqual(code, 0)
+        self.assertEqual(self.text(), "a real report\n")
+
+    def test_registering_the_task_writes_the_stub_for_this_vault(self):
+        ps1 = (ROOT / "system" / "tools" / "register-loop-watch.ps1").read_text(encoding="utf-8")
+        self.assertIn("--init-report", ps1)
+        self.assertLess(ps1.index("$env:AF_ROOT = $vault"), ps1.index("--init-report"))
+        self.assertLess(ps1.index("Register-ScheduledTask -TaskName"), ps1.index("--init-report"))
+        self.assertIn("$LASTEXITCODE", ps1)
+
+    def test_any_exception_on_a_call_is_charged_so_the_footer_cannot_read_nothing(self):
+        def boom(prompt):
+            raise RuntimeError("the runner broke")
+        due = [loop(f"Loop {i}") for i in range(25)]
+        code, _ = self.run_main(due, boom)
+        limit = int(lw.RUN_BUDGET_USD / lw.CALL_BUDGET_USD) + 1
+        self.assertEqual(code, 1)
+        self.assertEqual(len(self.prompts), limit)
+        self.assertIn(f"cost $0.00 plus {limit} run(s) with no figure", self.text())
+
+    def test_a_retry_checks_the_run_total_first(self):
+        due = [loop("First"), loop("Second")]
+        code, _ = self.run_main(due, lambda p: stream(gmail="needs-auth", cost=lw.RUN_BUDGET_USD))
+        text = self.text()
+        self.assertEqual(code, 1)
+        self.assertEqual(len(self.prompts), 1, "the retry would have spent past the total")
+        self.assertIn("- First: not checked: the run reached its", text)
+        self.assertIn("- Second: not checked: the run reached its", text)
+        self.assertEqual(self.counts(text), (0, 0, 2, 0))
+
+    def test_the_bills_watch_retry_is_unchanged(self):
+        calls = []
+
+        def flaky(prompt, max_turns, model):
+            calls.append(prompt)
+            return stream(*searched()) if len(calls) == 2 else stream(gmail="needs-auth")
+        self.assertEqual(bw._run(flaky, "p", 1, "m").unreadable, 0)
+        self.assertEqual(len(calls), 2)
 
 
 class HostileEmailTests(MainBase):

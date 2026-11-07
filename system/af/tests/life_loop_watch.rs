@@ -46,6 +46,7 @@ fn evidence_prints_one_line_of_counts_to_main_and_no_email_text() {
     assert!(lines[0].contains(REPORT), "{}", lines[0]);
     assert!(lines[0].contains("af open watch-reviewed"), "{}", lines[0]);
     assert!(lines[0].contains("untrusted"), "{}", lines[0]);
+    assert!(lines[0].contains("open the email before closing"), "{}", lines[0]);
     assert!(!out.contains("renewed"), "email text stays in the report: {out}");
 }
 
@@ -170,6 +171,32 @@ fn no_report_is_not_stale_so_an_unregistered_watch_stays_quiet() {
     assert!(!bundle(&fx).contains("loop watch"));
     let (_, out, _) = fx.run(&["doctor"]);
     assert!(!out.contains("loop watch"), "{out}");
+}
+
+#[test]
+fn the_stub_a_registered_task_starts_from_is_quiet_then_goes_stale_if_it_never_runs() {
+    let stub = |hours: i64| {
+        format!(
+            "# Loop watch\n\nHeader.\n\nThe watch is registered and has not run yet.\n\n\
+Run {} · loops checked 0 · with evidence 0 · failures 0 · skipped over the cap 0 · cost $0.00 · undeleted 0\n",
+            stamp(hours)
+        )
+    };
+    let fx = main_chat();
+    fx.write(REPORT, &stub(0));
+    assert!(!bundle(&fx).contains("loop watch"));
+    fx.write(REPORT, &stub(49));
+    assert!(bundle(&fx).contains("AgentFrame loop watch"), "a task that died on its first run is seen");
+    let (_, out, _) = fx.run(&["doctor"]);
+    assert!(out.contains("loop watch last ran"), "{out}");
+}
+
+#[test]
+fn a_footer_saying_undeleted_unknown_still_reads() {
+    let fx = main_chat();
+    let unknown = report(0, 1).replace("skipped over the cap 0\n", "skipped over the cap 0 · cost $0.04 · undeleted unknown\n");
+    fx.write(REPORT, &unknown);
+    assert!(bundle(&fx).contains("loop watch: 0 with email evidence, 1 failed"));
 }
 
 #[test]

@@ -37,12 +37,18 @@ import bills_watch as bw
 VAULT = Path(__file__).resolve().parent.parent.parent
 REPORT = Path("workspace/life/systems/loop-watch-report.md")
 LOG = Path("system/logs/loop-watch.log")
+SELF_FILE = Path("workspace/life/systems/loop-watch-self.txt")  # his addresses, one a line; optional and private
 
 MODEL = bw.MODEL
 MAX_LOOPS = 25          # loops checked per run, oldest first
 MAX_TURNS = 6           # two searches, three threads, the reply
-MIN_QUOTE_WORDS = 3     # "yes" names no email
+MIN_QUOTE_WORDS = 4     # alphabetic words: "yes", a sum, an address or a date names no email
 MAX_QUOTE_WORDS = 15
+MAX_QUOTE_CHARS = 200
+MAX_NAME_CHARS = 60     # a sender's display name; the address always prints whole
+MAX_ADDRESS_CHARS = 254
+FUTURE_GRACE = dt.timedelta(minutes=10)  # clocks differ; an email further ahead than this is misdated
+SETTLING = ("done", "answered")
 MAX_GET_THREADS = 3     # threads one loop's run may fetch; the prompt asks, this file holds the line
 STOP_AFTER = 2          # Gmail failures in a row before the rest of the run is given up
 CALL_BUDGET_USD = 0.15  # each claude -p
@@ -65,6 +71,10 @@ class Malformed(ValueError):
 
 class LoopFailure(RuntimeError):
     """A run gave no verdict this watch can stand behind."""
+
+
+class OverRunBudget(Exception):
+    """The morning's total is spent, so no further call may start, a retry included."""
 
 
 # --- Which loops ------------------------------------------------------------
@@ -137,13 +147,24 @@ def parse_verdict(reply: str) -> Verdict:
         raise Malformed("the reply's date is not YYYY-MM-DD") from None
     if len(d["quote"].split()) > MAX_QUOTE_WORDS:
         raise Malformed(f"the reply's quote is over {MAX_QUOTE_WORDS} words")
-    if len(_words(d["quote"])) < MIN_QUOTE_WORDS:
-        raise Malformed(f"the reply's quote is under {MIN_QUOTE_WORDS} words")
+    if len(d["quote"]) > MAX_QUOTE_CHARS:
+        raise Malformed(f"the reply's quote is over {MAX_QUOTE_CHARS} characters")
+    if _alpha_words(d["quote"]) < MIN_QUOTE_WORDS:
+        raise Malformed(f"the reply's quote is under {MIN_QUOTE_WORDS} alphabetic words")
     return Verdict(d["verdict"], d["sender"], d["date"], d["subject"], d["quote"])
 
 
 _WORD = re.compile(r"[^\W_]+")
 _REPLY_PREFIX = re.compile(r"\A(?:(?:re|fwd?)\s*:\s*)+", re.IGNORECASE)
+_ALPHA_TOKEN = re.compile(r"[^\W\d_]{2,}(?:['\u2019-][^\W\d_]+)*")
+_TOKEN_EDGE = "\"'\u2018\u2019\u201c\u201d()[]{}.,;:!?"
+_ADDRESS = re.compile(r"[^\s<>\"'`,;:()\[\]]+@[^\s<>\"'`,;:()\[\]@]+\.[^\s<>\"'`,;:()\[\]@]+")
+_HISTORY = "history"
+_HISTORY_HTML = re.compile(r"""(?is)<[^>]+\b(?:class|id)\s*=\s*["']?[^"'>]*"""
+                           r"(?:gmail_quote|gmail_attr|yahoo_quoted|divRplyFwdMsg|appendonsend|moz-cite-prefix|OutlookMessageHeader)")
+_BLOCKQUOTE = re.compile(r"(?is)<blockquote\b(?:(?!<blockquote\b).)*?</blockquote\s*>")
+_HISTORY_TEXT = re.compile(r"(?is)\bOn\b[^<>]{5,200}?\bwrote:|-{2,}\s*(?:Original|Forwarded) Message\s*-{2,}"
+                           r"|\bFrom:\s[^<>]{1,200}?\b(?:Sent|Date):\s")
 
 
 def _words(text: str) -> list[str]:
@@ -151,39 +172,100 @@ def _words(text: str) -> list[str]:
     return [w.casefold() for w in _WORD.findall(bw.clean_text(text))]
 
 
-def _messages(payloads: list[tuple[str, dict]]) -> list[dict]:
-    """Every message a run's Gmail results hold: get_thread's and search_threads'."""
+def _alpha_words(text: str) -> int:
+    """Words of letters only, so a sum, an address and a date do not count toward a quote."""
+    tokens = (t.strip(_TOKEN_EDGE) for t in bw.clean_text(text).split())
+    return sum(bool(_ALPHA_TOKEN.fullmatch(t)) for t in tokens)
+
+
+def _threads(payloads: list[tuple[str, dict]]) -> list[list[dict]]:
+    """Each thread's messages in a run's Gmail results: get_thread's and search_threads'."""
     lists: list = []
     for _, p in payloads:
         lists.append(p.get("messages"))
         threads = p.get("threads")
         lists += [t.get("messages") for t in threads if isinstance(t, dict)] if isinstance(threads, list) else []
-    return [m for found in lists if isinstance(found, list) for m in found if isinstance(m, dict)]
+    return [[m for m in found if isinstance(m, dict)] for found in lists if isinstance(found, list)]
 
 
-def _quoted_text(message: dict, words: list[str]) -> str | None:
-    """The run of the email's own text that a quote's words match, whole words only. This is
-    what prints, so nothing the model added to its quote can reach the report."""
-    for key in ("subject", "snippet", "plaintextBody", "htmlBody"):
-        body = message.get(key)
-        if not isinstance(body, str) or not body:
-            continue
-        text = bw.clean_text(body)
-        spans = list(_WORD.finditer(text))
-        have = [m.group().casefold() for m in spans]
-        for i in range(len(have) - len(words) + 1):
-            if have[i:i + len(words)] == words:
-                return text[spans[i].start():spans[i + len(words) - 1].end()]
+def _find_words(text: str, words: list[str]) -> str | None:
+    """The run of text that a quote's words match, whole words only."""
+    spans = list(_WORD.finditer(text))
+    have = [m.group().casefold() for m in spans]
+    for i in range(len(have) - len(words) + 1):
+        if have[i:i + len(words)] == words:
+            return text[spans[i].start():spans[i + len(words) - 1].end()]
     return None
 
 
-def _sender_ids(sender: str) -> set[str]:
-    """What names a sender: the address and the display name, or the whole string."""
-    flat = " ".join(sender.split()).casefold()
-    m = re.search(r"<([^<>\s]+@[^<>\s]+)>\Z", flat)
-    if not m:
-        return {flat} - {""}
-    return {m.group(1), flat[:m.start()].strip().strip('"')} - {""}
+def _own_text(body: str, is_html: bool) -> tuple[str, bool]:
+    """An email body without the quoted reply blocks this can identify, as one line, and whether
+    it found any. Everything after a client's history marker is history."""
+    cut = False
+    if is_html:
+        if m := _HISTORY_HTML.search(body):
+            body, cut = body[:m.start()], True
+        while True:
+            body, n = _BLOCKQUOTE.subn(" ", body)
+            if not n:
+                break
+            cut = True
+    else:
+        kept = [line for line in body.splitlines() if not line.lstrip().startswith(">")]
+        cut = len(kept) != len(body.splitlines())
+        body = " ".join(kept)
+    text = bw.clean_text(body)
+    if m := _HISTORY_TEXT.search(text):
+        text, cut = text[:m.start()], True
+    return text, cut
+
+
+@dataclass
+class Hit:
+    message: dict
+    text: str       # the matching run of the email's own text; what prints, so nothing the model
+                    # added to its quote can reach the report
+    certain: bool   # the text is this message's own, not history this could not see
+    newest: bool    # no later message in the thread could have changed it
+
+
+def _locate(message: dict, words: list[str], earlier: bool) -> Hit | str | None:
+    """Where a quote sits in one message: a Hit, _HISTORY when only its quoted history has it,
+    or None. A message that is a reply or follows others may quote in a way this cannot see, so
+    its words count as its own only when a history marker showed where they stop."""
+    subject = message.get("subject")
+    replying = earlier or (isinstance(subject, str) and bool(_REPLY_PREFIX.match(" ".join(subject.split()))))
+    for key, is_html in (("plaintextBody", False), ("htmlBody", True)):
+        body = message.get(key)
+        if not isinstance(body, str) or _find_words(bw.clean_text(body), words) is None:
+            continue
+        own, cut = _own_text(body, is_html)
+        text = _find_words(own, words)
+        return _HISTORY if text is None else Hit(message, text, cut or not replying, True)
+    for key in ("subject", "snippet"):
+        field_text = message.get(key)
+        if isinstance(field_text, str) and (text := _find_words(bw.clean_text(field_text), words)):
+            return Hit(message, text, not replying, True)
+    return None
+
+
+def address_of(sender: str) -> str | None:
+    """The address in a sender header, as written; None when there is no plausible one."""
+    flat = " ".join(sender.split())
+    m = re.search(r"<([^<>]*)>\Z", flat)
+    address = m.group(1).strip() if m else flat
+    return address if _ADDRESS.fullmatch(address) and len(address) <= MAX_ADDRESS_CHARS else None
+
+
+def sender_line(sender: str) -> str:
+    """A sender for the report: the address in full and first, so a long or borrowed display
+    name cannot hide it, then the name, capped."""
+    address = address_of(sender)
+    if address is None:
+        return _code(sender, MAX_NAME_CHARS)
+    flat = " ".join(sender.split())
+    name = _code(flat[:flat.rfind("<")].strip().strip('"'), MAX_NAME_CHARS) if "<" in flat else ""
+    return f"{address} ({name})" if name else address
 
 
 def _subject_words(subject: str) -> list[str]:
@@ -191,38 +273,69 @@ def _subject_words(subject: str) -> list[str]:
 
 
 def _agrees(message: dict, v: Verdict) -> bool:
-    """Whether the sender and subject the model named are this email's. An email with no
-    subject has nothing to disagree with."""
+    """Whether the sender and subject the model named are this email's. The address decides,
+    since a display name is the sender's to choose. An email with no subject has nothing to
+    disagree with."""
     sender, subject = message.get("sender"), message.get("subject")
-    if not isinstance(sender, str) or not _sender_ids(sender) & _sender_ids(v.sender):
+    address = address_of(sender) if isinstance(sender, str) else None
+    named = address_of(v.sender)
+    if address is None or named is None or address.casefold() != named.casefold():
         return False
     return not isinstance(subject, str) or not subject.strip() or _subject_words(subject) == _subject_words(v.subject)
 
 
-def _date_of(message: dict) -> dt.date | None:
+def _stamp(message: dict) -> dt.datetime | None:
+    """When an email arrived, local. Gmail's own received time comes first when there is one,
+    because the sender writes the date header."""
     try:
-        return bw.message_date(message)
-    except (AttributeError, KeyError, TypeError, ValueError, OSError):
+        if message.get("internalDate"):
+            stamp = dt.datetime.fromtimestamp(int(message["internalDate"]) / 1000, dt.timezone.utc)
+        else:
+            stamp = dt.datetime.fromisoformat(message["date"].replace("Z", "+00:00"))
+        return stamp.astimezone()
+    except (AttributeError, KeyError, TypeError, ValueError, OSError, OverflowError):
         return None
 
 
-def find_email(payloads: list[tuple[str, dict]], v: Verdict, start: dt.date) -> tuple[dict, str]:
-    """The one fetched email a verdict rests on and the text it quotes: the quote is in it, its
-    sender and subject are the ones the model named, and it dates from the loop's window. Each
-    miss is a failure naming which, so the report cannot name the wrong email."""
+def _date_of(message: dict) -> dt.date | None:
+    stamp = _stamp(message)
+    return stamp.date() if stamp else None
+
+
+def find_email(payloads: list[tuple[str, dict]], v: Verdict, start: dt.date, now: dt.datetime) -> Hit:
+    """The one fetched email a verdict rests on: the quote is in its own text, its sender and
+    subject are the ones the model named, and it dates from the loop's window. Each miss is a
+    failure naming which, so the report cannot name the wrong email. Among emails that pass, the
+    surest wins. Each thread's other messages decide whether this one is its newest."""
     words = _words(v.quote)
-    quoted = [(m, t) for m in _messages(payloads) if (t := _quoted_text(m, words))]
-    if not quoted:
-        raise LoopFailure("the model's quote is not in any email it fetched")
-    named = [(m, t) for m, t in quoted if _agrees(m, v)]
+    hits, in_history = [], False
+    for thread in _threads(payloads):
+        stamps = [t for t in map(_stamp, thread) if t]
+        for m in thread:
+            stamp = _stamp(m)
+            hit = _locate(m, words, stamp is not None and any(t < stamp for t in stamps))
+            if hit == _HISTORY:
+                in_history = True
+            elif hit:
+                hit.newest = stamp is not None and not any(t > stamp for t in stamps)
+                hits.append(hit)
+    if not hits:
+        raise LoopFailure("the model's quote is only in an email's quoted history, so it may be old news" if in_history
+                          else "the model's quote is not in any email it fetched")
+    named = [h for h in hits if _agrees(h.message, v)]
     if not named:
         raise LoopFailure("the sender or subject the model named does not match the email its quote came from")
-    for m, t in named:
-        date = _date_of(m)
-        if date is not None and date >= start:
-            return m, t
-    raise LoopFailure(f"the email its quote came from has no readable date or is dated before {start}, "
-                      "so it cannot speak to this loop")
+    latest = now.astimezone() + FUTURE_GRACE
+    timely = [h for h in named if (d := _stamp(h.message)) and d.date() >= start and d <= latest]
+    if not timely:
+        if any((d := _stamp(h.message)) and d > latest for h in named):
+            raise LoopFailure("the email its quote came from is dated later than now, so its date cannot be trusted")
+        raise LoopFailure(f"the email its quote came from has no readable date or is dated before {start}, "
+                          "so it cannot speak to this loop")
+    best = max(timely, key=lambda h: (h.certain, h.newest))
+    if len(best.text) > MAX_QUOTE_CHARS:
+        raise LoopFailure(f"the text matching the model's quote is over {MAX_QUOTE_CHARS} characters")
+    return best
 
 
 # --- One loop ---------------------------------------------------------------
@@ -235,6 +348,7 @@ class Evidence:
     date: dt.date | str
     subject: str
     quote: str
+    capped: str | None = None  # why a done or answered verdict dropped to update; fixed words only
 
 
 def relevant_start(loop: dict) -> dt.date:
@@ -265,36 +379,103 @@ def prompt_for(loop: dict) -> str:
         "answered, an email answers the question the to-do asks; "
         "update, an email moves it along without settling it; "
         "nothing, no email bears on it, and the other four fields stay empty. "
-        f"For any other verdict, the email must date from {start} or later; sender and subject are copied "
-        f"exactly from that one email, date is its date, and quote is {MIN_QUOTE_WORDS} to {MAX_QUOTE_WORDS} "
-        "words copied exactly from it."
+        f"For any other verdict, the email must date from {start} or later; sender is that one email's address "
+        "and subject is copied exactly from it, date is its date, and quote is "
+        f"{MIN_QUOTE_WORDS} to {MAX_QUOTE_WORDS} ordinary words, at most {MAX_QUOTE_CHARS} characters, copied "
+        "exactly from what that email itself says, not from older text it quotes."
     )
 
 
-SEARCH_ONLY_KEYS = {"resultCountEstimate", "nextPageToken"}
+_ERROR_KEYS = {"error", "errors", "iserror", "is_error", "failure", "failures"}
+_EMPTY_SEARCH_KEYS = {"threads", "resultCountEstimate", "nextPageToken"}
+_BODY_KEYS = ("plaintextBody", "htmlBody", "snippet")
+
+
+def _says_error(payload: dict) -> bool:
+    status = payload.get("status")
+    return bool({str(k).casefold() for k in payload} & _ERROR_KEYS) or (status is not None and status not in ("ok", "success"))
+
+
+def _empty_search(payload: dict) -> bool:
+    """The exact shape an empty search comes back in; the bills watch has seen {}."""
+    return (not set(payload) - _EMPTY_SEARCH_KEYS and payload.get("threads", []) == []
+            and payload.get("resultCountEstimate", 0) == 0 and not payload.get("nextPageToken"))
 
 
 def _well_formed(name: str, payload: dict) -> bool:
-    """Whether a Gmail result is one this watch can read as an answer. An empty search comes back
-    as {}; anything else without its list, or carrying an error, is not a quiet day. The bills
-    watch holds its results to the same shapes."""
-    if "error" in payload:
+    """Whether a Gmail result can stand behind a verdict of nothing. Fails closed: a search is a
+    quiet day only in the exact empty shape, or with a list of threads, and a thread must hold
+    messages that each have a body. Anything else may be a failure this watch cannot read."""
+    if _says_error(payload):
         return False
     if name == bw.READ_TOOLS[0]:
         threads = payload.get("threads")
-        return isinstance(threads, list) if "threads" in payload else not set(payload) - SEARCH_ONLY_KEYS
+        return _empty_search(payload) or (isinstance(threads, list) and bool(threads)
+                                          and all(isinstance(t, dict) for t in threads))
     messages = payload.get("messages")
-    return isinstance(messages, list) and bool(messages)
+    return (isinstance(messages, list) and bool(messages) and all(isinstance(m, dict) for m in messages)
+            and all(any(isinstance(m.get(k), str) and m[k].strip() for k in _BODY_KEYS) for m in messages))
 
 
-def check_loop(loop: dict, model: str, run, notes: list[str] | None = None) -> Evidence | None:
+def _safe(name: object, limit: int = 80) -> str:
+    """A name a run handed back, fit for the log: letters, digits, underscore and hyphen only."""
+    return re.sub(r"[^a-zA-Z0-9_-]", "", str(name))[:limit]
+
+
+def _note(notes: list[str] | None, line: str) -> None:
+    if notes is not None and line not in notes:
+        notes.append(line)
+
+
+def own_addresses() -> set[str]:
+    """His addresses from the optional private file, lower case; empty when there is none."""
+    try:
+        lines = (_root() / SELF_FILE).read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return set()
+    return {x.strip().casefold() for x in lines if x.strip() and not x.lstrip().startswith("#")}
+
+
+def _his_own(message: dict, own: set[str]) -> bool | None:
+    """Whether an email is his own mail; None when nothing here can tell."""
+    address = address_of(message.get("sender") or "")
+    if address and address.casefold() in own:
+        return True
+    labels = message.get("labelIds", message.get("labels"))
+    if isinstance(labels, list):
+        return any(str(x).casefold() == "sent" for x in labels)
+    return False if own else None
+
+
+def _cap(hit: Hit, own: set[str]) -> str | None:
+    """Why this email can only move a loop along, not settle it. The report is evidence for
+    main and not a decision, so anything short of sure drops to update."""
+    mine = _his_own(hit.message, own)
+    if mine:
+        return "it is from his own sent mail"
+    if mine is None:
+        return "could not tell whether it is his own mail"
+    if not hit.certain:
+        return "could not separate its own text from quoted history"
+    if not hit.newest:
+        return "a newer message in the thread may change it"
+    return None
+
+
+def check_loop(loop: dict, model: str, run, notes: list[str] | None = None, now: dt.datetime | None = None,
+               own: set[str] | None = None) -> Evidence | None:
     """The evidence for one loop, or None for nothing found. LoopFailure when the run gives no
     verdict to stand behind; GmailError when Gmail or Claude could not be reached."""
     res = bw._run(run, prompt_for(loop), MAX_TURNS, model, project_dir=PROJECT_DIR)
     if notes is not None:
         notes += [n for n in res.notes if n not in notes]
+    for name, p in res.payloads:
+        if not _well_formed(name, p):
+            keys = ", ".join(_safe(k) for k in list(p)[:12])
+            _note(notes, f"{_safe(name)} result in an unknown shape, keys: {keys or 'none'}")
     if res.refused:
-        raise LoopFailure(f"the model reached for refused tool `{_code(res.refused[0])}`, so its verdict is discarded; "
+        _note(notes, f"unexpected tool {_safe(res.refused[0])}")
+        raise LoopFailure("the model reached for an unexpected tool, so its verdict is discarded; "
                           "check this loop's email by hand")
     fetches = res.calls.count(bw.READ_TOOLS[1])
     if fetches > MAX_GET_THREADS:
@@ -313,13 +494,16 @@ def check_loop(loop: dict, model: str, run, notes: list[str] | None = None) -> E
         if res.unreadable:
             raise LoopFailure(f"{res.unreadable} Gmail result(s) unreadable, so nothing found cannot be trusted")
         bad = sum(not _well_formed(name, p) for name, p in res.payloads)
+        bad += max(0, len(res.calls) - len(res.payloads) - res.unreadable)  # a call with no result at all
         if bad:
             raise LoopFailure(f"{bad} Gmail result(s) came back with an error or not in a shape this watch knows, "
                               "so nothing found cannot be trusted")
         return None
-    m, quoted = find_email(res.payloads, v, relevant_start(loop))
-    return Evidence(loop["text"], v.verdict, m["sender"], _date_of(m) or v.date,
-                    m.get("subject") or "(no subject)", quoted)
+    hit = find_email(res.payloads, v, relevant_start(loop), now or dt.datetime.now())
+    m = hit.message
+    capped = _cap(hit, own or set()) if v.verdict in SETTLING else None
+    return Evidence(loop["text"], "update" if capped else v.verdict, m["sender"], _date_of(m) or v.date,
+                    m.get("subject") or "(no subject)", hit.text, capped and f"the model said {v.verdict}; {capped}")
 
 
 def claude(prompt: str, max_turns: int, model: str) -> list[str]:
@@ -338,7 +522,7 @@ class Outcome:
     notes: list[str] = field(default_factory=list)
     cost: float = 0.0     # what the result events reported
     uncosted: int = 0     # attempts with no figure, each charged the call cap against the run total
-    undeleted: int = 0    # saved run copies, which hold email bodies, still on disk at the end
+    undeleted: int | None = 0  # saved run copies, which hold email bodies, left on disk; None when unknown
 
     def spent(self) -> float:
         return self.cost + self.uncosted * CALL_BUDGET_USD
@@ -366,12 +550,16 @@ def _final_event(lines: list[str]) -> dict:
 
 def metered(run, out: Outcome):
     """A claude runner that charges every attempt to the run, retries and failures included,
-    since a failed run never gets as far as being parsed. A run stopped by its budget is that
-    loop's failure, not a Gmail fault: a retry would only spend the budget again."""
+    since a failed run never gets as far as being parsed. Any call that raises is charged the cap,
+    since it may have spent before it failed. The run total is checked before every call, so it
+    holds for a retry too. A run stopped by its budget is that loop's failure, not a Gmail fault:
+    a retry would only spend the budget again."""
     def go(prompt: str, max_turns: int, model: str) -> list[str]:
+        if out.spent() >= RUN_BUDGET_USD:
+            raise OverRunBudget
         try:
             lines = run(prompt, max_turns, model)
-        except bw.GmailError:
+        except Exception:
             out.uncosted += 1
             raise
         final = _final_event(lines)
@@ -387,17 +575,18 @@ def metered(run, out: Outcome):
     return go
 
 
-def watch(out: Outcome, model: str, run_claude, run_af) -> None:
+def watch(out: Outcome, model: str, run_claude, run_af, now: dt.datetime | None = None) -> None:
     loops, out.over_cap = select_loops(load_due(run_af()))
+    own = own_addresses()
     run = metered(run_claude, out)
     in_a_row = 0
     for i, loop in enumerate(loops):
-        if out.spent() >= RUN_BUDGET_USD:
+        try:
+            found = check_loop(loop, model, run, out.notes, now, own)
+        except OverRunBudget:
             reason = f"not checked: the run reached its ${RUN_BUDGET_USD:.2f} budget"
             out.failures += [(x["text"], reason) for x in loops[i:]]
             return
-        try:
-            found = check_loop(loop, model, run, out.notes)
         except bw.GmailError as e:
             out.failures.append((loop["text"], f"Gmail or Claude failed: {e}"))
             in_a_row += 1
@@ -437,13 +626,14 @@ def footer(out: Outcome, now: dt.datetime) -> str:
     cost = f"${out.cost:.2f}" + (f" plus {out.uncosted} run(s) with no figure" if out.uncosted else "")
     return (f"Run {now:%Y-%m-%d %H:%M} · loops checked {out.checked} · with evidence {len(out.evidence)} · "
             f"failures {len(out.failures)} · skipped over the cap {out.over_cap} · cost {cost} · "
-            f"undeleted {out.undeleted}")
+            f"undeleted {'unknown' if out.undeleted is None else out.undeleted}")
 
 
 def render_report(out: Outcome, now: dt.datetime) -> str:
     parts = [HEADER]
     for e in out.evidence:
-        parts.append(f"## {_flat(e.loop)}\n\n- Verdict: {e.verdict}\n- From: `{_code(e.sender)}`\n- Date: {_code(e.date)}\n"
+        verdict = f"{e.verdict} ({e.capped})" if e.capped else e.verdict
+        parts.append(f"## {_flat(e.loop)}\n\n- Verdict: {verdict}\n- From: `{sender_line(e.sender)}`\n- Date: {_code(e.date)}\n"
                      f"- Subject: `{_code(e.subject)}`\n- Quote: `{_code(e.quote)}`\n")
     if not out.evidence:
         parts.append("No loop has email evidence.\n")
@@ -462,33 +652,63 @@ def _root() -> Path:
 def log(line: str, now: dt.datetime) -> None:
     path = _root() / LOG
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as f:
+    with path.open("a", encoding="utf-8", errors="replace") as f:
         f.write(f"- {now:%Y-%m-%d %H:%M} · {line}\n")
+
+
+def _sweep(out: Outcome) -> None:
+    """The last sweep of a run. It may never stop the report being written."""
+    try:
+        bw.cleanup(None, older_than=0, project_dir=PROJECT_DIR)
+        out.undeleted = len(bw.saved_runs(PROJECT_DIR))
+    except Exception as e:  # noqa: BLE001 - the report must still say what happened
+        out.undeleted = None
+        out.failures.append(("Raw email cleanup", f"the sweep failed ({type(e).__name__}); check {PROJECT_DIR} by hand"))
+        return
+    if out.undeleted:
+        out.failures.append(("Raw email cleanup", f"{out.undeleted} saved run copies holding email could not be "
+                                                  f"deleted from {PROJECT_DIR}; delete them by hand"))
+
+
+def init_report(now: dt.datetime) -> int:
+    """The stub a newly registered task starts from, so a task that dies on its first run goes
+    stale like any other instead of looking like a watch not yet scheduled. A real report stays."""
+    path = _root() / REPORT
+    if path.exists():
+        print(f"{path} already exists; left as it is")
+        return 0
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"{HEADER}\nThe watch is registered and has not run yet.\n\n{footer(Outcome(), now)}\n",
+                        encoding="utf-8", newline="\n")
+    except OSError as e:
+        print(f"could not write the stub report: {e}", file=sys.stderr)
+        return 1
+    print(f"wrote {path}")
+    return 0
 
 
 def main(argv: list[str] | None = None, *, now: dt.datetime | None = None, run_claude=claude, run_af=af_due) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--dry-run", action="store_true", help="read Gmail and print the report; write nothing")
+    p.add_argument("--init-report", action="store_true", help="write the stub report if there is none, and stop")
     p.add_argument("--model", default=MODEL)
     a = p.parse_args(argv)
     try:
-        sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
     except Exception:  # noqa: BLE001
         pass
     now = now or dt.datetime.now()
+    if a.init_report:
+        return init_report(now)
     out = Outcome()
     try:
         bw.cleanup(None, older_than=0, project_dir=PROJECT_DIR)  # a killed run leaves its copies for this one
-        watch(out, a.model, run_claude, run_af)
+        watch(out, a.model, run_claude, run_af, now)
     except Exception as e:  # noqa: BLE001 - a scheduled run must never fail silently
         traceback.print_exc()
         out.failures.append(("The whole run", f"it stopped early ({type(e).__name__}: {e})"))
-    finally:
-        bw.cleanup(None, older_than=0, project_dir=PROJECT_DIR)
-        out.undeleted = len(bw.saved_runs(PROJECT_DIR))
-    if out.undeleted:
-        out.failures.append(("Raw email cleanup", f"{out.undeleted} saved run copies holding email could not be "
-                                                  f"deleted from {PROJECT_DIR}; delete them by hand"))
+    _sweep(out)
     text = render_report(out, now)
     code = 1 if out.failures else 0
     if a.dry_run:
@@ -499,9 +719,9 @@ def main(argv: list[str] | None = None, *, now: dt.datetime | None = None, run_c
     try:
         path = _root() / REPORT
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8", newline="\n")
+        path.write_text(text, encoding="utf-8", errors="replace", newline="\n")
         log(" · ".join([footer(out, now).split(" · ", 1)[1], *out.notes]), now)
-    except OSError as e:
+    except Exception as e:  # noqa: BLE001 - a scheduled run must never fail silently
         print(f"could not write the report: {e}", file=sys.stderr)
         return 1
     print(footer(out, now))

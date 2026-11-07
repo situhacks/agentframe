@@ -86,6 +86,26 @@ class InstructionTopologyCharacterizationTests(unittest.TestCase):
         self.assertNotIn("Never close or re-date a loop he did not answer for.", catchup)
         self.assertIn("loop watch report", text(".claude/skills/README.md"))
 
+    def test_catchup_closes_only_on_an_opened_email_in_main_written_words(self):
+        catchup = text(".claude/skills/catchup/SKILL.md")
+        self.assertIn("A report quote alone never closes a loop", catchup)
+        self.assertIn("through the Gmail connector", catchup)
+        self.assertIn("With no connector", catchup)
+        self.assertIn("so he decides", catchup)
+        self.assertIn("are never closed in this step", catchup)
+        for kind in ("needs item", "Bills loop"):
+            self.assertIn(kind, catchup)
+        self.assertNotIn('--outcome "<the evidence>"', catchup)
+        self.assertIn("--outcome '<your own few words>'", catchup)
+        self.assertIn("never pasted email or page text", catchup)
+        self.assertIn("$(...)", catchup)
+        self.assertIn("script file", catchup)
+        review = text("library/schema/loop-watch.md").split("## Reviewing it")[1].split("## A dead watch")[0]
+        rule = text("library/schema/open-loops.md").split("## The loop rule")[1].split("## Grammar")[0]
+        for page in (review, rule):
+            self.assertIn("never pasted email or page text", page)
+        self.assertIn("never closed from the report", review)
+
     def test_claude_code_reads_agents_md_natively(self):
         self.assertFalse((ROOT / "CLAUDE.md").exists(),
                          "a CLAUDE.md in the folder stops Claude Code reading AGENTS.md natively")

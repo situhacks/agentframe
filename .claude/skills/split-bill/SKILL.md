@@ -26,7 +26,7 @@ Read the e-transfer email from the line in `workspace/life/knowledge/money.md` t
 1. The bill: the final total, its breakdown, the share, the number of people, and the names of who owes. End with "you can e-transfer me at the email below." Keep it short and plain.
 2. The email address alone, with no other words, so it copies cleanly.
 
-Before each send, check the chat title, the text in the box, and that no mention popup is open. Then send, and confirm it appears in the thread. His own message in this chat, naming the group chat and asking you to send, is his yes. Otherwise show him both messages first and wait.
+Before each send, check the chat title, the text in the box, and that no mention popup is open. Then send, and confirm it appears in the thread. His own message in this chat asking you to split or send the bill is his yes when it makes the chat clear, by naming it or by saying "the same people" as a split already sent this session. Send without showing him first. Only if the chat or the people are unclear, show him both messages and wait.
 
 Do not attach the card slip: it shows card digits. Send the itemized receipt only if he asks, after checking it for card digits.
 

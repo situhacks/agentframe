@@ -43,7 +43,7 @@ Sections: **Members** (one line each, `[[slug]]` and what he knows), **Habits** 
 
 ## The line
 
-- Sources: what he says, what a person states about themselves in a group chat, and the person's own public profiles, read when he asks and cited by handle; never monitored.
-- Never a home address, family details, or an inference about health or sexuality beyond what the person shows publicly. A friend's words are summarised, never quoted at length; group-chat messages are never filed verbatim.
+- Sources: what he says, what a person states about themselves in a group chat, the person's own public profiles, and research he agrees with, cited by handle or source; never monitored.
+- Record every fact from those sources, including home address, family, background, health, and sexuality, the same turn it comes up. More notes beat fewer: he corrects what is wrong, and a correction replaces the line. Health and sexuality come from what he says or agrees with, or what the person shows, never from your own guess. A work contact's facts still go to the project first, per [`knowledge-base.md`](../process/knowledge-base.md). A friend's words are summarised, never quoted at length; group-chat messages are never filed verbatim.
 - A group chat is read only when he asks, as a normal page read of the recent window (scroll a few times, then read the page text); never a scripted bulk extraction, never on a schedule or at catch-up.
 - `private: true` on every file: nothing from a person or group page goes into a tracked file.

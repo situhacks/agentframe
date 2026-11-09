@@ -6,12 +6,13 @@ The working route for each source or tool the default toolchain fumbles on this 
 
 ## When To Load
 
-A transcript, page, price, or media tool below is about to run, or a default fetch of one of these sources has failed.
+A task must reach an app or service; a transcript, page, price, or media tool below is about to run; or a default fetch of one of these sources has failed.
 
 ## Procedure
 
 Write each script to the scratchpad with the Write tool and run it; set `PYTHONIOENCODING=utf-8` when it prints page text.
 
+- **Reaching an app or service.** A shell command first, then a connector, then the Chrome tools, then [`desktop-tool.md`](desktop-tool.md) for a native Windows app.
 - **YouTube talk, metadata first.** `yt-dlp --print "%(title)s / %(channel)s / %(upload_date)s / %(duration)s" --print "%(chapters)j" <url>`. Aggregator channels re-upload talks under their own titles; find the original venue and date separately.
 - **YouTube captions.** `yt-dlp --skip-download --write-sub --write-auto-sub --sub-lang "en.*,en" --sub-format vtt -o "<name>.%(ext)s" <url>`, then flatten the VTT with a script that strips `<c>` tags, drops consecutive repeated lines, and marks each minute.
 - **Auto-captions are not quotes.** File the flattened transcript as a source marked auto-captions, with the original venue and the upload channel; no line is quoted verbatim without a listen-back.

@@ -41,7 +41,7 @@ Infer the situation from goal and project state, not phrase matching.
 | Builder friction during Operator work | a row in [`system/backlog.md`](system/backlog.md) | — | system files, unless the operator swaps to Builder |
 | Unsure a capability, process, or type exists | [`.claude/skills/README.md`](.claude/skills/README.md), [`system/vendor/README.md`](system/vendor/README.md), [`library/process/README.md`](library/process/README.md), or the template chain | the file the catalog names | reinventing what a row covers |
 | Locate existing material | `af search "<query>"`, then the files it cites | `project.md` once the project is known | web search or grep before `af search` |
-| Fetch, scrape, or price lookup the default tools cannot reach | [`tool-routes.md`](library/process/tool-routes.md) | [`agent-reach`](.claude/skills/agent-reach/SKILL.md) | retrying a blocked host |
+| Page, price, or app the default tools cannot reach | [`tool-routes.md`](library/process/tool-routes.md) | [`agent-reach`](.claude/skills/agent-reach/SKILL.md) | retrying a blocked host |
 | Task-class mismatch | the Modes line below | — | continuing under the wrong router |
 
 ## Core Workflows

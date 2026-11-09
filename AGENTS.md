@@ -13,7 +13,7 @@ The session-start hook prints your role; read its file:
 
 An unregistered chat asks the session-start line's A/B/C first. If the task class changes, stop and read the new router.
 
-**Any chat can do anything.** Each does its job and routes the rest to `af-main`. No chat places securities orders; he enters them.
+**Any chat can do anything.** Each does its job and routes the rest to `af-main`. Securities orders: his word only, each approved in-app.
 
 ## Where Things Live
 

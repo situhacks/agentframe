@@ -435,7 +435,8 @@ class TimersTests(unittest.TestCase):
     def test_timers_use_the_task_names_their_register_scripts_set(self):
         text = (KIT / "timers.ps1").read_text(encoding="utf-8")
         pairs = re.findall(r"Script = '([^']+)'; Task = '([^']+)'", text)
-        self.assertEqual(len(pairs), 5, "timers.ps1 lists the loop watch, bills watch, reminders, consolidation and backlog pass")
+        self.assertEqual(len(pairs), 6, "timers.ps1 lists the loop watch, loop sweep, bills watch, reminders, "
+                                        "consolidation and backlog pass")
         for script, task in pairs:
             source = (TOOLS / script).read_text(encoding="utf-8")
             m = re.search(r"\$taskName = '([^']+)'", source)

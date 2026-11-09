@@ -16,6 +16,7 @@ $ErrorActionPreference = 'Stop'
 # Each job: the script that registers it and the task name that script uses.
 $timers = @(
     @{ Script = 'register-loop-watch.ps1'; Task = 'AgentFrame loop watch' },
+    @{ Script = 'register-loop-sweep.ps1'; Task = 'AgentFrame loop sweep' },
     @{ Script = 'register-bills-watch.ps1'; Task = 'AgentFrame bills watch' },
     @{ Script = 'register-daily-reminders.ps1'; Task = 'AgentFrame reminders' },
     @{ Script = 'register-weekly-consolidation.ps1'; Task = 'AgentFrame consolidation' },
@@ -53,7 +54,12 @@ foreach ($t in $timers) {
         }
     } else {
         $info = Get-ScheduledTask -TaskName $task -ErrorAction SilentlyContinue
-        if ($info) { Write-Output "[here]       $task ($($info.State))" } else { Write-Output "[absent]     $task" }
+        $mode = ''
+        if ($info -and $t.Script -eq 'register-loop-sweep.ps1') {
+            $live = @($info.Actions | Where-Object { $_.Arguments -match '(^|\s)-Live(\s|$)' }).Count -gt 0
+            $mode = if ($live) { ', live: closes loops on proof' } else { ', report-only' }
+        }
+        if ($info) { Write-Output "[here]       $task ($($info.State)$mode)" } else { Write-Output "[absent]     $task" }
     }
 }
 

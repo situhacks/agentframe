@@ -47,7 +47,7 @@ A brain dump splits into these, shown to him, before anything moves. Propose Opu
 - **Read named inputs:** a link is not loaded context; read the smallest set that resolves it.
 - **Verify before claiming success,** proportionate to risk.
 - **Preserve operator work.** Existing edits and untracked files are his.
-- **Both repositories are public.** `workspace/` stays on this machine; a tracked file carries no credential, client name, or private fact; a push needs his explicit yes.
+- **Both repositories are public.** `workspace/` stays on his machines; a tracked file carries no credential, client name, or private fact; a push needs his explicit yes.
 - **Ask in prose,** with lettered options, never a question widget.
 - **Script files, not heredocs:** they mangle backslashes.
 - **Act on what is reversible.** Do it, report it; ask only before something irreversible, outward-facing, or his to decide. Fix a stale reference now, or dispatch it; the backlog holds only work not yet doable.

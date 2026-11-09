@@ -159,10 +159,27 @@ pub fn main(args: &[String]) -> i32 {
     use crate::sessions;
     match event {
         "session-start" => {
-            let refresh = index_refresh::refresh(&h.root);
-            return emit(sessions::hook_session_start_with(&h.ctx, &text, refresh));
+            // The pull half first, so the bundle shows the other machine's latest loops.
+            let synced = crate::sync::hook_half(&h.ctx, false);
+            let refresh = index_refresh::refresh(&h.root).map(str::to_string);
+            let lead = match (synced, refresh) {
+                (None, r) => r,
+                (Some(s), Some(r)) => Some(format!("{s}\n{r}")),
+                (Some(s), None) => Some(match crate::life::index_age_line(&h.ctx) {
+                    Some(ix) => format!("{s}\n{ix}"),
+                    None => s,
+                }),
+            };
+            return emit(sessions::hook_session_start_with(&h.ctx, &text, lead.as_deref()));
         }
-        "stop" => return emit(sessions::hook_stop(&h.ctx, &text)),
+        "stop" => {
+            let o = sessions::hook_stop(&h.ctx, &text);
+            // The push half runs only when the chat is really stopping.
+            if o.stdout.is_empty() {
+                let _ = crate::sync::hook_half(&h.ctx, true);
+            }
+            return emit(o);
+        }
         "session-end" => return emit(sessions::hook_session_end(&h.ctx, &text)),
         "notification" => return emit(sessions::hook_notification(&h.ctx, &text)),
         _ => {}

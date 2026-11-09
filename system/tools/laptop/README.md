@@ -32,7 +32,7 @@ Placeholders: `<laptop-name>` is the laptop's computer name, `<vault folder>` th
 ### 1. On the laptop, by hand
 
 1. Update Windows (10 or 11) and sign in with your administrator account.
-2. Install Git, Python 3, Google Chrome and Claude Code, and Bun if you will use the Discord bridge (step 7). Check each answers in a new PowerShell window: `git --version`, `python --version`, `claude --version`, `bun --version`. Rust is not needed unless you choose to build `af` on the laptop (step 4).
+2. Install Git, Python 3, Google Chrome and Claude Code. Check each answers in a new PowerShell window: `git --version`, `python --version`, `claude --version`. Bun is needed only for the Discord bridge and is installed in step 7. Rust is not needed unless you choose to build `af` on the laptop (step 4).
 3. Set your git name and email once, or the laptop's commits are authored "AgentFrame":
    ```powershell
    git config --global user.name "<your name>"
@@ -106,11 +106,12 @@ See the section below.
 
 Skip this step to reach the session through Remote Control only. To add the Discord bridge, in a normal PowerShell, in the vault folder:
 
-1. Run `claude`, then `/plugin install discord@claude-plugins-official`.
-2. Run `/discord:configure` and paste your bot's token when asked. It is saved in your user folder under `.claude\channels\discord\`, never in the vault.
-3. Exit, then start `claude --channels plugin:discord@claude-plugins-official`.
-4. Send your bot a direct message from your phone and pair as the plugin tells you.
-5. Run `/discord:access policy allowlist` so only you can reach it. Then exit.
+1. Install Bun, which the Discord plugin runs on, and check `bun --version` answers in a new PowerShell window.
+2. Run `claude`, then `/plugin install discord@claude-plugins-official`.
+3. Run `/discord:configure` and paste your bot's token when asked. It is saved in your user folder under `.claude\channels\discord\`, never in the vault.
+4. Exit, then start `claude --channels plugin:discord@claude-plugins-official`.
+5. Send your bot a direct message from your phone and pair as the plugin tells you.
+6. Run `/discord:access policy allowlist` so only you can reach it. Then exit.
 
 From here on, add `-Discord` wherever steps 8 and 9 start the session; without it the session never loads the bridge.
 
@@ -126,7 +127,7 @@ Add `-Discord` at the end if you did step 7. Answer any question the "AgentFrame
 
 ### 9. Start at logon
 
-In a normal PowerShell, in the kit folder; the job is yours, at limited run level, so no administrator PowerShell is needed:
+In a normal PowerShell, in the kit folder; the job is yours, at limited run level, so no administrator PowerShell is needed. One exception: if the job was first registered from an administrator PowerShell, replace it from an administrator PowerShell too, or run `.\register-agent-logon.ps1 -Unregister` there first.
 
 ```powershell
 .\register-agent-logon.ps1

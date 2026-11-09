@@ -201,7 +201,9 @@ function Write-ForeignSessions($Own) {
         Where-Object { $ownIds -notcontains $_.ProcessId -and $_.ProcessId -ne $PID -and $_.CommandLine -match [regex]::Escape($SessionMarker) -and $_.CommandLine -match 'claude' -and $_.Name -notmatch '^powershell' })
     if ($others.Count -gt 0) {
         $list = ($others | ForEach-Object { "$($_.Name) pid $($_.ProcessId)" }) -join ', '
-        Write-Log "another remote-control session is running and is left alone: $list. If it also holds the Discord channel, both answer the bot."
+        $message = "another remote-control session is running and is left alone: $list."
+        if ($Discord) { $message += ' If it also holds the Discord channel, both answer the bot.' }
+        Write-Log $message
     }
 }
 

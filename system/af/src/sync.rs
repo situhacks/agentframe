@@ -95,6 +95,12 @@ pub const HOOK_BUDGET: Duration = Duration::from_secs(15);
 pub const MERGE_RESERVE: Duration = Duration::from_secs(3);
 /// This many skipped hook syncs in a row, and session start tells the chat.
 pub const SKIP_ALERT: u32 = 3;
+/// The per-message pull: its hub probe and fetch together end within this.
+pub const PROMPT_BUDGET: Duration = Duration::from_secs(2);
+/// The per-message pull starts a merge only with this much of its budget left.
+const PROMPT_RESERVE: Duration = Duration::from_millis(500);
+/// The per-message list of changed paths stops here and says how many more.
+pub const PROMPT_LIST_CAP: usize = 10;
 /// The verb waits longer than a hook for a share that is slow to wake.
 const VERB_PROBE: Duration = Duration::from_secs(10);
 /// Two copies whose times differ by less than this are the same age (network shares round).
@@ -106,6 +112,13 @@ pub const BACKUP_DIR: &str = "system/logs/sync-backups";
 /// and the hub commit whose merge conflicted.
 const SKIPS_FILE: &str = "af-sync-skips";
 const CONFLICT_FILE: &str = "af-sync-conflict";
+/// Also there: every path a merge from the hub brought in, one per line, appended; and per
+/// chat, how far into that file the per-message pull has told it, and which conflict.
+const BROUGHT_FILE: &str = "af-sync-brought";
+const SEEN_DIR: &str = "af-sync-seen";
+/// Also there: the hub commit this machine last merged or pushed, so a prompt with nothing
+/// new on the hub runs no git at all.
+const PULLED_FILE: &str = "af-sync-pulled";
 /// What `af sync` says on a machine not set up yet; the laptop kit's watchdog matches it.
 pub const NO_HUB: &str = "no hub remote";
 
@@ -581,6 +594,17 @@ fn recorded_conflict(ws: &Path) -> Option<String> {
     std::fs::read_to_string(git_dir(ws).join(CONFLICT_FILE)).ok().map(|t| t.trim().to_string()).filter(|t| !t.is_empty())
 }
 
+/// The paths a merge from the hub brought in, for the per-message pull to tell each chat.
+fn record_brought(ws: &Path, paths: &[String]) {
+    let text: String = paths.iter().filter(|p| !p.contains('\n')).map(|p| format!("{p}\n")).collect();
+    if text.is_empty() {
+        return;
+    }
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(git_dir(ws).join(BROUGHT_FILE)) {
+        let _ = f.write_all(text.as_bytes());
+    }
+}
+
 // ------------------------------------------------------------------ the lock
 
 /// One af-driven sync at a time per private repository: the verb and both hooks take it.
@@ -998,7 +1022,11 @@ fn sync_private(ctx: &Ctx, g: &Git, lock: &SyncLock) -> R<Private> {
         let after = g.rev("HEAD");
         if before != after {
             brought = match &before {
-                Some(b) => g.paths(&["diff", "--name-only", "-z", b, "HEAD"]).len().max(1),
+                Some(b) => {
+                    let paths = g.paths(&["diff", "--name-only", "-z", b, "HEAD"]);
+                    record_brought(&ws, &paths);
+                    paths.len().max(1)
+                }
                 None => 1,
             };
             outln!("Private layer: brought in {brought} changed file(s) from the other machine.");
@@ -1384,18 +1412,93 @@ pub fn hook_half(ctx: &Ctx, push: bool) -> Option<String> {
 
 /// `hook_half` with its network budget given (tests drive the merge reserve through it).
 pub fn hook_half_with(ctx: &Ctx, push: bool, budget: Duration) -> Option<String> {
+    half(ctx, if push { Half::Stop } else { Half::Start }, budget)
+}
+
+/// The hook a private half runs in.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Half {
+    Start,
+    Prompt,
+    Stop,
+}
+
+/// The per-message pull: the session-start half within `PROMPT_BUDGET` (probe and fetch
+/// together), then what this chat has not been told: the paths any merge from the hub brought
+/// in since its last prompt, capped at `PROMPT_LIST_CAP`, and the conflict line once per
+/// recorded conflict. None when there is nothing to tell. `session` keys the chat's marker; a
+/// chat with no marker yet read the files and heard any conflict at its session start.
+pub fn prompt_half(ctx: &Ctx, session: Option<&str>) -> Option<String> {
+    prompt_half_with(ctx, session, PROMPT_BUDGET)
+}
+
+/// `prompt_half` with its budget given.
+pub fn prompt_half_with(ctx: &Ctx, session: Option<&str>, budget: Duration) -> Option<String> {
     private_hub_url(ctx)?;
     let ws = PathBuf::from(vpath(ctx, "workspace"));
-    let verb = if push { "hook stop sync" } else { "hook session-start sync" };
+    let log = git_dir(&ws).join(BROUGHT_FILE);
+    let log_len = || std::fs::metadata(&log).map(|m| m.len()).unwrap_or(0);
+    let marker = session
+        .filter(|s| !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'))
+        .map(|s| git_dir(&ws).join(SEEN_DIR).join(s));
+    let saved = marker.as_ref().and_then(|m| std::fs::read_to_string(m).ok()).and_then(|t| {
+        let (at, told) = t.trim_end_matches(['\r', '\n']).split_once('\t')?;
+        Some((at.parse::<u64>().ok()?, Some(told.to_string()).filter(|t| !t.is_empty())))
+    });
+    let (from, told) = saved.unwrap_or_else(|| (log_len(), recorded_conflict(&ws)));
+    let _ = half(ctx, Half::Prompt, budget);
+    if !git_dir(&ws).is_dir() {
+        return None;
+    }
+    let end = log_len();
+    let mut paths = BTreeSet::new();
+    if end > from {
+        if let Ok(bytes) = std::fs::read(&log) {
+            let new = bytes.get(from as usize..).unwrap_or_default();
+            paths.extend(String::from_utf8_lossy(new).lines().filter(|l| !l.is_empty()).map(str::to_string));
+        }
+    }
+    let conflict = recorded_conflict(&ws);
+    if let Some(m) = &marker {
+        let _ = std::fs::create_dir_all(git_dir(&ws).join(SEEN_DIR));
+        let _ = std::fs::write(m, format!("{end}\t{}\n", conflict.as_deref().unwrap_or("")));
+    }
+    let mut out = Vec::new();
+    if conflict.is_some() && conflict != told {
+        out.push(conflict_line());
+    }
+    if !paths.is_empty() {
+        out.push("AgentFrame sync: the other machine changed these files since this chat last looked; reread any you answer from:".to_string());
+        out.extend(paths.iter().take(PROMPT_LIST_CAP).map(|p| format!("- workspace/{p}")));
+        if paths.len() > PROMPT_LIST_CAP {
+            out.push(format!("and {} more", paths.len() - PROMPT_LIST_CAP));
+        }
+    }
+    (!out.is_empty()).then(|| out.join("\n"))
+}
+
+fn half(ctx: &Ctx, kind: Half, budget: Duration) -> Option<String> {
+    let started = Instant::now();
+    private_hub_url(ctx)?;
+    let ws = PathBuf::from(vpath(ctx, "workspace"));
+    let push = kind == Half::Stop;
+    let verb = match kind {
+        Half::Start => "hook session-start sync",
+        Half::Prompt => "hook user-prompt-submit sync",
+        Half::Stop => "hook stop sync",
+    };
     // Every skip is logged. One that clears by itself (the hub is off or slow, another sync
-    // is running) is not counted; one that needs him is, and the line reaches the chat only
-    // at session start.
+    // is running) is not counted; one that needs him is, unless a prompt met it (session
+    // start and stop count their own), and the line reaches the chat only at session start.
     let pass = |why: &str| -> Option<String> {
         crate::runlog::log_note(ctx, verb, &format!("skipped: {why}"));
         None
     };
     let skip = |why: &str, line: Option<String>| -> Option<String> {
         crate::runlog::log_note(ctx, verb, &format!("skipped: {why}"));
+        if kind == Half::Prompt {
+            return None;
+        }
         let n = if git_dir(&ws).is_dir() { record_skip(&ws, why) } else { 0 };
         if push {
             return None;
@@ -1428,6 +1531,24 @@ pub fn hook_half_with(ctx: &Ctx, push: bool, budget: Duration) -> Option<String>
             )),
         );
     }
+    if kind == Half::Prompt {
+        // Read on the hub without git: no hub answers is the probe failing, and a hub tip
+        // this machine already merged or conflicted on is nothing new.
+        let url = private_hub_url(ctx)?;
+        if let (None, Some(branch)) = (not_a_folder(&url), head_branch(&ws)) {
+            let limit = (started + budget).saturating_duration_since(Instant::now());
+            match hub_tip(&hub_dir_from_url(&url).join(PRIVATE_REPO), &branch, limit) {
+                None => return pass("the hub is unreachable"),
+                Some(Some(tip)) => {
+                    let pulled = std::fs::read_to_string(git_dir(&ws).join(PULLED_FILE)).ok().map(|t| t.trim().to_string());
+                    if pulled.as_deref() == Some(tip.as_str()) || recorded_conflict(&ws).as_deref() == Some(tip.as_str()) {
+                        return None;
+                    }
+                }
+                Some(None) => {}
+            }
+        }
+    }
     let _lock = match SyncLock::take(&ws, false) {
         Lock::Taken(l) => l,
         Lock::Busy => return pass("another af sync is running"),
@@ -1440,7 +1561,12 @@ pub fn hook_half_with(ctx: &Ctx, push: bool, budget: Duration) -> Option<String>
             )
         }
     };
-    let cap = Instant::now() + budget;
+    // A prompt's budget runs from its start and covers the probe; the others' cover the
+    // network steps after a probe of their own.
+    let (cap, reserve) = match kind {
+        Half::Prompt => (started + budget, PROMPT_RESERVE),
+        _ => (Instant::now() + budget, MERGE_RESERVE),
+    };
     let hub = hub_dir_from_url(&private_hub_url(ctx)?);
     let g = Git::new(&ws, Some(cap)).trusting(&hub.to_string_lossy());
     match inspect_hub(&g, "workspace") {
@@ -1452,7 +1578,8 @@ pub fn hook_half_with(ctx: &Ctx, push: bool, budget: Duration) -> Option<String>
     if recorded_conflict(&ws).is_some_and(|rec| g.is_ancestor(&rec, "HEAD")) {
         let _ = std::fs::remove_file(git_dir(&ws).join(CONFLICT_FILE));
     }
-    if !probe(&hub.join(PRIVATE_REPO).join("HEAD"), HOOK_PROBE) {
+    let probe_limit = if kind == Half::Prompt { cap.saturating_duration_since(Instant::now()) } else { HOOK_PROBE };
+    if !probe(&hub.join(PRIVATE_REPO).join("HEAD"), probe_limit) {
         return pass("the hub is unreachable");
     }
     let Some(branch) = g.branch() else {
@@ -1482,11 +1609,12 @@ pub fn hook_half_with(ctx: &Ctx, push: bool, budget: Duration) -> Option<String>
     }
     let theirs = format!("{REMOTE}/{branch}");
     let mut line = None;
+    let mut pulled = None;
     if let Some(their_head) = g.rev(&theirs) {
         if recorded_conflict(&ws).as_deref() == Some(their_head.as_str()) {
             return skip("the hub still has the commit that conflicted; af sync resolves it", Some(conflict_line()));
         }
-        if cap.saturating_duration_since(Instant::now()) < MERGE_RESERVE {
+        if cap.saturating_duration_since(Instant::now()) < reserve {
             return pass("too little time left to start the merge");
         }
         let before = g.rev("HEAD");
@@ -1504,6 +1632,9 @@ pub fn hook_half_with(ctx: &Ctx, push: bool, budget: Duration) -> Option<String>
             return skip(&format!("merge failed: {}", m.why()), None);
         }
         if before != g.rev("HEAD") {
+            if let Some(b) = &before {
+                record_brought(&ws, &g.paths(&["diff", "--name-only", "-z", b, "HEAD"]));
+            }
             rerender(ctx);
             let _ = g.run(&["add", "-A"]);
             if !g.paths(&["diff", "--cached", "--name-only", "-z"]).is_empty() {
@@ -1512,6 +1643,7 @@ pub fn hook_half_with(ctx: &Ctx, push: bool, budget: Duration) -> Option<String>
             let _ = crate::hooks::index_refresh::refresh_after_sync(&ctx.root);
             line = Some("AgentFrame sync: brought in the other machine's latest private changes.".to_string());
         }
+        pulled = Some(their_head);
     }
     if push {
         let ours = format!("refs/heads/{branch}");
@@ -1519,6 +1651,10 @@ pub fn hook_half_with(ctx: &Ctx, push: bool, budget: Duration) -> Option<String>
         if !p.ok() {
             return net_skip("push", &p);
         }
+        pulled = g.rev("HEAD");
+    }
+    if let Some(head) = pulled {
+        let _ = std::fs::write(git_dir(&ws).join(PULLED_FILE), format!("{head}\n"));
     }
     clear_state(&ws);
     if push {
@@ -1526,6 +1662,33 @@ pub fn hook_half_with(ctx: &Ctx, push: bool, budget: Duration) -> Option<String>
     } else {
         line
     }
+}
+
+/// The branch `workspace/.git/HEAD` names, read without git.
+fn head_branch(ws: &Path) -> Option<String> {
+    let head = std::fs::read_to_string(git_dir(ws).join("HEAD")).ok()?;
+    head.trim().strip_prefix("ref: refs/heads/").map(str::to_string)
+}
+
+/// The tip of `branch` in a hub repository, read from its ref files within `limit`: None when
+/// the hub does not answer (no repository there, or a hung share, abandoned), Some(None) when
+/// no ref file names the branch.
+fn hub_tip(repo: &Path, branch: &str, limit: Duration) -> Option<Option<String>> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let (repo, name) = (repo.to_path_buf(), format!("refs/heads/{branch}"));
+    std::thread::spawn(move || {
+        if !repo.join("HEAD").is_file() {
+            let _ = tx.send(None);
+            return;
+        }
+        let loose = std::fs::read_to_string(join_rel(&repo, &name)).ok().map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
+        let tip = loose.or_else(|| {
+            let packed = std::fs::read_to_string(repo.join("packed-refs")).ok()?;
+            packed.lines().find_map(|l| l.split_once(' ').filter(|(_, r)| r.trim() == name).map(|(sha, _)| sha.to_string()))
+        });
+        let _ = tx.send(Some(tip));
+    });
+    rx.recv_timeout(limit).unwrap_or(None)
 }
 
 /// Whether a file on the hub answers within `limit`; a hung share is abandoned, not awaited.

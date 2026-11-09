@@ -19,7 +19,7 @@ fn test_claude_reference_wires_all_guards() {
             }
         }
     }
-    for event in ["session-start", "stop", "session-end", "notification", "pre-tool-use", "post-tool-use"] {
+    for event in ["session-start", "stop", "session-end", "notification", "pre-tool-use", "post-tool-use", "user-prompt-submit"] {
         let want = format!("AF_ROOT=\"${{CLAUDE_PROJECT_DIR}}\" af hook {event}");
         assert!(commands.iter().any(|c| c == &want), "{event}");
     }
@@ -37,6 +37,9 @@ fn test_claude_reference_wires_all_guards() {
     for ev in ["SessionStart", "Stop"] {
         assert_eq!(config["hooks"][ev][0]["hooks"][0]["timeout"], 30, "{ev}");
     }
+    // The per-message pull caps itself at about two seconds; every prompt runs it.
+    assert_eq!(matchers("UserPromptSubmit"), [""]);
+    assert_eq!(config["hooks"]["UserPromptSubmit"][0]["hooks"][0]["timeout"], 5);
     let deny = config["permissions"]["deny"].as_array().cloned().unwrap_or_default();
     assert!(!deny.iter().any(|d| d.as_str().unwrap_or("").contains("git push")), "a push is a prompt, not a deny: {deny:?}");
     assert_eq!(config["permissions"]["ask"], serde_json::json!(["Bash(git push)", "Bash(git push *)"]));

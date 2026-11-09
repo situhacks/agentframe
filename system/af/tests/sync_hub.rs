@@ -434,15 +434,17 @@ fn a_hanging_hub_never_holds_the_hook_past_its_limit() {
     let w = World::new();
     w.checkout_a();
     w.git("a/workspace", &["remote", "add", "hub", "//10.255.255.1/agentframe-hub/workspace.git"]);
-    for event in ["stop", "session-start"] {
+    for event in ["stop", "session-start", "user-prompt-submit"] {
         let t = Instant::now();
         let o = Command::cargo_bin("af").unwrap().env("AF_ROOT", w.p("a")).args(["hook", event]).write_stdin("{}").output().unwrap();
         let took = t.elapsed();
         assert_eq!(o.status.code(), Some(0));
-        assert!(took < Duration::from_secs(5), "af hook {event} took {took:?}");
+        // The per-message pull holds a turn about two seconds at most.
+        let limit = if event == "user-prompt-submit" { 3 } else { 5 };
+        assert!(took < Duration::from_secs(limit), "af hook {event} took {took:?}");
         eprintln!("af hook {event}: {took:?}");
     }
-    assert_eq!(run_log(&w, "a").matches("skipped: the hub is unreachable").count(), 2);
+    assert_eq!(run_log(&w, "a").matches("skipped: the hub is unreachable").count(), 3);
 }
 
 /// The hub as a network share: the temp folder reached through the loopback admin share.
@@ -989,4 +991,177 @@ fn init_checks_the_clone_address_in_the_scope_the_clone_uses() {
 #[test]
 fn briefs_merge_line_by_line() {
     assert!(!with_attr_block("").contains("life/briefs"), "nothing re-renders a brief, so keep-ours would drop one");
+}
+
+// ------------------------------------------------------------------ the per-message pull
+
+/// The per-message pull in this process with a budget no loaded test machine runs past, so
+/// what it tells the chat never depends on timing; "" when it tells nothing.
+fn prompt(w: &World, root: &str, session: Option<&str>) -> String {
+    sync::prompt_half_with(&w.ctx(root), session, Duration::from_secs(60)).unwrap_or_default()
+}
+
+/// `af hook user-prompt-submit` as the harness runs it: the context it gives the chat, or ""
+/// when it prints nothing. `session` None sends a payload without a session id; `git` false
+/// runs it where no git program can start.
+fn prompt_hook(w: &World, root: &str, session: Option<&str>, git: bool) -> String {
+    let payload = match session {
+        Some(s) => serde_json::json!({"session_id": s, "hook_event_name": "UserPromptSubmit", "prompt": "what is on the list?"}),
+        None => serde_json::json!({"hook_event_name": "UserPromptSubmit", "prompt": "what is on the list?"}),
+    };
+    let mut cmd = Command::cargo_bin("af").unwrap();
+    cmd.env("AF_ROOT", w.p(root)).args(["hook", "user-prompt-submit"]).write_stdin(payload.to_string());
+    if !git {
+        cmd.env("PATH", w.p("no-programs-here"));
+    }
+    let o = cmd.output().unwrap();
+    assert_eq!(o.status.code(), Some(0), "the prompt hook never blocks: {}", String::from_utf8_lossy(&o.stderr));
+    let out = String::from_utf8_lossy(&o.stdout).trim().to_string();
+    if out.is_empty() {
+        return out;
+    }
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap_or_else(|e| panic!("{e}: {out}"));
+    assert_eq!(v["hookSpecificOutput"]["hookEventName"], "UserPromptSubmit", "{out}");
+    v["hookSpecificOutput"]["additionalContext"].as_str().unwrap().to_string()
+}
+
+/// What the per-message pull costs, as the harness pays it (process start included). Ignored
+/// by default because it measures this machine: `cargo test --test sync_hub cost -- --ignored
+/// --nocapture --test-threads=1`.
+#[test]
+#[ignore]
+fn the_per_message_pull_cost() {
+    let w = World::new();
+    w.two_machines();
+    let time = |what: &str| {
+        let t = Instant::now();
+        let out = prompt_hook(&w, "b", Some("s-b"), true);
+        eprintln!("{what}: {:?} ({} lines)", t.elapsed(), out.lines().count());
+    };
+    time("first prompt, nothing new");
+    for i in 0..3 {
+        time(&format!("nothing new {i}"));
+    }
+    for i in 0..3 {
+        edit(&w, "a/workspace/life/open.md", "first loop", &format!("first loop {i}"));
+        assert_eq!(sync::hook_half(&w.ctx("a"), true), None);
+        time(&format!("one change from A {i}"));
+    }
+    w.write("b/workspace/life/knowledge/local.md", PAGE);
+    time("a local edit to commit, nothing new");
+    let gone = w.p("nowhere/workspace.git").to_string_lossy().replace('\\', "/");
+    w.git("b/workspace", &["remote", "set-url", "hub", &gone]);
+    time("hub folder missing");
+}
+
+fn listed(block: &str) -> Vec<String> {
+    block.lines().filter_map(|l| l.strip_prefix("- ")).map(str::to_string).collect()
+}
+
+#[test]
+fn a_prompt_lists_the_paths_the_other_machine_changed_then_nothing() {
+    let w = World::new();
+    w.two_machines();
+    assert_eq!(prompt(&w, "b", Some("s-b")), "", "nothing new on the hub");
+    edit(&w, "a/workspace/life/open.md", "first loop", "first loop, milk added on A");
+    w.write("a/workspace/life/knowledge/second.md", PAGE);
+    assert_eq!(sync::hook_half(&w.ctx("a"), true), None);
+
+    let block = prompt(&w, "b", Some("s-b"));
+    assert!(block.lines().next().unwrap_or("").contains("the other machine changed"), "{block}");
+    assert_eq!(listed(&block), ["workspace/life/knowledge/second.md", "workspace/life/open.md"], "{block}");
+    assert!(w.read("b/workspace/life/open.md").contains("milk added on A"), "the files themselves are current");
+    assert_eq!(prompt(&w, "b", Some("s-b")), "", "shown once");
+
+    // With nothing new on the hub the hook reads two ref files and runs no git at all.
+    let log = run_log(&w, "b");
+    assert_eq!(prompt_hook(&w, "b", Some("s-b"), false), "");
+    assert_eq!(run_log(&w, "b"), log, "nothing tried, nothing skipped");
+}
+
+#[test]
+fn a_prompt_caps_the_list_at_ten_paths() {
+    let w = World::new();
+    w.two_machines();
+    for i in 0..13 {
+        w.write(&format!("a/workspace/life/knowledge/note-{i:02}.md"), PAGE);
+    }
+    assert_eq!(sync::hook_half(&w.ctx("a"), true), None);
+    // Without a session id the hook still says what its own pull brought.
+    let block = prompt(&w, "b", None);
+    assert_eq!(listed(&block).len(), 10, "{block}");
+    assert_eq!(block.lines().last(), Some("and 3 more"), "{block}");
+}
+
+#[test]
+fn a_change_another_hook_merged_reaches_the_chat_at_its_next_prompt() {
+    let w = World::new();
+    w.two_machines();
+    assert_eq!(prompt(&w, "b", Some("s-b")), "");
+    edit(&w, "a/workspace/life/open.md", "third loop", "third loop, from A");
+    assert_eq!(sync::hook_half(&w.ctx("a"), true), None);
+    // B's stop hook (this chat's own, or another chat's on B) merges it and prints nothing.
+    assert_eq!(sync::hook_half(&w.ctx("b"), true), None);
+    assert!(w.read("b/workspace/life/open.md").contains("third loop, from A"));
+    // The real hook process: the hub has nothing B lacks, so no git runs and only the list goes out.
+    assert_eq!(listed(&prompt_hook(&w, "b", Some("s-b"), false)), ["workspace/life/open.md"]);
+    assert_eq!(prompt(&w, "b", Some("s-b")), "");
+    assert_eq!(prompt(&w, "b", Some("s-later")), "", "a chat that starts after the merge reads the new files");
+}
+
+#[test]
+fn a_prompt_with_an_unreachable_hub_skips_fast_and_prints_nothing() {
+    let w = World::new();
+    w.checkout_a();
+    let gone = w.p("nowhere/workspace.git").to_string_lossy().replace('\\', "/");
+    w.git("a/workspace", &["remote", "add", "hub", &gone]);
+    let t = Instant::now();
+    assert_eq!(prompt_hook(&w, "a", Some("s-a"), true), "");
+    assert!(t.elapsed() < Duration::from_secs(2), "{:?}", t.elapsed());
+    let log = run_log(&w, "a");
+    assert!(log.contains("hook user-prompt-submit sync") && log.contains("skipped: the hub is unreachable"), "{log}");
+
+    // A skip at a prompt is logged, never counted toward the session-start warning.
+    w.write("a/workspace/.git/index.lock", "");
+    for _ in 0..3 {
+        assert_eq!(prompt_hook(&w, "a", Some("s-a"), true), "");
+    }
+    assert!(run_log(&w, "a").contains("skipped: a git lock is held"));
+    assert_eq!(sync::hook_half(&w.ctx("a"), false), None, "prompt skips do not count");
+}
+
+#[test]
+fn a_conflict_at_a_prompt_is_told_once_and_not_merged_again() {
+    let w = World::new();
+    w.two_machines();
+    assert_eq!(prompt(&w, "b", Some("s-b")), "");
+    edit(&w, "a/workspace/life/open.md", "second loop", "second loop, A");
+    edit(&w, "b/workspace/life/open.md", "second loop", "second loop, B");
+    assert_eq!(sync::hook_half(&w.ctx("a"), true), None);
+
+    let block = prompt(&w, "b", Some("s-b"));
+    assert!(!w.p("b/workspace/.git/MERGE_HEAD").exists(), "the merge was undone");
+    assert!(w.read("b/workspace/life/open.md").contains("second loop, B"));
+    let open = w.p("b/workspace/life/open.md");
+    set_age(&open, 3600);
+    let stamp = std::fs::metadata(&open).unwrap().modified().unwrap();
+    assert_eq!(prompt(&w, "b", Some("s-b")), "", "told once");
+    assert_eq!(std::fs::metadata(&open).unwrap().modified().unwrap(), stamp, "not merged and undone again");
+    assert_eq!(run_log(&w, "b").matches("the merge conflicted and was undone").count(), 1, "{}", run_log(&w, "b"));
+    assert_eq!(prompt(&w, "b", Some("s-new")), "", "a chat with no prompt yet heard it at session start");
+    // The same line session start prints for the same recorded conflict.
+    assert_eq!(Some(block), sync::hook_half(&w.ctx("b"), false));
+}
+
+#[test]
+fn a_conflict_the_stop_hook_met_reaches_the_open_chat_once() {
+    let w = World::new();
+    w.two_machines();
+    assert_eq!(prompt(&w, "b", Some("s-b")), "");
+    edit(&w, "a/workspace/life/open.md", "second loop", "second loop, A");
+    edit(&w, "b/workspace/life/open.md", "second loop", "second loop, B");
+    assert_eq!(sync::hook_half(&w.ctx("a"), true), None);
+    assert_eq!(sync::hook_half(&w.ctx("b"), true), None, "the stop hook records it and prints nothing");
+    assert!(prompt(&w, "b", Some("s-b")).contains("Run af sync"));
+    assert_eq!(prompt(&w, "b", Some("s-b")), "");
 }

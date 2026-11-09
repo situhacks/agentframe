@@ -134,7 +134,7 @@ pub fn dispatch(h: &HookCtx, event: &str, stdin_text: &str) -> Result<Option<PyV
     Ok(combine(results))
 }
 
-pub const EVENTS: [&str; 6] = ["pre-tool-use", "post-tool-use", "session-start", "stop", "session-end", "notification"];
+pub const EVENTS: [&str; 7] = ["pre-tool-use", "post-tool-use", "session-start", "stop", "session-end", "notification", "user-prompt-submit"];
 
 fn emit(o: crate::sessions::HookOutput) -> i32 {
     if !o.stdout.is_empty() {
@@ -179,6 +179,15 @@ pub fn main(args: &[String]) -> i32 {
                 let _ = crate::sync::hook_half(&h.ctx, true);
             }
             return emit(o);
+        }
+        "user-prompt-submit" => {
+            // The pull half on every message, bounded; the chat hears only what came in.
+            let payload: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
+            let session = payload.get("session_id").and_then(Value::as_str);
+            if let Some(block) = crate::sync::prompt_half(&h.ctx, session) {
+                out::line(&pyjson::dumps(&context("UserPromptSubmit", &block)));
+            }
+            return 0;
         }
         "session-end" => return emit(sessions::hook_session_end(&h.ctx, &text)),
         "notification" => return emit(sessions::hook_notification(&h.ctx, &text)),

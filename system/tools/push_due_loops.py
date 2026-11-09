@@ -8,7 +8,7 @@ push-due-loops.ps1 is the scheduler's entry point; this file does the work.
 
 The loop sweep runs just before and hands over today's overdue list
 (workspace/life/systems/loop-sweep-overdue.json, library/schema/loop-sweep.md):
-those loops lead the message in the sweep's words and are left out of the
+those loops lead the message in his own words and are left out of the
 sections below, so each goes out once. A stale or missing handoff changes
 nothing. Discord is a third-party service, so every loop passes the
 off_discord filter: one that looks sensitive or holds a private term shows
@@ -77,17 +77,14 @@ def load_handoff(root: Path, today: dt.date) -> list[dict] | None:
 
 
 def overdue_section(items: list[dict], terms: list[str] | None) -> tuple[str, int]:
-    """The sweep's overdue loops as the message's first section, and how many it kept off
-    Discord. An item with no words to show was kept off the board, so it only counts."""
+    """The sweep's overdue loops as the message's first section, in his own words, and how many it
+    kept off Discord."""
     lines, hidden = [], 0
     for x in items:
-        show = x.get("show")
-        if terms is None or not isinstance(show, str) or not show or off_discord.is_private((x["text"], show), terms):
+        if terms is None or off_discord.is_private((x["text"],), terms):
             hidden += 1
             continue
-        why = ", ".join(str(w) for w in x.get("why") or [])
-        lines.append(f"- **{off_discord.mask(show, amounts=True)}** · due {x.get('due')} · {x.get('days')}d over"
-                     + (f" · {why}" if why else ""))
+        lines.append(f"- **{off_discord.mask(x['text'])}** · due {x.get('due')} · {x.get('days')}d over")
     text = "\n".join([f"## {OVERDUE}", "", *lines]) if lines else ""
     return text, hidden
 
@@ -97,7 +94,7 @@ def render(loops: list[dict], today: dt.date, overdue: list[dict] | None = None,
     """Headings per section, one bullet per loop; no tables (they do not render on a phone).
     The sweep's overdue loops come first and once; a loop that must stay off Discord counts.
     Amounts and long numbers are masked. With no private terms file (terms is None) nothing that
-    names a loop goes out: only the counts, as the board is not posted then either."""
+    names a loop goes out: only the counts."""
     due_texts = {l["text"] for l in loops}
     overdue = [x for x in overdue or [] if x["text"] in due_texts]
     handed = {x["text"] for x in overdue}
@@ -122,7 +119,7 @@ def render(loops: list[dict], today: dt.date, overdue: list[dict] | None = None,
         for l in shown:
             if l.get("section", "") != s:
                 continue
-            bullet = f"- **{off_discord.mask(l['text'], amounts=True)}** · nudged {l.get('nudge')}"
+            bullet = f"- **{off_discord.mask(l['text'])}** · nudged {l.get('nudge')}"
             if l.get("every"):
                 bullet += f" · every {l['every']}"
             bullet += f" · open {l.get('age_days', 0)}d"

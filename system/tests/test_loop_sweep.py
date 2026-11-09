@@ -23,6 +23,7 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "system" / "tools"))
 
 import loop_sweep as ls  # noqa: E402
+import off_discord  # noqa: E402
 
 TODAY = dt.date(2026, 3, 10)
 NOW = dt.datetime(2026, 3, 10, 8, 20)
@@ -90,7 +91,7 @@ header
 ## Book the dentist cleaning appointment
 
 - Verdict: update (the model said done; it is from his own sent mail)
-- From: `no-reply@janeapp.com (Clinic)`
+- From: `no-reply@booking.example (Clinic)`
 - Date: 2026-03-09
 - Subject: `Re: cleaning`
 - Quote: `see you then`
@@ -168,73 +169,127 @@ class WatchTests(unittest.TestCase):
 
 
 class AmountTests(unittest.TestCase):
-    def test_amounts_compare_as_numbers_on_whole_tokens(self):
-        self.assertEqual(ls.loop_amounts("Claim $40 from Robin"), {Decimal("40")})
-        self.assertEqual(ls.loop_amounts("Claim 40.00 from Robin"), {Decimal("40")}, "40.00 is 40")
-        self.assertNotIn(Decimal("40"), ls.loop_amounts("Claim $400 from Robin"), "40 does not match 400")
-        self.assertEqual(ls.loop_amounts("Send 40$ and C$15, then 1,200.50"), {Decimal("40"), Decimal("15"),
-                                                                               Decimal("1200.50")})
-        for none in ("Return item #40", "Budget 40k", "Call at 10:30 on 3/8", "Meet Mar 8 at 8 am", "Lunch the 12th",
-                     "Due 2026-03-08", "Cite src-2026-03-08-40", "Sam 40/month"):
-            self.assertEqual(ls.loop_amounts(none), set(), none)
+    def test_an_amount_needs_a_currency_or_a_decimal_part(self):
+        self.assertEqual(ls.amounts("Claim $40 from Robin"), {Decimal("40")})
+        self.assertEqual(ls.amounts("Claim 40.00 from Robin"), {Decimal("40")}, "40.00 is 40")
+        self.assertEqual(ls.amounts("Claim 40.5 from Robin"), {Decimal("40.50")})
+        self.assertNotIn(Decimal("40"), ls.amounts("Claim $400 from Robin"), "40 does not match 400")
+        self.assertEqual(ls.amounts("Send 40$ and C$15, then 1,200.50, then CAD 7 and 9 CAD"),
+                         {Decimal("40"), Decimal("15"), Decimal("1200.50"), Decimal("7"), Decimal("9")})
+        for none in ("Return 2 books to the library", "Collect 40 for the gym", "Return item #40", "Budget $40k",
+                     "Call at 10:30 on 3/8", "Meet Mar 8 at 8 am", "Lunch the 12th", "Due 2026-03-08",
+                     "Cite src-2026-03-08-40", "Sam 40/month", "Windows 10"):
+            self.assertEqual(ls.amounts(none), set(), none)
 
     def test_an_email_states_amounts_with_a_currency(self):
-        self.assertEqual(ls.email_amounts("has sent you $40.00 (CAD)"), {Decimal("40")})
-        self.assertEqual(ls.email_amounts("vous a envoyé 40,00 $"), {Decimal("40")})
-        self.assertEqual(ls.email_amounts("CAD 1,200.00 and 7 CAD"), {Decimal("1200"), Decimal("7")})
-        self.assertEqual(ls.email_amounts("order 40 of 400 items"), set(), "a bare number is not an amount")
+        self.assertEqual(ls.amounts("has sent you $40.00 (CAD)"), {Decimal("40")})
+        self.assertEqual(ls.amounts("vous a envoyé 40,00 $"), {Decimal("40")})
+        self.assertEqual(ls.amounts("CAD 1,200.00 and 7 CAD"), {Decimal("1200"), Decimal("7")})
+        self.assertEqual(ls.amounts("order 40 of 400 items"), set(), "a bare number is not an amount")
+        self.assertEqual(ls.amounts("40.001 $"), set(), "40.001 is not 40.00, and 001 is not 1")
 
 
-class ProofTests(unittest.TestCase):
-    """Rule 1: a close needs an allowlisted sender and a tie to this loop."""
-    CARDS = {"Fernhollow Visa": ["fernhollow.example"]}
+MOVED = "Interac e-Transfer: ROBIN MARSH sent you money."
+
+
+class InteracTests(unittest.TestCase):
+    """Rule 1 for Interac: the money moved, and the email names the loop's person or amount."""
 
     def test_interac_ties_by_the_counterpartys_name(self):
-        email = interac("Interac e-Transfer: ROBIN MARSH sent you money.")
+        email = interac(MOVED)
         self.assertIn("person", ls.ties(loop_of("Claim the e-transfer from Robin"), email, {}))
-        self.assertIn("person", ls.ties(loop_of("Robin owes me for the cabin"), email, {}))
         self.assertIsNone(ls.ties(loop_of("Claim the e-transfer from the club"), email, {}))
         self.assertIsNone(ls.ties(loop_of("claim the e-transfer from robin"), email, {}),
                           "a name must be written as a name in the loop")
         sent = interac("INTERAC e-Transfer: Your money transfer to ROBIN MARSH was deposited.")
         self.assertIsNotNone(ls.ties(loop_of("Send Marsh the deposit"), sent, {}))
-        self.assertEqual(ls.interac_names("INTERAC e-Transfer: A money request from Rénée Ostrander"), {"renee", "ostrander"})
+        got = interac("INTERAC e-Transfer: You've received $5.00 from ROBIN MARSH and it has been automatically deposited.")
+        self.assertIsNotNone(ls.ties(loop_of("It's time to collect from Robin"), got, {}))
+        self.assertEqual(ls.interac_names("INTERAC e-Transfer: Rénée Ostrander sent you money."), {"renee", "ostrander"})
         self.assertEqual(ls.interac_names("Deposit complete"), set())
 
+    def test_the_loops_first_word_is_never_a_name(self):
+        for first, name in (("Bill the client for October", "BILL NG"), ("Chase Dana for the cabin money", "CHASE QUAYLE"),
+                            ("Mark the deposit as paid for Dana", "MARK WU"), ("Will check the cabin booking", "WILL SMITH"),
+                            ("Robin owes me for the cabin", "ROBIN MARSH")):
+            email = interac(f"INTERAC e-Transfer: {name} sent you money.")
+            self.assertIsNone(ls.ties(loop_of(first), email, {}), first)
+
+    def test_only_money_that_moved_is_proof(self):
+        loop = loop_of("Pay Robin back $40 for dinner")
+        for subject, quote in (("INTERAC e-Transfer: ROBIN MARSH sent you money.", ""),
+                               ("INTERAC e-Transfer: Your money transfer to ROBIN MARSH was deposited.", ""),
+                               ("INTERAC e-Transfer: ROBIN MARSH accepted your money transfer.", ""),
+                               ("Interac e-Transfer", "your $40.00 has been deposited")):
+            self.assertIsNotNone(ls.ties(loop, interac(subject, quote), {}), subject)
+        for subject, quote in (("INTERAC e-Transfer: Request from ROBIN MARSH", ""),
+                               ("INTERAC e-Transfer: ROBIN MARSH has requested $40.00 from you", ""),
+                               ("INTERAC e-Transfer: Your money transfer to ROBIN MARSH was cancelled.", ""),
+                               ("INTERAC e-Transfer: Your request to ROBIN MARSH for $40.00 was declined", "deposited"),
+                               ("INTERAC e-Transfer: Your transfer to ROBIN MARSH has expired", ""),
+                               ("Reminder: ROBIN MARSH sent you money.", ""),
+                               ("INTERAC e-Transfer: ROBIN MARSH sent you money.", "it has not been deposited yet"),
+                               ("INTERAC e-Transfer: ROBIN MARSH sent you money.", "it hasn't been deposited"),
+                               ("INTERAC e-Transfer: a transfer to ROBIN MARSH", "$40.00 is on its way")):
+            self.assertIsNone(ls.ties(loop, interac(subject, quote), {}), (subject, quote))
+
     def test_interac_ties_by_the_exact_amount(self):
-        email = interac("Interac e-Transfer: a deposit of $40.00 (CAD)")
+        email = interac("Interac e-Transfer: $40.00 (CAD) has been deposited")
         self.assertIn("amount", ls.ties(loop_of("Collect $40 for the gym"), email, {}))
-        self.assertIn("amount", ls.ties(loop_of("Collect 40 for the gym"), email, {}))
+        self.assertIn("amount", ls.ties(loop_of("Collect 40.00 for the gym"), email, {}))
+        self.assertIsNone(ls.ties(loop_of("Collect 40 for the gym"), email, {}), "a bare number is no amount")
         self.assertIsNone(ls.ties(loop_of("Collect $400 for the gym"), email, {}), "40 does not match 400")
         self.assertIsNone(ls.ties(loop_of("Collect $4 for the gym"), email, {}))
-        self.assertIsNone(ls.ties(loop_of("Collect the gym money"), email, {}))
+        self.assertIsNone(ls.ties(loop_of("Return 2 books to the library"), interac("$2.00 has been deposited"), {}))
         quoted = interac("Deposit complete", "the $40.00 has been deposited")
         self.assertIsNotNone(ls.ties(loop_of("Collect 40.00 for the gym"), quoted, {}))
 
     def test_only_interac_itself_is_interac(self):
         loop = loop_of("Claim the e-transfer from Robin")
-        subject = "Interac e-Transfer: ROBIN MARSH sent you money."
-        self.assertIsNotNone(ls.ties(loop, hit("x@INTERAC.CA", subject), {}))
+        self.assertIsNotNone(ls.ties(loop, hit("x@INTERAC.CA", MOVED), {}))
         for address in ("x@interac.ca.evil.example", "x@interac-ca.example", "x@evilinterac.ca", "x@interac.ca.",
                         "x@ınterac.ca", "x@gmail.com", "no address"):
-            self.assertIsNone(ls.ties(loop, hit(address, subject), {}), address)
+            self.assertIsNone(ls.ties(loop, hit(address, MOVED), {}), address)
 
-    def test_a_card_issuer_ties_only_to_a_loop_that_names_its_card(self):
+
+class ProofTests(unittest.TestCase):
+    """Rule 1: a close needs an allowlisted sender and a tie to this loop."""
+    CARDS = {"Fernhollow Visa": ["fernhollow.example"], "Clementine Mastercard": ["clementine.example"],
+             "Visa": ["bank.example"]}
+
+    def test_a_card_issuer_ties_only_to_a_loop_that_names_its_card_as_whole_words(self):
         email = hit("alerts@fernhollow.example", "Payment received")
         self.assertIn("card", ls.ties(loop_of("Pay the Fernhollow statement"), email, self.CARDS))
-        self.assertIn("card", ls.ties(loop_of("Pay the Fernhollow Visa"), email, self.CARDS))
-        self.assertIsNone(ls.ties(loop_of("Pay Robin back $40"), email, self.CARDS))
-        self.assertIsNone(ls.ties(loop_of("Pay the visa application fee"), email, self.CARDS))
+        self.assertIn("card", ls.ties(loop_of("Pay the fernhollow visa"), email, self.CARDS))
+        for none in ("Pay Robin back $40", "Pay the visa application fee", "Buy fernhollows for the garden"):
+            self.assertIsNone(ls.ties(loop_of(none), email, self.CARDS), none)
         self.assertIsNone(ls.ties(loop_of("Pay the Fernhollow statement"), email, {}), "an issuer not in bills.md")
+        clementine = hit("statements@clementine.example", "Your statement")
+        self.assertIsNotNone(ls.ties(loop_of("Pay the Clementine card"), clementine, self.CARDS))
+        self.assertIsNone(ls.ties(loop_of("Buy clementines for the party"), clementine, self.CARDS))
+        bank = hit("alerts@bank.example", "Statement ready")
+        self.assertIsNone(ls.ties(loop_of("Renew the travel visa for the trip"), bank, self.CARDS),
+                          "a card named only for its network names nothing")
 
-    def test_a_ticketing_platform_ties_to_a_loop_naming_it_or_its_event(self):
-        email = hit("orders@eventbrite.com", "Your tickets for Harbour Lantern Night")
-        self.assertIsNotNone(ls.ties(loop_of("Get tickets for the lantern night by the harbour"), email, {}))
-        self.assertIsNotNone(ls.ties(loop_of("Sort out the Eventbrite refund"), email, {}))
-        self.assertIsNone(ls.ties(loop_of("Book tickets for the jazz show"), email, {}), "ticket words do not name an event")
-        self.assertIsNone(ls.ties(loop_of("Lantern for the balcony"), email, {}), "one shared word is not enough")
-        self.assertIsNone(ls.ties(loop_of("Get tickets for the lantern night by the harbour"),
-                                  hit("orders@harbourlantern.example", "Your tickets for Harbour Lantern Night"), {}))
+    def test_a_ticketing_platform_needs_a_receipt_and_its_name_in_the_loop(self):
+        receipt = hit("orders@eventbrite.com", "Your tickets for Harbour Lantern Night")
+        self.assertIsNotNone(ls.ties(loop_of("Get the Eventbrite tickets for lantern night"), receipt, {}))
+        self.assertIsNone(ls.ties(loop_of("Get tickets for the lantern night by the harbour"), receipt, {}),
+                          "shared event words are not enough")
+        self.assertIsNone(ls.ties(loop_of("Get the Eventbrite tickets for lantern night"),
+                                  hit("orders@eventbrite.com", "New events near you"), {}), "not a receipt")
+        for subject in ("Order #4412 receipt", "Booking confirmed", "Your confirmation"):
+            self.assertIsNotNone(ls.ties(loop_of("Sort out the Ticketmaster seats"),
+                                         hit("x@ticketmaster.ca", subject), {}), subject)
+        self.assertIsNotNone(ls.ties(loop_of("Book the Tock dinner for Friday"),
+                                     hit("x@exploretock.com", "Your reservation is confirmed"), {}),
+                             "the loop uses the platform's own name, not its domain")
+        for address, loop in (("info@meetup.com", "Meetup with Sam on Friday"), ("x@dice.fm", "Buy dice for game night"),
+                              ("x@universe.com", "Watch the Universe documentary"),
+                              ("x@partiful.com", "Partiful invite for the potluck")):
+            self.assertIsNone(ls.ties(loop_of(loop), hit(address, "Order confirmed"), {}), address)
+        self.assertIsNone(ls.ties(loop_of("Get the Eventbrite tickets"),
+                                  hit("orders@harbourlantern.example", "Your tickets"), {}))
 
     def test_a_sender_the_loop_names_is_not_proof(self):
         """The named-sender close is gone: anyone can register a domain."""
@@ -307,27 +362,26 @@ class OverdueTests(unittest.TestCase):
             self.assertNotIn(N[not_overdue], names, not_overdue)
 
     def test_only_an_applied_close_leaves_the_overdue_list(self):
-        for applied, handed in ((None, True), (False, True), (True, False)):
+        """A failed close stays reminded; a close not tried (report-only) is listed once, as would-close."""
+        for applied, handed in ((None, False), (False, True), (True, False)):
             sw = sweep()
             sw.closes = [ls.Close(loops()[N["etransfer"] - 1], "x", applied)]
             ls.find_overdue(sw)
             self.assertEqual(N["etransfer"] in {x.n for x in sw.overdue}, handed, applied)
 
-    def test_the_handoff_carries_board_words_and_no_words_for_a_loop_kept_off(self):
+    def test_the_handoff_carries_his_own_loop_text_and_nothing_written_for_it(self):
         sw = sweep()
         ls.find_overdue(sw)
-        items = {x["text"]: x for x in ls.handoff_items(sw, {N["gym"]: "Pay the gym fee"})}
+        items = {x["text"]: x for x in ls.handoff_items(sw)}
         self.assertEqual(items["Pay the gym fee of $40 by 03-08"],
-                         {"text": "Pay the gym fee of $40 by 03-08", "show": "Pay the gym fee", "due": "2026-03-07", "days": 3})
-        self.assertIsNone(items[ET_TEXT]["show"])
-        no_plan = {x["text"]: x for x in ls.handoff_items(sw, None)}
-        self.assertEqual(no_plan["Pay the gym fee of $40 by 03-08"]["show"], "Pay the gym fee of $40 by 03-08")
+                         {"text": "Pay the gym fee of $40 by 03-08", "due": "2026-03-07", "days": 3})
+        self.assertTrue(all(set(x) == {"text", "due", "days"} for x in items.values()))
 
     def test_the_sweep_sends_nothing_itself_and_writes_todays_handoff(self):
         sw = sweep()
         ls.find_overdue(sw)
         with tempfile.TemporaryDirectory() as d, mock.patch("notify.main") as notify_main:
-            ls.handoff(sw, Path(d), lines=None)
+            ls.handoff(sw, Path(d))
             data = json.loads((Path(d) / ls.HANDOFF).read_text(encoding="utf-8"))
         notify_main.assert_not_called()
         self.assertEqual(data["date"], "2026-03-10")
@@ -364,8 +418,9 @@ class ModelTests(unittest.TestCase):
         plan = ls.parse_plan('```json\n{"notice": [{"group": "duplicate", "ids": [10, 11, 10, "x", true]}, '
                              '{"group": "redate", "ids": [4]}, {"group": "stale"}], "board": [{"id": 4}, "x"]}\n```')
         self.assertEqual(plan.notice, [("duplicate", [10, 11])])
-        self.assertEqual(plan.board, [{"id": 4}])
-        for bad in ("not json", "[]", '{"notice": []}', '{"loops": [], "actions": [], "board": []}'):
+        self.assertFalse(hasattr(plan, "board"), "a board in the reply is ignored")
+        self.assertEqual(ls.parse_plan('{"notice": []}').notice, [])
+        for bad in ("not json", "[]", '{"notice": {}}', '{"loops": [], "actions": [], "board": []}'):
             with self.assertRaises(ls.PlanError):
                 ls.parse_plan(bad)
 
@@ -402,7 +457,7 @@ class ModelTests(unittest.TestCase):
         self.assertIn('"text": "Pay the gym fee of $40 by 03-08"', p)
         self.assertIn('"overdue_days": 3', p)
         self.assertIn("changes no loop", p)
-        for gone in ("close_", "redate", "<file", "Interac"):
+        for gone in ("close_", "redate", "<file", "Interac", "board", "Discord"):
             self.assertNotIn(gone, p)
 
 
@@ -424,35 +479,6 @@ class NoticeTests(unittest.TestCase):
         self.assertEqual(len(sw.noticed["stale"]), min(ls.MAX_NOTICED, 14))
 
 
-class BoardTests(unittest.TestCase):
-    def test_the_board_shows_open_loops_with_overdue_first_and_keeps_private_terms_off(self):
-        sw = sweep()
-        ls.find_overdue(sw)
-        plan = ls.Plan(board=[
-            {"id": N["gym"], "section": "Coming up", "line": "Pay the gym fee"},
-            {"id": N["cafe"], "section": "When you have time", "line": "Corner Cafe verdict"},
-            {"id": N["others"], "section": "Owed to you", "line": "Sam owes $15"},
-            {"id": N["needs"], "section": "Coming up", "line": "Renew or move"},
-            {"id": N["dentist_new"], "section": "Coming up", "line": "Cleaning"},
-            {"id": N["widget"], "section": "Nowhere", "line": "bad section"},
-            {"id": 99, "section": "Coming up", "line": "no such loop"},
-        ])
-        board = ls.render_board(sw, plan, loops(), ["dentist"])
-        self.assertTrue(board.startswith("**Open: what's waiting**"))
-        self.assertLess(board.index("**Overdue, not confirmed**"), board.index("**Owed to you**"))
-        self.assertIn("- Pay the gym fee (due 03-07, 3d over)", board)
-        self.assertIn("- Corner Cafe verdict", board)
-        self.assertIn("- Sam owes $15", board)
-        for gone in ("Renew or move", "Cleaning", "bad section", "no such loop"):
-            self.assertNotIn(gone, board)
-        self.assertIn("- 1 need you now in AgentFrame.", board)
-
-    def test_a_closed_loop_leaves_the_board(self):
-        plan = ls.Plan(board=[{"id": N["hat"], "section": "When you have time", "line": "Winter hat"}])
-        after = [x for x in loops() if x.n != N["hat"]]
-        self.assertNotIn("Winter hat", ls.render_board(sweep(), plan, after, []))
-
-
 # The reviews' cases: money, deadline, registration and appointment loops whose date passed.
 PASSED = ["Send rent to landlord Mar 1", "Transfer 500 to Sam on Mar 3", "Submit tax return Mar 3",
           "Hand in lease renewal form by Mar 3", "Register for the half marathon", "Return the shoes before the window closes",
@@ -471,8 +497,7 @@ class RunTests(unittest.TestCase):
         self.prompts = []
         self.plan = {"notice": [{"group": "duplicate", "ids": [N["dentist_old"], N["dentist_new"]]},
                                 {"group": "merge", "ids": [N["cafe"], N["gallery"]]},
-                                {"group": "stale", "ids": [N["finances"]]}],
-                     "board": [{"id": N["hat"], "section": "When you have time", "line": "Winter hat"}]}
+                                {"group": "stale", "ids": [N["finances"]]}]}
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -487,8 +512,8 @@ class RunTests(unittest.TestCase):
         return sorted(str(p.relative_to(self.root)) for p in self.root.rglob("*") if p.is_file())
 
     def terms_file(self):
-        (self.root / ls.BOARD_PRIVATE).parent.mkdir(parents=True, exist_ok=True)
-        (self.root / ls.BOARD_PRIVATE).write_text("# terms kept off Discord\n", encoding="utf-8")
+        (self.root / off_discord.TERMS_FILE).parent.mkdir(parents=True, exist_ok=True)
+        (self.root / off_discord.TERMS_FILE).write_text("# terms kept off Discord\n", encoding="utf-8")
 
     def run_main(self, *argv, run_af=None):
         run_af = run_af or fake_af()[0]
@@ -496,7 +521,8 @@ class RunTests(unittest.TestCase):
         with contextlib.redirect_stdout(out), mock.patch("notify.main", return_value=0) as push, \
                 mock.patch("discord_board.main", return_value=0) as board:
             code = ls.main(["--vault", str(self.root), *argv], now=NOW, run_claude=self.claude, run_af=run_af)
-        return code, out.getvalue(), push, board
+        board.assert_not_called()
+        return code, out.getvalue(), push
 
     def report(self):
         return (self.root / ls.REPORT).read_text(encoding="utf-8")
@@ -505,7 +531,7 @@ class RunTests(unittest.TestCase):
         self.terms_file()
         before = (self.root / ls.OPEN).read_bytes()
         run_af, calls = fake_af()
-        code, out, push, board = self.run_main(run_af=run_af)
+        code, out, push = self.run_main(run_af=run_af)
         self.assertEqual(code, 0, out)
         self.assertEqual(calls, [], "no af call at all")
         self.assertEqual((self.root / ls.OPEN).read_bytes(), before)
@@ -513,36 +539,35 @@ class RunTests(unittest.TestCase):
         self.assertIn(f"- Would close (report-only, not applied): #{N['etransfer']} {ET_TEXT} → Sweep 2026-03-10: "
                       "an email of 2026-03-09 from payments.interac.ca", report)
         self.assertIn("### Passed with no proof", report)
-        self.assertIn(f"- #{N['etransfer']} {ET_TEXT} (due 2026-03-09)", report, "not closed, so still reminded")
+        self.assertNotIn(f"- #{N['etransfer']} {ET_TEXT} (due", report, "listed once, under would-close")
+        self.assertEqual(report.count(ET_TEXT), 1)
         self.assertIn("### Looks like a duplicate", report)
         self.assertIn("### Could be merged", report)
         self.assertIn("### Looks stale", report)
-        self.assertIn("- Board: not changed: report-only", report)
+        self.assertNotIn("Board", report)
         self.assertRegex(report, r"(?m)^Loops 14 · report-only · closed 0 · would close 1 · ambiguous 0 · "
-                                 r"passed with no proof 7 · duplicates 1 · merges 1 · stale 1 · failures 0 · cost \$0\.11$")
+                                 r"passed with no proof 6 · duplicates 1 · merges 1 · stale 1 · failures 0 · cost \$0\.11$")
         handed = json.loads((self.root / ls.HANDOFF).read_text(encoding="utf-8"))
-        self.assertIn(ET_TEXT, [x["text"] for x in handed["items"]])
+        self.assertNotIn(ET_TEXT, [x["text"] for x in handed["items"]])
+        self.assertIn("Pay the gym fee of $40 by 03-08", [x["text"] for x in handed["items"]])
         push.assert_not_called()
-        board.assert_not_called()
-        self.assertFalse((self.root / ls.BOARD).exists())
+        self.assertFalse((self.root / "workspace/life/systems/discord/boards/open.md").exists())
 
-    def test_live_closes_on_proof_through_af_and_posts_the_board(self):
+    def test_live_closes_on_proof_through_af_and_posts_nothing(self):
         self.terms_file()
         run_af, calls = fake_af()
-        code, out, push, board = self.run_main("--live", run_af=run_af)
+        code, out, push = self.run_main("--live", run_af=run_af)
         self.assertEqual(code, 0, out)
         self.assertEqual(calls, [["open", "close", ET_TEXT, "--outcome",
-                                  "Sweep 2026-03-10: an email of 2026-03-09 from payments.interac.ca (Interac, for the "
-                                  "amount the loop names) proves it done"]])
+                                  "Sweep 2026-03-10: an email of 2026-03-09 from payments.interac.ca (Interac, money "
+                                  "moved, for the amount the loop names) proves it done"]])
         report = self.report()
         self.assertIn(f"- Closed: #{N['etransfer']} {ET_TEXT}", report)
         self.assertNotIn(f"- #{N['etransfer']} {ET_TEXT} (due", report, "closed, so not reminded")
         self.assertIn("· live · closed 1 · would close 0", report)
-        board.assert_called_once()
-        self.assertEqual(board.call_args.args[0][:2], ["board", "open"])
-        self.assertNotIn("--dry-run", board.call_args.args[0])
-        self.assertIn("Winter hat", (self.root / ls.BOARD).read_text(encoding="utf-8"))
+        self.assertNotIn("Board", report)
         push.assert_not_called()
+        self.assertFalse((self.root / "workspace/life/systems/discord/boards/open.md").exists())
 
     def test_the_plan_asks_for_changes_and_nothing_but_the_proof_close_is_applied(self):
         """Old-shape actions in the reply are ignored; what they asked for is only reported."""
@@ -552,7 +577,7 @@ class RunTests(unittest.TestCase):
                                 {"do": "end_duplicate", "id": N["dentist_old"], "keep": N["dentist_new"]},
                                 {"do": "close_vault", "id": N["weigh"], "file": "workspace/life/log.md", "quote": "x"}]
         run_af, calls = fake_af()
-        code, out, _, _ = self.run_main("--live", run_af=run_af)
+        code, out, _ = self.run_main("--live", run_af=run_af)
         self.assertEqual(code, 0, out)
         self.assertEqual([c[:3] for c in calls], [["open", "close", ET_TEXT]])
         report = self.report()
@@ -565,9 +590,9 @@ class RunTests(unittest.TestCase):
     def test_a_passed_date_closes_nothing_and_each_loop_is_reminded(self):
         body = "".join(f"- [ ] 2026-02-20 · {t} · nudge 2026-03-03 · from: main\n" for t in PASSED)
         (self.root / ls.OPEN).write_text(f"## Waiting on the operator\n\n### Errands\n{body}", encoding="utf-8")
-        self.plan = {"notice": [], "board": []}
+        self.plan = {"notice": []}
         run_af, calls = fake_af()
-        code, out, _, _ = self.run_main("--live", run_af=run_af)
+        code, out, _ = self.run_main("--live", run_af=run_af)
         self.assertEqual(calls, [])
         handed = json.loads((self.root / ls.HANDOFF).read_text(encoding="utf-8"))
         self.assertEqual([x["text"] for x in handed["items"]], PASSED)
@@ -577,7 +602,7 @@ class RunTests(unittest.TestCase):
     def test_a_failed_close_is_reported_and_the_loop_stays_open_and_reminded(self):
         def run_af(root, args):
             return 1, "no open loop starts with that text"
-        code, out, _, _ = self.run_main("--live", run_af=run_af)
+        code, out, _ = self.run_main("--live", run_af=run_af)
         self.assertEqual(code, 1)
         report = self.report()
         self.assertIn(f"- Failed: close #{N['etransfer']} {ET_TEXT}: no open loop starts with that text; it stays open",
@@ -627,18 +652,17 @@ class RunTests(unittest.TestCase):
         self.terms_file()
         before = {p: (self.root / p).read_bytes() for p in self.files()}
         run_af, calls = fake_af()
-        code, out, push, board = self.run_main("--dry-run", run_af=run_af)
+        code, out, push = self.run_main("--dry-run", run_af=run_af)
         self.assertEqual(code, 0, out)
         self.assertEqual({p: (self.root / p).read_bytes() for p in self.files()}, before)
         self.assertEqual(calls, [])
         push.assert_not_called()
-        board.assert_not_called()
         self.assertIn("Would close (dry-run, not applied)", out)
         self.assertIn("What the 08:30 push would lead with:", out)
         self.assertIn("Dry run.", out)
 
     def test_a_later_morning_can_be_previewed_only_as_a_dry_run(self):
-        code, out, _, _ = self.run_main("--dry-run", "--today", "2026-03-12")
+        code, out, _ = self.run_main("--dry-run", "--today", "2026-03-12")
         self.assertIn("Loop sweep plan for 2026-03-12", out)
         self.assertIn("Today is 2026-03-12", self.prompts[-1])
         for argv in (["--today", "2026-03-12"], ["--dry-run", "--live"]):
@@ -652,15 +676,10 @@ class RunTests(unittest.TestCase):
         for email_text in ("payments.interac.ca", "deposited", "QUILLON ROWING", "Loop watch"):
             self.assertNotIn(email_text, self.prompts[0])
 
-    def test_without_the_private_terms_file_a_live_run_does_not_post(self):
-        code, out, _, board = self.run_main("--live")
-        board.assert_not_called()
-        self.assertIn("not posted: write", self.report())
-
     def test_a_crash_after_closing_still_writes_the_report(self):
         with mock.patch.object(ls, "handoff", side_effect=PermissionError("locked")), \
                 contextlib.redirect_stderr(io.StringIO()):
-            code, out, _, _ = self.run_main("--live")
+            code, out, _ = self.run_main("--live")
         self.assertEqual(code, 1)
         report = self.report()
         self.assertIn("- Closed: #3", report)
@@ -671,7 +690,7 @@ class RunTests(unittest.TestCase):
         (self.root / ls.REPORT).mkdir(parents=True)  # a directory where the report goes
         err = io.StringIO()
         with contextlib.redirect_stderr(err):
-            code, out, _, _ = self.run_main("--live")
+            code, out, _ = self.run_main("--live")
         self.assertEqual(code, 1)
         self.assertIn("could not write the report", err.getvalue())
         self.assertIn("- Closed: #3", out)
@@ -684,7 +703,7 @@ class RunTests(unittest.TestCase):
         def claude(prompt, model):
             seen.append((self.root / ls.RUNNING).exists())
             return real(prompt, model)
-        with contextlib.redirect_stdout(io.StringIO()), mock.patch("discord_board.main", return_value=0):
+        with contextlib.redirect_stdout(io.StringIO()):
             for argv in ([], ["--live"], ["--dry-run"]):
                 ls.main(["--vault", str(self.root), *argv], now=NOW, run_claude=claude, run_af=fake_af()[0])
         self.assertEqual(seen, [True, True, False])
@@ -693,15 +712,14 @@ class RunTests(unittest.TestCase):
     def test_no_plan_still_closes_on_proof_and_reminds(self):
         self.plan = "not json"
         run_af, calls = fake_af()
-        code, out, _, board = self.run_main("--live", run_af=run_af)
+        code, out, _ = self.run_main("--live", run_af=run_af)
         self.assertEqual(code, 1)
         self.assertEqual([c[:3] for c in calls], [["open", "close", ET_TEXT]])
         handed = json.loads((self.root / ls.HANDOFF).read_text(encoding="utf-8"))
-        self.assertIn("Pay the gym fee of $40 by 03-08", [x["show"] for x in handed["items"]],
+        self.assertIn("Pay the gym fee of $40 by 03-08", [x["text"] for x in handed["items"]],
                       "with no plan the loop's own text goes, for the push to filter")
         report = self.report()
         self.assertIn("- Failed: no plan: the model's reply is not JSON", report)
-        self.assertIn("- Board: not changed: no board lines", report)
 
     def test_the_report_keeps_the_last_runs(self):
         old = ls.HEADER + "\n" + "".join(f"## Run 2026-01-{i:02d} 08:20\n\nLoops 1\n\n" for i in range(1, 31)) * 3
@@ -762,7 +780,9 @@ class ScheduleTests(unittest.TestCase):
 
     def test_the_judgement_machinery_is_gone(self):
         for name in ("zero_stakes", "guarded", "urgency_of", "plain_social", "SOCIAL_RE", "STAKE_PARTS", "check_action",
-                     "_apply_add", "redated_before", "evidence_files", "check_numbering", "similarity"):
+                     "_apply_add", "redated_before", "evidence_files", "check_numbering", "similarity",
+                     "render_board", "post_board", "publish_board", "board_lines", "BOARD", "BOARD_PRIVATE",
+                     "loop_amounts", "email_amounts"):
             self.assertFalse(hasattr(ls, name), name)
 
 

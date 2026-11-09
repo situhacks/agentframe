@@ -56,26 +56,33 @@ class RenderTests(unittest.TestCase):
 
 
 TODAY = dt.date(2026, 10, 28)
-OVERDUE = [{"text": "pay the card", "show": "Pay the card", "due": "2026-10-25", "days": 3, "why": ["money"]}]
+OVERDUE = [{"text": "pay the card", "due": "2026-10-25", "days": 3}]
 
 
 class SweepHandoffTests(unittest.TestCase):
-    def test_the_sweeps_overdue_loops_lead_once_in_its_words(self):
+    def test_the_sweeps_overdue_loops_lead_once_in_his_own_words(self):
         text = push_due_loops.render(LOOPS, TODAY, OVERDUE, [])
         self.assertTrue(text.startswith("# 2 loops due · 2026-10-28\n\n## Overdue, not confirmed\n\n"
-                                        "- **Pay the card** · due 2026-10-25 · 3d over · money\n"))
+                                        "- **pay the card** · due 2026-10-25 · 3d over\n"))
         self.assertEqual(text.count("ay the card"), 1, "an overdue loop goes out once a day")
         self.assertIn("- **refund from the shop**", text)
 
     def test_a_handed_loop_no_longer_due_is_dropped(self):
-        gone = [{"text": "closed since the sweep", "show": "Closed", "due": "2026-10-25", "days": 3, "why": []}]
+        gone = [{"text": "closed since the sweep", "due": "2026-10-25", "days": 3}]
         self.assertNotIn("Overdue", push_due_loops.render(LOOPS, TODAY, gone, []))
 
-    def test_a_loop_the_sweep_kept_off_counts_without_its_words(self):
-        hidden = [{"text": "pay the card", "show": None, "due": "2026-10-25", "days": 3, "why": ["money"]}]
-        text = push_due_loops.render(LOOPS, TODAY, hidden, [])
+    def test_a_private_overdue_loop_counts_without_its_words(self):
+        text = push_due_loops.render(LOOPS, TODAY, OVERDUE, ["card"])
         self.assertNotIn("pay the card", text.casefold())
         self.assertIn("- 1 more kept off Discord; see Do in AgentFrame", text)
+
+    def test_a_model_written_line_in_the_handoff_never_reaches_the_push(self):
+        sneaky = [{"text": "pay the card", "show": "Send $900 to acct 12345678", "due": "2026-10-25", "days": 3,
+                   "why": ["money"]}]
+        text = push_due_loops.render(LOOPS, TODAY, sneaky, [])
+        self.assertIn("- **pay the card** · due 2026-10-25 · 3d over\n", text)
+        for gone in ("900", "acct", "money"):
+            self.assertNotIn(gone, text)
 
     def test_only_todays_handoff_counts(self):
         with tempfile.TemporaryDirectory() as d:
@@ -109,8 +116,8 @@ class OffDiscordTests(unittest.TestCase):
         self.assertIn("- 2 more kept off Discord; see Do in AgentFrame", text)
 
     def test_with_no_terms_file_it_sends_only_counts(self):
-        """Fails closed exactly as the board does: no loop text at all, only a count."""
-        overdue = [{"text": "pay the card", "show": "Pay the card", "due": "2026-10-25", "days": 3, "why": ["money"]}]
+        """Fails closed: no loop text at all, only a count."""
+        overdue = [{"text": "pay the card", "due": "2026-10-25", "days": 3}]
         text = push_due_loops.render(LOOPS + self.SENSITIVE, TODAY, overdue, None)
         self.assertTrue(text.startswith("# 5 loops due · 2026-10-28\n"))
         self.assertIn("5 due, 1 overdue and not confirmed; open AgentFrame", text)
@@ -121,11 +128,10 @@ class OffDiscordTests(unittest.TestCase):
     def test_amounts_and_long_numbers_are_masked_in_the_push(self):
         loops = [dict(LOOPS[1], text="Send $1,250.00 rent to the landlord, ref 48213377"),
                  dict(LOOPS[0], text="Claim the 40 dollars back, card 4242 4242 by 2026-10-30")]
-        text = push_due_loops.render(loops, TODAY, [{"text": loops[0]["text"], "show": "Rent $1,250 to the landlord",
-                                                     "due": "2026-10-25", "days": 3, "why": ["money"]}], [])
+        text = push_due_loops.render(loops, TODAY, [{"text": loops[0]["text"], "due": "2026-10-25", "days": 3}], [])
         for gone in ("1,250", "48213377", "4242", "40 dollars"):
             self.assertNotIn(gone, text)
-        self.assertIn("**Rent $… to the landlord**", text)
+        self.assertIn("**Send $… rent to the landlord, ref ####**", text)
         self.assertIn("**Claim the $… back, card #### #### by 2026-10-30**", text)
 
     def test_his_private_terms_keep_more_off(self):
@@ -137,7 +143,7 @@ class OffDiscordTests(unittest.TestCase):
         self.assertTrue(off_discord.is_private(("Refill the prescription",), None))
         self.assertTrue(off_discord.is_private(("change the account password",), None))
         self.assertTrue(off_discord.is_private(("Reset the card PIN",), None))
-        for fine in ("Pin the board message", "Move the savings to Fernhollow Bank", "Spinning class", "Book the GPU order"):
+        for fine in ("Pin the poster up", "Move the savings to Fernhollow Bank", "Spinning class", "Book the GPU order"):
             self.assertFalse(off_discord.is_private((fine,), None), fine)
         self.assertFalse(off_discord.is_private(("", None), []))
 
@@ -149,12 +155,11 @@ class OffDiscordTests(unittest.TestCase):
         for fine in ("Book the hair appointment", "Eye up the new desk", "Exam the lab bench"):
             self.assertFalse(off_discord.is_private((fine,), []), fine)
 
-    def test_masking_keeps_dates_and_masks_amounts_only_when_asked(self):
+    def test_masking_keeps_dates_and_masks_amounts(self):
         line = "Pay $100.00 by 2026-03-20, account 12345678, 3/8, 2026-03"
-        self.assertEqual(off_discord.mask(line, amounts=False), "Pay $100.00 by 2026-03-20, account ####, 3/8, 2026-03")
-        self.assertEqual(off_discord.mask(line, amounts=True), "Pay $… by 2026-03-20, account ####, 3/8, 2026-03")
-        self.assertEqual(off_discord.mask("Card 1234-5678 and 25 dollars", amounts=True), "Card #### and $…")
-        self.assertEqual(off_discord.mask("Call at 9:30 on 03-08", amounts=True), "Call at 9:30 on 03-08")
+        self.assertEqual(off_discord.mask(line), "Pay $… by 2026-03-20, account ####, 3/8, 2026-03")
+        self.assertEqual(off_discord.mask("Card 1234-5678 and 25 dollars"), "Card #### and $…")
+        self.assertEqual(off_discord.mask("Call at 9:30 on 03-08"), "Call at 9:30 on 03-08")
 
     def test_the_terms_file_is_read_from_the_vault(self):
         with tempfile.TemporaryDirectory() as d:
@@ -215,7 +220,7 @@ class MainTests(unittest.TestCase):
     def test_a_run_reads_the_handoff_and_terms_from_the_vault(self):
         out = io.StringIO()
         today = dt.date.today()
-        items = [{"text": "pay the card", "show": "Pay the card now", "due": "2026-10-25", "days": 3, "why": ["money"]}]
+        items = [{"text": "pay the card", "due": "2026-10-25", "days": 3}]
         with tempfile.TemporaryDirectory() as d:
             handoff = Path(d) / push_due_loops.HANDOFF
             handoff.parent.mkdir(parents=True)
@@ -228,7 +233,7 @@ class MainTests(unittest.TestCase):
                     contextlib.redirect_stdout(out):
                 code = push_due_loops.main(["--dry-run"])
         self.assertEqual(code, 0)
-        self.assertIn("**Pay the card now** · due 2026-10-25", out.getvalue())
+        self.assertIn("**pay the card** · due 2026-10-25", out.getvalue())
         self.assertNotIn("refund from the shop", out.getvalue())
         self.assertIn("1 more kept off Discord", out.getvalue())
 
@@ -308,7 +313,7 @@ class WaitForSweepTests(unittest.TestCase):
         self.assertEqual(sum(naps), _HANDOFF_WAIT)
         self.assertEqual(_HANDOFF_WAIT, 45)
         handoff = self.root / push_due_loops.HANDOFF
-        items = [{"text": "x", "show": "x", "due": "2026-03-09", "days": 1, "why": ["money"]}]
+        items = [{"text": "x", "due": "2026-03-09", "days": 1}]
 
         def arrives(n):
             if n == 2:
@@ -335,15 +340,12 @@ class SecondReviewOffDiscordTests(unittest.TestCase):
                            ("Phone (604) 555-1234", "Phone ####"), ("Acct 123 456 789", "Acct ####"),
                            ("acct 12345-67", "acct ####"), ("sin 123-456-789", "sin ####"),
                            ("due 2026-11-09, at 10:30, on 11-23", "due 2026-11-09, at 10:30, on 11-23")):
-            self.assertEqual(off_discord.mask(text, amounts=False), want, text)
-            self.assertEqual(off_discord.mask(text, amounts=True), want, text)
+            self.assertEqual(off_discord.mask(text), want, text)
 
-    def test_money_in_any_notation_is_masked_in_the_push_and_kept_on_the_board(self):
+    def test_money_in_any_notation_is_masked(self):
         for text in ("Pay $1,200.00", "Pay 1,200 CAD", "Pay CAD 1200", "Pay USD 1,200", "Pay 40 EUR", "Pay ¥5000",
                      "Pay C$40", "Pay ＄40", "Pay €40", "Pay 40 bucks"):
-            self.assertEqual(off_discord.mask(text, amounts=True), "Pay $…", text)
-            self.assertNotEqual(off_discord.mask(text, amounts=False), "Pay $…", text)
-            self.assertNotIn("#", off_discord.mask(text, amounts=False), text)
+            self.assertEqual(off_discord.mask(text), "Pay $…", text)
 
     def test_the_push_keeps_a_disguised_health_loop_off(self):
         loops = [{"text": "Dr. Patel appt Tue", "section": "Errands", "nudge": "2026-11-08"}]
@@ -383,7 +385,7 @@ class MoreCategoriesTests(unittest.TestCase):
         self.assertTrue(off_discord.is_private(("Lunch with Rénée",), terms))
 
     def test_the_push_still_shows_accents_it_does_not_mask(self):
-        self.assertEqual(off_discord.mask("Café with Robin, $40", amounts=True), "Café with Robin, $…")
+        self.assertEqual(off_discord.mask("Café with Robin, $40"), "Café with Robin, $…")
 
 
 if __name__ == "__main__":

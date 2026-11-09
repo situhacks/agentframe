@@ -1,8 +1,8 @@
-"""What stays off Discord: the one filter for every surface that posts his loops there.
+"""What stays off Discord: the filter for the 08:30 push of his loops.
 
-Discord is a third-party service. A loop whose text, or the line written for it, matches the
-built-in sensitive categories (health, medication, therapy, passwords, account numbers) or one of
-his private terms is kept off: the board leaves it out, and the push counts it without its words.
+Discord is a third-party service. A loop whose text matches the built-in sensitive categories
+(health, medication, therapy, passwords, account numbers) or one of his private terms is kept off:
+the push counts it without its words.
 
 Text is normalised before any match (normalize()): NFKC, so fullwidth letters and signs read as
 plain ones; zero-width and soft-hyphen characters removed; and Cyrillic and Greek lookalike
@@ -11,14 +11,12 @@ dropped). "ＭＥＤＳ", "den<zero-width>tist", "mеds" with a Cyrillic e, and 
 
 His own terms (names, topics) live in the private, gitignored
 workspace/life/systems/discord/boards/open-private.txt, one a line, `#` for a comment. Without
-that file nothing that names a loop goes out: the board is not posted, and the push sends only a
-count.
+that file nothing that names a loop goes out: the push sends only a count.
 
-Numbers are masked, not hidden (mask()). Everywhere: any token holding four or more digits that
-is not a date or a time, and any grouped digit run (123-456-789, 604-555-1234, 4520 1234 5678).
-In the push only: an amount of money in any notation ($40, C$40, 40 CAD, USD 1,200, 40 EUR,
-¥5000, 40 bucks). The push shows as a notification preview on his lock screen; the #open board is
-a pinned message he opens, and what his bills come to is its point.
+Numbers are masked, not hidden (mask()): any token holding four or more digits that is not a
+date or a time, and any grouped digit run (123-456-789, 604-555-1234, 4520 1234 5678), as "####";
+an amount of money in any notation ($40, C$40, 40 CAD, USD 1,200, 40 EUR, ¥5000, 40 bucks) as
+"$…". The push shows as a notification preview on his lock screen.
 """
 
 from __future__ import annotations
@@ -60,7 +58,7 @@ SENSITIVE = re.compile(
     r"(?:eye|skin|ear|foot|hearing|vision|lab|derm)\s+(?:appointments?|exams?|tests?))(?!\w)",
     re.IGNORECASE,
 )
-ACRONYMS = re.compile(r"\b(?:PIN|SIN)s?\b")  # in capitals only: "pin the board" is fine
+ACRONYMS = re.compile(r"\b(?:PIN|SIN)s?\b")  # in capitals only: "pin the poster" is fine
 
 _SIGN = "$¢£¤¥֏؋৲৳฿៛₠-⃀﷼"  # every currency sign, after NFKC
 _CODE = r"(?:CAD|USD|EUR|GBP|AUD|NZD|JPY|CHF|CNY|RMB|INR|MXN|HKD|SGD|KRW|SEK|NOK|DKK|BTC)"
@@ -99,14 +97,14 @@ def is_private(texts: tuple[str, ...] | list[str], terms: list[str] | None) -> b
     return False
 
 
-def mask(text: str, amounts: bool) -> str:
-    """The normalised text with numbers that could identify him masked as "####", and with
-    amounts=True each amount of money as "$…". Dates and times stay."""
+def mask(text: str) -> str:
+    """The normalised text with numbers that could identify him masked as "####" and each amount
+    of money as "$…". Dates and times stay."""
     def sub(m: re.Match) -> str:
         if m.group("date"):
             return m.group(0)
         if m.group("money"):
-            return "$…" if amounts else m.group(0)
+            return "$…"
         if m.group("grouped"):
             return "####"
         token = m.group(0)

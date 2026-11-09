@@ -1,7 +1,7 @@
 # The loop sweep, as Task Scheduler runs it (register-loop-sweep.ps1). Report-only by default: it
 # appends to workspace/life/systems/loop-sweep-report.md and hands overdue loops to the 08:30 push
 # (it sends nothing itself), and changes no loop; the closes it would make are in the report.
-# -Live also closes the loops an email proves done and posts the Discord #open board. By hand:
+# -Live also closes the loops an email proves done. By hand:
 #   powershell -NoProfile -File system\tools\loop-sweep.ps1 -DryRun   # print what a run would write; write nothing
 
 param(

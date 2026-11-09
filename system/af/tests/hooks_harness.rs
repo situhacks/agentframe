@@ -33,13 +33,12 @@ fn test_claude_reference_wires_all_guards() {
     assert_eq!(matchers("SessionStart"), ["startup|resume|clear|compact"]);
     assert_eq!(matchers("Notification"), ["agent_completed|agent_needs_input"]);
     assert_eq!(config["hooks"]["SessionEnd"][0]["hooks"][0]["timeout"], 10);
-    // The sync halves cap themselves at 15 seconds; the harness timeout is the backstop.
-    for ev in ["SessionStart", "Stop"] {
+    // The sync halves cap their network steps themselves; the harness timeout is only the
+    // backstop, long enough for a started merge to finish and release the sync lock.
+    for ev in ["SessionStart", "Stop", "UserPromptSubmit"] {
         assert_eq!(config["hooks"][ev][0]["hooks"][0]["timeout"], 30, "{ev}");
     }
-    // The per-message pull caps itself at about two seconds; every prompt runs it.
     assert_eq!(matchers("UserPromptSubmit"), [""]);
-    assert_eq!(config["hooks"]["UserPromptSubmit"][0]["hooks"][0]["timeout"], 5);
     let deny = config["permissions"]["deny"].as_array().cloned().unwrap_or_default();
     assert!(!deny.iter().any(|d| d.as_str().unwrap_or("").contains("git push")), "a push is a prompt, not a deny: {deny:?}");
     assert_eq!(config["permissions"]["ask"], serde_json::json!(["Bash(git push)", "Bash(git push *)"]));

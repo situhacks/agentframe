@@ -161,6 +161,8 @@ pub fn main(args: &[String]) -> i32 {
         "session-start" => {
             // The pull half first, so the bundle shows the other machine's latest loops.
             let synced = crate::sync::hook_half(&h.ctx, false);
+            let payload: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
+            crate::sync::mark_session_start(&h.ctx, payload.get("session_id").and_then(Value::as_str));
             let refresh = index_refresh::refresh(&h.root).map(str::to_string);
             let lead = match (synced, refresh) {
                 (None, r) => r,

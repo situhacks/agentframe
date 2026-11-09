@@ -1049,6 +1049,9 @@ fn sync_private(ctx: &Ctx, g: &Git, lock: &SyncLock) -> R<Private> {
         die!("sending the private layer to the hub failed: {}; rerun af sync", p.why());
     }
     outln!("Private layer: the hub has this machine's state.");
+    if let Some(head) = g.rev("HEAD") {
+        let _ = std::fs::write(git_dir(&ws).join(PULLED_FILE), format!("{head}\n"));
+    }
     Ok(Private::Done { brought })
 }
 
@@ -1432,36 +1435,90 @@ pub fn prompt_half(ctx: &Ctx, session: Option<&str>) -> Option<String> {
     prompt_half_with(ctx, session, PROMPT_BUDGET)
 }
 
+/// A chat's marker file; None for a missing session id or one that is not a plain name.
+fn seen_marker(ws: &Path, session: Option<&str>) -> Option<PathBuf> {
+    session
+        .filter(|s| !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'))
+        .map(|s| git_dir(ws).join(SEEN_DIR).join(s))
+}
+
+fn brought_len(ws: &Path) -> u64 {
+    std::fs::metadata(git_dir(ws).join(BROUGHT_FILE)).map(|m| m.len()).unwrap_or(0)
+}
+
+fn write_marker(ws: &Path, marker: &Path, at: u64, told: Option<&str>) {
+    let _ = std::fs::create_dir_all(git_dir(ws).join(SEEN_DIR));
+    let _ = std::fs::write(marker, format!("{at}\t{}\n", told.unwrap_or("")));
+}
+
+/// After session start's pull: a new chat has read every file and heard any conflict, so its
+/// first prompt reports only what arrives after this. A chat that already has a marker (a
+/// resumed one) keeps it and hears what came in while it was away.
+pub fn mark_session_start(ctx: &Ctx, session: Option<&str>) {
+    if private_hub_url(ctx).is_none() {
+        return;
+    }
+    let ws = PathBuf::from(vpath(ctx, "workspace"));
+    if let Some(m) = seen_marker(&ws, session).filter(|m| !m.exists() && git_dir(&ws).is_dir()) {
+        write_marker(&ws, &m, brought_len(&ws), recorded_conflict(&ws).as_deref());
+    }
+}
+
+/// The complete lines of the brought-paths log between `from` and `end` (bytes past `end`,
+/// appended meanwhile, wait for the next prompt; so does a line still being written), and
+/// the offset just past the last complete line.
+pub fn complete_lines(bytes: &[u8], from: u64, end: u64) -> (u64, Vec<String>) {
+    let end = (end as usize).min(bytes.len());
+    let from = (from as usize).min(end);
+    let span = &bytes[from..end];
+    let Some(last) = span.iter().rposition(|b| *b == b'\n') else { return (from as u64, Vec::new()) };
+    let lines = String::from_utf8_lossy(&span[..=last]).lines().filter(|l| !l.is_empty()).map(str::to_string).collect();
+    ((from + last + 1) as u64, lines)
+}
+
+/// A path as the chat's context may carry it: control, separator and formatting characters
+/// (a line or paragraph separator, a direction override) become `?`.
+pub fn printable(path: &str) -> String {
+    path.chars()
+        .map(|c| {
+            let hidden = c.is_control()
+                || matches!(c, '\u{200B}'..='\u{200F}' | '\u{2028}'..='\u{202E}' | '\u{2060}'..='\u{206F}' | '\u{FEFF}' | '\u{FFF9}'..='\u{FFFB}');
+            if hidden {
+                '?'
+            } else {
+                c
+            }
+        })
+        .collect()
+}
+
 /// `prompt_half` with its budget given.
 pub fn prompt_half_with(ctx: &Ctx, session: Option<&str>, budget: Duration) -> Option<String> {
     private_hub_url(ctx)?;
     let ws = PathBuf::from(vpath(ctx, "workspace"));
-    let log = git_dir(&ws).join(BROUGHT_FILE);
-    let log_len = || std::fs::metadata(&log).map(|m| m.len()).unwrap_or(0);
-    let marker = session
-        .filter(|s| !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'))
-        .map(|s| git_dir(&ws).join(SEEN_DIR).join(s));
+    let marker = seen_marker(&ws, session);
     let saved = marker.as_ref().and_then(|m| std::fs::read_to_string(m).ok()).and_then(|t| {
         let (at, told) = t.trim_end_matches(['\r', '\n']).split_once('\t')?;
         Some((at.parse::<u64>().ok()?, Some(told.to_string()).filter(|t| !t.is_empty())))
     });
-    let (from, told) = saved.unwrap_or_else(|| (log_len(), recorded_conflict(&ws)));
+    let (from, told) = saved.unwrap_or_else(|| (brought_len(&ws), recorded_conflict(&ws)));
     let _ = half(ctx, Half::Prompt, budget);
     if !git_dir(&ws).is_dir() {
         return None;
     }
-    let end = log_len();
+    let end = brought_len(&ws);
     let mut paths = BTreeSet::new();
+    let mut seen = end;
     if end > from {
-        if let Ok(bytes) = std::fs::read(&log) {
-            let new = bytes.get(from as usize..).unwrap_or_default();
-            paths.extend(String::from_utf8_lossy(new).lines().filter(|l| !l.is_empty()).map(str::to_string));
+        if let Ok(bytes) = std::fs::read(git_dir(&ws).join(BROUGHT_FILE)) {
+            let (at, lines) = complete_lines(&bytes, from, end);
+            seen = at;
+            paths.extend(lines);
         }
     }
     let conflict = recorded_conflict(&ws);
     if let Some(m) = &marker {
-        let _ = std::fs::create_dir_all(git_dir(&ws).join(SEEN_DIR));
-        let _ = std::fs::write(m, format!("{end}\t{}\n", conflict.as_deref().unwrap_or("")));
+        write_marker(&ws, m, seen, conflict.as_deref());
     }
     let mut out = Vec::new();
     if conflict.is_some() && conflict != told {
@@ -1469,7 +1526,7 @@ pub fn prompt_half_with(ctx: &Ctx, session: Option<&str>, budget: Duration) -> O
     }
     if !paths.is_empty() {
         out.push("AgentFrame sync: the other machine changed these files since this chat last looked; reread any you answer from:".to_string());
-        out.extend(paths.iter().take(PROMPT_LIST_CAP).map(|p| format!("- workspace/{p}")));
+        out.extend(paths.iter().take(PROMPT_LIST_CAP).map(|p| format!("- workspace/{}", printable(p))));
         if paths.len() > PROMPT_LIST_CAP {
             out.push(format!("and {} more", paths.len() - PROMPT_LIST_CAP));
         }

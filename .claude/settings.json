@@ -24,7 +24,7 @@
           {
             "type": "command",
             "command": "AF_ROOT=\"${CLAUDE_PROJECT_DIR}\" af hook user-prompt-submit",
-            "timeout": 5
+            "timeout": 30
           }
         ]
       }

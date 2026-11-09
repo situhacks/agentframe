@@ -1165,3 +1165,67 @@ fn a_conflict_the_stop_hook_met_reaches_the_open_chat_once() {
     assert!(prompt(&w, "b", Some("s-b")).contains("Run af sync"));
     assert_eq!(prompt(&w, "b", Some("s-b")), "");
 }
+
+/// `af hook session-start` as the harness runs it for one chat.
+fn session_start(w: &World, root: &str, session: &str, source: &str) {
+    let payload = serde_json::json!({"session_id": session, "source": source, "hook_event_name": "SessionStart"});
+    let o = Command::cargo_bin("af").unwrap().env("AF_ROOT", w.p(root)).args(["hook", "session-start"]).write_stdin(payload.to_string()).output().unwrap();
+    assert_eq!(o.status.code(), Some(0), "{}", String::from_utf8_lossy(&o.stderr));
+}
+
+#[test]
+fn a_change_merged_after_session_start_reaches_the_chat_at_its_first_prompt() {
+    let w = World::new();
+    w.two_machines();
+    session_start(&w, "b", "s-new", "startup");
+    edit(&w, "a/workspace/life/open.md", "third loop", "third loop, from A");
+    assert_eq!(sync::hook_half(&w.ctx("a"), true), None);
+    // Another chat's stop hook on B merges it before this chat's first prompt.
+    assert_eq!(sync::hook_half(&w.ctx("b"), true), None);
+    assert_eq!(listed(&prompt(&w, "b", Some("s-new"))), ["workspace/life/open.md"]);
+    assert_eq!(prompt(&w, "b", Some("s-new")), "");
+
+    // A resumed chat keeps its marker: what came in while it was away still reaches it.
+    edit(&w, "a/workspace/life/open.md", "first loop", "first loop, from A");
+    assert_eq!(sync::hook_half(&w.ctx("a"), true), None);
+    assert_eq!(sync::hook_half(&w.ctx("b"), true), None);
+    session_start(&w, "b", "s-new", "resume");
+    assert_eq!(listed(&prompt(&w, "b", Some("s-new"))), ["workspace/life/open.md"]);
+}
+
+#[test]
+fn a_path_reaches_the_chat_with_only_printable_characters() {
+    let w = World::new();
+    w.two_machines();
+    w.write("a/workspace/life/knowledge/odd\u{2028}name\u{202E}.md", PAGE);
+    assert_eq!(sync::hook_half(&w.ctx("a"), true), None);
+    let block = prompt(&w, "b", Some("s-b"));
+    assert!(!block.contains('\u{2028}') && !block.contains('\u{202E}'), "{block:?}");
+    assert_eq!(listed(&block), ["workspace/life/knowledge/odd?name?.md"], "{block:?}");
+    assert_eq!(sync::printable("a\u{7}b\u{85}c\u{200B}d e-é.md"), "a?b?c?d e-é.md");
+}
+
+#[test]
+fn the_brought_log_is_read_only_to_the_end_measured_and_only_whole_lines() {
+    let log = b"life/one.md\nlife/two.md\nlife/three.md\nlife/fo";
+    // Up to the measured end, never past it: a path appended meanwhile waits for the next prompt.
+    assert_eq!(sync::complete_lines(log, 0, 12), (12, vec!["life/one.md".to_string()]));
+    let (at, lines) = sync::complete_lines(log, 12, 38);
+    assert_eq!(lines, ["life/two.md", "life/three.md"]);
+    assert_eq!(at, 38);
+    // A line still being written is left for the next read, which starts where this one stopped.
+    assert_eq!(sync::complete_lines(log, 38, log.len() as u64), (38, Vec::<String>::new()));
+    assert_eq!(sync::complete_lines(log, 26, 36), (26, Vec::<String>::new()), "no newline in the span, nothing consumed");
+}
+
+#[test]
+fn the_prompt_after_a_manual_sync_runs_no_git() {
+    let w = World::new();
+    w.two_machines();
+    edit(&w, "a/workspace/life/open.md", "first loop", "first loop, from A");
+    w.sync_ok("a");
+    w.sync_ok("b");
+    let log = run_log(&w, "b");
+    assert_eq!(prompt_hook(&w, "b", Some("s-b"), false), "");
+    assert_eq!(run_log(&w, "b"), log, "af sync recorded what the hub has");
+}

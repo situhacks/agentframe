@@ -80,11 +80,28 @@ TICKETING = {"eventbrite.com": "Eventbrite", "eventbrite.ca": "Eventbrite", "tic
 FREEMAIL = ("gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "live.com", "msn.com", "yahoo.com",
             "icloud.com", "me.com", "proton.me", "protonmail.com", "aol.com")
 RECEIPT_RE = re.compile(r"\b(?:order|receipt|confirmed|your tickets|confirmation)\b", re.IGNORECASE)
-# Interac: proof only when the email says the money moved, and never when it is about a request, a
-# cancellation, a decline, an expiry, a reminder, or money not yet deposited.
-MOVED_RE = re.compile(r"\bsent you money\b|\bdeposited\b|\baccepted\b|\bfulfilled\b", re.IGNORECASE)
-NOT_MOVED_RE = re.compile(r"\brequest\w*|\bcancel\w*|\bdeclin\w*|\bexpir\w*|\bremind\w*|\bnot\b|n't\b", re.IGNORECASE)
+CANCELLED_RE = re.compile(r"\bcancel\w*|\brefund\w*", re.IGNORECASE)
+# Words a loop and a receipt's subject can share without naming the same event.
+EVENT_STOP = {"your", "with", "from", "this", "that", "have", "will", "been", "ticket", "tickets", "order", "orders",
+              "receipt", "confirmed", "confirmation", "booking", "booked", "book", "reservation", "reserved", "event",
+              "events", "night", "show", "party", "dinner", "lunch", "brunch", "table", "seats", "admission",
+              "general", "entry", "pass", "today", "tonight", "tomorrow", "evening", "morning", "afternoon",
+              "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "january", "february",
+              "march", "april", "june", "july", "august", "september", "october", "november", "december",
+              "people", "guests", "here", "details", "upcoming", "about", "into", "over", "next", "week"}
+# Interac: proof only when the email says, in one of Interac's completed wordings, that the money
+# moved; never when any word of it speaks of a request, a cancellation, a decline, an expiry, a
+# reminder, money not deposited, pending or coming back.
+MOVED_RE = re.compile(r"\bsent you money\b|\b(?:has been|was)(?: automatically)? deposited\b|"
+                      r"\bautomatically deposited\b|\baccepted\b|\bfulfilled\b", re.IGNORECASE)
+NOT_MOVED_RE = re.compile(r"\brequest\w*|\bcancel\w*|\bdeclin\w*|\bexpir\w*|\bremind\w*|\bnot\b|n't\b|\bnever\b|"
+                          r"\bunable\b|\bback\b|\bfail\w*|\bpending\b|\bwill be\b|\breturn\w*|\brevers\w*|"
+                          r"\brefund\w*|\breclaim\w*|\bstop\w*", re.IGNORECASE)
 NETWORKS = {"visa", "mastercard", "master card", "card", "credit card", "debit card"}  # name no card on their own
+# A word that, within three words of an issuer's name, shows the loop means the card or bank.
+CARD_WORDS = re.compile(r"cards?|credit|visa|mastercard|banks?|banking|statements?|payments?|bills?")
+_MONTHS_DAYS = {"january", "february", "march", "april", "may", "june", "july", "august", "september", "october",
+                "november", "december", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}
 
 _MON = (r"(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sept?(?:ember)?|"
         r"oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b\.?")
@@ -217,6 +234,10 @@ class WatchHit:
     date: str
     subject: str = ""
     quote: str = ""
+    text: str = ""  # every line the watch printed for this email, flattened: where refusal words are looked for
+
+    def everything(self) -> str:
+        return f"{self.subject} {self.quote} {self.text}"
 
 
 def read_watch(text: str, today: dt.date) -> dict[str, WatchHit]:
@@ -238,7 +259,8 @@ def read_watch(text: str, today: dt.date) -> dict[str, WatchHit]:
         quote = re.search(r"(?m)^- Quote: `([^`]*)`\s*$", body)
         if verdict and sender and date:
             out[head.strip()] = WatchHit(verdict.group(1).strip(), sender.group(1).strip(), date.group(1),
-                                         subject.group(1) if subject else "", quote.group(1) if quote else "")
+                                         subject.group(1) if subject else "", quote.group(1) if quote else "",
+                                         " ".join(l[2:] for l in body.splitlines() if l.startswith("- ")))
     return out
 
 
@@ -270,13 +292,49 @@ def _whole(name: str, text: str) -> bool:
     return bool(name) and f" {name} " in f" {words} "
 
 
+def _folded_words(text: str) -> list[str]:
+    return _WORD.findall(off_discord.normalize(text).casefold())
+
+
 def names_card(loop: Loop, card: str | None, domains: list[str]) -> bool:
-    """Whether the loop names this card or its issuer as whole words: the card's name from
-    bills.md, or the main label of one of its domains ("Pay Fernhollow" names fernhollow.example;
-    "Buy fernhollows" does not). A network name alone (Visa, Mastercard) names no card."""
-    names = [card] if card and " ".join(card.casefold().split()) not in NETWORKS else []
+    """Whether the loop names this card or its issuer. Either the card's full name from bills.md,
+    two words or more, as whole words ("Pay the Fernhollow Visa"); or the card's one-word name or
+    the main label of one of its domains with a card or bank word (card, credit, visa, mastercard,
+    bank, statement, payment, bill) within three words ("Pay the Fernhollow statement"). Issuer
+    names can be everyday words: "Buy a clementine" and "Chase Sam for the money" name no card. A
+    network name alone (Visa, Mastercard) names no card."""
+    words = _folded_words(loop.text)
+    full = " ".join(_folded_words(card or ""))
+    if full and full not in NETWORKS and len(full.split()) >= 2 and _whole(full, loop.text):
+        return True
+    names = [full] if full and full not in NETWORKS and len(full.split()) == 1 else []
     names += [registrable(d).split(".")[0] for d in domains]
-    return any(len(n) >= 3 and _whole(n, loop.text) for n in names)
+    near = [i for i, w in enumerate(words) if CARD_WORDS.fullmatch(w)]
+    return any(len(n) >= 3 and w == n and any(0 < abs(i - j) <= 3 for j in near)
+               for n in names for i, w in enumerate(words))
+
+
+def name_capitals(text: str) -> set[str]:
+    """The loop's capitalised words that can be a person's name, folded. Not a word that starts the
+    text or a sentence, follows a colon or semicolon, is or follows a possessive ("April's",
+    "Dana's Chase"), or names a month or a weekday: "TODO: Bill the client", "Ask Dana. Chase the
+    refund" and "Send April's rent" name no Bill, Chase or April."""
+    t = off_discord.normalize(text).replace("’", "'")
+    out = set()
+    for m in _WORD.finditer(t):
+        w = m.group(0)
+        before = t[:m.start()].rstrip()
+        if (not w[0].isupper() or not before or before[-1] in ".!?:;" or re.search(r"'s?$", before)
+                or re.match(r"'s?\b", t[m.end():]) or w.casefold() in _MONTHS_DAYS):
+            continue
+        out.add(w.casefold())
+    return out
+
+
+def event_words(text: str, platform: str) -> set[str]:
+    """The words of four letters or more that can name an event: not the platform's name and not a
+    word every receipt or loop shares (tickets, order, night, a weekday)."""
+    return {w for w in _folded_words(text) if len(w) >= 4 and w.isalpha()} - EVENT_STOP - set(_folded_words(platform))
 
 
 def amount(token: str) -> Decimal | None:
@@ -309,20 +367,21 @@ def interac_names(subject: str) -> set[str]:
 
 def ties(loop: Loop, hit: WatchHit, cards: dict[str, list[str]]) -> str | None:
     """Why this email proves this loop done, or None. The sender must be allowlisted and the email
-    must tie to the loop. Interac: the email says the money was deposited, accepted or fulfilled,
-    says nothing of a request, cancellation, decline, expiry or reminder, and names the loop's
-    person (a capitalised word of the loop other than its first) or its exact amount. A card
-    issuer: the loop names the card or issuer. A ticketing platform: the subject is a receipt or
-    confirmation, and the loop names the platform."""
+    must tie to the loop. Interac: the subject or quote says the money moved in one of Interac's
+    completed wordings (sent you money; has been, was or automatically deposited; accepted;
+    fulfilled), no line of the email speaks of a request, cancellation, decline, expiry, reminder,
+    pending or returned money, and the email names the loop's person (see name_capitals) or its
+    exact amount. A card issuer: the loop names the card or issuer (see names_card). A ticketing
+    platform: the subject is a receipt or confirmation, nothing in the email is cancelled or
+    refunded, the loop names the platform, and the loop shares an event word with the subject."""
     domain = _domain(hit.address)
     if not re.fullmatch(r"[a-z0-9-]+(?:\.[a-z0-9-]+)+", domain) or any(_under(domain, f) for f in FREEMAIL):
         return None
     if _under(domain, INTERAC):
         email = f"{hit.subject} {hit.quote}"
-        if not MOVED_RE.search(email) or NOT_MOVED_RE.search(email):
+        if not MOVED_RE.search(email) or NOT_MOVED_RE.search(hit.everything()):
             return None
-        capitals = {w.casefold() for w in _WORD.findall(off_discord.normalize(loop.text))[1:] if w[0].isupper()}
-        if interac_names(hit.subject) & capitals:
+        if interac_names(hit.subject) & name_capitals(loop.text):
             return "Interac, money moved, to or from the person the loop names"
         if amounts(email) & amounts(loop.text):
             return "Interac, money moved, for the amount the loop names"
@@ -332,8 +391,9 @@ def ties(loop: Loop, hit: WatchHit, cards: dict[str, list[str]]) -> str | None:
             return "the card issuer the loop names" if names_card(loop, card, domains) else None
     for platform, name in TICKETING.items():
         if _under(domain, platform):
-            if RECEIPT_RE.search(hit.subject) and _whole(name, loop.text):
-                return "the ticketing platform the loop names, a receipt or confirmation"
+            if (RECEIPT_RE.search(hit.subject) and not CANCELLED_RE.search(hit.everything())
+                    and _whole(name, loop.text) and event_words(loop.text, name) & event_words(hit.subject, name)):
+                return "the ticketing platform the loop names, a receipt for the loop's event"
             return None
     return None
 

@@ -208,19 +208,25 @@ class InteracTests(unittest.TestCase):
         self.assertEqual(ls.interac_names("INTERAC e-Transfer: Rénée Ostrander sent you money."), {"renee", "ostrander"})
         self.assertEqual(ls.interac_names("Deposit complete"), set())
 
-    def test_the_loops_first_word_is_never_a_name(self):
-        for first, name in (("Bill the client for October", "BILL NG"), ("Chase Dana for the cabin money", "CHASE QUAYLE"),
-                            ("Mark the deposit as paid for Dana", "MARK WU"), ("Will check the cabin booking", "WILL SMITH"),
-                            ("Robin owes me for the cabin", "ROBIN MARSH")):
+    def test_a_word_that_starts_a_sentence_or_is_a_possessive_is_never_a_name(self):
+        for loop, name in (("Bill the client for October", "BILL NG"), ("Chase Dana for the cabin money", "CHASE QUAYLE"),
+                           ("Mark the deposit as paid for Dana", "MARK WU"), ("Will check the cabin booking", "WILL SMITH"),
+                           ("Robin owes me for the cabin", "ROBIN MARSH"), ("TODO: Bill the client", "BILL NG"),
+                           ("Ask Dana. Chase the refund", "CHASE QUAYLE"), ("Send April's rent to the landlord", "APRIL CHEN"),
+                           ("Pay rent for April to the landlord", "APRIL CHEN"), ("Send Dana's Chase card back", "CHASE QUAYLE"),
+                           ("Ask Dana; Mark has the keys", "MARK WU")):
             email = interac(f"INTERAC e-Transfer: {name} sent you money.")
-            self.assertIsNone(ls.ties(loop_of(first), email, {}), first)
+            self.assertIsNone(ls.ties(loop_of(loop), email, {}), loop)
+        self.assertEqual(ls.name_capitals("TODO: Bill the client. Ask Dana about Chase's card, Robin's Mark and Sam in April"),
+                         {"dana", "sam"})
 
-    def test_only_money_that_moved_is_proof(self):
+    def test_only_a_completed_wording_with_no_refusal_word_anywhere_is_proof(self):
         loop = loop_of("Pay Robin back $40 for dinner")
         for subject, quote in (("INTERAC e-Transfer: ROBIN MARSH sent you money.", ""),
                                ("INTERAC e-Transfer: Your money transfer to ROBIN MARSH was deposited.", ""),
+                               ("INTERAC e-Transfer: Your money transfer to ROBIN MARSH has been deposited.", ""),
                                ("INTERAC e-Transfer: ROBIN MARSH accepted your money transfer.", ""),
-                               ("Interac e-Transfer", "your $40.00 has been deposited")):
+                               ("Interac e-Transfer", "your $40.00 has been automatically deposited")):
             self.assertIsNotNone(ls.ties(loop, interac(subject, quote), {}), subject)
         for subject, quote in (("INTERAC e-Transfer: Request from ROBIN MARSH", ""),
                                ("INTERAC e-Transfer: ROBIN MARSH has requested $40.00 from you", ""),
@@ -230,8 +236,27 @@ class InteracTests(unittest.TestCase):
                                ("Reminder: ROBIN MARSH sent you money.", ""),
                                ("INTERAC e-Transfer: ROBIN MARSH sent you money.", "it has not been deposited yet"),
                                ("INTERAC e-Transfer: ROBIN MARSH sent you money.", "it hasn't been deposited"),
-                               ("INTERAC e-Transfer: a transfer to ROBIN MARSH", "$40.00 is on its way")):
+                               ("INTERAC e-Transfer: a transfer to ROBIN MARSH", "$40.00 is on its way"),
+                               ("INTERAC e-Transfer: Your transfer to ROBIN MARSH was returned and deposited back to your account.", ""),
+                               ("INTERAC e-Transfer: Your transfer to ROBIN MARSH was reversed; funds deposited back.", ""),
+                               ("INTERAC e-Transfer: Your transfer to ROBIN MARSH was refunded and deposited.", ""),
+                               ("INTERAC e-Transfer: Your transfer to ROBIN MARSH failed. Funds deposited back.", ""),
+                               ("INTERAC e-Transfer: Your transfer to ROBIN MARSH was stopped. Amount deposited back.", ""),
+                               ("INTERAC e-Transfer: Your transfer to ROBIN MARSH has been reclaimed and deposited to you", ""),
+                               ("INTERAC e-Transfer: Your transfer to ROBIN MARSH was never deposited", ""),
+                               ("INTERAC e-Transfer: Your transfer to ROBIN MARSH is pending; it will be deposited when accepted", ""),
+                               ("INTERAC e-Transfer: ROBIN MARSH was unable to be deposited", ""),
+                               ("INTERAC e-Transfer: Your transfer to ROBIN MARSH", "$40.00 deposited"),
+                               ("INTERAC e-Transfer: Autodeposit to ROBIN MARSH", "funds were deposited earlier")):
             self.assertIsNone(ls.ties(loop, interac(subject, quote), {}), (subject, quote))
+
+    def test_a_refusal_word_in_any_line_of_the_watch_report_stops_the_proof(self):
+        watch = WATCH.replace("- Date: 2026-03-09\n", "- Date: 2026-03-09\n- Note: `the transfer was reversed`\n", 1)
+        sw = sweep()
+        ls.find_proofs(sw, ls.read_watch(watch, TODAY), {})
+        self.assertEqual(sw.closes, [])
+        self.assertIn("reversed", ls.read_watch(watch, TODAY)[ET_TEXT].everything())
+        self.assertNotIn("failures", ls.read_watch(WATCH, TODAY)[ET_TEXT].everything(), "the footer is not the email")
 
     def test_interac_ties_by_the_exact_amount(self):
         email = interac("Interac e-Transfer: $40.00 (CAD) has been deposited")
@@ -255,41 +280,67 @@ class InteracTests(unittest.TestCase):
 class ProofTests(unittest.TestCase):
     """Rule 1: a close needs an allowlisted sender and a tie to this loop."""
     CARDS = {"Fernhollow Visa": ["fernhollow.example"], "Clementine Mastercard": ["clementine.example"],
-             "Visa": ["bank.example"]}
+             "Visa": ["bank.example"], "Freedom": ["quince.example"], "Larch": ["larchtrust.example"]}
 
-    def test_a_card_issuer_ties_only_to_a_loop_that_names_its_card_as_whole_words(self):
+    def test_a_card_issuer_ties_only_with_a_card_word_beside_it_or_the_cards_full_name(self):
         email = hit("alerts@fernhollow.example", "Payment received")
-        self.assertIn("card", ls.ties(loop_of("Pay the Fernhollow statement"), email, self.CARDS))
-        self.assertIn("card", ls.ties(loop_of("Pay the fernhollow visa"), email, self.CARDS))
-        for none in ("Pay Robin back $40", "Pay the visa application fee", "Buy fernhollows for the garden"):
+        for loop in ("Pay the Fernhollow statement", "Pay the fernhollow visa", "Fernhollow card: pay the balance",
+                     "Pay the bill for Fernhollow"):
+            self.assertIn("card", ls.ties(loop_of(loop), email, self.CARDS), loop)
+        for none in ("Pay Robin back $40", "Pay the visa application fee", "Buy fernhollows for the garden",
+                     "Call Fernhollow about the fee", "Pay the Fernhollow lodge for the weekend, then the card"):
             self.assertIsNone(ls.ties(loop_of(none), email, self.CARDS), none)
         self.assertIsNone(ls.ties(loop_of("Pay the Fernhollow statement"), email, {}), "an issuer not in bills.md")
         clementine = hit("statements@clementine.example", "Your statement")
         self.assertIsNotNone(ls.ties(loop_of("Pay the Clementine card"), clementine, self.CARDS))
-        self.assertIsNone(ls.ties(loop_of("Buy clementines for the party"), clementine, self.CARDS))
+        self.assertIsNotNone(ls.ties(loop_of("Ask about the Clementine Mastercard fee"), clementine, self.CARDS),
+                             "the card's full name from bills.md")
+        for none in ("Buy clementines for the party", "Buy a clementine for the party"):
+            self.assertIsNone(ls.ties(loop_of(none), clementine, self.CARDS), none)
+        quince = hit("a@quince.example", "Statement ready")
+        self.assertIsNone(ls.ties(loop_of("Quince Sam for the cabin money"), quince, self.CARDS),
+                          "an everyday-word issuer with no card word beside it")
+        self.assertIsNotNone(ls.ties(loop_of("Pay the Quince credit card"), quince, self.CARDS))
+        self.assertIsNone(ls.ties(loop_of("Plant the larch by the fence"), hit("a@larchtrust.example"), self.CARDS),
+                          "a one-word card name needs a card word too")
         bank = hit("alerts@bank.example", "Statement ready")
         self.assertIsNone(ls.ties(loop_of("Renew the travel visa for the trip"), bank, self.CARDS),
                           "a card named only for its network names nothing")
 
-    def test_a_ticketing_platform_needs_a_receipt_and_its_name_in_the_loop(self):
+    def test_a_ticketing_receipt_must_name_the_loops_event_and_nothing_cancelled(self):
         receipt = hit("orders@eventbrite.com", "Your tickets for Harbour Lantern Night")
-        self.assertIsNotNone(ls.ties(loop_of("Get the Eventbrite tickets for lantern night"), receipt, {}))
+        self.assertIn("event", ls.ties(loop_of("Get the Eventbrite tickets for lantern night"), receipt, {}))
         self.assertIsNone(ls.ties(loop_of("Get tickets for the lantern night by the harbour"), receipt, {}),
-                          "shared event words are not enough")
+                          "the loop must name the platform")
+        self.assertIsNone(ls.ties(loop_of("Get the Eventbrite tickets for jazz night"), receipt, {}),
+                          "a receipt for another event")
+        self.assertIsNone(ls.ties(loop_of("Get the Eventbrite tickets for Friday night"),
+                                  hit("orders@eventbrite.com", "Your order for Friday night"), {}),
+                          "a weekday and ticket words are not an event")
         self.assertIsNone(ls.ties(loop_of("Get the Eventbrite tickets for lantern night"),
-                                  hit("orders@eventbrite.com", "New events near you"), {}), "not a receipt")
-        for subject in ("Order #4412 receipt", "Booking confirmed", "Your confirmation"):
-            self.assertIsNotNone(ls.ties(loop_of("Sort out the Ticketmaster seats"),
+                                  hit("orders@eventbrite.com", "New events near you: lantern night"), {}), "not a receipt")
+        for subject, quote in (("Order cancelled: Harbour Lantern Night", ""), ("Your order for Lantern Night", "refund issued"),
+                               ("Order confirmed: Lantern Night", "this order was cancelled")):
+            self.assertIsNone(ls.ties(loop_of("Get the Eventbrite tickets for lantern night"),
+                                      hit("orders@eventbrite.com", subject, quote), {}), subject)
+        self.assertIsNone(ls.ties(loop_of("Book the Marigold table via OpenTable"),
+                                  hit("x@opentable.com", "Reservation cancelled; confirmation 123 at Marigold"), {}))
+        self.assertIsNotNone(ls.ties(loop_of("Book the Marigold table via OpenTable"),
+                                     hit("x@opentable.com", "Your reservation at Marigold is confirmed"), {}))
+        for subject in ("Order #4412 receipt: Lakeside Strings", "Booking confirmed, Lakeside Strings",
+                        "Your confirmation for Lakeside Strings"):
+            self.assertIsNotNone(ls.ties(loop_of("Sort out the Ticketmaster seats for Lakeside Strings"),
                                          hit("x@ticketmaster.ca", subject), {}), subject)
-        self.assertIsNotNone(ls.ties(loop_of("Book the Tock dinner for Friday"),
-                                     hit("x@exploretock.com", "Your reservation is confirmed"), {}),
+        self.assertIsNotNone(ls.ties(loop_of("Book the Tock dinner at Marigold"),
+                                     hit("x@exploretock.com", "Your reservation at Marigold is confirmed"), {}),
                              "the loop uses the platform's own name, not its domain")
-        for address, loop in (("info@meetup.com", "Meetup with Sam on Friday"), ("x@dice.fm", "Buy dice for game night"),
-                              ("x@universe.com", "Watch the Universe documentary"),
-                              ("x@partiful.com", "Partiful invite for the potluck")):
-            self.assertIsNone(ls.ties(loop_of(loop), hit(address, "Order confirmed"), {}), address)
-        self.assertIsNone(ls.ties(loop_of("Get the Eventbrite tickets"),
-                                  hit("orders@harbourlantern.example", "Your tickets"), {}))
+        for address, loop in (("info@meetup.com", "Meetup with Sam about lantern night"),
+                              ("x@dice.fm", "Buy dice for lantern night"),
+                              ("x@universe.com", "Watch the Universe lantern documentary"),
+                              ("x@partiful.com", "Partiful invite for the lantern potluck")):
+            self.assertIsNone(ls.ties(loop_of(loop), hit(address, "Order confirmed: lantern"), {}), address)
+        self.assertIsNone(ls.ties(loop_of("Get the Eventbrite tickets for lantern night"),
+                                  hit("orders@harbourlantern.example", "Your tickets for lantern night"), {}))
 
     def test_a_sender_the_loop_names_is_not_proof(self):
         """The named-sender close is gone: anyone can register a domain."""
@@ -318,11 +369,15 @@ class ProofTests(unittest.TestCase):
         self.assertIn("none closed", sw.ambiguous[0])
 
     def test_a_name_that_is_also_a_word_of_another_loop_is_ambiguous(self):
-        watch = WATCH.replace("QUILLON ROWING", "RIVER ROWING")  # loop 6 reads "verdict: River Gallery"
+        watch = WATCH.replace("QUILLON ROWING", "CAFE ROWING")  # a loop reads "verdict: Corner Cafe"
         sw = sweep()
         ls.find_proofs(sw, ls.read_watch(watch, TODAY), {})
         self.assertEqual(sw.closes, [])
-        self.assertIn(f"#{N['gallery']} verdict: River Gallery", sw.ambiguous[0])
+        self.assertIn(f"#{N['cafe']} verdict: Corner Cafe", sw.ambiguous[0])
+        river = WATCH.replace("QUILLON ROWING", "RIVER ROWING")  # "verdict: River Gallery": after a colon, no name
+        sw = sweep()
+        ls.find_proofs(sw, ls.read_watch(river, TODAY), {})
+        self.assertEqual([c.loop.n for c in sw.closes], [N["etransfer"]])
 
     def test_an_owned_loop_counts_toward_ambiguity(self):
         text = OPEN.replace("Sam owes $15 for the tickets", "The club owes $12.00 for the boat")

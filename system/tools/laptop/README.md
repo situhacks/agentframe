@@ -77,10 +77,10 @@ In a normal (not administrator) PowerShell:
    $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
    if (($userPath -split ';') -notcontains $bin) { [Environment]::SetEnvironmentVariable('Path', "$userPath;$bin", 'User') }
    ```
-   Open a new PowerShell window, so it sees the new PATH, and check that `af --version` prints.
+   Open a new PowerShell window, so it sees the new PATH, and check that `af --help` prints its list of commands, with `sync` among them.
    - If `af.exe` reports a missing `VCRUNTIME140.dll`, either use the statically linked copy the desktop can build, or install Microsoft's Visual C++ redistributable; your call.
    - The fallback is building it on the laptop with `cargo install --path system/af`, which needs Rust installed; also your call.
-   - Both machines must run the same version of `af`; after an update, refresh it on both.
+   - Both machines must run the same build of `af`. It has no version flag yet, so after the desktop rebuilds it, copy the new `af.exe` to the laptop again.
 3. Join the hub; this brings down the private layer (`workspace/`):
    ```powershell
    af sync init C:\afhub

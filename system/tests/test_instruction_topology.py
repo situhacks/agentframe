@@ -14,7 +14,7 @@ OPERATOR_ONLY_SKILLS = ("deliverable-harvest", "voice-harvest", "doc-export",
                         "price-read", "cook")
 AGENT_ROLES = ("reader", "researcher", "filer", "writer", "reviewer", "auditor", "briefer",
                "consolidator", "builder")
-MODEL_INVOCABLE_SKILLS = ("agent-reach", "deep-research", "split-bill")
+MODEL_INVOCABLE_SKILLS = ("agent-reach", "deep-research", "split-bill", "email-cleanup")
 
 
 def frontmatter(rel):

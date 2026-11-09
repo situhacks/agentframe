@@ -151,6 +151,8 @@ A second job, `AgentFrame reminders`, runs `push-due-loops.ps1` every day at 08:
 
 `system/tools/discord_board.py` keeps Discord boards current by editing in place, where `notify.py` only appends: `board <key> <file>` maintains a text channel's one pinned board, `post <key> <slug> <file> --title "<title>" [--tag <name>]` one forum post per item, and `--dry-run` prints without sending or writing. It reads the same `.env` and keeps its message ids in `workspace/life/systems/discord/state.json`.
 
+To run these jobs and an always-on session on a second Windows machine, see [`system/tools/laptop/README.md`](system/tools/laptop/README.md).
+
 ## Quick start
 
 1. Clone the repository:

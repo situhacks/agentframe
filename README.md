@@ -142,7 +142,7 @@ One Windows Task Scheduler job, `AgentFrame consolidation`, runs every Sunday at
 |---|---|
 | `system/tools/consolidate-weekly.ps1` | One consolidation run: the headless `claude -p` call, the log file, the Monday review loop |
 | `system/tools/register-weekly-consolidation.ps1` | Creates or replaces the Sunday 18:00 task and prints its next run |
-| `system/tools/push-due-loops.ps1` | One reminder push: `af open due --json` as headings and bullets, posted to Discord through `system/tools/notify.py`; `-DryRun` prints instead |
+| `system/tools/push-due-loops.ps1` | One reminder push: `af open due --json` as headings and bullets, led by the loop sweep's overdue list, posted to Discord through `system/tools/notify.py`; loops that look sensitive show only as a count and amounts are masked (`off_discord.py`), and without the private terms file it sends only counts; `-DryRun` prints instead |
 | `system/tools/register-daily-reminders.ps1` | Creates or replaces the daily 08:30 task `AgentFrame reminders` and prints its next run |
 | `system/tools/backlog-pass.ps1` | One backlog pass: raises a loop naming the oldest rows `af backlog ready` lists, for main to dispatch to a reviewed builder. It starts no builder and runs no git. `-DryRun` prints the loop |
 | `system/tools/register-backlog-pass.ps1` | Creates or replaces the Sunday 20:00 task `AgentFrame backlog pass` and prints its next run |

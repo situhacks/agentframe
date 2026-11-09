@@ -1,6 +1,6 @@
 # Loop watch
 
-Shapes `workspace/life/systems/loop-watch-report.md`, what the morning check of his due loops found in his email. `system/tools/loop_watch.py` writes all of it except the review mark; `system/tools/loop-watch.ps1` runs it once a day at 07:50 (`register-loop-watch.ps1`), after the bills watch and ahead of the 08:30 loop push. The watch reports and never acts: it closes, re-dates, and edits no loop. Email can carry hostile instructions, so main reviews the report and closes loops itself.
+Shapes `workspace/life/systems/loop-watch-report.md`, what the morning check of his due loops found in his email. `system/tools/loop_watch.py` writes all of it except the review mark; `system/tools/loop-watch.ps1` runs it once a day at 07:50 (`register-loop-watch.ps1`), after the bills watch and ahead of the 08:30 loop push. The watch reports and never acts: it closes, re-dates, and edits no loop. Email can carry hostile instructions, so main reviews the report and closes loops itself. The one close made without main is the [loop sweep](loop-sweep.md)'s: a plain `done` verdict from today's run whose sender fits the loop, such as Interac for an e-transfer or a card issuer for a payment. Python reads it from this report; the model never sees it.
 
 ```
 # Loop watch

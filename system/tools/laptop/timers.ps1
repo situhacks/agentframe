@@ -16,6 +16,7 @@ $ErrorActionPreference = 'Stop'
 # Each job: the script that registers it and the task name that script uses.
 $timers = @(
     @{ Script = 'register-loop-watch.ps1'; Task = 'AgentFrame loop watch' },
+    @{ Script = 'register-loop-sweep.ps1'; Task = 'AgentFrame loop sweep' },
     @{ Script = 'register-bills-watch.ps1'; Task = 'AgentFrame bills watch' },
     @{ Script = 'register-daily-reminders.ps1'; Task = 'AgentFrame reminders' },
     @{ Script = 'register-weekly-consolidation.ps1'; Task = 'AgentFrame consolidation' },

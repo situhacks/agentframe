@@ -17,7 +17,7 @@ use crate::life::{vpath, workspace_remotes, TextFile};
 use crate::outln;
 use clap::Subcommand;
 use std::collections::BTreeSet;
-use std::io::{Read, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant, SystemTime};
@@ -596,11 +596,22 @@ fn recorded_conflict(ws: &Path) -> Option<String> {
 
 /// The paths a merge from the hub brought in, for the per-message pull to tell each chat.
 fn record_brought(ws: &Path, paths: &[String]) {
-    let text: String = paths.iter().filter(|p| !p.contains('\n')).map(|p| format!("{p}\n")).collect();
+    let mut text: String = paths.iter().filter(|p| !p.contains('\n')).map(|p| format!("{p}\n")).collect();
     if text.is_empty() {
         return;
     }
-    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(git_dir(ws).join(BROUGHT_FILE)) {
+    let log = git_dir(ws).join(BROUGHT_FILE);
+    // A line left half-written (an append cut off) ends first, so it never runs into ours.
+    let torn = std::fs::File::open(&log).ok().and_then(|mut f| {
+        f.seek(SeekFrom::End(-1)).ok()?;
+        let mut last = [0u8];
+        f.read_exact(&mut last).ok()?;
+        Some(last[0] != b'\n')
+    });
+    if torn == Some(true) {
+        text.insert(0, '\n');
+    }
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&log) {
         let _ = f.write_all(text.as_bytes());
     }
 }
@@ -1508,7 +1519,8 @@ pub fn prompt_half_with(ctx: &Ctx, session: Option<&str>, budget: Duration) -> O
     }
     let end = brought_len(&ws);
     let mut paths = BTreeSet::new();
-    let mut seen = end;
+    // A log that cannot be read leaves the marker where it was; a shorter one moves it back.
+    let mut seen = from.min(end);
     if end > from {
         if let Ok(bytes) = std::fs::read(git_dir(&ws).join(BROUGHT_FILE)) {
             let (at, lines) = complete_lines(&bytes, from, end);

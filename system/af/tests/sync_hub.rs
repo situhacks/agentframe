@@ -1218,6 +1218,68 @@ fn the_brought_log_is_read_only_to_the_end_measured_and_only_whole_lines() {
     assert_eq!(sync::complete_lines(log, 26, 36), (26, Vec::<String>::new()), "no newline in the span, nothing consumed");
 }
 
+/// The brought-paths log on one machine.
+fn brought(w: &World, root: &str) -> PathBuf {
+    w.p(&format!("{root}/workspace/.git/af-sync-brought"))
+}
+
+/// Holds the file so no one else can read it until dropped.
+fn unreadable(path: &Path) -> impl Drop {
+    #[allow(dead_code)]
+    struct Held(Option<std::fs::File>, PathBuf);
+    impl Drop for Held {
+        fn drop(&mut self) {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = std::fs::set_permissions(&self.1, std::fs::Permissions::from_mode(0o644));
+            }
+        }
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        let f = std::fs::OpenOptions::new().read(true).share_mode(0).open(path).unwrap();
+        Held(Some(f), path.to_path_buf())
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o000)).unwrap();
+        Held(None, path.to_path_buf())
+    }
+}
+
+#[test]
+fn a_log_that_cannot_be_read_leaves_the_marker_where_it_was() {
+    let w = World::new();
+    w.two_machines();
+    assert_eq!(prompt(&w, "b", Some("s-b")), "");
+    let marker = w.p("b/workspace/.git/af-sync-seen/s-b");
+    let before = w.read("b/workspace/.git/af-sync-seen/s-b");
+    w.write("b/workspace/.git/af-sync-brought", "life/open.md\n");
+    {
+        let _held = unreadable(&brought(&w, "b"));
+        assert_eq!(prompt(&w, "b", Some("s-b")), "", "nothing could be read");
+        assert_eq!(std::fs::read_to_string(&marker).unwrap().replace("\r\n", "\n"), before, "the marker did not move");
+    }
+    assert_eq!(listed(&prompt(&w, "b", Some("s-b"))), ["workspace/life/open.md"], "told once the log reads again");
+}
+
+#[test]
+fn a_torn_last_line_never_runs_into_the_next_append() {
+    let w = World::new();
+    w.two_machines();
+    assert_eq!(prompt(&w, "b", Some("s-b")), "");
+    // An append on B cut off mid-path.
+    w.write("b/workspace/.git/af-sync-brought", "life/kno");
+    edit(&w, "a/workspace/life/open.md", "first loop", "first loop, from A");
+    assert_eq!(sync::hook_half(&w.ctx("a"), true), None);
+    let block = prompt(&w, "b", Some("s-b"));
+    assert_eq!(listed(&block), ["workspace/life/kno", "workspace/life/open.md"], "{block}");
+    assert_eq!(std::fs::read_to_string(brought(&w, "b")).unwrap(), "life/kno\nlife/open.md\n");
+}
+
 #[test]
 fn the_prompt_after_a_manual_sync_runs_no_git() {
     let w = World::new();

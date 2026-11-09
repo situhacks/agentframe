@@ -7,7 +7,8 @@
     From the vault root (three folders above this script):
       1. Starts Chrome if it is not running, so --chrome can reach the Claude extension.
       2. Runs `af sync` once, then starts the session in its own console window with the command
-         line set at the top of this file.
+         line set at the top of this file. Without -Discord the session is reached through Remote
+         Control only.
       3. Gives the session its own conversation id, kept in system/logs/start-agent-session-id.txt,
          so a restart reopens this conversation and never one left by a background `claude -p` run
          in the same folder. When the id's transcript exists under the user's
@@ -44,6 +45,11 @@
 
 .PARAMETER LockScreen
     Locks the screen once the session has started, for a laptop that signs in by itself.
+
+.PARAMETER Discord
+    Adds the Discord direct-message bridge, a research preview, to the session. Use it only once
+    the Discord plugin is installed and paired: without the plugin the session exits at once and
+    the watchdog backs off.
 #>
 [CmdletBinding()]
 param(
@@ -58,20 +64,19 @@ param(
     [ValidateRange(1, 1440)][int]$BackoffMinutes = 10,
     [ValidateRange(0, 600)][int]$StartDelaySeconds = 20,
     [string]$NotifyChannel = 'reminders',
-    [switch]$LockScreen
+    [switch]$LockScreen,
+    [switch]$Discord
 )
 
 # ================================ THE SESSION COMMAND LINE ================================
-# The one place to edit when Claude Code's flags change; --channels is a research preview.
+# The one place to edit when Claude Code's flags change; --channels is a research preview,
+# added only with -Discord.
 #   First start:  claude <NewSessionArgs> <SessionArgs>     ({id} is a fresh GUID)
 #   Restart:      claude <ResumeArgs> <SessionArgs>         ({id} is the saved GUID)
 $ClaudeCommand = 'claude'
-$SessionArgs = @(
-    '--remote-control', $SessionName,
-    '--channels', 'plugin:discord@claude-plugins-official',
-    '--chrome',
-    '--permission-mode', $PermissionMode
-)
+$SessionArgs = @('--remote-control', $SessionName)
+if ($Discord) { $SessionArgs += @('--channels', 'plugin:discord@claude-plugins-official') }
+$SessionArgs += @('--chrome', '--permission-mode', $PermissionMode)
 $NewSessionArgs = @('--session-id', '{id}')
 $ResumeArgs = @('--resume', '{id}')
 $SessionMarker = '--remote-control'   # another process whose command line has this is a remote-control session
@@ -196,7 +201,9 @@ function Write-ForeignSessions($Own) {
         Where-Object { $ownIds -notcontains $_.ProcessId -and $_.ProcessId -ne $PID -and $_.CommandLine -match [regex]::Escape($SessionMarker) -and $_.CommandLine -match 'claude' -and $_.Name -notmatch '^powershell' })
     if ($others.Count -gt 0) {
         $list = ($others | ForEach-Object { "$($_.Name) pid $($_.ProcessId)" }) -join ', '
-        Write-Log "another remote-control session is running and is left alone: $list. If it also holds the Discord channel, both answer the bot."
+        $message = "another remote-control session is running and is left alone: $list."
+        if ($Discord) { $message += ' If it also holds the Discord channel, both answer the bot.' }
+        Write-Log $message
     }
 }
 
@@ -322,7 +329,12 @@ if (-not (Get-Command $ClaudeCommand -ErrorAction SilentlyContinue)) {
     Send-Status 'AgentFrame session not started' "On $env:COMPUTERNAME, '$ClaudeCommand' is not on the PATH, so the always-on session did not start."
     exit 1
 }
-if (-not (Get-Command bun -ErrorAction SilentlyContinue)) { Write-Log 'warning: bun is not on the PATH; the Discord channel needs it' }
+if ($Discord) {
+    Write-Log 'Discord bridge on'
+    if (-not (Get-Command bun -ErrorAction SilentlyContinue)) { Write-Log 'warning: bun is not on the PATH; the Discord channel needs it' }
+} else {
+    Write-Log 'Discord bridge off; the session is reached through Remote Control only'
+}
 
 if ($StartDelaySeconds -gt 0) { Start-Sleep -Seconds $StartDelaySeconds }   # let the network settle after logon
 

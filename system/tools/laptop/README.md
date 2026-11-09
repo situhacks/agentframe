@@ -160,7 +160,7 @@ Either way, anyone who opens the laptop is signed in as you, an administrator. R
 - **Move the timers back to the desktop:** `.\timers.ps1 -Unregister` on the laptop, then `.\timers.ps1 -Register` on the desktop.
 - **Undo the settings:** run the undo commands from the setup summary in an administrator PowerShell. `Get-Help .\setup-laptop.ps1 -Full` lists them with common default values. In short: `powercfg /setacvalueindex` back to the old values, `Remove-SmbShare -Name 'afhub' -Force`, `icacls 'C:\afhub' /reset /T /C`, `Remove-NetFirewallRule -Group 'AgentFrame hub'`, and deleting the hub folder once nothing in it is needed.
 - **Undo sign-in at startup:** tick the box in `netplwiz` again, or turn Autologon off.
-- **Discord:** remove the plugin with `/plugin`, and delete `.claude\channels\discord\.env` in your user folder to remove the token.
+- **Discord:** remove the plugin with `/plugin`, and delete `.claude\channels\discord\.env` in your user folder to remove the token. Then rerun `.\register-agent-logon.ps1` without `-Discord`; otherwise the job still asks for the bridge, the session exits at once and the watchdog backs off.
 
 ## What to watch
 

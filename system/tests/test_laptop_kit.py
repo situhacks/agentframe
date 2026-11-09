@@ -6,7 +6,11 @@ parser and checked as text for 7-only syntax, and every kit file is scanned for 
 host and drive names other than the documented defaults, UNC hosts, IP and email addresses, Discord
 ids, home paths, and tokens. Two pieces are evaluated alone, under their script's own param block:
 start-agent.ps1's marked command-line block and the statements that build register-agent-logon.ps1's
-argument line. Both only assign variables.
+argument line. Before either runs, a guard reads its syntax tree and refuses a command, a static
+method call, a script block, a redirection, a provider-path variable such as ${C:\\file}, a cast or
+-as conversion to anything but a simple value type, and any statement but an assignment or an if
+or foreach around assignments. The guard catches an accidental edit to this repository's own
+scripts; it is not a security boundary, and code written to get past it can.
 """
 
 from __future__ import annotations
@@ -198,8 +202,11 @@ def command_line_block(text: str | None = None) -> str:
 
 # The pieces of the kit the tests evaluate may only assign variables. Each top-level statement is an
 # assignment, or an if or foreach around assignments (with continue and throw allowed inside), and
-# nothing anywhere runs a command, calls a static method, or holds a script block. A piece that breaks
+# nothing anywhere runs a command, calls a static method, holds a script block, redirects output, names
+# a provider path as a variable (env: and variable: are allowed), or casts or -as converts to anything
+# but string, int, long, bool, switch, datetime, timespan or an array of those. A piece that breaks
 # this rule fails the test and is never run. The param block it runs under gets the same deep check.
+# This catches an accidental edit to the kit's own scripts, not code written to get past it.
 GUARD_PS = r"""
 function Get-GuardProblems($Ast, [bool]$TopLevel) {
     $problems = @()
@@ -223,6 +230,26 @@ function Get-GuardProblems($Ast, [bool]$TopLevel) {
     }
     foreach ($n in $Ast.FindAll({ param($x) $x -is [System.Management.Automation.Language.ScriptBlockExpressionAst] }, $true)) {
         $problems += "holds a script block: $($n.Extent.Text)"
+    }
+    foreach ($n in $Ast.FindAll({ param($x) $x -is [System.Management.Automation.Language.RedirectionAst] }, $true)) {
+        $problems += "redirects output: $($n.Extent.Text)"
+    }
+    foreach ($n in $Ast.FindAll({ param($x) $x -is [System.Management.Automation.Language.VariableExpressionAst] -and $x.VariablePath.IsDriveQualified }, $true)) {
+        if (@('variable', 'env') -notcontains $n.VariablePath.DriveName.ToLowerInvariant()) {
+            $problems += "names a provider path, not a variable: $($n.Extent.Text)"
+        }
+    }
+    $valueTypes = @('string', 'int', 'int32', 'long', 'int64', 'bool', 'boolean', 'switch', 'switchparameter',
+        'management.automation.switchparameter', 'datetime', 'timespan')
+    $conversions = $Ast.FindAll({ param($x)
+        ($x -is [System.Management.Automation.Language.TypeConstraintAst]) -or
+        ($x -is [System.Management.Automation.Language.TypeExpressionAst] -and $x.Parent -is [System.Management.Automation.Language.BinaryExpressionAst] -and
+            $x.Parent.Operator -eq [System.Management.Automation.Language.TokenKind]::As) }, $true)
+    foreach ($n in $conversions) {
+        $name = $n.TypeName.FullName.ToLowerInvariant()
+        if ($name.EndsWith('[]')) { $name = $name.Substring(0, $name.Length - 2) }
+        if ($name.StartsWith('system.')) { $name = $name.Substring(7) }
+        if ($valueTypes -notcontains $name) { $problems += "casts to $($n.TypeName.FullName), not a simple value type: $($n.Parent.Extent.Text)" }
     }
     return $problems
 }
@@ -384,9 +411,23 @@ class CommandLineTests(unittest.TestCase):
             with self.subTest(label):
                 self.assertIn("not only variable assignments", guard_problems(text))
 
+    def test_the_guard_refuses_assignments_that_write_a_file_or_convert_to_an_object(self):
+        refused = {
+            "a redirection": ("$a = 'x' > 'out.txt'\n", "redirects output"),
+            "a provider-path variable": ("${C:\\afhub\\out.txt} = 'x'\n", "provider path"),
+            "a cast to a non-value type": ("$a = [System.IO.FileInfo]'out.txt'\n", "casts to"),
+            "an -as conversion to a non-value type": ("$a = 'out.txt' -as [System.IO.StreamWriter]\n", "casts to"),
+        }
+        for label, (text, reason) in refused.items():
+            with self.subTest(label):
+                problems = guard_problems(text)
+                self.assertIn("not only variable assignments", problems)
+                self.assertIn(reason, problems)
+
     def test_the_guard_accepts_the_shapes_the_kit_uses(self):
         text = ("$a = @('x', $b)\nif ($c) { $a += @('y') }\n"
-                "foreach ($n in @('p', 'q')) { if (-not $d) { continue }; $v = \"$n\".Trim(); if (-not $v) { throw 'no' }; $a += $v }\n")
+                "foreach ($n in @('p', 'q')) { if (-not $d) { continue }; $v = \"$n\".Trim(); if (-not $v) { throw 'no' }; $a += $v }\n"
+                "$i = [int]'5'; [string[]]$s = @('a'); $d = [datetime]'2026-01-01'; $f = [bool]1; $l = '7' -as [long]; $u = $env:USERNAME\n")
         self.assertEqual(guard_problems(text), "")
 
 

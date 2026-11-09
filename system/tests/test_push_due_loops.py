@@ -353,5 +353,38 @@ class SecondReviewOffDiscordTests(unittest.TestCase):
         self.assertNotIn("Patel", push_due_loops.render(loops, dt.date(2026, 11, 9), [], None))
 
 
+class MoreCategoriesTests(unittest.TestCase):
+    def test_bloodwork_surgery_pills_and_physicals_stay_off(self):
+        for text in ("Book the bloodwork", "Blood work on Friday", "Surgery consult", "Ask the surgeon", "Two surgeons",
+                     "Pick up the pills", "pill organiser", "Annual physical", "Book the annual physicals",
+                     "Physical exam Tuesday", "Physical therapy", "SURGERY"):
+            self.assertTrue(off_discord.is_private((text,), []), text)
+
+    def test_ordinary_words_around_them_pass(self):
+        for fine in ("Physically move the couch", "Buy a new pillow", "Pillsbury cookies", "Physical copy of the lease",
+                     "Surge protector for the desk", "Bloodhound gang tickets"):
+            self.assertFalse(off_discord.is_private((fine,), []), fine)
+
+    def test_an_accented_spelling_still_matches(self):
+        for text in ("thérapy notes", "thérapy notes", "Sürgery Friday", "méds pickup", "Phÿsical exam",
+                     "ＴＨÉＲＡＰＹ"):
+            self.assertTrue(off_discord.is_private((text,), []), text)
+        self.assertEqual(off_discord.normalize("Café crème"), "Cafe creme")
+        self.assertFalse(off_discord.is_private(("Café with Robin",), []))
+
+    def test_a_private_term_matches_with_or_without_its_accents(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / off_discord.TERMS_FILE
+            path.parent.mkdir(parents=True)
+            path.write_text("Rénée\n", encoding="utf-8")
+            terms = off_discord.private_terms(Path(d))
+        self.assertEqual(terms, ["renee"])
+        self.assertTrue(off_discord.is_private(("Lunch with Renee",), terms))
+        self.assertTrue(off_discord.is_private(("Lunch with Rénée",), terms))
+
+    def test_the_push_still_shows_accents_it_does_not_mask(self):
+        self.assertEqual(off_discord.mask("Café with Robin, $40", amounts=True), "Café with Robin, $…")
+
+
 if __name__ == "__main__":
     unittest.main()

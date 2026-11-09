@@ -6,8 +6,8 @@ his private terms is kept off: the board leaves it out, and the push counts it w
 
 Text is normalised before any match (normalize()): NFKC, so fullwidth letters and signs read as
 plain ones; zero-width and soft-hyphen characters removed; and Cyrillic and Greek lookalike
-letters read as the Latin letters they imitate. "ＭＥＤＳ", "den<zero-width>tist" and "mеds" with
-a Cyrillic e all match.
+letters read as the Latin letters they imitate; then accents folded (decomposed, combining marks
+dropped). "ＭＥＤＳ", "den<zero-width>tist", "mеds" with a Cyrillic e, and "thérapy" all match.
 
 His own terms (names, topics) live in the private, gitignored
 workspace/life/systems/discord/boards/open-private.txt, one a line, `#` for a comment. Without
@@ -37,9 +37,15 @@ _LOOKALIKE = str.maketrans("аеорсухіјѕԁԛԝкмнтвгпАВЕКМН
                            "aeopcyxijsdqwkmhtbrnABEKMHOPCTXIJSWABEZHIKMNOPTYXaeikvoptux")
 
 
-def normalize(text: str) -> str:
-    """The text as the filters read it: NFKC, no invisible characters, lookalikes as Latin."""
+def _plain(text: str) -> str:
+    """NFKC, no invisible characters, lookalikes as Latin: what mask() shows."""
     return unicodedata.normalize("NFKC", text).translate(_INVISIBLE).translate(_LOOKALIKE)
+
+
+def normalize(text: str) -> str:
+    """The text as the filters read it: _plain(), then accents folded, so "thérapie" reads "therapie"."""
+    decomposed = unicodedata.normalize("NFD", _plain(text))
+    return unicodedata.normalize("NFC", "".join(c for c in decomposed if not unicodedata.combining(c)))
 
 
 # Generic categories only; anything about him belongs in the private terms file.
@@ -48,7 +54,8 @@ SENSITIVE = re.compile(
     r"physicians?|clinics?|hospitals?|urgent care|dental|dentists?|orthodont\w*|optometr\w*|opticians?|"
     r"dermatolog\w*|chiropract\w*|vaccin\w*|flu shots?|check-?ups?|physio\w*|therap\w*|counsel\w*|psych\w*|"
     r"mental|diagnos\w*|symptoms?|mri|x-?rays?|ct scans?|ultrasounds?|\w+oscopy|biops\w*|allerg\w*|ob/?gyn|"
-    r"gyn\w*|urolog\w*|urin\w*|blood|lab tests?|std|sti|hiv|sexual\w*|passwords?|passcodes?|"
+    r"gyn\w*|urolog\w*|urin\w*|blood|bloodwork|lab tests?|std|sti|hiv|sexual\w*|surger(?:y|ies)|surgeons?|pills?|"
+    r"annual physicals?|physical exams?|passwords?|passcodes?|"
     r"account numbers?|card numbers?|appts?|"
     r"(?:eye|skin|ear|foot|hearing|vision|lab|derm)\s+(?:appointments?|exams?|tests?))(?!\w)",
     re.IGNORECASE,
@@ -107,4 +114,4 @@ def mask(text: str, amounts: bool) -> str:
             return token
         tail = re.search(r"[,.;:!?)\]]*$", token).group(0)
         return "####" + tail
-    return _MASK.sub(sub, normalize(text))
+    return _MASK.sub(sub, _plain(text))

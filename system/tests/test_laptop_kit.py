@@ -182,12 +182,74 @@ BLOCK_START = re.compile(r"^# =+ THE SESSION COMMAND LINE =+$")
 BLOCK_END = re.compile(r"^# =+$")
 
 
-def command_line_block() -> str:
+def command_line_block(text: str | None = None) -> str:
     """The marked block at the top of start-agent.ps1: the one place the session command line is built."""
-    lines = (KIT / "start-agent.ps1").read_text(encoding="utf-8").splitlines()
-    start = next(i for i, line in enumerate(lines) if BLOCK_START.match(line))
-    end = next(i for i in range(start + 1, len(lines)) if BLOCK_END.match(lines[i]))
+    if text is None:
+        text = (KIT / "start-agent.ps1").read_text(encoding="utf-8")
+    lines = text.splitlines()
+    start = next((i for i, line in enumerate(lines) if BLOCK_START.match(line)), None)
+    if start is None:
+        raise AssertionError("start-agent.ps1 has no '# ==== THE SESSION COMMAND LINE ====' marker line")
+    end = next((i for i in range(start + 1, len(lines)) if BLOCK_END.match(lines[i])), None)
+    if end is None:
+        raise AssertionError("start-agent.ps1's command-line block has no closing '# ====' marker line")
     return "\n".join(lines[start + 1:end])
+
+
+# The pieces of the kit the tests evaluate may only assign variables. Each top-level statement is an
+# assignment, or an if or foreach around assignments (with continue and throw allowed inside), and
+# nothing anywhere runs a command, calls a static method, or holds a script block. A piece that breaks
+# this rule fails the test and is never run. The param block it runs under gets the same deep check.
+GUARD_PS = r"""
+function Get-GuardProblems($Ast, [bool]$TopLevel) {
+    $problems = @()
+    if ($TopLevel) {
+        foreach ($s in $Ast.EndBlock.Statements) {
+            $kind = $s.GetType().Name
+            if (@('AssignmentStatementAst', 'IfStatementAst', 'ForEachStatementAst') -notcontains $kind) {
+                $problems += "top-level $kind is not an assignment: $($s.Extent.Text)"
+            }
+        }
+    }
+    $allowed = @('AssignmentStatementAst', 'IfStatementAst', 'ForEachStatementAst', 'ContinueStatementAst', 'ThrowStatementAst', 'PipelineAst', 'CommandExpressionAst')
+    foreach ($n in $Ast.FindAll({ param($x) $x -is [System.Management.Automation.Language.StatementAst] }, $true)) {
+        if ($allowed -notcontains $n.GetType().Name) { $problems += "$($n.GetType().Name): $($n.Extent.Text)" }
+    }
+    foreach ($n in $Ast.FindAll({ param($x) $x -is [System.Management.Automation.Language.CommandAst] }, $true)) {
+        $problems += "runs a command: $($n.Extent.Text)"
+    }
+    foreach ($n in $Ast.FindAll({ param($x) $x -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -and $x.Static }, $true)) {
+        $problems += "calls a static method: $($n.Extent.Text)"
+    }
+    foreach ($n in $Ast.FindAll({ param($x) $x -is [System.Management.Automation.Language.ScriptBlockExpressionAst] }, $true)) {
+        $problems += "holds a script block: $($n.Extent.Text)"
+    }
+    return $problems
+}
+
+function Assert-AssignmentsOnly([string]$Text, $ParamBlock, [string]$What) {
+    $t = $null; $e = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseInput($Text, [ref]$t, [ref]$e)
+    if ($e) { throw "$What does not parse: $($e[0].Message)" }
+    $problems = @(Get-GuardProblems $ast $true)
+    if ($ParamBlock) { $problems += @(Get-GuardProblems $ParamBlock $false) }
+    if ($problems.Count -gt 0) { throw ("$What is not only variable assignments, so it is not run:`n" + ($problems -join "`n")) }
+}
+"""
+
+
+def guard_problems(text: str) -> str:
+    """The guard's refusal for a piece of PowerShell, or an empty string when it would be run."""
+    with tempfile.TemporaryDirectory() as d:
+        piece = Path(d) / "piece.ps1"
+        piece.write_text(text, encoding="utf-8")
+        body = GUARD_PS + (
+            f"$text = [System.IO.File]::ReadAllText({ps_quote(str(piece))})\n"
+            "$msg = ''\n"
+            "try { Assert-AssignmentsOnly $text $null 'the piece' } catch { $msg = $_.Exception.Message }\n"
+            "ConvertTo-Json -InputObject @{ problems = $msg } -Compress\n"
+        )
+        return run_powershell_file(body)["problems"]
 
 
 def run_powershell_file(body: str) -> dict:
@@ -213,10 +275,11 @@ def session_args(*switches: str) -> list[str]:
     with tempfile.TemporaryDirectory() as d:
         block = Path(d) / "block.ps1"
         block.write_text(command_line_block(), encoding="utf-8")
-        body = (
+        body = GUARD_PS + (
             "$t = $null; $e = $null\n"
             f"$ast = [System.Management.Automation.Language.Parser]::ParseFile({ps_quote(str(KIT / 'start-agent.ps1'))}, [ref]$t, [ref]$e)\n"
             f"$blockText = [System.IO.File]::ReadAllText({ps_quote(str(block))})\n"
+            "Assert-AssignmentsOnly $blockText $ast.ParamBlock \"start-agent.ps1's command-line block\"\n"
             "$sb = [scriptblock]::Create($ast.ParamBlock.Extent.Text + \"`n\" + $blockText + \"`n\" + '$SessionArgs')\n"
             f"$argv = @(& $sb {' '.join(switches)})\n"
             "ConvertTo-Json -InputObject @($argv) -Compress\n"
@@ -224,13 +287,14 @@ def session_args(*switches: str) -> list[str]:
         return run_powershell_file(body)
 
 
-def register_arg_line(*options: str) -> dict:
+def register_arg_line(*options: str, script: Path | None = None) -> dict:
     """The argument line register-agent-logon.ps1 gives the task, from its statements that build $argLine
     (from `$argLine =` up to `$action =`), under its own param block, plus start-agent.ps1's parameter
-    names. Registers nothing."""
-    body = (
+    names. Registers nothing: a missing marker or a statement other than an assignment fails first."""
+    script = script or KIT / "register-agent-logon.ps1"
+    body = GUARD_PS + (
         "$t = $null; $e = $null\n"
-        f"$reg = [System.Management.Automation.Language.Parser]::ParseFile({ps_quote(str(KIT / 'register-agent-logon.ps1'))}, [ref]$t, [ref]$e)\n"
+        f"$reg = [System.Management.Automation.Language.Parser]::ParseFile({ps_quote(str(script))}, [ref]$t, [ref]$e)\n"
         f"$start = [System.Management.Automation.Language.Parser]::ParseFile({ps_quote(str(KIT / 'start-agent.ps1'))}, [ref]$t, [ref]$e)\n"
         "$statements = @($reg.EndBlock.Statements)\n"
         "$from = -1; $to = -1\n"
@@ -239,7 +303,10 @@ def register_arg_line(*options: str) -> dict:
         "    if ($from -lt 0 -and $s -match '^\\$argLine\\s*=') { $from = $i }\n"
         "    if ($from -ge 0 -and $to -lt 0 -and $s -match '^\\$action\\s*=') { $to = $i }\n"
         "}\n"
+        "if ($from -lt 0) { throw 'marker not found: register-agent-logon.ps1 has no top-level statement starting $argLine =' }\n"
+        "if ($to -lt 0) { throw 'marker not found: register-agent-logon.ps1 has no top-level statement starting $action = after $argLine =' }\n"
         "$build = ($statements[$from..($to - 1)] | ForEach-Object { $_.Extent.Text }) -join \"`n\"\n"
+        "Assert-AssignmentsOnly $build $reg.ParamBlock \"register-agent-logon.ps1's argument-line statements\"\n"
         "$sb = [scriptblock]::Create($reg.ParamBlock.Extent.Text + \"`n`$script = 'start-agent.ps1'`n\" + $build + \"`n`$argLine\")\n"
         f"$line = & $sb {' '.join(options)}\n"
         "$names = @($start.ParamBlock.Parameters | ForEach-Object { $_.Name.VariablePath.UserPath })\n"
@@ -289,6 +356,38 @@ class CommandLineTests(unittest.TestCase):
         known = {n.lower() for n in result["startParams"]}
         unknown = [p for p in passed if p.lower() not in known]
         self.assertEqual(unknown, [], f"register-agent-logon.ps1 passes options start-agent.ps1 lacks: {unknown}")
+
+    def test_a_missing_marker_fails_before_anything_runs(self):
+        with self.assertRaisesRegex(AssertionError, "THE SESSION COMMAND LINE"):
+            command_line_block("$SessionArgs = @('--chrome')\n")
+        with self.assertRaisesRegex(AssertionError, "closing"):
+            command_line_block("# ===== THE SESSION COMMAND LINE =====\n$SessionArgs = @('--chrome')\n")
+        text = (KIT / "register-agent-logon.ps1").read_text(encoding="utf-8")
+        self.assertRegex(text, r"(?m)^\$action = ", "the end marker this test removes must exist")
+        with tempfile.TemporaryDirectory() as d:
+            renamed = Path(d) / "register-agent-logon.ps1"
+            renamed.write_text(re.sub(r"(?m)^\$action = ", "$taskAction = ", text), encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, r"marker not found.*\$action ="):
+                register_arg_line(script=renamed)
+
+    def test_the_guard_refuses_anything_but_assignments(self):
+        refused = {
+            "a command": "$a = 1\nRemove-Item -Path nothing\n",
+            "a command inside an if": "if ($b) { Stop-Process -Id 0 }\n",
+            "a command in an assignment": "$a = Get-ChildItem\n",
+            "a static method call": "$a = [System.IO.File]::ReadAllText('x')\n",
+            "a call operator": "$a = & $b\n",
+            "a bare expression": "$a = 1\n$a\n",
+            "a while loop": "while ($true) { $a = 1 }\n",
+        }
+        for label, text in refused.items():
+            with self.subTest(label):
+                self.assertIn("not only variable assignments", guard_problems(text))
+
+    def test_the_guard_accepts_the_shapes_the_kit_uses(self):
+        text = ("$a = @('x', $b)\nif ($c) { $a += @('y') }\n"
+                "foreach ($n in @('p', 'q')) { if (-not $d) { continue }; $v = \"$n\".Trim(); if (-not $v) { throw 'no' }; $a += $v }\n")
+        self.assertEqual(guard_problems(text), "")
 
 
 class TimersTests(unittest.TestCase):

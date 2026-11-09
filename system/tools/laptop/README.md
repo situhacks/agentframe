@@ -1,6 +1,6 @@
 # The laptop kit
 
-These scripts turn a spare Windows 11 laptop into AgentFrame's always-on machine. Once it is set up, the laptop stays awake on wall power, holds the sync hub the desktop syncs through, runs the scheduled jobs, and keeps one Claude Code session open that you reach from your phone, through Remote Control or a Discord direct message with your bot. The session runs under your own administrator account.
+These scripts turn a spare Windows 10 or Windows 11 laptop into AgentFrame's always-on machine. Once it is set up, the laptop stays awake on wall power, holds the sync hub the desktop syncs through, runs the scheduled jobs, and keeps one Claude Code session open that you reach from your phone through Remote Control. A Discord direct message with your bot is an optional second way in. The session runs under your own administrator account.
 
 You run every script yourself. The setup script changes system and security settings, so it is yours to run, not an agent's.
 
@@ -9,11 +9,11 @@ You run every script yourself. The setup script changes system and security sett
 | Script | Who runs it, and when | What it does |
 |---|---|---|
 | `setup-laptop.ps1` | You, once, in an administrator PowerShell | On wall power: never sleep, never hibernate, closing the lid does nothing. Creates the hub folder (default `C:\afhub`) and shares it for your account only. Opens file sharing in the firewall for Private networks only. Prints each change before making it, then a summary with the undo command for each, or the step it stopped at. `-WhatIf` shows the changes without making them. |
-| `start-agent.ps1` | Task Scheduler, at each logon, as you (not elevated) | Starts Chrome, runs `af sync`, then opens the session in its own window named "AgentFrame session". The session keeps its own conversation id, so a restart reopens that conversation and never one left by a background job in the same folder. Restarts the session when it stops, and waits ten minutes after five restarts in ten minutes, sending you one message when that happens. Runs `af sync` every 15 minutes. Writes `system\logs\start-agent.log`. |
-| `register-agent-logon.ps1` | You, once | Creates the Task Scheduler job `AgentFrame agent`, which runs `start-agent.ps1` at normal priority when you sign in. `-Unregister` removes it. |
-| `timers.ps1` | You, once on each machine | `-Register` sets up the loop watch, bills watch, reminders push, weekly consolidation and weekly backlog pass on this machine; `-Unregister` removes them. With no switch it shows which of them are registered here. Only one machine should run them. |
+| `start-agent.ps1` | Task Scheduler, at each logon, as you (not elevated) | Starts Chrome, runs `af sync`, then opens the session in its own window named "AgentFrame session". `-Discord` adds the Discord bridge. The session keeps its own conversation id, so a restart reopens that conversation and never one left by a background job in the same folder. Restarts the session when it stops, and waits ten minutes after five restarts in ten minutes, sending you one message when that happens. Runs `af sync` every 15 minutes. Writes `system\logs\start-agent.log`. |
+| `register-agent-logon.ps1` | You, once, in a normal PowerShell | Creates the Task Scheduler job `AgentFrame agent`, which runs `start-agent.ps1` at normal priority when you sign in. `-Discord` and `-LockScreen` are passed on; the summary it prints says whether the Discord bridge is on. `-Unregister` removes it. |
+| `timers.ps1` | You, once on each machine, in a normal PowerShell | `-Register` sets up the loop watch, bills watch, reminders push, weekly consolidation and weekly backlog pass on this machine; `-Unregister` removes them. With no switch it shows which of them are registered here. Only one machine should run them. |
 
-The session's command line sits in one marked block at the top of `start-agent.ps1`. The Discord bridge (`--channels`) is a research preview whose flags may change; when they do, that block is the only place to edit. The permission mode defaults to `auto`, because a permission prompt stops an unattended session until someone answers it. Whether `auto` is accepted is not yet checked: if it is not, the session exits at once and the log shows it. The fix is `-PermissionMode` on `register-agent-logon.ps1`.
+The session's command line sits in one marked block at the top of `start-agent.ps1`; when Claude Code's flags change, that block is the only place to edit. The Discord bridge (`--channels`) is optional and a research preview: the command line carries it only when `start-agent.ps1` gets `-Discord`, which you add after the Discord plugin is installed and paired (step 7). Without it the session is reached through Remote Control only. With `-Discord` but no plugin, the session exits at once and the watchdog backs off. The permission mode defaults to `auto`, because a permission prompt stops an unattended session until someone answers it. Whether `auto` is accepted is not yet checked: if it is not, the session exits at once and the log shows it. The fix is `-PermissionMode` on `register-agent-logon.ps1`.
 
 The session's conversation id lives in `system\logs\start-agent-session-id.txt`. Each start reopens that conversation when its transcript exists, and otherwise starts it under the same id; a failed start never throws the id away. Delete that file to have the next start open a new conversation.
 
@@ -31,8 +31,8 @@ Placeholders: `<laptop-name>` is the laptop's computer name, `<vault folder>` th
 
 ### 1. On the laptop, by hand
 
-1. Update Windows 11 and sign in with your administrator account.
-2. Install Git, Python 3, Google Chrome, Claude Code and Bun. Check each answers in a new PowerShell window: `git --version`, `python --version`, `claude --version`, `bun --version`. Rust is not needed unless you choose to build `af` on the laptop (step 4).
+1. Update Windows (10 or 11) and sign in with your administrator account.
+2. Install Git, Python 3, Google Chrome and Claude Code, and Bun if you will use the Discord bridge (step 7). Check each answers in a new PowerShell window: `git --version`, `python --version`, `claude --version`, `bun --version`. Rust is not needed unless you choose to build `af` on the laptop (step 4).
 3. Set your git name and email once, or the laptop's commits are authored "AgentFrame":
    ```powershell
    git config --global user.name "<your name>"
@@ -102,15 +102,17 @@ From here on, use the kit inside the vault, `<vault folder>\system\tools\laptop`
 
 See the section below.
 
-### 7. Discord
+### 7. Discord (optional)
 
-In a normal PowerShell, in the vault folder:
+Skip this step to reach the session through Remote Control only. To add the Discord bridge, in a normal PowerShell, in the vault folder:
 
 1. Run `claude`, then `/plugin install discord@claude-plugins-official`.
 2. Run `/discord:configure` and paste your bot's token when asked. It is saved in your user folder under `.claude\channels\discord\`, never in the vault.
 3. Exit, then start `claude --channels plugin:discord@claude-plugins-official`.
 4. Send your bot a direct message from your phone and pair as the plugin tells you.
 5. Run `/discord:access policy allowlist` so only you can reach it. Then exit.
+
+From here on, add `-Discord` wherever steps 8 and 9 start the session; without it the session never loads the bridge.
 
 ### 8. First run, by hand
 
@@ -120,20 +122,22 @@ In a normal PowerShell, in the kit folder inside the vault:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\start-agent.ps1
 ```
 
-Answer any question the "AgentFrame session" window asks. Then check from your phone: the session "AgentFrame laptop" shows in Remote Control, and the bot answers a direct message. Check `system\logs\start-agent.log` shows `sync ok`. Stop it afterwards: close the watchdog window first, then the session window.
+Add `-Discord` at the end if you did step 7. Answer any question the "AgentFrame session" window asks. Then check from your phone: the session "AgentFrame laptop" shows in Remote Control, and, with `-Discord`, the bot answers a direct message. Check `system\logs\start-agent.log` shows `sync ok`. Stop it afterwards: close the watchdog window first, then the session window.
 
 ### 9. Start at logon
+
+In a normal PowerShell, in the kit folder; the job is yours, at limited run level, so no administrator PowerShell is needed:
 
 ```powershell
 .\register-agent-logon.ps1
 Start-ScheduledTask -TaskName 'AgentFrame agent'
 ```
 
-Add `-LockScreen` to the first command if the laptop signs in by itself (next section).
+Add `-Discord` to the first command if you did step 7; without it the job reaches the session through Remote Control only. Add `-LockScreen` if the laptop signs in by itself (next section). The summary it prints shows the registered command and whether the Discord bridge is on.
 
 ### 10. Timers
 
-On the laptop, `.\timers.ps1 -Register`. Then on the desktop, in its own vault's `system\tools\laptop` folder, `.\timers.ps1 -Unregister`. Run `.\timers.ps1` on each to check: the laptop shows `[here]`, the desktop `[absent]`.
+In a normal PowerShell on the laptop (the timers are your own tasks at limited run level), `.\timers.ps1 -Register`. Then on the desktop, in its own vault's `system\tools\laptop` folder, `.\timers.ps1 -Unregister`. Run `.\timers.ps1` on each to check: the laptop shows `[here]`, the desktop `[absent]`.
 
 Once the laptop's session works, you may want to stop the desktop's own Remote Control server, so your phone lists one session.
 
@@ -168,7 +172,7 @@ Either way, anyone who opens the laptop is signed in as you, an administrator. R
 
 Also:
 
-- Discord messages reach the session only while it is open. During a back-off they wait or are lost, so check the log if the bot goes quiet.
+- With `-Discord`, Discord messages reach the session only while it is open. During a back-off they wait or are lost, so check the log if the bot goes quiet.
 - If a Claude Code update changes the `--channels` or `--remote-control` flags, the session will stop at once and back off. Fix the block at the top of `start-agent.ps1`.
 - Status messages go to the reminders channel through `system\tools\notify.py`; pass `-NotifyChannel` to `register-agent-logon.ps1` for another.
 - A remote-control session you start by hand is left alone and logged once; the watchdog still starts its own. If both hold the Discord channel, both answer the bot, so close one.

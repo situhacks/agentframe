@@ -8,7 +8,7 @@ use std::io::Write;
 
 pub const BUTTON_WINDOW_DAYS: i64 = 14;
 pub const READ_ONLY_VERBS: [&str; 4] = ["doctor", "index", "search", "pipe board"];
-pub const SUBCOMMAND_VERBS: [&str; 8] = ["index", "pipe", "studio", "tag", "place", "person", "backlog", "needs"];
+pub const SUBCOMMAND_VERBS: [&str; 9] = ["index", "pipe", "studio", "tag", "place", "person", "backlog", "needs", "sync"];
 
 pub fn verb_of(argv: &[String]) -> String {
     let toks: Vec<&String> = argv.iter().filter(|t| !t.starts_with('-')).collect();
@@ -62,6 +62,22 @@ pub fn log_run(ctx: &Ctx, verb: &str, argv: &[String], exit_code: i32, refusal: 
     }
     row.push('}');
     row.push_str(crate::out::NL);
+    let _ = (|| -> std::io::Result<()> {
+        std::fs::create_dir_all(pyos::dirname(&ctx.run_log))?;
+        let mut f = std::fs::OpenOptions::new().create(true).append(true).open(&ctx.run_log)?;
+        f.write_all(row.as_bytes())
+    })();
+}
+
+/// One line for something a hook skipped: exit 0, so the button counts never include it.
+pub fn log_note(ctx: &Ctx, verb: &str, note: &str) {
+    let row = format!(
+        "{{\"ts\": {}, \"verb\": {}, \"argv\": [], \"exit\": 0, \"note\": {}}}{}",
+        json_str(&now_utc_iso()),
+        json_str(verb),
+        json_str(note),
+        crate::out::NL
+    );
     let _ = (|| -> std::io::Result<()> {
         std::fs::create_dir_all(pyos::dirname(&ctx.run_log))?;
         let mut f = std::fs::OpenOptions::new().create(true).append(true).open(&ctx.run_log)?;
@@ -205,14 +221,16 @@ pub fn open_backlog_rows_naming_af(ctx: &Ctx) -> usize {
         .count()
 }
 
-/// `af session stop` exiting 3 is its HANDOFF_REQUIRED signal, not a refusal.
+/// Exit 3 is a signal the chat acts on, not a refusal: `af session stop`'s HANDOFF_REQUIRED
+/// and `af sync`'s SYNC_CONFLICT.
 fn is_handoff_signal(r: &serde_json::Map<String, Value>) -> bool {
     let first_two: Vec<&str> = r
         .get("argv")
         .and_then(Value::as_array)
         .map(|a| a.iter().filter_map(Value::as_str).filter(|t| !t.starts_with('-')).take(2).collect())
         .unwrap_or_default();
-    first_two == ["session", "stop"] && r.get("exit").and_then(Value::as_i64) == Some(3)
+    let signals = first_two == ["session", "stop"] || first_two == ["sync"];
+    signals && r.get("exit").and_then(Value::as_i64) == Some(3)
 }
 
 /// What the buttons did lately, per state verb, against the open rows that name them.

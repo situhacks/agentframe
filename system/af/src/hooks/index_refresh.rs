@@ -95,12 +95,8 @@ pub fn decide(p: &Paths, now: NaiveDateTime) -> Result<String, String> {
     if !Path::new(&p.db).is_file() {
         return Ok("no index yet (af index update --rebuild builds the first one)".into());
     }
-    if Path::new(&p.lock).is_file() {
-        let now_ts = Local.from_local_datetime(&now).earliest().map(|t| t.timestamp_micros() as f64 / 1e6).unwrap_or(0.0);
-        let mtime = mtime_secs(&p.lock).ok_or("lock stat failed")?;
-        if (now_ts - mtime) / 3600.0 < LOCK_STALE_HOURS {
-            return Ok("a refresh is already running".into());
-        }
+    if lock_fresh(p, now)? {
+        return Ok("a refresh is already running".into());
     }
     if let Some(updated) = last_update(&p.db)? {
         let age_h = (now - updated).num_microseconds().map(|m| m as f64 / 1e6).unwrap_or(f64::MAX) / 3600.0;
@@ -109,6 +105,28 @@ pub fn decide(p: &Paths, now: NaiveDateTime) -> Result<String, String> {
         }
     }
     Ok("spawn".into())
+}
+
+/// A refresh lock younger than `LOCK_STALE_HOURS`: a refresh is running.
+fn lock_fresh(p: &Paths, now: NaiveDateTime) -> Result<bool, String> {
+    if !Path::new(&p.lock).is_file() {
+        return Ok(false);
+    }
+    let now_ts = Local.from_local_datetime(&now).earliest().map(|t| t.timestamp_micros() as f64 / 1e6).unwrap_or(0.0);
+    let mtime = mtime_secs(&p.lock).ok_or("lock stat failed")?;
+    Ok((now_ts - mtime) / 3600.0 < LOCK_STALE_HOURS)
+}
+
+pub const SYNC_SPAWNED_LINE: &str = "Search index: refreshing in the background after the sync (af index status).";
+
+/// After a sync brought changes: one detached update, unless this machine has no index yet
+/// or a refresh is running. Never fails the sync.
+pub fn refresh_after_sync(root: &str) -> Option<&'static str> {
+    let p = Paths::new(root);
+    if !Path::new(&p.db).is_file() || lock_fresh(&p, Local::now().naive_local()).unwrap_or(true) {
+        return None;
+    }
+    spawn(&p).ok().map(|_| SYNC_SPAWNED_LINE)
 }
 
 /// `f"{x:.0f}"` (round half to even on the exact value).

@@ -12,7 +12,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "AF_ROOT=\"${CLAUDE_PROJECT_DIR}\" af hook session-start"
+            "command": "AF_ROOT=\"${CLAUDE_PROJECT_DIR}\" af hook session-start",
+            "timeout": 30
           }
         ]
       }
@@ -22,7 +23,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "AF_ROOT=\"${CLAUDE_PROJECT_DIR}\" af hook stop"
+            "command": "AF_ROOT=\"${CLAUDE_PROJECT_DIR}\" af hook stop",
+            "timeout": 30
           }
         ]
       }

@@ -1,8 +1,10 @@
 # Registers the Task Scheduler job "AgentFrame agent": start-agent.ps1 at logon of the current user,
 # interactive and not elevated, in a minimized window, from the vault root, with no time limit.
+# Runs in a normal PowerShell: the job is the current user's, at limited run level.
 # Rerunning replaces it. Options given here are passed on to start-agent.ps1.
-#   .\register-agent-logon.ps1                                   # register
+#   .\register-agent-logon.ps1                                   # register; Remote Control only
 #   .\register-agent-logon.ps1 -PermissionMode acceptEdits -LockScreen
+#   .\register-agent-logon.ps1 -Discord                          # add the Discord bridge, once the plugin is paired
 #   .\register-agent-logon.ps1 -Unregister                       # remove the job
 # Removing the job stops nothing already running: end the watchdog, then close the session window.
 
@@ -13,7 +15,8 @@ param(
     [ValidateNotNullOrEmpty()][string]$PermissionMode,
     [ValidateRange(1, 1440)][int]$SyncMinutes,
     [ValidateNotNullOrEmpty()][string]$NotifyChannel,
-    [switch]$LockScreen
+    [switch]$LockScreen,
+    [switch]$Discord
 )
 
 $ErrorActionPreference = 'Stop'
@@ -47,6 +50,7 @@ foreach ($name in @('SessionName', 'PermissionMode', 'SyncMinutes', 'NotifyChann
     $argLine += " -$name `"$value`""
 }
 if ($LockScreen) { $argLine += ' -LockScreen' }
+if ($Discord) { $argLine += ' -Discord' }
 
 $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $argLine -WorkingDirectory $vault
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $user
@@ -60,4 +64,9 @@ Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Pr
 
 Write-Output "Registered '$taskName' for $user, working directory $vault"
 Write-Output "Runs at your next logon: powershell.exe $argLine"
+if ($Discord) {
+    Write-Output 'Discord bridge: on. The Discord plugin must be installed and paired, or the session exits at once.'
+} else {
+    Write-Output 'Discord bridge: off; the session is reached through Remote Control only. Rerun with -Discord to add it.'
+}
 Write-Output "Start it now without signing out: Start-ScheduledTask -TaskName '$taskName'"

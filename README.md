@@ -149,6 +149,8 @@ One Windows Task Scheduler job, `AgentFrame consolidation`, runs every Sunday at
 
 A second job, `AgentFrame reminders`, runs `push-due-loops.ps1` every day at 08:30 while you are logged on, and at the next logon if the PC was off. It posts nothing when nothing is due. The Discord credentials go in `system/tools/.env`, which git ignores; `notify.py` names the variables. Register it the same way, with `system/tools/register-daily-reminders.ps1`.
 
+`system/tools/discord_board.py` keeps Discord boards current by editing in place, where `notify.py` only appends: `board <key> <file>` maintains a text channel's one pinned board, `post <key> <slug> <file> --title "<title>" [--tag <name>]` one forum post per item, and `--dry-run` prints without sending or writing. It reads the same `.env` and keeps its message ids in `workspace/life/systems/discord/state.json`.
+
 ## Quick start
 
 1. Clone the repository:

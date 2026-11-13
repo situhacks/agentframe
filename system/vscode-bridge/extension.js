@@ -10,18 +10,13 @@ const vscode = require('vscode');
 const fs = require('fs');
 const path = require('path');
 
-const VERSION = '0.1.0';
+const VERSION = '0.2.0';
 const MAX_AGE_MS = 2 * 60 * 1000;
 const POLL_MS = 2000;
 const CLAUDE_VIEW = 'claudeVSCodePanel';
 const OPEN_COMMAND = 'claude-vscode.editor.open';
-const GROUP_COMMAND = 'claude-vscode.addSessionTabToGroup';
 
 let state = null;
-
-function sleep(ms) {
-  return new Promise(function (resolve) { setTimeout(resolve, ms); });
-}
 
 // The vault root is the first workspace folder, with a trailing .claude/worktrees/<name> removed.
 function vaultRoot() {
@@ -134,28 +129,14 @@ const ACTIONS = {
     // Anything that is not a Claude chat tab is never in this list, so it can never be closed here.
     let matches = claudeTabsByLabel(label);
     const total = matches.length;
-    if (args.all === false) matches = matches.slice(0, 1);
+    // One tab, the first match, unless every match is asked for in so many words.
+    if (args.all !== true) matches = matches.slice(0, 1);
     let closed = 0;
     for (let i = 0; i < matches.length; i++) {
       const ok = await vscode.window.tabGroups.close(matches[i]);
       if (ok) closed++;
     }
     return { matched: total, closed: closed };
-  },
-
-  'group-pick': async function (args) {
-    let steps = args.steps;
-    if (typeof steps !== 'number' || steps < 0 || steps > 50 || Math.floor(steps) !== steps) throw new Error('steps must be an integer from 0 to 50');
-    // Not awaited: the command resolves only after the quick pick is answered.
-    const pending = Promise.resolve(vscode.commands.executeCommand(GROUP_COMMAND)).catch(function () { return null; });
-    await sleep(700);
-    for (let i = 0; i < steps; i++) {
-      await vscode.commands.executeCommand('workbench.action.quickOpenSelectNext');
-      await sleep(120);
-    }
-    await vscode.commands.executeCommand('workbench.action.acceptSelectedQuickOpenItem');
-    await Promise.race([pending, sleep(1500)]);
-    return { picked: true, steps: steps };
   }
 };
 

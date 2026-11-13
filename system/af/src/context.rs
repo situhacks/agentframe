@@ -127,6 +127,53 @@ pub fn nudge(ctx: &Ctx, payload: &Value) -> Option<String> {
     Some(nudge_text(class, &row.name, &limits, tokens, tier))
 }
 
+// ------------------------------------------------------------------ a failed --when-idle waiter
+
+/// The one-line result a failed `--when-idle` waiter leaves for its chat, next to the chat's nudge markers.
+pub fn waiter_result_path(ctx: &Ctx, session_id: &str) -> PathBuf {
+    marker_dir(ctx, session_id).join("waiter-result.txt")
+}
+
+/// Leave the line for the chat; the context hook shows it once. A success leaves nothing.
+pub fn write_waiter_result(ctx: &Ctx, session_id: &str, line: &str) {
+    let path = waiter_result_path(ctx, session_id);
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let flat = line.split_whitespace().collect::<Vec<_>>().join(" ");
+    let _ = std::fs::write(path, format!("{} {flat}\n", crate::core::now_iso()));
+}
+
+/// The waiter's result for this chat, once: the process that removes the file shows it. Read before
+/// the nudge, whose re-arm removes the markers' folder. None for a subagent's call or when there is none.
+pub fn take_waiter_result(ctx: &Ctx, payload: &Value) -> Option<String> {
+    let id = payload.get("session_id").and_then(Value::as_str).unwrap_or("");
+    if id.is_empty() || payload.get("agent_id").is_some() {
+        return None;
+    }
+    let path = waiter_result_path(ctx, id);
+    let text = std::fs::read_to_string(&path).ok()?;
+    std::fs::remove_file(&path).ok()?;
+    let line = text.trim();
+    (!line.is_empty()).then(|| line.to_string())
+}
+
+/// Stop: when a waiter's result is waiting and the stop is not already a continuation, the chat is kept
+/// going once to read it (added to the handoff reason when the stop already blocks for that).
+pub fn stop_with_waiter_result(ctx: &Ctx, payload_text: &str, o: sessions::HookOutput) -> sessions::HookOutput {
+    let p: Value = serde_json::from_str(payload_text).unwrap_or(Value::Null);
+    if p.get("stop_hook_active").and_then(Value::as_bool).unwrap_or(false) {
+        return o;
+    }
+    let Some(line) = take_waiter_result(ctx, &p) else { return o };
+    let note = format!("{line} (This is the outcome of the --when-idle waiter this chat started; it is shown once. Say it to the operator in one line if it matters, then stop.)");
+    let reason = match serde_json::from_str::<Value>(&o.stdout).ok().and_then(|v| v.get("reason").and_then(Value::as_str).map(str::to_string)) {
+        Some(r) => format!("{r}\n\n{note}"),
+        None => note,
+    };
+    sessions::HookOutput { stdout: serde_json::json!({"decision": "block", "reason": reason}).to_string(), exit: o.exit }
+}
+
 /// PostCompact: a registered chat's nudges re-arm at once. Prints nothing.
 pub fn postcompact(ctx: &Ctx, payload_text: &str) {
     let p: Value = serde_json::from_str(payload_text).unwrap_or(Value::Null);

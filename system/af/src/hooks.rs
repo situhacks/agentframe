@@ -133,8 +133,11 @@ pub fn dispatch(h: &HookCtx, event: &str, stdin_text: &str) -> Result<Option<PyV
         ("pre-tool-use", publish_guard::GATED_TOOL) => results.extend(publish_guard::decide(h, &payload)?),
         _ => {}
     }
-    // After every tool, whatever it is: the chat's context-size nudge.
+    // After every tool, whatever it is: a failed waiter's result, once, then the chat's context-size nudge.
     if event == "post-tool-use" {
+        if let Some(text) = crate::context::take_waiter_result(&h.ctx, &payload) {
+            results.push(context("PostToolUse", &text));
+        }
         if let Some(text) = crate::context::nudge(&h.ctx, &payload) {
             results.push(context("PostToolUse", &text));
         }
@@ -180,7 +183,7 @@ pub fn main(args: &[String]) -> i32 {
             return emit(sessions::hook_session_start_with(&h.ctx, &text, lead));
         }
         "stop" => {
-            let o = sessions::hook_stop(&h.ctx, &text);
+            let o = crate::context::stop_with_waiter_result(&h.ctx, &text, sessions::hook_stop(&h.ctx, &text));
             // The private layer is saved only when the chat is really stopping.
             if o.stdout.is_empty() {
                 crate::save::hook(&h.ctx);

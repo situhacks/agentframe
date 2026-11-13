@@ -4,7 +4,7 @@
 
 Writes system/logs/panel-bridge/requests/<id>.json in the vault root (never a worktree), waits for
 results/<id>.json, prints it, and exits 0 on ok, 1 on error, 2 on timeout. Actions: ping, tabs, open,
-reveal, close-tab, group-pick. On Windows with Git Bash, pass text that starts with a slash through
+reveal, close-tab (the installed 0.1.0 also has group-pick, which nothing should send). On Windows with Git Bash, pass text that starts with a slash through
 --json-file, because the shell rewrites a leading slash in an argument.
 """
 import argparse

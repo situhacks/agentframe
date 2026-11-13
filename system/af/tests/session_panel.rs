@@ -193,7 +193,7 @@ fn driver_exit_codes_become_clear_refusals_and_nothing_else_runs() {
     let cases = [
         ("3", "exit 3", "operator was using the computer"),
         ("4", "exit 4", "draft typed in its input box"),
-        ("5", "exit 5", "safety check failed before anything was sent"),
+        ("5", "exit 5", "safety check failed, so nothing was sent"),
         ("6", "exit 6", "MODEL KEY MISMATCH"),
         ("2", "could not find", "no chat row for session sid-1"),
         ("1", "failed (exit 1)", "the stub driver refused"),
@@ -267,7 +267,8 @@ fn when_idle_returns_at_once_and_the_waiter_sends_the_compact_and_logs_its_resul
     assert!(log.contains("system/x compact ok: system/x: compacted through the panel"), "{log}");
     let made = sends(&fx);
     assert_eq!(made.len(), 1, "{made:?}");
-    assert_eq!(arg_after(&made[0].0, "-WaitMinutes").as_deref(), Some("60"));
+    let w: f64 = arg_after(&made[0].0, "-WaitMinutes").unwrap().parse().unwrap();
+    assert!((59.0..=60.0).contains(&w), "what is left of the 60 minutes: {w}");
     assert_eq!(made[0].1.as_deref(), Some("/compact keep the plan"));
     assert_eq!(boundaries(&fx), 1);
     assert!(fx.read("system/logs/panel-waiters.log").lines().count() == 1);
@@ -283,7 +284,8 @@ fn the_waiters_failure_lands_in_the_log_too_and_wait_minutes_sets_its_budget() {
     assert!(out.contains("within 5 minutes"), "{out}");
     let log = wait_for(&fx, "system/logs/panel-waiters.log", "compact failed");
     assert!(log.contains("system/x compact failed: ") && log.contains("exit 3"), "{log}");
-    assert_eq!(arg_after(&sends(&fx)[0].0, "-WaitMinutes").as_deref(), Some("5"));
+    let w: f64 = arg_after(&sends(&fx)[0].0, "-WaitMinutes").unwrap().parse().unwrap();
+    assert!((4.0..=5.0).contains(&w), "what is left of the 5 minutes: {w}");
     assert_eq!(boundaries(&fx), 0);
 }
 
@@ -490,7 +492,7 @@ fn panel_lists_the_chats_joined_with_registry_names() {
     let v: Value = serde_json::from_str(&out).unwrap();
     assert_eq!(v[0]["registry_name"], "system/x");
     assert_eq!(v[1]["registry_name"], "");
-    assert_eq!(calls(&fx)[0].0, ["list"]);
+    assert_eq!(calls(&fx)[0].0, ["list", "-WaitMinutes", "1"], "a list waits a minute at most");
 }
 
 #[test]
@@ -630,4 +632,178 @@ fn every_test_fixture_points_the_driver_at_nothing_by_default() {
     assert_eq!(o.status.code(), Some(1));
     let err = String::from_utf8_lossy(&o.stderr).into_owned();
     assert!(err.contains("would not start"), "{err}");
+}
+
+// ------------------------------------------------------------------ notes, the deadline, the lock
+
+/// A process id that is certainly not running: a child that has already ended.
+fn dead_pid() -> u32 {
+    let mut c = std::process::Command::new(panel_stub()).arg("agents").stdout(std::process::Stdio::null()).spawn().unwrap();
+    let id = c.id();
+    c.wait().unwrap();
+    id
+}
+
+#[test]
+fn the_drivers_notes_are_printed_on_success_and_on_a_refusal() {
+    let fx = chat();
+    let note = "his view was not restored: the operator is at the machine";
+    let (code, out, err) = session(&fx, &[("STUB_PANEL_NOTE", note)], &["compact", "system/x"]);
+    assert_eq!(code, 0, "{out}{err}");
+    assert!(out.contains(&format!("Driver notes: {note}")), "{out}");
+    let list = r#"[{"session_id":"sid-1","name":"system/x","status":"idle","active":false}]"#;
+    let (code, out, err) = session(&fx, &[("STUB_PANEL_NOTE", note), ("STUB_PANEL_LIST", list)], &["rename", "system/x"]);
+    assert_eq!(code, 0, "{out}{err}");
+    assert!(out.contains(&format!("note: {note}")), "{out}");
+    let fx = chat();
+    let reason = "read-back failed (the input does not hold the text). Nothing was sent. The driver closed the chat's tab, then opened it with the text in the input, then closed that tab again to take the unsent text away, then opened the chat's tab again with an empty input. The chat's tab is now open.";
+    let (code, _, err) = session(&fx, &[("STUB_PANEL_EXIT", "5"), ("STUB_PANEL_STDERR", reason), ("STUB_PANEL_NOTE", note)], &["compact", "system/x"]);
+    assert_eq!(code, 1);
+    assert!(err.contains("exit 5") && err.contains("The chat's tab is now open.") && err.contains(note), "the whole driver message and its notes: {err}");
+}
+
+#[test]
+fn afs_limit_is_the_drivers_own_deadline_plus_a_margin() {
+    use afcore::panel::{driver_limit, DRIVER_MARGIN_SECS, DRIVER_WAIT_MINUTES, DRIVER_WORK_SECS};
+    assert_eq!(DRIVER_WORK_SECS, 1200, "claude_panel.ps1 $WorkSeconds is the same number (a Python test pairs them)");
+    assert_eq!(DRIVER_WAIT_MINUTES, 20.0);
+    assert_eq!(driver_limit(Some(5.0)), Duration::from_secs(5 * 60 + DRIVER_WORK_SECS + DRIVER_MARGIN_SECS));
+    assert_eq!(driver_limit(None), Duration::from_secs(20 * 60 + DRIVER_WORK_SECS + DRIVER_MARGIN_SECS));
+    assert_eq!(driver_limit(Some(60.0)), Duration::from_secs(3600 + 1260));
+    // The longest step after the wait (a /compact confirmation, 10 minutes) fits in the work time.
+    assert!(DRIVER_WORK_SECS > 600 + 90 + 120);
+}
+
+#[test]
+fn a_driver_that_runs_past_afs_limit_is_killed_logged_and_reported() {
+    let fx = chat();
+    let started = Instant::now();
+    let (code, out, err) = session(&fx, &[("AF_PANEL_LIMIT_SECS", "1"), ("STUB_PANEL_SLEEP_SECS", "8")], &["compact", "system/x"]);
+    assert_eq!(code, 1, "{out}");
+    assert!(started.elapsed() < Duration::from_secs(7), "killed at the limit, not waited out");
+    assert!(err.contains("af killed the panel driver") && err.contains("look at the chat now"), "{err}");
+    assert!(!out.contains("compacted"), "{out}");
+    let log = fx.read("system/logs/claude-panel.log");
+    assert!(log.contains("send sid-1 exit=killed-by-af"), "{log}");
+}
+
+#[test]
+fn the_vault_root_is_found_from_a_worktree() {
+    use afcore::panel::vault_root;
+    assert_eq!(vault_root("C:\\v\\Vault\\.claude\\worktrees\\one"), std::path::PathBuf::from("C:\\v\\Vault"));
+    assert_eq!(vault_root("/v/Vault/.Claude/Worktrees/one"), std::path::PathBuf::from("/v/Vault"));
+    assert_eq!(vault_root("C:\\v\\Vault"), std::path::PathBuf::from("C:\\v\\Vault"));
+}
+
+#[test]
+fn a_live_driver_lock_on_the_chat_keeps_it_off_the_closed_route_and_a_dead_one_does_not() {
+    let fx = chat();
+    let me = std::process::id();
+    fx.write("system/logs/panel-bridge/driver.lock", &json!({"pid": me, "session_id": "sid-1", "action": "send", "started": "now"}).to_string());
+    let (code, out, err) = session(&fx, &[("STUB_ROSTER", "[]")], &["compact", "system/x", "--dry-run"]);
+    assert_eq!(code, 0, "{out}{err}");
+    assert!(out.contains(&format!("the panel driver (pid {me}) holds the panel lock")) && out.contains("through the panel"), "{out}");
+    fx.write("system/logs/panel-bridge/driver.lock", &json!({"pid": me, "session_id": "sid-other", "action": "send"}).to_string());
+    let (_, out, _) = session(&fx, &[("STUB_ROSTER", "[]")], &["compact", "system/x", "--dry-run"]);
+    assert!(out.contains("would run from"), "another chat's lock does not count: {out}");
+    fx.write("system/logs/panel-bridge/driver.lock", &json!({"pid": dead_pid(), "session_id": "sid-1", "action": "send"}).to_string());
+    let (_, out, _) = session(&fx, &[("STUB_ROSTER", "[]")], &["compact", "system/x", "--dry-run"]);
+    assert!(out.contains("would run from"), "a lock left by a dead run is stale: {out}");
+}
+
+// ------------------------------------------------------------------ one waiter per chat, deciding when it fires
+
+#[test]
+fn a_second_when_idle_finds_the_pending_waiter_and_starts_none() {
+    let fx = chat();
+    let me = std::process::id();
+    let job = "system/logs/claude-panel/waiter-sid-1.json";
+    fx.write(job, &json!({"name": "system/x", "session_id": "sid-1", "pid": me, "queued": "2026-11-13T10:00:00+00:00", "queued_ms": 1}).to_string());
+    let (code, out, err) = session(&fx, &[], &["compact", "system/x", "--when-idle"]);
+    assert_eq!(code, 0, "{out}{err}");
+    assert!(out.contains("already pending") && out.contains(&format!("(pid {me})")) && out.contains("nothing new was started"), "{out}");
+    std::thread::sleep(Duration::from_millis(500));
+    assert!(calls(&fx).is_empty() && !fx.exists("system/logs/panel-waiters.log"));
+    // A job whose waiter is gone is stale: a new waiter starts.
+    fx.write(job, &json!({"name": "system/x", "session_id": "sid-1", "pid": dead_pid(), "queued_ms": 1}).to_string());
+    let (code, out, err) = session(&fx, &[], &["compact", "system/x", "--when-idle"]);
+    assert_eq!(code, 0, "{out}{err}");
+    assert!(out.contains("detached waiter"), "{out}");
+    let log = wait_for(&fx, "system/logs/panel-waiters.log", "compact ok");
+    assert!(log.contains("compact ok"), "{log}");
+}
+
+#[test]
+fn the_waiter_does_nothing_when_the_chat_was_compacted_after_it_was_queued() {
+    let fx = chat();
+    let len = fx.read(TRANSCRIPT).len();
+    fx.write(TRANSCRIPT, &format!("{}{{\"type\":\"system\",\"subtype\":\"compact_boundary\"}}\n", fx.read(TRANSCRIPT)));
+    let job = fx.write(
+        "system/logs/claude-panel/waiter-sid-1.json",
+        &json!({"name": "system/x", "session_id": "sid-1", "instructions": null, "force": false, "then_file": null, "wait_minutes": 60, "queued_ms": 1, "transcript_len": len}).to_string(),
+    );
+    let (code, out, err) = session(&fx, &[], &["compact", "system/x", "--waiter-job", &job]);
+    assert_eq!(code, 0, "{out}{err}");
+    assert!(calls(&fx).is_empty(), "nothing was sent");
+    assert!(fx.read("system/logs/panel-waiters.log").contains("nothing to do; its transcript gained a compact_boundary line after this waiter was queued"));
+    assert!(!fx.exists("system/logs/claude-panel/waiter-sid-1.json"));
+}
+
+#[test]
+fn the_waiter_waits_while_a_record_is_not_idle_and_fires_when_it_is() {
+    let fx = chat();
+    let me = std::process::id();
+    // No status is not idle.
+    fx.write("cfg/sessions/1.json", &json!({"pid": me, "sessionId": "sid-1", "entrypoint": "claude-vscode"}).to_string());
+    let (code, out, err) = session(&fx, &[("AF_WAITER_POLL_MS", "100")], &["compact", "system/x", "--when-idle"]);
+    assert_eq!(code, 0, "{out}{err}");
+    std::thread::sleep(Duration::from_millis(1500));
+    assert!(sends(&fx).is_empty(), "nothing is sent while the chat is not idle");
+    assert!(fx.exists("system/logs/claude-panel/waiter-sid-1.json"), "the waiter holds its job while it waits");
+    fx.write("cfg/sessions/1.json", &json!({"pid": me, "sessionId": "sid-1", "entrypoint": "claude-vscode", "status": "busy"}).to_string());
+    std::thread::sleep(Duration::from_millis(600));
+    assert!(sends(&fx).is_empty());
+    fx.write("cfg/sessions/1.json", &json!({"pid": me, "sessionId": "sid-1", "entrypoint": "claude-vscode", "status": "idle"}).to_string());
+    let log = wait_for(&fx, "system/logs/panel-waiters.log", "compact ok");
+    assert!(log.contains("system/x compact ok: system/x: compacted through the panel"), "{log}");
+    assert_eq!(sends(&fx).len(), 1);
+}
+
+#[test]
+fn a_failed_waiter_leaves_one_line_that_the_chat_sees_once() {
+    let fx = chat();
+    let (code, out, err) = session(&fx, &[("STUB_PANEL_EXIT", "4"), ("STUB_PANEL_STDERR", "the tab was not closed: the chat has a draft typed in its input box. Nothing was sent. The panel was not changed")], &["compact", "system/x", "--when-idle"]);
+    assert_eq!(code, 0, "{out}{err}");
+    wait_for(&fx, "system/logs/panel-waiters.log", "compact failed");
+    let result = "system/logs/context-nudge/sid-1/waiter-result.txt";
+    let until = Instant::now() + Duration::from_secs(10);
+    while !fx.exists(result) && Instant::now() < until {
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    assert!(fx.read(result).contains("The --when-idle compaction this chat queued failed") && fx.read(result).contains("exit 4"));
+    let payload = json!({"session_id": "sid-1", "tool_name": "Read", "hook_event_name": "PostToolUse"}).to_string();
+    let o = fx.af().args(["hook", "post-tool-use"]).write_stdin(payload.clone()).output().unwrap();
+    let shown = String::from_utf8_lossy(&o.stdout).into_owned();
+    assert!(shown.contains("The --when-idle compaction this chat queued failed"), "{shown}");
+    assert!(!fx.exists(result), "shown once");
+    let o = fx.af().args(["hook", "post-tool-use"]).write_stdin(payload).output().unwrap();
+    assert!(!String::from_utf8_lossy(&o.stdout).contains("--when-idle compaction"));
+    // At a stop it keeps the chat going once to read it; a stop that is already a continuation is left alone.
+    fx.write(result, "2026-11-13T10:00:00+00:00 The --when-idle compaction this chat queued failed: x\n");
+    let stop = |active: bool| {
+        let p = json!({"session_id": "sid-1", "hook_event_name": "Stop", "stop_hook_active": active}).to_string();
+        String::from_utf8_lossy(&fx.af().args(["hook", "stop"]).write_stdin(p).output().unwrap().stdout).into_owned()
+    };
+    assert!(!stop(true).contains("--when-idle compaction"));
+    let out = stop(false);
+    assert!(out.contains("\"decision\":\"block\"") && out.contains("The --when-idle compaction this chat queued failed: x"), "{out}");
+    assert!(!fx.exists(result));
+}
+
+#[test]
+fn a_successful_waiter_leaves_nothing_for_the_chat() {
+    let fx = chat();
+    assert_eq!(session(&fx, &[], &["compact", "system/x", "--when-idle"]).0, 0);
+    wait_for(&fx, "system/logs/panel-waiters.log", "compact ok");
+    assert!(!fx.exists("system/logs/context-nudge/sid-1/waiter-result.txt"));
 }

@@ -333,7 +333,8 @@ posted_at: {posted_at}\nurl: {url}\nmetrics_captured_at: null\n\n# LIFECYCLE\nla
 /// `STUB_PANEL_EXITS` (comma list, one per call, the last repeats) or `STUB_PANEL_EXIT` set the exit
 /// code, `STUB_PANEL_STDERR` its message. `list` prints `STUB_PANEL_LIST`; `new` prints `STUB_PANEL_NEW_ID`;
 /// a `send` of text holding `/compact` appends a `compact_boundary` line to `STUB_PANEL_TRANSCRIPT`
-/// unless `STUB_PANEL_NO_BOUNDARY` is set. `STUB_PANEL_SLEEP_SECS` makes every call slow.
+/// unless `STUB_PANEL_NO_BOUNDARY` is set. `STUB_PANEL_SLEEP_SECS` makes every call slow;
+/// `STUB_PANEL_NOTE` prints a `note: ...` line on stderr, as the driver does, on success and failure.
 const PANEL_STUB_SRC: &str = r##"
 use std::io::Write;
 fn append(path: &str, text: &str) {
@@ -388,7 +389,13 @@ fn main() {
     };
     if code != 0 {
         eprintln!("{}", std::env::var("STUB_PANEL_STDERR").unwrap_or_else(|_| "the stub driver refused".into()));
+        if let Ok(note) = std::env::var("STUB_PANEL_NOTE") {
+            eprintln!("note: {note}");
+        }
         std::process::exit(code);
+    }
+    if let Ok(note) = std::env::var("STUB_PANEL_NOTE") {
+        eprintln!("note: {note}");
     }
     match action.as_str() {
         "list" => print!("{}", std::env::var("STUB_PANEL_LIST").unwrap_or_else(|_| "[]".into())),

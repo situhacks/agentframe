@@ -3,9 +3,11 @@
 //! bridge extension, with no key or mouse input, and these verbs build its calls. Text travels in a
 //! UTF-8 file, never as an argument, and reaches the driver exactly as given: a text that starts with
 //! `/` is not changed. The driver's exit code says why it did not act: 3 the operator was at the
-//! machine or the chat was running for the whole wait, 4 a draft sits in the chat's input, 5 a safety
-//! check failed before anything was sent, 2 the bridge, window, chat or control was not found, 6 the
-//! global model key or the settings file did not match after a model pick.
+//! machine, the chat was busy or another driver run held the panel for the whole wait, 4 the chat's
+//! input holds text that is not the driver's, 5 a safety check failed; on all three nothing was sent,
+//! and the driver's message says what it changed and where the chat's tab is now. 2 the bridge,
+//! window, chat or control was not found, 6 the global model key or the settings file did not match
+//! after a model pick. Its notes (lines `note: ...` on stderr) are printed on success too.
 
 use crate::core::Ctx;
 use crate::die;
@@ -23,12 +25,22 @@ use std::time::{Duration, Instant};
 /// The driver program: `AF_PANEL_DRIVER` names another program (tests use a stub), else
 /// `system/tools/claude_panel.ps1` under Windows PowerShell.
 pub const DRIVER_ENV: &str = "AF_PANEL_DRIVER";
-/// How long the driver waits for the operator and the chat when asked for no other time.
+/// How long the driver waits for the operator and the chat when asked for no other time
+/// (the driver's own `-WaitMinutes` default).
 pub const DRIVER_WAIT_MINUTES: f64 = 20.0;
-/// The time the driver may take beyond its wait: the panel is slow to read and the typing is guarded.
-const SLACK: Duration = Duration::from_secs(4 * 60);
-const LIST_LIMIT: Duration = Duration::from_secs(90);
+/// The time a driver run may take beyond its wait: the driver's `$WorkSeconds`, the same number. It
+/// bounds every step by the wait plus this, and puts the chat back inside it.
+pub const DRIVER_WORK_SECS: u64 = 1200;
+/// What af allows on top of the driver's own deadline, for PowerShell to start and end.
+pub const DRIVER_MARGIN_SECS: u64 = 60;
+/// A list waits at most this long (for a minimized window it must restore, or for the lock).
+pub const LIST_WAIT_MINUTES: f64 = 1.0;
+/// Test hook: seconds that replace the computed limit, to prove what happens when af has to kill the driver.
+const LIMIT_ENV: &str = "AF_PANEL_LIMIT_SECS";
 const WAITER_LOG: &str = "system/logs/panel-waiters.log";
+const DRIVER_LOG: &str = "system/logs/claude-panel.log";
+/// The lock every driver run that changes anything holds, under the vault root.
+const LOCK_FILE: &str = "system/logs/panel-bridge/driver.lock";
 
 pub struct Driver {
     program: String,
@@ -91,11 +103,107 @@ impl Driver {
         parts.iter().map(|p| if p.contains(' ') { format!("\"{p}\"") } else { p.clone() }).collect::<Vec<_>>().join(" ")
     }
 
-    fn run(&self, ctx: &Ctx, c: &Call, limit: Duration) -> Out {
+    /// Runs the driver within its own deadline plus a margin. If af has to kill it, the driver could
+    /// neither put the chat back nor log, so af logs the kill itself and the answer says so.
+    fn run(&self, ctx: &Ctx, c: &Call) -> Out {
+        let limit = driver_limit(c.wait_minutes);
         let mut cmd = Command::new(&self.program);
         cmd.args(self.args(c)).current_dir(&ctx.root);
-        run_command(cmd, "the panel driver", Some(Instant::now() + limit), true)
+        let out = run_command(cmd, "the panel driver", Some(Instant::now() + limit), true);
+        if out.timed_out() {
+            driver_log(
+                ctx,
+                &format!("{} {} exit=killed-by-af secs={} [af stopped the driver at its limit; nothing was put back]", c.action, c.session.unwrap_or("-"), limit.as_secs()),
+            );
+            return Out {
+                code: None,
+                stdout: String::new(),
+                stderr: format!(
+                    "af killed the panel driver: it ran past its limit of {} seconds (its wait, {} seconds of work and a {} second margin). A killed driver cannot put the chat back or log, so look at the chat now: its tab may be closed, or open with the text unsent",
+                    limit.as_secs(),
+                    DRIVER_WORK_SECS,
+                    DRIVER_MARGIN_SECS
+                ),
+            };
+        }
+        out
     }
+}
+
+/// af's limit for one driver run: the driver's own deadline (its wait, default 20 minutes, plus its
+/// work time) and a margin. The driver bounds every step by its deadline, so af kills it only when
+/// something hangs.
+pub fn driver_limit(wait_minutes: Option<f64>) -> Duration {
+    if let Some(s) = std::env::var(LIMIT_ENV).ok().and_then(|v| v.trim().parse::<f64>().ok()).filter(|s| *s > 0.0) {
+        return Duration::from_secs_f64(s);
+    }
+    let wait = wait_minutes.unwrap_or(DRIVER_WAIT_MINUTES).max(0.0);
+    Duration::from_secs_f64(wait * 60.0) + Duration::from_secs(DRIVER_WORK_SECS + DRIVER_MARGIN_SECS)
+}
+
+/// The vault root: the main checkout, also when af runs from a worktree under `.claude/worktrees/`.
+pub fn vault_root(root: &str) -> PathBuf {
+    // ASCII lower case keeps every byte where it was, so the index fits the original.
+    let unified = root.replace('\\', "/").to_ascii_lowercase();
+    match unified.find("/.claude/worktrees/") {
+        Some(i) => PathBuf::from(&root[..i]),
+        None => PathBuf::from(root),
+    }
+}
+
+/// One line in the driver's own log, `system/logs/claude-panel.log` under the vault root.
+fn driver_log(ctx: &Ctx, line: &str) {
+    use std::io::Write;
+    let path = vault_root(&ctx.root).join(DRIVER_LOG);
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        let _ = write!(f, "{} {line}\r\n", chrono::Local::now().format("%Y-%m-%dT%H:%M:%S"));
+    }
+}
+
+/// Whether a process with this id is running now.
+#[cfg(windows)]
+pub fn pid_alive(pid: u32) -> bool {
+    extern "system" {
+        fn OpenProcess(access: u32, inherit: i32, pid: u32) -> isize;
+        fn GetExitCodeProcess(handle: isize, code: *mut u32) -> i32;
+        fn CloseHandle(handle: isize) -> i32;
+    }
+    const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
+    const STILL_ACTIVE: u32 = 259;
+    if pid == 0 {
+        return false;
+    }
+    // SAFETY: OpenProcess takes plain values; the handle is checked, read once and closed.
+    unsafe {
+        let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if h == 0 {
+            return false;
+        }
+        let mut code = 0u32;
+        let ok = GetExitCodeProcess(h, &mut code);
+        CloseHandle(h);
+        ok != 0 && code == STILL_ACTIVE
+    }
+}
+
+#[cfg(not(windows))]
+pub fn pid_alive(pid: u32) -> bool {
+    pid != 0 && Path::new(&format!("/proc/{pid}")).exists()
+}
+
+/// The pid of a live driver run that holds the panel lock for this session, if any. A lock file whose
+/// pid is dead is left over from a run that was killed, and does not count.
+pub fn lock_holder(ctx: &Ctx, session_id: &str) -> Option<u32> {
+    let text = std::fs::read_to_string(vault_root(&ctx.root).join(LOCK_FILE)).ok()?;
+    let v: Value = serde_json::from_str(text.trim_start_matches('\u{feff}')).ok()?;
+    if v.get("session_id").and_then(Value::as_str) != Some(session_id) {
+        return None;
+    }
+    let pid = v.get("pid").and_then(Value::as_u64).and_then(|p| u32::try_from(p).ok())?;
+    pid_alive(pid).then_some(pid)
 }
 
 /// A file holding the text to send, exactly as given, under `system/logs/claude-panel/`; removed when dropped unless kept.
@@ -128,44 +236,73 @@ impl Drop for TextFile {
     }
 }
 
-fn limit_for(wait_minutes: Option<f64>, extra: Duration) -> Duration {
-    Duration::from_secs_f64(wait_minutes.unwrap_or(DRIVER_WAIT_MINUTES).max(0.0) * 60.0) + SLACK + extra
+/// What the driver printed on success: its output and its notes.
+#[derive(Debug, Default)]
+pub struct Answer {
+    pub value: String,
+    pub notes: Vec<String>,
 }
 
-/// The driver's answer: its output on exit 0, else the sentence that says what it refused and why.
-fn answer(out: &Out) -> Result<String, String> {
-    let why = out.why();
+impl Answer {
+    /// The notes as a sentence to append to a report, empty when there are none.
+    pub fn notes_sentence(&self) -> String {
+        if self.notes.is_empty() {
+            String::new()
+        } else {
+            format!(" Driver notes: {}.", self.notes.iter().map(|n| n.trim_end_matches('.')).collect::<Vec<_>>().join("; "))
+        }
+    }
+}
+
+fn notes_of(stderr: &str) -> Vec<String> {
+    stderr.lines().filter_map(|l| l.trim().strip_prefix("note: ")).map(|n| n.trim().to_string()).filter(|n| !n.is_empty()).collect()
+}
+
+/// Every message line the driver printed (its reason, then its notes), as one line.
+fn whole(out: &Out) -> String {
+    let lines: Vec<&str> = out.stderr.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+    if lines.is_empty() {
+        out.why()
+    } else {
+        lines.join(" ")
+    }
+}
+
+/// The driver's answer: its output and notes on exit 0, else the sentence that says what it refused
+/// and why, with everything the driver said (what it changed, where the tab is now, its notes).
+fn answer(out: &Out) -> Result<Answer, String> {
+    let why = whole(out);
     match out.code {
-        Some(0) => Ok(out.stdout.trim().to_string()),
+        Some(0) => Ok(Answer { value: out.stdout.trim().to_string(), notes: notes_of(&out.stderr) }),
         Some(2) => Err(format!("the panel driver could not find what it needs (the bridge extension, the VS Code window, the chat or a control): {why}. A chat running in a terminal has no panel row")),
-        Some(3) => Err(format!("refused (exit 3): the operator was using the computer, or the chat was running, for the whole wait; nothing was sent. {why}")),
-        Some(4) => Err(format!("refused (exit 4): the chat has a draft typed in its input box; nothing was sent. Ask him to send or clear it. {why}")),
-        Some(5) => Err(format!("refused (exit 5): a safety check failed before anything was sent, so nothing was sent. {why}")),
+        Some(3) => Err(format!("refused (exit 3): nothing was sent. The operator was using the computer, the chat was busy, or another driver run held the panel, for the whole wait. {why}")),
+        Some(4) => Err(format!("refused (exit 4): nothing was sent. The chat's input holds a draft typed in its input box or other text that is not the driver's; ask him to send or clear it. {why}")),
+        Some(5) => Err(format!("refused (exit 5): a safety check failed, so nothing was sent. {why}")),
         Some(6) => Err(format!("MODEL KEY MISMATCH (exit 6): after a model pick the global model key or ~/.claude/settings.json did not match what the driver saved, and the driver could not put it back. Fix settings.json by hand before anything else runs. {why}")),
         Some(n) => Err(format!("the panel driver failed (exit {n}): {why}")),
         None => Err(format!("the panel driver did not run to the end: {why}")),
     }
 }
 
-/// Send the text to the chat. Err carries the refusal sentence.
-pub fn send(ctx: &Ctx, session: &str, text: &str, wait_minutes: Option<f64>) -> Result<(), String> {
+/// Send the text to the chat; the driver's notes. Err carries the refusal sentence.
+pub fn send(ctx: &Ctx, session: &str, text: &str, wait_minutes: Option<f64>) -> Result<Answer, String> {
     let d = driver(ctx).map_err(|e| e.to_string())?;
     let file = TextFile::new(ctx, text).map_err(|e| e.to_string())?;
     let call = Call { action: "send", session: Some(session), text_file: Some(file.path()), wait_minutes, ..Call::default() };
-    answer(&d.run(ctx, &call, limit_for(wait_minutes, Duration::ZERO))).map(|_| ())
+    answer(&d.run(ctx, &call))
 }
 
-/// A new chat with this first message; its session id.
-pub fn new_chat(ctx: &Ctx, text: &str, model: Option<&str>, group_id: Option<&str>, wait_minutes: Option<f64>) -> Result<String, String> {
+/// A new chat with this first message; its session id and the driver's notes.
+pub fn new_chat(ctx: &Ctx, text: &str, model: Option<&str>, group_id: Option<&str>, wait_minutes: Option<f64>) -> Result<(String, Answer), String> {
     let d = driver(ctx).map_err(|e| e.to_string())?;
     let file = TextFile::new(ctx, text).map_err(|e| e.to_string())?;
     let call = Call { action: "new", text_file: Some(file.path()), model, group_id, wait_minutes, ..Call::default() };
-    let id = answer(&d.run(ctx, &call, limit_for(wait_minutes, Duration::from_secs(60))))?;
-    let id = id.lines().map(str::trim).rfind(|l| !l.is_empty()).unwrap_or("").to_string();
+    let a = answer(&d.run(ctx, &call))?;
+    let id = a.value.lines().map(str::trim).rfind(|l| !l.is_empty()).unwrap_or("").to_string();
     if id.len() < 8 || !id.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
         return Err(format!("the panel driver sent the message but printed no session id (it printed '{id}')"));
     }
-    Ok(id)
+    Ok((id, a))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -179,8 +316,8 @@ pub struct PanelChat {
 /// The chats the panel lists.
 pub fn list(ctx: &Ctx) -> Result<Vec<PanelChat>, String> {
     let d = driver(ctx).map_err(|e| e.to_string())?;
-    let out = d.run(ctx, &Call { action: "list", ..Call::default() }, LIST_LIMIT);
-    let text = answer(&out)?;
+    let out = d.run(ctx, &Call { action: "list", wait_minutes: Some(LIST_WAIT_MINUTES), ..Call::default() });
+    let text = answer(&out)?.value;
     let v: Value = serde_json::from_str(text.trim_start_matches('\u{feff}')).map_err(|e| format!("the panel driver's list is not JSON: {e}"))?;
     let rows = v.as_array().ok_or("the panel driver's list is not a JSON array")?;
     Ok(rows
@@ -333,8 +470,12 @@ pub fn cmd_rename(ctx: &Ctx, name: &str, to: Option<&str>, wait_minutes: Option<
     if to.is_empty() || to.contains('\n') || to.contains('\r') {
         die!("--to is one non-empty line of text, got {to:?}");
     }
-    if let Err(m) = send(ctx, &row.session_id, &format!("/rename {to}"), wait_minutes) {
-        die!("{name}: {m}");
+    let sent = match send(ctx, &row.session_id, &format!("/rename {to}"), wait_minutes) {
+        Ok(a) => a,
+        Err(m) => die!("{name}: {m}"),
+    };
+    for n in &sent.notes {
+        outln!("note: {n}");
     }
     let mut shown = String::new();
     for attempt in 0..6 {
@@ -397,7 +538,10 @@ pub fn cmd_start(ctx: &Ctx, name: &str, prompt_file: &str, model: Option<&str>, 
         None => None,
     };
     match new_chat(ctx, &text, Some(model), group_id.as_deref(), wait_minutes) {
-        Ok(id) => {
+        Ok((id, a)) => {
+            for n in &a.notes {
+                outln!("note: {n}");
+            }
             outln!("{name}: started in the panel as session {id}. Its first act is af session register {name} --session {id}.");
             Ok(0)
         }

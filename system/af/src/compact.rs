@@ -5,8 +5,10 @@
 //! closed and is checked again after the run. A running chat is compacted through the VS Code
 //! panel instead: the panel driver sends `/compact ...` to it once the operator and the chat are
 //! idle, and the transcript must gain a `compact_boundary` line. `--when-idle` starts a detached
-//! waiter that does this once the chat finishes its turn; `--then-file` sends a file's text to the
-//! chat as its next message after the compaction.
+//! waiter that does this once the chat finishes its turn (one pending waiter per chat; it chooses its
+//! route when it fires, and does nothing if the chat was compacted meanwhile); `--then-file` sends a
+//! file's text to the chat as its next message after the compaction. While a panel driver run holds
+//! the panel lock for the chat, the chat counts as running, so the closed route never races it.
 
 use crate::core::Ctx;
 use crate::die;
@@ -127,10 +129,14 @@ enum Live {
     Unknown,
 }
 
-/// Fail closed: the chat is closed only when its session id is absent from the roster
-/// (`claude agents --json --all`; any entry counts, whatever its status) and no record under
-/// the config dir's `sessions/` names it. A record that does not parse is ignored.
-fn live_check(session_id: &str) -> Live {
+/// Fail closed: the chat is closed only when no live panel driver run holds the panel lock for it
+/// (between its tab's close and reopen the chat has no process, yet it is not closed), its session id
+/// is absent from the roster (`claude agents --json --all`; any entry counts, whatever its status)
+/// and no record under the config dir's `sessions/` names it. A record that does not parse is ignored.
+fn live_check(ctx: &Ctx, session_id: &str) -> Live {
+    if let Some(pid) = panel::lock_holder(ctx, session_id) {
+        return Live::Running(format!("the panel driver (pid {pid}) holds the panel lock for it and is working on it"));
+    }
     let Some(roster) = sessions::claude_roster() else { return Live::Unknown };
     let entry = roster.as_array().into_iter().flatten().find(|e| e.get("sessionId").and_then(Value::as_str) == Some(session_id));
     if let Some(e) = entry {
@@ -236,7 +242,7 @@ fn compact_report(ctx: &Ctx, o: &Opts) -> R<String> {
         }
     }
 
-    let running = match live_check(&row.session_id) {
+    let running = match live_check(ctx, &row.session_id) {
         Live::Closed => None,
         Live::Unknown => die!("{name}: cannot tell whether it is running, the claude agents roster is unavailable; nothing was compacted"),
         Live::Running(why) => Some(why),
@@ -304,7 +310,7 @@ fn compact_report(ctx: &Ctx, o: &Opts) -> R<String> {
     cmd.args(&args).current_dir(&ctx.root);
     let out = run_command(cmd, "claude", Some(Instant::now() + limit), true);
     let result = judge(&out, &path, len_before, limit);
-    let note = after_note(&result, &row.session_id, name)?;
+    let note = after_note(ctx, &result, &row.session_id, name)?;
     match result {
         Ok((cost, after)) => {
             let after = match after {
@@ -329,7 +335,7 @@ fn send_then(ctx: &Ctx, o: &Opts, session_id: &str) -> R<String> {
         Err(m) => die!("{name}: compacted, but the next message was not sent: {m}"),
     };
     match panel::send(ctx, session_id, &text, o.wait_minutes) {
-        Ok(()) => Ok(format!(" Sent the text of {tf} as its next message.")),
+        Ok(a) => Ok(format!(" Sent the text of {tf} as its next message.{}", a.notes_sentence())),
         Err(m) => die!("{name}: compacted, but the next message ({tf}) was not sent: {m}"),
     }
 }
@@ -379,13 +385,14 @@ fn through_panel(ctx: &Ctx, o: &Opts, row: &sessions::Row, path: &str, tokens: O
         return Ok(lines.join("\n"));
     }
     if o.when_idle {
-        return start_waiter(ctx, o, wait.unwrap_or(WHEN_IDLE_MINUTES), why);
+        return start_waiter(ctx, o, row, path, wait.unwrap_or(WHEN_IDLE_MINUTES), why);
     }
 
     let len_before = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
-    if let Err(m) = panel::send(ctx, &row.session_id, &text, wait) {
-        die!("{name}: {m}");
-    }
+    let sent = match panel::send(ctx, &row.session_id, &text, wait) {
+        Ok(a) => a,
+        Err(m) => die!("{name}: {m}"),
+    };
     let limit = boundary_wait();
     let started = Instant::now();
     let (mut boundary, mut after) = appended_since(path, len_before);
@@ -400,36 +407,116 @@ fn through_panel(ctx: &Ctx, o: &Opts, row: &sessions::Row, path: &str, tokens: O
         Some(u) => format!("{} tokens", k(u.tokens)),
         None => "shown at its next turn".to_string(),
     };
-    let mut report = format!("{name}: compacted through the panel while it was running. Before {before} tokens; context after: {after}.{note}");
+    let mut report = format!("{name}: compacted through the panel while it was running. Before {before} tokens; context after: {after}.{note}{}", sent.notes_sentence());
     report.push_str(&send_then(ctx, o, &row.session_id)?);
     Ok(report)
 }
 
-/// Start the detached waiter: the same verb again, with the job in a file, outliving this process.
-fn start_waiter(ctx: &Ctx, o: &Opts, wait: f64, why: &str) -> R<String> {
-    let name = o.name;
-    let dir = std::path::PathBuf::from(&ctx.root).join("system").join("logs").join("claude-panel");
-    if let Err(e) = std::fs::create_dir_all(&dir) {
-        die!("cannot create {}: {e}", dir.display());
+//// The job file of the one waiter a chat may have: `system/logs/claude-panel/waiter-<session id>.json`.
+fn waiter_job_path(ctx: &Ctx, session_id: &str) -> std::path::PathBuf {
+    let safe: String = session_id.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' }).collect();
+    std::path::PathBuf::from(&ctx.root).join("system").join("logs").join("claude-panel").join(format!("waiter-{safe}.json"))
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+}
+
+/// How long a job that names no pid yet counts as pending: the verb that wrote it is starting its waiter.
+const STARTING_MS: u64 = 120_000;
+/// Test hook: milliseconds between a waiting waiter's looks at the chat (default 3000).
+const POLL_ENV: &str = "AF_WAITER_POLL_MS";
+
+/// The waiter already pending for a chat, from its job file: its pid (None while the verb that queued
+/// it is still starting it) and when it was queued. None when there is no job or its waiter is gone.
+fn pending_waiter(job: &std::path::Path) -> Option<(Option<u32>, String)> {
+    let v: Value = serde_json::from_str(&std::fs::read_to_string(job).ok()?).ok()?;
+    let pid = v.get("pid").and_then(Value::as_u64).and_then(|p| u32::try_from(p).ok());
+    let queued_ms = v.get("queued_ms").and_then(Value::as_u64).unwrap_or(0);
+    let live = match pid {
+        Some(p) => panel::pid_alive(p),
+        None => now_ms().saturating_sub(queued_ms) < STARTING_MS,
+    };
+    live.then(|| (pid, v.get("queued").and_then(Value::as_str).unwrap_or("an unknown time").to_string()))
+}
+
+fn already_pending(name: &str, pid: Option<u32>, queued: &str) -> String {
+    format!(
+        "{name}: a --when-idle waiter{} queued at {queued} is already pending for this chat, so nothing new was started. When it fires it checks again whether the chat still needs compacting.",
+        pid.map(|p| format!(" (pid {p})")).unwrap_or_default()
+    )
+}
+
+/// Write a job file whole: to a temp name, then renamed over it.
+fn write_job(job: &std::path::Path, body: &Value) {
+    let tmp = job.with_extension("json.tmp");
+    if std::fs::write(&tmp, body.to_string()).is_ok() {
+        let _ = std::fs::rename(&tmp, job);
     }
-    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
-    let job = dir.join(format!("waiter-{}-{nanos}.json", std::process::id()));
+}
+
+/// Start the detached waiter: the same verb again, with the job in the chat's one job file, outliving
+/// this process. A chat has at most one pending waiter; a second `--when-idle` says so and starts none.
+fn start_waiter(ctx: &Ctx, o: &Opts, row: &sessions::Row, path: &str, wait: f64, why: &str) -> R<String> {
+    let name = o.name;
+    let job = waiter_job_path(ctx, &row.session_id);
+    if let Some(dir) = job.parent() {
+        if let Err(e) = std::fs::create_dir_all(dir) {
+            die!("cannot create {}: {e}", dir.display());
+        }
+    }
+    if let Some((pid, queued)) = pending_waiter(&job) {
+        return Ok(already_pending(name, pid, &queued));
+    }
+    // A job whose waiter is gone is left over, and is replaced.
+    let _ = std::fs::remove_file(&job);
     let then_file = o.then_file.map(|t| std::fs::canonicalize(t).map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|_| t.to_string()));
-    let body = json!({"name": name, "instructions": o.instructions, "force": o.force, "then_file": then_file, "wait_minutes": wait});
-    if let Err(e) = std::fs::write(&job, body.to_string()) {
-        die!("cannot write {}: {e}", job.display());
+    let body = json!({
+        "name": name,
+        "session_id": row.session_id,
+        "instructions": o.instructions,
+        "force": o.force,
+        "then_file": then_file,
+        "wait_minutes": wait,
+        "queued_ms": now_ms(),
+        "queued": crate::core::now_iso(),
+        "transcript_len": std::fs::metadata(path).map(|m| m.len()).unwrap_or(0),
+        "pid": Value::Null,
+    });
+    // Created only when absent: of two verbs started at the same moment, one queues the waiter.
+    match std::fs::OpenOptions::new().write(true).create_new(true).open(&job) {
+        Ok(mut f) => {
+            use std::io::Write;
+            if let Err(e) = f.write_all(body.to_string().as_bytes()) {
+                drop(f);
+                let _ = std::fs::remove_file(&job);
+                die!("cannot write {}: {e}", job.display());
+            }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            let (pid, queued) = pending_waiter(&job).unwrap_or((None, "this moment".to_string()));
+            return Ok(already_pending(name, pid, &queued));
+        }
+        Err(e) => die!("cannot write {}: {e}", job.display()),
     }
     let exe = match std::env::current_exe() {
         Ok(e) => e,
-        Err(e) => die!("cannot find the af program to start the waiter: {e}"),
+        Err(e) => {
+            let _ = std::fs::remove_file(&job);
+            die!("cannot find the af program to start the waiter: {e}")
+        }
     };
     let args: Vec<String> = ["session", "compact", name, "--waiter-job"].iter().map(|s| s.to_string()).chain([job.to_string_lossy().into_owned()]).collect();
     match panel::spawn_detached(&exe, &args, &ctx.root) {
-        Ok(pid) => Ok(format!(
-            "{name}: running ({why}). A detached waiter (pid {pid}) compacts it once the chat and the operator are idle, within {wait} minutes{}. Its outcome is appended to {}.",
-            if o.then_file.is_some() { ", then sends the --then-file text as the next message" } else { "" },
-            panel::waiter_log_path()
-        )),
+        // The waiter writes its own pid into the job as it starts; until then the job counts as pending
+        // for STARTING_MS. (Writing it from here could recreate a job the waiter already finished.)
+        Ok(pid) => {
+            Ok(format!(
+                "{name}: running ({why}). A detached waiter (pid {pid}) compacts it once the chat and the operator are idle, within {wait} minutes{}. It decides when it fires: if the chat was compacted meanwhile it does nothing. Its outcome is appended to {}; a failure is also shown to this chat once, at its next tool call or stop.",
+                if o.then_file.is_some() { ", then sends the --then-file text as the next message" } else { "" },
+                panel::waiter_log_path()
+            ))
+        }
         Err(e) => {
             let _ = std::fs::remove_file(&job);
             die!("{name}: could not start the waiter: {e}")
@@ -437,42 +524,113 @@ fn start_waiter(ctx: &Ctx, o: &Opts, wait: f64, why: &str) -> R<String> {
     }
 }
 
-/// The detached process: runs the compaction the job names (the chat may have closed meanwhile,
-/// so the route is chosen again) and appends how it ended to the waiter log.
+/// Why the chat is busy now, or None: a live driver run holds the panel lock for it, or a session record
+/// for it whose process is alive says anything but `status: idle` (no status is not idle).
+fn busy_now(ctx: &Ctx, session_id: &str) -> Option<String> {
+    if let Some(pid) = panel::lock_holder(ctx, session_id) {
+        return Some(format!("the panel driver (pid {pid}) is working on it"));
+    }
+    let dir = reach::config_dir().map(|c| pyos::join(&c, "sessions"))?;
+    for e in std::fs::read_dir(dir).ok()?.flatten() {
+        let path = e.path();
+        if path.extension().and_then(|x| x.to_str()) != Some("json") {
+            continue;
+        }
+        let Some(v) = std::fs::read_to_string(&path).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok()) else { continue };
+        if v.get("sessionId").and_then(Value::as_str) != Some(session_id) {
+            continue;
+        }
+        if let Some(pid) = v.get("pid").and_then(Value::as_u64) {
+            if !panel::pid_alive(u32::try_from(pid).unwrap_or(0)) {
+                continue;
+            }
+        }
+        let status = v.get("status").and_then(Value::as_str).unwrap_or("");
+        if status != "idle" {
+            let file = path.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default();
+            return Some(format!("its session record sessions/{file} says {}", if status.is_empty() { "no status" } else { status }));
+        }
+    }
+    None
+}
+
+/// The detached process. It waits for the chat itself and decides what to do when it fires, not when
+/// it was queued: nothing when the transcript gained a `compact_boundary` after its queue time (the
+/// chat was compacted meanwhile), else the route the chat has then. Its outcome goes to the waiter log;
+/// a failure also leaves a one-line result that the context hook shows the chat once.
 fn run_waiter(ctx: &Ctx, job_path: &str) -> R<i32> {
     let text = match std::fs::read_to_string(job_path) {
         Ok(t) => t,
         Err(e) => die!("cannot read the waiter job {job_path}: {e}"),
     };
-    let _ = std::fs::remove_file(job_path);
-    let v: Value = match serde_json::from_str(&text) {
+    let mut v: Value = match serde_json::from_str(&text) {
         Ok(v) => v,
-        Err(e) => die!("the waiter job {job_path} is not JSON: {e}"),
+        Err(e) => {
+            let _ = std::fs::remove_file(job_path);
+            die!("the waiter job {job_path} is not JSON: {e}")
+        }
     };
+    // The job file is this waiter's claim on the chat: it names this process while it waits.
+    v["pid"] = json!(std::process::id());
+    write_job(std::path::Path::new(job_path), &v);
     let name = v.get("name").and_then(Value::as_str).unwrap_or("").to_string();
-    let instructions = v.get("instructions").and_then(Value::as_str).map(str::to_string);
-    let then_file = v.get("then_file").and_then(Value::as_str).map(str::to_string);
-    let o = Opts {
-        name: &name,
-        model: None,
-        instructions: instructions.as_deref(),
-        force: v.get("force").and_then(Value::as_bool).unwrap_or(false),
-        dry_run: false,
-        when_idle: false,
-        wait_minutes: v.get("wait_minutes").and_then(Value::as_f64),
-        then_file: then_file.as_deref(),
-        waiter_job: None,
-    };
-    match compact_report(ctx, &o) {
+    let outcome = fire_waiter(ctx, &v, &name);
+    let _ = std::fs::remove_file(job_path);
+    let session_id = v.get("session_id").and_then(Value::as_str).map(str::to_string).or_else(|| Registry::load(ctx).ok().and_then(|r| r.find_name(&name)).map(|r| r.session_id));
+    match outcome {
         Ok(report) => {
             panel::waiter_log(ctx, &format!("{name} compact ok: {report}"));
             Ok(0)
         }
         Err(e) => {
             panel::waiter_log(ctx, &format!("{name} compact failed: {e}"));
+            if let Some(sid) = session_id {
+                crate::context::write_waiter_result(ctx, &sid, &format!("The --when-idle compaction this chat queued failed: {e}"));
+            }
             Err(e)
         }
     }
+}
+
+fn fire_waiter(ctx: &Ctx, v: &Value, name: &str) -> R<String> {
+    let wait = v.get("wait_minutes").and_then(Value::as_f64).unwrap_or(WHEN_IDLE_MINUTES);
+    let queued_ms = v.get("queued_ms").and_then(Value::as_u64).unwrap_or_else(now_ms);
+    let deadline_ms = queued_ms + (wait.max(0.0) * 60_000.0) as u64;
+    let session_id = match v.get("session_id").and_then(Value::as_str) {
+        Some(s) => s.to_string(),
+        None => reach::row_or_refuse(&Registry::load(ctx)?, name)?.session_id,
+    };
+    let len = v.get("transcript_len").and_then(Value::as_u64).unwrap_or(0);
+    let poll = std::env::var(POLL_ENV).ok().and_then(|p| p.trim().parse::<u64>().ok()).unwrap_or(3000);
+    loop {
+        if let Some(path) = reach::transcript_path(&session_id) {
+            if appended_since(&path, len).0 {
+                return Ok(format!("{name}: nothing to do; its transcript gained a compact_boundary line after this waiter was queued, so it was compacted meanwhile."));
+            }
+        }
+        match busy_now(ctx, &session_id) {
+            None => break,
+            Some(why) if now_ms() >= deadline_ms => die!("{name}: the chat stayed busy ({why}) for the waiter's whole wait of {wait} minutes; nothing was sent"),
+            Some(_) => std::thread::sleep(Duration::from_millis(poll)),
+        }
+    }
+    // What is left of the wait goes to the driver, for the operator to be idle; at least a minute.
+    let left = (deadline_ms.saturating_sub(now_ms()) as f64 / 60_000.0).max(1.0);
+    let left = (left * 100.0).round() / 100.0;
+    let instructions = v.get("instructions").and_then(Value::as_str).map(str::to_string);
+    let then_file = v.get("then_file").and_then(Value::as_str).map(str::to_string);
+    let o = Opts {
+        name,
+        model: None,
+        instructions: instructions.as_deref(),
+        force: v.get("force").and_then(Value::as_bool).unwrap_or(false),
+        dry_run: false,
+        when_idle: false,
+        wait_minutes: Some(left),
+        then_file: then_file.as_deref(),
+        waiter_job: None,
+    };
+    compact_report(ctx, &o)
 }
 
 type Judged = Result<(String, Option<reach::Usage>), String>;
@@ -517,8 +675,8 @@ fn judge(out: &Out, path: &str, len_before: u64, limit: Duration) -> Judged {
 /// The roster and session records read again once the command is done. A chat that is live now
 /// was opened during the compaction, which is an error whatever the compaction did. Otherwise
 /// the sentence to append to a success report, empty when all is well.
-fn after_note(result: &Judged, session_id: &str, name: &str) -> R<String> {
-    match live_check(session_id) {
+fn after_note(ctx: &Ctx, result: &Judged, session_id: &str, name: &str) -> R<String> {
+    match live_check(ctx, session_id) {
         Live::Closed => Ok(String::new()),
         Live::Unknown if result.is_ok() => Ok(" Could not check afterwards that nothing opened the chat during the run.".to_string()),
         Live::Unknown => Ok(String::new()),

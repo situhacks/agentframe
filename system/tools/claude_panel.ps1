@@ -2,8 +2,8 @@
 # whose title holds the vault folder name, and nothing else. It sends no key events and no mouse events:
 # it reads and acts through Windows UI Automation patterns (read, Invoke, ExpandCollapse, SelectionItem,
 # Window) and through the AgentFrame bridge extension (system/vscode-bridge), which opens, reveals and
-# closes chat tabs and prefills a new chat's input from a file inbox. Text always arrives in a UTF-8
-# file, never as an argument, and is never logged.
+# closes chat tabs and prefills a chat's input from a file inbox. Text always arrives in a UTF-8 file,
+# never as an argument, and is never logged.
 #
 #   list                                       JSON array: session_id, name, status, active
 #   send  -Session <id> -TextFile <path>       send the file's text to that chat (a prompt or a slash command)
@@ -15,26 +15,40 @@
 #   selftest                                   the whole path on a Haiku 5.5 chat it creates
 #
 # How a send works. Closing a chat's tab ends its process; opening it again with a prompt prefills the
-# input (the page does it; the bridge never presses Send). So: reveal the chat, prove its tab is the one
-# (label and active tab), prove the input holds no draft, close the tab, open it with the text, read the
-# input back through UI Automation, and only then invoke 'Send message'. Text that starts with a slash is
-# sent as it is. A chat that has no open tab skips the close.
+# input (the page does it; the bridge never presses Send). So: reveal the chat, close its tab only after
+# one unbroken check, open it with the text, read the input back through UI Automation, and only then
+# invoke 'Send message'. Text that starts with a slash is sent as it is. A chat with no open tab skips the
+# close. The driver opens a tab only when that adds a tab (a tab someone else opened is never used).
 #
 # Guards:
 #   1. the operator has been idle for -IdleSeconds before any step that changes his screen, and again
-#      immediately before 'Send message'; otherwise wait up to -WaitMinutes, then exit 3
-#   2. the target chat is idle by its row and by its session record; the tab of a busy chat is never closed
-#   3. a draft in the target's input is exit 4 (read only after the window is visible and the row is active)
+#      immediately before 'Send message'; otherwise wait, then exit 3
+#   2. the chat is idle: its row says idle and every live session record for it says 'status: idle'
+#      (no status is not idle); a live record from outside the VS Code panel (a terminal) is exit 5
+#   3. the last thing before any tab close is one unbroken check with no wait after it: the window is not
+#      minimized, the target row is the only active row and idle, exactly one Claude tab carries the label
+#      and it is the active tab, the records are idle, the input is empty (a draft is exit 4) or, for the
+#      driver's own prefilled tab, holds exactly the driver's text; the operator is idle. If a wait was
+#      needed, the whole check runs again
 #   4. before Send: the input equals the text, the target row is the only active row, Send is enabled;
-#      otherwise nothing is sent (exit 5)
-#   5. tab identity: exactly one Claude tab carries the label and it is the active tab, else exit 5
+#      the very elements checked are read again and that same Send button is invoked, with no search in
+#      between; otherwise nothing is sent (exit 5)
+#   5. one run at a time: every run that changes anything holds system/logs/panel-bridge/driver.lock
+#      (pid, session id, action, start); a second run waits within its budget, then exits 3
+# The run tracks what it changed (tab closed, tab opened, text prefilled, Send pressed) and every exit
+# says it. On a failure before Send it puts the chat back where that is safe: its own prefilled tab is
+# closed only when the input still equals its text exactly, and a tab that was open at the start is
+# opened again. Once the text is sent and confirmed the exit is 0; a later cleanup failure is a note.
 # The window may be minimized: the accessibility tree is stale then, so the driver restores it with the
 # Window pattern first and minimizes it again at the end. Every model pick saves the global model key and
 # the settings file hash first, writes the key back right after the pick, and verifies (exit 6 if the
 # file does not match).
+# Deadline: a run ends within -WaitMinutes plus $WorkSeconds; every step is bounded by it, and the chat is
+# put back before it. af's timeout for a run is that plus a margin (panel.rs: DRIVER_WORK_SECS).
 # Exit codes: 0 done and confirmed; 1 failed or could not confirm; 2 bridge, window, chat or control not
-# found; 3 operator active or chat busy; 4 draft in the input; 5 a safety check failed; 6 the model key or
-# settings file does not match after a pick.
+# found; 3 operator active, chat busy or another run holding the lock; 4 the input holds text that is
+# not the driver's; 5 a safety check failed; 6 the model key or settings file does not match after a
+# pick. 3, 4 and 5 mean nothing was sent.
 # Every run appends one line to system/logs/claude-panel.log: time, action, session id, exit code, seconds.
 
 param(
@@ -89,19 +103,32 @@ $VaultRoot = [regex]::Replace($Root, '\\\.claude\\worktrees\\[^\\]+$', '')
 $LogDir = Join-Path $VaultRoot 'system\logs'
 $LogFile = Join-Path $LogDir 'claude-panel.log'
 $BridgeBase = Join-Path $VaultRoot 'system\logs\panel-bridge'
+$LockFile = Join-Path $BridgeBase 'driver.lock'
 $RowPrefix = 'sessions-list-row-'
+$UntitledLabel = 'Claude Code'
+$PanelEntrypoint = 'claude-vscode'
 $MaxChars = 200000
+# The time a run may take beyond -WaitMinutes: close, reopen, read-back, Send, the confirmation (a
+# /compact may take 10 minutes) and putting the chat back. panel.rs DRIVER_WORK_SECS is the same number.
+$WorkSeconds = 1200
+# The part of it kept for putting the chat and the window back after a failure.
+$RestoreSeconds = 120
 $Utf8 = New-Object System.Text.UTF8Encoding($false)
 
 $script:Win = $null
 $script:Hwnd = [IntPtr]::Zero
-$script:Deadline = (Get-Date).AddMinutes($WaitMinutes)
+$script:WaitUntil = (Get-Date).AddMinutes($WaitMinutes)
+$script:HardUntil = $script:WaitUntil.AddSeconds($WorkSeconds)
+$script:StepUntil = $script:HardUntil.AddSeconds(-$RestoreSeconds)
+$script:Restoring = $false
+$script:RestoreUntil = $script:HardUntil
 $script:ScreenBegun = $false
 $script:WasMinimized = $false
 $script:PrevActive = @()
-$script:OpenedUnsent = $false
 $script:Notes = @()
 $script:TxCache = @{}
+$script:Lock = $null
+$script:St = $null
 $script:Clock = [Diagnostics.Stopwatch]::StartNew()
 
 function Stop-Panel([int]$Code, [string]$Reason) {
@@ -109,6 +136,107 @@ function Stop-Panel([int]$Code, [string]$Reason) {
 }
 
 function Add-Note([string]$Note) { $script:Notes += $Note }
+
+# The PanelExit inside an error record, or $null for any other error.
+function Get-PanelExit($Err) {
+    $e = $Err.Exception
+    while ($null -ne $e) {
+        if ($e -is [PanelExit]) { return $e }
+        $e = $e.InnerException
+    }
+    $null
+}
+
+# ---------------------------------------------------------------- deadlines
+
+function Set-Deadlines {
+    $now = Get-Date
+    $script:WaitUntil = $now.AddMinutes($WaitMinutes)
+    $script:HardUntil = $script:WaitUntil.AddSeconds($WorkSeconds)
+    $script:StepUntil = $script:HardUntil.AddSeconds(-$RestoreSeconds)
+}
+
+# How long a wait may last: the wait budget while nothing is changed yet, the step deadline once
+# something is, and the hard deadline while the chat is being put back.
+function Get-WaitUntil {
+    if ($script:Restoring) { return $script:RestoreUntil }
+    if ($null -ne $script:St -and (Test-Touched)) { return $script:StepUntil }
+    $script:WaitUntil
+}
+
+# From now on the run is putting things back: at most $RestoreSeconds, never past the hard deadline.
+function Start-Restoring {
+    $script:Restoring = $true
+    $script:RestoreUntil = (Get-Date).AddSeconds($RestoreSeconds)
+    if ($script:RestoreUntil -gt $script:HardUntil) { $script:RestoreUntil = $script:HardUntil }
+}
+
+# A step's own limit in milliseconds, cut to what is left before the step deadline.
+function Get-StepMs([int]$Ms) {
+    $end = $script:StepUntil
+    if ($script:Restoring) { $end = $script:RestoreUntil }
+    $left = ($end - (Get-Date)).TotalMilliseconds
+    if ($left -lt 0) { $left = 0 }
+    [int][Math]::Min([double]$Ms, $left)
+}
+
+# ---------------------------------------------------------------- what the run changed
+
+function New-RunState([string]$Id, [string]$Text) {
+    $script:St = [pscustomobject]@{
+        Id = $Id; RowId = $Id; Text = $Text; OwnLabel = ''
+        HadTab = $false; TabOpen = $false
+        Closed = $false; OpenCalled = $false; Opened = $false; Prefilled = $false; Sent = $false
+        Cleaned = $false; LeftText = $false; Reopened = $false
+    }
+}
+
+function Test-Touched { $s = $script:St; [bool]($s.Closed -or $s.OpenCalled) }
+
+# One or two sentences: what the run changed in the panel and the state of the chat's tab now.
+function Get-StateText {
+    $s = $script:St
+    if ($null -eq $s) { return '' }
+    if (-not (Test-Touched)) { return "The panel was not changed: the chat's tab is as it was." }
+    $done = @()
+    if ($s.Closed) { $done += "closed the chat's tab" }
+    if ($s.OpenCalled) {
+        if ($s.Prefilled) { $done += 'opened it with the text in the input' }
+        elseif ($s.Opened) { $done += 'opened its tab' }
+        else { $done += 'asked the bridge to open it, which added no tab' }
+    }
+    if ($s.Sent) { $done += 'pressed Send' }
+    if ($s.Cleaned) { $done += 'closed that tab again to take the unsent text away' }
+    if ($s.Reopened) { $done += "opened the chat's tab again with an empty input" }
+    $t = 'The driver ' + ($done -join ', then ') + '. '
+    if ($s.LeftText) { $t += "The chat's tab is OPEN and still holds the driver's unsent text: clear the input or close the tab before the next send." }
+    elseif ($s.TabOpen) { $t += "The chat's tab is now open." }
+    else { $t += "The chat's tab is now closed." }
+    if ($s.HadTab -and -not $s.TabOpen) { $t += ' It was open before the run.' }
+    if (-not $s.HadTab -and $s.TabOpen) { $t += ' It was closed before the run.' }
+    $t
+}
+
+# Runs the part of an action that changes the chat. On a failure the chat is put back where that is safe
+# (never after Send was pressed), and the reason gains what changed and the tab's final state.
+function Invoke-Guarded([scriptblock]$Body) {
+    try {
+        return (& $Body)
+    } catch {
+        $pe = Get-PanelExit $_
+        $code = 1
+        $reason = ''
+        if ($null -ne $pe) { $code = $pe.Code; $reason = $pe.Reason }
+        else { $reason = 'unexpected: ' + $_.Exception.Message + ' (line ' + $_.InvocationInfo.ScriptLineNumber + ')' }
+        if (-not $script:St.Sent) { Restore-Chat }
+        if ($script:St.Sent -and $code -ge 3 -and $code -le 5) { $code = 1 }
+        $state = Get-StateText
+        if ($code -ge 3 -and $code -le 5) { $reason = $reason.TrimEnd('.') + '. Nothing was sent. ' + $state }
+        elseif ($script:St.Sent) { $reason = $reason.TrimEnd('.') + '. Send was pressed, so the text may have reached the chat. ' + $state }
+        else { $reason = $reason.TrimEnd('.') + '. Nothing was sent. ' + $state }
+        Stop-Panel $code $reason
+    }
+}
 
 # ---------------------------------------------------------------- the bridge (a file inbox)
 
@@ -165,18 +293,79 @@ function Get-BridgeTabs {
     @($r.tabs)
 }
 
+function Get-ClaudeTabs { @(Get-BridgeTabs | Where-Object { $_.claude }) }
+
+# Closes the first Claude tab with exactly this label. The installed bridge 0.1.0 closes every match
+# unless told otherwise, so all = $false is always passed.
+function Close-TabByLabel([string]$Label) {
+    $r = Invoke-BridgeOk 'close-tab' @{ label = $Label; all = $false }
+    if ($r.closed -ne 1) { Stop-Panel 5 "close-tab closed $($r.closed) tabs, not 1" }
+}
+
 # VS Code cuts a tab label at 25 characters with an ellipsis.
 function Get-TabLabel([string]$Title) {
     if ($Title.Length -gt 25) { return ($Title.Substring(0, 24) + [string][char]0x2026) }
     $Title
 }
 
-# ---------------------------------------------------------------- the idle guard
+# ---------------------------------------------------------------- the lock
+
+# Who holds the lock, from its file: pid, action, session, start. Read only.
+function Read-LockHolder {
+    try {
+        $fs = [System.IO.File]::Open($LockFile, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]'ReadWrite, Delete')
+        try {
+            $sr = New-Object System.IO.StreamReader($fs, $Utf8)
+            $j = $sr.ReadToEnd() | ConvertFrom-Json
+        } finally { $fs.Dispose() }
+        return ('pid {0}, {1}, session {2}, since {3}' -f $j.pid, $j.action, $(if ([string]$j.session_id -ne '') { $j.session_id } else { '-' }), $j.started)
+    } catch { return 'its holder could not be read' }
+}
+
+# One run at a time. The lock is the open file itself (shared for reading only), so it dies with its
+# process: a lock file left by a run that ended is stale and is simply taken over. A run that finds it
+# held waits within its wait budget, then exits 3.
+function Enter-Lock([string]$ActionName, [string]$Id) {
+    if ($null -ne $script:Lock) { return }
+    New-Item -ItemType Directory -Force -Path $BridgeBase | Out-Null
+    while ($true) {
+        $fs = $null
+        try {
+            $fs = [System.IO.File]::Open($LockFile, [System.IO.FileMode]::OpenOrCreate, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::Read)
+        } catch {
+            $e = $_.Exception
+            while ($e -is [System.Management.Automation.MethodInvocationException] -and $null -ne $e.InnerException) { $e = $e.InnerException }
+            if (-not ($e -is [System.IO.IOException] -or $e -is [System.UnauthorizedAccessException])) { throw }
+            $fs = $null
+        }
+        if ($null -ne $fs) {
+            $body = ConvertTo-Json -Compress -InputObject ([ordered]@{ pid = $PID; session_id = $Id; action = $ActionName; started = (Get-Date).ToString('yyyy-MM-ddTHH:mm:ssK') })
+            $bytes = $Utf8.GetBytes($body)
+            $fs.SetLength(0)
+            $fs.Write($bytes, 0, $bytes.Length)
+            $fs.Flush()
+            $script:Lock = $fs
+            return
+        }
+        if ((Get-Date) -ge $script:WaitUntil) { Stop-Panel 3 ('another driver run held the panel for the whole wait (' + (Read-LockHolder) + ')') }
+        Start-Sleep -Seconds 2
+    }
+}
+
+function Exit-Lock {
+    if ($null -eq $script:Lock) { return }
+    try { $script:Lock.Dispose() } catch { }
+    $script:Lock = $null
+    # Fails, harmlessly, when the next run already holds it.
+    try { [System.IO.File]::Delete($LockFile) } catch { }
+}
+
+# ---------------------------------------------------------------- the idle guard and the session records
 
 function Wait-Idle([string]$What) {
     while ($true) {
         if ([PanelNative]::IdleMs() -ge ($IdleSeconds * 1000)) { return }
-        if ((Get-Date) -ge $script:Deadline) { Stop-Panel 3 "the operator kept using the computer for $WaitMinutes minutes; nothing was changed ($What)" }
+        if ((Get-Date) -ge (Get-WaitUntil)) { Stop-Panel 3 "the operator kept using the computer until the deadline ($What)" }
         Start-Sleep -Seconds 2
     }
 }
@@ -186,39 +375,73 @@ function Get-ConfigDir {
     Join-Path $env:USERPROFILE '.claude'
 }
 
-# The session records under the config dir's sessions\ (only the .json files).
+function Test-PidAlive($ProcId) {
+    $n = 0
+    if (-not [int]::TryParse([string]$ProcId, [ref]$n)) { return $true }
+    try { $p = [System.Diagnostics.Process]::GetProcessById($n); return (-not $p.HasExited) } catch { return $false }
+}
+
+# The live session records under the config dir's sessions\: a record whose pid is dead is left over and
+# ignored (one with no pid is kept: a process cannot be ruled out). Each carries its file in _file.
 function Get-Records {
     $dir = Join-Path (Get-ConfigDir) 'sessions'
     $out = @()
     if (-not (Test-Path -LiteralPath $dir)) { return $out }
-    foreach ($f in Get-ChildItem -LiteralPath $dir -Filter '*.json' -ErrorAction SilentlyContinue) {
-        try { $out += ([System.IO.File]::ReadAllText($f.FullName, $Utf8) | ConvertFrom-Json) } catch { }
+    foreach ($f in Get-ChildItem -LiteralPath $dir -Filter '*.json' -File -ErrorAction SilentlyContinue) {
+        $r = $null
+        try { $r = [System.IO.File]::ReadAllText($f.FullName, $Utf8) | ConvertFrom-Json } catch { continue }
+        if ($null -eq $r) { continue }
+        if ($null -ne $r.pid -and -not (Test-PidAlive $r.pid)) { continue }
+        $r | Add-Member -NotePropertyName '_file' -NotePropertyValue $f.FullName -Force
+        $out += $r
     }
     $out
 }
 
-function Get-Record([string]$Id) {
-    foreach ($r in @(Get-Records)) { if ($r.sessionId -eq $Id) { return $r } }
-    $null
+function Get-ChatRecords([string]$Id) { @(Get-Records | Where-Object { [string]$_.sessionId -eq $Id }) }
+
+# Every live record for the chat: Count; Busy, '' when all say 'status: idle', else why not (a missing
+# status is not idle); Terminal, '' unless a record comes from outside the VS Code panel.
+function Get-RecordState([string]$Id) {
+    $recs = @(Get-ChatRecords $Id)
+    $busy = ''
+    $term = ''
+    foreach ($r in $recs) {
+        $ep = [string]$r.entrypoint
+        if ($ep -ne $PanelEntrypoint) {
+            if ($ep -eq '') { $ep = 'none' }
+            $term = "a process outside the VS Code panel holds the chat (entrypoint $ep, pid $($r.pid)): a terminal chat is never driven from the panel, because opening it there would start a second process on its transcript"
+        }
+        $st = [string]$r.status
+        if ($st -ne 'idle') {
+            if ($st -eq '') { $st = 'no status' }
+            $busy = "its session record (pid $($r.pid)) says $st"
+        }
+    }
+    [pscustomobject]@{ Count = $recs.Count; Busy = $busy; Terminal = $term }
 }
 
-# '' when the chat is idle by its record, else why not. No record means no process.
-function Get-RecordBusy([string]$Id) {
-    $rec = Get-Record $Id
-    if ($null -eq $rec) { return '' }
-    $st = [string]$rec.status
-    if ($st -ne '' -and $st -ne 'idle') { return "its session record says $st" }
-    ''
+# Seconds since the record's process started (its startedAt in ms, else the file's creation time).
+function Get-RecordAgeSeconds($Rec) {
+    $ms = 0.0
+    if ($null -ne $Rec.startedAt -and [double]::TryParse([string]$Rec.startedAt, [ref]$ms) -and $ms -gt 1e11) {
+        return ([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() - $ms) / 1000.0
+    }
+    try { return ((Get-Date).ToUniversalTime() - (Get-Item -LiteralPath $Rec._file).CreationTimeUtc).TotalSeconds } catch { return 0.0 }
 }
 
-# Guards 1 and 2 before the screen is touched: operator idle and the record idle, up to -WaitMinutes.
+# Guards 1 and 2 before the screen is touched: operator idle and the chat's records idle, up to -WaitMinutes.
 function Wait-Guards([string]$Id) {
     while ($true) {
         $why = ''
         if ([PanelNative]::IdleMs() -lt ($IdleSeconds * 1000)) { $why = 'the operator is using the computer' }
-        elseif ($Id -ne '') { $why = Get-RecordBusy $Id }
+        elseif ($Id -ne '') {
+            $rs = Get-RecordState $Id
+            if ($rs.Terminal -ne '') { Stop-Panel 5 $rs.Terminal }
+            $why = $rs.Busy
+        }
         if ($why -eq '') { return }
-        if ((Get-Date) -ge $script:Deadline) { Stop-Panel 3 "gave up after $WaitMinutes minutes: $why; nothing was changed" }
+        if ((Get-Date) -ge $script:WaitUntil) { Stop-Panel 3 "gave up after $WaitMinutes minutes: $why" }
         Start-Sleep -Seconds 2
     }
 }
@@ -291,14 +514,15 @@ function Ensure-Screen {
 }
 
 # Puts his active chat back, and the window as it was. Never fights him: if he is at the machine it waits
-# a little and then says it did not restore.
+# a little (within the run's deadline) and then says it did not restore.
 function Restore-Screen {
     if (-not $script:ScreenBegun) { return }
     $script:ScreenBegun = $false
     try {
         $limit = (Get-Date).AddSeconds(60)
+        if ($limit -gt $script:RestoreUntil) { $limit = $script:RestoreUntil }
         while ([PanelNative]::IdleMs() -lt ($IdleSeconds * 1000) -and (Get-Date) -lt $limit) { Start-Sleep -Seconds 2 }
-        if ([PanelNative]::IdleMs() -lt ($IdleSeconds * 1000)) { Add-Note 'not restored: the operator is at the machine'; return }
+        if ([PanelNative]::IdleMs() -lt ($IdleSeconds * 1000)) { Add-Note 'his view was not restored: the operator is at the machine'; return }
         if ($script:PrevActive.Count -eq 1) {
             $want = $script:PrevActive[0]
             $now = @(Get-Chats $script:Win | Where-Object { $_.Active } | ForEach-Object { $_.Id })
@@ -363,21 +587,31 @@ function Get-Chat([string]$Id) {
 
 function Get-ActiveIds { @(Get-Chats $script:Win | Where-Object { $_.Active } | ForEach-Object { $_.Id }) }
 
-function Get-InputBoxes { @(Find-Named $script:Win 'Message input' $CT::Edit | Where-Object { -not $_.Current.IsOffscreen }) }
-function Get-SendButtons { @(Find-Named $script:Win 'Send message' $CT::Button | Where-Object { -not $_.Current.IsOffscreen }) }
+# A row element read again by itself, with no search.
+function Test-RowActive($Row) { [bool]($Row.Element.Current.ClassName -match '(^|\s)active_') }
 
-function Read-InputValue {
-    $boxes = Get-InputBoxes
+# The one visible message input, and the Send button in the same chat document (the nearest Document
+# above the input that holds exactly one visible Send). $null when that is not what the screen shows.
+function Get-InputPair {
+    $boxes = @(Find-Named $script:Win 'Message input' $CT::Edit | Where-Object { -not $_.Current.IsOffscreen })
     if ($boxes.Count -ne 1) { return $null }
-    $o = $null
-    if (-not $boxes[0].TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern, [ref]$o)) { return $null }
-    [string]$o.Current.Value
+    $tw = [System.Windows.Automation.TreeWalker]::ControlViewWalker
+    $p = $tw.GetParent($boxes[0])
+    while ($null -ne $p) {
+        if ($p.Current.ControlType -eq $CT::Document) {
+            $sends = @(Find-Named $p 'Send message' $CT::Button | Where-Object { -not $_.Current.IsOffscreen })
+            if ($sends.Count -eq 1) { return [pscustomobject]@{ Input = $boxes[0]; Send = $sends[0]; Doc = $p } }
+            if ($sends.Count -gt 1) { return $null }
+        }
+        $p = $tw.GetParent($p)
+    }
+    $null
 }
 
-function Get-SendState {
-    $s = Get-SendButtons
-    if ($s.Count -ne 1) { return 'none' }
-    if ($s[0].Current.IsEnabled) { 'enabled' } else { 'disabled' }
+function Get-InputValue($El) {
+    $o = $null
+    if (-not $El.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern, [ref]$o)) { return $null }
+    [string]$o.Current.Value
 }
 
 function ConvertTo-PlainValue([string]$Value) {
@@ -399,28 +633,34 @@ function Test-SameText([string]$Value, [string]$Text) {
     $false
 }
 
-# $null when the panel shows what a send needs, else what is wrong. $Id '' means a new chat (no row active).
-function Test-Ready([string]$Id, [string]$Text) {
-    $act = @(Get-ActiveIds)
-    if ($Id -ne '') {
-        if (-not ($act.Count -eq 1 -and $act[0] -eq $Id)) { return "the target row is not the only active row ($($act.Count) active)" }
-    } elseif ($act.Count -ne 0) { return "a chat row is active ($($act.Count)), so this is not the new chat's tab" }
-    $v = Read-InputValue
-    if ($null -eq $v) { return 'the message input is not on screen' }
-    if (-not (Test-SameText $v $Text)) { return 'the input does not hold the text' }
-    if ((Get-SendState) -ne 'enabled') { return 'Send is not enabled' }
-    $null
+# Whether the panel shows what a send needs, and the very elements it checked: Why ($null when ready),
+# Pair (input, Send, their document) and Row (the target row; $null for a new chat, which has none).
+function Test-Ready([string]$RowId, [string]$Text) {
+    $rows = @(Get-Chats $script:Win)
+    $act = @($rows | Where-Object { $_.Active })
+    $row = $null
+    if ($RowId -ne '') {
+        if (-not ($act.Count -eq 1 -and $act[0].Id -eq $RowId)) { return [pscustomobject]@{ Why = "the target row is not the only active row ($($act.Count) active)"; Pair = $null; Row = $null } }
+        $row = $act[0]
+    } elseif ($act.Count -ne 0) { return [pscustomobject]@{ Why = "a chat row is active ($($act.Count)), so this is not the new chat's tab"; Pair = $null; Row = $null } }
+    $pair = Get-InputPair
+    if ($null -eq $pair) { return [pscustomobject]@{ Why = 'one message input with its Send button is not on screen'; Pair = $null; Row = $null } }
+    if (-not (Test-SameText (Get-InputValue $pair.Input) $Text)) { return [pscustomobject]@{ Why = 'the input does not hold the text'; Pair = $null; Row = $null } }
+    if (-not $pair.Send.Current.IsEnabled) { return [pscustomobject]@{ Why = 'Send is not enabled'; Pair = $null; Row = $null } }
+    [pscustomobject]@{ Why = $null; Pair = $pair; Row = $row }
 }
 
-function Wait-Ready([string]$Id, [string]$Text, [int]$Ms) {
+function Wait-Ready([string]$RowId, [string]$Text, [int]$Ms) {
     $sw = [Diagnostics.Stopwatch]::StartNew()
+    $limit = Get-StepMs $Ms
     $why = 'not read'
-    while ($sw.ElapsedMilliseconds -lt $Ms) {
-        $why = Test-Ready $Id $Text
-        if ($null -eq $why) { return }
+    while ($sw.ElapsedMilliseconds -lt $limit) {
+        $r = Test-Ready $RowId $Text
+        if ($null -eq $r.Why) { return $r }
+        $why = $r.Why
         Start-Sleep -Milliseconds 250
     }
-    Stop-Panel 5 "read-back failed ($why); nothing was sent"
+    Stop-Panel 5 "read-back failed ($why)"
 }
 
 function Get-Combo {
@@ -479,33 +719,176 @@ function Read-TxSince([string]$Id, $Mark) {
 
 # ---------------------------------------------------------------- tabs
 
-# Reveal the chat's tab, prove through tabs and the panel that the label is unique and the tab is the
-# active one and the target row is active, then close it and wait for the chat's process to end.
-function Close-ChatTab([string]$Id, [string]$Title) {
-    $label = Get-TabLabel $Title
-    Wait-Idle 'reveal the chat before closing its tab'
+# Bring the chat's tab to the front (the bridge's reveal; for a chat with no tab this opens one) and wait
+# a little for its row to be the only active one. The check that follows says whether it worked.
+function Show-Chat([string]$Id) {
     [void](Invoke-BridgeOk 'reveal' @{ sessionId = $Id })
-    $ok = $false
-    for ($i = 0; $i -lt 32; $i++) {
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    $limit = Get-StepMs 8000
+    while ($sw.ElapsedMilliseconds -lt $limit) {
         $act = @(Get-ActiveIds)
-        if ($act.Count -eq 1 -and $act[0] -eq $Id) { $ok = $true; break }
+        if ($act.Count -eq 1 -and $act[0] -eq $Id) { Start-Sleep -Milliseconds 700; return }
         Start-Sleep -Milliseconds 250
     }
-    if (-not $ok) { Stop-Panel 5 'after reveal the target row is not the only active row; its tab was not closed' }
-    $same = @(Get-BridgeTabs | Where-Object { $_.claude -and $_.label -ceq $label })
-    if ($same.Count -ne 1) { Stop-Panel 5 "$($same.Count) Claude tabs carry the label '$label' (labels are cut at 25 characters); no tab was closed" }
-    if (-not $same[0].isActive) { Stop-Panel 5 "the tab labelled '$label' is not the active tab; no tab was closed" }
-    $busy = Get-RecordBusy $Id
-    if ($busy -ne '') { Stop-Panel 3 "refusing to close the tab of a busy chat: $busy" }
-    Wait-Idle 'close the chat tab'
-    $r = Invoke-BridgeOk 'close-tab' @{ label = $label; all = $false }
-    if ($r.closed -ne 1) { Stop-Panel 5 "close-tab closed $($r.closed) tabs, not 1" }
-    $gone = $false
-    for ($i = 0; $i -lt 360; $i++) {
-        if ($null -eq (Get-Record $Id)) { $gone = $true; break }
-        Start-Sleep -Milliseconds 250
+}
+
+# Untitled tabs: the chats with no transcript and no row must all be idle, panel chats, and older than 60
+# seconds (a younger one may be about to get its first message). '' when they are, else why not.
+function Get-UntitledBlock {
+    $rows = @(Get-Chats $script:Win | ForEach-Object { $_.Id })
+    $cand = @(Get-Records | Where-Object { $rows -notcontains [string]$_.sessionId -and (Find-Transcript ([string]$_.sessionId)) -eq '' })
+    if ($cand.Count -lt 1) { return 'no live chat without a transcript and a row is left' }
+    foreach ($c in $cand) {
+        if ([string]$c.entrypoint -ne $PanelEntrypoint) { return 'an empty chat process is not a panel chat' }
+        if ([string]$c.status -ne 'idle') { return 'an empty chat process is not idle' }
+        if ((Get-RecordAgeSeconds $c) -lt 60) { return 'an empty chat started less than 60 seconds ago' }
     }
-    if (-not $gone) { Stop-Panel 1 'the tab was closed but the chat process did not end within 90 seconds' }
+    ''
+}
+
+# The unbroken check before a tab close: reads only, no wait. $RowId is the chat whose row must be the
+# only active one ('' for an untitled tab: no row active); $RecId the chat whose records must be idle
+# ('' none known, '*' the untitled rule); $Mode 'empty' (the input must hold nothing: a draft is exit 4)
+# or 'text' (the input must hold exactly the driver's text); $ExpectLabel the tab's label, or '' for the
+# label of the active Claude tab. With $FirstOfMany, several tabs may carry the label when the active one
+# is the first of them (close-tab closes the first match). Returns Code 0 and the label to close by, or a
+# Code, a Why and whether waiting may help (Retry).
+function Test-SafeToClose([string]$RowId, [string]$RecId, [string]$Mode, [string]$ExpectLabel, [bool]$FirstOfMany = $false) {
+    if ([PanelNative]::IsIconic($script:Hwnd)) { return [pscustomobject]@{ Code = 3; Why = 'the VS Code window is minimized'; Retry = $true; Label = '' } }
+    $claude = @(Get-ClaudeTabs)
+    $label = $ExpectLabel
+    if ($label -eq '') {
+        $act = @($claude | Where-Object { $_.isActive })
+        if ($act.Count -ne 1) { return [pscustomobject]@{ Code = 5; Why = "$($act.Count) Claude tabs are active, so the chat's tab cannot be told"; Retry = $true; Label = '' } }
+        $label = [string]$act[0].label
+    }
+    $same = @($claude | Where-Object { $_.label -ceq $label })
+    if ($same.Count -lt 1) { return [pscustomobject]@{ Code = 5; Why = "no Claude tab carries the chat's label"; Retry = $true; Label = '' } }
+    if ($same.Count -gt 1 -and -not $FirstOfMany) { return [pscustomobject]@{ Code = 5; Why = "$($same.Count) Claude tabs carry the chat's label (labels are cut at 25 characters)"; Retry = $false; Label = '' } }
+    if (-not $same[0].isActive) { return [pscustomobject]@{ Code = 5; Why = "the chat's tab is not the active tab"; Retry = $true; Label = '' } }
+    $rows = @(Get-Chats $script:Win)
+    $act = @($rows | Where-Object { $_.Active })
+    if ($RowId -ne '') {
+        if (-not ($act.Count -eq 1 -and $act[0].Id -eq $RowId)) { return [pscustomobject]@{ Code = 5; Why = "the chat's row is not the only active row"; Retry = $true; Label = '' } }
+        if ($act[0].Status -ne 'idle') { return [pscustomobject]@{ Code = 3; Why = "the chat's row says $($act[0].Status)"; Retry = $true; Label = '' } }
+    } elseif ($act.Count -ne 0) { return [pscustomobject]@{ Code = 5; Why = 'a chat row is active, so the active tab is not an untitled chat'; Retry = $true; Label = '' } }
+    if ($RecId -eq '*') {
+        $block = Get-UntitledBlock
+        if ($block -ne '') { return [pscustomobject]@{ Code = 5; Why = $block; Retry = $false; Label = '' } }
+    } elseif ($RecId -ne '') {
+        $rs = Get-RecordState $RecId
+        if ($rs.Terminal -ne '') { return [pscustomobject]@{ Code = 5; Why = $rs.Terminal; Retry = $false; Label = '' } }
+        if ($rs.Busy -ne '') { return [pscustomobject]@{ Code = 3; Why = $rs.Busy; Retry = $true; Label = '' } }
+    }
+    $pair = Get-InputPair
+    if ($null -eq $pair) { return [pscustomobject]@{ Code = 5; Why = "the chat's input is not on screen"; Retry = $true; Label = '' } }
+    $enabled = [bool]$pair.Send.Current.IsEnabled
+    if ($Mode -eq 'empty') {
+        if ($enabled) { return [pscustomobject]@{ Code = 4; Why = 'the chat has a draft typed in its input box'; Retry = $false; Label = '' } }
+    } else {
+        # The driver's own tab: its text exactly, or nothing at all (Send disabled), is safe to close.
+        if ($enabled -and -not (Test-SameText (Get-InputValue $pair.Input) $script:St.Text)) {
+            return [pscustomobject]@{ Code = 4; Why = "the input holds text that is not exactly the driver's"; Retry = $false; Label = '' }
+        }
+    }
+    if ([PanelNative]::IdleMs() -lt ($IdleSeconds * 1000)) { return [pscustomobject]@{ Code = 3; Why = 'the operator is using the computer'; Retry = $true; Label = '' } }
+    [pscustomobject]@{ Code = 0; Why = $null; Retry = $false; Label = $label }
+}
+
+# Closes a chat tab after the unbroken check, then waits for the chat's process to end. Whenever the check
+# fails in a way waiting may cure, the whole check (and the reveal, when $RevealId is given) runs again.
+function Close-Checked([string]$RowId, [string]$RecId, [string]$Mode, [string]$ExpectLabel, [string]$RevealId = '', [bool]$FirstOfMany = $false) {
+    $first = $true
+    while ($true) {
+        Wait-Idle 'close a chat tab'
+        if ($RevealId -ne '') { Show-Chat $RevealId }
+        elseif (-not $first) { Start-Sleep -Milliseconds 600 }
+        $first = $false
+        $c = Test-SafeToClose $RowId $RecId $Mode $ExpectLabel $FirstOfMany
+        if ($c.Code -eq 0) {
+            # Nothing waits between the check above and this close.
+            Close-TabByLabel $c.Label
+            $script:St.TabOpen = $false
+            if (-not $script:Restoring -and -not $script:St.Opened) { $script:St.Closed = $true }
+            break
+        }
+        if (-not $c.Retry -or (Get-Date) -ge (Get-WaitUntil)) { Stop-Panel $c.Code ('the tab was not closed: ' + $c.Why) }
+    }
+    if ($RecId -ne '' -and $RecId -ne '*') {
+        $sw = [Diagnostics.Stopwatch]::StartNew()
+        $limit = Get-StepMs 90000
+        while ($sw.ElapsedMilliseconds -lt $limit) {
+            if (@(Get-ChatRecords $RecId).Count -eq 0) { return }
+            Start-Sleep -Milliseconds 250
+        }
+        Stop-Panel 1 "the tab was closed but the chat's process did not end within 90 seconds"
+    }
+}
+
+# Opens the chat (no tab, no process) with the text prefilled. The tab set is read right before and after:
+# when the open adds no tab, the chat's tab was opened by someone else meanwhile, so the prompt was
+# dropped and that tab is not the driver's (it is left alone).
+function Open-WithText([string]$Id, [string]$Text) {
+    $s = $script:St
+    Wait-Idle 'open the chat with the text'
+    $n0 = @(Get-ClaudeTabs).Count
+    if (@(Get-ChatRecords $Id).Count -gt 0) { Stop-Panel 5 "the chat has a process again (someone opened its tab after the driver closed it); the driver opened nothing and left that tab alone" }
+    [void](Invoke-BridgeOk 'open' @{ sessionId = $Id; prompt = $Text })
+    $s.OpenCalled = $true
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    $limit = Get-StepMs 10000
+    while ($sw.ElapsedMilliseconds -lt $limit) {
+        if (@(Get-ClaudeTabs).Count -eq $n0 + 1) { $s.Opened = $true; $s.Prefilled = $true; $s.TabOpen = $true; return }
+        Start-Sleep -Milliseconds 300
+    }
+    Stop-Panel 5 'the open added no tab, so the chat was already open somewhere else and the prompt was dropped; that tab was left as it is'
+}
+
+# After a failure before Send: take the driver's own unsent text away by closing the tab it opened, only
+# when the input still holds exactly that text, then open the chat's tab again if it was open at the start.
+function Restore-Chat {
+    $s = $script:St
+    if ($null -eq $s -or $s.Sent -or -not (Test-Touched)) { return }
+    Start-Restoring
+    try {
+        if ($s.Opened -and $s.TabOpen) {
+            $mode = 'empty'
+            if ($s.Prefilled) { $mode = 'text' }
+            $reveal = ''
+            if ($s.RowId -ne '') { $reveal = $s.RowId }
+            try {
+                Close-Checked $s.RowId $s.Id $mode $s.OwnLabel $reveal
+                $s.Cleaned = $true
+            } catch {
+                $pe = Get-PanelExit $_
+                $why = $_.Exception.Message
+                if ($null -ne $pe) { $why = $pe.Reason }
+                if ($s.Prefilled -and ($null -eq $pe -or $pe.Code -ne 4)) { $s.LeftText = $true }
+                Add-Note ('the tab the driver opened was left open: ' + $why)
+                return
+            }
+        }
+        if ($s.HadTab -and -not $s.TabOpen -and $s.Id -ne '') {
+            if (@(Get-ChatRecords $s.Id).Count -gt 0) { Add-Note 'the chat has a process again, so its tab was not reopened'; return }
+            try {
+                Wait-Idle "open the chat's tab again"
+                $n0 = @(Get-ClaudeTabs).Count
+                [void](Invoke-BridgeOk 'reveal' @{ sessionId = $s.Id })
+                $sw = [Diagnostics.Stopwatch]::StartNew()
+                $limit = Get-StepMs 10000
+                while ($sw.ElapsedMilliseconds -lt $limit) {
+                    if (@(Get-ClaudeTabs).Count -eq $n0 + 1) { $s.Reopened = $true; $s.TabOpen = $true; break }
+                    Start-Sleep -Milliseconds 300
+                }
+                if (-not $s.Reopened) { Add-Note "the chat's tab did not come back after reveal" }
+            } catch {
+                $pe = Get-PanelExit $_
+                $why = $_.Exception.Message
+                if ($null -ne $pe) { $why = $pe.Reason }
+                Add-Note ("the chat's tab was not opened again: " + $why)
+            }
+        }
+    } finally { $script:Restoring = $false }
 }
 
 function Select-UntitledTab {
@@ -542,7 +925,10 @@ function Get-SettingsHash {
     (Get-FileHash -LiteralPath (Join-Path (Get-ConfigDir) 'settings.json') -Algorithm SHA256).Hash
 }
 
+# A picker option or the picker's value names the model when it is the name, or the name and a space
+# (the rest is a description or an effort level): 'Opus 5' never matches 'Opus 5.5 ...'.
 function Test-ModelMatch([string]$Option, [string]$Name) {
+    if ([string]::IsNullOrEmpty($Option) -or [string]::IsNullOrEmpty($Name)) { return $false }
     ($Option -ieq $Name) -or $Option.StartsWith($Name + ' ', [StringComparison]::OrdinalIgnoreCase)
 }
 
@@ -614,7 +1000,7 @@ function Select-Model([string]$Name) {
     for ($i = 0; $i -lt 16; $i++) {
         Start-Sleep -Milliseconds 250
         $pill = Get-Pill
-        if ((Test-ModelMatch $pill $Name) -or $pill.StartsWith($Name, [StringComparison]::OrdinalIgnoreCase)) { return $pill }
+        if (Test-ModelMatch $pill $Name) { return $pill }
     }
     Stop-Panel 1 "the model picker still says '$pill', not '$Name'"
 }
@@ -631,26 +1017,35 @@ function Read-Text([string]$Path) {
     $t
 }
 
-# The last step of a send: readback, then Send, with the operator idle at that moment.
-function Send-Now([string]$Id, [string]$Text) {
+# The last step of a send: the full read-back, then only the elements it verified are read again and that
+# same Send button is invoked, with the operator idle at that moment. Returns the verified pair.
+function Send-Now([string]$RowId, [string]$Text) {
     for ($try = 0; $try -lt 8; $try++) {
         Wait-Idle 'press Send'
-        $why = Test-Ready $Id $Text
-        if ($null -ne $why) { Stop-Panel 5 "read-back failed before Send ($why); nothing was sent" }
+        $ready = Test-Ready $RowId $Text
+        if ($null -ne $ready.Why) { Stop-Panel 5 "read-back failed before Send ($($ready.Why))" }
+        # From here to the Invoke nothing is searched: the verified elements are read again, nothing else.
         if ([PanelNative]::IdleMs() -lt ($IdleSeconds * 1000)) { continue }
-        $btn = Get-SendButtons
-        $btn[0].GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
-        return
+        if (-not (Test-SameText (Get-InputValue $ready.Pair.Input) $Text)) { Stop-Panel 5 'the input changed right before Send' }
+        if (-not $ready.Pair.Send.Current.IsEnabled -or $ready.Pair.Send.Current.IsOffscreen) { Stop-Panel 5 'Send was not enabled right before the press' }
+        if ($null -ne $ready.Row -and -not (Test-RowActive $ready.Row)) { Stop-Panel 5 "the chat's row stopped being active right before Send" }
+        $script:St.Sent = $true
+        $ready.Pair.Send.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+        return $ready.Pair
     }
-    Stop-Panel 3 'the operator kept using the computer; nothing was sent'
+    Stop-Panel 3 'the operator kept using the computer'
 }
 
 # After Send: the input cleared, then the transcript shows a new user line, and for a slash command its effect.
-function Confirm-Sent([string]$Id, [string]$Text, $Mark) {
+function Confirm-Sent([string]$Id, [string]$Text, $Mark, $Pair) {
     $cleared = $false
-    for ($i = 0; $i -lt 50; $i++) {
-        $v = Read-InputValue
-        if ((Get-SendState) -ne 'enabled' -or ($null -ne $v -and -not (Test-SameText $v $Text))) { $cleared = $true; break }
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    $limit = Get-StepMs 10000
+    while ($sw.ElapsedMilliseconds -lt $limit) {
+        $v = $null
+        $en = $false
+        try { $v = Get-InputValue $Pair.Input; $en = [bool]$Pair.Send.Current.IsEnabled } catch { $v = $null; $en = $false }
+        if (-not $en -or ($null -ne $v -and -not (Test-SameText $v $Text))) { $cleared = $true; break }
         Start-Sleep -Milliseconds 200
     }
     if (-not $cleared) { Stop-Panel 1 'Send was invoked but the input did not clear' }
@@ -661,96 +1056,101 @@ function Confirm-Sent([string]$Id, [string]$Text, $Mark) {
     $limit = 90
     if ($isCompact) { $limit = 600 }
     $sw = [Diagnostics.Stopwatch]::StartNew()
+    $limitMs = Get-StepMs ($limit * 1000)
     $userSeen = $false
-    while ($sw.Elapsed.TotalSeconds -lt $limit) {
+    while ($sw.ElapsedMilliseconds -lt $limitMs) {
         $f = Read-TxSince $Id $Mark
         if ($f.User -ge 1) { $userSeen = $true }
         if ($isCompact) {
             if ($f.Boundary -ge 1) { return 'sent; the transcript gained a compact_boundary line' }
         } elseif ($title -ne '') {
-            if ($userSeen -and ($f.Title -ceq $title -or (@(Get-Chats $script:Win | Where-Object { $_.Id -eq $Id -and $_.Name -ceq $title }).Count -eq 1))) { return "sent; the chat is renamed to '$title'" }
+            if ($userSeen -and ($f.Title -ceq $title -or (@(Get-Chats $script:Win | Where-Object { $_.Id -eq $Id -and $_.Name -ceq $title }).Count -eq 1))) { return 'sent; the chat shows the new name' }
         } elseif ($userSeen) {
             return 'sent; the transcript gained the user line'
         }
         Start-Sleep -Milliseconds 700
     }
-    if (-not $userSeen) { Stop-Panel 1 'Send was invoked but the transcript gained no user line within 90 seconds' }
-    if ($isCompact) { Stop-Panel 1 'the transcript gained no compact_boundary line within 10 minutes; look at the chat before trusting it' }
-    Stop-Panel 1 "the user line arrived but the chat is not renamed to '$title' (row and transcript title)"
+    if (-not $userSeen) { Stop-Panel 1 'Send was invoked but the transcript gained no user line in time' }
+    if ($isCompact) { Stop-Panel 1 'the transcript gained no compact_boundary line in time; look at the chat before trusting it' }
+    Stop-Panel 1 'the user line arrived but the chat does not show the new name (row and transcript title)'
 }
 
-# Wait until the chat's record and row say idle (a slash command ends fast), up to the given seconds.
+# Wait until the chat's records and row say idle (a slash command ends fast), up to the given seconds.
 function Wait-ChatIdle([string]$Id, [int]$Seconds) {
     $sw = [Diagnostics.Stopwatch]::StartNew()
-    while ($sw.Elapsed.TotalSeconds -lt $Seconds) {
-        $rec = Get-Record $Id
+    $limit = Get-StepMs ($Seconds * 1000)
+    while ($sw.ElapsedMilliseconds -lt $limit) {
+        $rs = Get-RecordState $Id
         $row = @(Get-Chats $script:Win | Where-Object { $_.Id -eq $Id })
-        $recIdle = ($null -eq $rec -or [string]$rec.status -eq 'idle' -or [string]$rec.status -eq '')
-        $rowIdle = ($row.Count -eq 1 -and $row[0].Status -ne 'running')
+        $recIdle = ($rs.Count -eq 0 -or $rs.Busy -eq '')
+        $rowIdle = ($row.Count -eq 1 -and $row[0].Status -eq 'idle')
         if ($recIdle -and $rowIdle) { return $true }
         Start-Sleep -Milliseconds 700
     }
     $false
 }
 
+# The chat's row, once it is not running (within the wait budget).
+function Wait-RowIdle([string]$Id) {
+    $chat = Get-Chat $Id
+    while ($chat.Status -eq 'running') {
+        if ((Get-Date) -ge (Get-WaitUntil)) { Stop-Panel 3 'the chat is running (its row says so)' }
+        Start-Sleep -Seconds 2
+        $chat = Get-Chat $Id
+    }
+    $chat
+}
+
 function Do-List {
     Open-Window
-    $min = [PanelNative]::IsIconic($script:Hwnd)
-    if ($min) { Ensure-Screen } else { Wait-Tree; $script:ScreenBegun = $false }
+    if ([PanelNative]::IsIconic($script:Hwnd)) {
+        # Restoring the window changes his screen, so this list waits its turn like any other run.
+        Enter-Lock 'list' ''
+        Ensure-Screen
+    } else { Wait-Tree }
     $rows = @(Get-Chats $script:Win | ForEach-Object { [pscustomobject]@{ session_id = $_.Id; name = $_.Name; status = $_.Status; active = $_.Active } })
     ConvertTo-Json -InputObject $rows -Compress
 }
 
 function Do-Send([string]$Id, [string]$Text) {
-    Test-Bridge
-    Wait-Guards $Id
-    Ensure-Screen
-    $chat = Get-Chat $Id
-    if ($chat.Status -eq 'running') {
-        $limit = $script:Deadline
-        while ($chat.Status -eq 'running') {
-            if ((Get-Date) -ge $limit) { Stop-Panel 3 'the chat is running (its row says so); nothing was changed' }
-            Start-Sleep -Seconds 2
-            $chat = Get-Chat $Id
+    New-RunState $Id $Text
+    $s = $script:St
+    $done = Invoke-Guarded {
+        Test-Bridge
+        Wait-Guards $Id
+        Ensure-Screen
+        $chat = Wait-RowIdle $Id
+        $rs = Get-RecordState $Id
+        if ($rs.Terminal -ne '') { Stop-Panel 5 $rs.Terminal }
+        $s.HadTab = ($rs.Count -gt 0)
+        $s.TabOpen = $s.HadTab
+        if ($s.HadTab) {
+            # His tab: reveal it, prove it is the one and holds no draft, close it, wait for the process to end.
+            Close-Checked $Id $Id 'empty' (Get-TabLabel $chat.Name) $Id
         }
+        $mark = Get-TxMark $Id
+        Open-WithText $Id $Text
+        [void](Wait-Ready $Id $Text 25000)
+        $pair = Send-Now $Id $Text
+        Confirm-Sent $Id $Text $mark $pair
     }
-    $rec = Get-Record $Id
-    $hadTab = ($null -ne $rec)
-    if ($hadTab) {
-        $busy = Get-RecordBusy $Id
-        if ($busy -ne '') { Stop-Panel 3 "refusing to close the tab of a busy chat: $busy" }
-        # Reveal it and read its input: closing the tab would throw a draft away.
-        Wait-Idle 'reveal the chat to read its input'
-        [void](Invoke-BridgeOk 'reveal' @{ sessionId = $Id })
-        $ok = $false
-        for ($i = 0; $i -lt 32; $i++) {
-            $act = @(Get-ActiveIds)
-            if ($act.Count -eq 1 -and $act[0] -eq $Id) { $ok = $true; break }
-            Start-Sleep -Milliseconds 250
-        }
-        if (-not $ok) { Stop-Panel 5 'after reveal the target row is not the only active row; nothing was changed further' }
-        Start-Sleep -Milliseconds 700
-        if ((Get-SendState) -ne 'disabled') { Stop-Panel 4 "the chat has a draft typed in its input box (Send is enabled): $($chat.Name)" }
-        Close-ChatTab $Id $chat.Name
-    }
-    $mark = Get-TxMark $Id
-    Wait-Idle 'open the chat with the text'
-    [void](Invoke-BridgeOk 'open' @{ sessionId = $Id; prompt = $Text })
-    $script:OpenedUnsent = $true
-    Wait-Ready $Id $Text 25000
-    Send-Now $Id $Text
-    $script:OpenedUnsent = $false
-    $done = Confirm-Sent $Id $Text $mark
-    if (-not $hadTab) {
-        if ($Text.StartsWith('/')) {
-            # A slash command ends fast; the tab that was closed before is closed again once the chat is idle.
-            if (Wait-ChatIdle $Id 150) {
-                $row = Get-Chat $Id
-                Close-ChatTab $Id $row.Name
-                $done += '; its tab is closed again'
-            } else { Add-Note 'the chat was still busy, so its tab was left open' }
-        } else {
-            Add-Note 'the chat is running the new turn, so its tab was left open'
+    # The text is sent and confirmed: from here a failure is a note, never a failed run.
+    if (-not $s.HadTab) {
+        try {
+            if ($Text.StartsWith('/')) {
+                # A slash command ends fast; the tab that was closed before is closed again once the chat is idle.
+                if (Wait-ChatIdle $Id 150) {
+                    Close-Checked $Id $Id 'empty' '' $Id
+                    $done += '; its tab is closed again, as it was'
+                } else { Add-Note 'the chat was still busy, so its tab was left open' }
+            } else {
+                Add-Note 'the chat is running the new turn, so its tab was left open'
+            }
+        } catch {
+            $pe = Get-PanelExit $_
+            $why = $_.Exception.Message
+            if ($null -ne $pe) { $why = $pe.Reason }
+            Add-Note ('the text was sent; its tab was left open: ' + $why)
         }
     }
     $done
@@ -758,109 +1158,136 @@ function Do-Send([string]$Id, [string]$Text) {
 
 function Do-New([string]$Text, [string]$ModelName, [string]$Group) {
     if ($ModelName -eq '') { Stop-Panel 1 '-Model is needed: a new chat would inherit the default model, which is the expensive one' }
-    Test-Bridge
-    Wait-Guards ''
-    Ensure-Screen
-    $rowsBefore = @(Get-Chats $script:Win | ForEach-Object { $_.Id })
-    $recBefore = @(Get-Records | ForEach-Object { $_.sessionId })
-    Wait-Idle 'open a new chat'
-    $bargs = @{ prompt = $Text }
-    if ($Group -ne '') { $bargs.groupId = $Group }
-    [void](Invoke-BridgeOk 'open' $bargs)
-    $script:OpenedUnsent = $true
-    Wait-Ready '' $Text 30000
-    # The new chat's process and record exist at once.
-    $newRec = @()
-    for ($i = 0; $i -lt 40; $i++) {
-        $newRec = @(Get-Records | Where-Object { $recBefore -notcontains $_.sessionId })
-        if ($newRec.Count -ge 1) { break }
-        Start-Sleep -Milliseconds 250
+    New-RunState '' $Text
+    $s = $script:St
+    $s.RowId = ''
+    $s.OwnLabel = $UntitledLabel
+    $newId = Invoke-Guarded {
+        Test-Bridge
+        Wait-Guards ''
+        Ensure-Screen
+        Wait-Idle 'open a new chat'
+        # Nothing waits from here to the open: the new tab must be the only untitled one.
+        $claude = @(Get-ClaudeTabs)
+        $blank = @($claude | Where-Object { $_.label -ceq $UntitledLabel })
+        if ($blank.Count -ne 0) { Stop-Panel 5 "$($blank.Count) untitled '$UntitledLabel' tab(s) are already open, so the new chat's tab could not be told apart; run close-untitled or close them, then start the chat" }
+        $recBefore = @(Get-Records | ForEach-Object { [string]$_.sessionId })
+        $bargs = @{ prompt = $Text }
+        if ($Group -ne '') { $bargs.groupId = $Group }
+        [void](Invoke-BridgeOk 'open' $bargs)
+        $s.OpenCalled = $true
+        $sw = [Diagnostics.Stopwatch]::StartNew()
+        $limit = Get-StepMs 10000
+        while ($sw.ElapsedMilliseconds -lt $limit) {
+            $now = @(Get-ClaudeTabs)
+            if ($now.Count -eq $claude.Count + 1 -and @($now | Where-Object { $_.label -ceq $UntitledLabel }).Count -eq 1) { $s.Opened = $true; $s.Prefilled = $true; $s.TabOpen = $true; break }
+            Start-Sleep -Milliseconds 300
+        }
+        if (-not $s.Opened) { Stop-Panel 5 'the open added no untitled tab' }
+        [void](Wait-Ready '' $Text 30000)
+        # The new chat is the one panel session record that appeared since the open (its process starts at once).
+        $new = @()
+        $sw = [Diagnostics.Stopwatch]::StartNew()
+        $limit = Get-StepMs 10000
+        while ($sw.ElapsedMilliseconds -lt $limit) {
+            $new = @(Get-Records | Where-Object { $recBefore -notcontains [string]$_.sessionId -and [string]$_.entrypoint -eq $PanelEntrypoint })
+            if ($new.Count -ge 1) { break }
+            Start-Sleep -Milliseconds 250
+        }
+        if ($new.Count -ne 1) { Stop-Panel 5 "$($new.Count) new panel session records appeared after the open, so the new chat cannot be told apart" }
+        $s.Id = [string]$new[0].sessionId
+        # The model is set and shown before the first message exists.
+        [void](Select-Model $ModelName)
+        [void](Wait-Ready '' $Text 15000)
+        $nowPill = Get-Pill
+        if (-not (Test-ModelMatch $nowPill $ModelName)) { Stop-Panel 5 "the picker shows '$nowPill', not '$ModelName'" }
+        $pair = Send-Now '' $Text
+        # The row that appears must be the new chat's own record, not any new row.
+        $seen = $false
+        $sw = [Diagnostics.Stopwatch]::StartNew()
+        $limit = Get-StepMs 60000
+        while ($sw.ElapsedMilliseconds -lt $limit) {
+            if (@(Get-Chats $script:Win | Where-Object { $_.Id -eq $s.Id }).Count -eq 1) { $seen = $true; break }
+            Start-Sleep -Milliseconds 500
+        }
+        if (-not $seen) { Stop-Panel 1 "the message was sent but no row for the new chat's session $($s.Id) appeared within 60 seconds" }
+        $sw = [Diagnostics.Stopwatch]::StartNew()
+        $limit = Get-StepMs 90000
+        $seen = $false
+        while ($sw.ElapsedMilliseconds -lt $limit) {
+            $f = Read-TxSince $s.Id ([pscustomobject]@{ Len = [long]0 })
+            if ($f.User -ge 1) { $seen = $true; break }
+            Start-Sleep -Milliseconds 700
+        }
+        if (-not $seen) { Stop-Panel 1 "the new chat $($s.Id) exists but its transcript has no user line after 90 seconds" }
+        Add-Note "model shown: $nowPill; its tab is left open (it is running its first turn)"
+        $s.Id
     }
-    # The model is set and shown before the first message exists.
-    $pill = Select-Model $ModelName
-    Wait-Ready '' $Text 15000
-    $nowPill = Get-Pill
-    if (-not ((Test-ModelMatch $nowPill $ModelName) -or $nowPill.StartsWith($ModelName, [StringComparison]::OrdinalIgnoreCase))) {
-        Stop-Panel 5 "the picker shows '$nowPill', not '$ModelName'; nothing was sent"
-    }
-    Send-Now '' $Text
-    $script:OpenedUnsent = $false
-    $newId = ''
-    for ($i = 0; $i -lt 120; $i++) {
-        $now = @(Get-Chats $script:Win | Where-Object { $rowsBefore -notcontains $_.Id })
-        if ($now.Count -ge 1) { $newId = $now[0].Id; break }
-        Start-Sleep -Milliseconds 500
-    }
-    if ($newId -eq '') { Stop-Panel 1 'the message was sent but no new chat row appeared within 60 seconds' }
-    if ($newRec.Count -eq 1 -and $newRec[0].sessionId -ne $newId) { Add-Note "the new record named $($newRec[0].sessionId) but the new row is $newId" }
-    $sw = [Diagnostics.Stopwatch]::StartNew()
-    $seen = $false
-    while ($sw.Elapsed.TotalSeconds -lt 90) {
-        $f = Read-TxSince $newId ([pscustomobject]@{ Len = [long]0 })
-        if ($f.User -ge 1) { $seen = $true; break }
-        Start-Sleep -Milliseconds 700
-    }
-    if (-not $seen) { Stop-Panel 1 "the new chat $newId exists but its transcript has no user line after 90 seconds" }
-    Add-Note "model shown: $nowPill; its tab is left open (it is running its first turn)"
     $newId
 }
 
 function Do-Model([string]$Id, [string]$ModelName) {
-    Test-Bridge
-    Wait-Guards $Id
-    Ensure-Screen
-    $chat = Get-Chat $Id
-    if ($chat.Status -eq 'running') { Stop-Panel 3 'the chat is running; its model was not changed' }
-    Wait-Idle 'show the chat'
-    $rec = Get-Record $Id
-    [void](Invoke-BridgeOk 'reveal' @{ sessionId = $Id })
-    $ok = $false
-    for ($i = 0; $i -lt 40; $i++) {
+    New-RunState $Id ''
+    $s = $script:St
+    $out = Invoke-Guarded {
+        Test-Bridge
+        Wait-Guards $Id
+        Ensure-Screen
+        [void](Wait-RowIdle $Id)
+        $rs = Get-RecordState $Id
+        $s.HadTab = ($rs.Count -gt 0)
+        $s.TabOpen = $s.HadTab
+        Wait-Idle 'show the chat'
+        $n0 = @(Get-ClaudeTabs).Count
+        if (-not $s.HadTab) { $s.OpenCalled = $true }
+        Show-Chat $Id
+        if (-not $s.HadTab -and @(Get-ClaudeTabs).Count -eq $n0 + 1) { $s.Opened = $true; $s.TabOpen = $true }
         $act = @(Get-ActiveIds)
-        if ($act.Count -eq 1 -and $act[0] -eq $Id) { $ok = $true; break }
-        Start-Sleep -Milliseconds 250
+        if (-not ($act.Count -eq 1 -and $act[0] -eq $Id)) { Stop-Panel 5 'the target row is not the only active row after reveal; no model was picked' }
+        $rs = Get-RecordState $Id
+        if ($rs.Terminal -ne '') { Stop-Panel 5 $rs.Terminal }
+        if ($rs.Busy -ne '') { Stop-Panel 3 "the chat is busy: $($rs.Busy)" }
+        if ((Get-Chat $Id).Status -eq 'running') { Stop-Panel 3 'the chat started running; its model was not changed' }
+        Select-Model $ModelName
     }
-    if (-not $ok) { Stop-Panel 5 'the target row is not the only active row after reveal; no model was picked' }
-    Start-Sleep -Milliseconds 800
-    if ($null -eq $rec) { Add-Note 'the chat had no open tab; its tab is left open because the pick lives in its process' }
-    $busy = Get-RecordBusy $Id
-    if ($busy -ne '') { Stop-Panel 3 "the chat is busy: $busy" }
-    $chat = Get-Chat $Id
-    if ($chat.Status -eq 'running') { Stop-Panel 3 'the chat started running; its model was not changed' }
-    Select-Model $ModelName
+    if ($s.Opened) { Add-Note 'the chat had no open tab; its tab is left open because the pick lives in its process' }
+    $out
 }
 
 function Do-CloseUntitled {
     Test-Bridge
-    $blank = @(Get-BridgeTabs | Where-Object { $_.claude -and $_.label -ceq 'Claude Code' })
+    $blank = @(Get-ClaudeTabs | Where-Object { $_.label -ceq $UntitledLabel })
     if ($blank.Count -eq 0) { return 'closed 0: no untitled Claude Code tab is open' }
+    New-RunState '' ''
     Wait-Guards ''
     Ensure-Screen
     $closed = 0
     $skipped = ''
     for ($n = 0; $n -lt 20; $n++) {
-        $tabs = @(Get-BridgeTabs | Where-Object { $_.claude -and $_.label -ceq 'Claude Code' })
+        $tabs = @(Get-ClaudeTabs | Where-Object { $_.label -ceq $UntitledLabel })
         if ($tabs.Count -eq 0) { break }
-        # Candidate records: a process with no transcript and no row (a chat that has not had a message).
-        $rows = @(Get-Chats $script:Win | ForEach-Object { $_.Id })
-        $cand = @(Get-Records | Where-Object { $rows -notcontains $_.sessionId -and (Find-Transcript $_.sessionId) -eq '' })
-        if ($cand.Count -lt 1) { $skipped = 'no live chat without a transcript and a row is left'; break }
+        $block = Get-UntitledBlock
+        if ($block -ne '') { $skipped = $block; break }
+        $before = @(Get-Records).Count
         Wait-Idle 'select an untitled tab'
         if (-not (Select-UntitledTab)) { $skipped = 'no untitled tab could be selected'; break }
-        $first = @(Get-BridgeTabs | Where-Object { $_.claude -and $_.label -ceq 'Claude Code' })[0]
-        $act = @(Get-ActiveIds)
-        if (-not $first.isActive -or $act.Count -ne 0) { $skipped = 'the first untitled tab is not the selected one, or a chat row is active'; break }
-        if ((Get-SendState) -ne 'disabled') { $skipped = 'an untitled tab holds an unsent draft; it was left open'; break }
-        Wait-Idle 'close an untitled tab'
-        $r = Invoke-BridgeOk 'close-tab' @{ label = 'Claude Code'; all = $false }
-        if ($r.closed -ne 1) { Stop-Panel 1 "close-tab closed $($r.closed) tabs, not 1" }
+        try {
+            # The selected tab is the first untitled one, which is the one close-tab closes.
+            Close-Checked '' '*' 'empty' $UntitledLabel '' $true
+        } catch {
+            $pe = Get-PanelExit $_
+            if ($null -eq $pe) { throw }
+            $skipped = $pe.Reason
+            break
+        }
         $gone = $false
-        for ($i = 0; $i -lt 240; $i++) {
-            $left = @(Get-Records | Where-Object { $rows -notcontains $_.sessionId -and (Find-Transcript $_.sessionId) -eq '' })
-            if ($left.Count -lt $cand.Count) { $gone = $true; break }
+        $sw = [Diagnostics.Stopwatch]::StartNew()
+        $limit = Get-StepMs 60000
+        while ($sw.ElapsedMilliseconds -lt $limit) {
+            if (@(Get-Records).Count -lt $before) { $gone = $true; break }
             Start-Sleep -Milliseconds 250
         }
-        if (-not $gone) { Stop-Panel 1 'an untitled tab was closed but no empty chat process ended; stopping' }
+        if (-not $gone) { Stop-Panel 1 "closed $($closed + 1) untitled tab(s), but the last one's empty chat process did not end; stopping" }
         $closed++
     }
     $msg = "closed $closed untitled tab(s)"
@@ -881,47 +1308,45 @@ function Write-PanelLog([string]$ActionName, [string]$Id, [int]$Code, [string]$R
     } catch { }
 }
 
-# Close a tab this run opened with text in it but did not send, so no prefilled draft is left behind.
-function Clean-UnsentTab([string]$Id) {
-    if (-not $script:OpenedUnsent) { return }
-    $script:OpenedUnsent = $false
-    try {
-        if ($Id -ne '' -and [PanelNative]::IdleMs() -ge ($IdleSeconds * 1000)) {
-            $row = @(Get-Chats $script:Win | Where-Object { $_.Id -eq $Id })
-            if ($row.Count -eq 1) { Close-ChatTab $Id $row[0].Name; Add-Note 'the tab opened with the unsent text was closed again' }
-        } else {
-            Add-Note 'an empty chat tab with unsent text was left open; close it by hand or run close-untitled'
-        }
-    } catch { Add-Note ('could not close the unsent tab: ' + $_.Exception.Message) }
-}
-
-function Invoke-Logged([string]$ActionName, [string]$LogId, [scriptblock]$Body) {
+# One run: the lock (for a run that changes anything), the body, then his view and the window put back
+# and the lock let go whatever happened, then one log line.
+function Invoke-Logged([string]$ActionName, [string]$LogId, [bool]$Locked, [scriptblock]$Body) {
     $script:Notes = @()
     $script:Clock = [Diagnostics.Stopwatch]::StartNew()
-    $script:Deadline = (Get-Date).AddMinutes($WaitMinutes)
+    Set-Deadlines
     $r = [pscustomobject]@{ Code = 0; Reason = 'ok'; Value = $null }
     try {
-        $r.Value = & $Body
-    } catch [PanelExit] {
-        $r.Code = $_.Exception.Code
-        $r.Reason = $_.Exception.Reason
-    } catch {
-        $r.Code = 1
-        $r.Reason = 'unexpected: ' + $_.Exception.Message + ' (line ' + $_.InvocationInfo.ScriptLineNumber + ')'
+        try {
+            if ($Locked) { Enter-Lock $ActionName $LogId }
+            $r.Value = & $Body
+        } catch {
+            $pe = Get-PanelExit $_
+            if ($null -ne $pe) {
+                $r.Code = $pe.Code
+                $r.Reason = $pe.Reason
+            } else {
+                $r.Code = 1
+                $r.Reason = 'unexpected: ' + $_.Exception.Message + ' (line ' + $_.InvocationInfo.ScriptLineNumber + ')'
+            }
+        }
+    } finally {
+        Start-Restoring
+        try { Restore-Screen } catch { Add-Note ('restore failed: ' + $_.Exception.Message) }
+        $script:Restoring = $false
+        Exit-Lock
     }
-    if ($r.Code -ne 0 -and $script:ScreenBegun) { Clean-UnsentTab $LogId }
-    try { Restore-Screen } catch { Add-Note ('restore failed: ' + $_.Exception.Message) }
     Write-PanelLog $ActionName $LogId $r.Code $r.Reason
     $r
 }
 
+# The value on stdout on success, else the reason on stderr; the notes on stderr always.
 function Out-Result($r) {
     if ($r.Code -eq 0) {
         if ($null -ne $r.Value) { [Console]::Out.WriteLine([string]$r.Value) }
-        foreach ($n in $script:Notes) { [Console]::Error.WriteLine('note: ' + $n) }
     } else {
         [Console]::Error.WriteLine($r.Reason)
     }
+    foreach ($n in $script:Notes) { [Console]::Error.WriteLine('note: ' + $n) }
     $r.Code
 }
 
@@ -944,12 +1369,21 @@ function Step-Run([string]$Step, [scriptblock]$Body, [string]$Detail) {
         if ($d -eq '') { $d = [string]$v }
         Write-StepLine $Step $true $d
         return ,$v
-    } catch [PanelExit] {
-        Write-StepLine $Step $false ('exit {0}: {1}' -f $_.Exception.Code, $_.Exception.Reason)
     } catch {
-        Write-StepLine $Step $false ('unexpected: ' + $_.Exception.Message)
+        $pe = Get-PanelExit $_
+        if ($null -ne $pe) { Write-StepLine $Step $false ('exit {0}: {1}' -f $pe.Code, $pe.Reason) }
+        else { Write-StepLine $Step $false ('unexpected: ' + $_.Exception.Message) }
     }
     $null
+}
+
+# Closes a chat's tab after the unbroken check (selftest's last step).
+function Close-ChatTab([string]$Id) {
+    New-RunState $Id ''
+    $script:St.HadTab = $true
+    $script:St.TabOpen = $true
+    Close-Checked $Id $Id 'empty' '' $Id
+    'tab closed, its process ended'
 }
 
 function Do-SelfTest {
@@ -970,11 +1404,7 @@ function Do-SelfTest {
     if ($null -eq $r) { $failed++ }
     $r = Step-Run "model set to $SelfTestSecondModel and read back" { Do-Model $id $SelfTestSecondModel } ''
     if ($null -eq $r) { $failed++ }
-    $r = Step-Run 'close the chat tab' {
-        $row = Get-Chat $id
-        Close-ChatTab $id $row.Name
-        'tab closed, its process ended'
-    } ''
+    $r = Step-Run 'close the chat tab' { Close-ChatTab $id } ''
     if ($null -eq $r) { $failed++ }
     [Console]::Out.WriteLine("scratch chat: $id ($name)")
     if ($failed -gt 0) { return 1 }
@@ -993,21 +1423,21 @@ if ($GroupId -ne '' -and $GroupId -notmatch '^[0-9A-Za-z_-]{1,200}$') {
 }
 $code = 1
 switch ($Action) {
-    'list' { $code = Out-Result (Invoke-Logged 'list' '' { Do-List }) }
+    'list' { $code = Out-Result (Invoke-Logged 'list' '' $false { Do-List }) }
     'send' {
         if ($Session -eq '') { [Console]::Error.WriteLine('send needs -Session'); $code = 1 } else {
-            $code = Out-Result (Invoke-Logged 'send' $Session { Do-Send $Session (Read-Text $TextFile) })
+            $code = Out-Result (Invoke-Logged 'send' $Session $true { Do-Send $Session (Read-Text $TextFile) })
         }
     }
-    'new' { $code = Out-Result (Invoke-Logged 'new' '' { Do-New (Read-Text $TextFile) $Model $GroupId }) }
+    'new' { $code = Out-Result (Invoke-Logged 'new' '' $true { Do-New (Read-Text $TextFile) $Model $GroupId }) }
     'model' {
         if ($Session -eq '') { [Console]::Error.WriteLine('model needs -Session'); $code = 1 } else {
-            $code = Out-Result (Invoke-Logged 'model' $Session { Do-Model $Session $Model })
+            $code = Out-Result (Invoke-Logged 'model' $Session $true { Do-Model $Session $Model })
         }
     }
-    'close-untitled' { $code = Out-Result (Invoke-Logged 'close-untitled' '' { Do-CloseUntitled }) }
+    'close-untitled' { $code = Out-Result (Invoke-Logged 'close-untitled' '' $true { Do-CloseUntitled }) }
     'selftest' {
-        $r = Invoke-Logged 'selftest' '' { Do-SelfTest }
+        $r = Invoke-Logged 'selftest' '' $true { Do-SelfTest }
         $code = [int]$r.Value
         if ($r.Code -ne 0) { [Console]::Error.WriteLine($r.Reason); $code = $r.Code }
         foreach ($n in $script:Notes) { [Console]::Error.WriteLine('note: ' + $n) }

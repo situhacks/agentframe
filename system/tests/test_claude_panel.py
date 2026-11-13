@@ -34,8 +34,10 @@ POWERSHELL = sys.platform == "win32" and shutil.which("powershell.exe")
 
 # The controls the driver may name, and nothing else.
 CONTROLS = {"Message input", "Send message", "Switch model", "New session"}
-# The fixed actions of the bridge (version 0.1.0 is installed; the driver may use only these).
-BRIDGE_ACTIONS = {"ping", "tabs", "open", "reveal", "close-tab", "group-pick"}
+# The actions of the installed bridge 0.1.0, and of the source (0.2.0, which drops group-pick). The driver
+# may use only the ones both have.
+INSTALLED_ACTIONS = {"ping", "tabs", "open", "reveal", "close-tab", "group-pick"}
+BRIDGE_ACTIONS = {"ping", "tabs", "open", "reveal", "close-tab"}
 # What the driver may import from Windows: the idle time and the window's state and title, nothing that sends input.
 ALLOWED_IMPORTS = {"GetLastInputInfo", "IsIconic", "IsWindow", "GetWindowTextW"}
 # Words that would mean synthetic input, clipboard use or taking the foreground.
@@ -382,8 +384,8 @@ class BridgeUseTests(unittest.TestCase):
         text = code_lines(source())
         used = set(re.findall(r"Invoke-Bridge(?:Ok)?\s+'([\w-]+)'", text))
         self.assertTrue(used, "the driver must use the bridge")
-        self.assertLessEqual(used, BRIDGE_ACTIONS)
-        self.assertNotIn("group-pick", used, "built but not run in this build")
+        self.assertLessEqual(used, BRIDGE_ACTIONS & INSTALLED_ACTIONS)
+        self.assertNotIn("group-pick", source(), "the driver never sends group-pick (0.1.0 still has it)")
         # The options it passes: only ones 0.1.0 reads.
         for m in re.finditer(r"Invoke-BridgeOk\s+'open'\s+(@\{[^}]*\}|\$\w+)", text):
             self.assertRegex(m.group(1), r"sessionId|\$bargs")
@@ -396,25 +398,15 @@ class BridgeUseTests(unittest.TestCase):
         for part in ["build.py", "code --install-extension", "do not reload"]:
             self.assertIn(part, test)
 
-    def test_tab_identity_is_proved_before_close_tab_and_a_busy_chat_is_never_closed(self):
-        close = function_text("Close-ChatTab")
-        self.assertLess(close.index("'reveal'"), close.index("'tabs'") if "'tabs'" in close else close.index("Get-BridgeTabs"))
-        self.assertLess(close.index("Get-BridgeTabs"), close.index("'close-tab'"))
-        self.assertIn("$same.Count -ne 1", close)
-        self.assertIn("isActive", close)
-        self.assertIn("Get-ActiveIds", close)
-        self.assertLess(close.index("Get-RecordBusy"), close.index("'close-tab'"))
-        self.assertIn("Stop-Panel 3", close)
-        self.assertEqual(len(re.findall(r"'close-tab'", code_lines(source()))), 2, "one in Close-ChatTab, one in close-untitled")
-
     def test_send_reads_the_input_for_a_draft_before_it_closes_the_tab_and_skips_the_close_when_there_is_none(self):
         send = function_text("Do-Send")
-        self.assertIn("$hadTab = ($null -ne $rec)", send)
-        self.assertIn("if ($hadTab)", send)
-        self.assertLess(send.index("Stop-Panel 4"), send.index("Close-ChatTab"))
-        self.assertLess(send.index("Close-ChatTab"), send.index("'open'"))
+        self.assertIn("$s.HadTab = ($rs.Count -gt 0)", send)
+        self.assertIn("if ($s.HadTab)", send)
+        self.assertIn("Close-Checked $Id $Id 'empty' (Get-TabLabel $chat.Name) $Id", send, "his tab closes only empty, after the check")
+        self.assertLess(send.index("Close-Checked"), send.index("Open-WithText"))
         self.assertLess(send.index("Wait-Ready"), send.index("Send-Now"))
         self.assertIn("Confirm-Sent", send)
+        self.assertIn("Invoke-Guarded", send)
 
     def test_new_requires_a_model_and_never_sends_before_the_picker_shows_it(self):
         new = function_text("Do-New")
@@ -431,8 +423,11 @@ class BridgeUseTests(unittest.TestCase):
 
     def test_close_untitled_closes_only_blank_tabs_with_no_transcript_and_no_row(self):
         text = function_text("Do-CloseUntitled")
-        for part in ["Find-Transcript", "-notcontains $_.sessionId", "Get-SendState) -ne 'disabled'", "unsent draft", "-ceq 'Claude Code'"]:
+        for part in ["Get-UntitledBlock", "Close-Checked '' '*' 'empty' $UntitledLabel '' $true", "-ceq $UntitledLabel"]:
             self.assertIn(part, text)
+        block = function_text("Get-UntitledBlock")
+        for part in ["Find-Transcript", "-notcontains [string]$_.sessionId", "status -ne 'idle'", "Get-RecordAgeSeconds $c) -lt 60", "$PanelEntrypoint"]:
+            self.assertIn(part, block)
 
 
 class LogTests(unittest.TestCase):
@@ -448,7 +443,7 @@ class LogTests(unittest.TestCase):
         self.assertEqual(call.strip(), "Write-PanelLog $ActionName $LogId $r.Code $r.Reason")
         logged = function_text("Invoke-Logged")
         self.assertLess(logged.index("Restore-Screen"), logged.index("Write-PanelLog"))
-        self.assertIn("catch [PanelExit]", logged)
+        self.assertIn("Get-PanelExit $_", logged)
 
     def test_no_reason_it_prints_contains_the_text(self):
         text = code_lines(source())
@@ -503,13 +498,27 @@ class BridgeExtensionTests(unittest.TestCase):
         block = re.search(r"const ACTIONS = \{(.*?)\n\};\n", text, re.DOTALL).group(1)
         names = set(re.findall(r"^  '?([\w-]+)'?: async function", block, re.MULTILINE))
         self.assertEqual(names, BRIDGE_ACTIONS)
+        for gone in ["group-pick", "addSessionTabToGroup", "quickOpen", "acceptSelected"]:
+            self.assertNotIn(gone, text)
+
+    def test_the_source_is_0_2_0_and_close_tab_closes_one_tab_unless_all_is_asked_for(self):
+        text = EXTENSION.read_text(encoding="ascii")
+        self.assertIn("const VERSION = '0.2.0';", text)
+        pkg = json.loads((BRIDGE_DIR / "package.json").read_text(encoding="utf-8"))
+        self.assertEqual(pkg["version"], "0.2.0")
+        close = re.search(r"'close-tab': async function.*?\n  \}", text, re.DOTALL).group(0)
+        self.assertIn("if (!label) throw new Error('label is required');", close)
+        self.assertIn("if (args.all !== true) matches = matches.slice(0, 1);", close)
+        readme = (BRIDGE_DIR / "README.md").read_text(encoding="utf-8")
+        for part in ["0.1.0", "group-pick", "inbox", "0.2.0", "no chat"]:
+            self.assertIn(part, readme)
 
     def test_no_action_runs_an_arbitrary_command_id_or_code(self):
         text = EXTENSION.read_text(encoding="ascii")
         for m in re.finditer(r"executeCommand\(\s*([^,)]+)", text):
             self.assertIn(
                 m.group(1).strip(),
-                {"OPEN_COMMAND", "GROUP_COMMAND", "'workbench.action.quickOpenSelectNext'", "'workbench.action.acceptSelectedQuickOpenItem'"},
+                {"OPEN_COMMAND"},
                 "every executeCommand names a fixed command id",
             )
         for banned in ["eval(", "new Function", "child_process", "spawn(", "exec(", "execSync", "require(args", "require(req"]:
@@ -642,11 +651,449 @@ class PairingTests(unittest.TestCase):
         self.assertIn("af session compact {name} --when-idle", rust)
 
     def test_every_exit_code_the_driver_uses_is_one_the_rust_side_explains(self):
-        codes = {int(c) for c in re.findall(r"Stop-Panel (\d)", source())}
+        codes = {int(c) for c in re.findall(r"Stop-Panel (\d)", source())} | {int(c) for c in re.findall(r"Code = (\d);", function_text("Test-SafeToClose"))} - {0}
         rust = (ROOT / "system" / "af" / "src" / "panel.rs").read_text(encoding="utf-8")
         for c in codes - {1}:
             self.assertIn(f"Some({c})", rust, f"exit {c} has no sentence in panel.rs")
         self.assertEqual(codes, {1, 2, 3, 4, 5, 6})
+
+
+# ---------------------------------------------------------------- the review fixes, unit by unit
+
+# A stand-in for the driver's Add-Type block: the exit type, and the window and idle reads with values a
+# test sets, so the driver's own checks run against a staged screen.
+MOCK_NATIVE = (
+    "Add-Type -TypeDefinition @'\n"
+    "using System;\n"
+    "public class PanelExit : Exception { public int Code; public string Reason; public PanelExit(int c, string r) : base(r) { Code = c; Reason = r; } }\n"
+    "public static class PanelNative { public static bool Iconic; public static double Idle = 999999;\n"
+    "  public static bool IsIconic(IntPtr h) { return Iconic; } public static double IdleMs() { return Idle; } }\n"
+    "'@\n"
+    "function Stop-Panel([int]$Code, [string]$Reason) { throw (New-Object PanelExit($Code, $Reason)) }\n"
+    "$IdleSeconds = 120; $script:Win = $null; $script:Hwnd = [IntPtr]::Zero\n"
+)
+
+
+def dead_pid() -> int:
+    p = subprocess.Popen([sys.executable, "-c", "pass"])
+    p.wait()
+    return p.pid
+
+
+@unittest.skipUnless(POWERSHELL, "needs Windows PowerShell")
+class UnbrokenCloseCheckTests(unittest.TestCase):
+    """Finding 1 and 6: the last thing before a tab close is one check with no wait in it."""
+
+    STAGE = (
+        MOCK_NATIVE
+        + "$script:St = [pscustomobject]@{ Text = 'hello there' }\n"
+        "$script:Tabs = @(); $script:Rows = @(); $script:Rec = $null; $script:Enabled = $false; $script:Value = ''; $script:Block = ''\n"
+        "function Get-ClaudeTabs { $script:Tabs }\n"
+        "function Get-Chats($w) { $script:Rows }\n"
+        "function Get-RecordState([string]$Id) { $script:Rec }\n"
+        "function Get-UntitledBlock { $script:Block }\n"
+        "function Get-InputPair { [pscustomobject]@{ Input = 'in'; Send = [pscustomobject]@{ Current = [pscustomobject]@{ IsEnabled = $script:Enabled } } } }\n"
+        "function Get-InputValue($El) { $script:Value }\n"
+        "function Tab([string]$l, [bool]$a) { [pscustomobject]@{ claude = $true; label = $l; isActive = $a } }\n"
+        "function Row([string]$i, [bool]$a, [string]$s) { [pscustomobject]@{ Id = $i; Active = $a; Status = $s } }\n"
+        "function Rec([string]$b, [string]$t) { [pscustomobject]@{ Count = 1; Busy = $b; Terminal = $t } }\n"
+        "function Reset {\n"
+        "  [PanelNative]::Iconic = $false; [PanelNative]::Idle = 999999\n"
+        "  $script:Tabs = @((Tab 'chat-a' $true), (Tab 'other' $false)); $script:Rows = @((Row 'id-a' $true 'idle'), (Row 'id-b' $false 'idle'))\n"
+        "  $script:Rec = (Rec '' ''); $script:Enabled = $false; $script:Value = ''; $script:Block = ''\n"
+        "}\n"
+        "function Check([string]$RowId, [string]$RecId, [string]$Mode, [string]$Label, [bool]$First = $false) {\n"
+        "  $c = Test-SafeToClose $RowId $RecId $Mode $Label $First\n"
+        "  '{0}|{1}|{2}' -f $c.Code, $c.Retry, $c.Label\n"
+        "}\n"
+    )
+
+    def run_cases(self, body: str):
+        return run_functions(["Test-SafeToClose", "Test-SameText", "ConvertTo-PlainValue"], self.STAGE + body)
+
+    def test_his_tab_closes_only_when_everything_holds_at_once(self):
+        got = self.run_cases(
+            "$o = [ordered]@{}\n"
+            "Reset; $o.ok = Check 'id-a' 'id-a' 'empty' 'chat-a'\n"
+            "Reset; $script:Enabled = $true; $o.draft = Check 'id-a' 'id-a' 'empty' 'chat-a'\n"
+            "Reset; [PanelNative]::Iconic = $true; $o.minimized = Check 'id-a' 'id-a' 'empty' 'chat-a'\n"
+            "Reset; $script:Rows = @((Row 'id-a' $true 'idle'), (Row 'id-b' $true 'idle')); $o.two_active = Check 'id-a' 'id-a' 'empty' 'chat-a'\n"
+            "Reset; $script:Rows = @((Row 'id-a' $false 'idle'), (Row 'id-b' $true 'idle')); $o.other_active = Check 'id-a' 'id-a' 'empty' 'chat-a'\n"
+            "Reset; $script:Rows = @((Row 'id-a' $true 'running')); $o.row_running = Check 'id-a' 'id-a' 'empty' 'chat-a'\n"
+            "Reset; $script:Rows = @((Row 'id-a' $true 'none')); $o.row_no_status = Check 'id-a' 'id-a' 'empty' 'chat-a'\n"
+            "Reset; $script:Rec = (Rec 'its session record (pid 1) says no status' ''); $o.rec_busy = Check 'id-a' 'id-a' 'empty' 'chat-a'\n"
+            "Reset; $script:Rec = (Rec '' 'a terminal holds it'); $o.terminal = Check 'id-a' 'id-a' 'empty' 'chat-a'\n"
+            "Reset; $script:Tabs = @((Tab 'chat-a' $true), (Tab 'chat-a' $false)); $o.two_labels = Check 'id-a' 'id-a' 'empty' 'chat-a'\n"
+            "Reset; $script:Tabs = @((Tab 'chat-a' $false), (Tab 'other' $true)); $o.not_active_tab = Check 'id-a' 'id-a' 'empty' 'chat-a'\n"
+            "Reset; $script:Tabs = @((Tab 'other' $true)); $o.no_tab = Check 'id-a' 'id-a' 'empty' 'chat-a'\n"
+            "Reset; [PanelNative]::Idle = 5000; $o.operator = Check 'id-a' 'id-a' 'empty' 'chat-a'\n"
+            "ConvertTo-Json -Compress -InputObject $o\n"
+        )
+        self.assertEqual(got, {
+            "ok": "0|False|chat-a",
+            "draft": "4|False|",
+            "minimized": "3|True|",
+            "two_active": "5|True|",
+            "other_active": "5|True|",
+            "row_running": "3|True|",
+            "row_no_status": "3|True|",
+            "rec_busy": "3|True|",
+            "terminal": "5|False|",
+            "two_labels": "5|False|",
+            "not_active_tab": "5|True|",
+            "no_tab": "5|True|",
+            "operator": "3|True|",
+        })
+
+    def test_the_drivers_own_tab_closes_only_with_its_exact_text_or_an_empty_input(self):
+        got = self.run_cases(
+            "$o = [ordered]@{}\n"
+            "Reset; $script:Enabled = $true; $script:Value = 'hello there'; $o.own_text = Check 'id-a' 'id-a' 'text' ''\n"
+            "Reset; $script:Enabled = $true; $script:Value = 'hello there, and his words'; $o.his_words = Check 'id-a' 'id-a' 'text' ''\n"
+            "Reset; $script:Enabled = $false; $script:Value = ''; $o.empty = Check 'id-a' 'id-a' 'text' ''\n"
+            "Reset; $script:Tabs = @((Tab 'chat-a' $true), (Tab 'x' $true)); $script:Enabled = $true; $script:Value = 'hello there'; $o.two_active_tabs = Check 'id-a' 'id-a' 'text' ''\n"
+            "ConvertTo-Json -Compress -InputObject $o\n"
+        )
+        self.assertEqual(got, {"own_text": "0|False|chat-a", "his_words": "4|False|", "empty": "0|False|chat-a", "two_active_tabs": "5|True|"})
+
+    def test_untitled_tabs_need_no_active_row_and_the_first_of_many_to_be_the_active_one(self):
+        got = self.run_cases(
+            "$o = [ordered]@{}\n"
+            "Reset; $script:Rows = @((Row 'id-a' $false 'idle')); $script:Tabs = @((Tab 'Claude Code' $true), (Tab 'Claude Code' $false))\n"
+            "$o.first = Check '' '*' 'empty' 'Claude Code' $true\n"
+            "$o.not_first_of_many_allowed = Check '' '*' 'empty' 'Claude Code' $false\n"
+            "$script:Block = 'an empty chat started less than 60 seconds ago'; $o.young = Check '' '*' 'empty' 'Claude Code' $true\n"
+            "Reset; $script:Tabs = @((Tab 'Claude Code' $false), (Tab 'Claude Code' $true)); $script:Rows = @((Row 'id-a' $false 'idle'))\n"
+            "$o.second_selected = Check '' '*' 'empty' 'Claude Code' $true\n"
+            "Reset; $script:Tabs = @((Tab 'Claude Code' $true)); $o.row_active = Check '' '*' 'empty' 'Claude Code' $true\n"
+            "ConvertTo-Json -Compress -InputObject $o\n"
+        )
+        self.assertEqual(got, {
+            "first": "0|False|Claude Code",
+            "not_first_of_many_allowed": "5|False|",
+            "young": "5|False|",
+            "second_selected": "5|True|",
+            "row_active": "5|True|",
+        })
+
+    def test_nothing_waits_between_the_check_and_the_close(self):
+        close = function_text("Close-Checked")
+        check_at = close.index("Test-SafeToClose")
+        close_at = close.index("Close-TabByLabel")
+        self.assertLess(check_at, close_at)
+        between = close[check_at:close_at]
+        for waiting in ["Start-Sleep", "Wait-", "Show-Chat", "Invoke-Bridge", "Get-"]:
+            self.assertNotIn(waiting, between, f"{waiting} between the check and the close")
+        # The wait and the reveal come before the check, inside the loop, so a wait means the whole check again.
+        loop = close[close.index("while ($true)"):check_at]
+        self.assertIn("Wait-Idle", loop)
+        self.assertIn("Show-Chat", loop)
+        check = function_text("Test-SafeToClose")
+        self.assertNotIn("Start-Sleep", check)
+        self.assertNotIn("Wait-", check)
+        for part in ["IsIconic", "Get-ClaudeTabs", "isActive", "Get-Chats", "Status -ne 'idle'", "Get-RecordState", "Get-InputPair", "IdleMs()"]:
+            self.assertIn(part, check)
+        self.assertLess(check.index("Get-InputPair"), check.index("IdleMs()"), "the operator's idle time is the last read")
+
+    def test_every_close_goes_through_the_check_and_closes_one_tab(self):
+        code = code_lines(source())
+        self.assertEqual(len(re.findall(r"Invoke-BridgeOk 'close-tab'", code)), 1, "one call, in Close-TabByLabel")
+        self.assertIn("@{ label = $Label; all = $false }", function_text("Close-TabByLabel"))
+        calls = [m.start() for m in re.finditer(r"Close-TabByLabel \$", code)]
+        self.assertEqual(len(calls), 1, "Close-TabByLabel is called from Close-Checked only")
+        self.assertIn("Close-TabByLabel $c.Label", function_text("Close-Checked"))
+
+
+@unittest.skipUnless(POWERSHELL, "needs Windows PowerShell")
+class RecordRuleTests(unittest.TestCase):
+    """Finding 6: only 'status: idle' is idle, every live record counts, a terminal holder is refused."""
+
+    def test_records_are_read_by_these_rules(self):
+        import os
+
+        me, dead = os.getpid(), dead_pid()
+        recs = {
+            "a": {"pid": me, "sessionId": "s1", "status": "idle", "entrypoint": "claude-vscode"},
+            "b": {"pid": dead, "sessionId": "s1", "status": "busy", "entrypoint": "claude-vscode"},
+            "c": {"pid": me, "sessionId": "s2", "entrypoint": "claude-vscode"},
+            "d": {"pid": me, "sessionId": "s3", "status": "idle", "entrypoint": "cli"},
+            "e": {"pid": me, "sessionId": "s4", "status": "idle", "entrypoint": "claude-vscode"},
+            "f": {"pid": me, "sessionId": "s4", "status": "busy", "entrypoint": "claude-vscode"},
+            "g": {"pid": dead, "sessionId": "s5", "status": "idle", "entrypoint": "claude-vscode"},
+        }
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "sessions").mkdir()
+            for k, v in recs.items():
+                (Path(d) / "sessions" / f"{k}.json").write_text(json.dumps(v), encoding="utf-8")
+            (Path(d) / "sessions" / "broken.json").write_text("{not json", encoding="utf-8")
+            body = (
+                "$Utf8 = New-Object System.Text.UTF8Encoding($false); $PanelEntrypoint = 'claude-vscode'\n"
+                "$o = [ordered]@{}\n"
+                "foreach ($s in @('s1', 's2', 's3', 's4', 's5')) { $r = Get-RecordState $s; $o[$s] = @($r.Count, $r.Busy, ($r.Terminal -ne '')) }\n"
+                "ConvertTo-Json -Compress -Depth 4 -InputObject $o\n"
+            )
+            got = run_functions(["Get-ConfigDir", "Test-PidAlive", "Get-Records", "Get-ChatRecords", "Get-RecordState"], body, env={"CLAUDE_CONFIG_DIR": d})
+        self.assertEqual(got["s1"], [1, "", False], "a dead process's busy record is left over and ignored")
+        self.assertEqual(got["s2"][0:1], [1])
+        self.assertIn("says no status", got["s2"][1], "no status is not idle")
+        self.assertEqual(got["s3"][2], True, "a terminal holds s3")
+        self.assertIn("says busy", got["s4"][1], "an idle record does not hide a busy one")
+        self.assertEqual(got["s5"], [0, "", False])
+
+    def test_the_guards_and_the_waits_use_these_rules(self):
+        guards = function_text("Wait-Guards")
+        self.assertIn("Get-RecordState", guards)
+        self.assertIn("Stop-Panel 5 $rs.Terminal", guards)
+        idle = function_text("Wait-ChatIdle")
+        self.assertIn("$rs.Busy -eq ''", idle)
+        self.assertIn("Status -eq 'idle'", idle)
+        self.assertNotIn("-eq ''))", idle.replace("$rs.Busy -eq ''", ""), "an empty status is never idle")
+        self.assertNotIn("function Get-Record(", source(), "no first-match record lookup is left")
+
+
+@unittest.skipUnless(POWERSHELL, "needs Windows PowerShell")
+class LockTests(unittest.TestCase):
+    """Finding 4: one driver run at a time; a lock left by a dead run is taken over."""
+
+    def test_a_second_run_waits_then_exits_3_and_a_stale_lock_is_taken_over(self):
+        with tempfile.TemporaryDirectory() as d:
+            body = (
+                "$Utf8 = New-Object System.Text.UTF8Encoding($false)\n"
+                f"$BridgeBase = '{d}'; $LockFile = Join-Path $BridgeBase 'driver.lock'\n"
+                "function Stop-Panel([int]$Code, [string]$Reason) { throw ('exit ' + $Code + ': ' + $Reason) }\n"
+                "$script:Lock = $null; $script:WaitUntil = (Get-Date).AddSeconds(3)\n"
+                "Enter-Lock 'send' 'sid-1'\n"
+                "$holder = Read-LockHolder\n"
+                "$first = $script:Lock; $script:Lock = $null\n"
+                "$sw = [Diagnostics.Stopwatch]::StartNew(); $second = 'took it'\n"
+                "try { Enter-Lock 'send' 'sid-2' } catch { $second = $_.Exception.Message }\n"
+                "$waited = $sw.Elapsed.TotalSeconds\n"
+                "$first.Dispose()\n"
+                "$leftOver = Test-Path $LockFile\n"
+                "$script:WaitUntil = (Get-Date).AddSeconds(3)\n"
+                "Enter-Lock 'new' ''\n"
+                "$holder2 = Read-LockHolder\n"
+                "Exit-Lock\n"
+                "ConvertTo-Json -Compress -InputObject @($holder, $second, [bool]($waited -ge 2), $leftOver, $holder2, (Test-Path $LockFile))\n"
+            )
+            got = run_functions(["Enter-Lock", "Exit-Lock", "Read-LockHolder"], body)
+        holder, second, waited, left_over, holder2, after = got
+        self.assertRegex(holder, r"^pid \d+, send, session sid-1, since ")
+        self.assertTrue(second.startswith("exit 3: another driver run held the panel for the whole wait (pid "), second)
+        self.assertTrue(waited)
+        self.assertTrue(left_over, "the file of a run that ended without letting go stays behind")
+        self.assertRegex(holder2, r"^pid \d+, new, session -, since ", "and the next run takes it over at once")
+        self.assertFalse(after, "a run that lets go removes the file")
+
+    def test_every_run_that_changes_anything_holds_the_lock(self):
+        text = source()
+        for action in ["send", "new", "model", "close-untitled", "selftest"]:
+            self.assertRegex(text, rf"Invoke-Logged '{action}' \S+ \$true", action)
+        self.assertIn("Invoke-Logged 'list' '' $false", text)
+        self.assertIn("Enter-Lock 'list'", function_text("Do-List"), "a list that restores a minimized window waits its turn")
+        logged = function_text("Invoke-Logged")
+        self.assertLess(logged.index("Enter-Lock"), logged.index("& $Body"))
+        self.assertLess(logged.index("Restore-Screen"), logged.index("Exit-Lock"), "the view is put back before the lock goes")
+        self.assertIn("finally", logged)
+        self.assertIn("system\\logs\\panel-bridge", text)
+        self.assertIn("$LockFile = Join-Path $BridgeBase 'driver.lock'", text)
+
+    def test_new_identifies_its_chat_by_the_record_its_own_open_created(self):
+        new = function_text("Do-New")
+        self.assertLess(new.index("$recBefore"), new.index("Invoke-BridgeOk 'open'"))
+        self.assertIn("$recBefore -notcontains", new)
+        self.assertIn("$new.Count -ne 1", new)
+        self.assertIn("$_.Id -eq $s.Id", new, "the new row must be the new record's own")
+        self.assertNotIn("$rowsBefore", new)
+        self.assertLess(new.index("untitled"), new.index("Invoke-BridgeOk 'open'"), "no other untitled tab may be open")
+
+
+@unittest.skipUnless(POWERSHELL, "needs Windows PowerShell")
+class ChangeReportTests(unittest.TestCase):
+    """Finding 2: every exit says what changed and where the chat's tab is now."""
+
+    def state(self, fields: dict) -> str:
+        body = (
+            "New-RunState 'id' 'text'\n"
+            + "".join(f"$script:St.{k} = ${str(v).lower()}\n" for k, v in fields.items())
+            + "ConvertTo-Json -Compress -InputObject @(Get-StateText)\n"
+        )
+        return run_functions(["New-RunState", "Test-Touched", "Get-StateText"], body)[0]
+
+    def test_the_state_sentence_follows_what_changed(self):
+        self.assertEqual(self.state({}), "The panel was not changed: the chat's tab is as it was.")
+        t = self.state({"HadTab": True, "Closed": True, "TabOpen": False})
+        self.assertIn("closed the chat's tab", t)
+        self.assertIn("The chat's tab is now closed. It was open before the run.", t)
+        t = self.state({"HadTab": True, "Closed": True, "OpenCalled": True, "Opened": True, "Prefilled": True, "Cleaned": True, "Reopened": True, "TabOpen": True})
+        self.assertIn("opened it with the text in the input, then closed that tab again to take the unsent text away, then opened the chat's tab again", t)
+        self.assertIn("The chat's tab is now open.", t)
+        t = self.state({"OpenCalled": True, "Opened": True, "Prefilled": True, "LeftText": True, "TabOpen": True})
+        self.assertIn("OPEN and still holds the driver's unsent text", t)
+
+    def guarded(self, sent: bool, code: int) -> list:
+        body = (
+            MOCK_NATIVE
+            + "$script:Restored = $false\n"
+            "function Restore-Chat { $script:Restored = $true; $script:St.Cleaned = $true; $script:St.TabOpen = $false }\n"
+            "New-RunState 'id' 'text'\n"
+            "$script:St.Closed = $true; $script:St.HadTab = $true; $script:St.OpenCalled = $true; $script:St.Opened = $true; $script:St.Prefilled = $true\n"
+            f"$script:St.Sent = ${str(sent).lower()}\n"
+            "$out = $null\n"
+            f"try {{ Invoke-Guarded {{ Stop-Panel {code} 'read-back failed' }} }} catch {{ $pe = Get-PanelExit $_; $out = @($pe.Code, $pe.Reason, $script:Restored) }}\n"
+            "ConvertTo-Json -Compress -InputObject $out\n"
+        )
+        return run_functions(["New-RunState", "Test-Touched", "Get-StateText", "Get-PanelExit", "Invoke-Guarded"], body)
+
+    def test_a_failure_before_send_puts_the_chat_back_and_says_nothing_was_sent_and_where_the_tab_is(self):
+        code, reason, restored = self.guarded(False, 5)
+        self.assertEqual(code, 5)
+        self.assertTrue(restored)
+        self.assertIn("read-back failed. Nothing was sent. The driver closed the chat's tab", reason)
+        self.assertIn("The chat's tab is now closed.", reason)
+
+    def test_after_send_nothing_is_put_back_and_the_exit_is_never_a_nothing_was_sent_code(self):
+        code, reason, restored = self.guarded(True, 5)
+        self.assertEqual(code, 1)
+        self.assertFalse(restored)
+        self.assertIn("Send was pressed, so the text may have reached the chat", reason)
+
+    def test_a_confirmed_send_is_exit_0_even_when_a_later_cleanup_fails(self):
+        send = function_text("Do-Send")
+        tail = send[send.index("# The text is sent and confirmed"):]
+        self.assertIn("try {", tail)
+        self.assertIn("Add-Note ('the text was sent; its tab was left open: '", tail)
+        self.assertNotIn("Stop-Panel", tail)
+
+    def test_notes_are_printed_on_every_exit(self):
+        body = (
+            "$script:Notes = @('one', 'two')\n"
+            "$c = Out-Result ([pscustomobject]@{ Code = 5; Reason = 'why'; Value = $null })\n"
+        )
+        proc = run_powershell(
+            "$t = $null; $e = $null\n"
+            f"$ast = [System.Management.Automation.Language.Parser]::ParseFile('{DRIVER}', [ref]$t, [ref]$e)\n"
+            "$d = @($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true) | Where-Object { $_.Name -eq 'Out-Result' })\n"
+            ". ([scriptblock]::Create($d[0].Extent.Text))\n" + body
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stderr.strip().splitlines(), ["why", "note: one", "note: two"])
+
+    def test_a_restore_closes_only_its_own_tab_and_reopens_his_only_when_no_process_holds_the_chat(self):
+        restore = function_text("Restore-Chat")
+        self.assertIn("if ($null -eq $s -or $s.Sent", restore, "nothing is put back after Send")
+        self.assertIn("if ($s.Opened -and $s.TabOpen)", restore, "only a tab the driver opened is closed")
+        self.assertIn("$mode = 'text'", restore)
+        self.assertIn("Close-Checked $s.RowId $s.Id $mode $s.OwnLabel $reveal", restore)
+        self.assertLess(restore.index("Get-ChatRecords $s.Id).Count -gt 0"), restore.index("'reveal'"))
+        self.assertIn("Start-Restoring", restore)
+        opened = function_text("Open-WithText")
+        self.assertIn("$n0 + 1", opened, "the tab set is compared before and after the open")
+        self.assertLess(opened.index("Get-ChatRecords $Id"), opened.index("Invoke-BridgeOk 'open'"))
+        self.assertLess(opened.index("$s.OpenCalled = $true"), opened.index("$s.Opened = $true"))
+
+
+class SendWindowTests(unittest.TestCase):
+    """Finding 3: Send is the very button the read-back verified; nothing is searched in between."""
+
+    def test_no_search_between_the_last_check_and_the_invoke(self):
+        send = function_text("Send-Now")
+        last = send.rindex("Test-Ready")
+        invoke = send.index(".Invoke()")
+        between = send[last:invoke]
+        for search in ["Get-Chats", "FindAll", "Find-Named", "Get-InputPair", "Get-ActiveIds", "Get-ClaudeTabs", "Invoke-Bridge"]:
+            self.assertNotIn(search, between, f"{search} between the check and the Invoke")
+        for reread in ["Get-InputValue $ready.Pair.Input", "$ready.Pair.Send.Current.IsEnabled", "Test-RowActive $ready.Row", "IdleMs()"]:
+            self.assertIn(reread, between)
+        self.assertIn("$ready.Pair.Send.GetCurrentPattern", send, "the verified Send element itself is invoked")
+
+    def test_the_input_and_send_are_found_together_in_one_chat_document(self):
+        pair = function_text("Get-InputPair")
+        self.assertIn("$CT::Document", pair)
+        self.assertIn("Find-Named $p 'Send message'", pair, "Send is searched inside the input's own document")
+        ready = function_text("Test-Ready")
+        self.assertIn("Pair = $pair; Row = $row", ready)
+
+
+@unittest.skipUnless(POWERSHELL, "needs Windows PowerShell")
+class ModelMatchTests(unittest.TestCase):
+    """Finding 5: a pick is checked on a word boundary, in the options and in the picker's value."""
+
+    NAMES = ["Default", "Opus 5.5", "Fable 5.2", "Sonnet 5.5", "Haiku 5.5", "Fable 5.1", "Haiku 4.5", "Sonnet 5", "Opus 5", "Fable 5",
+             "Opus 4.8", "Opus 4.7", "Opus 4.6", "Sonnet 4.6"]
+
+    def test_each_real_name_matches_exactly_its_own_option_and_pill(self):
+        options = [n + (" (recommended) Opus 5.5 for most work" if n == "Default" else " Some description") for n in self.NAMES]
+        pills = [n + " Extra high" for n in self.NAMES]
+        body = (
+            "$names = '" + json.dumps(self.NAMES) + "' | ConvertFrom-Json\n"
+            "$options = '" + json.dumps(options).replace("'", "''") + "' | ConvertFrom-Json\n"
+            "$pills = '" + json.dumps(pills) + "' | ConvertFrom-Json\n"
+            "$out = @(foreach ($n in $names) { [string]@($options | Where-Object { Test-ModelMatch $_ $n }).Count + '#' + (@($pills | Where-Object { Test-ModelMatch $_ $n }) -join '|') })\n"
+            "ConvertTo-Json -Compress -InputObject $out\n"
+        )
+        got = run_functions(["Test-ModelMatch"], body)
+        self.assertEqual(len(got), len(self.NAMES))
+        for name, row in zip(self.NAMES, got):
+            count, pill = row.split("#", 1)
+            self.assertEqual(count, "1", f"{name}: options matched {count}")
+            self.assertEqual(pill, name + " Extra high", name)
+
+    def test_a_failed_pick_does_not_pass_as_the_asked_model(self):
+        cases = [("Opus 5.5 Extra high", "Opus 5", False), ("Fable 5.2 High", "Fable 5", False), ("Opus 5 High", "Opus 5", True),
+                 ("Sonnet 4.6", "Sonnet 4.6", True), ("", "Opus 5", False), ("Haiku 5.5", "", False)]
+        body = (
+            "$cases = '" + json.dumps(cases) + "' | ConvertFrom-Json\n"
+            "$out = @(foreach ($c in $cases) { [bool](Test-ModelMatch $c[0] $c[1]) })\n"
+            "ConvertTo-Json -Compress -InputObject $out\n"
+        )
+        self.assertEqual(run_functions(["Test-ModelMatch"], body), [c[2] for c in cases])
+
+    def test_no_prefix_match_is_left_anywhere(self):
+        code = code_lines(source())
+        self.assertNotRegex(code, r"StartsWith\(\$(Name|ModelName)\s*,", "every model check goes through Test-ModelMatch")
+        self.assertIn("Test-ModelMatch $pill $Name", function_text("Select-Model"))
+        self.assertIn("Test-ModelMatch $nowPill $ModelName", function_text("Do-New"))
+
+
+class DeadlineTests(unittest.TestCase):
+    """Finding 7: one deadline bounds every step; af's timeout is that deadline plus a margin."""
+
+    def test_the_work_time_is_the_same_number_on_both_sides(self):
+        rust = (ROOT / "system" / "af" / "src" / "panel.rs").read_text(encoding="utf-8")
+        ps = int(re.search(r"^\$WorkSeconds = (\d+)$", source(), re.MULTILINE).group(1))
+        rs = int(re.search(r"pub const DRIVER_WORK_SECS: u64 = (\d+);", rust).group(1))
+        self.assertEqual(ps, rs)
+        wait_ps = float(re.search(r"\[double\]\$WaitMinutes = (\d+)", source()).group(1))
+        wait_rs = float(re.search(r"pub const DRIVER_WAIT_MINUTES: f64 = ([\d.]+);", rust).group(1))
+        self.assertEqual(wait_ps, wait_rs)
+        restore = int(re.search(r"^\$RestoreSeconds = (\d+)$", source(), re.MULTILINE).group(1))
+        self.assertGreater(ps - restore, 600 + 90 + 25, "the longest steps fit before the restore time")
+
+    def test_every_step_wait_is_cut_to_the_deadline(self):
+        for name in ["Wait-Ready", "Show-Chat", "Close-Checked", "Open-WithText", "Confirm-Sent", "Wait-ChatIdle"]:
+            self.assertIn("Get-StepMs", function_text(name), name)
+        self.assertIn("Get-WaitUntil", function_text("Wait-Idle"))
+        self.assertIn("$script:RestoreUntil", function_text("Restore-Screen"))
+        self.assertIn("finally", function_text("Invoke-Logged"))
+
+
+class LogPrivacyTests(unittest.TestCase):
+    """Finding 9: no reason or note carries a chat title, a tab label or the text."""
+
+    def test_reasons_and_notes_name_no_title_label_or_text(self):
+        code = code_lines(source())
+        for m in re.finditer(r"(Stop-Panel \d+|Add-Note) \(?[\"'].*", code):
+            line = m.group(0)
+            for private in [r"\$title", r"\$Title", r"\$label", r"\$Label", r"\$chat\.Name", r"\.Current\.Name", r"\$Text\b", r"\$text\b"]:
+                self.assertNotRegex(line, private, line)
+
+
+class WaiterPairingTests(unittest.TestCase):
+    def test_the_context_hook_reads_the_waiter_result_before_the_nudge_can_rearm(self):
+        hooks = (ROOT / "system" / "af" / "src" / "hooks.rs").read_text(encoding="utf-8")
+        self.assertLess(hooks.index("take_waiter_result"), hooks.index("crate::context::nudge("))
+        self.assertIn("stop_with_waiter_result", hooks)
 
 
 if __name__ == "__main__":

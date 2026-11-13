@@ -18,7 +18,7 @@ Write a request to a temp name and rename it to `<id>.json`, or use the client: 
 
 ## Actions
 
-There is no generic "run this command" action.
+There is no generic "run this command" action. This is the source, version 0.2.0; see below for what the installed 0.1.0 does differently.
 
 | Action | Args | What it does |
 |---|---|---|
@@ -26,8 +26,7 @@ There is no generic "run this command" action.
 | `tabs` | none | Every tab: group, index, label, isActive, kind, viewType (webview), `claude: true` for Claude chat tabs |
 | `open` | `sessionId?`, `prompt?`, `groupId?` | `claude-vscode.editor.open(sessionId, prompt, undefined, groupId)`. A new chat, or a session with no open tab, gets the prompt prefilled (never sent). A session that already has a tab is only revealed and the prompt is dropped |
 | `reveal` | `sessionId` | The same command with only the session id: brings that chat's tab to the front |
-| `close-tab` | `label`, `all?` | Closes Claude chat tabs whose label equals `label` exactly; `all: false` closes the first only. Returns how many. Any tab that is not a Claude chat tab is never touched |
-| `group-pick` | `steps` | Calls `claude-vscode.addSessionTabToGroup` without awaiting, waits for the pick, runs `quickOpenSelectNext` `steps` times, then `acceptSelectedQuickOpenItem` |
+| `close-tab` | `label`, `all?` | Closes the first Claude chat tab whose label equals `label` exactly; only `all: true` closes every match. The label is required. Returns how many matched and how many closed. Any tab that is not a Claude chat tab is never touched |
 
 ## Limits seen in the live proof
 
@@ -39,4 +38,13 @@ There is no generic "run this command" action.
 
 `python system/vscode-bridge/build.py` writes `system/logs/panel-bridge/af-bridge-<version>.vsix` in the main checkout (no npm; `--out <folder>` writes elsewhere). Install it once with `code --install-extension system/logs/panel-bridge/af-bridge-<version>.vsix`. A first install is picked up by the running window without a reload, and the extension answers `ping` within a few seconds.
 
-An update of an installed bridge needs an extension host restart (the host keeps the old copy running until then), and a restart ends every running chat in the window. So update it only at a moment when no chat is running, never to fix something in passing, and never reload the window to load it. The panel driver (`system/tools/claude_panel.ps1`) is built against the actions the installed version has (`ping`, `tabs`, `open`, `reveal`, `close-tab`); `group-pick` is built but not used by it.
+An update of an installed bridge needs an extension host restart (the host keeps the old copy running until then), and a restart ends every running chat in the window. So update it only at a moment when no chat is running, never to fix something in passing, and never reload the window to load it.
+
+## Version 0.1.0 (installed) and 0.2.0 (this source)
+
+The installed bridge is 0.1.0. It differs from this source in two ways, and the panel driver (`system/tools/claude_panel.ps1`) is built against what 0.1.0 does:
+
+- 0.1.0 has a sixth action, `group-pick` (`steps`): it calls `claude-vscode.addSessionTabToGroup` without awaiting, presses `quickOpenSelectNext` `steps` times, then `acceptSelectedQuickOpenItem`. If the group command fails to open its pick, the accept runs whatever quick-open list is showing at that moment, which can be the command palette, so a request can end up running an arbitrary command. Who can reach it: any process that can write a file into `system/logs/panel-bridge/requests/`, which is a process already running as the operator and already able to run any code as him; nothing outside his account can. The driver never sends `group-pick` (a static test checks it), and 0.2.0 removes it.
+- 0.1.0's `close-tab` closes every match unless `all: false` is passed. The driver always passes `all: false`; 0.2.0 closes one tab unless `all: true` is asked for.
+
+Install 0.2.0 at the next moment when no chat is running (the extension host restart ends every chat in the window): `python system/vscode-bridge/build.py`, then `code --install-extension system/logs/panel-bridge/af-bridge-0.2.0.vsix`, then restart the extension host. The driver works the same with either version.

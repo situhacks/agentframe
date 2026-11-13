@@ -14,6 +14,9 @@ $env:AF_ROOT = $vault
 
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 
+# The model id comes from system/models.json, the one place that names them.
+$model = (Get-Content -Raw (Join-Path $vault 'system\models.json') | ConvertFrom-Json).sonnet
+
 $today = Get-Date
 $date = $today.ToString('yyyy-MM-dd')
 $daysToMonday = (8 - [int]$today.DayOfWeek) % 7
@@ -42,13 +45,13 @@ $briefPath = Join-Path $sessionDir 'brief.md'
 $briefText = "# Brief: worker/consolidation`n`nGoal: the weekly consolidation of workspace/life/.`nDone when: every knowledge page's Current is rebuilt from its Timeline, old entries are archived, closures are proposed, life.md is reported against its cap, and the tag pass has run (lint, mechanical fixes applied, the rest listed with evidence).`nWrite surface: workspace/life/knowledge/, workspace/life/knowledge/_archive/, workspace/life/tags.yaml and tags-log.md through af tag only, the tags field of workspace/life/places/ and people/ pages through af tag only, system/sessions/worker/consolidation/.`nContext: library/schema/knowledge-page.md, library/schema/open-loops.md, library/schema/tags.md.`n`n$brief`n"
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 [System.IO.File]::WriteAllText($briefPath, $briefText, $utf8)
-& af session register $sessionName --session $sessionId --model claude-sonnet-5-5 --brief $briefPath | Out-Null
+& af session register $sessionName --session $sessionId --model $model --brief $briefPath | Out-Null
 
 $claudeArgs = @(
     '-p', $brief,
     '--session-id', $sessionId,
     '--agent', 'consolidator',
-    '--model', 'claude-sonnet-5-5',
+    '--model', $model,
     '--max-turns', "$MaxTurns",
     '--permission-mode', 'acceptEdits',
     '--allowedTools', 'Bash(git -C workspace diff *)', 'Bash(git -C workspace status *)', 'Bash(af open due)', 'Bash(af open due *)', 'Bash(af search *)', 'Bash(af tag *)'

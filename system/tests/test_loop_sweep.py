@@ -501,7 +501,7 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(args[args.index("--setting-sources") + 1], "local")
         self.assertEqual(args[args.index("--max-turns") + 1], "1")
         self.assertEqual(args[args.index("--max-budget-usd") + 1], f"{ls.BUDGET_USD:.2f}")
-        self.assertEqual(args[args.index("--model") + 1], "claude-sonnet-5-5")
+        self.assertEqual(args[args.index("--model") + 1], json.loads((ROOT / "system" / "models.json").read_text(encoding="utf-8"))["sonnet"])
         self.assertNotEqual(Path(kw["cwd"]), ROOT)
         denied = args[args.index("--disallowedTools") + 1].split(",")
         self.assertIn("mcp__claude_ai_Gmail__search_threads", denied)

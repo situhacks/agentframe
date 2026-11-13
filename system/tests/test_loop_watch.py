@@ -518,7 +518,7 @@ class LockdownTests(unittest.TestCase):
 
     def test_its_folders_are_not_the_bills_watchs(self):
         self.assertNotEqual(lw.RUN_DIR, bw.RUN_DIR)
-        self.assertEqual(lw.MODEL, "claude-haiku-4-5")
+        self.assertEqual(lw.MODEL, json.loads((ROOT / "system" / "models.json").read_text(encoding="utf-8"))["haiku"])
         fresh = bw.project_dir_for(Path(tempfile.gettempdir()) / "agentframe-loop-watch")
         self.assertNotEqual(fresh, bw.PROJECT_DIR)
 

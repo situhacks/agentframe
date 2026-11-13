@@ -40,6 +40,10 @@ from decimal import Decimal
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+
+import models  # noqa: E402
+
 VAULT = HERE.parent.parent
 BILLS = Path("workspace/life/systems/finances/bills.md")
 OPEN = Path("workspace/life/open.md")
@@ -47,7 +51,7 @@ LOG = VAULT / "system" / "logs" / "bills-watch.log"
 
 FROM = "bills-watch"
 SECTION = "Bills"
-MODEL = "claude-haiku-4-5"
+MODEL = models.HAIKU
 FIRST_WINDOW_DAYS = 60
 OVERLAP_DAYS = 3
 LOOP_HORIZON_DAYS = 14  # an unpaid statement due longer ago than this gets no loop (bootstrap history)

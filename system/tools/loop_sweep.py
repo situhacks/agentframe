@@ -47,6 +47,7 @@ sys.path.insert(0, str(HERE))
 
 import bills_watch as bw  # noqa: E402
 import loop_watch as lw  # noqa: E402
+import models  # noqa: E402
 import off_discord  # noqa: E402
 
 VAULT = HERE.parent.parent
@@ -56,7 +57,7 @@ HANDOFF = Path("workspace/life/systems/loop-sweep-overdue.json")  # today's over
 RUNNING = Path("workspace/life/systems/loop-sweep.running")  # present while a run that writes works
 LOG = Path("system/logs/loop-sweep.log")
 
-MODEL = "claude-sonnet-5-5"
+MODEL = models.SONNET
 EFFORT = "medium"
 BUDGET_USD = 0.60       # the one claude -p call a run makes
 TIMEOUT_S = 600

@@ -18,6 +18,7 @@ Usage:
     python system/tools/notify.py note.md --title "Thursday list"
     python system/tools/notify.py - --channel reminders < note.md    # read stdin
     python system/tools/notify.py note.md --dry-run                  # print, send nothing
+    python system/tools/notify.py - --test --channel reminders       # send one test line, report the result
 
 Discord takes 2,000 characters a message, so a long file goes out as several
 messages in order. Markdown tables do not render on a phone; write headings
@@ -27,6 +28,7 @@ and bullets.
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
 import os
 import sys
@@ -95,7 +97,9 @@ def target_from_env(env: dict[str, str], channel: str | None = None) -> dict[str
     return None
 
 
-def post(target: dict[str, str], content: str) -> None:
+def post(target: dict[str, str], content: str) -> dict:
+    """Send one message. Returns the response JSON (the bot path returns the message); a webhook
+    answers with an empty body, and the result is then {}."""
     body = json.dumps({"content": content}).encode("utf-8")
     headers = {"Content-Type": "application/json", "User-Agent": "agentframe-notify/1"}
     if target.get("token"):
@@ -105,7 +109,12 @@ def post(target: dict[str, str], content: str) -> None:
         url = target["webhook"]
     req = urllib.request.Request(url, data=body, headers=headers)
     with urllib.request.urlopen(req, timeout=30) as resp:
-        resp.read()
+        raw = resp.read()
+    try:
+        data = json.loads(raw.decode("utf-8")) if raw.strip() else {}
+    except ValueError:
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def read_input(src: str) -> str:
@@ -129,18 +138,58 @@ def compose(text: str, title: str | None) -> list[str]:
     return chunks(text)
 
 
+def test_text(now: dt.datetime | None = None) -> str:
+    return f"AgentFrame notify test {(now or dt.datetime.now()).strftime('%Y-%m-%d %H:%M')}"
+
+
+def send_test(a: argparse.Namespace) -> int:
+    """--test: one line to --channel, then the delivery result. A missing target names its keys."""
+    text = test_text()
+    if a.dry_run:
+        print(f"--- test message ({len(text)} chars) ---")
+        print(text)
+        return 0
+    target = target_from_env({**os.environ, **load_env(a.env)}, a.channel)
+    if not target:
+        return missing_target(a)
+    try:
+        sent = post(target, text)
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        print(f"notify failed: {e}", file=sys.stderr)
+        return 2
+    if target.get("token"):
+        if not isinstance(sent, dict) or not sent.get("id"):
+            print("notify failed: the bot's reply carried no message id", file=sys.stderr)
+            return 2
+        print(f"delivered, message id {sent['id']}")
+    else:
+        print("delivered")
+    return 0
+
+
+def missing_target(a: argparse.Namespace) -> int:
+    chan_key, hook_key = names(a.channel)
+    print(f"no DISCORD_BOT_TOKEN + {chan_key}, and no {hook_key}, in {a.env} or the environment; nothing sent.", file=sys.stderr)
+    return 2
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("file", help="markdown file to send, or - for stdin")
+    p.add_argument("file", nargs="?", help="markdown file to send, or - for stdin (not read with --test)")
     p.add_argument("--title", default=None, help="bold first line; defaults to the file's first heading")
     p.add_argument("--channel", default=None, help="variable-name prefix, e.g. reminders or groceries")
     p.add_argument("--env", type=Path, default=ENV, help=f"credentials file (default {ENV})")
     p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--test", action="store_true", help="send one 'AgentFrame notify test <date time>' line to --channel and print the result")
     a = p.parse_args(argv)
+    if not a.test and a.file is None:
+        p.error("the file argument is required unless --test is given")
     try:
         sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
     except Exception:  # noqa: BLE001
         pass
+    if a.test:
+        return send_test(a)
     parts = compose(read_input(a.file), a.title)
     if not parts:
         print("nothing to send.", file=sys.stderr)
@@ -152,9 +201,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     target = target_from_env({**os.environ, **load_env(a.env)}, a.channel)
     if not target:
-        chan_key, hook_key = names(a.channel)
-        print(f"no DISCORD_BOT_TOKEN + {chan_key}, and no {hook_key}, in {a.env} or the environment; nothing sent.", file=sys.stderr)
-        return 2
+        return missing_target(a)
     errors = send_all(target, parts)
     for err in errors:
         print(f"notify failed: {err}", file=sys.stderr)

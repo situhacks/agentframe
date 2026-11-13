@@ -8,7 +8,8 @@
 //! waiter that does this once the chat finishes its turn (one pending waiter per chat; it chooses its
 //! route when it fires, and does nothing if the chat was compacted meanwhile); `--then-file` sends a
 //! file's text to the chat as its next message after the compaction. While a panel driver run holds
-//! the panel lock for the chat, the chat counts as running, so the closed route never races it.
+//! the panel lock for the chat, the chat counts as running, so the closed route never races it; and the
+//! closed route holds the same lock for its whole run, so no driver run opens the chat meanwhile.
 
 use crate::core::Ctx;
 use crate::die;
@@ -304,6 +305,18 @@ fn compact_report(ctx: &Ctx, o: &Opts) -> R<String> {
         return Ok(text);
     }
 
+    // The panel lock, for the whole run: for about a second after `claude -p` starts there is no
+    // session record, and a driver run that opened the chat then would start a second process on it.
+    let lock = match panel::acquire_lock(ctx, &row.session_id, "headless-compact") {
+        Ok(l) => l,
+        Err(m) => die!("{name}: nothing was compacted: {m}"),
+    };
+    // Checked again under the lock: the chat may have been opened since the first check.
+    match live_check(ctx, &row.session_id) {
+        Live::Closed => {}
+        Live::Unknown => die!("{name}: cannot tell whether it is running, the claude agents roster is unavailable; nothing was compacted"),
+        Live::Running(why) => die!("{name}: it is running now ({why}); nothing was compacted"),
+    }
     let len_before = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
     let limit = deadline();
     let mut cmd = Command::new(&bin);
@@ -311,6 +324,8 @@ fn compact_report(ctx: &Ctx, o: &Opts) -> R<String> {
     let out = run_command(cmd, "claude", Some(Instant::now() + limit), true);
     let result = judge(&out, &path, len_before, limit);
     let note = after_note(ctx, &result, &row.session_id, name)?;
+    // Let go before the --then-file send, which is a driver run and needs the lock.
+    drop(lock);
     match result {
         Ok((cost, after)) => {
             let after = match after {
@@ -424,20 +439,81 @@ fn now_ms() -> u64 {
 
 /// How long a job that names no pid yet counts as pending: the verb that wrote it is starting its waiter.
 const STARTING_MS: u64 = 120_000;
+/// How long past its own wait a job can still be pending: the compaction's driver run (its deadline and
+/// af's margin), the wait for the boundary, a --then-file driver run, and a minute. After that the job is
+/// left over whatever its pid says (after a reboot the pid may belong to another process).
+pub const WAITER_MARGIN_MS: u64 = 60_000 + 2 * (panel::DRIVER_WORK_SECS + panel::DRIVER_MARGIN_SECS) * 1000 + 600_000;
 /// Test hook: milliseconds between a waiting waiter's looks at the chat (default 3000).
 const POLL_ENV: &str = "AF_WAITER_POLL_MS";
 
-/// The waiter already pending for a chat, from its job file: its pid (None while the verb that queued
-/// it is still starting it) and when it was queued. None when there is no job or its waiter is gone.
-fn pending_waiter(job: &std::path::Path) -> Option<(Option<u32>, String)> {
-    let v: Value = serde_json::from_str(&std::fs::read_to_string(job).ok()?).ok()?;
+/// The waiter already pending for a chat, from its job file's text: its pid (None while the verb that
+/// queued it is still starting it) and when it was queued. None when the job is left over: past its wait
+/// plus WAITER_MARGIN_MS, or its pid is not the waiter that wrote it (dead, or another process started at
+/// another time).
+fn pending_in(text: &str) -> Option<(Option<u32>, String)> {
+    let v: Value = serde_json::from_str(text).ok()?;
     let pid = v.get("pid").and_then(Value::as_u64).and_then(|p| u32::try_from(p).ok());
     let queued_ms = v.get("queued_ms").and_then(Value::as_u64).unwrap_or(0);
+    let wait = v.get("wait_minutes").and_then(Value::as_f64).unwrap_or(WHEN_IDLE_MINUTES).max(0.0);
+    if now_ms() >= queued_ms + (wait * 60_000.0) as u64 + WAITER_MARGIN_MS {
+        return None;
+    }
     let live = match pid {
-        Some(p) => panel::pid_alive(p),
+        Some(p) => panel::process_is(p, panel::start_of(&v, "pid_start")),
         None => now_ms().saturating_sub(queued_ms) < STARTING_MS,
     };
     live.then(|| (pid, v.get("queued").and_then(Value::as_str).unwrap_or("an unknown time").to_string()))
+}
+
+fn pending_waiter(job: &std::path::Path) -> Option<(Option<u32>, String)> {
+    pending_in(&std::fs::read_to_string(job).ok()?)
+}
+
+/// What claiming the chat's one job file came to.
+enum Claim {
+    Created,
+    Pending(Option<u32>, String),
+}
+
+/// Create the job file only when absent. A left-over job is replaced only by a compare-and-rename: it
+/// is moved aside under a name of this process's own, and removed only when what was moved is what was
+/// judged left over; a job written in between is put back. Nothing is ever deleted first, so of two
+/// verbs started at the same moment exactly one creates the job.
+fn claim_job(job: &std::path::Path, body: &Value) -> Result<Claim, String> {
+    use std::io::Write;
+    for _ in 0..4 {
+        match std::fs::OpenOptions::new().write(true).create_new(true).open(job) {
+            Ok(mut f) => {
+                if let Err(e) = f.write_all(body.to_string().as_bytes()) {
+                    drop(f);
+                    let _ = std::fs::remove_file(job);
+                    return Err(format!("cannot write {}: {e}", job.display()));
+                }
+                return Ok(Claim::Created);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(e) => return Err(format!("cannot write {}: {e}", job.display())),
+        }
+        let Ok(seen) = std::fs::read_to_string(job) else { continue };
+        if let Some((pid, queued)) = pending_in(&seen) {
+            return Ok(Claim::Pending(pid, queued));
+        }
+        let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+        let aside = job.with_extension(format!("stale-{}-{nanos}", std::process::id()));
+        if std::fs::rename(job, &aside).is_err() {
+            continue;
+        }
+        let moved = std::fs::read_to_string(&aside).unwrap_or_default();
+        if moved != seen {
+            // Not the job judged left over: put it back unless a newer one is already there.
+            let _ = std::fs::hard_link(&aside, job);
+        }
+        let _ = std::fs::remove_file(&aside);
+    }
+    match pending_waiter(job) {
+        Some((pid, queued)) => Ok(Claim::Pending(pid, queued)),
+        None => Err(format!("could not claim {}: it kept changing", job.display())),
+    }
 }
 
 fn already_pending(name: &str, pid: Option<u32>, queued: &str) -> String {
@@ -465,11 +541,6 @@ fn start_waiter(ctx: &Ctx, o: &Opts, row: &sessions::Row, path: &str, wait: f64,
             die!("cannot create {}: {e}", dir.display());
         }
     }
-    if let Some((pid, queued)) = pending_waiter(&job) {
-        return Ok(already_pending(name, pid, &queued));
-    }
-    // A job whose waiter is gone is left over, and is replaced.
-    let _ = std::fs::remove_file(&job);
     let then_file = o.then_file.map(|t| std::fs::canonicalize(t).map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|_| t.to_string()));
     let body = json!({
         "name": name,
@@ -481,23 +552,13 @@ fn start_waiter(ctx: &Ctx, o: &Opts, row: &sessions::Row, path: &str, wait: f64,
         "queued_ms": now_ms(),
         "queued": crate::core::now_iso(),
         "transcript_len": std::fs::metadata(path).map(|m| m.len()).unwrap_or(0),
+        "queued_by": caller_session(),
         "pid": Value::Null,
     });
-    // Created only when absent: of two verbs started at the same moment, one queues the waiter.
-    match std::fs::OpenOptions::new().write(true).create_new(true).open(&job) {
-        Ok(mut f) => {
-            use std::io::Write;
-            if let Err(e) = f.write_all(body.to_string().as_bytes()) {
-                drop(f);
-                let _ = std::fs::remove_file(&job);
-                die!("cannot write {}: {e}", job.display());
-            }
-        }
-        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-            let (pid, queued) = pending_waiter(&job).unwrap_or((None, "this moment".to_string()));
-            return Ok(already_pending(name, pid, &queued));
-        }
-        Err(e) => die!("cannot write {}: {e}", job.display()),
+    match claim_job(&job, &body) {
+        Ok(Claim::Created) => {}
+        Ok(Claim::Pending(pid, queued)) => return Ok(already_pending(name, pid, &queued)),
+        Err(m) => die!("{m}"),
     }
     let exe = match std::env::current_exe() {
         Ok(e) => e,
@@ -512,7 +573,7 @@ fn start_waiter(ctx: &Ctx, o: &Opts, row: &sessions::Row, path: &str, wait: f64,
         // for STARTING_MS. (Writing it from here could recreate a job the waiter already finished.)
         Ok(pid) => {
             Ok(format!(
-                "{name}: running ({why}). A detached waiter (pid {pid}) compacts it once the chat and the operator are idle, within {wait} minutes{}. It decides when it fires: if the chat was compacted meanwhile it does nothing. Its outcome is appended to {}; a failure is also shown to this chat once, at its next tool call or stop.",
+                "{name}: running ({why}). A detached waiter (pid {pid}) compacts it once the chat and the operator are idle, within {wait} minutes{}. It decides when it fires: if the chat was compacted meanwhile it does nothing. Its outcome is appended to {}; a failure is also shown once, at the next tool call or stop, to the chat that queued it (to this chat when af cannot tell which chat that is).",
                 if o.then_file.is_some() { ", then sends the --then-file text as the next message" } else { "" },
                 panel::waiter_log_path()
             ))
@@ -570,12 +631,19 @@ fn run_waiter(ctx: &Ctx, job_path: &str) -> R<i32> {
             die!("the waiter job {job_path} is not JSON: {e}")
         }
     };
-    // The job file is this waiter's claim on the chat: it names this process while it waits.
-    v["pid"] = json!(std::process::id());
+    // The job file is this waiter's claim on the chat: it names this process, and when it started, while
+    // it waits.
+    let me = std::process::id();
+    v["pid"] = json!(me);
+    v["pid_start"] = json!(panel::pid_start(me));
     write_job(std::path::Path::new(job_path), &v);
     let name = v.get("name").and_then(Value::as_str).unwrap_or("").to_string();
     let outcome = fire_waiter(ctx, &v, &name);
-    let _ = std::fs::remove_file(job_path);
+    // Removed only while it is still this waiter's job.
+    let still_mine = std::fs::read_to_string(job_path).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok()).is_some_and(|j| j.get("pid").and_then(Value::as_u64) == Some(me as u64));
+    if still_mine {
+        let _ = std::fs::remove_file(job_path);
+    }
     let session_id = v.get("session_id").and_then(Value::as_str).map(str::to_string).or_else(|| Registry::load(ctx).ok().and_then(|r| r.find_name(&name)).map(|r| r.session_id));
     match outcome {
         Ok(report) => {
@@ -584,11 +652,28 @@ fn run_waiter(ctx: &Ctx, job_path: &str) -> R<i32> {
         }
         Err(e) => {
             panel::waiter_log(ctx, &format!("{name} compact failed: {e}"));
-            if let Some(sid) = session_id {
-                crate::context::write_waiter_result(ctx, &sid, &format!("The --when-idle compaction this chat queued failed: {e}"));
+            let queued_by = v.get("queued_by").and_then(Value::as_str).filter(|s| !s.is_empty()).map(str::to_string);
+            if let Some((sid, line)) = failure_line(&name, session_id.as_deref(), queued_by.as_deref(), &e.to_string()) {
+                crate::context::write_waiter_result(ctx, &sid, &line);
             }
             Err(e)
         }
+    }
+}
+
+/// The session that ran this af, when Claude Code says so (`CLAUDE_CODE_SESSION_ID` in a chat's tools).
+fn caller_session() -> Option<String> {
+    std::env::var("CLAUDE_CODE_SESSION_ID").ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+}
+
+/// Where a failed waiter's line goes and what it says: to the chat that queued it, worded for who queued
+/// what; to the compacted chat when the caller is not known.
+fn failure_line(name: &str, compacted: Option<&str>, queued_by: Option<&str>, why: &str) -> Option<(String, String)> {
+    match (queued_by, compacted) {
+        (Some(q), Some(c)) if q == c => Some((c.to_string(), format!("The --when-idle compaction this chat queued for itself failed: {why}"))),
+        (Some(q), _) => Some((q.to_string(), format!("The --when-idle compaction you queued for {name} failed: {why}"))),
+        (None, Some(c)) => Some((c.to_string(), format!("A --when-idle compaction of this chat failed; it was queued by a caller af could not identify (maybe a terminal or a script): {why}"))),
+        (None, None) => None,
     }
 }
 

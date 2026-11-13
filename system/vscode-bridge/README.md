@@ -26,7 +26,7 @@ There is no generic "run this command" action. This is the source, version 0.2.0
 | `tabs` | none | Every tab: group, index, label, isActive, kind, viewType (webview), `claude: true` for Claude chat tabs |
 | `open` | `sessionId?`, `prompt?`, `groupId?` | `claude-vscode.editor.open(sessionId, prompt, undefined, groupId)`. A new chat, or a session with no open tab, gets the prompt prefilled (never sent). A session that already has a tab is only revealed and the prompt is dropped |
 | `reveal` | `sessionId` | The same command with only the session id: brings that chat's tab to the front |
-| `close-tab` | `label`, `all?` | Closes the first Claude chat tab whose label equals `label` exactly; only `all: true` closes every match. The label is required. Returns how many matched and how many closed. Any tab that is not a Claude chat tab is never touched |
+| `close-tab` | `label`, `all?`, `requireActive?` | Closes the first Claude chat tab whose label equals `label` exactly; only `all: true` closes every match. The label is required. Unless `requireActive: false`, it checks again, right before the close, that the tab is the active tab of its group, and closes nothing otherwise (the inbox is polled every 2 seconds, so the driver's own check can be that old). Returns how many matched and how many closed. Any tab that is not a Claude chat tab is never touched |
 
 ## Limits seen in the live proof
 
@@ -45,6 +45,6 @@ An update of an installed bridge needs an extension host restart (the host keeps
 The installed bridge is 0.1.0. It differs from this source in two ways, and the panel driver (`system/tools/claude_panel.ps1`) is built against what 0.1.0 does:
 
 - 0.1.0 has a sixth action, `group-pick` (`steps`): it calls `claude-vscode.addSessionTabToGroup` without awaiting, presses `quickOpenSelectNext` `steps` times, then `acceptSelectedQuickOpenItem`. If the group command fails to open its pick, the accept runs whatever quick-open list is showing at that moment, which can be the command palette, so a request can end up running an arbitrary command. Who can reach it: any process that can write a file into `system/logs/panel-bridge/requests/`, which is a process already running as the operator and already able to run any code as him; nothing outside his account can. The driver never sends `group-pick` (a static test checks it), and 0.2.0 removes it.
-- 0.1.0's `close-tab` closes every match unless `all: false` is passed. The driver always passes `all: false`; 0.2.0 closes one tab unless `all: true` is asked for.
+- 0.1.0's `close-tab` closes every match unless `all: false` is passed, and does not check the tab is still active. The driver always passes `all: false` and `requireActive: true` (0.1.0 ignores it); 0.2.0 closes one tab unless `all: true` is asked for, and only the active one.
 
 Install 0.2.0 at the next moment when no chat is running (the extension host restart ends every chat in the window): `python system/vscode-bridge/build.py`, then `code --install-extension system/logs/panel-bridge/af-bridge-0.2.0.vsix`, then restart the extension host. The driver works the same with either version.

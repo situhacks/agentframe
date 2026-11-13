@@ -131,6 +131,13 @@ const ACTIONS = {
     const total = matches.length;
     // One tab, the first match, unless every match is asked for in so many words.
     if (args.all !== true) matches = matches.slice(0, 1);
+    // The driver checked that the tab was the active one; the inbox is polled, so that is checked again
+    // here, right before the close, unless the caller says otherwise in so many words.
+    if (args.requireActive !== false) {
+      for (let i = 0; i < matches.length; i++) {
+        if (!matches[i].isActive) throw new Error('the tab is not the active tab of its group; nothing was closed');
+      }
+    }
     let closed = 0;
     for (let i = 0; i < matches.length; i++) {
       const ok = await vscode.window.tabGroups.close(matches[i]);

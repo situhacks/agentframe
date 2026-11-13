@@ -39,7 +39,8 @@ CONTROLS = {"Message input", "Send message", "Switch model", "New session"}
 INSTALLED_ACTIONS = {"ping", "tabs", "open", "reveal", "close-tab", "group-pick"}
 BRIDGE_ACTIONS = {"ping", "tabs", "open", "reveal", "close-tab"}
 # What the driver may import from Windows: the idle time and the window's state and title, nothing that sends input.
-ALLOWED_IMPORTS = {"GetLastInputInfo", "IsIconic", "IsWindow", "GetWindowTextW"}
+# GetProcessTimes reads only this process's own start time, for the lock.
+ALLOWED_IMPORTS = {"GetLastInputInfo", "IsIconic", "IsWindow", "GetWindowTextW", "GetProcessTimes"}
 # Words that would mean synthetic input, clipboard use or taking the foreground.
 FORBIDDEN = [
     "SendInput", "keybd_event", "mouse_event", "SendKeys", "SetCursorPos", "clipboard", "SetForegroundWindow",
@@ -667,11 +668,41 @@ MOCK_NATIVE = (
     "using System;\n"
     "public class PanelExit : Exception { public int Code; public string Reason; public PanelExit(int c, string r) : base(r) { Code = c; Reason = r; } }\n"
     "public static class PanelNative { public static bool Iconic; public static double Idle = 999999;\n"
-    "  public static bool IsIconic(IntPtr h) { return Iconic; } public static double IdleMs() { return Idle; } }\n"
+    "  public static bool IsIconic(IntPtr h) { return Iconic; } public static double IdleMs() { return Idle; } public static long OwnStart() { return 42; } }\n"
     "'@\n"
     "function Stop-Panel([int]$Code, [string]$Reason) { throw (New-Object PanelExit($Code, $Reason)) }\n"
     "$IdleSeconds = 120; $script:Win = $null; $script:Hwnd = [IntPtr]::Zero\n"
 )
+
+
+# A staged panel for the behaviour tests: one chat 'id-a' whose tab, process, input and Send the mocks
+# below keep in $W, and the bridge and the screen as functions that read and change it. The driver's
+# own functions run against it unchanged.
+WORLD = (
+    MOCK_NATIVE
+    + "$UntitledLabel = 'Claude Code'; $PanelEntrypoint = 'claude-vscode'\n"
+    "$script:Win = 'win'; $script:Notes = @(); $script:Restoring = $false; $script:St = $null\n"
+    "$script:SettleSecs = 5; $script:RestoreSecs = 0\n"
+    "$script:WaitUntil = (Get-Date).AddSeconds(-1); $script:StepUntil = (Get-Date).AddSeconds(-1)\n"
+    "$script:HardUntil = (Get-Date).AddSeconds(30); $script:RestoreUntil = $script:HardUntil\n"
+    "function Add-Note([string]$Note) { $script:Notes += $Note }\n"
+    "$W = [pscustomobject]@{ TabOpen = $true; Pid = 101; ProcUntil = $null; Value = ''; Enabled = $false; Linger = 0.0; RevealWorks = $true; Log = @() }\n"
+    "function Get-ClaudeTabs { $t = @([pscustomobject]@{ claude = $true; label = 'other'; isActive = (-not $W.TabOpen) }); if ($W.TabOpen) { $t += [pscustomobject]@{ claude = $true; label = 'chat-a'; isActive = $true } }; $t }\n"
+    "function Get-Chats($Window) { @([pscustomobject]@{ Id = 'id-a'; Active = $W.TabOpen; Status = 'idle' }, [pscustomobject]@{ Id = 'id-b'; Active = (-not $W.TabOpen); Status = 'idle' }) }\n"
+    "function Get-ActiveIds { @(Get-Chats $null | Where-Object { $_.Active } | ForEach-Object { $_.Id }) }\n"
+    "function Get-ChatRecords([string]$Id) { if ($Id -eq 'id-a' -and ($W.TabOpen -or ($null -ne $W.ProcUntil -and (Get-Date) -lt $W.ProcUntil))) { @([pscustomobject]@{ pid = $W.Pid; sessionId = 'id-a'; status = 'idle'; entrypoint = 'claude-vscode' }) } else { @() } }\n"
+    "function Get-RecordState([string]$Id) { $r = @(Get-ChatRecords $Id); [pscustomobject]@{ Count = $r.Count; Busy = ''; Terminal = '' } }\n"
+    "function Get-InputPair { if (-not $W.TabOpen) { return $null }; [pscustomobject]@{ Input = 'in'; Send = [pscustomobject]@{ Current = [pscustomobject]@{ IsEnabled = $W.Enabled } } } }\n"
+    "function Get-InputValue($El) { $W.Value }\n"
+    "function Show-Chat([string]$Id) { $W.Log += 'show' }\n"
+    "function Close-TabByLabel([string]$Label, [int]$Count) { $W.Log += ('close ' + $Label); $W.TabOpen = $false; $W.ProcUntil = (Get-Date).AddSeconds($W.Linger) }\n"
+    "function Invoke-BridgeOk([string]$Name, $BArgs) { $W.Log += $Name; if ($Name -eq 'reveal' -and $W.RevealWorks) { $W.TabOpen = $true; $W.Pid = $W.Pid + 1; $W.Value = ''; $W.Enabled = $false }; [pscustomobject]@{} }\n"
+)
+WORLD_FUNCTIONS = [
+    "New-RunState", "Test-Touched", "Get-StateText", "Read-ChatState", "Read-ChatInput", "Get-InputKind", "Test-EmptyValue",
+    "Get-Placeholders", "Test-SameText", "ConvertTo-PlainValue", "Test-SafeToClose", "Close-Checked", "Wait-ProcessEnd",
+    "Restore-Chat", "Test-ChatTabOpen", "Start-Restoring", "Get-WaitUntil", "Get-StepMs", "Wait-Idle", "Get-PanelExit", "Invoke-Guarded",
+]
 
 
 def dead_pid() -> int:
@@ -694,22 +725,23 @@ class UnbrokenCloseCheckTests(unittest.TestCase):
         "function Get-UntitledBlock { $script:Block }\n"
         "function Get-InputPair { [pscustomobject]@{ Input = 'in'; Send = [pscustomobject]@{ Current = [pscustomobject]@{ IsEnabled = $script:Enabled } } } }\n"
         "function Get-InputValue($El) { $script:Value }\n"
+        "$script:Recs = @(); function Get-ChatRecords([string]$Id) { $script:Recs }\n"
         "function Tab([string]$l, [bool]$a) { [pscustomobject]@{ claude = $true; label = $l; isActive = $a } }\n"
         "function Row([string]$i, [bool]$a, [string]$s) { [pscustomobject]@{ Id = $i; Active = $a; Status = $s } }\n"
         "function Rec([string]$b, [string]$t) { [pscustomobject]@{ Count = 1; Busy = $b; Terminal = $t } }\n"
         "function Reset {\n"
         "  [PanelNative]::Iconic = $false; [PanelNative]::Idle = 999999\n"
         "  $script:Tabs = @((Tab 'chat-a' $true), (Tab 'other' $false)); $script:Rows = @((Row 'id-a' $true 'idle'), (Row 'id-b' $false 'idle'))\n"
-        "  $script:Rec = (Rec '' ''); $script:Enabled = $false; $script:Value = ''; $script:Block = ''\n"
+        "  $script:Rec = (Rec '' ''); $script:Enabled = $false; $script:Value = ''; $script:Block = ''; $script:Recs = @()\n"
         "}\n"
-        "function Check([string]$RowId, [string]$RecId, [string]$Mode, [string]$Label, [bool]$First = $false) {\n"
-        "  $c = Test-SafeToClose $RowId $RecId $Mode $Label $First\n"
+        "function Check([string]$RowId, [string]$RecId, [string]$Mode, [string]$Label, [bool]$First = $false, [int]$OwnPid = 0) {\n"
+        "  $c = Test-SafeToClose $RowId $RecId $Mode $Label $First $OwnPid\n"
         "  '{0}|{1}|{2}' -f $c.Code, $c.Retry, $c.Label\n"
         "}\n"
     )
 
     def run_cases(self, body: str):
-        return run_functions(["Test-SafeToClose", "Test-SameText", "ConvertTo-PlainValue"], self.STAGE + body)
+        return run_functions(["Test-SafeToClose", "Get-InputKind", "Test-EmptyValue", "Get-Placeholders", "Test-SameText", "ConvertTo-PlainValue"], self.STAGE + body)
 
     def test_his_tab_closes_only_when_everything_holds_at_once(self):
         got = self.run_cases(
@@ -756,6 +788,42 @@ class UnbrokenCloseCheckTests(unittest.TestCase):
         )
         self.assertEqual(got, {"own_text": "0|False|chat-a", "his_words": "4|False|", "empty": "0|False|chat-a", "two_active_tabs": "5|True|"})
 
+    def test_a_disabled_send_is_not_enough_the_value_itself_must_read_empty(self):
+        """Second review, item 3: the input's value is read; empty is blank or the page's placeholder."""
+        got = self.run_cases(
+            "$o = [ordered]@{}\n"
+            "Reset; $script:Value = 'my half-typed thought'; $o.draft_send_disabled = Check 'id-a' 'id-a' 'empty' 'chat-a'\n"
+            "Reset; $script:Value = 'ctrl esc to focus or unfocus Claude'; $o.placeholder = Check 'id-a' 'id-a' 'empty' 'chat-a'\n"
+            "Reset; $script:Value = ('Ask Claude to edit' + [char]0x2026); $o.placeholder_edit = Check 'id-a' 'id-a' 'empty' 'chat-a'\n"
+            "Reset; $script:Value = 'Summarise the last run'; $o.suggestion = Check 'id-a' 'id-a' 'empty' 'chat-a'\n"
+            "Reset; $script:Value = '  '; $o.blank = Check 'id-a' 'id-a' 'empty' 'chat-a'\n"
+            "Reset; $script:Enabled = $true; $script:Value = ''; $o.attachment = Check 'id-a' 'id-a' 'empty' 'chat-a'\n"
+            "Reset; $script:Value = 'his words'; $o.text_mode_disabled_his_words = Check 'id-a' 'id-a' 'text' ''\n"
+            "Reset; $script:Value = 'ctrl esc to focus or unfocus Claude'; $o.text_mode_empty = Check 'id-a' 'id-a' 'text' ''\n"
+            "ConvertTo-Json -Compress -InputObject $o\n"
+        )
+        self.assertEqual(got, {
+            "draft_send_disabled": "4|False|",
+            "placeholder": "0|False|chat-a",
+            "placeholder_edit": "0|False|chat-a",
+            "suggestion": "4|False|",
+            "blank": "0|False|chat-a",
+            "attachment": "4|False|",
+            "text_mode_disabled_his_words": "4|False|",
+            "text_mode_empty": "0|False|chat-a",
+        })
+
+    def test_the_drivers_own_tab_is_proved_by_the_process_its_open_started(self):
+        """Second review, items 1 and 11: a tab he reopened has another process, and is never closed as the driver's."""
+        got = self.run_cases(
+            "$o = [ordered]@{}\n"
+            "Reset; $script:Recs = @([pscustomobject]@{ pid = 101 }); $o.own = Check 'id-a' 'id-a' 'empty' 'chat-a' $false 101\n"
+            "Reset; $script:Recs = @([pscustomobject]@{ pid = 202 }); $o.his = Check 'id-a' 'id-a' 'empty' 'chat-a' $false 101\n"
+            "Reset; $script:Recs = @([pscustomobject]@{ pid = 101 }, [pscustomobject]@{ pid = 202 }); $o.two = Check 'id-a' 'id-a' 'empty' 'chat-a' $false 101\n"
+            "ConvertTo-Json -Compress -InputObject $o\n"
+        )
+        self.assertEqual(got, {"own": "0|False|chat-a", "his": "5|False|", "two": "5|False|"})
+
     def test_untitled_tabs_need_no_active_row_and_the_first_of_many_to_be_the_active_one(self):
         got = self.run_cases(
             "$o = [ordered]@{}\n"
@@ -797,11 +865,11 @@ class UnbrokenCloseCheckTests(unittest.TestCase):
 
     def test_every_close_goes_through_the_check_and_closes_one_tab(self):
         code = code_lines(source())
-        self.assertEqual(len(re.findall(r"Invoke-BridgeOk 'close-tab'", code)), 1, "one call, in Close-TabByLabel")
-        self.assertIn("@{ label = $Label; all = $false }", function_text("Close-TabByLabel"))
+        self.assertEqual(len(re.findall(r"Invoke-Bridge(Ok)? 'close-tab'", code)), 1, "one call, in Close-TabByLabel")
+        self.assertIn("@{ label = $Label; all = $false; requireActive = $true }", function_text("Close-TabByLabel"))
         calls = [m.start() for m in re.finditer(r"Close-TabByLabel \$", code)]
         self.assertEqual(len(calls), 1, "Close-TabByLabel is called from Close-Checked only")
-        self.assertIn("Close-TabByLabel $c.Label", function_text("Close-Checked"))
+        self.assertIn("Close-TabByLabel $c.Label $c.Count", function_text("Close-Checked"))
 
 
 @unittest.skipUnless(POWERSHELL, "needs Windows PowerShell")
@@ -858,12 +926,14 @@ class LockTests(unittest.TestCase):
     def test_a_second_run_waits_then_exits_3_and_a_stale_lock_is_taken_over(self):
         with tempfile.TemporaryDirectory() as d:
             body = (
+                "Add-Type -TypeDefinition 'public static class PanelNative { public static long OwnStart() { return 42; } }'\n"
                 "$Utf8 = New-Object System.Text.UTF8Encoding($false)\n"
                 f"$BridgeBase = '{d}'; $LockFile = Join-Path $BridgeBase 'driver.lock'\n"
                 "function Stop-Panel([int]$Code, [string]$Reason) { throw ('exit ' + $Code + ': ' + $Reason) }\n"
                 "$script:Lock = $null; $script:WaitUntil = (Get-Date).AddSeconds(3)\n"
                 "Enter-Lock 'send' 'sid-1'\n"
                 "$holder = Read-LockHolder\n"
+                "$raw = [System.IO.File]::Open($LockFile, 'Open', 'Read', 'ReadWrite, Delete'); $json = (New-Object System.IO.StreamReader($raw)).ReadToEnd(); $raw.Dispose()\n"
                 "$first = $script:Lock; $script:Lock = $null\n"
                 "$sw = [Diagnostics.Stopwatch]::StartNew(); $second = 'took it'\n"
                 "try { Enter-Lock 'send' 'sid-2' } catch { $second = $_.Exception.Message }\n"
@@ -874,10 +944,11 @@ class LockTests(unittest.TestCase):
                 "Enter-Lock 'new' ''\n"
                 "$holder2 = Read-LockHolder\n"
                 "Exit-Lock\n"
-                "ConvertTo-Json -Compress -InputObject @($holder, $second, [bool]($waited -ge 2), $leftOver, $holder2, (Test-Path $LockFile))\n"
+                "ConvertTo-Json -Compress -InputObject @($holder, $second, [bool]($waited -ge 2), $leftOver, $holder2, (Test-Path $LockFile), $json)\n"
             )
             got = run_functions(["Enter-Lock", "Exit-Lock", "Read-LockHolder"], body)
-        holder, second, waited, left_over, holder2, after = got
+        holder, second, waited, left_over, holder2, after, raw = got
+        self.assertEqual(json.loads(raw)["pid_start"], 42, "the lock records when its process started, so a reused pid is told apart")
         self.assertRegex(holder, r"^pid \d+, send, session sid-1, since ")
         self.assertTrue(second.startswith("exit 3: another driver run held the panel for the whole wait (pid "), second)
         self.assertTrue(waited)
@@ -900,51 +971,33 @@ class LockTests(unittest.TestCase):
 
     def test_new_identifies_its_chat_by_the_record_its_own_open_created(self):
         new = function_text("Do-New")
-        self.assertLess(new.index("$recBefore"), new.index("Invoke-BridgeOk 'open'"))
+        self.assertLess(new.index("$recBefore"), new.index("Invoke-Bridge 'open'"))
         self.assertIn("$recBefore -notcontains", new)
         self.assertIn("$new.Count -ne 1", new)
         self.assertIn("$_.Id -eq $s.Id", new, "the new row must be the new record's own")
         self.assertNotIn("$rowsBefore", new)
-        self.assertLess(new.index("untitled"), new.index("Invoke-BridgeOk 'open'"), "no other untitled tab may be open")
+        self.assertLess(new.index("untitled"), new.index("Invoke-Bridge 'open'"), "no other untitled tab may be open")
+        self.assertLess(new.index("$s.OpenCalled = $true"), new.index("Invoke-Bridge 'open'"), "the open is recorded before it is asked for")
 
 
 @unittest.skipUnless(POWERSHELL, "needs Windows PowerShell")
 class ChangeReportTests(unittest.TestCase):
     """Finding 2: every exit says what changed and where the chat's tab is now."""
 
-    def state(self, fields: dict) -> str:
-        body = (
-            "New-RunState 'id' 'text'\n"
-            + "".join(f"$script:St.{k} = ${str(v).lower()}\n" for k, v in fields.items())
-            + "ConvertTo-Json -Compress -InputObject @(Get-StateText)\n"
-        )
-        return run_functions(["New-RunState", "Test-Touched", "Get-StateText"], body)[0]
-
-    def test_the_state_sentence_follows_what_changed(self):
-        self.assertEqual(self.state({}), "The panel was not changed: the chat's tab is as it was.")
-        t = self.state({"HadTab": True, "Closed": True, "TabOpen": False})
-        self.assertIn("closed the chat's tab", t)
-        self.assertIn("The chat's tab is now closed. It was open before the run.", t)
-        t = self.state({"HadTab": True, "Closed": True, "OpenCalled": True, "Opened": True, "Prefilled": True, "Cleaned": True, "Reopened": True, "TabOpen": True})
-        self.assertIn("opened it with the text in the input, then closed that tab again to take the unsent text away, then opened the chat's tab again", t)
-        self.assertIn("The chat's tab is now open.", t)
-        t = self.state({"OpenCalled": True, "Opened": True, "Prefilled": True, "LeftText": True, "TabOpen": True})
-        self.assertIn("OPEN and still holds the driver's unsent text", t)
-
     def guarded(self, sent: bool, code: int) -> list:
         body = (
-            MOCK_NATIVE
+            WORLD
             + "$script:Restored = $false\n"
-            "function Restore-Chat { $script:Restored = $true; $script:St.Cleaned = $true; $script:St.TabOpen = $false }\n"
-            "New-RunState 'id' 'text'\n"
+            "function Restore-Chat { $script:Restored = $true }\n"
+            "New-RunState 'id-a' 'text'\n"
             "$script:St.Closed = $true; $script:St.HadTab = $true; $script:St.OpenCalled = $true; $script:St.Opened = $true; $script:St.Prefilled = $true\n"
+            "$W.TabOpen = $false\n"
             f"$script:St.Sent = ${str(sent).lower()}\n"
             "$out = $null\n"
             f"try {{ Invoke-Guarded {{ Stop-Panel {code} 'read-back failed' }} }} catch {{ $pe = Get-PanelExit $_; $out = @($pe.Code, $pe.Reason, $script:Restored) }}\n"
             "ConvertTo-Json -Compress -InputObject $out\n"
         )
-        return run_functions(["New-RunState", "Test-Touched", "Get-StateText", "Get-PanelExit", "Invoke-Guarded"], body)
-
+        return run_functions(WORLD_FUNCTIONS, body)
     def test_a_failure_before_send_puts_the_chat_back_and_says_nothing_was_sent_and_where_the_tab_is(self):
         code, reason, restored = self.guarded(False, 5)
         self.assertEqual(code, 5)
@@ -979,18 +1032,6 @@ class ChangeReportTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertEqual(proc.stderr.strip().splitlines(), ["why", "note: one", "note: two"])
 
-    def test_a_restore_closes_only_its_own_tab_and_reopens_his_only_when_no_process_holds_the_chat(self):
-        restore = function_text("Restore-Chat")
-        self.assertIn("if ($null -eq $s -or $s.Sent", restore, "nothing is put back after Send")
-        self.assertIn("if ($s.Opened -and $s.TabOpen)", restore, "only a tab the driver opened is closed")
-        self.assertIn("$mode = 'text'", restore)
-        self.assertIn("Close-Checked $s.RowId $s.Id $mode $s.OwnLabel $reveal", restore)
-        self.assertLess(restore.index("Get-ChatRecords $s.Id).Count -gt 0"), restore.index("'reveal'"))
-        self.assertIn("Start-Restoring", restore)
-        opened = function_text("Open-WithText")
-        self.assertIn("$n0 + 1", opened, "the tab set is compared before and after the open")
-        self.assertLess(opened.index("Get-ChatRecords $Id"), opened.index("Invoke-BridgeOk 'open'"))
-        self.assertLess(opened.index("$s.OpenCalled = $true"), opened.index("$s.Opened = $true"))
 
 
 class SendWindowTests(unittest.TestCase):
@@ -1068,11 +1109,19 @@ class DeadlineTests(unittest.TestCase):
         wait_rs = float(re.search(r"pub const DRIVER_WAIT_MINUTES: f64 = ([\d.]+);", rust).group(1))
         self.assertEqual(wait_ps, wait_rs)
         restore = int(re.search(r"^\$RestoreSeconds = (\d+)$", source(), re.MULTILINE).group(1))
-        self.assertGreater(ps - restore, 600 + 90 + 25, "the longest steps fit before the restore time")
+        settle = int(re.search(r"^\$SettleSeconds = (\d+)$", source(), re.MULTILINE).group(1))
+        self.assertGreater(ps - restore - settle, 600 + 90 + 25, "the longest steps fit before the restore time")
+        list_ps = int(re.search(r"^\$ListWorkSeconds = (\d+)$", source(), re.MULTILINE).group(1))
+        list_rs = int(re.search(r"pub const DRIVER_LIST_WORK_SECS: u64 = (\d+);", rust).group(1))
+        self.assertEqual(list_ps, list_rs, "a list's work time is the same number on both sides")
+        self.assertIn("if ($ActionName -eq 'list') { $work = $ListWorkSeconds", function_text("Set-Deadlines"))
+        self.assertIn("Set-Deadlines $ActionName", function_text("Invoke-Logged"))
 
     def test_every_step_wait_is_cut_to_the_deadline(self):
-        for name in ["Wait-Ready", "Show-Chat", "Close-Checked", "Open-WithText", "Confirm-Sent", "Wait-ChatIdle"]:
+        for name in ["Wait-Ready", "Show-Chat", "Open-WithText", "Confirm-Sent", "Wait-ChatIdle", "Get-OwnPid"]:
             self.assertIn("Get-StepMs", function_text(name), name)
+        self.assertIn("Wait-ProcessEnd $RecId", function_text("Close-Checked"))
+        self.assertIn("$script:SettleSecs", function_text("Wait-ProcessEnd"), "the process wait has a budget of its own")
         self.assertIn("Get-WaitUntil", function_text("Wait-Idle"))
         self.assertIn("$script:RestoreUntil", function_text("Restore-Screen"))
         self.assertIn("finally", function_text("Invoke-Logged"))
@@ -1102,5 +1151,201 @@ class WaiterPairingTests(unittest.TestCase):
         self.assertIn("stop_with_waiter_result", hooks)
 
 
-if __name__ == "__main__":
-    unittest.main()
+# ---------------------------------------------------------------- second review: behaviour, not source text
+
+
+@unittest.skipUnless(POWERSHELL, "needs Windows PowerShell")
+class RestoreBehaviourTests(unittest.TestCase):
+    """Restore-Chat and the message, run against the staged panel: the cleanup's process wait has a budget of
+    its own, his tab comes back on every path where it is closed, and the final sentence is a fresh read."""
+
+    def fail_before_send(self, setup: str) -> dict:
+        body = (
+            WORLD
+            + "New-RunState 'id-a' 'hello there'; $s = $script:St\n"
+            "$s.HadTab = $true; $s.Closed = $true; $s.OpenCalled = $true; $s.Opened = $true; $s.Prefilled = $true; $s.TabOpen = $true; $s.OwnPid = 101\n"
+            "$W.TabOpen = $true; $W.Pid = 101; $W.Value = 'hello there'; $W.Enabled = $true\n"
+            + setup
+            + "$out = [ordered]@{}\n"
+            "try { Invoke-Guarded { Stop-Panel 3 'the operator kept using the computer until the deadline (press Send)' } } catch { $pe = Get-PanelExit $_; $out.code = $pe.Code; $out.reason = $pe.Reason }\n"
+            "$out.log = @($W.Log); $out.notes = @($script:Notes); $out.tab_open = $W.TabOpen\n"
+            "ConvertTo-Json -Compress -Depth 4 -InputObject $out\n"
+        )
+        return run_functions(WORLD_FUNCTIONS, body)
+
+    def test_the_cleanup_waits_for_the_process_on_its_own_budget_and_his_tab_comes_back(self):
+        # The wait for him is spent (he was active until the deadline), he is idle now, and the closed
+        # process takes two seconds to end: the old code timed this out and reported the tab OPEN.
+        got = self.fail_before_send("$W.Linger = 2; [PanelNative]::Idle = 999999\n")
+        self.assertEqual(got["code"], 3)
+        self.assertEqual(got["log"][-2:], ["close chat-a", "reveal"], got)
+        self.assertTrue(got["tab_open"])
+        self.assertIn("then closed that tab again to take the unsent text away, then opened the chat's tab again.", got["reason"])
+        self.assertIn("The chat's tab is now open and its input is empty.", got["reason"])
+        self.assertNotIn("unsent text:", got["reason"])
+        self.assertEqual(got["notes"], [])
+
+    def test_while_he_stays_active_nothing_is_closed_and_the_message_says_what_the_input_really_holds(self):
+        got = self.fail_before_send("[PanelNative]::Idle = 0\n")
+        self.assertNotIn("close chat-a", got["log"])
+        self.assertTrue(got["tab_open"])
+        self.assertIn("The chat's tab is OPEN and its input holds the driver's unsent text", got["reason"])
+        self.assertTrue(any("was not closed" in n for n in got["notes"]), got)
+
+    def test_a_tab_he_reopened_is_not_closed_as_the_drivers(self):
+        got = self.fail_before_send("$W.Pid = 202; $W.Value = ''; $W.Enabled = $false\n")
+        self.assertNotIn("close chat-a", got["log"])
+        self.assertIn("The chat's tab is now open and its input is empty.", got["reason"])
+        self.assertTrue(any("not the one the driver opened" in n for n in got["notes"]), got)
+
+    def test_his_tab_comes_back_when_the_open_never_happened(self):
+        got = self.fail_before_send("$s.Opened = $false; $s.Prefilled = $false; $s.TabOpen = $false; $W.TabOpen = $false\n")
+        self.assertEqual(got["log"], ["reveal"], got)
+        self.assertIn("asked the bridge to open it (no new tab was seen), then opened the chat's tab again.", got["reason"])
+        self.assertIn("The chat's tab is now open and its input is empty.", got["reason"])
+
+    def test_the_final_state_is_read_not_inferred_from_what_was_done(self):
+        # The reveal is asked for but nothing opens: the message says closed, whatever the flags would say.
+        got = self.fail_before_send("$s.Opened = $false; $s.Prefilled = $false; $s.TabOpen = $false; $W.TabOpen = $false; $W.RevealWorks = $false\n")
+        self.assertIn("The chat's tab is now closed. It was open before the run.", got["reason"])
+        self.assertTrue(any("did not come back" in n for n in got["notes"]), got)
+
+    def test_after_send_nothing_is_put_back(self):
+        code, reason, restored = self.guarded_after_send()
+        self.assertEqual(code, 1)
+        self.assertFalse(restored)
+        self.assertIn("Send was pressed, so the text may have reached the chat", reason)
+
+    def guarded_after_send(self):
+        body = (
+            WORLD
+            + "$script:Restored = $false\n"
+            "function Restore-Chat { $script:Restored = $true }\n"
+            "New-RunState 'id-a' 'text'; $script:St.OpenCalled = $true; $script:St.Opened = $true; $script:St.Sent = $true\n"
+            "$out = $null\n"
+            "try { Invoke-Guarded { Stop-Panel 5 'read-back failed' } } catch { $pe = Get-PanelExit $_; $out = @($pe.Code, $pe.Reason, $script:Restored) }\n"
+            "ConvertTo-Json -Compress -InputObject $out\n"
+        )
+        return run_functions(WORLD_FUNCTIONS, body)
+
+
+@unittest.skipUnless(POWERSHELL, "needs Windows PowerShell")
+class CloseLoopBehaviourTests(unittest.TestCase):
+    """Close-Checked run with a scripted check: every retry waits for him and reveals again before the whole
+    check runs again, the close follows only a passing check, and a check that cannot pass stops with no close."""
+
+    def run_loop(self, results: str, wait_until: str = "(Get-Date).AddSeconds(30)") -> dict:
+        body = (
+            MOCK_NATIVE
+            + "$script:Restoring = $false; $script:Log = @()\n"
+            f"$script:WaitUntil = {wait_until}; $script:StepUntil = $script:WaitUntil\n"
+            "$script:St = [pscustomobject]@{ Closed = $false; CloseAsked = $false; OpenCalled = $false; Opened = $false; TabOpen = $true }\n"
+            "function Res([int]$Code, [bool]$Retry) { [pscustomobject]@{ Code = $Code; Why = 'w' + $Code; Retry = $Retry; Label = 'chat-a'; Count = 1 } }\n"
+            f"$script:Queue = [System.Collections.ArrayList]@({results})\n"
+            "function Test-SafeToClose { $script:Log += 'check'; $r = $script:Queue[0]; if ($script:Queue.Count -gt 1) { $script:Queue.RemoveAt(0) }; $r }\n"
+            "function Wait-Idle([string]$What) { $script:Log += 'wait' }\n"
+            "function Show-Chat([string]$Id) { $script:Log += 'show' }\n"
+            "function Close-TabByLabel([string]$Label, [int]$Count) { $script:Log += ('close ' + $Label + ' ' + $Count) }\n"
+            "function Wait-ProcessEnd([string]$Id) { $script:Log += 'gone'; $true }\n"
+            "$out = [ordered]@{ code = 0 }\n"
+            "try { Close-Checked 'id-a' 'id-a' 'empty' 'chat-a' 'id-a' } catch { $out.code = (Get-PanelExit $_).Code }\n"
+            "$out.log = @($script:Log) -join ' '; $out.closed = $script:St.Closed; $out.open = $script:St.TabOpen\n"
+            "ConvertTo-Json -Compress -InputObject $out\n"
+        )
+        return run_functions(["Close-Checked", "Get-WaitUntil", "Test-Touched", "Get-PanelExit"], body)
+
+    def test_a_retry_runs_the_wait_the_reveal_and_the_whole_check_again_then_closes_once(self):
+        got = self.run_loop("(Res 3 $true), (Res 5 $true), (Res 0 $false)")
+        self.assertEqual(got, {"code": 0, "log": "wait show check wait show check wait show check close chat-a 1 gone", "closed": True, "open": False})
+
+    def test_a_check_that_waiting_cannot_cure_stops_with_its_code_and_no_close(self):
+        got = self.run_loop("(Res 3 $true), (Res 4 $false)")
+        self.assertEqual(got, {"code": 4, "log": "wait show check wait show check", "closed": False, "open": True})
+
+    def test_past_the_deadline_a_retry_stops_with_no_close(self):
+        got = self.run_loop("(Res 3 $true)", wait_until="(Get-Date).AddSeconds(-1)")
+        self.assertEqual(got, {"code": 3, "log": "wait show check", "closed": False, "open": True})
+
+
+@unittest.skipUnless(POWERSHELL, "needs Windows PowerShell")
+class SendNowBehaviourTests(unittest.TestCase):
+    """Send-Now run against scripted read-backs: it invokes the very Send it verified, and nothing when the
+    input, Send or the row changed after the read-back."""
+
+    PRE = (
+        MOCK_NATIVE
+        + "Add-Type -AssemblyName UIAutomationClient\n"
+        "$script:St = [pscustomobject]@{ Sent = $false }\n"
+        "$global:Log = @(); $global:Value = 'hello'; $global:RowActive = $true\n"
+        "function NewSend([string]$Id, [bool]$Enabled = $true) {\n"
+        "  $o = [pscustomobject]@{ Id = $Id; Current = [pscustomobject]@{ IsEnabled = $Enabled; IsOffscreen = $false } }\n"
+        "  $o | Add-Member -MemberType ScriptMethod -Name GetCurrentPattern -Value { param($p) $inv = [pscustomobject]@{ Id = $this.Id }; $inv | Add-Member -MemberType ScriptMethod -Name Invoke -Value { $global:Log += ('invoke ' + $this.Id) }; $inv }\n"
+        "  $o\n"
+        "}\n"
+        "function Ready([string]$Id, [bool]$Enabled = $true) { [pscustomobject]@{ Why = $null; Pair = [pscustomobject]@{ Input = 'in'; Send = (NewSend $Id $Enabled) }; Row = [pscustomobject]@{ Element = 'row' } } }\n"
+        "function Wait-Idle([string]$What) { $global:Log += 'wait' }\n"
+        "function Test-ReadyQueue { }\n"
+        "function Test-Ready([string]$RowId, [string]$Text) { $global:Log += 'ready'; $r = $global:Ready[0]; $global:Ready.RemoveAt(0); [PanelNative]::Idle = $global:Idles[0]; $global:Idles.RemoveAt(0); if ($null -ne $global:AfterRead) { & $global:AfterRead }; $r }\n"
+        "function Get-InputValue($El) { $global:Value }\n"
+        "function Test-RowActive($Row) { $global:RowActive }\n"
+        "$global:AfterRead = $null\n"
+    )
+
+    def send(self, setup: str) -> dict:
+        body = (
+            self.PRE
+            + setup
+            + "$out = [ordered]@{ code = 0; sent = $false }\n"
+            "try { $p = Send-Now 'id-a' 'hello'; $out.invoked_pair = $p.Send.Id } catch { $out.code = (Get-PanelExit $_).Code }\n"
+            "$out.sent = $script:St.Sent; $out.log = @($global:Log) -join ' '\n"
+            "ConvertTo-Json -Compress -InputObject $out\n"
+        )
+        return run_functions(["Send-Now", "Test-SameText", "ConvertTo-PlainValue", "Get-PanelExit"], body)
+
+    def test_it_invokes_the_send_it_verified(self):
+        got = self.send("$global:Ready = [System.Collections.ArrayList]@((Ready 'send-1')); $global:Idles = [System.Collections.ArrayList]@(999999)\n")
+        self.assertEqual(got, {"code": 0, "sent": True, "invoked_pair": "send-1", "log": "wait ready invoke send-1"})
+
+    def test_a_change_after_the_read_back_stops_it_with_nothing_invoked(self):
+        cases = {
+            "input": "$global:AfterRead = { $global:Value = 'hello and his words' }\n",
+            "send_disabled": "$global:Ready = [System.Collections.ArrayList]@((Ready 'send-1' $false))\n",
+            "row": "$global:AfterRead = { $global:RowActive = $false }\n",
+        }
+        for name, extra in cases.items():
+            got = self.send("$global:Ready = [System.Collections.ArrayList]@((Ready 'send-1')); $global:Idles = [System.Collections.ArrayList]@(999999)\n" + extra)
+            self.assertEqual((got["code"], got["sent"], got["log"]), (5, False, "wait ready"), name)
+
+    def test_when_he_moves_after_the_read_back_it_reads_back_again_and_invokes_the_new_one(self):
+        got = self.send("$global:Ready = [System.Collections.ArrayList]@((Ready 'send-1'), (Ready 'send-2')); $global:Idles = [System.Collections.ArrayList]@(0, 999999)\n")
+        self.assertEqual(got, {"code": 0, "sent": True, "invoked_pair": "send-2", "log": "wait ready wait ready invoke send-2"})
+
+    def test_a_failed_read_back_sends_nothing(self):
+        got = self.send("$r = Ready 'send-1'; $r.Why = 'the input does not hold the text'; $global:Ready = [System.Collections.ArrayList]@($r); $global:Idles = [System.Collections.ArrayList]@(999999)\n")
+        self.assertEqual((got["code"], got["sent"], got["log"]), (5, False, "wait ready"))
+
+
+class SecondReviewPairingTests(unittest.TestCase):
+    def test_the_bridge_close_rechecks_the_active_tab_and_the_driver_still_works_with_0_1_0(self):
+        text = EXTENSION.read_text(encoding="ascii")
+        close = re.search(r"'close-tab': async function.*?\n  \}", text, re.DOTALL).group(0)
+        self.assertIn("if (args.requireActive !== false)", close)
+        self.assertLess(close.index("isActive"), close.index("tabGroups.close"))
+        tab = function_text("Close-TabByLabel")
+        self.assertIn("all = $false", tab, "0.1.0 closes every match without it")
+        self.assertIn("not the active tab", tab)
+
+    def test_a_bridge_timeout_is_followed_by_a_read_of_the_tabs(self):
+        tab = function_text("Close-TabByLabel")
+        self.assertLess(tab.index("$s.CloseAsked = $true"), tab.index("Invoke-Bridge 'close-tab'"), "the attempt is recorded first")
+        self.assertIn("if ($null -eq $r)", tab)
+        self.assertIn("is unknown", tab)
+        opened = function_text("Open-WithText")
+        self.assertLess(opened.index("$s.OpenCalled = $true"), opened.index("Invoke-Bridge 'open'"))
+        self.assertIn("did not answer open", opened)
+
+    def test_a_post_send_close_needs_the_drivers_own_tab(self):
+        send = function_text("Do-Send")
+        tail = send[send.index("# The text is sent and confirmed"):]
+        self.assertIn("if (-not $s.HadTab -and $s.Opened)", tail)
+        self.assertIn("Close-Checked $Id $Id 'empty' '' $Id $false $s.OwnPid", tail)

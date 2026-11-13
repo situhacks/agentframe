@@ -34,7 +34,12 @@ pub const DRIVER_WORK_SECS: u64 = 1200;
 /// What af allows on top of the driver's own deadline, for PowerShell to start and end.
 pub const DRIVER_MARGIN_SECS: u64 = 60;
 /// A list waits at most this long (for a minimized window it must restore, or for the lock).
-pub const LIST_WAIT_MINUTES: f64 = 1.0;
+pub const LIST_WAIT_MINUTES: f64 = 0.5;
+/// The driver's work time for a read-only run (`list`): its `$ListWorkSeconds`, the same number.
+pub const DRIVER_LIST_WORK_SECS: u64 = 45;
+/// af's whole limit for a read-only run: its wait, its work and a margin. A list never holds af for
+/// the 22 minutes a send may take.
+pub const READ_LIMIT_SECS: u64 = 90;
 /// Test hook: seconds that replace the computed limit, to prove what happens when af has to kill the driver.
 const LIMIT_ENV: &str = "AF_PANEL_LIMIT_SECS";
 const WAITER_LOG: &str = "system/logs/panel-waiters.log";
@@ -106,7 +111,7 @@ impl Driver {
     /// Runs the driver within its own deadline plus a margin. If af has to kill it, the driver could
     /// neither put the chat back nor log, so af logs the kill itself and the answer says so.
     fn run(&self, ctx: &Ctx, c: &Call) -> Out {
-        let limit = driver_limit(c.wait_minutes);
+        let limit = action_limit(c.action, c.wait_minutes);
         let mut cmd = Command::new(&self.program);
         cmd.args(self.args(c)).current_dir(&ctx.root);
         let out = run_command(cmd, "the panel driver", Some(Instant::now() + limit), true);
@@ -139,6 +144,18 @@ pub fn driver_limit(wait_minutes: Option<f64>) -> Duration {
     }
     let wait = wait_minutes.unwrap_or(DRIVER_WAIT_MINUTES).max(0.0);
     Duration::from_secs_f64(wait * 60.0) + Duration::from_secs(DRIVER_WORK_SECS + DRIVER_MARGIN_SECS)
+}
+
+/// af's limit for one run of this action: a read-only action (`list`) has its own short limit, every
+/// other action the driver's deadline plus a margin.
+pub fn action_limit(action: &str, wait_minutes: Option<f64>) -> Duration {
+    if action == "list" {
+        if let Some(s) = std::env::var(LIMIT_ENV).ok().and_then(|v| v.trim().parse::<f64>().ok()).filter(|s| *s > 0.0) {
+            return Duration::from_secs_f64(s);
+        }
+        return Duration::from_secs(READ_LIMIT_SECS);
+    }
+    driver_limit(wait_minutes)
 }
 
 /// The vault root: the main checkout, also when af runs from a worktree under `.claude/worktrees/`.
@@ -194,16 +211,126 @@ pub fn pid_alive(pid: u32) -> bool {
     pid != 0 && Path::new(&format!("/proc/{pid}")).exists()
 }
 
-/// The pid of a live driver run that holds the panel lock for this session, if any. A lock file whose
-/// pid is dead is left over from a run that was killed, and does not count.
-pub fn lock_holder(ctx: &Ctx, session_id: &str) -> Option<u32> {
-    let text = std::fs::read_to_string(vault_root(&ctx.root).join(LOCK_FILE)).ok()?;
-    let v: Value = serde_json::from_str(text.trim_start_matches('\u{feff}')).ok()?;
-    if v.get("session_id").and_then(Value::as_str) != Some(session_id) {
+/// When a running process started, as a Windows FILETIME (100 ns since 1601, the number the driver
+/// and Claude's own session records write); None when it is not running or cannot be read.
+#[cfg(windows)]
+pub fn pid_start(pid: u32) -> Option<u64> {
+    #[repr(C)]
+    #[derive(Default, Clone, Copy)]
+    struct FileTime {
+        low: u32,
+        high: u32,
+    }
+    extern "system" {
+        fn OpenProcess(access: u32, inherit: i32, pid: u32) -> isize;
+        fn GetProcessTimes(handle: isize, creation: *mut FileTime, exit: *mut FileTime, kernel: *mut FileTime, user: *mut FileTime) -> i32;
+        fn CloseHandle(handle: isize) -> i32;
+    }
+    const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
+    if pid == 0 || !pid_alive(pid) {
         return None;
     }
+    // SAFETY: plain values in, four out-structs owned here; the handle is checked and closed.
+    unsafe {
+        let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if h == 0 {
+            return None;
+        }
+        let (mut c, mut e, mut k, mut u) = (FileTime::default(), FileTime::default(), FileTime::default(), FileTime::default());
+        let ok = GetProcessTimes(h, &mut c, &mut e, &mut k, &mut u);
+        CloseHandle(h);
+        (ok != 0).then(|| ((c.high as u64) << 32) | c.low as u64)
+    }
+}
+
+#[cfg(not(windows))]
+pub fn pid_start(pid: u32) -> Option<u64> {
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    stat.rsplit(')').next()?.split_whitespace().nth(19)?.parse().ok()
+}
+
+/// Whether this process id is the process that was recorded: running, and, when its start time was
+/// recorded, started then (a pid reused after a reboot or an exit is another process).
+pub fn process_is(pid: u32, start: Option<u64>) -> bool {
+    if !pid_alive(pid) {
+        return false;
+    }
+    match start {
+        Some(s) => pid_start(pid) == Some(s),
+        None => true,
+    }
+}
+
+/// A recorded start time from JSON: a number or a string of digits.
+pub fn start_of(v: &Value, key: &str) -> Option<u64> {
+    match v.get(key)? {
+        Value::Number(n) => n.as_u64(),
+        Value::String(s) => s.trim().parse().ok(),
+        _ => None,
+    }
+}
+
+/// Who holds the panel lock now, from its file: pid, session id, action. A lock whose process is gone
+/// (its pid is dead, or now belongs to a process that started at another time) is left over, and
+/// does not count; nor does this process's own lock.
+pub fn lock_info(ctx: &Ctx) -> Option<(u32, String, String)> {
+    let text = std::fs::read_to_string(vault_root(&ctx.root).join(LOCK_FILE)).ok()?;
+    let v: Value = serde_json::from_str(text.trim_start_matches('\u{feff}')).ok()?;
     let pid = v.get("pid").and_then(Value::as_u64).and_then(|p| u32::try_from(p).ok())?;
-    pid_alive(pid).then_some(pid)
+    if pid == std::process::id() || !process_is(pid, start_of(&v, "pid_start")) {
+        return None;
+    }
+    let sid = v.get("session_id").and_then(Value::as_str).unwrap_or("").to_string();
+    let action = v.get("action").and_then(Value::as_str).unwrap_or("").to_string();
+    Some((pid, sid, action))
+}
+
+/// The pid of a live run that holds the panel lock for this session, if any.
+pub fn lock_holder(ctx: &Ctx, session_id: &str) -> Option<u32> {
+    lock_info(ctx).filter(|(_, sid, _)| sid == session_id).map(|(pid, _, _)| pid)
+}
+
+/// The panel lock held by af itself (the closed-route compaction): the same file the driver holds,
+/// opened for writing and shared for reading only, so a driver run cannot take it meanwhile and waits.
+/// Released (and the file removed) when dropped.
+pub struct PanelLock {
+    file: Option<std::fs::File>,
+    path: PathBuf,
+}
+
+impl Drop for PanelLock {
+    fn drop(&mut self) {
+        self.file.take();
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+/// Take the panel lock for this session and action, or say who holds it.
+pub fn acquire_lock(ctx: &Ctx, session_id: &str, action: &str) -> Result<PanelLock, String> {
+    use std::io::Write;
+    let path = vault_root(&ctx.root).join(LOCK_FILE);
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
+    }
+    let mut opts = std::fs::OpenOptions::new();
+    opts.read(true).write(true).create(true).truncate(false);
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        // FILE_SHARE_READ only: the driver's open for writing fails while af holds it.
+        opts.share_mode(1);
+    }
+    let mut file = match opts.open(&path) {
+        Ok(f) => f,
+        Err(e) => {
+            let who = lock_info(ctx).map(|(pid, sid, act)| format!("pid {pid}, {act}, session {}", if sid.is_empty() { "-".to_string() } else { sid })).unwrap_or_else(|| "its holder could not be read".to_string());
+            return Err(format!("a panel driver run holds the panel lock ({who}): {e}"));
+        }
+    };
+    let me = std::process::id();
+    let body = json!({"pid": me, "pid_start": pid_start(me), "session_id": session_id, "action": action, "started": crate::core::now_iso()}).to_string();
+    file.set_len(0).and_then(|_| file.write_all(body.as_bytes())).and_then(|_| file.flush()).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+    Ok(PanelLock { file: Some(file), path })
 }
 
 /// A file holding the text to send, exactly as given, under `system/logs/claude-panel/`; removed when dropped unless kept.

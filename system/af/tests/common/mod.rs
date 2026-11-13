@@ -121,6 +121,8 @@ impl Fx {
         let mut c = Command::cargo_bin("af").unwrap();
         // No test reaches the real panel: the driver is a program that does not exist unless a test names a stub.
         c.env("AF_ROOT", self.root()).env("AF_PANEL_DRIVER", self.path("no-such-panel-driver")).current_dir(self.dir.path());
+        // The chat running the tests is not the caller of a test's af.
+        c.env_remove("CLAUDE_CODE_SESSION_ID");
         c
     }
 
@@ -335,6 +337,7 @@ posted_at: {posted_at}\nurl: {url}\nmetrics_captured_at: null\n\n# LIFECYCLE\nla
 /// a `send` of text holding `/compact` appends a `compact_boundary` line to `STUB_PANEL_TRANSCRIPT`
 /// unless `STUB_PANEL_NO_BOUNDARY` is set. `STUB_PANEL_SLEEP_SECS` makes every call slow;
 /// `STUB_PANEL_NOTE` prints a `note: ...` line on stderr, as the driver does, on success and failure.
+/// With `STUB_LOCK_SNAPSHOT` and `STUB_LOCK_FILE` every call appends what the lock file holds then.
 const PANEL_STUB_SRC: &str = r##"
 use std::io::Write;
 fn append(path: &str, text: &str) {
@@ -364,6 +367,11 @@ fn main() {
         }
         print!("{}", std::env::var("STUB_ROSTER").unwrap_or_else(|_| "[]".into()));
         return;
+    }
+    if let (Ok(snap), Ok(lock)) = (std::env::var("STUB_LOCK_SNAPSHOT"), std::env::var("STUB_LOCK_FILE")) {
+        let held = std::fs::read_to_string(&lock).unwrap_or_else(|_| "none".into());
+        append(&snap, &format!("{held}
+"));
     }
     let value = |flag: &str| args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1)).cloned();
     let text = value("-TextFile").and_then(|p| std::fs::read_to_string(p).ok());

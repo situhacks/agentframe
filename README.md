@@ -117,6 +117,7 @@ Third-party tools live in `system/vendor/`, each with a `VENDOR.md` that pins th
 - `af needs add|close|move|list|render` keeps the list of what main needs him to decide: each item is a marked loop in `open.md` with a detail file in `workspace/life/needs/`, and `workspace/life/needs.md` is the generated view: Now, Do (plain due loops that are his to act on), and Later. Any `af` read or write of the loops moves a dated item to Now once its date passes, and it reaches `af open due` and the phone push.
 - `af brief` is the catch-up after days away: due loops, needs, chats waiting, backlog, boards. It costs no tokens.
 - `af session reach <name>` says whether a message reaches a chat and starts a turn, and what to do when it will not; `--confirm "<phrase>"` checks one arrived. `SendMessage` answering success proves neither.
+- `af session compact <name>` compacts a chat that has no live process, from outside it, and refuses one that is running; `--dry-run` shows the command first.
 - `af place add|visit|verdict|list` and `af person add` own the mechanics of `workspace/life/places/` and `people/` pages.
 - `af save [--dry-run]` commits `workspace/`, the private layer's own local git repo. It never fetches, pulls, merges or pushes.
 - Nine subagent roles in `.claude/agents/` (reader, researcher, filer, writer, reviewer, auditor, briefer, consolidator, builder) carry a pinned model and a narrow tool set.

@@ -321,7 +321,7 @@ fn local_minute(utc: &str) -> String {
 
 // ------------------------------------------------------------------ the verb
 
-fn row_or_refuse(reg: &Registry, name: &str) -> R<Row> {
+pub fn row_or_refuse(reg: &Registry, name: &str) -> R<Row> {
     match reg.find_name(name) {
         Some(r) => Ok(r),
         None => die!(

@@ -592,7 +592,7 @@ pub enum SessionCmd {
     },
     /// A chat's class, context tokens, window and thresholds; every live chat with no name
     Context { name: Option<String> },
-    /// Compact a chat that has no live process, from outside it (claude -p "/compact" --resume)
+    /// Compact a chat: from outside when it has no live process (claude -p "/compact" --resume), through the VS Code panel when it is running
     Compact {
         name: String,
         /// the model that writes the summary; default: the model of the chat's last reply
@@ -607,6 +607,46 @@ pub enum SessionCmd {
         /// print the command, the model and the tokens before; run nothing
         #[arg(long)]
         dry_run: bool,
+        /// a running chat: return at once and compact it from a detached waiter once the chat and the operator are idle
+        #[arg(long)]
+        when_idle: bool,
+        /// minutes the panel driver waits for the operator and the chat (default 20; 60 with --when-idle)
+        #[arg(long)]
+        wait_minutes: Option<f64>,
+        /// after the compaction is confirmed, send this file's text to the chat as its next message
+        #[arg(long)]
+        then_file: Option<String>,
+        /// the waiter's job file (internal)
+        #[arg(long, hide = true)]
+        waiter_job: Option<String>,
+    },
+    /// Type /rename into a chat through the VS Code panel; the default name is the registry name
+    Rename {
+        name: String,
+        /// the new title (one line)
+        #[arg(long)]
+        to: Option<String>,
+        /// minutes the panel driver waits for the operator and the chat (default 20)
+        #[arg(long)]
+        wait_minutes: Option<f64>,
+    },
+    /// Open a new chat in the VS Code panel with a file as its first message; prints its session id
+    Start {
+        name: String,
+        /// the first message: the brief and the instruction to register
+        #[arg(long)]
+        brief_prompt_file: String,
+        /// the model to pick in the new chat (as the panel's picker names it)
+        #[arg(long)]
+        model: Option<String>,
+        /// minutes the panel driver waits for the operator (default 20)
+        #[arg(long)]
+        wait_minutes: Option<f64>,
+    },
+    /// The chats in the VS Code panel, with their registry names
+    Panel {
+        #[arg(long)]
+        json: bool,
     },
     /// Print the SessionStart injection for a session id
     Bundle {
@@ -642,9 +682,27 @@ pub fn run(ctx: &Ctx, cmd: SessionCmd) -> R<i32> {
         SessionCmd::Reach { name, from, confirm, since, json } => {
             crate::reach::cmd_reach(ctx, &name, from.as_deref(), confirm.as_deref(), since.as_deref(), json)
         }
-        SessionCmd::Compact { name, model, instructions, force, dry_run } => {
-            crate::compact::cmd_compact(ctx, &name, model.as_deref(), instructions.as_deref(), force, dry_run)
+        SessionCmd::Compact { name, model, instructions, force, dry_run, when_idle, wait_minutes, then_file, waiter_job } => {
+            crate::compact::cmd_compact(
+                ctx,
+                &crate::compact::Opts {
+                    name: &name,
+                    model: model.as_deref(),
+                    instructions: instructions.as_deref(),
+                    force,
+                    dry_run,
+                    when_idle,
+                    wait_minutes,
+                    then_file: then_file.as_deref(),
+                    waiter_job: waiter_job.as_deref(),
+                },
+            )
         }
+        SessionCmd::Rename { name, to, wait_minutes } => crate::panel::cmd_rename(ctx, &name, to.as_deref(), wait_minutes),
+        SessionCmd::Start { name, brief_prompt_file, model, wait_minutes } => {
+            crate::panel::cmd_start(ctx, &name, &brief_prompt_file, model.as_deref(), wait_minutes)
+        }
+        SessionCmd::Panel { json } => crate::panel::cmd_panel(ctx, json),
         SessionCmd::Bundle { session } => {
             let (text, _) = bundle(ctx, &session)?;
             if !text.is_empty() {

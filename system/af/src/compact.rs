@@ -2,17 +2,22 @@
 //! `claude -p "/compact ..." --resume <id>`. The project's `pre-compact` hook adds the standing
 //! summary instructions and `post-compact` re-arms the nudges. A chat with a live process is
 //! never compacted this way: two processes would write one transcript, so the guard fails
-//! closed and is checked again after the run.
+//! closed and is checked again after the run. A running chat is compacted through the VS Code
+//! panel instead: the panel driver types ` /compact ...` into it once the operator and the chat are
+//! idle, and the transcript must gain a `compact_boundary` line. `--when-idle` starts a detached
+//! waiter that does this once the chat finishes its turn; `--then-file` sends a file's text to the
+//! chat as its next message after the compaction.
 
 use crate::core::Ctx;
 use crate::die;
 use crate::error::R;
 use crate::outln;
+use crate::panel;
 use crate::pyos;
 use crate::proc::{claude_bin, run_command, Out};
 use crate::reach;
 use crate::sessions::{self, Registry};
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::io::{Read, Seek, SeekFrom};
 use std::process::Command;
 use std::time::{Duration, Instant};
@@ -25,6 +30,12 @@ const DEADLINE: Duration = Duration::from_secs(15 * 60);
 const DEADLINE_ENV: &str = "AF_COMPACT_DEADLINE_SECS";
 /// How much of a failed command's output the refusal shows.
 const OUTPUT_SHOWN: usize = 300;
+/// The longest the transcript is given to show a `compact_boundary` line after the panel sent `/compact`.
+const BOUNDARY_WAIT: Duration = Duration::from_secs(10 * 60);
+/// Test hook: seconds (fractions allowed) that replace the 10 minute boundary wait.
+const BOUNDARY_ENV: &str = "AF_COMPACT_BOUNDARY_SECS";
+/// How long a `--when-idle` waiter waits for the chat and the operator when `--wait-minutes` is not given.
+const WHEN_IDLE_MINUTES: f64 = 60.0;
 
 fn k(tokens: u64) -> String {
     format!("{}k", (tokens + 500) / 1000)
@@ -183,15 +194,53 @@ fn default_model(usage: &reach::Usage, tail: &str) -> Option<(String, String)> {
     answered.map(|m| (m.to_string(), "the model of its last reply".to_string()))
 }
 
-pub fn cmd_compact(ctx: &Ctx, name: &str, model: Option<&str>, instructions: Option<&str>, force: bool, dry_run: bool) -> R<i32> {
+/// What `af session compact` was asked.
+pub struct Opts<'a> {
+    pub name: &'a str,
+    pub model: Option<&'a str>,
+    pub instructions: Option<&'a str>,
+    pub force: bool,
+    pub dry_run: bool,
+    pub when_idle: bool,
+    pub wait_minutes: Option<f64>,
+    pub then_file: Option<&'a str>,
+    pub waiter_job: Option<&'a str>,
+}
+
+pub fn cmd_compact(ctx: &Ctx, o: &Opts) -> R<i32> {
+    if let Some(job) = o.waiter_job {
+        return run_waiter(ctx, job);
+    }
+    let report = compact_report(ctx, o)?;
+    outln!("{report}");
+    Ok(0)
+}
+
+/// The text of a `--then-file`: read when it is needed, so a file written after the verb started
+/// is read as it is then.
+fn then_text(path: &str) -> Result<String, String> {
+    match std::fs::read_to_string(path) {
+        Ok(t) if !t.trim().is_empty() => Ok(t),
+        Ok(_) => Err(format!("--then-file {path} is empty")),
+        Err(e) => Err(format!("cannot read --then-file {path}: {e}")),
+    }
+}
+
+fn compact_report(ctx: &Ctx, o: &Opts) -> R<String> {
+    let name = o.name;
     let reg = Registry::load(ctx)?;
     let row = reach::row_or_refuse(&reg, name)?;
-
-    match live_check(&row.session_id) {
-        Live::Closed => {}
-        Live::Unknown => die!("{name}: cannot tell whether it is running, the claude agents roster is unavailable; nothing was compacted"),
-        Live::Running(why) => die!("{name} is running ({why}), so compacting it from outside would put two processes on one transcript. Close its tab and rerun, or type /compact in that chat"),
+    if let Some(tf) = o.then_file {
+        if let Err(m) = then_text(tf) {
+            die!("{name}: {m}");
+        }
     }
+
+    let running = match live_check(&row.session_id) {
+        Live::Closed => None,
+        Live::Unknown => die!("{name}: cannot tell whether it is running, the claude agents roster is unavailable; nothing was compacted"),
+        Live::Running(why) => Some(why),
+    };
 
     let Some(path) = reach::transcript_path(&row.session_id) else {
         die!("{name}: no transcript found for session {}; nothing to compact", row.session_id);
@@ -199,33 +248,38 @@ pub fn cmd_compact(ctx: &Ctx, name: &str, model: Option<&str>, instructions: Opt
     let usage = reach::context_usage(&path);
     let tokens = usage.as_ref().map(|u| u.tokens);
     match tokens {
-        Some(t) if t < MIN_TOKENS && !force => {
-            outln!("{name}: context is {}, under {}; nothing worth compacting (--force overrides).", k(t), k(MIN_TOKENS));
-            return Ok(0);
+        Some(t) if t < MIN_TOKENS && !o.force => {
+            return Ok(format!("{name}: context is {}, under {}; nothing worth compacting (--force overrides).", k(t), k(MIN_TOKENS)));
         }
-        None if !force => die!("{name}: its transcript has no assistant usage line, so its size is unknown; --force compacts anyway"),
+        None if !o.force => die!("{name}: its transcript has no assistant usage line, so its size is unknown; --force compacts anyway"),
         _ => {}
     }
 
-    let chosen = match model.map(str::trim).filter(|m| !m.is_empty()) {
+    if let Some(why) = running {
+        return through_panel(ctx, o, &row, &path, tokens, &why);
+    }
+
+    let chosen = match o.model.map(str::trim).filter(|m| !m.is_empty()) {
         Some(m) => Some((m.to_string(), "--model".to_string())),
         None => usage.as_ref().and_then(|u| default_model(u, &reach::tail(&path).unwrap_or_default())),
     };
     let Some((model, source)) = chosen else {
         die!("{name}: its transcript records no model; pass --model <id>");
     };
-    if model.to_lowercase().contains("haiku") && !force {
+    if model.to_lowercase().contains("haiku") && !o.force {
         die!("{name}: {model} would write the summary, and a summary is the chat's whole memory; pass a larger --model, or --force");
     }
 
-    let args = command_args(instructions, &row.session_id, &model);
+    let args = command_args(o.instructions, &row.session_id, &model);
     let before = tokens.map(k).unwrap_or_else(|| "unknown".to_string());
     let bin = claude_bin();
-    if dry_run {
+    if o.dry_run {
         let line: Vec<String> = args.iter().map(|a| shown(a)).collect();
-        outln!("{name}: would run from {}: {} {}", ctx.root, shown(&bin), line.join(" "));
-        outln!("model {model} (from {source}), context before {before} tokens.");
-        return Ok(0);
+        let mut text = format!("{name}: would run from {}: {} {}\nmodel {model} (from {source}), context before {before} tokens.", ctx.root, shown(&bin), line.join(" "));
+        if let Some(tf) = o.then_file {
+            text.push_str(&format!("\nthen it would send the text of {tf} to the chat through the panel driver, as its next message."));
+        }
+        return Ok(text);
     }
 
     let len_before = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
@@ -241,10 +295,167 @@ pub fn cmd_compact(ctx: &Ctx, name: &str, model: Option<&str>, instructions: Opt
                 Some(u) => format!("{} tokens", k(u.tokens)),
                 None => "shown at its next turn".to_string(),
             };
-            outln!("{name}: compacted. Before {before} tokens, model {model} (from {source}), cost {cost}; context after: {after}.{note}");
-            Ok(0)
+            let mut report = format!("{name}: compacted. Before {before} tokens, model {model} (from {source}), cost {cost}; context after: {after}.{note}");
+            report.push_str(&send_then(ctx, o, &row.session_id)?);
+            Ok(report)
         }
         Err(why) => die!("{name}: compaction failed, {why}"),
+    }
+}
+
+/// After a confirmed compaction: the `--then-file` text as the chat's next message, under the
+/// driver's guards. The sentence to append to the report, empty with no `--then-file`.
+fn send_then(ctx: &Ctx, o: &Opts, session_id: &str) -> R<String> {
+    let Some(tf) = o.then_file else { return Ok(String::new()) };
+    let name = o.name;
+    let text = match then_text(tf) {
+        Ok(t) => t,
+        Err(m) => die!("{name}: compacted, but the next message was not sent: {m}"),
+    };
+    match panel::send(ctx, session_id, &text, o.wait_minutes) {
+        Ok(()) => Ok(format!(" Sent the text of {tf} as its next message.")),
+        Err(m) => die!("{name}: compacted, but the next message ({tf}) was not sent: {m}"),
+    }
+}
+
+// ------------------------------------------------------------------ a running chat, through the panel
+
+fn boundary_wait() -> Duration {
+    std::env::var(BOUNDARY_ENV)
+        .ok()
+        .and_then(|v| v.trim().parse::<f64>().ok())
+        .filter(|s| *s > 0.0)
+        .map(Duration::from_secs_f64)
+        .unwrap_or(BOUNDARY_WAIT)
+}
+
+/// Compact a chat that is running: the panel driver types ` /compact ...` into it, and the
+/// transcript has to show the boundary.
+fn through_panel(ctx: &Ctx, o: &Opts, row: &sessions::Row, path: &str, tokens: Option<u64>, why: &str) -> R<String> {
+    let name = o.name;
+    let text = match o.instructions.map(str::trim).filter(|i| !i.is_empty()) {
+        Some(i) => format!("/compact {i}"),
+        None => "/compact".to_string(),
+    };
+    let before = tokens.map(k).unwrap_or_else(|| "unknown".to_string());
+    let note = if o.model.is_some() { " --model has no effect here: the chat summarises on its own model." } else { "" };
+    let wait = if o.when_idle { Some(o.wait_minutes.unwrap_or(WHEN_IDLE_MINUTES)) } else { o.wait_minutes };
+    if o.dry_run {
+        let d = panel::driver(ctx)?;
+        let call = panel::Call {
+            action: "send",
+            session: Some(&row.session_id),
+            text_file: Some(std::path::Path::new("<a file holding the text>")),
+            wait_minutes: wait,
+            ..panel::Call::default()
+        };
+        let mut lines = vec![format!("{name}: running ({why}), so it is compacted through the panel, not from outside.")];
+        if o.when_idle {
+            lines.push(format!("would start a detached waiter, which runs this once the chat is idle, within {} minutes:", wait.unwrap_or(WHEN_IDLE_MINUTES)));
+        } else {
+            lines.push("would run now:".to_string());
+        }
+        lines.push(format!("{}  (the file holds {:?})", d.shown(&call), panel::typed(&text)));
+        lines.push(format!("then it would wait up to {} for a compact_boundary line in the transcript; context before {before} tokens.{note}", span(boundary_wait())));
+        if let Some(tf) = o.then_file {
+            lines.push(format!("then it would send the text of {tf} to the chat as its next message."));
+        }
+        return Ok(lines.join("\n"));
+    }
+    if o.when_idle {
+        return start_waiter(ctx, o, wait.unwrap_or(WHEN_IDLE_MINUTES), why);
+    }
+
+    let len_before = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    if let Err(m) = panel::send(ctx, &row.session_id, &text, wait) {
+        die!("{name}: {m}");
+    }
+    let limit = boundary_wait();
+    let started = Instant::now();
+    let (mut boundary, mut after) = appended_since(path, len_before);
+    while !boundary && started.elapsed() < limit {
+        std::thread::sleep(Duration::from_millis(200));
+        (boundary, after) = appended_since(path, len_before);
+    }
+    if !boundary {
+        die!("{name}: /compact was typed into the chat, but its transcript gained no compact_boundary line within {}; look at the chat before trusting it", span(limit));
+    }
+    let after = match after {
+        Some(u) => format!("{} tokens", k(u.tokens)),
+        None => "shown at its next turn".to_string(),
+    };
+    let mut report = format!("{name}: compacted through the panel while it was running. Before {before} tokens; context after: {after}.{note}");
+    report.push_str(&send_then(ctx, o, &row.session_id)?);
+    Ok(report)
+}
+
+/// Start the detached waiter: the same verb again, with the job in a file, outliving this process.
+fn start_waiter(ctx: &Ctx, o: &Opts, wait: f64, why: &str) -> R<String> {
+    let name = o.name;
+    let dir = std::path::PathBuf::from(&ctx.root).join("system").join("logs").join("claude-panel");
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        die!("cannot create {}: {e}", dir.display());
+    }
+    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+    let job = dir.join(format!("waiter-{}-{nanos}.json", std::process::id()));
+    let then_file = o.then_file.map(|t| std::fs::canonicalize(t).map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|_| t.to_string()));
+    let body = json!({"name": name, "instructions": o.instructions, "force": o.force, "then_file": then_file, "wait_minutes": wait});
+    if let Err(e) = std::fs::write(&job, body.to_string()) {
+        die!("cannot write {}: {e}", job.display());
+    }
+    let exe = match std::env::current_exe() {
+        Ok(e) => e,
+        Err(e) => die!("cannot find the af program to start the waiter: {e}"),
+    };
+    let args: Vec<String> = ["session", "compact", name, "--waiter-job"].iter().map(|s| s.to_string()).chain([job.to_string_lossy().into_owned()]).collect();
+    match panel::spawn_detached(&exe, &args, &ctx.root) {
+        Ok(pid) => Ok(format!(
+            "{name}: running ({why}). A detached waiter (pid {pid}) compacts it once the chat and the operator are idle, within {wait} minutes{}. Its outcome is appended to {}.",
+            if o.then_file.is_some() { ", then sends the --then-file text as the next message" } else { "" },
+            panel::waiter_log_path()
+        )),
+        Err(e) => {
+            let _ = std::fs::remove_file(&job);
+            die!("{name}: could not start the waiter: {e}")
+        }
+    }
+}
+
+/// The detached process: runs the compaction the job names (the chat may have closed meanwhile,
+/// so the route is chosen again) and appends how it ended to the waiter log.
+fn run_waiter(ctx: &Ctx, job_path: &str) -> R<i32> {
+    let text = match std::fs::read_to_string(job_path) {
+        Ok(t) => t,
+        Err(e) => die!("cannot read the waiter job {job_path}: {e}"),
+    };
+    let _ = std::fs::remove_file(job_path);
+    let v: Value = match serde_json::from_str(&text) {
+        Ok(v) => v,
+        Err(e) => die!("the waiter job {job_path} is not JSON: {e}"),
+    };
+    let name = v.get("name").and_then(Value::as_str).unwrap_or("").to_string();
+    let instructions = v.get("instructions").and_then(Value::as_str).map(str::to_string);
+    let then_file = v.get("then_file").and_then(Value::as_str).map(str::to_string);
+    let o = Opts {
+        name: &name,
+        model: None,
+        instructions: instructions.as_deref(),
+        force: v.get("force").and_then(Value::as_bool).unwrap_or(false),
+        dry_run: false,
+        when_idle: false,
+        wait_minutes: v.get("wait_minutes").and_then(Value::as_f64),
+        then_file: then_file.as_deref(),
+        waiter_job: None,
+    };
+    match compact_report(ctx, &o) {
+        Ok(report) => {
+            panel::waiter_log(ctx, &format!("{name} compact ok: {report}"));
+            Ok(0)
+        }
+        Err(e) => {
+            panel::waiter_log(ctx, &format!("{name} compact failed: {e}"));
+            Err(e)
+        }
     }
 }
 

@@ -6,6 +6,7 @@ use afcore::core::Ctx;
 use afcore::fm;
 use assert_cmd::Command;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 pub const SCHEMA: &str = "2026-07-19-v2";
 
@@ -118,7 +119,8 @@ impl Fx {
     /// The binary, rooted at this fixture.
     pub fn af(&self) -> Command {
         let mut c = Command::cargo_bin("af").unwrap();
-        c.env("AF_ROOT", self.root()).current_dir(self.dir.path());
+        // No test reaches the real panel: the driver is a program that does not exist unless a test names a stub.
+        c.env("AF_ROOT", self.root()).env("AF_PANEL_DRIVER", self.path("no-such-panel-driver")).current_dir(self.dir.path());
         c
     }
 
@@ -323,4 +325,103 @@ posted_at: {posted_at}\nurl: {url}\nmetrics_captured_at: null\n\n# LIFECYCLE\nla
         fx.write(&format!("{d}/video/source.mov"), "fake video bytes");
     }
     d
+}
+
+/// The panel driver stub's source. It is the driver for `AF_PANEL_DRIVER` and, answering `agents`,
+/// the program for `AF_CLAUDE_BIN` as well. It appends each call to `STUB_PANEL_CALLS` as a JSON line
+/// (its arguments, and the text of the file named by `-TextFile`, read while it still exists).
+/// `STUB_PANEL_EXITS` (comma list, one per call, the last repeats) or `STUB_PANEL_EXIT` set the exit
+/// code, `STUB_PANEL_STDERR` its message. `list` prints `STUB_PANEL_LIST`; `new` prints `STUB_PANEL_NEW_ID`;
+/// a `send` of text holding `/compact` appends a `compact_boundary` line to `STUB_PANEL_TRANSCRIPT`
+/// unless `STUB_PANEL_NO_BOUNDARY` is set. `STUB_PANEL_SLEEP_SECS` makes every call slow.
+const PANEL_STUB_SRC: &str = r##"
+use std::io::Write;
+fn append(path: &str, text: &str) {
+    let mut f = std::fs::OpenOptions::new().create(true).append(true).open(path).unwrap();
+    f.write_all(text.as_bytes()).unwrap();
+}
+fn esc(s: &str) -> String {
+    let mut o = String::new();
+    for c in s.chars() {
+        match c {
+            '\\' => o.push_str("\\\\"),
+            '"' => o.push_str("\\\""),
+            '\n' => o.push_str("\\n"),
+            '\r' => o.push_str("\\r"),
+            '\t' => o.push_str("\\t"),
+            c => o.push(c),
+        }
+    }
+    o
+}
+fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let action = args.first().cloned().unwrap_or_default();
+    if action == "agents" {
+        if std::env::var("STUB_ROSTER_FAIL").is_ok() {
+            std::process::exit(1);
+        }
+        print!("{}", std::env::var("STUB_ROSTER").unwrap_or_else(|_| "[]".into()));
+        return;
+    }
+    let value = |flag: &str| args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1)).cloned();
+    let text = value("-TextFile").and_then(|p| std::fs::read_to_string(p).ok());
+    let mut index = 0usize;
+    if let Ok(calls) = std::env::var("STUB_PANEL_CALLS") {
+        index = std::fs::read_to_string(&calls).map(|t| t.lines().count()).unwrap_or(0);
+        let quoted: Vec<String> = args.iter().map(|a| format!("\"{}\"", esc(a))).collect();
+        let text_json = match &text {
+            Some(t) => format!("\"{}\"", esc(t)),
+            None => "null".to_string(),
+        };
+        append(&calls, &format!("{{\"args\":[{}],\"text\":{}}}\n", quoted.join(","), text_json));
+    }
+    if let Ok(secs) = std::env::var("STUB_PANEL_SLEEP_SECS") {
+        std::thread::sleep(std::time::Duration::from_secs_f64(secs.parse().unwrap()));
+    }
+    let code = match std::env::var("STUB_PANEL_EXITS") {
+        Ok(list) => {
+            let codes: Vec<i32> = list.split(',').map(|c| c.trim().parse().unwrap()).collect();
+            codes[index.min(codes.len() - 1)]
+        }
+        Err(_) => std::env::var("STUB_PANEL_EXIT").ok().and_then(|c| c.parse().ok()).unwrap_or(0),
+    };
+    if code != 0 {
+        eprintln!("{}", std::env::var("STUB_PANEL_STDERR").unwrap_or_else(|_| "the stub driver refused".into()));
+        std::process::exit(code);
+    }
+    match action.as_str() {
+        "list" => print!("{}", std::env::var("STUB_PANEL_LIST").unwrap_or_else(|_| "[]".into())),
+        "new" => println!("{}", std::env::var("STUB_PANEL_NEW_ID").unwrap_or_else(|_| "11111111-2222-3333-4444-555555555555".into())),
+        "send" => {
+            if let Ok(t) = std::env::var("STUB_PANEL_TRANSCRIPT") {
+                if text.as_deref().is_some_and(|x| x.contains("/compact")) && std::env::var("STUB_PANEL_NO_BOUNDARY").is_err() {
+                    append(&t, "{\"type\":\"system\",\"subtype\":\"compact_boundary\",\"content\":\"Conversation compacted\"}\n");
+                    if let Ok(line) = std::env::var("STUB_PANEL_AFTER_LINE") {
+                        append(&t, &format!("{line}\n"));
+                    }
+                }
+            }
+            println!("sent");
+        }
+        _ => println!("ok"),
+    }
+}
+"##;
+
+/// The panel stub, compiled once for the whole test run.
+pub fn panel_stub() -> &'static Path {
+    static STUB: OnceLock<PathBuf> = OnceLock::new();
+    STUB.get_or_init(|| {
+        let target = std::env::current_exe().unwrap().parent().unwrap().parent().unwrap().to_path_buf();
+        let dir = target.join("af-test-stubs");
+        std::fs::create_dir_all(&dir).unwrap();
+        let src = dir.join("panel_stub.rs");
+        let exe = dir.join(if cfg!(windows) { "panel_stub.exe" } else { "panel_stub" });
+        std::fs::write(&src, PANEL_STUB_SRC).unwrap();
+        let rustc = std::env::var("RUSTC").unwrap_or_else(|_| "rustc".into());
+        let status = std::process::Command::new(rustc).args(["--edition", "2021", "-o"]).arg(&exe).arg(&src).status().unwrap();
+        assert!(status.success(), "the panel stub did not compile");
+        exe
+    })
 }

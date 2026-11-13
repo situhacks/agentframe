@@ -27,7 +27,7 @@ fn k(tokens: u64) -> u64 {
     (tokens + 500) / 1000
 }
 
-pub fn nudge_text(class: SessionClass, limits: &ClassLimits, tokens: u64, tier: Tier) -> String {
+pub fn nudge_text(class: SessionClass, name: &str, limits: &ClassLimits, tokens: u64, tier: Tier) -> String {
     let (n, c) = (k(tokens), class.name());
     match tier {
         Tier::Soft => format!(
@@ -35,7 +35,7 @@ pub fn nudge_text(class: SessionClass, limits: &ClassLimits, tokens: u64, tier: 
             k(limits.soft.unwrap_or(0))
         ),
         Tier::Hard => format!(
-            "Context: about {n}k tokens, past this {c} chat's {}k limit. At the next natural stopping point: write the current state, decisions and next step into handoff.md and the plan, file anything that exists only in this conversation, then compact before starting new large work. If you cannot compact yourself, tell the operator in one line that this chat is ready for /compact.",
+            "Context: about {n}k tokens, past this {c} chat's {}k limit. At the next natural stopping point: write the current state, decisions and next step into handoff.md and the plan, file anything that exists only in this conversation. With the handoff up to date, run `af session compact {name} --when-idle` before starting new large work: it compacts this chat once its turn ends.",
             k(limits.hard.unwrap_or(0))
         ),
     }
@@ -124,7 +124,7 @@ pub fn nudge(ctx: &Ctx, payload: &Value) -> Option<String> {
     }
     let tokens = reach::context_tokens(&transcript_for(payload, id)?)?;
     let tier = settle(&limits, tokens, &marker_dir(ctx, id))?;
-    Some(nudge_text(class, &limits, tokens, tier))
+    Some(nudge_text(class, &row.name, &limits, tokens, tier))
 }
 
 /// PostCompact: a registered chat's nudges re-arm at once. Prints nothing.

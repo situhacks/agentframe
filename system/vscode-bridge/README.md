@@ -29,6 +29,12 @@ There is no generic "run this command" action.
 | `close-tab` | `label`, `all?` | Closes Claude chat tabs whose label equals `label` exactly; `all: false` closes the first only. Returns how many. Any tab that is not a Claude chat tab is never touched |
 | `group-pick` | `steps` | Calls `claude-vscode.addSessionTabToGroup` without awaiting, waits for the pick, runs `quickOpenSelectNext` `steps` times, then `acceptSelectedQuickOpenItem` |
 
+## Limits seen in the live proof
+
+- A bridge action works while the VS Code window is minimized or behind another window, but the Chromium accessibility tree (what UI Automation reads) goes stale while the window is minimized. A caller that reads the screen after an action must first make sure the window is not minimized.
+- `open` with a prompt only prefills. A chat that already has a tab is revealed and the prompt is dropped with a toast, so close the tab first (`close-tab`), wait for the chat's session record to disappear, then `open`.
+- The bridge never presses Send. The caller reads the input back and invokes `Send message` itself.
+
 ## Build and install
 
 `python system/vscode-bridge/build.py` writes `system/logs/panel-bridge/af-bridge-<version>.vsix` in the main checkout (no npm). Install with `code --install-extension <file.vsix>`. Never reload the window to load it: other chats run in that window.

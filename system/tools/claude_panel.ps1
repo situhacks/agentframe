@@ -5,8 +5,9 @@
 #
 #   list                                          JSON array: session_id, name, status, active
 #   send  -Session <id> -TextFile <path>          open that chat, type the text, press Enter
-#   new   -TextFile <path> [-Model <name>]        open a new chat, type the first message, print its session id
-#   model -Session <id> -Model <name>             open that chat and switch its model
+#   new   -TextFile <path> -Model <name>          open a new chat, set and confirm its model, type the first message,
+#                                                 print its session id (-Model is required: the default model is the expensive one)
+#   model -Session <id> [-Model <name>]           open that chat and switch its model; without -Model, list the options
 #   selftest                                      the whole path on a scratch chat it creates (by hand, after a merge)
 #
 # Controls used: Edit 'Message input'; Button 'Send message'; ComboBox 'Switch model' and its modelItem
@@ -76,6 +77,10 @@ public static class PanelNative {
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowTextW(IntPtr h, StringBuilder s, int n);
     [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
     [DllImport("user32.dll")] static extern uint MapVirtualKeyW(uint c, uint t);
+    [StructLayout(LayoutKind.Sequential)]
+    struct GUITHREADINFO { public uint cbSize; public uint flags; public IntPtr hwndActive; public IntPtr hwndFocus; public IntPtr hwndCapture; public IntPtr hwndMenuOwner; public IntPtr hwndMoveSize; public IntPtr hwndCaret; public int l; public int t; public int r; public int b; }
+    [DllImport("user32.dll")] static extern bool GetGUIThreadInfo(uint tid, ref GUITHREADINFO i);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassNameW(IntPtr h, StringBuilder s, int n);
 
     // SendInput needs the 64-bit INPUT layout (40 bytes); the union is padded to hold it.
     public static bool InputLayoutOk() { return IntPtr.Size == 8 && Marshal.SizeOf(typeof(INPUT)) == 40; }
@@ -134,6 +139,40 @@ public static class PanelNative {
     public static int CountEvents(string s) { return Events(s).Count; }
     // One batch of key events: a line break is Shift+Enter (a new line in the input, not a send).
     public static uint TypeBatch(string s) { return Send(Events(s)); }
+    // Backspace once: takes back the one canary space.
+    public static uint Backspace() {
+        List<INPUT> a = new List<INPUT>();
+        a.Add(Key(0x08, false)); a.Add(Key(0x08, true));
+        return Send(a);
+    }
+    // Select all and delete; only ever sent after the focused element is verified to be the message input.
+    public static uint ClearInput() {
+        List<INPUT> a = new List<INPUT>();
+        a.Add(Key(0x11, false)); a.Add(Key(0x41, false)); a.Add(Key(0x41, true)); a.Add(Key(0x11, true));
+        a.Add(Key(0x2E, false)); a.Add(Key(0x2E, true));
+        return Send(a);
+    }
+    public static string ProcessNameOf(IntPtr h) {
+        try {
+            uint pid;
+            if (h == IntPtr.Zero || GetWindowThreadProcessId(h, out pid) == 0) return "none";
+            return System.Diagnostics.Process.GetProcessById((int)pid).ProcessName;
+        } catch { return "unknown"; }
+    }
+    // Which window class holds the keyboard focus inside the foreground window's thread.
+    public static string KeyboardFocusFacts() {
+        try {
+            IntPtr fg = GetForegroundWindow();
+            uint pid;
+            uint tid = fg == IntPtr.Zero ? 0 : GetWindowThreadProcessId(fg, out pid);
+            GUITHREADINFO g = new GUITHREADINFO();
+            g.cbSize = (uint)Marshal.SizeOf(typeof(GUITHREADINFO));
+            if (tid == 0 || !GetGUIThreadInfo(tid, ref g)) return "no thread info";
+            StringBuilder sb = new StringBuilder(256);
+            if (g.hwndFocus != IntPtr.Zero) GetClassNameW(g.hwndFocus, sb, 256);
+            return string.Format("win32 focus class [{0}], is the foreground window itself {1}", sb.ToString(), g.hwndFocus == fg);
+        } catch { return "no thread info"; }
+    }
     public static uint Enter() {
         List<INPUT> a = new List<INPUT>();
         a.Add(Key(0x0D, false)); a.Add(Key(0x0D, true));
@@ -158,6 +197,7 @@ $script:Hwnd = [IntPtr]::Zero
 $script:Expected = [uint32]0
 $script:HeldWatch = $null
 $script:Saved = $null
+$script:RestoreNote = ''
 
 function Stop-Panel([int]$Code, [string]$Reason) {
     throw (New-Object PanelExit($Code, $Reason))
@@ -222,8 +262,9 @@ function Get-Chats($win) {
     $tw = [System.Windows.Automation.TreeWalker]::ControlViewWalker
     $out = @()
     foreach ($b in $win.FindAll($TS::Descendants, $cond)) {
-        $id = $b.Current.AutomationId
-        if (-not $id.StartsWith($RowPrefix, [StringComparison]::Ordinal)) { continue }
+        $id = ''
+        try { $id = [string]$b.Current.AutomationId } catch { continue }
+        if ($id -eq '' -or -not $id.StartsWith($RowPrefix, [StringComparison]::Ordinal)) { continue }
         $status = 'none'
         $ch = $tw.GetFirstChild($b)
         while ($null -ne $ch) {
@@ -387,19 +428,27 @@ function Save-View {
 
 # Best effort; never throws. The previously active row, the previously selected tabs, the foreground window.
 function Restore-View {
+    $script:RestoreNote = ''
     if ($null -eq $script:Saved -or $null -eq $script:Win) { return }
     try {
         $win = $script:Win
         $prev = $script:Saved
         if ($prev.Active.Count -eq 1) {
-            $now = @(Get-Chats $win | Where-Object { $_.Active } | ForEach-Object { $_.Id })
-            if (-not ($now.Count -eq 1 -and $now[0] -eq $prev.Active[0])) {
-                $row = @(Get-Chats $win | Where-Object { $_.Id -eq $prev.Active[0] })
-                if ($row.Count -eq 1) {
-                    $row[0].Element.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
-                    Start-Sleep -Milliseconds 800
+            $want = $prev.Active[0]
+            for ($try = 0; $try -lt 3; $try++) {
+                $now = @(Get-Chats $win | Where-Object { $_.Active } | ForEach-Object { $_.Id })
+                if ($now.Count -eq 1 -and $now[0] -eq $want) { break }
+                $row = @(Get-Chats $win | Where-Object { $_.Id -eq $want })
+                if ($row.Count -ne 1) { $script:RestoreNote = 'the previous chat row is gone'; break }
+                $row[0].Element.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+                for ($i = 0; $i -lt 8; $i++) {
+                    Start-Sleep -Milliseconds 500
+                    $now = @(Get-Chats $win | Where-Object { $_.Active } | ForEach-Object { $_.Id })
+                    if ($now.Count -eq 1 -and $now[0] -eq $want) { break }
                 }
             }
+            $now = @(Get-Chats $win | Where-Object { $_.Active } | ForEach-Object { $_.Id })
+            if (-not ($now.Count -eq 1 -and $now[0] -eq $want)) { $script:RestoreNote = ($script:RestoreNote + ' the previously active chat is not active again').Trim() }
         }
         $have = @(Get-SelectedTabNames $win)
         foreach ($name in $prev.Tabs) {
@@ -412,8 +461,11 @@ function Restore-View {
         }
         if ($prev.Fg -ne [IntPtr]::Zero -and $prev.Fg -ne $script:Hwnd -and [PanelNative]::IsWindow($prev.Fg)) {
             [void][PanelNative]::BringToFront($prev.Fg)
+            if ([PanelNative]::GetForegroundWindow() -ne $prev.Fg) { $script:RestoreNote = ($script:RestoreNote + ' the previous foreground window is not back').Trim() }
         }
-    } catch { }
+    } catch {
+        $script:RestoreNote = ('restore failed: ' + $_.Exception.Message).Trim()
+    }
 }
 
 function Open-Row([string]$Id) {
@@ -478,6 +530,18 @@ function Set-InputFocus {
     if ([PanelNative]::IsIconic($script:Hwnd)) { [void][PanelNative]::ShowWindow($script:Hwnd, 9) }
     if (-not [PanelNative]::BringToFront($script:Hwnd)) { Stop-Panel 5 'could not take the foreground for the VS Code window' }
     $script:HeldWatch = [Diagnostics.Stopwatch]::StartNew()
+    # Found live: when another window was in front, the window reports the input as focused but the keys
+    # are lost, because the page was never given the keyboard (the canary caught it). Once the window has
+    # settled, focus moves to the model picker and back, which makes the page take the input as its focus.
+    $wasBehind = ($null -ne $script:Saved -and $script:Saved.Fg -ne $script:Hwnd)
+    if ($wasBehind) {
+        Start-Sleep -Milliseconds 1200
+        $pill = @(Find-Named $win 'Switch model' $CT::ComboBox | Where-Object { -not $_.Current.IsOffscreen })
+        if ($pill.Count -eq 1) {
+            try { $pill[0].SetFocus() } catch { }
+            Start-Sleep -Milliseconds 300
+        }
+    }
     $boxes = Get-InputBoxes $win
     if ($boxes.Count -ne 1) { Stop-Panel 5 "the panel shows $($boxes.Count) message inputs, not one; nothing was typed" }
     for ($i = 0; $i -lt 4; $i++) {
@@ -489,37 +553,136 @@ function Set-InputFocus {
     Start-Sleep -Milliseconds 500
 }
 
-# What can be said about a typing that did not register, without any of the text: the input's length
-# and what has the keyboard focus, the foreground window, and whether the operator touched input since.
-function Get-TypingFacts {
-    $len = 'unknown'
+# The input's text through ValuePattern, or $null. An empty input reads as its placeholder (35 characters
+# in the probes), so emptiness is judged by the Send button, never by this length.
+function Read-InputValue {
     $boxes = Get-InputBoxes $script:Win
-    if ($boxes.Count -eq 1) {
-        $o = $null
-        if ($boxes[0].TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern, [ref]$o)) { $len = [string]$o.Current.Value.Length }
-    }
-    $f = $AE::FocusedElement
-    $focus = 'none'
-    if ($null -ne $f) { $focus = [string]$f.Current.Name }
-    if ($focus.Length -gt 24) { $focus = $focus.Substring(0, 24) }
-    $fgIs = ([PanelNative]::GetForegroundWindow() -eq $script:Hwnd)
-    $moved = ([PanelNative]::LastTick() -ne $script:Expected)
-    'Input value length {0}, focus on [{1}], VS Code in front {2}, operator input since typing {3}.' -f $len, $focus, $fgIs, $moved
+    if ($boxes.Count -ne 1) { return $null }
+    $o = $null
+    if (-not $boxes[0].TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern, [ref]$o)) { return $null }
+    [string]$o.Current.Value
 }
 
-# Guards 3 to 5 for the text, then the Enter that sends it; confirms the input cleared.
+# The value as compared: non-breaking spaces and zero-width marks as the page may add them, line ends as LF.
+function ConvertTo-PlainValue([string]$Value) {
+    if ($null -eq $Value) { return '' }
+    $v = $Value.Replace([string][char]0xA0, ' ').Replace([string][char]0x200B, '').Replace([string][char]0xFEFF, '')
+    $v = $v.Replace("`r`n", "`n").Replace("`r", "`n")
+    $v.TrimEnd([char]10)
+}
+
+# Waits up to $Ms for the input's value to satisfy the test; returns the last value read (or $null).
+function Wait-InputValue([scriptblock]$Test, [int]$Ms) {
+    $watch = [Diagnostics.Stopwatch]::StartNew()
+    do {
+        $v = Read-InputValue
+        if ($null -ne $v -and (& $Test $v)) { return $v }
+        Start-Sleep -Milliseconds 100
+    } while ($watch.ElapsedMilliseconds -lt $Ms)
+    Read-InputValue
+}
+
+# What can be said about keys that did not land where they should, without any of the text: what has the
+# keyboard focus (UI Automation control type, name, class; the window class that holds the Win32 focus),
+# the foreground window's process, the input's length, and whether the operator touched input since.
+function Get-TypingFacts {
+    $len = 'unknown'
+    $v = Read-InputValue
+    if ($null -ne $v) { $len = [string]$v.Length }
+    $kind = 'none'
+    $name = ''
+    $cls = ''
+    try {
+        $f = $AE::FocusedElement
+        if ($null -ne $f) {
+            $kind = [string]$f.Current.ControlType.ProgrammaticName
+            $name = [string]$f.Current.Name
+            $cls = [string]$f.Current.ClassName
+        }
+    } catch { }
+    if ($name.Length -gt 40) { $name = $name.Substring(0, 40) }
+    if ($cls.Length -gt 40) { $cls = $cls.Substring(0, 40) }
+    $fg = [PanelNative]::GetForegroundWindow()
+    $fgProc = [PanelNative]::ProcessNameOf($fg)
+    $moved = ([PanelNative]::LastTick() -ne $script:Expected)
+    'Input value length {0}; focused element {1} name [{2}] class [{3}]; foreground process {4}, is the VS Code window {5}; {6}; operator input since typing {7}.' -f $len, $kind, $name, $cls, $fgProc, ($fg -eq $script:Hwnd), [PanelNative]::KeyboardFocusFacts(), $moved
+}
+
+# True only when the keyboard focus is the message input of the VS Code window, in front.
+function Test-FocusIsInput {
+    try {
+        if ([PanelNative]::GetForegroundWindow() -ne $script:Hwnd) { return $false }
+        $f = $AE::FocusedElement
+        if ($null -eq $f) { return $false }
+        if ($f.Current.ProcessId -ne $script:Win.Current.ProcessId) { return $false }
+        return ($f.Current.Name -eq 'Message input' -and $f.Current.ControlType -eq $CT::Edit -and $f.Current.ClassName -like 'messageInput_*')
+    } catch { return $false }
+}
+
+# Takes back what this driver typed, and only when the focus is verified to be the message input.
+# Returns a few words on what happened, for the reason line.
+function Clear-OwnText {
+    if (-not (Test-FocusIsInput)) { return 'the focus is not the message input, so nothing was cleared' }
+    $n = [PanelNative]::ClearInput()
+    Save-OwnTick
+    if ($n -ne 6) { return 'the clearing keys were not all accepted' }
+    Start-Sleep -Milliseconds 300
+    $s = Get-SendButtons $script:Win
+    if ($s.Count -eq 0 -or -not $s[0].Current.IsEnabled) { return 'the typed text was cleared' }
+    'the input still holds text after clearing'
+}
+
+# One guarded batch of unicode key events; the only place text keys leave this driver.
+function Send-Chunk([string]$Chunk, [string]$Target, [string]$ChatName, [string]$InputMode) {
+    Assert-Ready $Target $InputMode $ChatName
+    $want = [PanelNative]::CountEvents($Chunk)
+    $sent = [PanelNative]::TypeBatch($Chunk)
+    Save-OwnTick
+    if ($sent -ne $want) { Stop-Panel 1 "only $sent of $want key events were accepted; the typed text is left in the input" }
+}
+
+# The canary: one space, read back. Only a value that is exactly that one space (or the placeholder
+# plus it) proves the keys reach the message input; anything else, nothing more is typed (exit 5).
+function Send-Canary([string]$Target, [string]$ChatName) {
+    $base = Read-InputValue
+    if ($null -eq $base) { Stop-Panel 5 'the message input cannot be read back; nothing was typed' }
+    Send-Chunk ' ' $Target $ChatName 'empty'
+    $v = Wait-InputValue { param($x) ($x -ceq ' ') -or ($x -ceq ($base + ' ')) } 2500
+    if ($null -eq $v -or -not (($v -ceq ' ') -or ($v -ceq ($base + ' ')))) {
+        Stop-Panel 5 ('the canary space did not show up in the message input; nothing more was typed. ' + (Get-TypingFacts))
+    }
+    $base
+}
+
+# Guards 3 to 5 for the text, the canary, the read-back, then the Enter that sends it; confirms the input cleared.
 function Send-Text([string]$Text, [string]$Target, [string]$ChatName) {
     $win = $script:Win
     Set-InputFocus
-    $first = $true
-    foreach ($chunk in (Split-Text $Text)) {
-        if ($first) { Assert-Ready $Target 'empty' $ChatName } else { Assert-Ready $Target 'any' $ChatName }
-        $want = [PanelNative]::CountEvents($chunk)
-        $sent = [PanelNative]::TypeBatch($chunk)
+    $base = Send-Canary $Target $ChatName
+    $rest = $Text
+    if ($Text.StartsWith(' ')) {
+        # the canary is the text's own leading space
+        $rest = $Text.Substring(1)
+    } else {
+        $n = [PanelNative]::Backspace()
         Save-OwnTick
-        if ($sent -ne $want) { Stop-Panel 1 "only $sent of $want key events were accepted; the typed text is left in the input" }
-        $first = $false
+        if ($n -ne 2) { Stop-Panel 1 'the key to take the canary space back was not accepted' }
+        $back = Wait-InputValue { param($x) ($x -ceq $base) -or ($x -ceq '') } 2500
+        if ($null -eq $back -or -not (($back -ceq $base) -or ($back -ceq ''))) {
+            $note = Clear-OwnText
+            Stop-Panel 5 ('the canary space was not taken back; ' + $note + '. ' + (Get-TypingFacts))
+        }
+    }
+    foreach ($chunk in (Split-Text $rest)) {
+        Send-Chunk $chunk $Target $ChatName 'any'
         Start-Sleep -Milliseconds 150
+    }
+    # The read-back: the input must hold exactly the intended text before Enter is pressed.
+    $want = ConvertTo-PlainValue $Text
+    $got = Wait-InputValue { param($x) (ConvertTo-PlainValue $x) -ceq $want } 3000
+    if ($null -eq $got -or -not ((ConvertTo-PlainValue $got) -ceq $want)) {
+        $note = Clear-OwnText
+        Stop-Panel 5 ('the input does not hold the intended text, so Enter was not pressed; ' + $note + '. ' + (Get-TypingFacts))
     }
     $typed = $false
     for ($i = 0; $i -lt 10; $i++) {
@@ -527,8 +690,16 @@ function Send-Text([string]$Text, [string]$Target, [string]$ChatName) {
         if ($s.Count -eq 1 -and $s[0].Current.IsEnabled) { $typed = $true; break }
         Start-Sleep -Milliseconds 200
     }
-    if (-not $typed) { Stop-Panel 1 ('the typed text did not register in the input box (Send stayed disabled); it may be left in the input. ' + (Get-TypingFacts)) }
+    if (-not $typed) {
+        $note = Clear-OwnText
+        Stop-Panel 1 ('the Send button stayed disabled although the input holds the text, so Enter was not pressed; ' + $note)
+    }
     Assert-Ready $Target 'typed' $ChatName
+    $last = Read-InputValue
+    if ($null -eq $last -or -not ((ConvertTo-PlainValue $last) -ceq $want)) {
+        $note = Clear-OwnText
+        Stop-Panel 5 ('the input changed just before Enter, so Enter was not pressed; ' + $note)
+    }
     $n = [PanelNative]::Enter()
     Save-OwnTick
     if ($n -ne 2) { Stop-Panel 1 'Enter was not accepted' }
@@ -562,7 +733,8 @@ function Select-Model([string]$Name) {
         if ($items.Count -eq 0) { Stop-Panel 2 'the model picker listed no options' }
         if ($Name -eq '') {
             $active = @($items | Where-Object { $_.Current.ClassName -like '*activeModelItem_*' })
-            return ('{0} options, active: {1}' -f $items.Count, $(if ($active.Count -ge 1) { $active[0].Current.Name } else { 'none' }))
+            $names = ($items | ForEach-Object { $_.Current.Name }) -join ' | '
+            return ('{0} options: {1}; active: {2}' -f $items.Count, $names, $(if ($active.Count -ge 1) { $active[0].Current.Name } else { 'none' }))
         }
         $match = @($items | Where-Object { $_.Current.Name -ieq $Name -or $_.Current.Name.StartsWith($Name + ' ', [StringComparison]::OrdinalIgnoreCase) })
         if ($match.Count -ne 1) {
@@ -602,6 +774,7 @@ function Invoke-Send([string]$Id, [string]$File) {
 }
 
 function Invoke-New([string]$File, [string]$ModelName) {
+    if ($ModelName -eq '') { Stop-Panel 1 '-Model is needed: a new chat would inherit the default model, which is the expensive one. Name an option; model -Session <id> lists them' }
     $text = Read-TextFile $File
     Open-Window
     Wait-Guards ''
@@ -618,7 +791,8 @@ function Invoke-New([string]$File, [string]$ModelName) {
         if ($active.Count -eq 0 -and (Get-InputBoxes $win).Count -eq 1) { $ready = $true; break }
     }
     if (-not $ready) { Stop-Panel 5 'a new chat tab did not open' }
-    if ($ModelName -ne '') { [void](Select-Model $ModelName) }
+    # The model is set and confirmed on the new tab before its first message exists.
+    [void](Select-Model $ModelName)
     Send-Text $text '' 'the new chat'
     for ($i = 0; $i -lt 120; $i++) {
         $now = @(Get-Chats $win | Where-Object { $before -notcontains $_.Id })
@@ -629,7 +803,6 @@ function Invoke-New([string]$File, [string]$ModelName) {
 }
 
 function Invoke-Model([string]$Id, [string]$ModelName) {
-    if ($ModelName -eq '') { Stop-Panel 1 '-Model is needed' }
     Open-Window
     Wait-Guards $Id
     Save-View
@@ -655,6 +828,7 @@ function Write-PanelLog([string]$ActionName, [string]$Id, [int]$Code, [string]$R
         if ($null -ne $script:HeldWatch) { $held = [int]$script:HeldWatch.ElapsedMilliseconds }
         $why = ''
         if ($Code -ne 0) { $why = ' ' + ($Reason -replace '[\r\n]+', ' ') }
+        if ($script:RestoreNote -ne '') { $why += ' [restore: ' + $script:RestoreNote + ']' }
         $line = '{0} {1} {2} exit={3} held_ms={4}{5}' -f (Get-Date).ToString('yyyy-MM-ddTHH:mm:ss'), $ActionName, $(if ($Id -ne '') { $Id } else { '-' }), $Code, $held, $why
         [System.IO.File]::AppendAllText($LogFile, $line + "`r`n", (New-Object System.Text.UTF8Encoding($false)))
     } catch { }
@@ -672,7 +846,7 @@ function Invoke-Logged([string]$ActionName, [string]$LogId, [scriptblock]$Body) 
         $r.Reason = $_.Exception.Reason
     } catch {
         $r.Code = 1
-        $r.Reason = 'unexpected: ' + $_.Exception.Message
+        $r.Reason = 'unexpected: ' + $_.Exception.Message + ' (line ' + $_.InvocationInfo.ScriptLineNumber + ')'
     }
     Restore-View
     if ($null -ne $script:HeldWatch) { $script:HeldWatch.Stop() }
@@ -705,15 +879,19 @@ function Write-StepLine([string]$Step, $r, [string]$Detail) {
     [Console]::Out.WriteLine(('{0} {1}: {2}' -f $verdict, $Step, $note))
 }
 
+# The scratch chat of the selftest runs on the cheap model: set and confirmed before its first message,
+# or the selftest stops at its first step and sends nothing.
+$SelfTestModel = 'Haiku 4.5'
+
 function Invoke-SelfTest {
     $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ('claude-panel-selftest-' + [guid]::NewGuid().ToString('N') + '.txt')
     $failed = 0
     $id = ''
     try {
         [System.IO.File]::WriteAllText($tmp, 'Reply with the single word OK.', (New-Object System.Text.UTF8Encoding($false)))
-        $r = Invoke-Logged 'new' '' { Invoke-New $tmp '' }
+        $r = Invoke-Logged 'new' '' { Invoke-New $tmp $SelfTestModel }
         if ($r.Code -eq 0) { $id = [string]$r.Value }
-        Write-StepLine 'new' $r $id
+        Write-StepLine 'new' $r ($id + ' on ' + $SelfTestModel)
         if ($r.Code -ne 0) { return 1 }
 
         $newName = 'zz-selftest-' + (Get-Date).ToString('yyyyMMddHHmm')
@@ -745,6 +923,7 @@ function Invoke-SelfTest {
         if ($r.Code -ne 0) { $failed++ }
 
         $r = Invoke-Logged 'model' $id { Open-Window; Wait-Guards $id; Save-View; Open-Row $id; Select-Model '' }
+        if ($r.Code -eq 0 -and ([string]$r.Value) -notmatch 'active: Haiku') { $r.Code = 1; $r.Reason = 'the scratch chat is not on a Haiku option: ' + [string]$r.Value }
         Write-StepLine 'model (read only)' $r ([string]$r.Value)
         if ($r.Code -ne 0) { $failed++ }
     } finally {

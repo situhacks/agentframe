@@ -434,13 +434,20 @@ fn start_opens_a_new_chat_with_the_file_as_its_first_message_and_prints_the_sess
 }
 
 #[test]
-fn start_without_a_model_passes_none_and_a_leading_slash_gets_one_space() {
+fn start_without_a_model_refuses_and_lists_the_options_and_a_leading_slash_gets_one_space() {
     let fx = Fx::new();
     fx.write("prompt.md", "/status please");
-    let (code, out, err) = session(&fx, &[], &["start", "worker/y", "--brief-prompt-file", &fx.p("prompt.md")]);
+    let (code, _, err) = session(&fx, &[], &["start", "worker/y", "--brief-prompt-file", &fx.p("prompt.md")]);
+    assert_eq!(code, 1);
+    assert!(err.contains("--model is needed") && err.contains("Haiku 4.5") && err.contains("Opus 5.5"), "{err}");
+    assert!(calls(&fx).is_empty(), "nothing may reach the driver without a model");
+    let (code, _, err) = session(&fx, &[], &["start", "worker/y", "--brief-prompt-file", &fx.p("prompt.md"), "--model", "  "]);
+    assert_eq!(code, 1, "{err}");
+    assert!(calls(&fx).is_empty());
+    let (code, out, err) = session(&fx, &[], &["start", "worker/y", "--brief-prompt-file", &fx.p("prompt.md"), "--model", "Haiku 4.5"]);
     assert_eq!(code, 0, "{out}{err}");
     let (args, text) = &calls(&fx)[0];
-    assert_eq!(arg_after(args, "-Model"), None);
+    assert_eq!(arg_after(args, "-Model").as_deref(), Some("Haiku 4.5"));
     assert_eq!(text.as_deref(), Some(" /status please"));
 }
 
@@ -453,7 +460,7 @@ fn start_refuses_a_bad_name_a_missing_or_empty_file_and_a_driver_refusal() {
     assert_eq!(session(&fx, &[], &["start", "system/x", "--brief-prompt-file", &fx.p("missing.md")]).0, 1);
     assert_eq!(session(&fx, &[], &["start", "system/x", "--brief-prompt-file", &fx.p("empty.md")]).0, 1);
     assert!(calls(&fx).is_empty());
-    let (code, _, err) = session(&fx, &[("STUB_PANEL_EXIT", "3")], &["start", "system/x", "--brief-prompt-file", &fx.p("prompt.md")]);
+    let (code, _, err) = session(&fx, &[("STUB_PANEL_EXIT", "3")], &["start", "system/x", "--brief-prompt-file", &fx.p("prompt.md"), "--model", "Haiku 4.5"]);
     assert_eq!(code, 1);
     assert!(err.contains("system/x: ") && err.contains("exit 3"), "{err}");
 }
@@ -462,7 +469,7 @@ fn start_refuses_a_bad_name_a_missing_or_empty_file_and_a_driver_refusal() {
 fn start_refuses_an_answer_that_is_not_a_session_id() {
     let fx = Fx::new();
     fx.write("prompt.md", "hello");
-    let (code, _, err) = session(&fx, &[("STUB_PANEL_NEW_ID", "not an id!")], &["start", "system/x", "--brief-prompt-file", &fx.p("prompt.md")]);
+    let (code, _, err) = session(&fx, &[("STUB_PANEL_NEW_ID", "not an id!")], &["start", "system/x", "--brief-prompt-file", &fx.p("prompt.md"), "--model", "Haiku 4.5"]);
     assert_eq!(code, 1);
     assert!(err.contains("printed no session id"), "{err}");
 }

@@ -259,7 +259,15 @@ fn readback_pause_ms() -> u64 {
     std::env::var("AF_PANEL_READBACK_MS").ok().and_then(|v| v.trim().parse().ok()).unwrap_or(1000)
 }
 
-/// `af session start <name> --brief-prompt-file <path> [--model <m>]`: a new chat whose first message is the file.
+/// The options the panel's model picker showed on 2026-11-13 (each is `<name> <description>` there; the driver
+/// matches the name). Only for the refusal text; the picker is the truth.
+const MODEL_OPTIONS: [&str; 14] = [
+    "Default (recommended)", "Opus 5.5", "Fable 5.2", "Sonnet 5.5", "Haiku 5.5", "Fable 5.1", "Haiku 4.5",
+    "Sonnet 5", "Opus 5", "Fable 5", "Opus 4.8", "Opus 4.7", "Opus 4.6", "Sonnet 4.6",
+];
+
+/// `af session start <name> --brief-prompt-file <path> --model <m>`: a new chat whose first message is the file.
+/// The model is required: a new chat inherits the default model otherwise.
 pub fn cmd_start(ctx: &Ctx, name: &str, prompt_file: &str, model: Option<&str>, wait_minutes: Option<f64>) -> R<i32> {
     if !sessions::valid_name(name) {
         die!("'{name}' is not a chat name: af-main, life/<topic>, project/<slug>, system/<topic> or worker/<slug>");
@@ -272,7 +280,13 @@ pub fn cmd_start(ctx: &Ctx, name: &str, prompt_file: &str, model: Option<&str>, 
         die!("--brief-prompt-file {prompt_file} is empty");
     }
     let model = model.map(str::trim).filter(|m| !m.is_empty());
-    match new_chat(ctx, &text, model, wait_minutes) {
+    let Some(model) = model else {
+        die!(
+            "{name}: --model is needed: a new chat would inherit the default model, which is the expensive one.              The model picker shows: {}. (`claude_panel.ps1 model -Session <id>` lists the live options.)",
+            MODEL_OPTIONS.join(", ")
+        )
+    };
+    match new_chat(ctx, &text, Some(model), wait_minutes) {
         Ok(id) => {
             outln!("{name}: started in the panel as session {id}. Its first act is af session register {name} --session {id}.");
             Ok(0)

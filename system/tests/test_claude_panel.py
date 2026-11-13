@@ -233,9 +233,95 @@ class TypingTests(unittest.TestCase):
 
     def test_a_long_text_is_typed_in_guarded_batches(self):
         text = source()
-        loop = re.search(r"foreach \(\$chunk in \(Split-Text \$Text\)\) \{(.*?)\n    \}\n", text, re.DOTALL).group(1)
-        self.assertLess(loop.index("Assert-Ready"), loop.index("TypeBatch"))
-        self.assertIn("Save-OwnTick", loop)
+        loop = re.search(r"foreach \(\$chunk in \(Split-Text \$rest\)\) \{(.*?)\n    \}\n", text, re.DOTALL).group(1)
+        self.assertIn("Send-Chunk $chunk", loop)
+        chunk = re.search(r"function Send-Chunk.*?\n\}\n", text, re.DOTALL).group(0)
+        self.assertLess(chunk.index("Assert-Ready"), chunk.index("TypeBatch"))
+        self.assertIn("Save-OwnTick", chunk)
+
+
+class CanaryTests(unittest.TestCase):
+    """The typing path proves the keys reach the message input before it types anything real."""
+
+    def send_text(self) -> str:
+        return re.search(r"function Send-Text.*?\n\}\n", source(), re.DOTALL).group(0)
+
+    def test_a_single_space_canary_is_typed_and_read_back_before_any_real_text(self):
+        text = source()
+        canary = re.search(r"function Send-Canary.*?\n\}\n", text, re.DOTALL).group(0)
+        self.assertIn("Send-Chunk ' '", canary)
+        self.assertIn("Read-InputValue", canary)
+        self.assertIn("Stop-Panel 5", canary)
+        self.assertIn("Get-TypingFacts", canary)
+        send = self.send_text()
+        self.assertLess(send.index("Set-InputFocus"), send.index("Send-Canary"))
+        self.assertLess(send.index("Send-Canary"), send.index("Split-Text $rest"))
+
+    def test_the_canary_must_show_as_exactly_one_space_or_nothing_more_is_typed(self):
+        canary = re.search(r"function Send-Canary.*?\n\}\n", source(), re.DOTALL).group(0)
+        self.assertIn("-ceq ' '", canary)
+        self.assertIn("-ceq ($base + ' ')", canary)
+        self.assertIn("nothing more was typed", canary)
+
+    def test_the_canary_is_the_leading_space_or_is_taken_back_and_verified(self):
+        send = self.send_text()
+        self.assertIn("$Text.StartsWith(' ')", send)
+        self.assertIn("$rest = $Text.Substring(1)", send)
+        self.assertEqual(len(re.findall(r"\[PanelNative\]::Backspace\(", source())), 1)
+        self.assertLess(send.index("Backspace"), send.index("Wait-InputValue"))
+
+    def test_enter_waits_for_a_read_back_that_equals_the_intended_text(self):
+        send = self.send_text()
+        enter = send.index("[PanelNative]::Enter()")
+        self.assertIn("-ceq $want", send[:enter])
+        self.assertLess(send.index("$got = Wait-InputValue"), send.index("Assert-Ready $Target 'typed'"))
+        self.assertLess(send.index("Assert-Ready $Target 'typed'"), send.index("$last = Read-InputValue"))
+        self.assertLess(send.index("$last = Read-InputValue"), enter)
+        self.assertEqual(send.count("[PanelNative]::Enter()"), 1)
+        # every refusal before Enter clears only what the driver typed, then stops without pressing anything
+        refusals = re.findall(r"\$note = Clear-OwnText\n\s+Stop-Panel (\d)", send)
+        self.assertGreaterEqual(len(refusals), 4)
+
+    def test_the_driver_clears_only_with_the_focus_verified_on_the_message_input(self):
+        text = source()
+        clear = re.search(r"function Clear-OwnText.*?\n\}\n", text, re.DOTALL).group(0)
+        self.assertLess(clear.index("Test-FocusIsInput"), clear.index("ClearInput"))
+        self.assertEqual(len(re.findall(r"\[PanelNative\]::ClearInput\(", text)), 1)
+        focus = re.search(r"function Test-FocusIsInput.*?\n\}\n", text, re.DOTALL).group(0)
+        for part in ["$script:Hwnd", "'Message input'", "$CT::Edit", "messageInput_*", "ProcessId"]:
+            self.assertIn(part, focus)
+
+    def test_when_another_window_was_in_front_the_page_is_given_time_and_a_focus_change_before_the_canary(self):
+        text = source()
+        focus = re.search(r"function Set-InputFocus.*?\n\}\n", text, re.DOTALL).group(0)
+        self.assertIn("$script:Saved.Fg -ne $script:Hwnd", focus)
+        self.assertIn("Find-Named $win 'Switch model'", focus)
+        self.assertLess(focus.index("Start-Sleep -Milliseconds 1200"), focus.index("$boxes[0].SetFocus()"))
+        # the focus change never types: no key leaves this function
+        self.assertNotIn("TypeBatch", focus)
+        self.assertNotIn("[PanelNative]::Enter", focus)
+
+    def test_a_failed_canary_reports_what_had_the_focus(self):
+        facts = re.search(r"function Get-TypingFacts.*?\n\}\n", source(), re.DOTALL).group(0)
+        for part in ["ControlType.ProgrammaticName", "Current.Name", "Current.ClassName", "ProcessNameOf", "KeyboardFocusFacts"]:
+            self.assertIn(part, facts)
+
+    @unittest.skipUnless(POWERSHELL, "needs Windows PowerShell")
+    def test_the_read_back_comparison_ignores_only_what_the_page_adds(self):
+        cases = [
+            ["a b", "a b"],
+            ["a b", "a b"],
+            ["line\r\nline\r\n", "line\nline"],
+            ["x​y", "xy"],
+            ["A", "A"],
+        ]
+        got = run_functions(
+            ["ConvertTo-PlainValue"],
+            "$cases = " + json.dumps([c[0] for c in cases]).replace("'", "''").join(["'", "'"]) + " | ConvertFrom-Json\n"
+            "$out = @(foreach ($c in $cases) { ConvertTo-PlainValue $c })\n"
+            "ConvertTo-Json -InputObject $out -Compress\n",
+        )
+        self.assertEqual(got, [c[1] for c in cases])
 
 
 class GuardTests(unittest.TestCase):
@@ -314,6 +400,28 @@ class SelfTestTests(unittest.TestCase):
         self.assertIn("'FAIL'", text)
         self.assertIn("Select-Model ''", selftest)
         self.assertIn("compact_boundary", text)
+
+    def test_selftest_puts_its_scratch_chat_on_haiku_before_the_first_message(self):
+        text = source()
+        selftest = re.search(r"function Invoke-SelfTest.*?\n\}\n", text, re.DOTALL).group(0)
+        self.assertIn("$SelfTestModel = 'Haiku 4.5'", text)
+        self.assertIn("Invoke-New $tmp $SelfTestModel", selftest)
+        self.assertIn("zz-selftest-", selftest)
+        new = re.search(r"function Invoke-New.*?\n\}\n", text, re.DOTALL).group(0)
+        self.assertLess(new.index("Select-Model $ModelName"), new.index("Send-Text"))
+        self.assertNotIn("if ($ModelName -ne '')", new)
+
+    def test_new_refuses_without_a_model_before_it_touches_anything(self):
+        new = re.search(r"function Invoke-New.*?\n\}\n", source(), re.DOTALL).group(0)
+        self.assertLess(new.index("Stop-Panel 1 '-Model is needed"), new.index("Read-TextFile"))
+        self.assertLess(new.index("Stop-Panel 1 '-Model is needed"), new.index("Open-Window"))
+
+    def test_model_without_a_name_only_lists_the_options(self):
+        text = source()
+        model = re.search(r"function Invoke-Model.*?\n\}\n", text, re.DOTALL).group(0)
+        self.assertNotIn("-Model is needed", model)
+        picker = re.search(r"function Select-Model.*?\n\}\n", text, re.DOTALL).group(0)
+        self.assertIn("options: {1}; active: {2}", picker)
 
 
 class PairingTests(unittest.TestCase):

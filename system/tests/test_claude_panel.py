@@ -701,7 +701,7 @@ WORLD = (
 WORLD_FUNCTIONS = [
     "New-RunState", "Test-Touched", "Get-StateText", "Read-ChatState", "Read-ChatInput", "Get-InputKind", "Test-EmptyValue",
     "Get-Placeholders", "Test-SameText", "ConvertTo-PlainValue", "Test-SafeToClose", "Close-Checked", "Wait-ProcessEnd",
-    "Restore-Chat", "Test-ChatTabOpen", "Start-Restoring", "Get-WaitUntil", "Get-StepMs", "Wait-Idle", "Get-PanelExit", "Invoke-Guarded",
+    "Restore-Chat", "Get-TabState", "Test-ProcessLingers", "Get-RevealCommand", "Get-InputRead", "Get-InputWhy", "Start-Restoring", "Get-WaitUntil", "Get-StepMs", "Wait-Idle", "Get-PanelExit", "Invoke-Guarded",
 ]
 
 
@@ -741,7 +741,26 @@ class UnbrokenCloseCheckTests(unittest.TestCase):
     )
 
     def run_cases(self, body: str):
-        return run_functions(["Test-SafeToClose", "Get-InputKind", "Test-EmptyValue", "Get-Placeholders", "Test-SameText", "ConvertTo-PlainValue"], self.STAGE + body)
+        return run_functions(["Test-SafeToClose", "Get-InputKind", "Get-InputRead", "Get-InputWhy", "Test-EmptyValue", "Get-Placeholders", "Test-SameText", "ConvertTo-PlainValue"], self.STAGE + body)
+
+    def test_an_unknown_placeholder_with_send_disabled_is_named_as_such_with_its_length_never_its_text(self):
+        """Third review, item 2: a value the driver does not know while Send is disabled is not called his draft."""
+        got = self.run_cases(
+            "$o = [ordered]@{}\n"
+            "Reset; $script:Value = ('Ask Claude anything' + [char]0x2026); $o.unknown = (Test-SafeToClose 'id-a' 'id-a' 'empty' 'chat-a').Why\n"
+            "Reset; $script:Enabled = $true; $script:Value = 'my half-typed thought'; $o.draft = (Test-SafeToClose 'id-a' 'id-a' 'empty' 'chat-a').Why\n"
+            "Reset; $script:Value = 'his words'; $o.own_tab = (Test-SafeToClose 'id-a' 'id-a' 'text' '').Why\n"
+            "Reset; $script:Value = ('Ask Claude anything' + [char]0x2026); $o.code = (Test-SafeToClose 'id-a' 'id-a' 'empty' 'chat-a').Code\n"
+            "ConvertTo-Json -Compress -InputObject $o\n"
+        )
+        self.assertEqual(got["code"], 4)
+        self.assertIn("shows 20 characters of text the driver does not recognise while Send is disabled", got["unknown"])
+        self.assertIn("if he has no draft there, the placeholder list in the driver (Get-Placeholders) needs an update", got["unknown"])
+        self.assertNotIn("draft typed", got["unknown"])
+        self.assertNotIn("Ask Claude anything", got["unknown"])
+        self.assertIn("does not recognise", got["own_tab"])
+        self.assertNotIn("his words", got["own_tab"])
+        self.assertEqual(got["draft"], "the chat has a draft typed in its input box (its input is not empty)")
 
     def test_his_tab_closes_only_when_everything_holds_at_once(self):
         got = self.run_cases(
@@ -989,7 +1008,7 @@ class ChangeReportTests(unittest.TestCase):
             WORLD
             + "$script:Restored = $false\n"
             "function Restore-Chat { $script:Restored = $true }\n"
-            "New-RunState 'id-a' 'text'\n"
+            "New-RunState 'id-a' 'text'; $script:St.Label = 'chat-a'\n"
             "$script:St.Closed = $true; $script:St.HadTab = $true; $script:St.OpenCalled = $true; $script:St.Opened = $true; $script:St.Prefilled = $true\n"
             "$W.TabOpen = $false\n"
             f"$script:St.Sent = ${str(sent).lower()}\n"
@@ -1162,7 +1181,7 @@ class RestoreBehaviourTests(unittest.TestCase):
     def fail_before_send(self, setup: str) -> dict:
         body = (
             WORLD
-            + "New-RunState 'id-a' 'hello there'; $s = $script:St\n"
+            + "New-RunState 'id-a' 'hello there'; $s = $script:St; $s.Label = 'chat-a'\n"
             "$s.HadTab = $true; $s.Closed = $true; $s.OpenCalled = $true; $s.Opened = $true; $s.Prefilled = $true; $s.TabOpen = $true; $s.OwnPid = 101\n"
             "$W.TabOpen = $true; $W.Pid = 101; $W.Value = 'hello there'; $W.Enabled = $true\n"
             + setup
@@ -1209,6 +1228,66 @@ class RestoreBehaviourTests(unittest.TestCase):
         got = self.fail_before_send("$s.Opened = $false; $s.Prefilled = $false; $s.TabOpen = $false; $W.TabOpen = $false; $W.RevealWorks = $false\n")
         self.assertIn("The chat's tab is now closed. It was open before the run.", got["reason"])
         self.assertTrue(any("did not come back" in n for n in got["notes"]), got)
+
+    # Third review, item 1: open or closed comes from the tab list; the process outlives its tab.
+
+    def test_his_tab_closed_while_its_process_lingers_past_the_budget_is_reported_closed_and_not_reopened(self):
+        # The reviewer's sequence: his tab is closed, its process lives 30 s against a 5 s budget.
+        got = self.fail_before_send("$s.Opened = $false; $s.Prefilled = $false; $s.OpenCalled = $false; $s.TabOpen = $false; $W.TabOpen = $false; $W.ProcUntil = (Get-Date).AddSeconds(30)\n")
+        self.assertNotIn("reveal", got["log"], got)
+        self.assertFalse(got["tab_open"])
+        self.assertIn("The chat's tab is now closed; its process has not ended yet. It was open before the run.", got["reason"])
+        self.assertNotIn("now open", got["reason"])
+        self.assertTrue(any("was not opened again: its process has not ended yet" in n and "panel_bridge.py reveal" in n and "id-a" in n for n in got["notes"]), got)
+
+    def test_his_tab_is_reopened_once_the_lingering_process_ends_inside_the_budget(self):
+        got = self.fail_before_send("$s.Opened = $false; $s.Prefilled = $false; $s.OpenCalled = $false; $s.TabOpen = $false; $W.TabOpen = $false; $W.ProcUntil = (Get-Date).AddSeconds(2)\n")
+        self.assertEqual(got["log"], ["reveal"], got)
+        self.assertTrue(got["tab_open"])
+        self.assertIn("then opened the chat's tab again.", got["reason"])
+        self.assertIn("The chat's tab is now open and its input is empty.", got["reason"])
+
+    def test_the_drivers_own_tab_closed_with_its_process_lingering_counts_as_closed_and_says_so(self):
+        got = self.fail_before_send("$W.Linger = 30; [PanelNative]::Idle = 999999\n")
+        self.assertIn("close chat-a", got["log"])
+        self.assertNotIn("reveal", got["log"], got)
+        self.assertIn("then closed that tab again to take the unsent text away.", got["reason"])
+        self.assertIn("The chat's tab is now closed; its process has not ended yet. It was open before the run.", got["reason"])
+        self.assertFalse(any("was not closed" in n for n in got["notes"]), got)
+        self.assertTrue(any("the tab the driver opened was closed; its process has not ended yet" in n for n in got["notes"]), got)
+        self.assertTrue(any("panel_bridge.py reveal" in n for n in got["notes"]), got)
+
+    def test_a_close_the_bridge_carries_out_after_its_timeout_is_reported_closed(self):
+        # The real Close-TabByLabel: the bridge does not answer close-tab, the tab list read right after
+        # still shows the tab, then the bridge closes it late and the process lingers.
+        got = self.fail_before_send(
+            "$s.Closed = $false; $s.OpenCalled = $false; $s.Opened = $false; $s.Prefilled = $false; $s.OwnPid = 0\n"
+            "$W.Value = ''; $W.Enabled = $false; $W | Add-Member LateClose 0\n"
+            ". ([scriptblock]::Create(@($defs | Where-Object { $_.Name -eq 'Close-TabByLabel' })[0].Extent.Text))\n"
+            "function Invoke-Bridge([string]$Name, $BArgs, [int]$TimeoutSec = 25) { $W.Log += ('bridge ' + $Name); $W.LateClose = 2; $null }\n"
+            "function Get-ClaudeTabs { if ($W.LateClose -gt 0) { $W.LateClose--; if ($W.LateClose -eq 0) { $W.TabOpen = $false; $W.ProcUntil = (Get-Date).AddSeconds(30) } }; $t = @([pscustomobject]@{ claude = $true; label = 'other'; isActive = (-not $W.TabOpen) }); if ($W.TabOpen) { $t += [pscustomobject]@{ claude = $true; label = 'chat-a'; isActive = $true } }; $t }\n"
+            "function Stop-Main { Close-Checked 'id-a' 'id-a' 'empty' 'chat-a' 'id-a' }\n"
+            "[PanelNative]::Idle = 999999\n"
+            "$out = [ordered]@{}\n"
+            "try { Invoke-Guarded { Stop-Main } } catch { $pe = Get-PanelExit $_; $out.code = $pe.Code; $out.reason = $pe.Reason }\n"
+            "$out.log = @($W.Log); $out.notes = @($script:Notes); $out.tab_open = $W.TabOpen\n"
+            "ConvertTo-Json -Compress -Depth 4 -InputObject $out\n"
+            "exit 0\n"
+        )
+        self.assertEqual(got["code"], 2, got)
+        self.assertIn("bridge close-tab", got["log"])
+        self.assertIn("asked the bridge to close the chat's tab (it did not confirm).", got["reason"])
+        self.assertIn("The chat's tab is now closed; its process has not ended yet. It was open before the run.", got["reason"])
+        self.assertNotIn("now open", got["reason"])
+
+    def test_an_unreadable_tab_list_is_reported_unknown_and_nothing_is_reopened(self):
+        got = self.fail_before_send(
+            "$s.Opened = $false; $s.Prefilled = $false; $s.OpenCalled = $false; $s.TabOpen = $false; $W.TabOpen = $false\n"
+            "function Get-ClaudeTabs { throw 'the bridge did not answer' }\n"
+        )
+        self.assertNotIn("reveal", got["log"], got)
+        self.assertIn("The state of the chat's tab is unknown: the bridge's tab list could not be read.", got["reason"])
+        self.assertTrue(any("is unknown" in n and "panel_bridge.py reveal" in n for n in got["notes"]), got)
 
     def test_after_send_nothing_is_put_back(self):
         code, reason, restored = self.guarded_after_send()

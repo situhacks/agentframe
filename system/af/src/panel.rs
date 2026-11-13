@@ -305,6 +305,30 @@ impl Drop for PanelLock {
     }
 }
 
+/// Who holds the panel lock, in words: its action and session, from the lock file.
+pub fn lock_holder_text(ctx: &Ctx) -> String {
+    match lock_info(ctx) {
+        Some((pid, sid, act)) => format!(
+            "the panel lock is held by a {} run for session {} (pid {pid})",
+            if act.is_empty() { "panel".to_string() } else { format!("'{act}'") },
+            if sid.is_empty() { "-".to_string() } else { sid }
+        ),
+        None => "the panel lock is held, and its holder could not be read".to_string(),
+    }
+}
+
+/// Take the panel lock, waiting for it up to `budget`; then refuse, naming the holder.
+pub fn acquire_lock_within(ctx: &Ctx, session_id: &str, action: &str, budget: Duration) -> Result<PanelLock, String> {
+    let until = Instant::now() + budget;
+    loop {
+        match acquire_lock(ctx, session_id, action) {
+            Ok(l) => return Ok(l),
+            Err(m) if Instant::now() >= until => return Err(format!("{m}, for the whole wait of {} seconds", budget.as_secs())),
+            Err(_) => std::thread::sleep(Duration::from_millis(500)),
+        }
+    }
+}
+
 /// Take the panel lock for this session and action, or say who holds it.
 pub fn acquire_lock(ctx: &Ctx, session_id: &str, action: &str) -> Result<PanelLock, String> {
     use std::io::Write;
@@ -322,10 +346,7 @@ pub fn acquire_lock(ctx: &Ctx, session_id: &str, action: &str) -> Result<PanelLo
     }
     let mut file = match opts.open(&path) {
         Ok(f) => f,
-        Err(e) => {
-            let who = lock_info(ctx).map(|(pid, sid, act)| format!("pid {pid}, {act}, session {}", if sid.is_empty() { "-".to_string() } else { sid })).unwrap_or_else(|| "its holder could not be read".to_string());
-            return Err(format!("a panel driver run holds the panel lock ({who}): {e}"));
-        }
+        Err(e) => return Err(format!("{} ({e})", lock_holder_text(ctx))),
     };
     let me = std::process::id();
     let body = json!({"pid": me, "pid_start": pid_start(me), "session_id": session_id, "action": action, "started": crate::core::now_iso()}).to_string();

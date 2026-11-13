@@ -846,14 +846,72 @@ fn a_waiter_job_is_left_over_once_its_pid_started_at_another_time_or_its_time_is
     assert_eq!(code, 0, "{out}{err}");
     assert!(out.contains("detached waiter"), "a reused pid is not a pending waiter: {out}");
     wait_for(&fx, "system/logs/panel-waiters.log", "compact ok");
-    // The right process, but queued longer ago than its wait and the margin.
+    // The right process, but queued longer ago than its wait and all a waiter may run after it.
     let fx = chat();
-    let old = now_ms() - 60 * 60_000 - afcore::compact::WAITER_MARGIN_MS - 1;
+    let old = now_ms() - 60 * 60_000 - afcore::compact::WAITER_RUN_SECS * 1000 - 1;
     fx.write(job, &json!({"name": "system/x", "session_id": "sid-1", "pid": me, "pid_start": start, "queued_ms": old, "wait_minutes": 60}).to_string());
     let (code, out, err) = session(&fx, &[], &["compact", "system/x", "--when-idle"]);
     assert_eq!(code, 0, "{out}{err}");
     assert!(out.contains("detached waiter"), "an expired job is not pending: {out}");
     wait_for(&fx, "system/logs/panel-waiters.log", "compact ok");
+}
+
+#[test]
+fn a_waiter_job_still_inside_its_run_time_is_pending_however_long_ago_it_was_queued() {
+    let fx = chat();
+    let me = std::process::id();
+    let start = afcore::panel::pid_start(me).unwrap();
+    let job = "system/logs/claude-panel/waiter-sid-1.json";
+    // Queued 60 minutes ago with a 60-minute wait, fired at its last minute: it may run on for
+    // WAITER_RUN_SECS, so a minute before that end it is still the chat's waiter.
+    let queued = now_ms() - 60 * 60_000 - (afcore::compact::WAITER_RUN_SECS - 60) * 1000;
+    fx.write(job, &json!({"name": "system/x", "session_id": "sid-1", "pid": me, "pid_start": start, "queued_ms": queued, "wait_minutes": 60}).to_string());
+    let (code, out, err) = session(&fx, &[], &["compact", "system/x", "--when-idle"]);
+    assert_eq!(code, 0, "{out}{err}");
+    assert!(!out.contains("detached waiter") && out.contains("already pending"), "still pending: {out}");
+}
+
+/// The worst case of a waiter's run, stage by stage, as fire_waiter and through_panel cut it: each driver
+/// run is given `stage_wait_minutes` and may use all of it plus the driver's work time and af's margin;
+/// the boundary wait is cut to the end. Whenever it fires inside its wait, it ends by `waiter_end_ms`,
+/// the same end the job's expiry uses.
+#[test]
+fn a_waiter_cut_to_its_window_always_ends_by_the_end_its_job_expires_at() {
+    use afcore::compact::{stage_wait_minutes, waiter_end_ms, BOUNDARY_WAIT_SECS, STAGE_MIN_WAIT_SECS, WAITER_RUN_SECS};
+    use afcore::panel::{DRIVER_MARGIN_SECS, DRIVER_WORK_SECS};
+    let run = (DRIVER_WORK_SECS + DRIVER_MARGIN_SECS) * 1000;
+    for wait_minutes in [0.0_f64, 1.0, 5.0, 60.0, 240.0] {
+        let queued = 1_000_000_000u64;
+        let until = queued + (wait_minutes * 60_000.0) as u64;
+        let end = waiter_end_ms(queued, wait_minutes);
+        assert_eq!(end, until + WAITER_RUN_SECS * 1000);
+        let mut fire = queued;
+        while fire <= until {
+            // The compaction: the whole stage wait used, the boundary wait cut to the end.
+            let w1 = stage_wait_minutes(fire, until, end).expect("a waiter firing inside its wait always gets its compaction run");
+            let mut t = fire + (w1 * 60_000.0) as u64 + run;
+            assert!(t <= end, "fire {fire}: the compaction run ends by the waiter's end");
+            t = (t + BOUNDARY_WAIT_SECS * 1000).min(end);
+            // The --then-file message: run only when it fits.
+            if let Some(w2) = stage_wait_minutes(t, until, end) {
+                assert!(w2 * 60_000.0 >= (STAGE_MIN_WAIT_SECS * 1000) as f64);
+                t += (w2 * 60_000.0) as u64 + run;
+            }
+            assert!(t <= end, "fire {fire}, wait {wait_minutes}: ends {t} after {end}");
+            fire += 60_000;
+        }
+        // Fired at the last moment, both runs still fit: the margin is not cut short.
+        let w1 = stage_wait_minutes(until, until, end).unwrap();
+        let t = until + (w1 * 60_000.0) as u64 + run + BOUNDARY_WAIT_SECS * 1000;
+        assert!(stage_wait_minutes(t, until, end).is_some(), "a waiter fired at the end of its wait still sends its next message");
+    }
+    // The reviewer's case: queued for 60 minutes, fired at minute 1, its first run given the 59 left.
+    let queued = 0u64;
+    let until = 60 * 60_000;
+    let end = waiter_end_ms(queued, 60.0);
+    let w1 = stage_wait_minutes(60_000, until, end).unwrap();
+    assert!((w1 - 59.0).abs() < 0.02, "{w1}");
+    assert!(stage_wait_minutes(end - run - 59_000, until, end).is_none(), "no run starts that could not end in time");
 }
 
 #[test]
@@ -959,11 +1017,66 @@ fn the_closed_route_refuses_while_a_driver_run_holds_the_lock_for_another_chat()
     use std::io::Write;
     held.write_all(json!({"pid": me, "pid_start": afcore::panel::pid_start(me), "session_id": "sid-other", "action": "send"}).to_string().as_bytes()).unwrap();
     held.flush().unwrap();
-    let env = closed_env(&fx);
+    let mut env = closed_env(&fx);
+    env.push(("AF_LOCK_WAIT_SECS".into(), "1".into()));
+    let env: Vec<(&str, &str)> = env.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    let began = std::time::Instant::now();
+    let (code, out, err) = session(&fx, &env, &["compact", "system/x"]);
+    assert_eq!(code, 1, "{out}{err}");
+    assert!(began.elapsed() >= std::time::Duration::from_secs(1), "it waited for the lock first");
+    assert!(err.contains("nothing was compacted") && err.contains("held by a 'send' run for session sid-other") && err.contains("whole wait of 1 seconds"), "{err}");
+    assert!(!fx.exists("lock-seen.txt") || !fx.read("lock-seen.txt").lines().any(|l| l.contains("headless")), "claude -p never ran");
+    drop(held);
+}
+
+/// Hold the panel lock as another process would, with this holder's action and session.
+fn hold_lock(fx: &Fx, action: &str, sid: &str) -> std::fs::File {
+    let lock = fx.path("system/logs/panel-bridge/driver.lock");
+    std::fs::create_dir_all(lock.parent().unwrap()).unwrap();
+    let me = std::process::id();
+    let mut opts = std::fs::OpenOptions::new();
+    opts.read(true).write(true).create(true).truncate(true);
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        opts.share_mode(1);
+    }
+    let mut held = opts.open(&lock).unwrap();
+    use std::io::Write;
+    held.write_all(json!({"pid": me, "pid_start": afcore::panel::pid_start(me), "session_id": sid, "action": action}).to_string().as_bytes()).unwrap();
+    held.flush().unwrap();
+    held
+}
+
+#[test]
+fn the_closed_route_refusal_names_another_headless_compaction_as_the_holder() {
+    let fx = chat();
+    let held = hold_lock(&fx, "headless-compact", "sid-other");
+    let mut env = closed_env(&fx);
+    env.push(("AF_LOCK_WAIT_SECS".into(), "1".into()));
     let env: Vec<(&str, &str)> = env.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
     let (code, out, err) = session(&fx, &env, &["compact", "system/x"]);
     assert_eq!(code, 1, "{out}{err}");
-    assert!(err.contains("nothing was compacted") && err.contains("holds the panel lock") && err.contains("sid-other"), "{err}");
-    assert!(!fx.exists("lock-seen.txt") || !fx.read("lock-seen.txt").lines().any(|l| l.contains("headless")), "claude -p never ran");
+    assert!(err.contains("held by a 'headless-compact' run for session sid-other") && !err.contains("driver run"), "{err}");
     drop(held);
+}
+
+#[test]
+fn the_closed_route_waits_for_the_lock_and_runs_once_it_is_let_go() {
+    let fx = chat();
+    let held = hold_lock(&fx, "send", "sid-other");
+    let lock = fx.path("system/logs/panel-bridge/driver.lock");
+    let release = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        drop(held);
+        let _ = std::fs::remove_file(lock);
+    });
+    let mut env = closed_env(&fx);
+    env.push(("AF_LOCK_WAIT_SECS".into(), "30".into()));
+    let env: Vec<(&str, &str)> = env.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    let (_code, out, err) = session(&fx, &env, &["compact", "system/x"]);
+    release.join().unwrap();
+    assert!(!err.contains("held by"), "{out}{err}");
+    let seen = fx.read("lock-seen.txt");
+    assert!(seen.lines().any(|l| l.contains("headless-compact")), "claude -p ran under the lock once it was free: {seen}");
 }

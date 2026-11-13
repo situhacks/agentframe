@@ -211,6 +211,7 @@ function Get-StepMs([int]$Ms) {
 function New-RunState([string]$Id, [string]$Text) {
     $script:St = [pscustomobject]@{
         Id = $Id; RowId = $Id; Text = $Text; OwnLabel = ''; OwnPid = 0
+        Label = ''; LabelBase = 0
         HadTab = $false; TabOpen = $false
         Closed = $false; CloseAsked = $false; OpenCalled = $false; Opened = $false; Prefilled = $false; Sent = $false
         Cleaned = $false; Reopened = $false
@@ -239,48 +240,85 @@ function Get-StateText {
     'The driver ' + ($done -join ', then ') + '. ' + (Read-ChatState)
 }
 
-# The chat's tab now, read fresh: open or closed (the chat's process; for a new chat with no id yet, the
-# bridge's tab list), and when it is open and in front, what its input holds.
+# The chat's tab now, read fresh from the bridge's tab list (never from the chat's process, which lives on
+# for a while after its tab closes), and when it is open and in front, what its input holds. When the tab
+# is closed but the process has not ended, it says so.
 function Read-ChatState {
     $s = $script:St
-    $open = $null
-    if ($s.Id -ne '') {
-        try { $open = (@(Get-ChatRecords $s.Id).Count -gt 0) } catch { $open = $null }
-    } else {
-        try { $open = (@(Get-ClaudeTabs | Where-Object { $_.label -ceq $UntitledLabel }).Count -gt 0) } catch { $open = $null }
-    }
-    if ($null -eq $open) { return "The state of the chat's tab is unknown: it could not be read." }
-    if (-not $open) {
+    $tab = Get-TabState
+    if ($tab -eq 'unknown') { return "The state of the chat's tab is unknown: the bridge's tab list could not be read." }
+    if ($tab -eq 'closed') {
         $t = "The chat's tab is now closed."
+        if (Test-ProcessLingers) { $t = "The chat's tab is now closed; its process has not ended yet." }
         if ($s.HadTab) { $t += ' It was open before the run.' }
         return $t
     }
-    $kind = Read-ChatInput
+    $in = Read-ChatInput
+    $kind = ''
+    if ($null -ne $in) { $kind = $in.Kind }
     $t = "The chat's tab is now open"
     if ($kind -eq 'text') { $t = "The chat's tab is OPEN and its input holds the driver's unsent text: clear the input or close the tab before the next send." }
     elseif ($kind -eq 'empty') { $t += ' and its input is empty.' }
-    elseif ($kind -eq 'other') { $t += ' and its input holds text that is not the driver''s.' }
+    elseif ($kind -eq 'draft') { $t += ' and its input holds text that is not the driver''s.' }
+    elseif ($kind -eq 'unrecognised') { $t += " and its input shows $($in.Length) characters the driver does not recognise while Send is disabled (a placeholder the driver does not know, or his text)." }
     else { $t += " (its input was not read: the chat's tab is not the one in front)." }
     if (-not $s.HadTab) { $t += ' It was closed before the run.' }
     $t
 }
 
-# What the chat's input holds, when its tab is the one in front: 'empty', 'text' (the driver's), 'other',
-# or '' when it cannot be read.
+# The chat's tab by the label rule: 'open' when more Claude tabs carry its label than the other chats'
+# tabs that carried it at the start, 'closed' when not, 'unknown' when the tab list cannot be read or the
+# run never learned the label.
+function Get-TabState {
+    $s = $script:St
+    $label = $s.Label
+    if ($label -eq '') { $label = $s.OwnLabel }
+    if ($label -eq '') { return 'unknown' }
+    $n = $null
+    try { $n = @(Get-ClaudeTabs | Where-Object { $_.label -ceq $label }).Count } catch { return 'unknown' }
+    if ($n - $s.LabelBase -ge 1) { return 'open' }
+    'closed'
+}
+
+# The chat's process still runs (its tab may be closed already; it outlives the tab for a while).
+function Test-ProcessLingers {
+    $s = $script:St
+    if ($s.Id -eq '') { return $false }
+    try { return (@(Get-ChatRecords $s.Id).Count -gt 0) } catch { return $false }
+}
+
+# Records the chat's tab label and how many tabs of other chats carry it now (labels are cut at 25
+# characters, so two chats can share one).
+function Set-TabLabel([string]$Label) {
+    $s = $script:St
+    $s.Label = $Label
+    $n = @(Get-ClaudeTabs | Where-Object { $_.label -ceq $Label }).Count
+    if ($s.HadTab) { $n-- }
+    if ($n -lt 0) { $n = 0 }
+    $s.LabelBase = $n
+}
+
+# The command that opens the chat's tab later, for a note when the driver could not.
+function Get-RevealCommand([string]$Id) {
+    "python system/tools/panel_bridge.py reveal --json '{""sessionId"":""$Id""}'"
+}
+
+# What the chat's input holds, when its tab is the one in front: its read (Kind 'empty', 'text' (the
+# driver's), 'draft' or 'unrecognised', and Length), or $null when it cannot be read.
 function Read-ChatInput {
     $s = $script:St
-    if ($null -eq $script:Win) { return '' }
+    if ($null -eq $script:Win) { return $null }
     try {
         $act = @(Get-ActiveIds)
         if ($s.RowId -ne '') {
-            if (-not ($act.Count -eq 1 -and $act[0] -eq $s.RowId)) { return '' }
-        } elseif ($act.Count -ne 0) { return '' }
+            if (-not ($act.Count -eq 1 -and $act[0] -eq $s.RowId)) { return $null }
+        } elseif ($act.Count -ne 0) { return $null }
         $pair = Get-InputPair
-        if ($null -eq $pair) { return '' }
-        $k = Get-InputKind $pair $s.Text
-        if ($k -eq 'unreadable') { return '' }
-        return $k
-    } catch { return '' }
+        if ($null -eq $pair) { return $null }
+        $r = Get-InputRead $pair $s.Text
+        if ($r.Kind -eq 'unreadable') { return $null }
+        return $r
+    } catch { return $null }
 }
 
 # Runs the part of an action that changes the chat. On a failure the chat is put back where that is safe
@@ -723,17 +761,35 @@ function Test-EmptyValue([string]$Value) {
     $false
 }
 
-# What the input holds, from its value read now: 'text' (exactly $Text, when given), 'empty' (Send is
-# disabled and the value is blank or a placeholder), 'other' (anything else: a draft, an attachment, a
-# suggestion), or 'unreadable'.
-function Get-InputKind($Pair, [string]$Text) {
+# What the input holds, from its value read now: Kind 'text' (exactly $Text, when given), 'empty' (Send is
+# disabled and the value is blank or a known placeholder), 'draft' (Send is enabled: his draft, an
+# attachment), 'unrecognised' (Send is disabled but the value is no placeholder the driver knows: a
+# suggestion, a new placeholder, or his text), or 'unreadable'; and Length, the value's length. The value
+# itself is never returned, so it cannot reach a message or the log.
+function Get-InputRead($Pair, [string]$Text) {
     $v = $null
     $enabled = $false
-    try { $v = Get-InputValue $Pair.Input; $enabled = [bool]$Pair.Send.Current.IsEnabled } catch { return 'unreadable' }
-    if ($null -eq $v) { return 'unreadable' }
-    if ($Text -ne '' -and (Test-SameText $v $Text)) { return 'text' }
-    if (-not $enabled -and (Test-EmptyValue $v)) { return 'empty' }
-    'other'
+    try { $v = Get-InputValue $Pair.Input; $enabled = [bool]$Pair.Send.Current.IsEnabled } catch { return [pscustomobject]@{ Kind = 'unreadable'; Length = 0 } }
+    if ($null -eq $v) { return [pscustomobject]@{ Kind = 'unreadable'; Length = 0 } }
+    $len = (ConvertTo-PlainValue $v).Trim().Length
+    $kind = 'draft'
+    if ($Text -ne '' -and (Test-SameText $v $Text)) { $kind = 'text' }
+    elseif (-not $enabled) {
+        if (Test-EmptyValue $v) { $kind = 'empty' } else { $kind = 'unrecognised' }
+    }
+    [pscustomobject]@{ Kind = $kind; Length = $len }
+}
+
+function Get-InputKind($Pair, [string]$Text) { (Get-InputRead $Pair $Text).Kind }
+
+# Why an input that is neither empty nor the driver's text stops a close (exit 4).
+function Get-InputWhy($Read, [string]$Mode) {
+    if ($Read.Kind -eq 'unrecognised') {
+        return ("the chat's input shows $($Read.Length) characters of text the driver does not recognise while Send is disabled; " +
+            'if he has no draft there, the placeholder list in the driver (Get-Placeholders) needs an update')
+    }
+    if ($Mode -eq 'empty') { return 'the chat has a draft typed in its input box (its input is not empty)' }
+    "the input holds text that is not exactly the driver's"
 }
 
 # The input equals the text exactly. A text with line breaks may be read back with other breaks, so for those
@@ -907,13 +963,14 @@ function Test-SafeToClose([string]$RowId, [string]$RecId, [string]$Mode, [string
     if ($null -eq $pair) { return [pscustomobject]@{ Code = 5; Why = "the chat's input is not on screen"; Retry = $true; Label = '' } }
     $want = ''
     if ($Mode -eq 'text') { $want = [string]$script:St.Text }
-    $kind = Get-InputKind $pair $want
+    $read = Get-InputRead $pair $want
+    $kind = $read.Kind
     if ($kind -eq 'unreadable') { return [pscustomobject]@{ Code = 5; Why = "the chat's input could not be read"; Retry = $true; Label = '' } }
     if ($Mode -eq 'empty') {
-        if ($kind -ne 'empty') { return [pscustomobject]@{ Code = 4; Why = 'the chat has a draft typed in its input box (its input is not empty)'; Retry = $false; Label = '' } }
+        if ($kind -ne 'empty') { return [pscustomobject]@{ Code = 4; Why = (Get-InputWhy $read $Mode); Retry = $false; Label = '' } }
     } else {
         # The driver's own tab: its text exactly, or an empty input, is safe to close.
-        if ($kind -ne 'text' -and $kind -ne 'empty') { return [pscustomobject]@{ Code = 4; Why = "the input holds text that is not exactly the driver's"; Retry = $false; Label = '' } }
+        if ($kind -ne 'text' -and $kind -ne 'empty') { return [pscustomobject]@{ Code = 4; Why = (Get-InputWhy $read $Mode); Retry = $false; Label = '' } }
     }
     if ([PanelNative]::IdleMs() -lt ($IdleSeconds * 1000)) { return [pscustomobject]@{ Code = 3; Why = 'the operator is using the computer'; Retry = $true; Label = '' } }
     [pscustomobject]@{ Code = 0; Why = $null; Retry = $false; Label = $label; Count = $same.Count }
@@ -997,13 +1054,15 @@ function Get-OwnPid([string]$Id) {
 
 # After a failure before Send: take the driver's own unsent text away by closing the tab it opened (through
 # the unbroken check, as its own tab, with its exact text or an empty input), then, whatever happened to
-# that, open the chat's tab again if it was open at the start and is closed now.
+# that, open the chat's tab again if it was open at the start and is closed now. Open or closed is read
+# from the bridge's tab list, never from the chat's process: the process outlives its tab for a while, and
+# the panel opens no tab for a chat whose process still runs, so the reopen waits for it to end first.
 function Restore-Chat {
     $s = $script:St
     if ($null -eq $s -or $s.Sent -or -not (Test-Touched)) { return }
     Start-Restoring
     try {
-        if ($s.Opened -and (Test-ChatTabOpen)) {
+        if ($s.Opened -and (Get-TabState) -eq 'open') {
             $mode = 'empty'
             if ($s.Prefilled) { $mode = 'text' }
             try {
@@ -1013,39 +1072,45 @@ function Restore-Chat {
                 $pe = Get-PanelExit $_
                 $why = $_.Exception.Message
                 if ($null -ne $pe) { $why = $pe.Reason }
-                Add-Note ('the tab the driver opened was not closed: ' + $why)
+                $now = Get-TabState
+                if ($now -eq 'closed') {
+                    # The close went through (late, or its process lives on): the unsent text is gone.
+                    $s.Cleaned = $true
+                    if (Test-ProcessLingers) { Add-Note 'the tab the driver opened was closed; its process has not ended yet' }
+                    else { Add-Note ('the tab the driver opened is closed, though the close reported: ' + $why) }
+                }
+                elseif ($now -eq 'unknown') { Add-Note ('whether the tab the driver opened was closed is unknown (the tab list could not be read): ' + $why) }
+                else { Add-Note ('the tab the driver opened was not closed: ' + $why) }
             }
         }
-        if ($s.HadTab -and $s.Id -ne '' -and -not (Test-ChatTabOpen)) {
-            try {
-                Wait-Idle "open the chat's tab again"
-                $n0 = @(Get-ClaudeTabs).Count
-                [void](Invoke-BridgeOk 'reveal' @{ sessionId = $s.Id })
-                $sw = [Diagnostics.Stopwatch]::StartNew()
-                $limit = Get-StepMs 10000
-                while ($sw.ElapsedMilliseconds -lt $limit) {
-                    if (@(Get-ClaudeTabs).Count -eq $n0 + 1) { $s.Reopened = $true; $s.TabOpen = $true; break }
-                    Start-Sleep -Milliseconds 300
+        if ($s.HadTab -and $s.Id -ne '') {
+            $tab = Get-TabState
+            if ($tab -eq 'unknown') {
+                Add-Note ("whether the chat's tab is open is unknown (the tab list could not be read), so it was not opened again; to open it: " + (Get-RevealCommand $s.Id))
+            } elseif ($tab -eq 'closed') {
+                try {
+                    if (-not (Wait-ProcessEnd $s.Id)) {
+                        Add-Note ("the chat's tab was not opened again: its process has not ended yet, and the panel opens no tab while it runs; to open it once it has ended: " + (Get-RevealCommand $s.Id))
+                    } else {
+                        Wait-Idle "open the chat's tab again"
+                        [void](Invoke-BridgeOk 'reveal' @{ sessionId = $s.Id })
+                        $sw = [Diagnostics.Stopwatch]::StartNew()
+                        $limit = Get-StepMs 10000
+                        while ($sw.ElapsedMilliseconds -lt $limit) {
+                            if ((Get-TabState) -eq 'open') { $s.Reopened = $true; $s.TabOpen = $true; break }
+                            Start-Sleep -Milliseconds 300
+                        }
+                        if (-not $s.Reopened) { Add-Note ("the chat's tab did not come back after reveal; to open it: " + (Get-RevealCommand $s.Id)) }
+                    }
+                } catch {
+                    $pe = Get-PanelExit $_
+                    $why = $_.Exception.Message
+                    if ($null -ne $pe) { $why = $pe.Reason }
+                    Add-Note ("the chat's tab was not opened again: " + $why + '; to open it: ' + (Get-RevealCommand $s.Id))
                 }
-                if (-not $s.Reopened) { Add-Note "the chat's tab did not come back after reveal" }
-            } catch {
-                $pe = Get-PanelExit $_
-                $why = $_.Exception.Message
-                if ($null -ne $pe) { $why = $pe.Reason }
-                Add-Note ("the chat's tab was not opened again: " + $why)
             }
         }
     } finally { $script:Restoring = $false }
-}
-
-# Whether the chat's tab is open now, read fresh: its process (for a new chat with no id yet, an untitled
-# tab in the bridge's list). When it cannot be read it counts as open, so nothing is reopened over it.
-function Test-ChatTabOpen {
-    $s = $script:St
-    try {
-        if ($s.Id -ne '') { return (@(Get-ChatRecords $s.Id).Count -gt 0) }
-        return (@(Get-ClaudeTabs | Where-Object { $_.label -ceq $UntitledLabel }).Count -gt 0)
-    } catch { return $true }
 }
 
 function Select-UntitledTab {
@@ -1281,6 +1346,7 @@ function Do-Send([string]$Id, [string]$Text) {
         if ($rs.Terminal -ne '') { Stop-Panel 5 $rs.Terminal }
         $s.HadTab = ($rs.Count -gt 0)
         $s.TabOpen = $s.HadTab
+        Set-TabLabel (Get-TabLabel $chat.Name)
         if ($s.HadTab) {
             # His tab: reveal it, prove it is the one and holds no draft, close it, wait for the process to end.
             Close-Checked $Id $Id 'empty' (Get-TabLabel $chat.Name) $Id
@@ -1322,6 +1388,7 @@ function Do-New([string]$Text, [string]$ModelName, [string]$Group) {
     $s = $script:St
     $s.RowId = ''
     $s.OwnLabel = $UntitledLabel
+    $s.Label = $UntitledLabel
     $newId = Invoke-Guarded {
         Test-Bridge
         Wait-Guards ''
@@ -1400,10 +1467,11 @@ function Do-Model([string]$Id, [string]$ModelName) {
         Test-Bridge
         Wait-Guards $Id
         Ensure-Screen
-        [void](Wait-RowIdle $Id)
+        $chat = Wait-RowIdle $Id
         $rs = Get-RecordState $Id
         $s.HadTab = ($rs.Count -gt 0)
         $s.TabOpen = $s.HadTab
+        Set-TabLabel (Get-TabLabel $chat.Name)
         Wait-Idle 'show the chat'
         $n0 = @(Get-ClaudeTabs).Count
         if (-not $s.HadTab) { $s.OpenCalled = $true }

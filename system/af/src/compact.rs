@@ -34,7 +34,12 @@ const DEADLINE_ENV: &str = "AF_COMPACT_DEADLINE_SECS";
 /// How much of a failed command's output the refusal shows.
 const OUTPUT_SHOWN: usize = 300;
 /// The longest the transcript is given to show a `compact_boundary` line after the panel sent `/compact`.
-const BOUNDARY_WAIT: Duration = Duration::from_secs(10 * 60);
+pub const BOUNDARY_WAIT_SECS: u64 = 10 * 60;
+const BOUNDARY_WAIT: Duration = Duration::from_secs(BOUNDARY_WAIT_SECS);
+/// How long the closed route waits for the panel lock when no waiter's window says otherwise.
+pub const LOCK_WAIT_SECS: u64 = 10 * 60;
+/// Test hook: seconds that replace LOCK_WAIT_SECS.
+const LOCK_WAIT_ENV: &str = "AF_LOCK_WAIT_SECS";
 /// Test hook: seconds (fractions allowed) that replace the 10 minute boundary wait.
 const BOUNDARY_ENV: &str = "AF_COMPACT_BOUNDARY_SECS";
 /// How long a `--when-idle` waiter waits for the chat and the operator when `--wait-minutes` is not given.
@@ -307,7 +312,7 @@ fn compact_report(ctx: &Ctx, o: &Opts) -> R<String> {
 
     // The panel lock, for the whole run: for about a second after `claude -p` starts there is no
     // session record, and a driver run that opened the chat then would start a second process on it.
-    let lock = match panel::acquire_lock(ctx, &row.session_id, "headless-compact") {
+    let lock = match panel::acquire_lock_within(ctx, &row.session_id, "headless-compact", lock_budget()) {
         Ok(l) => l,
         Err(m) => die!("{name}: nothing was compacted: {m}"),
     };
@@ -318,7 +323,7 @@ fn compact_report(ctx: &Ctx, o: &Opts) -> R<String> {
         Live::Running(why) => die!("{name}: it is running now ({why}); nothing was compacted"),
     }
     let len_before = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
-    let limit = deadline();
+    let limit = window_cap(deadline());
     let mut cmd = Command::new(&bin);
     cmd.args(&args).current_dir(&ctx.root);
     let out = run_command(cmd, "claude", Some(Instant::now() + limit), true);
@@ -349,7 +354,11 @@ fn send_then(ctx: &Ctx, o: &Opts, session_id: &str) -> R<String> {
         Ok(t) => t,
         Err(m) => die!("{name}: compacted, but the next message was not sent: {m}"),
     };
-    match panel::send(ctx, session_id, &text, o.wait_minutes) {
+    let wait = match driver_wait(o.wait_minutes) {
+        Ok(w) => w,
+        Err(m) => die!("{name}: compacted, but the next message ({tf}) was not sent: {m}"),
+    };
+    match panel::send(ctx, session_id, &text, wait) {
         Ok(a) => Ok(format!(" Sent the text of {tf} as its next message.{}", a.notes_sentence())),
         Err(m) => die!("{name}: compacted, but the next message ({tf}) was not sent: {m}"),
     }
@@ -404,11 +413,15 @@ fn through_panel(ctx: &Ctx, o: &Opts, row: &sessions::Row, path: &str, tokens: O
     }
 
     let len_before = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    let wait = match driver_wait(wait) {
+        Ok(w) => w,
+        Err(m) => die!("{name}: nothing was sent: {m}"),
+    };
     let sent = match panel::send(ctx, &row.session_id, &text, wait) {
         Ok(a) => a,
         Err(m) => die!("{name}: {m}"),
     };
-    let limit = boundary_wait();
+    let limit = window_cap(boundary_wait());
     let started = Instant::now();
     let (mut boundary, mut after) = appended_since(path, len_before);
     while !boundary && started.elapsed() < limit {
@@ -439,23 +452,75 @@ fn now_ms() -> u64 {
 
 /// How long a job that names no pid yet counts as pending: the verb that wrote it is starting its waiter.
 const STARTING_MS: u64 = 120_000;
-/// How long past its own wait a job can still be pending: the compaction's driver run (its deadline and
-/// af's margin), the wait for the boundary, a --then-file driver run, and a minute. After that the job is
-/// left over whatever its pid says (after a reboot the pid may belong to another process).
-pub const WAITER_MARGIN_MS: u64 = 60_000 + 2 * (panel::DRIVER_WORK_SECS + panel::DRIVER_MARGIN_SECS) * 1000 + 600_000;
+/// The shortest wait a driver run a waiter starts is given, for the operator to be idle.
+pub const STAGE_MIN_WAIT_SECS: u64 = 60;
+/// What a waiter may still do after its wait ends: two driver runs (the compaction and the --then-file
+/// message, each its shortest wait, the driver's work time and af's margin), the boundary wait, and two
+/// minutes for af's own steps between them. The waiter cuts every stage to end by its queue time plus its
+/// wait plus this, and a job counts as pending until then (never expired by time while it can still run).
+pub const WAITER_RUN_SECS: u64 = 2 * (STAGE_MIN_WAIT_SECS + panel::DRIVER_WORK_SECS + panel::DRIVER_MARGIN_SECS) + BOUNDARY_WAIT_SECS + 120;
+
+/// The latest a waiter queued then, with this wait, may legitimately still run.
+pub fn waiter_end_ms(queued_ms: u64, wait_minutes: f64) -> u64 {
+    queued_ms + (wait_minutes.max(0.0) * 60_000.0) as u64 + WAITER_RUN_SECS * 1000
+}
+
+/// The -WaitMinutes for a driver run a waiter starts at `now_ms`: what is left of its wait (at least
+/// STAGE_MIN_WAIT_SECS), cut so the run (that wait, the driver's work time and af's margin) ends by
+/// `end_ms`. None when no run could end in time. Rounded down to a hundredth of a minute.
+pub fn stage_wait_minutes(now_ms: u64, until_ms: u64, end_ms: u64) -> Option<f64> {
+    let left = until_ms.saturating_sub(now_ms).max(STAGE_MIN_WAIT_SECS * 1000);
+    let run = (panel::DRIVER_WORK_SECS + panel::DRIVER_MARGIN_SECS) * 1000;
+    let room = end_ms.checked_sub(now_ms)?.checked_sub(run)?;
+    let wait = left.min(room);
+    if wait < STAGE_MIN_WAIT_SECS * 1000 {
+        return None;
+    }
+    Some((wait / 600) as f64 / 100.0)
+}
+
+/// In a waiter process: the end of its wait and its own end (ms since the epoch), set once as it fires.
+static WINDOW: std::sync::OnceLock<(u64, u64)> = std::sync::OnceLock::new();
+
+/// The wait for a driver run: as asked, or in a waiter, what fits its window.
+fn driver_wait(asked: Option<f64>) -> Result<Option<f64>, String> {
+    match WINDOW.get() {
+        None => Ok(asked),
+        Some(&(until, end)) => stage_wait_minutes(now_ms(), until, end)
+            .map(Some)
+            .ok_or_else(|| "the waiter's time is up: no driver run could end before the waiter's own end".to_string()),
+    }
+}
+
+/// A step's limit, cut in a waiter to what is left before its end.
+fn window_cap(limit: Duration) -> Duration {
+    match WINDOW.get() {
+        None => limit,
+        Some(&(_, end)) => limit.min(Duration::from_millis(end.saturating_sub(now_ms()))),
+    }
+}
+
+/// How long the closed route waits for the panel lock: in a waiter, what is left of its wait (at least
+/// five seconds); otherwise LOCK_WAIT_SECS.
+fn lock_budget() -> Duration {
+    match WINDOW.get() {
+        Some(&(until, _)) => Duration::from_millis(until.saturating_sub(now_ms()).max(5_000)),
+        None => Duration::from_secs(std::env::var(LOCK_WAIT_ENV).ok().and_then(|v| v.trim().parse().ok()).unwrap_or(LOCK_WAIT_SECS)),
+    }
+}
 /// Test hook: milliseconds between a waiting waiter's looks at the chat (default 3000).
 const POLL_ENV: &str = "AF_WAITER_POLL_MS";
 
 /// The waiter already pending for a chat, from its job file's text: its pid (None while the verb that
-/// queued it is still starting it) and when it was queued. None when the job is left over: past its wait
-/// plus WAITER_MARGIN_MS, or its pid is not the waiter that wrote it (dead, or another process started at
-/// another time).
+/// queued it is still starting it) and when it was queued. None when the job is left over: past the latest
+/// a waiter can run (`waiter_end_ms`, which the waiter itself keeps to), or its pid is not the waiter that
+/// wrote it (dead, or another process started at another time).
 fn pending_in(text: &str) -> Option<(Option<u32>, String)> {
     let v: Value = serde_json::from_str(text).ok()?;
     let pid = v.get("pid").and_then(Value::as_u64).and_then(|p| u32::try_from(p).ok());
     let queued_ms = v.get("queued_ms").and_then(Value::as_u64).unwrap_or(0);
     let wait = v.get("wait_minutes").and_then(Value::as_f64).unwrap_or(WHEN_IDLE_MINUTES).max(0.0);
-    if now_ms() >= queued_ms + (wait * 60_000.0) as u64 + WAITER_MARGIN_MS {
+    if now_ms() >= waiter_end_ms(queued_ms, wait) {
         return None;
     }
     let live = match pid {
@@ -681,6 +746,8 @@ fn fire_waiter(ctx: &Ctx, v: &Value, name: &str) -> R<String> {
     let wait = v.get("wait_minutes").and_then(Value::as_f64).unwrap_or(WHEN_IDLE_MINUTES);
     let queued_ms = v.get("queued_ms").and_then(Value::as_u64).unwrap_or_else(now_ms);
     let deadline_ms = queued_ms + (wait.max(0.0) * 60_000.0) as u64;
+    // Every stage from here is cut to end by the waiter's own end, the one the job's expiry uses.
+    let _ = WINDOW.set((deadline_ms, waiter_end_ms(queued_ms, wait)));
     let session_id = match v.get("session_id").and_then(Value::as_str) {
         Some(s) => s.to_string(),
         None => reach::row_or_refuse(&Registry::load(ctx)?, name)?.session_id,

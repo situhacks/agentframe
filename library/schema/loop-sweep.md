@@ -20,7 +20,7 @@ It posts nothing to Discord itself; the 08:30 push carries its overdue list.
 | Live | `loop-sweep.ps1 -Live`, `loop_sweep.py --live` | Also each close on proof through `af open close` |
 | Dry run | `loop-sweep.ps1 -DryRun`, `loop_sweep.py --dry-run [--today <date>]` | Nothing: prints the run section and what the push would lead with. `--today` previews a later morning |
 
-`register-loop-sweep.ps1` registers report-only; `register-loop-sweep.ps1 -Live` registers the live run. `system/tools/laptop/timers.ps1` with no switch shows which mode the registered job is in, and its `-Register` registers report-only.
+`register-loop-sweep.ps1` registers report-only; `register-loop-sweep.ps1 -Live` registers the live run. `system/tools/timers.ps1` with no switch shows which mode the registered job is in, and its `-Register` registers report-only.
 
 ## The proof rule
 

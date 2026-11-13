@@ -818,8 +818,8 @@ class ScheduleTests(unittest.TestCase):
         self.assertIn("Report-only by default", head)
         self.assertNotIn("to his phone", head)
 
-    def test_the_laptop_timers_carry_it_and_show_its_mode(self):
-        timers = self.text("laptop/timers.ps1")
+    def test_the_timers_script_carries_it_and_shows_its_mode(self):
+        timers = self.text("timers.ps1")
         self.assertIn("@{ Script = 'register-loop-sweep.ps1'; Task = 'AgentFrame loop sweep' }", timers)
         self.assertIn("-Live", timers)
         self.assertIn("report-only", timers)

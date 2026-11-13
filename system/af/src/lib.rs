@@ -26,7 +26,7 @@ pub mod index;
 pub mod pyjson;
 pub mod voice;
 pub mod hooks;
-pub mod sync;
+pub mod save;
 pub mod tags;
 pub mod places;
 pub mod reach;

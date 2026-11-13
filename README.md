@@ -118,6 +118,7 @@ Third-party tools live in `system/vendor/`, each with a `VENDOR.md` that pins th
 - `af brief` is the catch-up after days away: due loops, needs, chats waiting, backlog, boards. It costs no tokens.
 - `af session reach <name>` says whether a message reaches a chat and starts a turn, and what to do when it will not; `--confirm "<phrase>"` checks one arrived. `SendMessage` answering success proves neither.
 - `af place add|visit|verdict|list` and `af person add` own the mechanics of `workspace/life/places/` and `people/` pages.
+- `af save [--dry-run]` commits `workspace/`, the private layer's own local git repo. It never fetches, pulls, merges or pushes.
 - Nine subagent roles in `.claude/agents/` (reader, researcher, filer, writer, reviewer, auditor, briefer, consolidator, builder) carry a pinned model and a narrow tool set.
 
 ### Hooks
@@ -129,7 +130,7 @@ Third-party tools live in `system/vendor/`, each with a `VENDOR.md` that pins th
 | `session-start` | Prints the chat's role, brief, last handoff, and for main the whole of `life.md` and the due loops; has an unregistered chat ask whether it is main, a side chat, or a one-off; renames the tab to the registered name; refreshes a stale search index in the background |
 | `pre-tool-use` | Turns any shell command that runs `git push` into a permission prompt; blocks edits to old versions, published heads, and hand-made version files; blocks `af ready` on hard voice findings; keeps deck projects out of the vendor folder; refuses a Substack push until its row is ready |
 | `post-tool-use` | Prints the voice lint after `af version` and reminds the agent to promote a deck export |
-| `stop` | Asks a registered side chat or worker for its handoff before it stops, once |
+| `stop` | Asks a registered side chat or worker for its handoff before it stops, once; when the chat really stops, commits the private layer (`af save`) |
 | `session-end`, `notification` | Stamp the registry row ended or last seen |
 
 A push happens only on your explicit yes. A `permissions.ask` rule for `git push` prompts you for every push, in bypass-permissions mode too, and the pre-tool-use hook turns a push buried in a compound command into the same prompt. `AGENTS.md` carries the rule for the model.
@@ -150,8 +151,6 @@ One Windows Task Scheduler job, `AgentFrame consolidation`, runs every Sunday at
 A second job, `AgentFrame reminders`, runs `push-due-loops.ps1` every day at 08:30 while you are logged on, and at the next logon if the PC was off. It posts nothing when nothing is due. The Discord credentials go in `system/tools/.env`, which git ignores; `notify.py` names the variables. Register it the same way, with `system/tools/register-daily-reminders.ps1`.
 
 `system/tools/discord_board.py` keeps Discord boards current by editing in place, where `notify.py` only appends: `board <key> <file>` maintains a text channel's one pinned board, `post <key> <slug> <file> --title "<title>" [--tag <name>]` one forum post per item, and `--dry-run` prints without sending or writing. It reads the same `.env` and keeps its message ids in `workspace/life/systems/discord/state.json`.
-
-To run these jobs and an always-on session on a second Windows machine, see [`system/tools/laptop/README.md`](system/tools/laptop/README.md).
 
 ## Quick start
 

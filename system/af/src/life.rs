@@ -243,8 +243,7 @@ pub fn index_age_line(ctx: &Ctx) -> Option<String> {
 
 // ------------------------------------------------------------------ doctor
 
-/// Remotes configured on the private layer's repo: (name, url). The only one allowed is
-/// `hub`, at a folder path.
+/// Remotes configured on the private layer's repo: (name, url). It keeps none.
 pub fn workspace_remotes(ctx: &Ctx) -> Vec<(String, String)> {
     let mut out: Vec<(String, String)> = Vec::new();
     for (name, key, value) in workspace_remote_entries(ctx) {
@@ -257,28 +256,8 @@ pub fn workspace_remotes(ctx: &Ctx) -> Vec<(String, String)> {
     out
 }
 
-/// Every `url` and `pushurl` the private repo's config spells for one remote.
-pub fn workspace_remote_addresses(ctx: &Ctx, remote: &str) -> Vec<String> {
-    workspace_remote_entries(ctx)
-        .into_iter()
-        .filter(|(n, k, v)| n == remote && (k == "url" || k == "pushurl") && !v.is_empty())
-        .map(|(_, _, v)| v)
-        .collect()
-}
-
-/// The settings the private repo's config spells for one remote that make git run a
-/// program (`receivepack`, `uploadpack`, `vcs`), as full keys.
-pub fn workspace_remote_command_keys(ctx: &Ctx, remote: &str) -> Vec<String> {
-    workspace_remote_entries(ctx)
-        .into_iter()
-        .filter(|(n, k, _)| n == remote && !k.is_empty() && k != "url" && k != "pushurl")
-        .map(|(n, k, _)| format!("remote.{n}.{k}"))
-        .collect()
-}
-
 /// (remote, key, value) for each remote section of the private repo's config: a bare
-/// section yields one row with an empty key; `url`, `pushurl`, `receivepack`, `uploadpack`
-/// and `vcs` one row each.
+/// section yields one row with an empty key; each `url` one row.
 fn workspace_remote_entries(ctx: &Ctx) -> Vec<(String, String, String)> {
     let dotgit = vpath(ctx, "workspace/.git");
     let config = if pyos::isdir(&dotgit) {
@@ -304,7 +283,7 @@ fn workspace_remote_entries(ctx: &Ctx) -> Vec<(String, String, String)> {
     };
     let text = std::fs::read_to_string(&config).unwrap_or_default();
     let sect = rx(r#"\A\s*\[remote\s+"([^"]*)"\]"#);
-    let kv = rx(r"(?i)\A\s*(url|pushurl|receivepack|uploadpack|vcs)\s*=\s*(.*?)\s*\z");
+    let kv = rx(r"(?i)\A\s*(url)\s*=\s*(.*?)\s*\z");
     let mut out: Vec<(String, String, String)> = Vec::new();
     let mut cur: Option<String> = None;
     for line in text.lines() {
@@ -487,23 +466,10 @@ pub fn doctor_checks(ctx: &Ctx) -> R<(Vec<String>, Vec<String>)> {
     }
 
     for (name, url) in workspace_remotes(ctx) {
-        if name != crate::sync::REMOTE {
-            issues.push(format!(
-                "workspace/.git has remote '{name}' ({url}); the private layer syncs only through a folder hub: git -C workspace remote remove {name}, then af sync init <hub-folder> if this machine syncs"
-            ));
-        } else {
-            if let Some(key) = crate::sync::doctor_hub_command(ctx, &workspace_remote_command_keys(ctx, &name)) {
-                issues.push(format!(
-                    "workspace/.git remote 'hub' sets {key}, which runs a command on every fetch or push, so af sync refuses it: git -C workspace config --unset-all {key}"
-                ));
-            }
-            if let Some((addr, kind)) = crate::sync::doctor_hub_problem(ctx, &workspace_remote_addresses(ctx, &name)) {
-                // What git will really use: url, pushurl, and any insteadOf rewrite.
-                issues.push(format!(
-                    "workspace/.git remote 'hub' resolves to {addr}, {kind}, not a folder path; the private layer never leaves your home network: git -C workspace config --unset-all remote.hub.pushurl and drop any url.<address>.insteadOf rule (git config --show-origin --get-regexp \"^url\\.\"), or git -C workspace remote remove hub (or git -C workspace config --unset-all remote.hub.url), then af sync init <hub-folder>"
-                ));
-            }
-        }
+        let at = if url.is_empty() { String::new() } else { format!(" ({url})") };
+        issues.push(format!(
+            "workspace/.git has remote '{name}'{at}; the private layer stays on this machine: git -C workspace remote remove {name}"
+        ));
     }
 
     notes.extend(crate::sessions::stale_handoff_notes(ctx)?);

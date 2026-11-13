@@ -8,7 +8,7 @@ use std::io::Write;
 
 pub const BUTTON_WINDOW_DAYS: i64 = 14;
 pub const READ_ONLY_VERBS: [&str; 4] = ["doctor", "index", "search", "pipe board"];
-pub const SUBCOMMAND_VERBS: [&str; 9] = ["index", "pipe", "studio", "tag", "place", "person", "backlog", "needs", "sync"];
+pub const SUBCOMMAND_VERBS: [&str; 8] = ["index", "pipe", "studio", "tag", "place", "person", "backlog", "needs"];
 
 pub fn verb_of(argv: &[String]) -> String {
     let toks: Vec<&String> = argv.iter().filter(|t| !t.starts_with('-')).collect();
@@ -221,15 +221,14 @@ pub fn open_backlog_rows_naming_af(ctx: &Ctx) -> usize {
         .count()
 }
 
-/// Exit 3 is a signal the chat acts on, not a refusal: `af session stop`'s HANDOFF_REQUIRED
-/// and `af sync`'s SYNC_CONFLICT.
+/// Exit 3 is a signal the chat acts on, not a refusal: `af session stop`'s HANDOFF_REQUIRED.
 fn is_handoff_signal(r: &serde_json::Map<String, Value>) -> bool {
     let first_two: Vec<&str> = r
         .get("argv")
         .and_then(Value::as_array)
         .map(|a| a.iter().filter_map(Value::as_str).filter(|t| !t.starts_with('-')).take(2).collect())
         .unwrap_or_default();
-    let signals = first_two == ["session", "stop"] || first_two == ["sync"];
+    let signals = first_two == ["session", "stop"];
     signals && r.get("exit").and_then(Value::as_i64) == Some(3)
 }
 

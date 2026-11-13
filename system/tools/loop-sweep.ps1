@@ -1,5 +1,5 @@
-# The loop sweep, as Task Scheduler runs it (register-loop-sweep.ps1). Report-only by default: it
-# appends to workspace/life/systems/loop-sweep-report.md and hands overdue loops to the 08:30 push
+# The loop sweep, as the 10:00 batch run starts it (watch_batch.py). Report-only by default: it
+# appends to workspace/life/systems/loop-sweep-report.md and hands overdue loops to the morning push
 # (it sends nothing itself), and changes no loop; the closes it would make are in the report.
 # -Live also closes the loops an email proves done. By hand:
 #   powershell -NoProfile -File system\tools\loop-sweep.ps1 -DryRun   # print what a run would write; write nothing

@@ -4,7 +4,7 @@ Runs `af open due --json`, writes the due loops as headings and bullets, and
 posts them through notify.py on the REMINDERS channel (credential names: see
 notify.py; they live in system/tools/.env). Nothing due: exits 0 without a
 word. Each real run appends one line to system/logs/reminders-push.log.
-push-due-loops.ps1 is the scheduler's entry point; this file does the work.
+The 10:00 batch run (watch_batch.py) starts this as its last job; push-due-loops.ps1 runs it by hand.
 
 The loop sweep runs just before and hands over today's overdue list
 (workspace/life/systems/loop-sweep-overdue.json, library/schema/loop-sweep.md):
@@ -17,9 +17,14 @@ terms file the push sends counts only. While the sweep runs (its marker
 workspace/life/systems/loop-sweep.running) the push waits, up to 7 minutes;
 with no handoff for today it waits up to 45 seconds for one.
 
+The batch run (watch_batch.py) calls this with --lead <file>: that file's block, the watch
+lines it filtered, goes first in the message and is sent even when no loop is due, so the
+morning carries one message.
+
 Usage:
     python system/tools/push_due_loops.py --dry-run    # print what would be sent
     python system/tools/push_due_loops.py              # send
+    python system/tools/push_due_loops.py --lead f.md  # send, with f.md's block first
 """
 
 from __future__ import annotations
@@ -90,16 +95,19 @@ def overdue_section(items: list[dict], terms: list[str] | None) -> tuple[str, in
 
 
 def render(loops: list[dict], today: dt.date, overdue: list[dict] | None = None,
-           terms: list[str] | None = None) -> str:
+           terms: list[str] | None = None, lead: str = "") -> str:
     """Headings per section, one bullet per loop; no tables (they do not render on a phone).
     The sweep's overdue loops come first and once; a loop that must stay off Discord counts.
     Amounts and long numbers are masked. With no private terms file (terms is None) nothing that
-    names a loop goes out: only the counts."""
+    names a loop goes out: only the counts. A lead block (the batch run's watch lines, already
+    filtered) goes right after the title, before anything else."""
     due_texts = {l["text"] for l in loops}
     overdue = [x for x in overdue or [] if x["text"] in due_texts]
     handed = {x["text"] for x in overdue}
     noun = "loop" if len(loops) == 1 else "loops"
     out = [f"# {len(loops)} {noun} due · {today.isoformat()}"]
+    if lead.strip():
+        out += ["", lead.strip()]
     if terms is None:
         over = f", {len(overdue)} overdue and not confirmed" if overdue else ""
         return "\n".join(out + ["", f"- {len(loops)} due{over}; open AgentFrame to see them.",
@@ -171,6 +179,7 @@ def log(line: str) -> None:
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--dry-run", action="store_true", help="print what would be sent; send and log nothing")
+    p.add_argument("--lead", type=Path, default=None, help="a markdown block that goes first, sent even when no loop is due")
     a = p.parse_args(argv)
     try:
         sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
@@ -178,6 +187,13 @@ def main(argv: list[str] | None = None) -> int:
         pass
     root = Path(os.environ.get("AF_ROOT") or VAULT)
     today = dt.date.today()
+    lead, lead_failed = "", False
+    if a.lead is not None:
+        try:
+            lead = a.lead.read_text(encoding="utf-8").strip()
+        except OSError as e:
+            print(f"cannot read --lead {a.lead}: {e}", file=sys.stderr)
+            lead_failed = True
     if a.dry_run:
         handoff = load_handoff(root, today)
     else:
@@ -190,11 +206,14 @@ def main(argv: list[str] | None = None) -> int:
             log(f"af open due failed: {e}")
         print(e, file=sys.stderr)
         return 1
-    if not loops:
+    if not loops and not lead:
         if not a.dry_run:
             log("0 due")
-        return 0
-    text = render(loops, today, handoff, off_discord.private_terms(root))
+        return 1 if lead_failed else 0
+    if loops:
+        text = render(loops, today, handoff, off_discord.private_terms(root), lead)
+    else:
+        text = f"# AgentFrame · {today.isoformat()}\n\n{lead}\n"
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".md", delete=False) as f:
         f.write(text)
         tmp = f.name
@@ -213,8 +232,8 @@ def main(argv: list[str] | None = None) -> int:
         print(line, file=sys.stderr)
     if not a.dry_run:
         detail = "; ".join(failures)
-        log(f"{len(loops)} due · " + ("sent" if code == 0 else f"notify exit {code}: {detail}"))
-    return code
+        log(f"{len(loops)} due{' · lead' if lead else ''} · " + ("sent" if code == 0 else f"notify exit {code}: {detail}"))
+    return code or (1 if lead_failed else 0)
 
 
 if __name__ == "__main__":

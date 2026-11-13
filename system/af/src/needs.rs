@@ -431,6 +431,10 @@ fn normalize_detail(ctx: &Ctx, v: &str) -> R<String> {
 }
 
 pub fn cmd_add(ctx: &Ctx, text: &str, detail: &str, on: Option<&str>, when: Option<&str>, from: Option<&str>) -> R<i32> {
+    open::locked(ctx, || cmd_add_unlocked(ctx, text, detail, on, when, from))
+}
+
+fn cmd_add_unlocked(ctx: &Ctx, text: &str, detail: &str, on: Option<&str>, when: Option<&str>, from: Option<&str>) -> R<i32> {
     let text = life::one_line(text);
     if text.is_empty() {
         die!("a needs item needs its question");
@@ -481,6 +485,10 @@ fn find_item(doc: &OpenDoc, target: &str) -> R<Loop> {
 }
 
 fn cmd_close(ctx: &Ctx, target: &str, outcome: &str) -> R<i32> {
+    open::locked(ctx, || cmd_close_unlocked(ctx, target, outcome))
+}
+
+fn cmd_close_unlocked(ctx: &Ctx, target: &str, outcome: &str) -> R<i32> {
     let mut doc = match OpenDoc::load(ctx)? {
         Some(d) => d,
         None => die!("{OPEN_REL} not found"),
@@ -490,6 +498,10 @@ fn cmd_close(ctx: &Ctx, target: &str, outcome: &str) -> R<i32> {
 }
 
 fn cmd_move(ctx: &Ctx, target: &str, now: bool, on: Option<&str>, when: Option<&str>) -> R<i32> {
+    open::locked(ctx, || cmd_move_unlocked(ctx, target, now, on, when))
+}
+
+fn cmd_move_unlocked(ctx: &Ctx, target: &str, now: bool, on: Option<&str>, when: Option<&str>) -> R<i32> {
     if !now && on.is_none() && when.is_none() {
         die!("af needs move needs --now, --on <date>, or --when <trigger>");
     }

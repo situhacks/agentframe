@@ -13,7 +13,7 @@ use chrono::NaiveDateTime;
 
 pub const REPORT_REL: &str = "workspace/life/systems/loop-watch-report.md";
 const REVIEWED: &str = "Reviewed ";
-const TASK: &str = "AgentFrame loop watch";
+const TASK: &str = "AgentFrame batch";
 /// The watch runs daily, so two days without a run means it has stopped.
 const STALE_HOURS: i64 = 48;
 

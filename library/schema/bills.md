@@ -1,6 +1,6 @@
 # Bills
 
-Shapes `workspace/life/systems/finances/bills.md`, the card statement ledger. `system/tools/bills_watch.py` writes all of it except the Cards list; `system/tools/bills-watch.ps1` runs it each morning at 07:45 (`register-bills-watch.ps1`), ahead of the 08:30 loop push. The file is a ledger of what the emails said, not a reminder file: each unpaid due date in it is a loop under `Bills` in `open.md`.
+Shapes `workspace/life/systems/finances/bills.md`, the card statement ledger. `system/tools/bills_watch.py` writes all of it except the Cards list; the [10:00 batch run](watch.md) runs it first each morning (`bills-watch.ps1` by hand), ahead of the loop watch and the loop push. The file is a ledger of what the emails said, not a reminder file: each unpaid due date in it is a loop under `Bills` in `open.md`.
 
 ```
 # Bills

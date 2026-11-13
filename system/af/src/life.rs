@@ -66,11 +66,41 @@ impl TextFile {
         if !dir.is_empty() {
             pyos::makedirs(&dir)?;
         }
+        pyos::write(path, &self.render())
+    }
+
+    fn render(&self) -> String {
         let mut out = if self.crlf { self.text.replace('\n', "\r\n") } else { self.text.clone() };
         if self.bom {
             out.insert(0, '\u{feff}');
         }
-        pyos::write(path, &out)
+        out
+    }
+
+    /// `save` through a temp file in the same folder and a rename over the target, so a reader
+    /// sees the old file or the new one and never half of either. On Windows the rename is retried
+    /// briefly while another process has the target open.
+    pub fn save_atomic(&self, path: &str) -> R<()> {
+        let dir = pyos::dirname(path);
+        if !dir.is_empty() {
+            pyos::makedirs(&dir)?;
+        }
+        let tmp = format!("{path}.tmp{}", std::process::id());
+        std::fs::write(&tmp, self.render().as_bytes()).map_err(|e| pyos::os_error(&e, &tmp))?;
+        let mut tries = 0;
+        loop {
+            match std::fs::rename(&tmp, path) {
+                Ok(()) => return Ok(()),
+                Err(_) if tries < RENAME_TRIES => {
+                    tries += 1;
+                    std::thread::sleep(std::time::Duration::from_millis(RENAME_PAUSE_MS));
+                }
+                Err(e) => {
+                    let _ = std::fs::remove_file(&tmp);
+                    return Err(pyos::os_error(&e, path));
+                }
+            }
+        }
     }
 
     /// The lines without their ends (a final newline does not make an empty last line).
@@ -95,6 +125,71 @@ impl TextFile {
         self.text.push_str(line);
         self.text.push('\n');
     }
+}
+
+// ------------------------------------------------------------------ one writer at a time
+
+const RENAME_TRIES: u32 = 100;
+const RENAME_PAUSE_MS: u64 = 20;
+const LOCK_WAIT_MS: u64 = 5000;
+const LOCK_PAUSE_MS: u64 = 25;
+const LOCK_STALE_SECS: u64 = 120;
+
+/// Holds `<target>.lock` until dropped, so the lock is released on every path out.
+struct LockGuard {
+    lock: String,
+}
+
+impl Drop for LockGuard {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.lock);
+    }
+}
+
+fn lock_is_stale(lock: &str) -> bool {
+    std::fs::metadata(lock)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.elapsed().ok())
+        .is_some_and(|age| age.as_secs() > LOCK_STALE_SECS)
+}
+
+/// Run `f` while this process alone holds `<target>.lock`: a read-modify-write of `target` (load,
+/// change, `TextFile::save_atomic`) goes inside, so two writers never lose each other's change.
+/// The lock is a file made with create_new, retried for about five seconds; one older than two
+/// minutes was left by a crashed writer and is replaced. A lock still held after the wait refuses,
+/// naming the lock file.
+pub fn locked<T>(target: &str, f: impl FnOnce() -> R<T>) -> R<T> {
+    let dir = pyos::dirname(target);
+    if !dir.is_empty() {
+        pyos::makedirs(&dir)?;
+    }
+    let lock = format!("{target}.lock");
+    let start = std::time::Instant::now();
+    let _guard = loop {
+        match std::fs::OpenOptions::new().write(true).create_new(true).open(&lock) {
+            Ok(mut file) => {
+                use std::io::Write;
+                let _ = writeln!(file, "pid {}", std::process::id());
+                break LockGuard { lock: lock.clone() };
+            }
+            Err(e) if matches!(e.kind(), std::io::ErrorKind::AlreadyExists | std::io::ErrorKind::PermissionDenied) => {
+                if lock_is_stale(&lock) {
+                    let _ = std::fs::remove_file(&lock);
+                    continue;
+                }
+                if start.elapsed() >= std::time::Duration::from_millis(LOCK_WAIT_MS) {
+                    crate::die!(
+                        "{lock} is held by another af process, still after {}s; if none is running, delete that file",
+                        LOCK_WAIT_MS / 1000
+                    );
+                }
+                std::thread::sleep(std::time::Duration::from_millis(LOCK_PAUSE_MS));
+            }
+            Err(e) => return Err(pyos::os_error(&e, &lock)),
+        }
+    };
+    f()
 }
 
 // ------------------------------------------------------------------ clocks

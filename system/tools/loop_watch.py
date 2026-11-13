@@ -1,6 +1,6 @@
 """The loop watch: due loops checked against Gmail, the findings in a report for main.
 
-Each morning (loop-watch.ps1, scheduled by register-loop-watch.ps1) this lists the due loops
+Each morning (the 10:00 batch run, watch_batch.py; loop-watch.ps1 by hand) this lists the due loops
 with `af open due --json`, asks a cheap model to look for each one's answer in his email, and
 rewrites workspace/life/systems/loop-watch-report.md with the loops that have evidence. Email
 can carry hostile instructions, so this closes and edits nothing: main reviews the report and
@@ -16,6 +16,7 @@ failure, reported in the report and the exit code, never read as nothing found.
 Usage:
     python system/tools/loop_watch.py --dry-run    # read Gmail, print the report; write nothing
     python system/tools/loop_watch.py              # read Gmail, rewrite the report
+    python system/tools/loop_watch.py --deadline-minutes 90   # as the batch run starts it
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -54,6 +56,7 @@ STOP_AFTER = 2          # Gmail failures in a row before the rest of the run is 
 CALL_BUDGET_USD = 0.15  # each claude -p
 RUN_BUDGET_USD = 1.00   # the morning's total; the loops left are reported as not checked
 OTHERS_SECTION = "Waiting on others"
+WATCH_FROM = "watch"    # the `from` of a loop `af watch` raised
 VERDICTS = ("done", "answered", "update", "nothing")
 EVIDENCE_KEYS = ("sender", "date", "subject", "quote")
 NEEDED_KEYS = ("text", "opened", "section", "top")
@@ -99,9 +102,10 @@ def is_bills_loop(text: str) -> bool:
 
 def select_loops(due: list[dict]) -> tuple[list[dict], int]:
     """The loops worth checking, oldest first and capped, and how many the cap left out.
-    Needs items and what others owe are not his homework to clear by email, and the bills
-    watch owns its own loops."""
+    Needs items and what others owe are not his homework to clear by email, the bills watch
+    owns its own loops, and a loop the watch queue raised is its own answer."""
     keep = [x for x in due if not (x.get("need") or x.get("detail") or is_bills_loop(x["text"])
+                                   or x.get("from") == WATCH_FROM
                                    or OTHERS_SECTION in (x["section"], x["top"]))]
     keep.sort(key=lambda x: x["opened"])
     return keep[:MAX_LOOPS], max(0, len(keep) - MAX_LOOPS)
@@ -548,14 +552,15 @@ def _final_event(lines: list[str]) -> dict:
     return {}
 
 
-def metered(run, out: Outcome):
+def metered(run, out: Outcome, run_budget: float = RUN_BUDGET_USD, call_budget: float = CALL_BUDGET_USD):
     """A claude runner that charges every attempt to the run, retries and failures included,
     since a failed run never gets as far as being parsed. Any call that raises is charged the cap,
     since it may have spent before it failed. The run total is checked before every call, so it
     holds for a retry too. A run stopped by its budget is that loop's failure, not a Gmail fault:
-    a retry would only spend the budget again."""
+    a retry would only spend the budget again. The budgets default to this watch's own; the
+    watch queue's runner passes its own caps."""
     def go(prompt: str, max_turns: int, model: str) -> list[str]:
-        if out.spent() >= RUN_BUDGET_USD:
+        if out.spent() >= run_budget:
             raise OverRunBudget
         try:
             lines = run(prompt, max_turns, model)
@@ -570,17 +575,24 @@ def metered(run, out: Outcome):
             out.uncosted += 1
         if "budget" in str(final.get("subtype", "")):
             bw.cleanup(bw._session_of(lines), project_dir=PROJECT_DIR)
-            raise LoopFailure(f"the run hit its ${CALL_BUDGET_USD:.2f} budget before it answered; check by hand")
+            raise LoopFailure(f"the run hit its ${call_budget:.2f} budget before it answered; check by hand")
         return lines
     return go
 
 
-def watch(out: Outcome, model: str, run_claude, run_af, now: dt.datetime | None = None) -> None:
+def watch(out: Outcome, model: str, run_claude, run_af, now: dt.datetime | None = None,
+          deadline: tuple[float, int] | None = None, clock=time.monotonic) -> None:
+    """Each selected loop in turn. `deadline` is (clock reading, minutes): past it no new loop
+    starts, and the loops left are reported as not checked."""
     loops, out.over_cap = select_loops(load_due(run_af()))
     own = own_addresses()
     run = metered(run_claude, out)
     in_a_row = 0
     for i, loop in enumerate(loops):
+        if deadline is not None and clock() >= deadline[0]:
+            reason = f"not checked: the run reached its {deadline[1]}-minute deadline"
+            out.failures += [(x["text"], reason) for x in loops[i:]]
+            return
         try:
             found = check_loop(loop, model, run, out.notes, now, own)
         except OverRunBudget:
@@ -688,12 +700,17 @@ def init_report(now: dt.datetime) -> int:
     return 0
 
 
-def main(argv: list[str] | None = None, *, now: dt.datetime | None = None, run_claude=claude, run_af=af_due) -> int:
+def main(argv: list[str] | None = None, *, now: dt.datetime | None = None, run_claude=claude, run_af=af_due,
+         clock=time.monotonic) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--dry-run", action="store_true", help="read Gmail and print the report; write nothing")
     p.add_argument("--init-report", action="store_true", help="write the stub report if there is none, and stop")
     p.add_argument("--model", default=MODEL)
+    p.add_argument("--deadline-minutes", type=int, default=None, metavar="N",
+                   help="start no loop after N minutes; the loops left are reported as not checked, and the report "
+                        "and log line are still written")
     a = p.parse_args(argv)
+    deadline = (clock() + a.deadline_minutes * 60, a.deadline_minutes) if a.deadline_minutes else None
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
     except Exception:  # noqa: BLE001
@@ -704,7 +721,7 @@ def main(argv: list[str] | None = None, *, now: dt.datetime | None = None, run_c
     out = Outcome()
     try:
         bw.cleanup(None, older_than=0, project_dir=PROJECT_DIR)  # a killed run leaves its copies for this one
-        watch(out, a.model, run_claude, run_af, now)
+        watch(out, a.model, run_claude, run_af, now, deadline, clock)
     except Exception as e:  # noqa: BLE001 - a scheduled run must never fail silently
         traceback.print_exc()
         out.failures.append(("The whole run", f"it stopped early ({type(e).__name__}: {e})"))

@@ -1,4 +1,4 @@
-# The bills watch, as Task Scheduler runs it (register-bills-watch.ps1): reads his card emails
+# The bills watch, as the 10:00 batch run starts it (watch_batch.py): reads his card emails
 # through the claude.ai Gmail connector, updates workspace/life/systems/finances/bills.md, and
 # raises, re-dates and closes the Bills loops that the morning loop push carries to his phone.
 # Run by hand the same way:

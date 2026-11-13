@@ -1,4 +1,4 @@
-"""What stays off Discord: the filter for the 08:30 push of his loops.
+"""What stays off Discord: the filter for the morning push of his loops.
 
 Discord is a third-party service. A loop whose text matches the built-in sensitive categories
 (health, medication, therapy, passwords, account numbers) or one of his private terms is kept off:

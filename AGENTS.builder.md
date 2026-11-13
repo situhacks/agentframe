@@ -51,7 +51,7 @@ Fix a repeated mistake at the highest level that holds: structure first (one own
 - Look for the weakness first; if there is none, say so and leave the file alone.
 - Make surgical changes. Prefer state-shaped rules over phrase lists.
 - Prefer inline agent work over scripts unless determinism, auth, or repeatability makes code the smaller system.
-- A system's dates and reminders are open loops (`af open add`, `--every` to recur; [rule](library/schema/open-loops.md#the-loop-rule)) and its phone messages go through `system/tools/notify.py` (boards: `discord_board.py`); nothing else, and no system-local deadlines file.
+- A system's dates are open loops (`af open add`, `--every` to recur; [rule](library/schema/open-loops.md#the-loop-rule)); timed checks: `af watch`; its phone messages go through `system/tools/notify.py` (boards: `discord_board.py`); nothing else, and no system-local deadlines file.
 - When a wrong outcome is cheaply reversible, use judgment and one batched review, not counts, gates, or per-item questions; thresholds go only where mechanics need them.
 - Hook commands use `AF_ROOT="${CLAUDE_PROJECT_DIR}" af hook <event>`; `AF_ROOT` survives a drifted shell directory.
 - `.claude/settings.json` keeps `worktree.bgIsolation: none` so background sessions see the gitignored `workspace/`.

@@ -1,6 +1,6 @@
 # Open loops
 
-Shapes `workspace/life/open.md` and the closed lines in `workspace/life/log/<YYYY-MM>.md`. Owned by `af open`; headings and prose around the lines are free. Open loops are the system's one reminder mechanism.
+Shapes `workspace/life/open.md` and the closed lines in `workspace/life/log/<YYYY-MM>.md`. Owned by `af open`; headings and prose around the lines are free. Open loops are the system's to-do record: if he must do something, it is a loop, "remind me" included; if a chat must check, it is a [watch](watch.md) item, which raises a loop when it fires.
 
 ```
 # Open loops
@@ -21,7 +21,7 @@ Shapes `workspace/life/open.md` and the closed lines in `workspace/life/log/<YYY
 - An interactive chat (main or a side chat) reviews each due loop that prints: close what is done or answered, re-date one whose date has plainly moved, move a decision to the needs list, chase what someone else owes. A due loop only he can act on stays open and due, never closed or re-dated to quiet it; it shows under Do in `workspace/life/needs.md` until he does it. The [loop sweep](loop-sweep.md) is the one exception, and only in its live mode: it closes a loop when an email from an allowlisted sender (Interac, his card issuer, a ticketing platform) proves that one loop done. It never closes on a passed date and never re-dates, merges or ends a loop; it reports overdue loops with no proof, likely duplicates and stale loops for main to act on. A due loop under `Waiting on others` stays out of Do; main chases it. A worker writes no replies; it records a due loop in its handoff instead.
 - Never keep a deadlines or reminders file inside a system or project folder; each date there is a loop.
 
-Due loops print at the start of every registered interactive chat and after compaction, and reach his phone each morning through `system/tools/push-due-loops.ps1`, which `system/tools/register-daily-reminders.ps1` schedules. The [loop sweep](loop-sweep.md) runs just before it and hands over its overdue list, which leads the push, so each loop goes out once a day. Every loop the push sends passes the off-Discord filter. Card bills need no hand-raised loop: the bills watch raises, re-dates and closes the `Bills` loops from his card emails ([`bills.md`](bills.md)).
+Due loops print at the start of every registered interactive chat and after compaction, and reach his phone each morning through `system/tools/push_due_loops.py`, the last job of the 10:00 [batch run](watch.md) (`push-due-loops.ps1` by hand). The [loop sweep](loop-sweep.md) runs just before it and hands over its overdue list, which leads the push, so each loop goes out once a day. Every loop the push sends passes the off-Discord filter. Card bills need no hand-raised loop: the bills watch raises, re-dates and closes the `Bills` loops from his card emails ([`bills.md`](bills.md)).
 
 ## Grammar
 

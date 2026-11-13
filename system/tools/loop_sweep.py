@@ -1,6 +1,6 @@
 """The loop sweep: each morning, close what an email proves done, and report the rest for main.
 
-Each morning (loop-sweep.ps1, scheduled by register-loop-sweep.ps1, after the loop watch) this
+Each morning (the 10:00 batch run, watch_batch.py, after the loop watch; loop-sweep.ps1 by hand) this
 reads workspace/life/open.md and today's loop watch report:
 
 - Closes a loop only on proof: a `done` verdict in today's loop watch report, from an allowlisted
@@ -9,7 +9,7 @@ reads workspace/life/open.md and today's loop watch report:
   ledger: the loop names that card or issuer. A ticketing platform: a receipt or confirmation,
   and the loop names the platform. A proof that ties to more than one open loop closes none of
   them. Nothing else closes, re-dates or merges a loop.
-- Hands every overdue loop it did not close, in his own words, to the 08:30 push
+- Hands every overdue loop it did not close, in his own words, to the morning push
   (push_due_loops.py), which leads with them. The sweep sends nothing itself.
 - Appends a run section to workspace/life/systems/loop-sweep-report.md: the closes, each overdue
   loop with no proof, and what the model noticed (a likely duplicate, a possible merge, a stale
@@ -47,16 +47,17 @@ sys.path.insert(0, str(HERE))
 
 import bills_watch as bw  # noqa: E402
 import loop_watch as lw  # noqa: E402
+import models  # noqa: E402
 import off_discord  # noqa: E402
 
 VAULT = HERE.parent.parent
 OPEN = Path("workspace/life/open.md")
 REPORT = Path("workspace/life/systems/loop-sweep-report.md")
-HANDOFF = Path("workspace/life/systems/loop-sweep-overdue.json")  # today's overdue list, for the 08:30 push
+HANDOFF = Path("workspace/life/systems/loop-sweep-overdue.json")  # today's overdue list, for the morning push
 RUNNING = Path("workspace/life/systems/loop-sweep.running")  # present while a run that writes works
 LOG = Path("system/logs/loop-sweep.log")
 
-MODEL = "claude-sonnet-5-5"
+MODEL = models.SONNET
 EFFORT = "medium"
 BUDGET_USD = 0.60       # the one claude -p call a run makes
 TIMEOUT_S = 600
@@ -467,7 +468,7 @@ def find_proofs(sw: Sweep, hits: dict[str, WatchHit], cards: dict[str, list[str]
 
 def find_overdue(sw: Sweep) -> None:
     """Every overdue loop the sweep did not close or propose to close: it stays open and due, and
-    leads the 08:30 push. A close that failed leaves its loop here."""
+    leads the morning push. A close that failed leaves its loop here."""
     closed = {c.loop.raw for c in sw.closes if c.applied is not False}
     sw.overdue = [x for x in sw.loops if not x.owned and x.raw not in closed and x.due_on() and x.due_on() < sw.today]
 
@@ -653,16 +654,16 @@ def apply(sw: Sweep, root: Path, run_af=af) -> None:
 # --- His phone: the overdue handoff -----------------------------------------
 
 def handoff_items(sw: Sweep) -> list[dict]:
-    """The overdue loops as the 08:30 push leads with them, in his own words; the push filters them."""
+    """The overdue loops as the morning push leads with them, in his own words; the push filters them."""
     return [{"text": x.text, "due": x.due_on().isoformat(), "days": (sw.today - x.due_on()).days} for x in sw.overdue]
 
 
 def handoff(sw: Sweep, root: Path) -> None:
-    """Hand today's overdue list to the 08:30 push, which sends it once, ahead of the other due
+    """Hand today's overdue list to the morning push, which sends it once, ahead of the other due
     loops. Written even when empty, so the push knows the sweep ran; a dry run writes nothing."""
     sw.handed = handoff_items(sw)
     if sw.mode == "dry-run":
-        sw.pushed = f"would hand {len(sw.handed)} overdue to the 08:30 push"
+        sw.pushed = f"would hand {len(sw.handed)} overdue to the morning push"
         return
     try:
         path = root / HANDOFF
@@ -672,7 +673,7 @@ def handoff(sw: Sweep, root: Path) -> None:
     except OSError as e:
         sw.failures.append(f"overdue handoff: {e}")
         return
-    sw.pushed = f"handed {len(sw.handed)} overdue to the 08:30 push"
+    sw.pushed = f"handed {len(sw.handed)} overdue to the morning push"
 
 
 # --- The report -------------------------------------------------------------
@@ -738,7 +739,7 @@ def main(argv: list[str] | None = None, *, now: dt.datetime | None = None, run_c
     if a.dry_run and a.live:
         p.error("--dry-run writes nothing, so it does not go with --live")
     writes = not a.dry_run
-    if writes:  # first thing: the 08:30 push, started alongside at logon, waits on this marker
+    if writes:  # first thing: the morning push, started alongside at logon, waits on this marker
         mark_running(_root(a.vault), now or dt.datetime.now())
     try:
         return _main(a, now, run_claude, run_af)
@@ -811,7 +812,7 @@ def dry_run_text(sw: Sweep, now: dt.datetime, terms: list[str] | None) -> str:
     if sw.handed:
         import push_due_loops
         text, hidden = push_due_loops.overdue_section(sw.handed, terms)
-        out += ["What the 08:30 push would lead with:", text or "(no lines it may show)"]
+        out += ["What the morning push would lead with:", text or "(no lines it may show)"]
         if hidden:
             out.append(f"- {hidden} more kept off Discord; see Do in AgentFrame")
         if terms is None:
@@ -840,10 +841,10 @@ def write_report(sw: Sweep, root: Path, report: str, now: dt.datetime) -> int:
     return code
 
 
-# --- The 08:30 push waits while a sweep runs ---------------------------------
+# --- The morning push waits while a sweep runs ---------------------------------
 
 def mark_running(root: Path, now: dt.datetime) -> None:
-    """Mark a run that writes, so the 08:30 push (started late at logon, say) waits for its handoff."""
+    """Mark a run that writes, so the morning push (started late at logon, say) waits for its handoff."""
     try:
         path = root / RUNNING
         path.parent.mkdir(parents=True, exist_ok=True)

@@ -138,7 +138,7 @@ fn a_report_over_two_days_old_is_said_even_when_clean_or_reviewed() {
     let lines: Vec<&str> = out.lines().filter(|l| l.contains("loop watch")).collect();
     assert_eq!(lines.len(), 1, "{out}");
     assert!(lines[0].contains("last ran "), "{}", lines[0]);
-    assert!(lines[0].contains("AgentFrame loop watch"), "names the job to check: {}", lines[0]);
+    assert!(lines[0].contains("AgentFrame batch"), "names the job to check: {}", lines[0]);
 
     fx.ok(&["open", "watch-reviewed"]);
     assert!(bundle(&fx).contains("last ran"), "a review does not make a dead watch alive");
@@ -186,7 +186,7 @@ Run {} · loops checked 0 · with evidence 0 · failures 0 · skipped over the c
     fx.write(REPORT, &stub(0));
     assert!(!bundle(&fx).contains("loop watch"));
     fx.write(REPORT, &stub(49));
-    assert!(bundle(&fx).contains("AgentFrame loop watch"), "a task that died on its first run is seen");
+    assert!(bundle(&fx).contains("AgentFrame batch"), "a task that died on its first run is seen");
     let (_, out, _) = fx.run(&["doctor"]);
     assert!(out.contains("loop watch last ran"), "{out}");
 }

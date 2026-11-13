@@ -105,8 +105,16 @@ class SelectTests(unittest.TestCase):
             loop("Bills watch refused a tool call and skipped card email thread t-9"),
             loop("Refund from the shop", section="Waiting on others"),
             loop("Reply from a friend", section="A subgroup", top="Waiting on others"),
+            loop("Watch w-20261113-01 met for af-main: Rail refund confirmed; date reached [w-20261113-01]", **{"from": "watch"}),
         ]
         self.assertEqual(lw.select_loops(due), ([keep], 0))
+
+    def test_a_loop_the_watch_queue_raised_is_not_checked_against_email(self):
+        raised = loop("Watch w-20261113-01 expired without firing for af-main: Return the books [w-20261113-01]",
+                      section="Watch", **{"from": "watch"})
+        self.assertEqual(lw.select_loops([raised]), ([], 0))
+        same_words = dict(raised, **{"from": "main"})
+        self.assertEqual(lw.select_loops([same_words]), ([same_words], 0), "only the `from` marks it")
 
     def test_a_loop_that_only_mentions_paying_is_still_checked(self):
         keep = loop("Pay the plumber by 2026-03-25")
@@ -518,17 +526,40 @@ class LockdownTests(unittest.TestCase):
 
     def test_its_folders_are_not_the_bills_watchs(self):
         self.assertNotEqual(lw.RUN_DIR, bw.RUN_DIR)
-        self.assertEqual(lw.MODEL, "claude-haiku-4-5")
+        self.assertEqual(lw.MODEL, json.loads((ROOT / "system" / "models.json").read_text(encoding="utf-8"))["haiku"])
         fresh = bw.project_dir_for(Path(tempfile.gettempdir()) / "agentframe-loop-watch")
         self.assertNotEqual(fresh, bw.PROJECT_DIR)
 
-    def test_the_task_runs_at_0750_and_its_time_limit_covers_a_full_run(self):
-        ps1 = (ROOT / "system" / "tools" / "register-loop-watch.ps1").read_text(encoding="utf-8")
-        self.assertIn("-Daily -At '07:50'", ps1)
-        self.assertIn("loop-watch.ps1", ps1)
+    def test_the_batch_run_starts_it_after_the_bills_watch_and_gives_it_a_step_limit(self):
+        import watch_batch as wb
+        names = [name for name, _, _ in wb.MORNING]
+        self.assertLess(names.index("bills"), names.index("loop-watch"), "the loop watch skips Bills loops, so they come first")
+        self.assertEqual(next(m for n, s, m in wb.MORNING if s == "loop_watch.py"), 105, "the hard kill")
+        self.assertEqual(wb.STEP_ARGS["loop-watch"], ["--deadline-minutes", "90"], "it stops itself first and writes its report")
+        ps1 = (ROOT / "system" / "tools" / "register-watch-batch.ps1").read_text(encoding="utf-8")
         m = re.search(r"-ExecutionTimeLimit \(New-TimeSpan -Hours (\d+)\)", ps1)
-        worst = lw.MAX_LOOPS * 2 * (120 + 60 * lw.MAX_TURNS)
-        self.assertGreater(int(m.group(1)) * 3600, worst)
+        self.assertGreater(int(m.group(1)) * 60, sum(minutes for _, _, minutes in wb.MORNING))
+
+    def test_metering_takes_the_callers_budgets_and_defaults_to_its_own(self):
+        out = lw.Outcome()
+        runs = []
+
+        def run(prompt, turns, model):
+            runs.append(model)
+            return stream(reply="{}", cost=0.30)
+        small = lw.metered(run, out, run_budget=0.50, call_budget=0.40)
+        small("p", 5, "m")
+        small("p", 5, "m")
+        with self.assertRaises(lw.OverRunBudget):
+            small("p", 5, "m")
+        self.assertEqual((len(runs), round(out.cost, 2)), (2, 0.60))
+        out = lw.Outcome()
+        default = lw.metered(run, out)
+        for _ in range(4):
+            default("p", 5, "m")
+        with self.assertRaises(lw.OverRunBudget):
+            default("p", 5, "m")
+        self.assertEqual(lw.RUN_BUDGET_USD, 1.00)
 
     def test_the_wrapper_passes_dry_run_through(self):
         ps1 = (ROOT / "system" / "tools" / "loop-watch.ps1").read_text(encoding="utf-8")
@@ -836,6 +867,35 @@ class SpendTests(MainBase):
         self.assertIsNotNone(lw.check_loop(loop(), "model", lambda *a: stream(*searched(), *flat, reply=json.dumps(GOOD))))
 
 
+class DeadlineTests(MainBase):
+    def run_clocked(self, due, minutes_each, args):
+        ticks = iter(range(0, 10_000, minutes_each))   # each clock reading is one loop's worth of minutes later
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            code = lw.main(list(args), now=NOW, clock=lambda: next(ticks) * 60.0,
+                           run_claude=lambda p, t, m: self.prompts.append(p) or stream(*searched()),
+                           run_af=lambda: json.dumps(due))
+        return code, out.getvalue()
+
+    def test_past_the_deadline_no_loop_starts_and_the_report_still_lands(self):
+        due = [loop("First"), loop("Second"), loop("Third"), loop("Fourth")]
+        code, out = self.run_clocked(due, 40, ["--deadline-minutes", "90"])
+        self.assertEqual(code, 1, "a partial run exits 1, as a budget stop does")
+        self.assertEqual(len(self.prompts), 2, "the run starts at 0; loops start at 40 and 80 minutes, not at 120")
+        text = self.report.read_text(encoding="utf-8")
+        self.assertEqual(self.counts(text), (2, 0, 2, 0))
+        for left in ("- Third: not checked: the run reached its 90-minute deadline", "- Fourth: not checked"):
+            self.assertIn(left, text)
+        log = (self.root / lw.LOG).read_text(encoding="utf-8")
+        self.assertIn("loops checked 2", log)
+        self.assertIn("Run 2026-03-10 07:50", out)
+
+    def test_without_the_option_there_is_no_deadline(self):
+        due = [loop(f"Loop {i}") for i in range(4)]
+        code, _ = self.run_clocked(due, 400, [])
+        self.assertEqual((code, len(self.prompts)), (0, 4))
+
+
 class SurvivalTests(MainBase):
     def text(self):
         return self.report.read_text(encoding="utf-8")
@@ -887,8 +947,8 @@ class SurvivalTests(MainBase):
         self.assertEqual(code, 0)
         self.assertEqual(self.text(), "a real report\n")
 
-    def test_registering_the_task_writes_the_stub_for_this_vault(self):
-        ps1 = (ROOT / "system" / "tools" / "register-loop-watch.ps1").read_text(encoding="utf-8")
+    def test_registering_the_batch_task_writes_the_stub_for_this_vault(self):
+        ps1 = (ROOT / "system" / "tools" / "register-watch-batch.ps1").read_text(encoding="utf-8")
         self.assertIn("--init-report", ps1)
         self.assertLess(ps1.index("$env:AF_ROOT = $vault"), ps1.index("--init-report"))
         self.assertLess(ps1.index("Register-ScheduledTask -TaskName"), ps1.index("--init-report"))

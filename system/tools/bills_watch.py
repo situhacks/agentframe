@@ -1,6 +1,6 @@
 """The bills watch: card statements from Gmail into bills.md and the Bills loops.
 
-Each morning (bills-watch.ps1, scheduled by register-bills-watch.ps1) this reads
+Each morning (the 10:00 batch run, watch_batch.py; bills-watch.ps1 by hand) this reads
 his card emails through the claude.ai Gmail connector, records each statement,
 reminder, balance update, payment and missed-payment email in
 workspace/life/systems/finances/bills.md, and keeps one open loop per unpaid
@@ -40,6 +40,10 @@ from decimal import Decimal
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+
+import models  # noqa: E402
+
 VAULT = HERE.parent.parent
 BILLS = Path("workspace/life/systems/finances/bills.md")
 OPEN = Path("workspace/life/open.md")
@@ -47,7 +51,7 @@ LOG = VAULT / "system" / "logs" / "bills-watch.log"
 
 FROM = "bills-watch"
 SECTION = "Bills"
-MODEL = "claude-haiku-4-5"
+MODEL = models.HAIKU
 FIRST_WINDOW_DAYS = 60
 OVERLAP_DAYS = 3
 LOOP_HORIZON_DAYS = 14  # an unpaid statement due longer ago than this gets no loop (bootstrap history)

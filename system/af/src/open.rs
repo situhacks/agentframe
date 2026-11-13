@@ -220,7 +220,7 @@ impl OpenDoc {
 
     pub fn save(&mut self, ctx: &Ctx) -> R<()> {
         self.file.set_lines(&self.lines);
-        self.file.save(&self.path)?;
+        self.file.save_atomic(&self.path)?;
         crate::needs::refresh(ctx);
         Ok(())
     }
@@ -312,6 +312,36 @@ pub fn cmd_add(
     from: Option<&str>,
     section: Option<&str>,
 ) -> R<i32> {
+    let line = add_loop(ctx, text, nudge, every, from, section)?;
+    outln!("{line}");
+    Ok(0)
+}
+
+/// `af open add` without the printing: the line it wrote. `af watch sweep` raises its loops here.
+pub fn add_loop(
+    ctx: &Ctx,
+    text: &str,
+    nudge: Option<&str>,
+    every: Option<&str>,
+    from: Option<&str>,
+    section: Option<&str>,
+) -> R<String> {
+    locked(ctx, || add_loop_unlocked(ctx, text, nudge, every, from, section))
+}
+
+/// Every verb that rewrites open.md runs inside this lock, so two writers never lose each other's line.
+pub fn locked<T>(ctx: &Ctx, f: impl FnOnce() -> R<T>) -> R<T> {
+    life::locked(&vpath(ctx, OPEN_REL), f)
+}
+
+fn add_loop_unlocked(
+    ctx: &Ctx,
+    text: &str,
+    nudge: Option<&str>,
+    every: Option<&str>,
+    from: Option<&str>,
+    section: Option<&str>,
+) -> R<String> {
     let today = today_date();
     let text = life::one_line(text);
     if text.is_empty() {
@@ -347,8 +377,7 @@ pub fn cmd_add(
     let mut doc = OpenDoc::parse(path, file);
     insert_in_section(&mut doc.lines, &section, &line);
     doc.save(ctx)?;
-    outln!("{line}");
-    Ok(0)
+    Ok(line)
 }
 
 /// Add `line` at the end of its section, creating the section at the file's end if needed.
@@ -420,6 +449,10 @@ pub fn find_target_in(doc: &OpenDoc, target: &str, keep: impl Fn(&Loop) -> bool,
 /// `af open close <target> --outcome <text> [--final]`: a one-off loop moves to the month
 /// log; a recurring one is logged and re-dated one period on, unless `--final` ends it.
 pub fn cmd_close(ctx: &Ctx, target: &str, outcome: &str, final_: bool) -> R<i32> {
+    locked(ctx, || cmd_close_unlocked(ctx, target, outcome, final_))
+}
+
+fn cmd_close_unlocked(ctx: &Ctx, target: &str, outcome: &str, final_: bool) -> R<i32> {
     let mut doc = match OpenDoc::load(ctx)? {
         Some(d) => d,
         None => die!("{OPEN_REL} not found"),
@@ -471,6 +504,10 @@ pub fn close_loop(ctx: &Ctx, doc: &mut OpenDoc, hit: &Loop, outcome: &str, final
 /// `af open redate <target> --nudge <date|+Nd>`: the loop keeps its opened date, text,
 /// section, and source; only the nudge changes. The month log records the re-date.
 pub fn cmd_redate(ctx: &Ctx, target: &str, nudge: &str) -> R<i32> {
+    locked(ctx, || cmd_redate_unlocked(ctx, target, nudge))
+}
+
+fn cmd_redate_unlocked(ctx: &Ctx, target: &str, nudge: &str) -> R<i32> {
     let today = crate::core::today_date();
     let new = match parse_nudge(nudge, today) {
         Some(d) => d,

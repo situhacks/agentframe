@@ -94,16 +94,25 @@ public static class PanelNative {
     public static double IdleMs() { return unchecked((uint)Environment.TickCount - LastTick()); }
     public static string Title(IntPtr h) { StringBuilder sb = new StringBuilder(512); GetWindowTextW(h, sb, 512); return sb.ToString(); }
 
+    // What the last BringToFront did, for the log: no window text, only what Windows answered.
+    public static string BringNote = "";
     public static bool BringToFront(IntPtr h) {
+        BringNote = "already in front";
         if (GetForegroundWindow() == h) return true;
-        if (SetForegroundWindow(h) && GetForegroundWindow() == h) return true;
+        bool first = SetForegroundWindow(h);
+        bool firstHeld = GetForegroundWindow() == h;
+        BringNote = string.Format("SetForegroundWindow returned {0}, window in front afterwards {1}", first, firstHeld);
+        if (first && firstHeld) return true;
         IntPtr fg = GetForegroundWindow();
         uint pid;
         uint fgThread = fg == IntPtr.Zero ? 0 : GetWindowThreadProcessId(fg, out pid);
         uint self = GetCurrentThreadId();
         bool attached = fgThread != 0 && fgThread != self && AttachThreadInput(self, fgThread, true);
-        try { BringWindowToTop(h); SetForegroundWindow(h); } finally { if (attached) AttachThreadInput(self, fgThread, false); }
-        return GetForegroundWindow() == h;
+        bool second = false;
+        try { BringWindowToTop(h); second = SetForegroundWindow(h); } finally { if (attached) AttachThreadInput(self, fgThread, false); }
+        bool held = GetForegroundWindow() == h;
+        BringNote += string.Format("; with the input queues attached ({0}) it returned {1}, in front {2}", attached, second, held);
+        return held;
     }
 
     static INPUT Key(ushort vk, bool up) {
@@ -198,6 +207,10 @@ $script:Expected = [uint32]0
 $script:HeldWatch = $null
 $script:Saved = $null
 $script:RestoreNote = ''
+$script:FgNote = ''
+$script:ModelNote = ''
+$script:NewBaseActive = @()
+$script:NewBaseUntitled = $false
 
 function Stop-Panel([int]$Code, [string]$Reason) {
     throw (New-Object PanelExit($Code, $Reason))
@@ -300,6 +313,11 @@ function Get-InputBoxes($win) {
 
 function Get-SendButtons($win) {
     @(Find-Named $win 'Send message' $CT::Button | Where-Object { -not $_.Current.IsOffscreen })
+}
+
+# The selected tab is an untitled chat ('Claude Code, ...'), which is what a new chat is until its first message.
+function Test-UntitledTabSelected($win) {
+    @(Get-SelectedTabNames $win | Where-Object { $_ -like 'Claude Code,*' }).Count -ge 1
 }
 
 function Get-SelectedTabNames($win) {
@@ -411,8 +429,16 @@ function Assert-Ready([string]$Target, [string]$InputMode, [string]$ChatName) {
     $active = @(Get-Chats $win | Where-Object { $_.Active } | ForEach-Object { $_.Id })
     if ($Target -ne '') {
         if ($active.Count -ne 1 -or $active[0] -ne $Target) { Stop-Panel 5 'the active chat is not the target; nothing was typed' }
-    } elseif ($active.Count -ne 0) {
-        Stop-Panel 5 'the open tab is a chat that already has a row, not a new one; nothing was typed'
+    } else {
+        # A new chat: the selected tab is an untitled one, and no row became active that was not before.
+        # (A row that was active before the new tab opened can stay marked active; that is not a chat switch.)
+        if (-not (Test-UntitledTabSelected $win)) { Stop-Panel 5 'the open tab is not a new, untitled chat; nothing was typed' }
+        foreach ($a in $active) {
+            if ($script:NewBaseActive -notcontains $a) { Stop-Panel 5 'the open tab is a chat that already has a row, not a new one; nothing was typed' }
+        }
+        # If an untitled tab was already open when the run began, a marked row cannot be told from a lingering
+        # one, so then no row may be marked at all.
+        if ($script:NewBaseUntitled -and $active.Count -ne 0) { Stop-Panel 5 'the open tab may be a chat that already has a row; nothing was typed' }
     }
 }
 
@@ -528,7 +554,11 @@ function Split-Text([string]$Text) {
 function Set-InputFocus {
     $win = $script:Win
     if ([PanelNative]::IsIconic($script:Hwnd)) { [void][PanelNative]::ShowWindow($script:Hwnd, 9) }
-    if (-not [PanelNative]::BringToFront($script:Hwnd)) { Stop-Panel 5 'could not take the foreground for the VS Code window' }
+    $startProc = 'unknown'
+    if ($null -ne $script:Saved) { $startProc = [PanelNative]::ProcessNameOf($script:Saved.Fg) }
+    $brought = [PanelNative]::BringToFront($script:Hwnd)
+    $script:FgNote = ('started with [{0}] in front; {1}' -f $startProc, [PanelNative]::BringNote)
+    if (-not $brought) { Stop-Panel 5 'could not take the foreground for the VS Code window' }
     $script:HeldWatch = [Diagnostics.Stopwatch]::StartNew()
     # Found live: when another window was in front, the window reports the input as focused but the keys
     # are lost, because the page was never given the keyboard (the canary caught it). Once the window has
@@ -536,6 +566,7 @@ function Set-InputFocus {
     $wasBehind = ($null -ne $script:Saved -and $script:Saved.Fg -ne $script:Hwnd)
     if ($wasBehind) {
         Start-Sleep -Milliseconds 1200
+        $script:FgNote += ('; 1.2 s later [{0}] in front' -f [PanelNative]::ProcessNameOf([PanelNative]::GetForegroundWindow()))
         $pill = @(Find-Named $win 'Switch model' $CT::ComboBox | Where-Object { -not $_.Current.IsOffscreen })
         if ($pill.Count -eq 1) {
             try { $pill[0].SetFocus() } catch { }
@@ -649,7 +680,11 @@ function Send-Canary([string]$Target, [string]$ChatName) {
     Send-Chunk ' ' $Target $ChatName 'empty'
     $v = Wait-InputValue { param($x) ($x -ceq ' ') -or ($x -ceq ($base + ' ')) } 2500
     if ($null -eq $v -or -not (($v -ceq ' ') -or ($v -ceq ($base + ' ')))) {
-        Stop-Panel 5 ('the canary space did not show up in the message input; nothing more was typed. ' + (Get-TypingFacts))
+        $limit = ''
+        if ($null -ne $script:Saved -and $script:Saved.Fg -ne $script:Hwnd) {
+            $limit = ' The keys could not be delivered with another window in front of VS Code; the previous window is put back in front.'
+        }
+        Stop-Panel 5 ('the canary space did not show up in the message input; nothing more was typed.' + $limit + ' ' + (Get-TypingFacts))
     }
     $base
 }
@@ -700,21 +735,32 @@ function Send-Text([string]$Text, [string]$Target, [string]$ChatName) {
         $note = Clear-OwnText
         Stop-Panel 5 ('the input changed just before Enter, so Enter was not pressed; ' + $note)
     }
-    $n = [PanelNative]::Enter()
-    Save-OwnTick
-    if ($n -ne 2) { Stop-Panel 1 'Enter was not accepted' }
-    # Cleared: Send is disabled, or gone because the chat is now running.
-    for ($i = 0; $i -lt 25; $i++) {
-        Start-Sleep -Milliseconds 200
-        $s = Get-SendButtons $win
-        if ($s.Count -eq 0 -or -not $s[0].Current.IsEnabled) { return }
+    for ($round = 0; $round -lt 2; $round++) {
+        if ($round -eq 1) {
+            # A first Enter that did nothing (the input still holds exactly the text, Send is enabled, the
+            # focus is still the input): once more, under every guard. A sent text leaves the input empty,
+            # so a second Enter can never send it twice.
+            Start-Sleep -Milliseconds 1500
+            $again = Read-InputValue
+            if ($null -eq $again -or -not ((ConvertTo-PlainValue $again) -ceq $want)) { break }
+            Assert-Ready $Target 'typed' $ChatName
+        }
+        $n = [PanelNative]::Enter()
+        Save-OwnTick
+        if ($n -ne 2) { Stop-Panel 1 'Enter was not accepted' }
+        # Cleared: Send is disabled, or gone because the chat is now running.
+        for ($i = 0; $i -lt 25; $i++) {
+            Start-Sleep -Milliseconds 200
+            $s = Get-SendButtons $win
+            if ($s.Count -eq 0 -or -not $s[0].Current.IsEnabled) { return }
+        }
     }
     Stop-Panel 1 'Enter did not clear the input; the text may be unsent in the chat'
 }
 
 # ---------------------------------------------------------------- the model picker
 
-function Select-Model([string]$Name) {
+function Select-Model([string]$Name, [string]$Fallback = '') {
     $win = $script:Win
     $combos = @(Find-Named $win 'Switch model' $CT::ComboBox | Where-Object { -not $_.Current.IsOffscreen })
     if ($combos.Count -ne 1) { Stop-Panel 2 'the model picker is not showing' }
@@ -737,6 +783,15 @@ function Select-Model([string]$Name) {
             return ('{0} options: {1}; active: {2}' -f $items.Count, $names, $(if ($active.Count -ge 1) { $active[0].Current.Name } else { 'none' }))
         }
         $match = @($items | Where-Object { $_.Current.Name -ieq $Name -or $_.Current.Name.StartsWith($Name + ' ', [StringComparison]::OrdinalIgnoreCase) })
+        $script:ModelNote = ''
+        if ($match.Count -eq 0 -and $Fallback -ne '') {
+            # The wanted option is not offered: the first option that starts with the fallback word, and say so.
+            $match = @($items | Where-Object { $_.Current.Name.StartsWith($Fallback, [StringComparison]::OrdinalIgnoreCase) } | Select-Object -First 1)
+            if ($match.Count -eq 1) {
+                $script:ModelNote = "'$Name' is not offered; chose the option starting '$Fallback'"
+                $Name = $Fallback
+            }
+        }
         if ($match.Count -ne 1) {
             $names = ($items | ForEach-Object { $_.Current.Name }) -join ' | '
             Stop-Panel 2 "$($match.Count) model options match '$Name'; the options are: $names"
@@ -752,7 +807,7 @@ function Select-Model([string]$Name) {
         for ($i = 0; $i -lt 12; $i++) {
             Start-Sleep -Milliseconds 250
             $v = $vp.Current.Value
-            if ($v -ieq $Name -or $v.StartsWith($Name + ' ', [StringComparison]::OrdinalIgnoreCase)) { return $v }
+            if ($v -ieq $Name -or $v.StartsWith($Name + ' ', [StringComparison]::OrdinalIgnoreCase) -or ($script:ModelNote -ne '' -and $v.StartsWith($Name, [StringComparison]::OrdinalIgnoreCase))) { return $v }
         }
         Stop-Panel 1 "the model picker still says '$($vp.Current.Value)', not '$Name'"
     } finally {
@@ -773,7 +828,7 @@ function Invoke-Send([string]$Id, [string]$File) {
     'sent'
 }
 
-function Invoke-New([string]$File, [string]$ModelName) {
+function Invoke-New([string]$File, [string]$ModelName, [string]$FallbackModel = '') {
     if ($ModelName -eq '') { Stop-Panel 1 '-Model is needed: a new chat would inherit the default model, which is the expensive one. Name an option; model -Session <id> lists them' }
     $text = Read-TextFile $File
     Open-Window
@@ -781,18 +836,21 @@ function Invoke-New([string]$File, [string]$ModelName) {
     Save-View
     $win = $script:Win
     $before = @(Get-Chats $win | ForEach-Object { $_.Id })
+    $script:NewBaseActive = @(Get-Chats $win | Where-Object { $_.Active } | ForEach-Object { $_.Id })
+    $script:NewBaseUntitled = Test-UntitledTabSelected $win
     $btn = @(Find-Named $win 'New session' $CT::Button | Where-Object { $_.Current.IsEnabled })
     if ($btn.Count -lt 1) { Stop-Panel 2 'the New session button is not available' }
     $btn[0].GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
     $ready = $false
     for ($i = 0; $i -lt 32; $i++) {
         Start-Sleep -Milliseconds 250
-        $active = @(Get-Chats $win | Where-Object { $_.Active })
-        if ($active.Count -eq 0 -and (Get-InputBoxes $win).Count -eq 1) { $ready = $true; break }
+        $opened = Test-UntitledTabSelected $win
+        $marked = @(Get-Chats $win | Where-Object { $_.Active -and ($script:NewBaseUntitled -or $script:NewBaseActive -notcontains $_.Id) })
+        if ($opened -and $marked.Count -eq 0 -and (Get-InputBoxes $win).Count -eq 1) { $ready = $true; break }
     }
     if (-not $ready) { Stop-Panel 5 'a new chat tab did not open' }
     # The model is set and confirmed on the new tab before its first message exists.
-    [void](Select-Model $ModelName)
+    [void](Select-Model $ModelName $FallbackModel)
     Send-Text $text '' 'the new chat'
     for ($i = 0; $i -lt 120; $i++) {
         $now = @(Get-Chats $win | Where-Object { $before -notcontains $_.Id })
@@ -829,6 +887,7 @@ function Write-PanelLog([string]$ActionName, [string]$Id, [int]$Code, [string]$R
         $why = ''
         if ($Code -ne 0) { $why = ' ' + ($Reason -replace '[\r\n]+', ' ') }
         if ($script:RestoreNote -ne '') { $why += ' [restore: ' + $script:RestoreNote + ']' }
+        if ($script:FgNote -ne '') { $why += ' [fg: ' + $script:FgNote + ']' }
         $line = '{0} {1} {2} exit={3} held_ms={4}{5}' -f (Get-Date).ToString('yyyy-MM-ddTHH:mm:ss'), $ActionName, $(if ($Id -ne '') { $Id } else { '-' }), $Code, $held, $why
         [System.IO.File]::AppendAllText($LogFile, $line + "`r`n", (New-Object System.Text.UTF8Encoding($false)))
     } catch { }
@@ -838,6 +897,7 @@ function Write-PanelLog([string]$ActionName, [string]$Id, [int]$Code, [string]$R
 function Invoke-Logged([string]$ActionName, [string]$LogId, [scriptblock]$Body) {
     $script:HeldWatch = $null
     $script:Saved = $null
+    $script:FgNote = ''
     $r = [pscustomobject]@{ Code = 0; Reason = 'ok'; Value = $null }
     try {
         $r.Value = & $Body
@@ -879,9 +939,9 @@ function Write-StepLine([string]$Step, $r, [string]$Detail) {
     [Console]::Out.WriteLine(('{0} {1}: {2}' -f $verdict, $Step, $note))
 }
 
-# The scratch chat of the selftest runs on the cheap model: set and confirmed before its first message,
-# or the selftest stops at its first step and sends nothing.
-$SelfTestModel = 'Haiku 4.5'
+# The scratch chat of the selftest runs on the cheapest model: set and confirmed before its first message,
+# or the selftest stops at its first step and sends nothing. If 5.5 is not offered, any Haiku option, said so.
+$SelfTestModel = 'Haiku 5.5'
 
 function Invoke-SelfTest {
     $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ('claude-panel-selftest-' + [guid]::NewGuid().ToString('N') + '.txt')
@@ -889,9 +949,9 @@ function Invoke-SelfTest {
     $id = ''
     try {
         [System.IO.File]::WriteAllText($tmp, 'Reply with the single word OK.', (New-Object System.Text.UTF8Encoding($false)))
-        $r = Invoke-Logged 'new' '' { Invoke-New $tmp $SelfTestModel }
+        $r = Invoke-Logged 'new' '' { Invoke-New $tmp $SelfTestModel 'Haiku' }
         if ($r.Code -eq 0) { $id = [string]$r.Value }
-        Write-StepLine 'new' $r ($id + ' on ' + $SelfTestModel)
+        Write-StepLine 'new' $r ($id + ' on ' + $SelfTestModel + $(if ($script:ModelNote -ne '') { ' (' + $script:ModelNote + ')' } else { '' }))
         if ($r.Code -ne 0) { return 1 }
 
         $newName = 'zz-selftest-' + (Get-Date).ToString('yyyyMMddHHmm')

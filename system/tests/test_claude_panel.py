@@ -301,6 +301,33 @@ class CanaryTests(unittest.TestCase):
         self.assertNotIn("TypeBatch", focus)
         self.assertNotIn("[PanelNative]::Enter", focus)
 
+    def test_a_second_enter_needs_the_text_still_in_the_input_and_every_guard(self):
+        send = re.search(r"function Send-Text.*?\n\}\n", source(), re.DOTALL).group(0)
+        self.assertIn("$round -lt 2", send)
+        retry = send[send.index("if ($round -eq 1)"):send.index("[PanelNative]::Enter()")]
+        self.assertIn("-ceq $want", retry)
+        self.assertIn("Assert-Ready $Target 'typed'", retry)
+        self.assertEqual(send.count("[PanelNative]::Enter()"), 1)
+
+    def test_the_selftest_takes_haiku_5_5_and_falls_back_to_any_haiku_and_says_so(self):
+        text = source()
+        self.assertIn("$SelfTestModel = 'Haiku 5.5'", text)
+        selftest = re.search(r"function Invoke-SelfTest.*?\n\}\n", text, re.DOTALL).group(0)
+        self.assertIn("Invoke-New $tmp $SelfTestModel 'Haiku'", selftest)
+        self.assertIn("$script:ModelNote", selftest)
+        picker = re.search(r"function Select-Model.*?\n\}\n", text, re.DOTALL).group(0)
+        self.assertIn("is not offered; chose the option starting", picker)
+
+    def test_a_new_chat_is_an_untitled_selected_tab_and_a_lingering_active_row_is_not_a_chat_switch(self):
+        text = source()
+        new = re.search(r"function Invoke-New.*?\n\}\n", text, re.DOTALL).group(0)
+        self.assertIn("Test-UntitledTabSelected", new)
+        self.assertIn("$script:NewBaseActive", new)
+        ready = re.search(r"function Assert-Ready.*?\n\}\n", text, re.DOTALL).group(0)
+        self.assertIn("Test-UntitledTabSelected", ready)
+        self.assertIn("$script:NewBaseUntitled -and $active.Count -ne 0", ready)
+        self.assertIn("Claude Code,*", text)
+
     def test_a_failed_canary_reports_what_had_the_focus(self):
         facts = re.search(r"function Get-TypingFacts.*?\n\}\n", source(), re.DOTALL).group(0)
         for part in ["ControlType.ProgrammaticName", "Current.Name", "Current.ClassName", "ProcessNameOf", "KeyboardFocusFacts"]:
@@ -404,7 +431,7 @@ class SelfTestTests(unittest.TestCase):
     def test_selftest_puts_its_scratch_chat_on_haiku_before_the_first_message(self):
         text = source()
         selftest = re.search(r"function Invoke-SelfTest.*?\n\}\n", text, re.DOTALL).group(0)
-        self.assertIn("$SelfTestModel = 'Haiku 4.5'", text)
+        self.assertIn("$SelfTestModel = 'Haiku 5.5'", text)
         self.assertIn("Invoke-New $tmp $SelfTestModel", selftest)
         self.assertIn("zz-selftest-", selftest)
         new = re.search(r"function Invoke-New.*?\n\}\n", text, re.DOTALL).group(0)

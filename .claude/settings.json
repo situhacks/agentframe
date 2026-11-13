@@ -82,11 +82,23 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "Bash|PowerShell",
+        "matcher": "*",
         "hooks": [
           {
             "type": "command",
-            "command": "AF_ROOT=\"${CLAUDE_PROJECT_DIR}\" af hook post-tool-use"
+            "command": "AF_ROOT=\"${CLAUDE_PROJECT_DIR}\" af hook post-tool-use",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "AF_ROOT=\"${CLAUDE_PROJECT_DIR}\" af hook pre-compact",
+            "timeout": 10
           }
         ]
       }

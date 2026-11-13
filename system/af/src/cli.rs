@@ -107,7 +107,7 @@ enum Cmd {
         #[command(subcommand)]
         cmd: crate::studio::StudioCmd,
     },
-    /// The chat registry: register, list, stop, end, bundle
+    /// The chat registry: register, list, context, stop, end, bundle
     Session {
         #[command(subcommand)]
         cmd: crate::sessions::SessionCmd,
@@ -191,7 +191,7 @@ enum Cmd {
         dry_run: bool,
     },
     /// Run a Claude Code hook: session-start, stop, session-end, notification, pre-tool-use,
-    /// post-tool-use (payload on stdin)
+    /// post-tool-use, pre-compact (payload on stdin)
     Hook {
         event: String,
         #[arg(trailing_var_arg = true, allow_hyphen_values = true, hide = true)]

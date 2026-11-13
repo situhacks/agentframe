@@ -2,7 +2,7 @@
 
 Shapes the two files in `system/sessions/<name>/` (runtime state, gitignored). The chat writes both by hand; `af hook session-start` prints them and `af hook stop` checks the handoff.
 
-**`brief.md`**, written by the chat or the operator that starts it, before it starts: frontmatter `goal` (one line), `done_when` (the check that ends the job), `write_surface` (a list of vault-relative paths), `model` (`opus` or `sonnet`), `window` (tokens); the body is free.
+**`brief.md`**, written by the chat or the operator that starts it, before it starts: frontmatter `goal` (one line), `done_when` (the check that ends the job), `write_surface` (a list of vault-relative paths), `model` (`opus` or `sonnet`), and optionally `class` (`main`, `side`, or `build`; [`sessions-registry.md`](sessions-registry.md#session-classes) says what each means); the body is free.
 
 **`handoff.md`**, written by the chat before it stops. These four sections, in this order, and no others:
 

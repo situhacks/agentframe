@@ -18,6 +18,8 @@ use std::io::{BufRead, Read, Seek, SeekFrom};
 
 /// Bytes read from the end of a transcript to find the last permission mode.
 const MODE_TAIL: u64 = 512 * 1024;
+/// The most a context-size read takes from the end of a transcript before giving up.
+const CONTEXT_TAIL_MAX: u64 = 8 * 1024 * 1024;
 /// The shortest `--confirm` phrase: long enough to identify one message, not a common word.
 pub const MIN_PHRASE: usize = 12;
 const OPEN_TAG: &str = "<cross-session-message";
@@ -173,6 +175,57 @@ pub fn last_mode(path: &str) -> Option<String> {
     let text = String::from_utf8_lossy(&buf);
     let re = crate::fm::rx(r#""permissionMode":"([A-Za-z]+)""#);
     re.captures_iter(&text).last().map(|c| c[1].to_string())
+}
+
+/// Tokens in the context of the last main-chain assistant line in these lines: input plus
+/// cache read plus cache creation. Sidechain lines, lines with no usage, and lines that do not
+/// parse (a torn tail, a cut head) are skipped; an all-zero usage is an error stub, not a size.
+pub fn last_context_tokens(text: &str) -> Option<u64> {
+    for line in text.rsplit('\n') {
+        if !line.contains("\"usage\"") {
+            continue;
+        }
+        let rec: Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if rec.get("type").and_then(Value::as_str) != Some("assistant") || rec.get("isSidechain").and_then(Value::as_bool) == Some(true) {
+            continue;
+        }
+        let usage = match rec.pointer("/message/usage") {
+            Some(u) => u,
+            None => continue,
+        };
+        let n: u64 = ["input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"]
+            .iter()
+            .map(|k| usage.get(*k).and_then(Value::as_u64).unwrap_or(0))
+            .sum();
+        if n > 0 {
+            return Some(n);
+        }
+    }
+    None
+}
+
+/// The chat's current context size from its transcript: the last 512 KB, then up to 8 MB when
+/// that tail holds no assistant line with usage. None when neither does.
+pub fn context_tokens(path: &str) -> Option<u64> {
+    let mut f = std::fs::File::open(path).ok()?;
+    let len = f.metadata().ok()?.len();
+    let mut tail = MODE_TAIL;
+    loop {
+        let from = len.saturating_sub(tail);
+        f.seek(SeekFrom::Start(from)).ok()?;
+        let mut buf = Vec::new();
+        (&mut f).take(tail).read_to_end(&mut buf).ok()?;
+        if let Some(n) = last_context_tokens(&String::from_utf8_lossy(&buf)) {
+            return Some(n);
+        }
+        if from == 0 || tail >= CONTEXT_TAIL_MAX {
+            return None;
+        }
+        tail = CONTEXT_TAIL_MAX;
+    }
 }
 
 fn inbound_setting() -> Option<String> {

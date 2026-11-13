@@ -73,6 +73,85 @@ pub fn brief_rel(name: &str) -> String {
     format!("system/sessions/{name}/brief.md")
 }
 
+// ------------------------------------------------------------------ session classes
+
+/// How much context a chat is meant to carry. Not the permission class in `reach`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionClass {
+    Main,
+    Side,
+    Build,
+}
+
+/// One class's window and nudge thresholds, in tokens. `None` means no nudge: the
+/// harness's own auto-compact handles that class.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClassLimits {
+    pub class: SessionClass,
+    pub window: u64,
+    pub soft: Option<u64>,
+    pub hard: Option<u64>,
+}
+
+/// The one table of session classes.
+pub const CLASS_LIMITS: [ClassLimits; 3] = [
+    ClassLimits { class: SessionClass::Main, window: 350_000, soft: None, hard: None },
+    ClassLimits { class: SessionClass::Side, window: 300_000, soft: None, hard: None },
+    ClassLimits { class: SessionClass::Build, window: 1_000_000, soft: Some(400_000), hard: Some(600_000) },
+];
+
+pub const CLASS_NAMES: [&str; 3] = ["main", "side", "build"];
+
+impl SessionClass {
+    pub fn name(self) -> &'static str {
+        match self {
+            SessionClass::Main => "main",
+            SessionClass::Side => "side",
+            SessionClass::Build => "build",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<SessionClass> {
+        CLASS_LIMITS.iter().map(|l| l.class).find(|c| c.name() == s.trim())
+    }
+
+    pub fn limits(self) -> ClassLimits {
+        *CLASS_LIMITS.iter().find(|l| l.class == self).expect("every class has a row")
+    }
+}
+
+/// The class a name gets with no brief override: the main chat is `main`, `system/*` is
+/// `build`, everything else is `side`.
+pub fn default_class(name: &str) -> SessionClass {
+    match (role_of(name), name.contains('/')) {
+        ("main", false) => SessionClass::Main,
+        ("builder", _) => SessionClass::Build,
+        _ => SessionClass::Side,
+    }
+}
+
+/// The brief's `class:` line, when it holds one of the three classes.
+pub fn brief_class(ctx: &Ctx, name: &str) -> Option<SessionClass> {
+    let tf = TextFile::load(&vpath(ctx, &brief_rel(name))).ok()??;
+    let (bfm, _) = fm::split_fm_optional(&tf.text)?;
+    SessionClass::parse(&fm::get_scalar(&bfm, "class")?)
+}
+
+/// A chat's class: its brief's `class:` line, else the default for its name.
+pub fn class_of(ctx: &Ctx, name: &str) -> SessionClass {
+    brief_class(ctx, name).unwrap_or_else(|| default_class(name))
+}
+
+/// Write or update `class: <c>` in a brief's frontmatter, adding the block when it has none.
+fn write_brief_class(path: &str, class: SessionClass) -> R<()> {
+    let mut tf = TextFile::load(path)?.unwrap_or_else(|| TextFile::new(""));
+    tf.text = match fm::split_fm_optional(&tf.text) {
+        Some((bfm, body)) => fm::join_fm(fm::upsert_scalar(&bfm, "class", class.name(), None)?.trim_end(), &body),
+        None => fm::join_fm(&format!("class: {}", class.name()), &tf.text),
+    };
+    tf.save(path)
+}
+
 // ------------------------------------------------------------------ rows
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -429,6 +508,9 @@ pub enum SessionCmd {
         model: Option<String>,
         #[arg(long)]
         brief: Option<String>,
+        /// main, side, or build: written to the brief's `class:` line (default: from the name)
+        #[arg(long)]
+        class: Option<String>,
     },
     /// Print the registry, joined with the claude agents roster when available
     List {
@@ -449,6 +531,8 @@ pub enum SessionCmd {
         #[arg(long, value_parser = clap::builder::PossibleValuesParser::new(END_REASONS))]
         reason: String,
     },
+    /// A chat's class, context tokens, window and thresholds; every live chat with no name
+    Context { name: Option<String> },
     /// Print the SessionStart injection for a session id
     Bundle {
         #[arg(long)]
@@ -473,7 +557,10 @@ pub enum SessionCmd {
 
 pub fn run(ctx: &Ctx, cmd: SessionCmd) -> R<i32> {
     match cmd {
-        SessionCmd::Register { name, session, model, brief } => cmd_register(ctx, &name, &session, model.as_deref(), brief.as_deref()),
+        SessionCmd::Register { name, session, model, brief, class } => {
+            cmd_register(ctx, &name, &session, model.as_deref(), brief.as_deref(), class.as_deref())
+        }
+        SessionCmd::Context { name } => crate::context::cmd_context(ctx, name.as_deref()),
         SessionCmd::List { json } => cmd_list(ctx, json),
         SessionCmd::Stop { name, session } => cmd_stop(ctx, name.as_deref(), session.as_deref()),
         SessionCmd::End { name, session, reason } => cmd_end(ctx, name.as_deref(), session.as_deref(), &reason),
@@ -498,7 +585,7 @@ fn clean_cell(label: &str, v: &str) -> R<String> {
     Ok(v.to_string())
 }
 
-pub fn cmd_register(ctx: &Ctx, name: &str, session: &str, model: Option<&str>, brief: Option<&str>) -> R<i32> {
+pub fn cmd_register(ctx: &Ctx, name: &str, session: &str, model: Option<&str>, brief: Option<&str>, class: Option<&str>) -> R<i32> {
     if !valid_name(name) {
         die!("session name '{name}' is outside the grammar: {NAME_GRAMMAR}");
     }
@@ -517,13 +604,26 @@ pub fn cmd_register(ctx: &Ctx, name: &str, session: &str, model: Option<&str>, b
         }
         None => None,
     };
+    let class = match class {
+        Some(c) => match SessionClass::parse(c) {
+            Some(c) => Some(c),
+            None => die!("unknown --class '{c}': use one of {}", CLASS_NAMES.join(", ")),
+        },
+        None => None,
+    };
     let dir = vpath(ctx, &session_rel(name));
+    let dst = pyos::join(&dir, "brief.md");
+    if class.is_some() && src.is_none() && !pyos::isfile(&dst) {
+        die!("--class is written to the brief's class: line and {} has no brief; pass --brief <path> or write the brief first", brief_rel(name));
+    }
     pyos::makedirs(&dir)?;
     if let Some(p) = src {
-        let dst = pyos::join(&dir, "brief.md");
         if pyos::abspath(&p) != pyos::abspath(&dst) {
             std::fs::copy(&p, &dst).map_err(|e| pyos::os_error(&e, &dst))?;
         }
+    }
+    if let Some(c) = class {
+        write_brief_class(&dst, c)?;
     }
     let now = life::now_min();
     let row = Row {
@@ -568,6 +668,7 @@ pub fn cmd_list(ctx: &Ctx, as_json: bool) -> R<i32> {
             .enumerate()
             .map(|(i, r)| {
                 let mut v = r.to_json();
+                v["class"] = json!(class_of(ctx, &r.name).name());
                 if let Some(s) = &states {
                     v["live_state"] = json!(s[i]);
                 }
@@ -580,19 +681,20 @@ pub fn cmd_list(ctx: &Ctx, as_json: bool) -> R<i32> {
         }
         return Ok(0);
     }
+    let class = |r: &Row| class_of(ctx, &r.name).name();
     match &states {
         Some(s) => {
-            outln!("{} live_state |", HEADER);
-            outln!("{}---|", SEPARATOR);
+            outln!("{HEADER} class | live_state |");
+            outln!("{SEPARATOR}---|---|");
             for (r, st) in rows.iter().zip(s) {
-                outln!("{} {st} |", r.line());
+                outln!("{} {} | {st} |", r.line(), class(r));
             }
         }
         None => {
-            outln!("{HEADER}");
-            outln!("{SEPARATOR}");
+            outln!("{HEADER} class |");
+            outln!("{SEPARATOR}---|");
             for r in &rows {
-                outln!("{}", r.line());
+                outln!("{} {} |", r.line(), class(r));
             }
             outln!("af session list: {missing}");
         }

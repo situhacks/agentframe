@@ -146,7 +146,7 @@ fn emit(o: crate::sessions::HookOutput) -> i32 {
 /// `af hook <event>`: one process start per event.
 pub fn main(args: &[String]) -> i32 {
     let event = match args {
-        [e] if EVENTS.contains(&e.as_str()) => e.as_str(),
+        [e] if EVENTS.contains(&e.as_str()) || e == "user-prompt-submit" => e.as_str(),
         _ => {
             out::err_line(&format!("af hook: give one event: {}", EVENTS.join(", ")));
             return 1;
@@ -170,6 +170,8 @@ pub fn main(args: &[String]) -> i32 {
             }
             return emit(o);
         }
+        // Chats started under earlier settings still send this on every message.
+        "user-prompt-submit" => return 0,
         "session-end" => return emit(sessions::hook_session_end(&h.ctx, &text)),
         "notification" => return emit(sessions::hook_notification(&h.ctx, &text)),
         _ => {}

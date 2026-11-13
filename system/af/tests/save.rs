@@ -46,6 +46,8 @@ fn fixture() -> Fx {
     let fx = Fx::new();
     fx.write("workspace/life/open.md", "# Open loops\n");
     fx.write("workspace/life/life.md", "# Life\n");
+    // The doctor renders life/needs.md into the repo; commit it so a clean repo stays clean.
+    afcore::life::doctor_checks(&fx.ctx()).unwrap();
     git(&fx, "", &["init", "-q", "-b", "master", "workspace"]);
     git(&fx, "workspace", &["add", "-A"]);
     git(&fx, "workspace", &["commit", "-q", "-m", "private start"]);
@@ -53,7 +55,7 @@ fn fixture() -> Fx {
 }
 
 fn dirty(fx: &Fx) {
-    fx.write("workspace/life/open.md", "# Open loops\n\n- changed\n");
+    fx.write("workspace/life/open.md", "# Open loops\n\nProse is fine here.\n");
     fx.write("workspace/life/knowledge/new.md", "# New\n");
 }
 
@@ -214,4 +216,125 @@ fn the_stop_hook_is_silent_without_a_private_repo() {
     let (code, out) = stop(&fx, r#"{"session_id":"s-new"}"#);
     assert_eq!((code, out.as_str()), (0, ""));
     assert!(fx.run_log_rows().is_empty(), "nothing to save is not a skip");
+}
+
+// ------------------------------------------------------------------ what blocks a save
+
+#[test]
+fn any_operation_in_progress_skips_the_save() {
+    let cases: [(&str, bool, &str); 5] = [
+        ("rebase-merge", true, "a rebase is in progress"),
+        ("rebase-apply", true, "a rebase is in progress"),
+        ("CHERRY_PICK_HEAD", false, "a cherry-pick is in progress"),
+        ("REVERT_HEAD", false, "a revert is in progress"),
+        ("BISECT_LOG", false, "a bisect is in progress"),
+    ];
+    for (marker, is_dir, words) in cases {
+        let fx = fixture();
+        dirty(&fx);
+        let rel = format!("workspace/.git/{marker}");
+        if is_dir {
+            fx.mkdir(&rel);
+        } else {
+            fx.write(&rel, "abc\n");
+        }
+        let out = fx.ok(&["save"]);
+        assert!(out.starts_with("Skipped: ") && out.contains(words), "{marker}: {out}");
+        assert_eq!(commits(&fx, "workspace"), 1, "{marker}");
+    }
+}
+
+#[test]
+fn git_cleanup_runs_for_the_manual_save_and_never_for_the_hook() {
+    assert!(afcore::save::cleanup_runs(None), "af save cleans up");
+    assert!(!afcore::save::cleanup_runs(Some(afcore::save::HOOK_BUDGET)), "a save with a deadline never does");
+}
+
+// ------------------------------------------------------------------ af doctor
+
+fn issues(fx: &Fx) -> Vec<String> {
+    afcore::life::doctor_checks(&fx.ctx()).unwrap().0
+}
+
+/// The fixture's last commit, backdated by `hours`.
+fn backdate(fx: &Fx, hours: i64) {
+    let when = (chrono::Local::now() - chrono::Duration::hours(hours)).format("%Y-%m-%dT%H:%M:%S").to_string();
+    let o = std::process::Command::new("git")
+        .arg("-C")
+        .arg(fx.path("workspace"))
+        .args(["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-q", "--amend", "--no-edit", "--allow-empty"])
+        .env("GIT_AUTHOR_DATE", &when)
+        .env("GIT_COMMITTER_DATE", &when)
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+}
+
+#[test]
+fn a_stale_git_lock_is_an_issue_naming_the_file_and_the_fix() {
+    for (rel, name) in [
+        ("workspace/.git/index.lock", "index.lock"),
+        ("workspace/.git/HEAD.lock", "HEAD.lock"),
+        ("workspace/.git/refs/heads/master.lock", "refs/heads/master.lock"),
+        ("workspace/.git/gc.pid", "gc.pid"),
+    ] {
+        let fx = fixture();
+        fx.write(rel, "");
+        assert!(issues(&fx).is_empty(), "{name}: a fresh lock is a git at work");
+        set_mtime(&fx, rel, -11 * 60);
+        let i = issues(&fx);
+        assert_eq!(i.len(), 1, "{name}: {i:?}");
+        assert!(i[0].starts_with(&format!("workspace/.git/{name} is 11 minutes old")), "{}", i[0]);
+        assert!(i[0].contains("confirm no git is running, then delete that file"), "{}", i[0]);
+    }
+}
+
+#[test]
+fn a_lock_a_few_minutes_old_is_not_flagged() {
+    let fx = fixture();
+    fx.write("workspace/.git/index.lock", "");
+    set_mtime(&fx, "workspace/.git/index.lock", -5 * 60);
+    assert!(issues(&fx).is_empty(), "{:?}", issues(&fx));
+}
+
+#[test]
+fn uncommitted_changes_over_an_old_commit_mean_the_layer_is_not_saved() {
+    let fx = fixture();
+    backdate(&fx, 30);
+    dirty(&fx);
+    let i = issues(&fx);
+    assert_eq!(i.len(), 1, "{i:?}");
+    assert!(i[0].contains("uncommitted changes") && i[0].contains("not being saved") && i[0].contains("af save"), "{}", i[0]);
+    assert!(i[0].contains("30 hours old"), "{}", i[0]);
+
+    let (code, out, _) = fx.run(&["doctor"]);
+    assert_eq!(code, 1);
+    assert!(out.contains("not being saved"), "{out}");
+
+    fx.ok(&["save"]);
+    assert!(issues(&fx).is_empty(), "a save clears it");
+}
+
+#[test]
+fn uncommitted_changes_over_a_recent_commit_are_not_flagged() {
+    let fx = fixture();
+    backdate(&fx, 2);
+    dirty(&fx);
+    assert!(issues(&fx).is_empty(), "{:?}", issues(&fx));
+}
+
+#[test]
+fn a_clean_repo_with_an_old_commit_is_not_flagged() {
+    let fx = fixture();
+    backdate(&fx, 100);
+    assert!(issues(&fx).is_empty(), "{:?}", issues(&fx));
+}
+
+#[test]
+fn a_workspace_git_cannot_read_reports_nothing() {
+    isolate_git();
+    let fx = Fx::new();
+    fx.write("workspace/.git/config", "[core]\n\tbare = false\n");
+    fx.write("workspace/life/open.md", "# Open loops\n");
+    assert!(issues(&fx).is_empty(), "no false issue when git cannot answer");
 }

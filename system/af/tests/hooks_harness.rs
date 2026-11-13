@@ -76,10 +76,16 @@ fn test_guard_entrypoints_emit_valid_empty_json_when_no_rule_matches() {
 fn test_unknown_event_or_flag_is_a_non_blocking_error() {
     let fx = fixture();
     assert_eq!(hook(&fx, &["pre-compact"], "{}").0, 1);
-    assert_eq!(hook(&fx, &["user-prompt-submit"], "{}").0, 1, "no hook runs per message");
     assert_eq!(hook(&fx, &[], "{}").0, 1);
     assert_eq!(hook(&fx, &["pre-tool-use", "--verbose"], "{}").0, 1, "an unknown flag fails like an unknown event");
     assert_eq!(hook(&fx, &["pre-tool-use", "stop"], "{}").0, 1, "one event per call");
+}
+
+#[test]
+fn test_the_per_message_event_is_a_silent_no_op() {
+    let fx = fixture();
+    // Chats started under earlier settings still send this event: it exits 0 and says nothing.
+    assert_eq!(hook(&fx, &["user-prompt-submit"], r#"{"session_id":"s1","prompt":"hi"}"#), (0, String::new()));
 }
 
 #[test]

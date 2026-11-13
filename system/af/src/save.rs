@@ -11,7 +11,7 @@ use crate::outln;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 /// How long the stop hook lets git run before it gives up and logs a skip.
 pub const HOOK_BUDGET: Duration = Duration::from_secs(20);
@@ -67,9 +67,34 @@ pub fn run(ctx: &Ctx, dry_run: bool) -> R<i32> {
 
 /// The stop hook's save: bounded, silent, and a skip or failure becomes one run-log note.
 pub fn hook(ctx: &Ctx) {
-    if let Saved::Skipped(why) | Saved::Failed(why) = save(ctx, false, Some(HOOK_BUDGET)) {
-        crate::runlog::log_note(ctx, HOOK_VERB, &format!("skipped: {why}"));
+    match save(ctx, false, Some(HOOK_BUDGET)) {
+        Saved::Skipped(why) => crate::runlog::log_note(ctx, HOOK_VERB, &format!("skipped: {why}")),
+        Saved::Failed(why) => crate::runlog::log_note(ctx, HOOK_VERB, &format!("failed: {why}")),
+        _ => {}
     }
+}
+
+/// Git's own cleanup runs only for the manual save. A hook never starts it: a cleanup cut off
+/// by the hook's deadline is the one git step that could leave work half done.
+pub fn cleanup_runs(budget: Option<Duration>) -> bool {
+    budget.is_none()
+}
+
+/// What a git operation in progress in the repository is, in plain words; the save leaves
+/// the repository alone while one runs. A lock file is an operation too.
+fn operation_in_progress(dotgit: &Path) -> Option<&'static str> {
+    if dotgit.join("index.lock").exists() {
+        return Some("a git lock is held (workspace/.git/index.lock)");
+    }
+    let marks: [(&str, &str, bool); 6] = [
+        ("MERGE_HEAD", "a merge is in progress in workspace/", false),
+        ("rebase-merge", "a rebase is in progress in workspace/", true),
+        ("rebase-apply", "a rebase is in progress in workspace/", true),
+        ("CHERRY_PICK_HEAD", "a cherry-pick is in progress in workspace/", false),
+        ("REVERT_HEAD", "a revert is in progress in workspace/", false),
+        ("BISECT_LOG", "a bisect is in progress in workspace/", false),
+    ];
+    marks.iter().find(|(name, _, dir)| if *dir { dotgit.join(name).is_dir() } else { dotgit.join(name).is_file() }).map(|m| m.1)
 }
 
 fn files(n: usize) -> &'static str {
@@ -81,29 +106,19 @@ fn files(n: usize) -> &'static str {
 }
 
 /// Stage and commit everything in `workspace/`. With `budget`, every git step is killed at
-/// the deadline and the save is skipped.
+/// the deadline and the save is skipped; a killed step leaves its lock file alone.
 pub fn save(ctx: &Ctx, dry: bool, budget: Option<Duration>) -> Saved {
     let ws = PathBuf::from(vpath(ctx, "workspace"));
     if !ws.join(".git").exists() {
         return Saved::NotRepo;
     }
-    let started = SystemTime::now();
     let g = Git::new(&ws, budget.map(|b| Instant::now() + b));
     let dotgit = git_dir(&g);
-    if dotgit.join("index.lock").exists() {
-        return Saved::Skipped("a git lock is held (workspace/.git/index.lock)".into());
-    }
-    if dotgit.join("MERGE_HEAD").is_file() {
-        return Saved::Skipped("a merge is in progress in workspace/".into());
+    if let Some(why) = operation_in_progress(&dotgit) {
+        return Saved::Skipped(why.into());
     }
     let failed = |what: &str, o: &Out| -> Saved {
         if o.timed_out() {
-            // The killed git may have left its own lock behind; one made since this save
-            // began is ours, and left in place it would block every later save.
-            let lock = dotgit.join("index.lock");
-            if std::fs::metadata(&lock).and_then(|m| m.modified()).is_ok_and(|t| t >= started) {
-                let _ = std::fs::remove_file(&lock);
-            }
             Saved::Skipped(format!("git took too long to {what}"))
         } else {
             Saved::Failed(format!("{what}: {}", o.why()))
@@ -129,8 +144,65 @@ pub fn save(ctx: &Ctx, dry: bool, budget: Option<Duration>) -> Saved {
     if !c.ok() {
         return failed("commit", &c);
     }
-    g.cleanup();
+    if cleanup_runs(budget) {
+        g.cleanup();
+    }
     Saved::Committed(n)
+}
+
+/// A git lock this old was left by a git that died.
+const STALE_LOCK: Duration = Duration::from_secs(10 * 60);
+/// A private layer with changes and no commit for this long is not being saved.
+const UNSAVED_AFTER: Duration = Duration::from_secs(24 * 3600);
+/// What the doctor lets git take to answer; past it, it reports nothing.
+const DOCTOR_BUDGET: Duration = Duration::from_secs(3);
+
+/// The doctor's check of the private layer: a stale git lock that blocks the save, and
+/// changes left uncommitted for a day. Cheap, and silent when git cannot answer in time.
+pub fn doctor_issues(ctx: &Ctx) -> Vec<String> {
+    let ws = PathBuf::from(vpath(ctx, "workspace"));
+    let mut issues = Vec::new();
+    if !ws.join(".git").exists() {
+        return issues;
+    }
+    let g = Git::plain(&ws, Some(Instant::now() + DOCTOR_BUDGET));
+    let dotgit = git_dir(&g);
+    let mut locks: Vec<PathBuf> = Vec::new();
+    if let Ok(rd) = std::fs::read_dir(&dotgit) {
+        locks.extend(rd.flatten().map(|e| e.path()).filter(|p| {
+            p.is_file() && p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.ends_with(".lock") || n == "gc.pid")
+        }));
+    }
+    locks.extend(
+        walkdir::WalkDir::new(dotgit.join("refs").join("heads"))
+            .into_iter()
+            .flatten()
+            .map(|e| e.into_path())
+            .filter(|p| p.is_file() && p.extension().is_some_and(|x| x == "lock")),
+    );
+    locks.sort();
+    for lock in locks {
+        let age = std::fs::metadata(&lock).and_then(|m| m.modified()).ok().and_then(|t| SystemTime::now().duration_since(t).ok());
+        if let Some(age) = age.filter(|a| *a > STALE_LOCK) {
+            let rel = lock.strip_prefix(&dotgit).map(|r| r.to_string_lossy().replace(std::path::MAIN_SEPARATOR, "/")).unwrap_or_default();
+            issues.push(format!(
+                "workspace/.git/{rel} is {} minutes old and can stop the private layer from saving; confirm no git is running, then delete that file",
+                age.as_secs() / 60
+            ));
+        }
+    }
+    let status = g.run(&["status", "--porcelain"]);
+    if status.ok() && !status.stdout.trim().is_empty() {
+        let last = g.text(&["log", "-1", "--format=%ct"]).and_then(|s| s.parse::<u64>().ok());
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        if let Some(age) = last.map(|c| now.saturating_sub(c)).filter(|a| *a > UNSAVED_AFTER.as_secs()) {
+            issues.push(format!(
+                "workspace/ has uncommitted changes and its last commit is {} hours old, so the private layer is not being saved; run af save to see why",
+                age / 3600
+            ));
+        }
+    }
+    issues
 }
 
 /// The entries `git status --porcelain -z` lists: a rename or copy carries its source as a
@@ -206,9 +278,14 @@ struct Git {
 }
 
 impl Git {
-    fn new(dir: &Path, deadline: Option<Instant>) -> Git {
+    /// git with the fixed settings and no identity probe, for a read.
+    fn plain(dir: &Path, deadline: Option<Instant>) -> Git {
         let pre = ["--no-optional-locks", "-c", "core.quotepath=off"];
-        let mut g = Git { dir: dir.to_path_buf(), pre: pre.iter().map(|s| s.to_string()).collect(), deadline };
+        Git { dir: dir.to_path_buf(), pre: pre.iter().map(|s| s.to_string()).collect(), deadline }
+    }
+
+    fn new(dir: &Path, deadline: Option<Instant>) -> Git {
+        let mut g = Git::plain(dir, deadline);
         // A machine with no git identity still commits its own private layer.
         let has = |g: &Git, k: &str| !g.run(&["config", "--get", k]).stdout.trim().is_empty();
         if !(has(&g, "user.name") && has(&g, "user.email")) {

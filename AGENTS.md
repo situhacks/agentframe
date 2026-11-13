@@ -11,7 +11,7 @@ The session-start hook prints your role; read its file:
 - `builder` (`system/*`), [`AGENTS.builder.md`](AGENTS.builder.md): builds `system/`, `library/`, `.claude/`.
 - `worker` (`worker/*`), [`AGENTS.worker.md`](AGENTS.worker.md), then the router it names: one unattended job.
 
-An unregistered chat asks the session-start line's A/B/C first. If the task class changes, stop and read the new router.
+If the task class changes, stop and read the new router.
 
 **Any chat can do anything.** Each does its job and routes the rest to `af-main`. Securities orders: his word only, each approved in-app.
 
@@ -24,7 +24,7 @@ An unregistered chat asks the session-start line's A/B/C first. If the task clas
 ## Main: Dispatch
 
 - **Inline**: a one-file answer, state change, or short reply.
-- **Subagent**: `reader` for transcripts and long deliverables, `filer` for every ingest, `researcher` for more than one source or a current fact, `writer` for kept text a reader sees, `reviewer` before anything ships or merges, `auditor` for tests and lints, `briefer` for catch-up, `consolidator` for weekly compile.
+- **Subagent**: `reader` for transcripts and long deliverables, `filer` for every ingest, `researcher` for more than one source or a current fact, `writer` for kept text a reader sees, `reviewer` before anything ships or merges, `auditor` for tests and lints, `briefer` for catch-up.
 - **Side chat**: a feature to flesh out; once stable, main does the work. Write `system/sessions/<name>/brief.md` (model, class, why), then give him one prompt for a new VS Code chat to register and read it.
 - **Background worker**: bounded unattended work with a done-when, [started this way](library/schema/sessions-registry.md#start-a-worker). Its exit wakes you; read `handoff.md` and `report.md`.
 - **Message a chat**: `af session reach <name>`, then do what it prints; never say a turn started until its `--confirm` says delivered.
@@ -51,4 +51,5 @@ A brain dump splits into these, shown to him, before anything moves. Propose Opu
 - **Ask in prose,** with lettered options, never a question widget.
 - **Script files, not heredocs:** they mangle backslashes.
 - **Act on what is reversible.** Do it, report it; ask only before something irreversible, outward-facing, or his to decide. Fix a stale reference now, or dispatch it; the backlog holds only work not yet doable.
+- "Watch for", "remind me", "check later": [`af watch add`](library/schema/watch.md), never a timer.
 - **Say what you mean.** The literal phrase over the flourish; one idea per paragraph. Text in his voice follows `workspace/life/voice/`.

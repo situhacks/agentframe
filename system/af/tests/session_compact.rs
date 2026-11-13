@@ -226,13 +226,30 @@ fn a_second_compact_on_a_just_compacted_chat_says_already_compact_and_runs_nothi
     let (code, out, err) = compact(&fx, &[], &[]);
     assert_eq!(code, 0, "{out}{err}");
     assert_eq!((boundaries(&fx), calls(&fx).len()), (1, 1));
-    for extra in [&[][..], &["--force"][..]] {
+    for extra in [&[][..], &["--dry-run"][..], &["--model", "claude-opus-5-5"][..]] {
         let (code, out, err) = compact(&fx, &[], extra);
         assert_eq!(code, 0, "{out}{err}");
-        assert!(out.contains("system/x: already compact"), "{out}");
+        assert!(out.contains("system/x: already compact") && out.contains("--force runs it anyway"), "{out}");
         assert!(!err.contains("no compact_boundary"), "{err}");
     }
     assert_eq!((boundaries(&fx), calls(&fx).len()), (1, 1), "no further run, no further boundary");
+}
+
+#[test]
+fn force_runs_the_compaction_on_a_chat_that_reads_as_already_compact() {
+    // After a compaction he pastes a file and the request fails "prompt too long": that error reply
+    // has all-zero usage, so the transcript still reads as compacted, but there is something to compact.
+    let fx = big();
+    compact(&fx, &[], &[]);
+    let (code, out, err) = compact(&fx, &[], &["--force", "--dry-run"]);
+    assert_eq!(code, 0, "{out}{err}");
+    assert!(out.contains("would run") && out.contains("model claude-opus-5-5[1m] (from requestedModel of its last reply)"), "the model still comes from the reply before the boundary: {out}");
+    assert_eq!(calls(&fx).len(), 1, "a dry run runs nothing");
+    let (code, out, err) = compact(&fx, &[], &["--force"]);
+    assert_eq!(code, 0, "{out}{err}");
+    assert!(out.contains("system/x: compacted") && out.contains("Before unknown tokens"), "{out}");
+    assert_eq!((boundaries(&fx), calls(&fx).len()), (2, 2));
+    assert_eq!(model_arg(&fx, 1), "claude-opus-5-5[1m]");
 }
 
 #[test]
@@ -412,14 +429,11 @@ fn the_model_is_the_last_replys_requested_id_with_its_bracket_and_says_where_it_
     ]);
     assert_eq!(compact(&fx, &[], &[]).0, 0);
     assert_eq!(model_arg(&fx, 0), "claude-fable-5-2[1m]");
-    // A compacted chat has nothing new to compact until it replies again.
-    let mut text = fx.read(TRANSCRIPT);
-    text.push_str(&format!("{}\n", assistant_requested(Some("claude-fable-5-2"), Some("claude-fable-5-2[1m]"), 200_000)));
-    fx.write(TRANSCRIPT, &text);
-    let (code, out, _) = compact(&fx, &[], &["--model", "claude-opus-5-5", "--dry-run"]);
+    // No reply since the first compaction, so the next ones need --force.
+    let (code, out, _) = compact(&fx, &[], &["--model", "claude-opus-5-5", "--dry-run", "--force"]);
     assert_eq!(code, 0);
     assert!(out.contains("model claude-opus-5-5 (from --model)"), "{out}");
-    assert_eq!(compact(&fx, &[], &["--model", "claude-opus-5-5"]).0, 0);
+    assert_eq!(compact(&fx, &[], &["--model", "claude-opus-5-5", "--force"]).0, 0);
     assert_eq!(model_arg(&fx, 1), "claude-opus-5-5");
 }
 

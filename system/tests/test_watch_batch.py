@@ -853,6 +853,20 @@ class MorningTests(Base):
         self.assertIn("morning step loop-sweep exited 1", report)
         self.assertNotIn("morning step loop-watch exited", report)
 
+    def test_exit_3_is_partial_only_for_a_step_with_its_own_report(self):
+        self.assertEqual(list(wb.STEP_REPORT), ["loop-watch"])
+        for name in ("bills", "loop-sweep", "push"):
+            with self.subTest(step=name):
+                steps = StubSteps(self.root, {name: 3})
+                (self.root / wb.STATE).unlink(missing_ok=True)
+                code = self.run_main([], now=MORNING, steps=steps, slot="auto")
+                self.assertEqual(code, 1, "exit 3 from a step with no report of its own is a failure")
+                report = self.report()
+                self.assertIn(f"morning step {name} exited 3", report)
+                self.assertIn(f"- {name}: exit 3", report)
+                self.assertNotIn(f"- {name}: partial", report, "a failed step is never labelled partial")
+                self.assertNotIn("finished partly", report)
+
     def test_a_step_that_exits_1_or_2_or_124_still_fails_the_run(self):
         for exit_code in (1, 2, 124):
             with self.subTest(exit=exit_code):

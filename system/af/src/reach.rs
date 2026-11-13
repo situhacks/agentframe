@@ -83,13 +83,15 @@ pub fn verdict(f: &Facts) -> Reach {
     };
     // A chat running a background shell is working, like a busy one.
     let status = if status == "shell" { "busy" } else { status };
-    if status == "unknown" {
+    // Only a chat the roster does not list is closed. Any status this build does not know (none,
+    // or one a later claude prints) means the chat is there, so never offer to resume it.
+    if !matches!(status, "idle" | "busy" | "waiting" | "absent") {
         return Reach {
             state: "unknown",
-            line: format!("{name}: running, the claude agents roster lists it with no status, so whether it is idle or busy is unknown. Say the state is unknown; do not say a message started a turn."),
+            line: format!("{name}: running, the claude agents roster lists it {}, so whether it is idle or busy is unknown. Say the state is unknown; do not say a message started a turn.", if status == "unknown" { "with no status".to_string() } else { format!("with status {status}") }),
         };
     }
-    if !matches!(status, "idle" | "busy" | "waiting") {
+    if status == "absent" {
         return Reach {
             state: "closed",
             line: format!("{name}: closed, not running on this machine. SendMessage will refuse it. {resume}"),

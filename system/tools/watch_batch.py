@@ -86,6 +86,7 @@ MORNING = (("bills", "bills_watch.py", 130), ("loop-watch", "loop_watch.py", 105
 PUSH = ("push", "push_due_loops.py", 10)
 LOOP_WATCH_DEADLINE_MIN = 90
 EXIT_PARTIAL = lw.EXIT_PARTIAL   # a morning step's "some items failed, the rest were done": a step note, not a failure
+# Only a step with its own report can be partial; exit 3 from any other step is a failure.
 STEP_REPORT = {"loop-watch": "workspace/life/systems/loop-watch-report.md"}
 STEP_ARGS = {"loop-watch": ["--deadline-minutes", str(LOOP_WATCH_DEADLINE_MIN)]}
 QUEUE_MIN = 30            # the queue's own share of a run
@@ -713,10 +714,9 @@ def run_morning(rn: Run, done: list[str]) -> None:
         except Exception as e:  # noqa: BLE001 - one step failing never stops the next
             code, footer = 1, f"it crashed ({type(e).__name__})"
         rn.steps.append((name, code, plain(footer, 200)))
-        if code == EXIT_PARTIAL:
-            where = STEP_REPORT.get(name)
-            rn.notes.append(f"morning step {name} finished partly (exit {code}); the detail is in "
-                            + (f"its own report, {where}" if where else "its own report or log"))
+        if code == EXIT_PARTIAL and name in STEP_REPORT:
+            rn.notes.append(f"morning step {name} finished partly (exit {code}); the detail is in its own report, "
+                            f"{STEP_REPORT[name]}")
         elif code != 0:
             rn.fail(f"morning step {name} exited {code}")
 
@@ -1001,7 +1001,7 @@ def render_report(rn: Run) -> str:
     out = [HEADER, f"Slot: {rn.slot}. Phone: {rn.phone or 'nothing to send'}.\n"]
     if rn.steps:
         out.append("## Steps\n\n" + "\n".join(
-            f"- {name}: " + ("not run" if code is None else f"partial (exit {code})" if code == EXIT_PARTIAL
+            f"- {name}: " + ("not run" if code is None else f"partial (exit {code})" if code == EXIT_PARTIAL and name in STEP_REPORT
                             else f"exit {code}") + (f" · {lw._code(foot)}" if foot else "")
             for name, code, foot in rn.steps) + "\n")
     if rn.sweep:

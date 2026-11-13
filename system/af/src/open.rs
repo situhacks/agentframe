@@ -312,6 +312,20 @@ pub fn cmd_add(
     from: Option<&str>,
     section: Option<&str>,
 ) -> R<i32> {
+    let line = add_loop(ctx, text, nudge, every, from, section)?;
+    outln!("{line}");
+    Ok(0)
+}
+
+/// `af open add` without the printing: the line it wrote. `af watch sweep` raises its loops here.
+pub fn add_loop(
+    ctx: &Ctx,
+    text: &str,
+    nudge: Option<&str>,
+    every: Option<&str>,
+    from: Option<&str>,
+    section: Option<&str>,
+) -> R<String> {
     let today = today_date();
     let text = life::one_line(text);
     if text.is_empty() {
@@ -347,8 +361,7 @@ pub fn cmd_add(
     let mut doc = OpenDoc::parse(path, file);
     insert_in_section(&mut doc.lines, &section, &line);
     doc.save(ctx)?;
-    outln!("{line}");
-    Ok(0)
+    Ok(line)
 }
 
 /// Add `line` at the end of its section, creating the section at the file's end if needed.

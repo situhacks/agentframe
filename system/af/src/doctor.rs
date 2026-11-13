@@ -1120,6 +1120,7 @@ pub fn check_system(ctx: &Ctx) -> R<(Vec<String>, Vec<String>)> {
     issues.extend(pi);
     notes.extend(pn);
     notes.extend(crate::loop_watch::doctor_notes(ctx));
+    notes.extend(crate::watch::doctor_notes(ctx));
     Ok((issues, notes))
 }
 

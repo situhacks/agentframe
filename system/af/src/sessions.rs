@@ -942,6 +942,7 @@ pub fn bundle_with_source(ctx: &Ctx, session_id: &str, refresh: Option<&str>, so
     }
     if is_main {
         parts.extend(crate::loop_watch::bundle_line(ctx));
+        parts.extend(crate::watch::bundle_line(ctx));
     }
     if let Some(r) = &row {
         if let Some(b) = file_block(ctx, "brief", &brief_rel(&r.name))? {

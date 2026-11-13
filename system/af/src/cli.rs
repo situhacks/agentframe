@@ -117,6 +117,11 @@ enum Cmd {
         #[command(subcommand)]
         cmd: crate::open::OpenCmd,
     },
+    /// The watch queue: timed and conditional checks the batch run works through
+    Watch {
+        #[command(subcommand)]
+        cmd: crate::watch::WatchCmd,
+    },
     /// The needs list: what needs the operator's decision, now or later
     Needs {
         #[command(subcommand)]
@@ -279,6 +284,7 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> R<i32> {
         Cmd::Studio { cmd } => crate::studio::dispatch(ctx, cmd).map(|_| 0),
         Cmd::Session { cmd } => crate::sessions::run(ctx, cmd),
         Cmd::Open { cmd } => crate::open::run(ctx, cmd),
+        Cmd::Watch { cmd } => crate::watch::run(ctx, cmd),
         Cmd::Needs { cmd } => crate::needs::run(ctx, cmd),
         Cmd::Brief { json, write } => crate::brief::cmd_brief(ctx, json, write),
         Cmd::Close { slug, force } => crate::close::cmd_close(ctx, &slug, force),

@@ -45,7 +45,8 @@ pub struct Reach {
 pub struct Facts<'a> {
     pub name: &'a str,
     pub session_id: &'a str,
-    /// The roster status: Some("idle"), Some("busy"), Some("absent"); None when no roster.
+    /// The roster status: Some("idle"), Some("busy"), Some("shell"), Some("absent"), Some("unknown")
+    /// for an entry with no status; None when no roster.
     pub roster: Option<&'a str>,
     pub target_mode: Option<&'a str>,
     pub sender_mode: Option<&'a str>,
@@ -80,6 +81,14 @@ pub fn verdict(f: &Facts) -> Reach {
             }
         }
     };
+    // A chat running a background shell is working, like a busy one.
+    let status = if status == "shell" { "busy" } else { status };
+    if status == "unknown" {
+        return Reach {
+            state: "unknown",
+            line: format!("{name}: running, the claude agents roster lists it with no status, so whether it is idle or busy is unknown. Say the state is unknown; do not say a message started a turn."),
+        };
+    }
     if !matches!(status, "idle" | "busy" | "waiting") {
         return Reach {
             state: "closed",
@@ -198,14 +207,40 @@ pub struct Usage {
 /// that do not parse (a torn tail, a cut head) are skipped; an all-zero usage is an error stub,
 /// not a size.
 pub fn last_usage(text: &str) -> Option<Usage> {
+    match scan_usage(text, false) {
+        Scan::Usage(u) => Some(u),
+        _ => None,
+    }
+}
+
+/// What a transcript's lines say about the chat's current size.
+enum Scan {
+    Usage(Usage),
+    /// A `compact_boundary` line comes after the last main-chain assistant line, so the usage
+    /// before it describes a context that no longer exists.
+    AfterCompact,
+    Nothing,
+}
+
+fn is_boundary(rec: &Value) -> bool {
+    rec.get("type").and_then(Value::as_str) == Some("system")
+        && rec.get("subtype").and_then(Value::as_str) == Some("compact_boundary")
+        && rec.get("isSidechain").and_then(Value::as_bool) != Some(true)
+}
+
+fn scan_usage(text: &str, stop_at_boundary: bool) -> Scan {
     for line in text.rsplit('\n') {
-        if !line.contains("\"usage\"") {
+        let boundary = stop_at_boundary && line.contains("compact_boundary");
+        if !boundary && !line.contains("\"usage\"") {
             continue;
         }
         let rec: Value = match serde_json::from_str(line) {
             Ok(v) => v,
             Err(_) => continue,
         };
+        if boundary && is_boundary(&rec) {
+            return Scan::AfterCompact;
+        }
         if rec.get("type").and_then(Value::as_str) != Some("assistant") || rec.get("isSidechain").and_then(Value::as_bool) == Some(true) {
             continue;
         }
@@ -220,34 +255,59 @@ pub fn last_usage(text: &str) -> Option<Usage> {
         if tokens > 0 {
             let model = rec.pointer("/message/model").and_then(Value::as_str).map(str::to_string);
             let requested = rec.get("requestedModel").and_then(Value::as_str).map(str::to_string);
-            return Some(Usage { tokens, model, requested });
+            return Scan::Usage(Usage { tokens, model, requested });
         }
     }
-    None
+    Scan::Nothing
 }
 
 pub fn last_context_tokens(text: &str) -> Option<u64> {
     last_usage(text).map(|u| u.tokens)
 }
 
-/// The chat's current usage from its transcript: the last 512 KB, then up to 8 MB when that tail
-/// holds no assistant line with usage. None when neither does.
-pub fn context_usage(path: &str) -> Option<Usage> {
-    let mut f = std::fs::File::open(path).ok()?;
-    let len = f.metadata().ok()?.len();
+/// The chat's size as its transcript shows it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ContextSize {
+    Known(Usage),
+    /// The chat was compacted after its last reply: its size is unknown until the next reply.
+    AfterCompact,
+    /// No assistant line with usage.
+    Unknown,
+}
+
+/// The chat's current size from its transcript: the last 512 KB, then up to 8 MB when that tail
+/// holds no assistant line with usage and no compaction.
+pub fn context_size(path: &str) -> ContextSize {
+    let mut f = match std::fs::File::open(path) {
+        Ok(f) => f,
+        Err(_) => return ContextSize::Unknown,
+    };
+    let Ok(len) = f.metadata().map(|m| m.len()) else { return ContextSize::Unknown };
     let mut tail = MODE_TAIL;
     loop {
         let from = len.saturating_sub(tail);
-        f.seek(SeekFrom::Start(from)).ok()?;
         let mut buf = Vec::new();
-        (&mut f).take(tail).read_to_end(&mut buf).ok()?;
-        if let Some(u) = last_usage(&String::from_utf8_lossy(&buf)) {
-            return Some(u);
+        if f.seek(SeekFrom::Start(from)).is_err() || (&mut f).take(tail).read_to_end(&mut buf).is_err() {
+            return ContextSize::Unknown;
+        }
+        match scan_usage(&String::from_utf8_lossy(&buf), true) {
+            Scan::Usage(u) => return ContextSize::Known(u),
+            Scan::AfterCompact => return ContextSize::AfterCompact,
+            Scan::Nothing => {}
         }
         if from == 0 || tail >= CONTEXT_TAIL_MAX {
-            return None;
+            return ContextSize::Unknown;
         }
         tail = CONTEXT_TAIL_MAX;
+    }
+}
+
+/// The chat's current usage; None when its size is unknown, a compaction after its last reply
+/// included.
+pub fn context_usage(path: &str) -> Option<Usage> {
+    match context_size(path) {
+        ContextSize::Known(u) => Some(u),
+        _ => None,
     }
 }
 

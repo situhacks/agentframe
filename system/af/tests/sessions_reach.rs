@@ -66,6 +66,23 @@ fn a_chat_off_the_roster_is_closed_and_the_line_names_the_resume() {
 }
 
 #[test]
+fn a_chat_running_a_shell_is_working_not_closed() {
+    let r = verdict(&facts(Some("shell"), Some(BYPASS), Some(BYPASS)));
+    assert_eq!(r.state, "live-busy");
+    assert!(r.line.contains("between its tool calls"), "{}", r.line);
+    assert_eq!(verdict(&facts(Some("shell"), Some(BYPASS), Some("default"))).state, "holding", "the other checks still apply");
+}
+
+#[test]
+fn a_roster_entry_with_no_status_is_running_but_unknown_and_never_closed() {
+    let r = verdict(&facts(Some("unknown"), Some(BYPASS), Some(BYPASS)));
+    assert_eq!(r.state, "unknown");
+    assert!(r.line.contains("running") && r.line.contains("no status"), "{}", r.line);
+    assert!(r.line.contains("do not say a message started a turn"), "{}", r.line);
+    assert!(!r.line.contains("--resume"), "never offers to resume a chat that is running: {}", r.line);
+}
+
+#[test]
 fn no_roster_is_unknown_and_never_claims_a_turn() {
     let r = verdict(&facts(None, Some(BYPASS), Some(BYPASS)));
     assert_eq!(r.state, "unknown");

@@ -134,6 +134,16 @@ fn roster_join_adds_live_state_by_session_id() {
 }
 
 #[test]
+fn a_roster_entry_with_no_status_is_unknown_never_absent() {
+    let rows: Vec<Row> = [("main", "s1"), ("worker/a", "s2"), ("worker/b", "s3")]
+        .iter()
+        .map(|(n, s)| Row::parse(&row(n, sessions::role_of(n), s, "2026-10-24T09:00", "live")).unwrap())
+        .collect();
+    let roster = serde_json::json!([{"sessionId": "s1", "name": "x"}, {"sessionId": "s2", "status": ""}, {"sessionId": "s3", "status": "shell"}]);
+    assert_eq!(join_roster(&rows, &roster), vec!["unknown".to_string(), "unknown".to_string(), "shell".to_string()]);
+}
+
+#[test]
 fn stop_is_silent_for_an_unregistered_session() {
     let fx = Fx::new();
     let (code, out, _) = fx.run(&["session", "stop", "--session", "nobody"]);

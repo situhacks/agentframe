@@ -220,6 +220,52 @@ fn an_ended_row_is_compacted_like_any_other() {
     assert_eq!(boundaries(&fx), 1);
 }
 
+#[test]
+fn a_second_compact_on_a_just_compacted_chat_says_already_compact_and_runs_nothing() {
+    let fx = big();
+    let (code, out, err) = compact(&fx, &[], &[]);
+    assert_eq!(code, 0, "{out}{err}");
+    assert_eq!((boundaries(&fx), calls(&fx).len()), (1, 1));
+    for extra in [&[][..], &["--force"][..]] {
+        let (code, out, err) = compact(&fx, &[], extra);
+        assert_eq!(code, 0, "{out}{err}");
+        assert!(out.contains("system/x: already compact"), "{out}");
+        assert!(!err.contains("no compact_boundary"), "{err}");
+    }
+    assert_eq!((boundaries(&fx), calls(&fx).len()), (1, 1), "no further run, no further boundary");
+}
+
+#[test]
+fn a_reply_after_the_boundary_makes_the_chat_compactable_again() {
+    let fx = big();
+    compact(&fx, &[], &[]);
+    let mut text = fx.read(TRANSCRIPT);
+    text.push_str(&format!("{}\n", assistant_requested(Some("claude-opus-5-5"), Some("claude-opus-5-5[1m]"), 120_000)));
+    fx.write(TRANSCRIPT, &text);
+    let (code, out, err) = compact(&fx, &[], &[]);
+    assert_eq!(code, 0, "{out}{err}");
+    assert!(out.contains("system/x: compacted"), "{out}");
+    assert_eq!(boundaries(&fx), 2);
+}
+
+#[test]
+fn a_roster_entry_with_no_status_or_status_shell_is_reported_as_running_by_list_and_reach() {
+    let fx = big();
+    for roster in [r#"[{"sessionId":"sid-1"}]"#, r#"[{"sessionId":"sid-1","status":"shell"}]"#] {
+        let run = |args: &[&str]| {
+            let o = fx.af().env("CLAUDE_CONFIG_DIR", fx.path("cfg")).env("AF_CLAUDE_BIN", stub()).env("STUB_ROSTER", roster).args(args).output().unwrap();
+            String::from_utf8_lossy(&o.stdout).into_owned()
+        };
+        let list: Value = serde_json::from_str(&run(&["session", "list", "--json"])).unwrap();
+        let state = list[0]["live_state"].as_str().unwrap().to_string();
+        assert!(state == "unknown" || state == "shell", "{roster}: {state}");
+        let reach: Value = serde_json::from_str(&run(&["session", "reach", "system/x", "--json"])).unwrap();
+        let line = reach["line"].as_str().unwrap();
+        assert_ne!(reach["state"], "closed", "{roster}: {line}");
+        assert!(!line.contains("not running"), "{roster}: {line}");
+    }
+}
+
 // ------------------------------------------------------------------ the live-process guard
 
 #[test]
@@ -366,6 +412,10 @@ fn the_model_is_the_last_replys_requested_id_with_its_bracket_and_says_where_it_
     ]);
     assert_eq!(compact(&fx, &[], &[]).0, 0);
     assert_eq!(model_arg(&fx, 0), "claude-fable-5-2[1m]");
+    // A compacted chat has nothing new to compact until it replies again.
+    let mut text = fx.read(TRANSCRIPT);
+    text.push_str(&format!("{}\n", assistant_requested(Some("claude-fable-5-2"), Some("claude-fable-5-2[1m]"), 200_000)));
+    fx.write(TRANSCRIPT, &text);
     let (code, out, _) = compact(&fx, &[], &["--model", "claude-opus-5-5", "--dry-run"]);
     assert_eq!(code, 0);
     assert!(out.contains("model claude-opus-5-5 (from --model)"), "{out}");

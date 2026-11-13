@@ -196,7 +196,14 @@ pub fn cmd_compact(ctx: &Ctx, name: &str, model: Option<&str>, instructions: Opt
     let Some(path) = reach::transcript_path(&row.session_id) else {
         die!("{name}: no transcript found for session {}; nothing to compact", row.session_id);
     };
-    let usage = reach::context_usage(&path);
+    let usage = match reach::context_size(&path) {
+        reach::ContextSize::Known(u) => Some(u),
+        reach::ContextSize::AfterCompact => {
+            outln!("{name}: already compact. Its transcript ends at a compact_boundary with no reply since, so nothing new exists to compact.");
+            return Ok(0);
+        }
+        reach::ContextSize::Unknown => None,
+    };
     let tokens = usage.as_ref().map(|u| u.tokens);
     match tokens {
         Some(t) if t < MIN_TOKENS && !force => {

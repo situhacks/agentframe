@@ -16,24 +16,24 @@ One list line, fields joined by ` · ` in this order; `after` and `then` are opt
 ```
 
 - `id` is `w-YYYYMMDD-NN`: one more than the highest number used that day, in the queue or the month log, so a closed id is not reused.
-- `owner` is the chat that queued it: `af-main` when `--owner` is omitted (af cannot tell which chat called), otherwise a registered chat name; never `worker/*`.
-- `expires` defaults to 14 days out, or a later date's day plus one, and is at most 90 days out. An open row past it is swept into a loop.
+- `owner` is the chat that queued it: `af-main` when `--owner` is omitted (af cannot tell which chat called), otherwise a name in the session registry in any status (`af session list`); never `worker/*`.
+- `expires` defaults to 14 days out, or a later date's day plus one, and is at most 90 days out: a computed default past that is clamped to 90 days and `add` says so, while an explicit `--expires` past it is refused. An open row past its expiry is swept into a loop.
 - Free text (`do`'s message, `then`, a query, a statement, a path, a loop's text) is a JSON string literal holding no ` · ` and no newline. The message is 120 characters at most, `then` 160, and the rest 300.
 - `tier` follows the kind: `email` is `haiku`, every other kind is `code`.
-- `checked` is `never` or `YYYY-MM-DD HH:MM`; `result` is `none`, `not met`, `met: <detail>`, `error: <detail>` or `error twice: <detail>`; `status` is `open`, `firing` or `met`.
+- `checked` is `never` or `YYYY-MM-DD HH:MM`; `result` is `none`, `not met`, `met: <detail>`, `error: <detail>` or `error twice: <detail>` (a detail is one line of 200 characters at most, and every `·` in it becomes `;`); `status` is `open`, `firing` or `met`.
 
 ## Conditions
 
 | `when` | Met when |
 |---|---|
 | `date D [HH:MM]` | the first run at or after that moment; a bare date is midnight |
-| `loop closed "<exact text>" nudge <date\|none>` | no open loop has that text, or its nudge has moved past the stored one (a recurring loop that was closed) |
-| `loop open-on D "<text>" nudge <date\|none>` | today is on or after D and the loop is still open with its stored nudge |
+| `loop closed "<exact text>" nudge <date\|none>` | the month log holds `closed: <exact text> → …` written on or after the day the item was added, which `af open close` and `af needs close` write (a recurring loop's close too). A loop that was only re-dated, reworded, moved or deleted is not closed. The stored nudge is a record for the owner |
+| `loop open-on D "<text>"` | today is on or after D and an open loop has exactly that text |
 | `file exists "<path>"` | the path exists |
-| `file changed "<path>" sha256 <hex\|none>` | the file's hash differs from the stored one (`none`: the file was absent) |
+| `file changed "<path>" sha256 <hex\|none>` | the file's streamed hash differs from the stored one (`none`: the file was absent), or the file was deleted after a hash was stored; a path that cannot be read is never met |
 | `email "<query>" means "<statement>"` | a Haiku judge finds a thread in the Gmail search that proves the statement; the runner validates the quote in code |
 
-Paths are absolute or relative to the vault. Loop conditions read open.md through the same parser as `af open`; a loop line that no longer parses is not read as closed.
+Paths are absolute or relative to the vault. `loop open-on` reads open.md through the same parser as `af open`.
 
 ## Status
 
@@ -49,6 +49,8 @@ Paths are absolute or relative to the vault. Loop conditions read open.md throug
 | `af watch close <id> --outcome "<text>"` | Logs `event: watch <id> closed: <say> → <outcome>` in the month log and removes the row; a `firing` row is refused. |
 | `af watch sweep [--json]` | Each open row past its expiry is logged, raised as the loop `Watch <id> expired without firing for <owner>: <say> [<id>]` (nudge today, from `watch`, section `Watch`), and removed; each `met` row is logged and removed; `firing` rows stay. A loop already carrying `[<id>]` is not raised again. |
 
-`add` refuses: no condition or several; an expiry in the past, over 90 days out, or before `--after` or the condition's date; `--after` with `--date`; a date already passed; a file that already exists; a loop that is missing or matches several; empty, over-long or ` · ` text; a bad or `worker/*` owner; and an open row with the same owner and condition (the refusal names its id).
+`add` refuses: no condition or several; an expiry in the past, an explicit one over 90 days out, or one before `--after` or the condition's date; a condition date over 90 days out; `--after` with `--date`; a date already passed; a file that already exists; a loop that is missing or matches several; empty, over-long or ` · ` text; a bad, unregistered or `worker/*` owner; a file that cannot be read; and an open row with the same owner and condition (the refusal names its id).
 
-`af doctor` notes a row that does not parse, an open row more than a day past its expiry, a `firing` row older than a day, no batch run in 30 hours (`system/logs/watch-batch.log`), and a missing phone key. Main's session start carries one counts-only line when the queue is stuck.
+Every verb that writes `watch.md`, and every `af open` and `af needs` verb that writes `open.md`, holds a lock file beside it (`watch.md.lock`) for its read, change and write, writes through a temp file and a rename, and waits about five seconds for a lock another writer holds before refusing, naming the lock file; a lock over two minutes old is stale and is replaced. A row is written only if it parses back to the same item, and `list` says on stderr how many rows did not parse.
+
+`af doctor` notes a row that does not parse, an open row more than a day past its expiry, a `firing` row older than a day (the note names `af watch result <id> fired`, to run once its loop is confirmed in open.md), no batch run in 30 hours (`system/logs/watch-batch.log`), and a missing phone key. Main's session start carries one counts-only line when the queue is stuck.

@@ -16,7 +16,7 @@ use crate::open::{self, Loop, OpenDoc, OPEN_REL};
 use crate::out;
 use crate::outln;
 use crate::sessions;
-use chrono::{Duration, NaiveDate, NaiveDateTime, NaiveTime};
+use chrono::{Datelike, Duration, NaiveDate, NaiveDateTime, NaiveTime};
 use clap::{Args, Subcommand};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -98,7 +98,7 @@ impl Status {
 enum Cond {
     Date { date: NaiveDate, time: Option<NaiveTime> },
     LoopClosed { text: String, nudge: Option<NaiveDate> },
-    LoopOpen { on: NaiveDate, text: String, nudge: Option<NaiveDate> },
+    LoopOpen { on: NaiveDate, text: String },
     FileExists { path: String },
     FileChanged { path: String, sha: Option<String> },
     Email { query: String, means: String },
@@ -140,9 +140,7 @@ impl Cond {
         match self {
             Cond::Date { date, time } => format!("date {}", fmt_moment(*date, *time)),
             Cond::LoopClosed { text, nudge } => format!("loop closed {} nudge {}", jstr(text), fmt_opt_date(*nudge)),
-            Cond::LoopOpen { on, text, nudge } => {
-                format!("loop open-on {} {} nudge {}", fmt_date(*on), jstr(text), fmt_opt_date(*nudge))
-            }
+            Cond::LoopOpen { on, text } => format!("loop open-on {} {}", fmt_date(*on), jstr(text)),
             Cond::FileExists { path } => format!("file exists {}", jstr(path)),
             Cond::FileChanged { path, sha } => {
                 format!("file changed {} sha256 {}", jstr(path), sha.as_deref().unwrap_or("none"))
@@ -179,23 +177,65 @@ struct Item {
 }
 
 impl Item {
-    fn row(&self) -> String {
-        let mut s = format!("- [ ] {}{SEP}owner {}{SEP}added {}", self.id, self.owner, fmt_date(self.added));
+    /// The row's fields in order, each as it is written: the unit a round trip is checked against.
+    fn fields(&self) -> Vec<(&'static str, String)> {
+        let mut v = vec![("id", self.id.clone()), ("owner", format!("owner {}", self.owner)), ("added", format!("added {}", fmt_date(self.added)))];
         if let Some(a) = self.after {
-            s.push_str(&format!("{SEP}after {}", fmt_date(a)));
+            v.push(("after", format!("after {}", fmt_date(a))));
         }
-        s.push_str(&format!("{SEP}expires {}{SEP}when {}{SEP}do {} {}", fmt_date(self.expires), self.cond.text(), self.act.word(), jstr(&self.say)));
+        v.push(("expires", format!("expires {}", fmt_date(self.expires))));
+        v.push(("when", format!("when {}", self.cond.text())));
+        v.push(("do", format!("do {} {}", self.act.word(), jstr(&self.say))));
         if let Some(t) = &self.then {
-            s.push_str(&format!("{SEP}then {}", jstr(t)));
+            v.push(("then", format!("then {}", jstr(t))));
         }
-        s.push_str(&format!(
-            "{SEP}tier {}{SEP}checked {}{SEP}result {}{SEP}status {}",
-            self.cond.tier(),
-            self.checked.map(fmt_stamp).unwrap_or_else(|| "never".to_string()),
-            self.result,
-            self.status.word()
-        ));
-        s
+        v.push(("tier", format!("tier {}", self.cond.tier())));
+        v.push(("checked", format!("checked {}", self.checked.map(fmt_stamp).unwrap_or_else(|| "never".to_string()))));
+        v.push(("result", format!("result {}", self.result)));
+        v.push(("status", format!("status {}", self.status.word())));
+        v
+    }
+
+    fn row(&self) -> String {
+        format!("- [ ] {}", self.fields().into_iter().map(|(_, f)| f).collect::<Vec<_>>().join(SEP))
+    }
+
+    /// Refuse a row that would not read back as this item, naming the field at fault: a write that
+    /// parsed wrongly would make the item vanish from `list` and from the runner.
+    fn check_roundtrip(&self) -> R<()> {
+        for (name, f) in self.fields() {
+            if f.contains(SEP) || f.contains('\n') || f.contains('\r') {
+                die!("the {name} field would break the row (it holds ' · ' or a newline): {f}");
+            }
+        }
+        let row = self.row();
+        match parse_row(&row) {
+            Some(mut back) => {
+                back.line_idx = self.line_idx;
+                match self.first_difference(&back) {
+                    None => Ok(()),
+                    Some(name) => die!("the row would not read back as written: its {name} field changes ({row})"),
+                }
+            }
+            None => die!("the row would not parse back, so {} would vanish from the queue: {row}", self.id),
+        }
+    }
+
+    fn first_difference(&self, back: &Item) -> Option<&'static str> {
+        let same = [
+            ("id", self.id == back.id),
+            ("owner", self.owner == back.owner),
+            ("added", self.added == back.added),
+            ("after", self.after == back.after),
+            ("expires", self.expires == back.expires),
+            ("when", self.cond == back.cond),
+            ("do", self.act == back.act && self.say == back.say),
+            ("then", self.then == back.then),
+            ("checked", self.checked == back.checked),
+            ("result", self.result == back.result),
+            ("status", self.status == back.status),
+        ];
+        same.iter().find(|(_, ok)| !ok).map(|(n, _)| *n)
     }
 
     /// Open, begun (`after` is today or earlier) and not yet expired; and every firing row.
@@ -282,9 +322,7 @@ fn parse_cond(s: &str) -> Option<Cond> {
     }
     if let Some(v) = field(s, "loop open-on") {
         let (d, rest) = v.split_once(' ')?;
-        let (text, rest) = take_json(rest)?;
-        let nudge = opt_date(rest.strip_prefix(" nudge ")?)?;
-        return Some(Cond::LoopOpen { on: date(d)?, text, nudge });
+        return Some(Cond::LoopOpen { on: date(d)?, text: only_json(rest)? });
     }
     if let Some(v) = field(s, "file exists") {
         return Some(Cond::FileExists { path: only_json(v)? });
@@ -410,25 +448,31 @@ impl Doc {
 
     fn save(&mut self) -> R<()> {
         self.file.set_lines(&self.lines);
-        self.file.save(&self.path)
+        self.file.save_atomic(&self.path)
     }
 
-    fn append(&mut self, row: &str) {
+    /// Add a row at the end. The item must read back as written, or nothing is added.
+    fn append(&mut self, item: &Item) -> R<()> {
+        let mut item = item.clone();
+        item.line_idx = if self.lines.is_empty() { 2 } else { self.lines.len() };
+        item.check_roundtrip()?;
         if self.lines.is_empty() {
             self.lines.push("# Watch queue".to_string());
             self.lines.push(String::new());
         }
-        self.lines.push(row.to_string());
-        let mut it = parse_row(row).expect("a row af wrote parses");
-        it.line_idx = self.lines.len() - 1;
-        self.items.push(it);
+        self.lines.push(item.row());
+        self.items.push(item);
+        Ok(())
     }
 
-    fn replace(&mut self, item: &Item) {
+    /// Rewrite an item's row in place. It must read back as written, or nothing changes.
+    fn replace(&mut self, item: &Item) -> R<()> {
+        item.check_roundtrip()?;
         self.lines[item.line_idx] = item.row();
         if let Some(slot) = self.items.iter_mut().find(|i| i.id == item.id) {
             *slot = item.clone();
         }
+        Ok(())
     }
 
     fn remove(&mut self, id: &str) {
@@ -444,9 +488,42 @@ impl Doc {
     }
 }
 
-fn month_log_text(ctx: &Ctx) -> String {
-    let rel = life::month_log_rel(&chrono::Local::now().format("%Y-%m").to_string());
+/// The month log for the month holding `day`; empty when there is none.
+fn log_text_of(ctx: &Ctx, day: NaiveDate) -> String {
+    let rel = life::month_log_rel(&day.format("%Y-%m").to_string());
     TextFile::load(&vpath(ctx, &rel)).ok().flatten().map(|t| t.text).unwrap_or_default()
+}
+
+fn month_log_text(ctx: &Ctx) -> String {
+    log_text_of(ctx, today_date())
+}
+
+fn first_of_month(d: NaiveDate) -> NaiveDate {
+    d.with_day(1).unwrap_or(d)
+}
+
+/// The first day of each month from `from`'s through `to`'s.
+fn months(from: NaiveDate, to: NaiveDate) -> Vec<NaiveDate> {
+    let (mut m, end) = (first_of_month(from), first_of_month(to));
+    let mut out = Vec::new();
+    while m <= end {
+        out.push(m);
+        match m.checked_add_months(chrono::Months::new(1)) {
+            Some(n) => m = n,
+            None => break,
+        }
+    }
+    out
+}
+
+/// Whether `af open close` (or `af needs close`) logged the loop `text` closed on or after `since`:
+/// the month log line `- YYYY-MM-DD HH:MM · closed: <text> → <outcome>`, which a recurring loop's
+/// close also writes (its outcome ends `(next nudge D)`). Months from `since`'s to this one are read.
+fn close_logged(ctx: &Ctx, text: &str, since: NaiveDate) -> bool {
+    let re = rx(&format!(r"\A- (\d{{4}}-\d{{2}}-\d{{2}}) \d{{2}}:\d{{2}} · closed: {} → ", crate::fm::esc(&life::one_line(text))));
+    months(since, today_date()).into_iter().any(|m| {
+        log_text_of(ctx, m).lines().any(|l| re.captures(l).and_then(|c| date(&c[1])).is_some_and(|d| d >= since))
+    })
 }
 
 fn open_text(ctx: &Ctx) -> String {
@@ -474,9 +551,31 @@ fn resolve(ctx: &Ctx, path: &str) -> PathBuf {
     }
 }
 
-fn sha_of(path: &Path) -> Option<String> {
-    let bytes = std::fs::read(path).ok()?;
-    Some(format!("{:x}", Sha256::digest(&bytes)))
+enum Hash {
+    Found(String),
+    /// The only read failure that means "no file".
+    Missing,
+    Unreadable(String),
+}
+
+/// The file's sha256, streamed. Only "not found" is the no-file state; a lock, a permission
+/// refusal or a directory is unreadable, never a change.
+fn sha_of(path: &Path) -> Hash {
+    use std::io::Read;
+    let mut file = match std::fs::File::open(path) {
+        Ok(f) => f,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Hash::Missing,
+        Err(e) => return Hash::Unreadable(e.to_string()),
+    };
+    let (mut hasher, mut buf) = (Sha256::new(), [0u8; 64 * 1024]);
+    loop {
+        match file.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => hasher.update(&buf[..n]),
+            Err(e) => return Hash::Unreadable(e.to_string()),
+        }
+    }
+    Hash::Found(format!("{:x}", hasher.finalize()))
 }
 
 // ------------------------------------------------------------------ verbs
@@ -626,6 +725,9 @@ fn cmd_add(ctx: &Ctx, a: &AddArgs) -> R<i32> {
     if owner.starts_with("worker/") {
         die!("a worker chat ends with its job and cannot own a watch item; queue it as af-main or the chat that reads the result");
     }
+    if owner != sessions::MAIN_NAME && sessions::Registry::load(ctx)?.find_name(&owner).is_none() {
+        die!("--owner '{owner}' is not in the session registry; af session list shows the chat names, or leave --owner off to queue it as {}", sessions::MAIN_NAME);
+    }
     if a.means.is_some() && a.email.is_none() {
         die!("--means goes with --email: the statement a thread must prove");
     }
@@ -681,7 +783,7 @@ fn cmd_add(ctx: &Ctx, a: &AddArgs) -> R<i32> {
             die!("--on {} has already passed", fmt_date(on));
         }
         let hit = loop_target(ctx, t)?;
-        Cond::LoopOpen { on, text: hit.text.clone(), nudge: hit.due_on() }
+        Cond::LoopOpen { on, text: hit.text.clone() }
     } else if let Some(p) = &a.file_exists {
         let path = check_text("--file-exists", p, FIELD_MAX)?;
         if resolve(ctx, &path).exists() {
@@ -691,10 +793,12 @@ fn cmd_add(ctx: &Ctx, a: &AddArgs) -> R<i32> {
     } else if let Some(p) = &a.file_changed {
         let path = check_text("--file-changed", p, FIELD_MAX)?;
         let full = resolve(ctx, &path);
-        if full.is_dir() {
-            die!("{path} is a directory; --file-changed takes a file");
-        }
-        Cond::FileChanged { sha: sha_of(&full), path }
+        let sha = match sha_of(&full) {
+            Hash::Found(h) => Some(h),
+            Hash::Missing => None,
+            Hash::Unreadable(why) => die!("{path} cannot be read ({why}); --file-changed takes a readable file, or one that does not exist yet"),
+        };
+        Cond::FileChanged { sha, path }
     } else if let (Some(q), Some(m)) = (&a.email, &a.means) {
         Cond::Email { query: check_text("--email", q, FIELD_MAX)?, means: check_text("--means", m, FIELD_MAX)? }
     } else {
@@ -702,11 +806,17 @@ fn cmd_add(ctx: &Ctx, a: &AddArgs) -> R<i32> {
     };
 
     let latest = today + Duration::days(MAX_DAYS);
+    if let Some(f) = cond.floor().filter(|f| *f > latest) {
+        die!("the condition's date {} is more than {MAX_DAYS} days out (latest {}); a date that far out belongs in an open loop with a nudge", fmt_date(f), fmt_date(latest));
+    }
+    let mut clamped = false;
     let expires = match &a.expires {
         Some(v) => day_arg("--expires", v, today)?,
         None => {
             let base = after.map_or(today, |x| x.max(today)) + Duration::days(DEFAULT_DAYS);
-            cond.floor().map_or(base, |f| base.max(f + Duration::days(1)))
+            let want = cond.floor().map_or(base, |f| base.max(f + Duration::days(1)));
+            clamped = want > latest;
+            want.min(latest)
         }
     };
     if expires < today {
@@ -722,29 +832,34 @@ fn cmd_add(ctx: &Ctx, a: &AddArgs) -> R<i32> {
         die!("expiry {} is before the condition's date {}; it would expire before it could fire", fmt_date(expires), fmt_date(f));
     }
 
-    let mut doc = Doc::load(ctx)?;
-    if let Some(dup) = doc.items.iter().find(|i| i.status == Status::Open && i.owner == owner && i.cond.identity() == cond.identity()) {
-        die!("{} already watches that for {owner}; close it or change the condition", dup.id);
-    }
-    let item = Item {
-        id: next_id(ctx, &doc, today),
-        owner,
-        added: today,
-        after,
-        expires,
-        cond,
-        act,
-        say,
-        then,
-        checked: None,
-        result: "none".to_string(),
-        status: Status::Open,
-        line_idx: 0,
-    };
-    let row = item.row();
-    doc.append(&row);
-    doc.save()?;
+    let row = life::locked(&vpath(ctx, WATCH_REL), || {
+        let mut doc = Doc::load(ctx)?;
+        if let Some(dup) = doc.items.iter().find(|i| i.status == Status::Open && i.owner == owner && i.cond.identity() == cond.identity()) {
+            die!("{} already watches that for {owner}; close it or change the condition", dup.id);
+        }
+        let item = Item {
+            id: next_id(ctx, &doc, today),
+            owner: owner.clone(),
+            added: today,
+            after,
+            expires,
+            cond,
+            act,
+            say,
+            then,
+            checked: None,
+            result: "none".to_string(),
+            status: Status::Open,
+            line_idx: 0,
+        };
+        doc.append(&item)?;
+        doc.save()?;
+        Ok(item.row())
+    })?;
     outln!("{row}");
+    if clamped {
+        outln!("expiry clamped to {} (the queue holds nothing past {MAX_DAYS} days); pass --expires to choose", fmt_date(expires));
+    }
     if defaulted {
         outln!("owner {}; a side chat passes --owner <its name>", sessions::MAIN_NAME);
     }
@@ -753,31 +868,21 @@ fn cmd_add(ctx: &Ctx, a: &AddArgs) -> R<i32> {
 
 // ------------------------------------------------------------------ list
 
-fn loop_closed(doc: &OpenDoc, text: &str, stored: Option<NaiveDate>) -> bool {
-    let same: Vec<&Loop> = doc.loops.iter().filter(|l| l.text == text).collect();
-    if same.is_empty() {
-        // A line that failed to parse may still be the loop; that is not closed.
-        return !doc.bad.iter().any(|(_, line, _)| line.contains(text));
-    }
-    match stored {
-        None => false,
-        Some(s) => same.iter().all(|l| matches!(l.due_on(), Some(n) if n > s)),
-    }
-}
-
-fn loop_open_unchanged(doc: &OpenDoc, text: &str, stored: Option<NaiveDate>) -> bool {
-    doc.loops.iter().any(|l| l.text == text && l.due_on() == stored)
-}
-
 /// Whether a code condition holds now; None for an email condition, which the runner judges.
-fn code_met(ctx: &Ctx, cond: &Cond, open: Option<&OpenDoc>, now: NaiveDateTime) -> Option<bool> {
+/// A loop is closed only on evidence of a close in the month log: a loop that was re-dated,
+/// reworded or moved to the needs list was not closed.
+fn code_met(ctx: &Ctx, it: &Item, open: Option<&OpenDoc>, now: NaiveDateTime) -> Option<bool> {
     let today = now.date();
-    match cond {
+    match &it.cond {
         Cond::Date { date, time } => Some(now >= date.and_time(time.unwrap_or(NaiveTime::MIN))),
-        Cond::LoopClosed { text, nudge } => Some(open.is_some_and(|d| loop_closed(d, text, *nudge))),
-        Cond::LoopOpen { on, text, nudge } => Some(today >= *on && open.is_some_and(|d| loop_open_unchanged(d, text, *nudge))),
+        Cond::LoopClosed { text, .. } => Some(close_logged(ctx, text, it.added)),
+        Cond::LoopOpen { on, text } => Some(today >= *on && open.is_some_and(|d| d.loops.iter().any(|l| l.text == *text))),
         Cond::FileExists { path } => Some(resolve(ctx, path).exists()),
-        Cond::FileChanged { path, sha } => Some(sha_of(&resolve(ctx, path)) != *sha),
+        Cond::FileChanged { path, sha } => Some(match sha_of(&resolve(ctx, path)) {
+            Hash::Found(h) => Some(&h) != sha.as_ref(),
+            Hash::Missing => sha.is_some(),
+            Hash::Unreadable(_) => false,
+        }),
         Cond::Email { .. } => None,
     }
 }
@@ -798,6 +903,12 @@ fn item_json(it: &Item, code_met: Option<bool>) -> Value {
 fn cmd_list(ctx: &Ctx, owner: Option<&str>, due: bool, as_json: bool) -> R<i32> {
     let today = today_date();
     let doc = Doc::load(ctx)?;
+    if !doc.bad.is_empty() {
+        out::err_line(&format!(
+            "af watch list: {} row(s) in {WATCH_REL} do not parse and are not listed; af doctor names them",
+            doc.bad.len()
+        ));
+    }
     let rows: Vec<&Item> = doc
         .items
         .iter()
@@ -812,20 +923,24 @@ fn cmd_list(ctx: &Ctx, owner: Option<&str>, due: bool, as_json: bool) -> R<i32> 
     }
     let open = OpenDoc::load_raw(ctx).ok().flatten();
     let now = life::now();
-    let arr: Vec<Value> = rows.iter().map(|i| item_json(i, code_met(ctx, &i.cond, open.as_ref(), now))).collect();
+    let arr: Vec<Value> = rows.iter().map(|i| item_json(i, code_met(ctx, i, open.as_ref(), now))).collect();
     out::line(&serde_json::to_string_pretty(&Value::Array(arr)).unwrap_or_default());
     Ok(0)
 }
 
 // ------------------------------------------------------------------ result
 
-/// A detail as the row stores it: one line, no ` · `, bounded.
+/// A detail as the row stores it: one line, no `·` at all, bounded.
 fn clean_detail(s: &str) -> String {
-    let one = life::one_line(s).replace(SEP, " ; ");
+    let one = life::one_line(s).replace('·', ";");
     one.chars().take(DETAIL_MAX).collect::<String>().trim().to_string()
 }
 
 fn cmd_result(ctx: &Ctx, id: &str, outcome: &str, detail: Option<&str>) -> R<i32> {
+    life::locked(&vpath(ctx, WATCH_REL), || cmd_result_unlocked(ctx, id, outcome, detail))
+}
+
+fn cmd_result_unlocked(ctx: &Ctx, id: &str, outcome: &str, detail: Option<&str>) -> R<i32> {
     let mut doc = Doc::load(ctx)?;
     let mut it = doc.find(id)?;
     let detail = detail.map(clean_detail).filter(|d| !d.is_empty());
@@ -854,7 +969,7 @@ fn cmd_result(ctx: &Ctx, id: &str, outcome: &str, detail: Option<&str>) -> R<i32
         }
         it.checked = Some(life::now());
     }
-    doc.replace(&it);
+    doc.replace(&it)?;
     doc.save()?;
     outln!("{}", it.row());
     Ok(0)
@@ -863,6 +978,10 @@ fn cmd_result(ctx: &Ctx, id: &str, outcome: &str, detail: Option<&str>) -> R<i32
 // ------------------------------------------------------------------ close and sweep
 
 fn cmd_close(ctx: &Ctx, id: &str, outcome: &str) -> R<i32> {
+    life::locked(&vpath(ctx, WATCH_REL), || cmd_close_unlocked(ctx, id, outcome))
+}
+
+fn cmd_close_unlocked(ctx: &Ctx, id: &str, outcome: &str) -> R<i32> {
     let mut doc = Doc::load(ctx)?;
     let it = doc.find(id)?;
     if it.status == Status::Firing {
@@ -880,14 +999,22 @@ fn cmd_close(ctx: &Ctx, id: &str, outcome: &str) -> R<i32> {
     Ok(0)
 }
 
+/// Log an event unless this month's log or last month's already holds it, so a sweep that crashed
+/// across a month boundary does not log it twice.
 fn log_once(ctx: &Ctx, text: &str) -> R<()> {
-    if !month_log_text(ctx).contains(&format!("event: {text}")) {
+    let last_month = first_of_month(today_date()) - Duration::days(1);
+    let needle = format!("event: {text}");
+    if !month_log_text(ctx).contains(&needle) && !log_text_of(ctx, last_month).contains(&needle) {
         life::append_log(ctx, "event", text)?;
     }
     Ok(())
 }
 
 fn cmd_sweep(ctx: &Ctx, as_json: bool) -> R<i32> {
+    life::locked(&vpath(ctx, WATCH_REL), || cmd_sweep_unlocked(ctx, as_json))
+}
+
+fn cmd_sweep_unlocked(ctx: &Ctx, as_json: bool) -> R<i32> {
     let today = today_date();
     let mut doc = Doc::load(ctx)?;
     let (mut expired, mut met, mut raised, mut firing) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
@@ -1021,7 +1148,7 @@ pub fn doctor_notes(ctx: &Ctx) -> Vec<String> {
         notes.push(format!("{WATCH_REL}: {id} is {days} days past its expiry; run af watch sweep, or check the batch run"));
     }
     for (id, since) in &h.stuck {
-        notes.push(format!("{WATCH_REL}: {id} has been firing since {}; the batch run did not finish it (af watch list --due)", fmt_stamp(*since)));
+        notes.push(format!("{WATCH_REL}: {id} has been firing since {}; the batch run did not finish it. Check that its loop exists in open.md, then af watch result {id} fired", fmt_stamp(*since)));
     }
     match h.batch {
         Batch::Stale(m) => notes.push(format!("{BATCH_LOG_REL}: no batch run since {}, over {BATCH_STALE_HOURS} hours; check the scheduled task 'AgentFrame batch'", fmt_stamp(m))),
@@ -1055,4 +1182,53 @@ pub fn bundle_line(ctx: &Ctx) -> Option<String> {
         Batch::Fine => {}
     }
     Some(format!("watch queue: {}; check the scheduled task 'AgentFrame batch' and run af doctor ({WATCH_REL})", parts.join(", ")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn item() -> Item {
+        parse_row(
+            "- [ ] w-20261113-01 · owner af-main · added 2026-11-13 · expires 2026-11-27 · when file exists \"a\" · do notify \"Say\" · tier code · checked never · result none · status open",
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn a_sound_item_reads_back_as_written() {
+        assert!(item().check_roundtrip().is_ok());
+    }
+
+    #[test]
+    fn a_field_holding_the_separator_is_refused_by_name_before_any_write() {
+        let mut it = item();
+        it.say = "a · b".to_string();
+        match it.check_roundtrip() {
+            Err(crate::error::AfError::Refusal(m)) => assert!(m.contains("the do field"), "{m}"),
+            other => panic!("expected a refusal naming the do field, got {other:?}"),
+        }
+        let mut doc = Doc::parse("unused".to_string(), TextFile::new(""));
+        assert!(doc.append(&it).is_err());
+        assert!(doc.lines.is_empty() && doc.items.is_empty(), "a refused row is not added");
+        let mut it = item();
+        it.result = "met: x · y".to_string();
+        match it.check_roundtrip() {
+            Err(crate::error::AfError::Refusal(m)) => assert!(m.contains("the result field"), "{m}"),
+            other => panic!("expected a refusal naming the result field, got {other:?}"),
+        }
+        let mut it = item();
+        it.result = "bogus".to_string();
+        assert!(it.check_roundtrip().is_err(), "a result outside the grammar would not parse back");
+    }
+
+    #[test]
+    fn the_difference_finder_names_the_first_field_that_changed() {
+        let a = item();
+        let mut b = a.clone();
+        b.owner = "life/travel".to_string();
+        b.status = Status::Met;
+        assert_eq!(a.first_difference(&b), Some("owner"));
+        assert_eq!(a.first_difference(&a), None);
+    }
 }

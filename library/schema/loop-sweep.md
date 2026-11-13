@@ -1,16 +1,16 @@
 # Loop sweep
 
-Shapes `workspace/life/systems/loop-sweep-report.md`, the record of the morning sweep of his open loops, and `workspace/life/systems/loop-sweep-overdue.json`, the overdue list it hands the 08:30 push. `system/tools/loop_sweep.py` writes both; `system/tools/loop-sweep.ps1` runs it once a day at 08:20 (`register-loop-sweep.ps1`), after the 07:50 [loop watch](loop-watch.md) and ahead of the 08:30 loop push.
+Shapes `workspace/life/systems/loop-sweep-report.md`, the record of the morning sweep of his open loops, and `workspace/life/systems/loop-sweep-overdue.json`, the overdue list it hands the morning push. `system/tools/loop_sweep.py` writes both; the [10:00 batch run](watch.md) runs it once a day (`loop-sweep.ps1` by hand), after the [loop watch](loop-watch.md) and ahead of the loop push.
 
 The sweep makes no judgement calls. A to-do is never passed because its date went by: it is closed on proof, or he is reminded and main checks it with its own tools.
 
 ## What it does
 
 1. **Closes on proof, and only on proof.** See the rule below. Nothing else closes, re-dates, merges or ends a loop.
-2. **Reminds.** Every overdue loop it did not close, other than needs items, `Bills` loops and loops under `Waiting on others`, stays open and due and leads the 08:30 push.
+2. **Reminds.** Every overdue loop it did not close, other than needs items, `Bills` loops and loops under `Waiting on others`, stays open and due and leads the morning push.
 3. **Reports.** Appends a run section for main: the closes, each overdue loop with no proof, and what the model noticed.
 
-It posts nothing to Discord itself; the 08:30 push carries its overdue list.
+It posts nothing to Discord itself; the morning push carries its overdue list.
 
 ## Modes
 
@@ -20,7 +20,7 @@ It posts nothing to Discord itself; the 08:30 push carries its overdue list.
 | Live | `loop-sweep.ps1 -Live`, `loop_sweep.py --live` | Also each close on proof through `af open close` |
 | Dry run | `loop-sweep.ps1 -DryRun`, `loop_sweep.py --dry-run [--today <date>]` | Nothing: prints the run section and what the push would lead with. `--today` previews a later morning |
 
-`register-loop-sweep.ps1` registers report-only; `register-loop-sweep.ps1 -Live` registers the live run. `system/tools/timers.ps1` with no switch shows which mode the registered job is in, and its `-Register` registers report-only.
+`register-watch-batch.ps1` registers the batch task with a report-only sweep; `register-watch-batch.ps1 -SweepLive` registers the live one (the task passes `--sweep-live` to the sweep). `system/tools/timers.ps1` with no switch shows which mode the registered task is in, and its `-Register` registers report-only.
 
 ## The proof rule
 
@@ -41,7 +41,7 @@ A loop closes only on a `done` verdict in today's loop watch report (a verdict t
 
 **Applying.** A live run closes each loop by its whole text, which af matches exactly. A loop whose text another open loop shares, or that af would read as a number or a flag, is not closed. Each af call stops after 120 seconds. A close af refuses, or that raises, is a `- Failed:` line; the loop stays open, stays on the overdue list, and the run exits 1. A recurring loop closed on proof re-dates one period on, as `af open close` does.
 
-**While it runs.** A run that writes creates `workspace/life/systems/loop-sweep.running` before it reads anything and removes it when it ends. The 08:30 push waits up to 7 minutes for that marker to go, inside its 10-minute limit, then sends either way. When today's handoff is missing it first waits up to 45 seconds for one. A marker older than 30 minutes is a crashed run and is ignored.
+**While it runs.** A run that writes creates `workspace/life/systems/loop-sweep.running` before it reads anything and removes it when it ends. The morning push waits up to 7 minutes for that marker to go, inside its 10-minute limit, then sends either way. When today's handoff is missing it first waits up to 45 seconds for one. A marker older than 30 minutes is a crashed run and is ignored.
 
 ## The model
 
@@ -58,13 +58,13 @@ One push a day: the sweep sends nothing itself. It writes today's overdue loops 
 {"date": "2026-03-10", "items": [{"text": "<the loop's text>", "due": "2026-03-07", "days": 3}]}
 ```
 
-- `system/tools/push_due_loops.py`, at 08:30, reads the file when its date is today. Those loops lead the message under `Overdue, not confirmed`, in his own words through the off-Discord filter, with due date and days over, and are left out of the sections below, so each goes out once. No model-written line reaches the push.
+- `system/tools/push_due_loops.py`, at the end of the 10:00 batch run, reads the file when its date is today. Those loops lead the message under `Overdue, not confirmed`, in his own words through the off-Discord filter, with due date and days over, and are left out of the sections below, so each goes out once. No model-written line reaches the push.
 - A loop a report-only run would close is listed once, under `Would close`, and is not handed on.
 - A stale or missing file changes nothing: the push sends every due loop as before. A handed loop that is no longer due is dropped.
 
 ## Off Discord
 
-Discord is a third-party service. `system/tools/off_discord.py` is the filter for the 08:30 push. A loop matching it shows only in a closing count, `N more kept off Discord; see Do in AgentFrame`. It matches two things:
+Discord is a third-party service. `system/tools/off_discord.py` is the filter for the morning push. A loop matching it shows only in a closing count, `N more kept off Discord; see Do in AgentFrame`. It matches two things:
 
 - **Built-in categories.** Health, medication and meds, pills, prescriptions, pharmacies, doctors (`Dr.`, `doc`), dentists, clinics, urgent care, surgery and surgeons, bloodwork, an annual physical or physical exam, scans and tests (`MRI`, `x-ray`, `-oscopy`), `psych`, `OB/GYN`, allergies, appointments (`appt`), therapy, passwords and account numbers, each as a whole word: `physically` and `pillow` pass. Text is normalised first: fullwidth letters, invisible characters and Cyrillic or Greek lookalikes read as plain Latin, and accents are folded, so `thérapy` matches.
 - **His terms.** `workspace/life/systems/discord/boards/open-private.txt`: private, one term a line, `#` for a comment, folded the same way. It holds his names and topics; nothing about him goes in the tracked file.
@@ -102,7 +102,7 @@ Discord is a third-party service. `system/tools/off_discord.py` is the filter fo
 
 - #8 Decide on the winter trip
 
-- Phone: handed 1 overdue to the 08:30 push
+- Phone: handed 1 overdue to the morning push
 
 Loops 41 · report-only · closed 0 · would close 1 · ambiguous 1 · passed with no proof 1 · duplicates 1 · merges 1 · stale 1 · failures 0 · cost $0.12
 ```

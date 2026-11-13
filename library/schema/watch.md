@@ -27,7 +27,7 @@ One list line, fields joined by ` · ` in this order; `after` and `then` are opt
 | `when` | Met when |
 |---|---|
 | `date D [HH:MM]` | the first run at or after that moment; a bare date is midnight |
-| `loop closed "<exact text>" nudge <date\|none>` | the month log holds `closed: <exact text> → …` written on or after the day the item was added, which `af open close` and `af needs close` write (a recurring loop's close too). A loop that was only re-dated, reworded, moved or deleted is not closed. The stored nudge is a record for the owner |
+| `loop closed "<exact text>"` | the month log holds `closed: <exact text> → …` written on or after the day the item was added, which `af open close` and `af needs close` write (a recurring loop's close too). A loop that was only re-dated, reworded, moved or deleted is not closed |
 | `loop open-on D "<text>"` | today is on or after D and an open loop has exactly that text |
 | `file exists "<path>"` | the path exists |
 | `file changed "<path>" sha256 <hex\|none>` | the file's streamed hash differs from the stored one (`none`: the file was absent), or the file was deleted after a hash was stored; a path that cannot be read is never met |
@@ -38,6 +38,19 @@ Paths are absolute or relative to the vault. `loop open-on` reads open.md throug
 ## Status
 
 `open` is queued. A run that finds the condition met records `met: <detail>` and sets `firing`; it then raises the loop and sends the phone line, and marks the row `fired`, which sets `met`. The next sweep removes a `met` row after logging it. A `firing` row left by a crashed run is finished by the next run without a second phone message.
+
+## Slots
+
+The batch run, `system/tools/watch_batch.py` (task `AgentFrame batch`, started by `watch-batch.ps1`), goes at 10:00, 15:00 and 19:00 and does this in order:
+
+1. `af watch sweep`: expired rows become loops, `met` rows are removed.
+2. Recovery: a `firing` row gets its loop if open.md lacks `[<id>]`, then `fired`; never a phone message.
+3. Morning jobs, on the first run from 09:55 that has not done them today (`system/logs/watch-batch-state.json`): the bills watch, the loop watch, the loop sweep. Each is its own process with its own caps, report and log; one failing does not stop the next.
+4. The queue: code rows by `code_met`; email rows oldest-checked first, 12 at most, one model call each (Haiku, then one retry on Sonnet), the answer validated in code against what the call fetched. A second failure is `error twice`, which sends one phone line and is not repeated on later slots. The queue's model calls may spend $0.75 a run; what the cap leaves is deferred with `checked` unchanged.
+5. A met row is set `firing`, raises the loop `Watch <id> met for <owner>: <say>; <detail> [<id>]` (nudge today, from `watch`, section `Watch`; the `then` text follows the detail), and joins the run's phone lines; then the message goes and the rows are marked `fired`. Email words never reach a loop.
+6. The phone message: at the morning run the loop push (`push_due_loops.py --lead`) carries the watch lines first, so the day is one message; other runs send only when there are lines. Each line passes the off-Discord filter or shows only in a count, and at most 15 go out.
+
+A run takes `system/logs/watch-batch.lock` (a lock under three hours old makes the next run skip), writes `system/logs/watch-batch/<date-time>.md` (the last 60 stay) and one line in `watch-batch.log`, and exits 1 if a step failed, an item hit `error twice`, or the queue could not be read. A missing phone channel changes none of that: the report says `phone: not configured (REMINDERS_DISCORD_CHANNEL_ID)` and the loop push waits for a run that can send it.
 
 ## Verbs
 

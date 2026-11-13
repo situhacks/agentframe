@@ -1,4 +1,4 @@
-# The daily reminder push, as Task Scheduler runs it (register-daily-reminders.ps1): due open
+# The daily reminder push, as the 10:00 batch run ends with it (watch_batch.py): due open
 # loops to his phone through push_due_loops.py and notify.py, from the vault root.
 # Nothing due: exits 0 without a word. Run by hand the same way:
 #   powershell -NoProfile -File system\tools\push-due-loops.ps1 -DryRun   # print, send nothing

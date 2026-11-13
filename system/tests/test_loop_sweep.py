@@ -713,7 +713,7 @@ class RunTests(unittest.TestCase):
         self.assertEqual(calls, [])
         push.assert_not_called()
         self.assertIn("Would close (dry-run, not applied)", out)
-        self.assertIn("What the 08:30 push would lead with:", out)
+        self.assertIn("What the morning push would lead with:", out)
         self.assertIn("Dry run.", out)
 
     def test_a_later_morning_can_be_previewed_only_as_a_dry_run(self):
@@ -790,23 +790,22 @@ class ScheduleTests(unittest.TestCase):
     def text(self, name):
         return (self.TOOLS / name).read_text(encoding="utf-8")
 
-    def test_the_task_runs_after_the_loop_watch_and_before_the_push(self):
-        ps1 = self.text("register-loop-sweep.ps1")
-        at = re.search(r"-Daily -At '(\d\d:\d\d)'", ps1).group(1)
-        watch = re.search(r"-Daily -At '(\d\d:\d\d)'", self.text("register-loop-watch.ps1")).group(1)
-        push = re.search(r"-Daily -At '(\d\d:\d\d)'", self.text("register-daily-reminders.ps1")).group(1)
-        self.assertLess(watch, at)
-        self.assertLess(at, push)
-        self.assertIn("$taskName = 'AgentFrame loop sweep'", ps1)
-        timeout = int(re.search(r"-ExecutionTimeLimit \(New-TimeSpan -Minutes (\d+)\)", ps1).group(1))
-        self.assertGreater(timeout * 60, ls.TIMEOUT_S + 120)
+    def test_the_batch_run_starts_the_sweep_after_the_loop_watch_and_before_the_push(self):
+        import watch_batch as wb
+        names = [name for name, _, _ in wb.MORNING]
+        self.assertEqual(names, ["bills", "loop-watch", "loop-sweep"])
+        self.assertLess(names.index("loop-watch"), names.index("loop-sweep"), "the sweep reads the watch's report")
+        self.assertNotIn(wb.PUSH[0], names, "the push runs after the queue, so it carries what the queue raised")
+        self.assertEqual(wb.PUSH[1], "push_due_loops.py")
+        minutes = next(m for n, s, m in wb.MORNING if s == "loop_sweep.py")
+        self.assertGreater(minutes * 60, ls.TIMEOUT_S + 120)
 
-    def test_the_task_registers_report_only_unless_live_is_asked_for(self):
-        ps1 = self.text("register-loop-sweep.ps1")
-        self.assertIn("param([switch]$Live)", ps1)
+    def test_the_batch_task_registers_a_report_only_sweep_unless_a_live_one_is_asked_for(self):
+        ps1 = self.text("register-watch-batch.ps1")
+        self.assertIn("param([switch]$SweepLive)", ps1)
         base = next(line for line in ps1.splitlines() if line.startswith("$argument = "))
         self.assertNotIn("Live", base, "the default registration is report-only")
-        self.assertIn("if ($Live) { $argument += ' -Live' }", ps1)
+        self.assertIn("if ($SweepLive) { $argument += ' -SweepLive' }", ps1)
         self.assertIn("-Argument $argument", ps1)
         self.assertIn("Registered '$taskName' ($mode)", ps1)
 
@@ -818,14 +817,14 @@ class ScheduleTests(unittest.TestCase):
         self.assertIn("Report-only by default", head)
         self.assertNotIn("to his phone", head)
 
-    def test_the_timers_script_carries_it_and_shows_its_mode(self):
+    def test_the_timers_script_shows_the_sweep_mode_of_the_batch_task(self):
         timers = self.text("timers.ps1")
-        self.assertIn("@{ Script = 'register-loop-sweep.ps1'; Task = 'AgentFrame loop sweep' }", timers)
-        self.assertIn("-Live", timers)
-        self.assertIn("report-only", timers)
+        self.assertIn("@{ Script = 'register-watch-batch.ps1'; Task = 'AgentFrame batch' }", timers)
+        self.assertIn("-SweepLive", timers)
+        self.assertIn("report-only sweep", timers)
 
     def test_the_tracked_files_hold_no_address_beyond_generic_services(self):
-        for name in ("loop_sweep.py", "loop-sweep.ps1", "register-loop-sweep.ps1"):
+        for name in ("loop_sweep.py", "loop-sweep.ps1"):
             self.assertIsNone(re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+\.[A-Za-z]{2,}", self.text(name)), name)
 
     def test_the_push_watches_the_sweeps_marker(self):

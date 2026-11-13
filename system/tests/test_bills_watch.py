@@ -487,12 +487,13 @@ class FetchTests(unittest.TestCase):
         self.assertIn("mcp__claude_ai_Gmail__send_message", denied)
         self.assertFalse(set(bw.READ_TOOLS) & set(denied))
 
-    def test_the_task_time_limit_covers_a_full_run(self):
-        ps1 = (ROOT / "system" / "tools" / "register-bills-watch.ps1").read_text(encoding="utf-8")
+    def test_the_batch_task_runs_it_first_and_its_limit_holds_every_step(self):
+        import watch_batch as wb
+        self.assertEqual(wb.MORNING[0][:2], ("bills", "bills_watch.py"), "the loop watch skips Bills loops, so these come first")
+        ps1 = (ROOT / "system" / "tools" / "register-watch-batch.ps1").read_text(encoding="utf-8")
         m = re.search(r"-ExecutionTimeLimit \(New-TimeSpan -(Hours|Minutes) (\d+)\)", ps1)
         limit = int(m.group(2)) * (3600 if m.group(1) == "Hours" else 60)
-        worst = (120 + 60 * 8) + bw.MAX_THREADS * (120 + 60 * 4)
-        self.assertGreater(limit, worst)
+        self.assertGreater(limit, sum(minutes for _, _, minutes in wb.MORNING) * 60)
 
 
 BILLS_MD = """# Bills

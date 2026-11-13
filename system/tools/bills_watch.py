@@ -1,6 +1,6 @@
 """The bills watch: card statements from Gmail into bills.md and the Bills loops.
 
-Each morning (bills-watch.ps1, scheduled by register-bills-watch.ps1) this reads
+Each morning (the 10:00 batch run, watch_batch.py; bills-watch.ps1 by hand) this reads
 his card emails through the claude.ai Gmail connector, records each statement,
 reminder, balance update, payment and missed-payment email in
 workspace/life/systems/finances/bills.md, and keeps one open loop per unpaid

@@ -253,6 +253,64 @@ class MainTests(unittest.TestCase):
         self.assertNotIn("card", out.getvalue())
 
 
+class LeadTests(unittest.TestCase):
+    """--lead: the batch run's watch lines go first, and go out even with no loop due."""
+
+    def run_main(self, loops, args, lead="## Watch\n\n- Return the library books\n"):
+        out = io.StringIO()
+        with tempfile.TemporaryDirectory() as d:
+            lead_file = Path(d) / "lead.md"
+            log = Path(d) / "reminders-push.log"
+            if lead is not None:
+                lead_file.write_text(lead, encoding="utf-8")
+            terms = Path(d) / off_discord.TERMS_FILE
+            terms.parent.mkdir(parents=True)
+            terms.write_text("# none yet\n", encoding="utf-8")
+            sent = []
+            with mock.patch.dict(os.environ, {"AF_ROOT": d}), \
+                    mock.patch.object(push_due_loops, "due_loops", return_value=loops), \
+                    mock.patch.object(push_due_loops, "LOG", log), \
+                    mock.patch.object(push_due_loops.notify, "post", side_effect=lambda t, c: sent.append(c) or {}), \
+                    mock.patch.object(push_due_loops.notify, "load_env",
+                                      return_value={"REMINDERS_DISCORD_WEBHOOK": "https://example.invalid/hook"}), \
+                    contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+                code = push_due_loops.main([*args, "--lead", str(lead_file)])
+            logged = log.read_text(encoding="utf-8") if log.exists() else ""
+        return code, out.getvalue(), sent, logged
+
+    def test_the_lead_block_goes_right_after_the_title_and_before_the_loops(self):
+        text = push_due_loops.render(LOOPS, dt.date(2026, 10, 28), terms=[], lead="## Watch\n\n- Return the books\n")
+        self.assertTrue(text.startswith("# 2 loops due · 2026-10-28\n\n## Watch\n\n- Return the books\n\n## Waiting on others"), text)
+
+    def test_the_lead_also_leads_when_the_private_terms_file_is_missing(self):
+        text = push_due_loops.render(LOOPS, dt.date(2026, 10, 28), terms=None, lead="- Return the books")
+        self.assertIn("\n\n- Return the books\n\n- 2 due; open AgentFrame", text)
+
+    def test_a_lead_is_sent_even_when_no_loop_is_due(self):
+        code, _, sent, logged = self.run_main([], [])
+        self.assertEqual(code, 0)
+        self.assertEqual(len(sent), 1)
+        self.assertIn("Return the library books", sent[0])
+        self.assertIn("AgentFrame", sent[0])
+        self.assertTrue(logged.endswith(" · 0 due · lead · sent\n"), logged)
+
+    def test_a_lead_and_the_due_loops_go_out_as_one_message(self):
+        code, _, sent, _ = self.run_main(LOOPS, [])
+        self.assertEqual((code, len(sent)), (0, 1))
+        self.assertLess(sent[0].index("Return the library books"), sent[0].index("pay the card"))
+
+    def test_dry_run_with_a_lead_prints_and_sends_nothing(self):
+        code, out, sent, logged = self.run_main([], ["--dry-run"])
+        self.assertEqual((code, sent, logged), (0, [], ""))
+        self.assertIn("Return the library books", out)
+
+    def test_an_unreadable_lead_still_sends_the_loops_and_fails_the_run(self):
+        code, _, sent, _ = self.run_main(LOOPS, [], lead=None)
+        self.assertEqual(code, 1)
+        self.assertEqual(len(sent), 1)
+        self.assertIn("pay the card", sent[0])
+
+
 class WaitForSweepTests(unittest.TestCase):
     """At logon the sweep and the push can start together; the push waits for the sweep's handoff."""
 

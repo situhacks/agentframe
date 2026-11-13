@@ -124,7 +124,7 @@ fn add_writes_one_row_per_condition_kind_with_its_tier() {
     let rows: Vec<&str> = text.lines().filter(|l| l.starts_with("- [ ] ")).collect();
     assert_eq!(rows.len(), 6, "{text}");
     assert!(rows[0].contains(&format!("when date {} 10:00 · do notify \"Return the books\" · tier code · checked never · result none · status open", ahead(3))), "{}", rows[0]);
-    assert!(rows[1].contains(&format!("when loop closed \"Get the shed permit quote\" nudge {} · do loop \"Quote is in\" · tier code", ahead(5))), "{}", rows[1]);
+    assert!(rows[1].contains("when loop closed \"Get the shed permit quote\" · do loop \"Quote is in\" · tier code"), "{}", rows[1]);
     assert!(rows[2].contains(&format!("when loop open-on {} \"Get the garden quote\" · do loop", ahead(4))), "{}", rows[2]);
     assert!(rows[3].contains("when file exists \"inbox/scan.pdf\" · do notify+loop \"Scan landed\" · tier code"), "{}", rows[3]);
     assert!(rows[4].contains("when file changed \"data/a.txt\" sha256 7692c3ad3540bb803c020b3aee66cd8887123234ea0c6e7143c0add73ff431ed · do notify"), "{}", rows[4]);
@@ -421,7 +421,7 @@ fn code_met_for_a_date_item_follows_the_clock() {
 /// A row for a loop-closed item added on `added`, seeded by hand.
 fn closed_row(id: &str, text: &str, added: &str) -> String {
     format!(
-        "- [ ] {id} · owner af-main · added {added} · expires {} · when loop closed \"{text}\" nudge none · do notify \"Say {id}\" · tier code · checked never · result none · status open",
+        "- [ ] {id} · owner af-main · added {added} · expires {} · when loop closed \"{text}\" · do notify \"Say {id}\" · tier code · checked never · result none · status open",
         ahead(30)
     )
 }

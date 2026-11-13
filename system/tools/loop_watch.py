@@ -1,6 +1,6 @@
 """The loop watch: due loops checked against Gmail, the findings in a report for main.
 
-Each morning (loop-watch.ps1, scheduled by register-loop-watch.ps1) this lists the due loops
+Each morning (the 10:00 batch run, watch_batch.py; loop-watch.ps1 by hand) this lists the due loops
 with `af open due --json`, asks a cheap model to look for each one's answer in his email, and
 rewrites workspace/life/systems/loop-watch-report.md with the loops that have evidence. Email
 can carry hostile instructions, so this closes and edits nothing: main reviews the report and
@@ -54,6 +54,7 @@ STOP_AFTER = 2          # Gmail failures in a row before the rest of the run is 
 CALL_BUDGET_USD = 0.15  # each claude -p
 RUN_BUDGET_USD = 1.00   # the morning's total; the loops left are reported as not checked
 OTHERS_SECTION = "Waiting on others"
+WATCH_FROM = "watch"    # the `from` of a loop `af watch` raised
 VERDICTS = ("done", "answered", "update", "nothing")
 EVIDENCE_KEYS = ("sender", "date", "subject", "quote")
 NEEDED_KEYS = ("text", "opened", "section", "top")
@@ -99,9 +100,10 @@ def is_bills_loop(text: str) -> bool:
 
 def select_loops(due: list[dict]) -> tuple[list[dict], int]:
     """The loops worth checking, oldest first and capped, and how many the cap left out.
-    Needs items and what others owe are not his homework to clear by email, and the bills
-    watch owns its own loops."""
+    Needs items and what others owe are not his homework to clear by email, the bills watch
+    owns its own loops, and a loop the watch queue raised is its own answer."""
     keep = [x for x in due if not (x.get("need") or x.get("detail") or is_bills_loop(x["text"])
+                                   or x.get("from") == WATCH_FROM
                                    or OTHERS_SECTION in (x["section"], x["top"]))]
     keep.sort(key=lambda x: x["opened"])
     return keep[:MAX_LOOPS], max(0, len(keep) - MAX_LOOPS)
@@ -548,14 +550,15 @@ def _final_event(lines: list[str]) -> dict:
     return {}
 
 
-def metered(run, out: Outcome):
+def metered(run, out: Outcome, run_budget: float = RUN_BUDGET_USD, call_budget: float = CALL_BUDGET_USD):
     """A claude runner that charges every attempt to the run, retries and failures included,
     since a failed run never gets as far as being parsed. Any call that raises is charged the cap,
     since it may have spent before it failed. The run total is checked before every call, so it
     holds for a retry too. A run stopped by its budget is that loop's failure, not a Gmail fault:
-    a retry would only spend the budget again."""
+    a retry would only spend the budget again. The budgets default to this watch's own; the
+    watch queue's runner passes its own caps."""
     def go(prompt: str, max_turns: int, model: str) -> list[str]:
-        if out.spent() >= RUN_BUDGET_USD:
+        if out.spent() >= run_budget:
             raise OverRunBudget
         try:
             lines = run(prompt, max_turns, model)
@@ -570,7 +573,7 @@ def metered(run, out: Outcome):
             out.uncosted += 1
         if "budget" in str(final.get("subtype", "")):
             bw.cleanup(bw._session_of(lines), project_dir=PROJECT_DIR)
-            raise LoopFailure(f"the run hit its ${CALL_BUDGET_USD:.2f} budget before it answered; check by hand")
+            raise LoopFailure(f"the run hit its ${call_budget:.2f} budget before it answered; check by hand")
         return lines
     return go
 

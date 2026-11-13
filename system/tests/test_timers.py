@@ -1,9 +1,9 @@
 """Static checks for system/tools/timers.ps1, the script that shows, registers or removes
-AgentFrame's scheduled jobs on this machine.
+AgentFrame's scheduled jobs on this machine, and for the batch task's two scripts.
 
-Nothing here runs it. The script is parsed with the Windows PowerShell 5.1 parser, checked as text
-for 7-only syntax and for non-ASCII bytes, and each job it lists is matched against the task name
-its register-*.ps1 script sets.
+Nothing here runs them or touches a scheduled task. The scripts are parsed with the Windows
+PowerShell 5.1 parser, checked as text for 7-only syntax and for non-ASCII bytes, and each job
+timers.ps1 lists is matched against the task name its register-*.ps1 script sets.
 """
 
 from __future__ import annotations
@@ -20,6 +20,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 TOOLS = ROOT / "system" / "tools"
 TIMERS = TOOLS / "timers.ps1"
+BATCH_SCRIPTS = [TOOLS / "watch-batch.ps1", TOOLS / "register-watch-batch.ps1"]
+SCRIPTS = [TIMERS, *BATCH_SCRIPTS]
+RETIRED = ["AgentFrame loop watch", "AgentFrame bills watch", "AgentFrame loop sweep", "AgentFrame reminders"]
 
 # Windows PowerShell 5.1 has none of these; checked as text, since a newer parser accepts them.
 PS7_ONLY = [
@@ -60,8 +63,8 @@ def ps7_only_syntax(text: str) -> list[str]:
 
 @unittest.skipUnless(sys.platform == "win32" and shutil.which("powershell.exe"), "needs Windows PowerShell")
 class ParseTests(unittest.TestCase):
-    def test_timers_parses_in_windows_powershell(self):
-        errors = parse_errors([TIMERS])
+    def test_timers_and_the_batch_scripts_parse_in_windows_powershell(self):
+        errors = parse_errors(SCRIPTS)
         bad = {Path(k).name: v for k, v in errors.items() if v}
         self.assertEqual(bad, {}, f"parse errors: {bad}")
 
@@ -77,16 +80,17 @@ class ParseTests(unittest.TestCase):
 
 
 class EncodingTests(unittest.TestCase):
-    def test_timers_is_ascii_so_windows_powershell_reads_it_right(self):
-        data = TIMERS.read_bytes()
-        bad = [i for i, b in enumerate(data) if b > 127]
-        self.assertEqual(bad, [], "timers.ps1 has non-ASCII bytes; 5.1 reads a BOM-less file as the ANSI code page")
+    def test_the_scripts_are_ascii_so_windows_powershell_reads_them_right(self):
+        for path in SCRIPTS:
+            bad = [i for i, b in enumerate(path.read_bytes()) if b > 127]
+            self.assertEqual(bad, [], f"{path.name} has non-ASCII bytes; 5.1 reads a BOM-less file as the ANSI code page")
 
 
 class SyntaxTextTests(unittest.TestCase):
-    def test_timers_uses_no_powershell_7_only_syntax(self):
-        problems = ps7_only_syntax(TIMERS.read_text(encoding="utf-8"))
-        self.assertEqual(problems, [], f"PowerShell 7-only syntax; Windows PowerShell 5.1 runs this: {problems}")
+    def test_the_scripts_use_no_powershell_7_only_syntax(self):
+        for path in SCRIPTS:
+            problems = ps7_only_syntax(path.read_text(encoding="utf-8"))
+            self.assertEqual(problems, [], f"{path.name}: PowerShell 7-only syntax; Windows PowerShell 5.1 runs this: {problems}")
 
     def test_the_text_check_catches_each_construct(self):
         sample = "a && b\nc || d\n$x = $y ?? 1\n$n = $o?.Name\n$t = $c ? 1 : 2\nConvertFrom-Json -AsHashtable\n"
@@ -98,8 +102,8 @@ class TimersTests(unittest.TestCase):
     def test_timers_use_the_task_names_their_register_scripts_set(self):
         text = TIMERS.read_text(encoding="utf-8")
         pairs = re.findall(r"Script = '([^']+)'; Task = '([^']+)'", text)
-        self.assertEqual(len(pairs), 6, "timers.ps1 lists the loop watch, loop sweep, bills watch, reminders, "
-                                        "consolidation and backlog pass")
+        self.assertEqual([task for _, task in pairs], ["AgentFrame batch", "AgentFrame consolidation", "AgentFrame backlog pass"],
+                         "timers.ps1 lists the batch task, consolidation and the backlog pass")
         for script, task in pairs:
             source = (TOOLS / script).read_text(encoding="utf-8")
             m = re.search(r"\$taskName = '([^']+)'", source)
@@ -110,6 +114,52 @@ class TimersTests(unittest.TestCase):
         text = TIMERS.read_text(encoding="utf-8")
         for script, _ in re.findall(r"Script = '([^']+)'; Task = '([^']+)'", text):
             self.assertTrue((TIMERS.parent / script).is_file(), f"{script} is not beside timers.ps1")
+
+    def test_the_four_retired_tasks_are_named_in_one_list_and_nothing_registers_them(self):
+        text = TIMERS.read_text(encoding="utf-8")
+        listed = re.search(r"\$retired = @\(([^)]*)\)", text)
+        self.assertIsNotNone(listed, "timers.ps1 has no $retired list")
+        self.assertEqual(re.findall(r"'([^']+)'", listed.group(1)), RETIRED)
+        for path in sorted(TOOLS.glob("register-*.ps1")):
+            m = re.search(r"\$taskName = '([^']+)'", path.read_text(encoding="utf-8"))
+            self.assertNotIn(m.group(1), RETIRED, f"{path.name} still registers a retired task")
+        for name in ("register-loop-watch.ps1", "register-bills-watch.ps1", "register-loop-sweep.ps1",
+                     "register-daily-reminders.ps1"):
+            self.assertFalse((TOOLS / name).exists(), f"{name} should be gone")
+
+    def test_register_and_unregister_both_remove_the_retired_tasks_and_show_names_a_leftover(self):
+        text = TIMERS.read_text(encoding="utf-8")
+        self.assertIn("function Remove-Retired", text)
+        self.assertIn("foreach ($task in $retired)", text)
+        flat = " ".join(text.split())
+        self.assertIn("if ($Register -or $Unregister) { Remove-Retired }", flat)
+        self.assertIn("[retired, still here]", text)
+        self.assertIn("Unregister-ScheduledTask -TaskName $task -Confirm:$false", text)
+
+    def test_show_mode_reads_the_batch_tasks_sweep_mode_from_its_arguments(self):
+        text = TIMERS.read_text(encoding="utf-8")
+        self.assertIn("$t.Script -eq 'register-watch-batch.ps1'", text)
+        self.assertIn("-SweepLive", text)
+        self.assertIn("live sweep: closes loops on proof", text)
+        self.assertIn("report-only sweep", text)
+
+    def test_the_retired_names_appear_nowhere_else_in_the_tools(self):
+        for path in sorted(TOOLS.glob("*.ps1")) + sorted(TOOLS.glob("*.py")):
+            if path == TIMERS:
+                continue
+            text = path.read_text(encoding="utf-8")
+            for name in RETIRED:
+                self.assertNotIn(name, text, f"{path.name} names the retired task {name!r}")
+
+
+class BatchTaskTests(unittest.TestCase):
+    def test_the_batch_task_is_the_name_the_session_start_and_doctor_lines_point_at(self):
+        source = (TOOLS / "register-watch-batch.ps1").read_text(encoding="utf-8")
+        self.assertEqual(re.search(r"\$taskName = '([^']+)'", source).group(1), "AgentFrame batch")
+        rust = (ROOT / "system" / "af" / "src" / "loop_watch.rs").read_text(encoding="utf-8")
+        self.assertIn('const TASK: &str = "AgentFrame batch";', rust)
+        watch = (ROOT / "system" / "af" / "src" / "watch.rs").read_text(encoding="utf-8")
+        self.assertIn("'AgentFrame batch'", watch)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-# The loop watch, as Task Scheduler runs it (register-loop-watch.ps1): checks the due loops against
+# The loop watch, as the 10:00 batch run starts it (watch_batch.py): checks the due loops against
 # his email through the claude.ai Gmail connector and rewrites
 # workspace/life/systems/loop-watch-report.md for main to review. It closes and edits no loop.
 # Run by hand the same way:

@@ -97,7 +97,7 @@ impl Status {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Cond {
     Date { date: NaiveDate, time: Option<NaiveTime> },
-    LoopClosed { text: String, nudge: Option<NaiveDate> },
+    LoopClosed { text: String },
     LoopOpen { on: NaiveDate, text: String },
     FileExists { path: String },
     FileChanged { path: String, sha: Option<String> },
@@ -124,11 +124,11 @@ impl Cond {
         }
     }
 
-    /// What two items watch for, ignoring state recorded at add time (a nudge or a hash).
+    /// What two items watch for, ignoring state recorded at add time (a hash).
     fn identity(&self) -> String {
         match self {
             Cond::Date { date, time } => format!("date {}", fmt_moment(*date, *time)),
-            Cond::LoopClosed { text, .. } => format!("loop closed {text}"),
+            Cond::LoopClosed { text } => format!("loop closed {text}"),
             Cond::LoopOpen { on, text, .. } => format!("loop open-on {} {text}", fmt_date(*on)),
             Cond::FileExists { path } => format!("file exists {path}"),
             Cond::FileChanged { path, .. } => format!("file changed {path}"),
@@ -139,7 +139,7 @@ impl Cond {
     fn text(&self) -> String {
         match self {
             Cond::Date { date, time } => format!("date {}", fmt_moment(*date, *time)),
-            Cond::LoopClosed { text, nudge } => format!("loop closed {} nudge {}", jstr(text), fmt_opt_date(*nudge)),
+            Cond::LoopClosed { text } => format!("loop closed {}", jstr(text)),
             Cond::LoopOpen { on, text } => format!("loop open-on {} {}", fmt_date(*on), jstr(text)),
             Cond::FileExists { path } => format!("file exists {}", jstr(path)),
             Cond::FileChanged { path, sha } => {
@@ -260,10 +260,6 @@ fn fmt_date(d: NaiveDate) -> String {
     d.format("%Y-%m-%d").to_string()
 }
 
-fn fmt_opt_date(d: Option<NaiveDate>) -> String {
-    d.map(fmt_date).unwrap_or_else(|| "none".to_string())
-}
-
 fn fmt_moment(d: NaiveDate, t: Option<NaiveTime>) -> String {
     match t {
         Some(t) => format!("{} {}", fmt_date(d), t.format("%H:%M")),
@@ -298,14 +294,6 @@ fn only_json(s: &str) -> Option<String> {
     }
 }
 
-fn opt_date(s: &str) -> Option<Option<NaiveDate>> {
-    if s == "none" {
-        Some(None)
-    } else {
-        date(s).map(Some)
-    }
-}
-
 fn parse_cond(s: &str) -> Option<Cond> {
     if let Some(v) = field(s, "date") {
         let c = rx(r"\A(\d{4}-\d{2}-\d{2})(?: (\d{2}:\d{2}))?\z").captures(v)?;
@@ -316,9 +304,7 @@ fn parse_cond(s: &str) -> Option<Cond> {
         return Some(Cond::Date { date: date(&c[1])?, time });
     }
     if let Some(v) = field(s, "loop closed") {
-        let (text, rest) = take_json(v)?;
-        let nudge = opt_date(rest.strip_prefix(" nudge ")?)?;
-        return Some(Cond::LoopClosed { text, nudge });
+        return Some(Cond::LoopClosed { text: only_json(v)? });
     }
     if let Some(v) = field(s, "loop open-on") {
         let (d, rest) = v.split_once(' ')?;
@@ -622,7 +608,7 @@ pub struct AddArgs {
     /// Met at the first run at or after YYYY-MM-DD[THH:MM]
     #[arg(long)]
     date: Option<String>,
-    /// Met when the open loop (number or text prefix) is gone, or its nudge has moved on
+    /// Met when the open loop (number or text prefix) is closed, as the month log shows
     #[arg(long = "loop-closed")]
     loop_closed: Option<String>,
     /// Met on --on when the open loop (number or text prefix) is still open and unchanged
@@ -776,7 +762,7 @@ fn cmd_add(ctx: &Ctx, a: &AddArgs) -> R<i32> {
         Cond::Date { date: d, time }
     } else if let Some(t) = &a.loop_closed {
         let hit = loop_target(ctx, t)?;
-        Cond::LoopClosed { text: hit.text.clone(), nudge: hit.due_on() }
+        Cond::LoopClosed { text: hit.text.clone() }
     } else if let Some(t) = &a.loop_open {
         let on = day_arg("--on", a.on.as_deref().unwrap_or(""), today)?;
         if on < today {

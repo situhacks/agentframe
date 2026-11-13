@@ -137,7 +137,7 @@ pub fn verdict(f: &Facts) -> Reach {
 
 // ------------------------------------------------------------------ the machine's files
 
-fn config_dir() -> Option<String> {
+pub fn config_dir() -> Option<String> {
     if let Ok(d) = std::env::var("CLAUDE_CONFIG_DIR") {
         if !d.is_empty() {
             return Some(d);
@@ -163,8 +163,8 @@ pub fn transcript_path(session_id: &str) -> Option<String> {
     None
 }
 
-/// The permission mode of the transcript's last record that names one.
-pub fn last_mode(path: &str) -> Option<String> {
+/// The last 512 KB of a transcript (all of it when shorter).
+pub fn tail(path: &str) -> Option<String> {
     let mut f = std::fs::File::open(path).ok()?;
     let len = f.metadata().ok()?.len();
     if len > MODE_TAIL {
@@ -172,16 +172,25 @@ pub fn last_mode(path: &str) -> Option<String> {
     }
     let mut buf = Vec::new();
     f.read_to_end(&mut buf).ok()?;
-    let text = String::from_utf8_lossy(&buf);
+    Some(String::from_utf8_lossy(&buf).into_owned())
+}
+
+/// The permission mode of the transcript's last record that names one.
+pub fn last_mode(path: &str) -> Option<String> {
+    let text = tail(path)?;
     let re = crate::fm::rx(r#""permissionMode":"([A-Za-z]+)""#);
     re.captures_iter(&text).last().map(|c| c[1].to_string())
 }
 
-/// The size and model of the last main-chain assistant line.
+/// The size and models of the last main-chain assistant line.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Usage {
     pub tokens: u64,
+    /// `message.model`: the model that answered, never with a bracket suffix.
     pub model: Option<String>,
+    /// The line's top-level `requestedModel`: the id the chat asked for, with `[1m]` when it ran
+    /// on the large window.
+    pub requested: Option<String>,
 }
 
 /// The last main-chain assistant line in these lines: its context tokens (input plus cache read
@@ -210,7 +219,8 @@ pub fn last_usage(text: &str) -> Option<Usage> {
             .sum();
         if tokens > 0 {
             let model = rec.pointer("/message/model").and_then(Value::as_str).map(str::to_string);
-            return Some(Usage { tokens, model });
+            let requested = rec.get("requestedModel").and_then(Value::as_str).map(str::to_string);
+            return Some(Usage { tokens, model, requested });
         }
     }
     None
@@ -321,7 +331,7 @@ fn local_minute(utc: &str) -> String {
 
 // ------------------------------------------------------------------ the verb
 
-fn row_or_refuse(reg: &Registry, name: &str) -> R<Row> {
+pub fn row_or_refuse(reg: &Registry, name: &str) -> R<Row> {
     match reg.find_name(name) {
         Some(r) => Ok(r),
         None => die!(

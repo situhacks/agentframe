@@ -531,37 +531,13 @@ pub fn stale_handoff_notes(ctx: &Ctx) -> R<Vec<String>> {
 
 /// `claude agents --json --all`, or None when it is absent, fails, or takes over 5 s.
 pub fn claude_roster() -> Option<Value> {
-    use std::io::Read;
-    let mut child = std::process::Command::new("claude")
-        .args(["agents", "--json", "--all"])
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .ok()?;
-    let mut stdout = child.stdout.take()?;
-    let reader = std::thread::spawn(move || {
-        let mut s = String::new();
-        let _ = stdout.read_to_string(&mut s);
-        s
-    });
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                let text = reader.join().ok()?;
-                if !status.success() {
-                    return None;
-                }
-                return serde_json::from_str::<Value>(&text).ok().filter(|v| v.is_array());
-            }
-            Ok(None) if std::time::Instant::now() < deadline => std::thread::sleep(std::time::Duration::from_millis(20)),
-            _ => {
-                let _ = child.kill();
-                return None;
-            }
-        }
+    let mut cmd = std::process::Command::new(crate::proc::claude_bin());
+    cmd.args(["agents", "--json", "--all"]);
+    let out = crate::proc::run_command(cmd, "claude", Some(std::time::Instant::now() + std::time::Duration::from_secs(5)), false);
+    if !out.ok() {
+        return None;
     }
+    serde_json::from_str::<Value>(&out.stdout).ok().filter(|v| v.is_array())
 }
 
 /// The roster `status` for each row's session id; `absent` when the roster lacks it.
@@ -616,6 +592,22 @@ pub enum SessionCmd {
     },
     /// A chat's class, context tokens, window and thresholds; every live chat with no name
     Context { name: Option<String> },
+    /// Compact a chat that has no live process, from outside it (claude -p "/compact" --resume)
+    Compact {
+        name: String,
+        /// the model that writes the summary; default: the model of the chat's last reply
+        #[arg(long)]
+        model: Option<String>,
+        /// extra summary instructions, placed after /compact
+        #[arg(long)]
+        instructions: Option<String>,
+        /// compact below 50k tokens, with a haiku model, or when the size is unknown
+        #[arg(long)]
+        force: bool,
+        /// print the command, the model and the tokens before; run nothing
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Print the SessionStart injection for a session id
     Bundle {
         #[arg(long)]
@@ -649,6 +641,9 @@ pub fn run(ctx: &Ctx, cmd: SessionCmd) -> R<i32> {
         SessionCmd::End { name, session, reason } => cmd_end(ctx, name.as_deref(), session.as_deref(), &reason),
         SessionCmd::Reach { name, from, confirm, since, json } => {
             crate::reach::cmd_reach(ctx, &name, from.as_deref(), confirm.as_deref(), since.as_deref(), json)
+        }
+        SessionCmd::Compact { name, model, instructions, force, dry_run } => {
+            crate::compact::cmd_compact(ctx, &name, model.as_deref(), instructions.as_deref(), force, dry_run)
         }
         SessionCmd::Bundle { session } => {
             let (text, _) = bundle(ctx, &session)?;

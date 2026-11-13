@@ -8,9 +8,9 @@ use crate::die;
 use crate::error::R;
 use crate::life::vpath;
 use crate::outln;
-use std::io::Read;
+use crate::proc::{run_command, Out};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 /// How long the stop hook lets git run before it gives up and logs a skip.
@@ -241,35 +241,6 @@ fn git_dir(g: &Git) -> PathBuf {
 
 // ------------------------------------------------------------------ git
 
-/// One git run: the exit code (None when it timed out or would not start) and its output.
-pub struct Out {
-    pub code: Option<i32>,
-    pub stdout: String,
-    pub stderr: String,
-}
-
-impl Out {
-    pub fn ok(&self) -> bool {
-        self.code == Some(0)
-    }
-
-    pub fn timed_out(&self) -> bool {
-        self.code.is_none() && self.stderr == "timed out"
-    }
-
-    /// git's first message line, for a one-line report.
-    pub fn why(&self) -> String {
-        let text = if self.stderr.trim().is_empty() { &self.stdout } else { &self.stderr };
-        text.lines()
-            .map(str::trim)
-            .find(|l| !l.is_empty() && !l.starts_with("hint:"))
-            .unwrap_or("git gave no message")
-            .trim_start_matches("fatal: ")
-            .trim_start_matches("error: ")
-            .to_string()
-    }
-}
-
 /// git in the private layer's folder, with this crate's fixed settings.
 struct Git {
     dir: PathBuf,
@@ -331,51 +302,6 @@ fn run_git(args: &[String], deadline: Option<Instant>, ceiling: Option<&Path>) -
     if let Some(c) = ceiling {
         cmd.env("GIT_CEILING_DIRECTORIES", c);
     }
-    cmd.args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .env("GCM_INTERACTIVE", "never");
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        cmd.creation_flags(CREATE_NO_WINDOW);
-    }
-    let mut child = match cmd.spawn() {
-        Ok(c) => c,
-        Err(e) => return Out { code: None, stdout: String::new(), stderr: format!("git would not start: {e}") },
-    };
-    let pipe = |r: Option<Box<dyn Read + Send>>| {
-        let (tx, rx) = std::sync::mpsc::channel::<String>();
-        if let Some(mut r) = r {
-            std::thread::spawn(move || {
-                let mut buf = Vec::new();
-                let _ = r.read_to_end(&mut buf);
-                let _ = tx.send(String::from_utf8_lossy(&buf).into_owned());
-            });
-        }
-        rx
-    };
-    let out_rx = pipe(child.stdout.take().map(|s| Box::new(s) as Box<dyn Read + Send>));
-    let err_rx = pipe(child.stderr.take().map(|s| Box::new(s) as Box<dyn Read + Send>));
-    let code = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break status.code().or(Some(1)),
-            Ok(None) => {}
-            Err(_) => break None,
-        }
-        if deadline.is_some_and(|d| Instant::now() >= d) {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Out { code: None, stdout: String::new(), stderr: "timed out".into() };
-        }
-        std::thread::sleep(Duration::from_millis(15));
-    };
-    let wait = |rx: std::sync::mpsc::Receiver<String>| {
-        let left = deadline.map(|d| d.saturating_duration_since(Instant::now())).unwrap_or(Duration::from_secs(600));
-        rx.recv_timeout(left.max(Duration::from_millis(200))).unwrap_or_default()
-    };
-    Out { code, stdout: wait(out_rx), stderr: wait(err_rx) }
+    cmd.args(args).env("GIT_TERMINAL_PROMPT", "0").env("GCM_INTERACTIVE", "never");
+    run_command(cmd, "git", deadline, false)
 }

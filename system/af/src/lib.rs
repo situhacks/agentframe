@@ -34,4 +34,5 @@ pub mod places;
 pub mod reach;
 pub mod context;
 pub mod compact;
+pub mod panel;
 pub mod backlog;

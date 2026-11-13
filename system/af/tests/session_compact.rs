@@ -286,19 +286,21 @@ fn a_roster_entry_with_no_status_or_status_shell_is_reported_as_running_by_list_
 // ------------------------------------------------------------------ the live-process guard
 
 #[test]
-fn any_roster_entry_for_the_chat_refuses_whatever_its_status_and_names_it() {
+fn any_roster_entry_for_the_chat_means_running_so_it_is_compacted_through_the_panel_not_from_outside() {
     let fx = big();
     for status in ["idle", "busy", "waiting", "shell", "completed", "a-status-nobody-has-seen"] {
         let roster = format!(r#"[{{"sessionId":"sid-1","status":"{status}"}}]"#);
+        let (code, out, err) = compact(&fx, &[("STUB_ROSTER", &roster)], &["--force", "--dry-run"]);
+        assert_eq!(code, 0, "{status}: {err}");
+        assert!(out.contains("system/x: running") && out.contains(&format!("with status {status}")) && out.contains("through the panel"), "{out}");
+        // Run for real, the driver (which does not exist in a test fixture) is the only thing tried.
         let (code, _, err) = compact(&fx, &[("STUB_ROSTER", &roster)], &["--force"]);
         assert_eq!(code, 1, "{status}: {err}");
-        assert!(err.contains("system/x is running"), "{err}");
-        assert!(err.contains(&format!("with status {status}")), "{err}");
-        assert!(err.contains("Close its tab and rerun, or type /compact in that chat"), "{err}");
+        assert!(err.contains("panel driver") && err.contains("would not start"), "{err}");
     }
-    assert!(calls(&fx).is_empty());
+    assert!(calls(&fx).is_empty(), "claude -p is never run for a running chat");
     assert_eq!(boundaries(&fx), 0);
-    assert!(run_log_has(&fx, "is running"), "the refusal is in the run log");
+    assert!(run_log_has(&fx, "panel driver"), "the refusal is in the run log");
 }
 
 #[test]
@@ -310,12 +312,14 @@ fn another_chat_on_the_roster_does_not_make_this_one_running() {
 }
 
 #[test]
-fn a_session_record_naming_the_chat_refuses_even_when_the_roster_is_empty() {
+fn a_session_record_naming_the_chat_means_running_even_when_the_roster_is_empty() {
     let fx = big();
     fx.write("cfg/sessions/4242.json", r#"{"pid":4242,"sessionId":"sid-1","status":"shell"}"#);
+    let (code, out, err) = compact(&fx, &[], &["--force", "--dry-run"]);
+    assert_eq!(code, 0, "{err}");
+    assert!(out.contains("system/x: running") && out.contains("sessions/4242.json") && out.contains("through the panel"), "{out}");
     let (code, _, err) = compact(&fx, &[], &["--force"]);
     assert_eq!(code, 1, "{err}");
-    assert!(err.contains("system/x is running") && err.contains("sessions/4242.json"), "{err}");
     assert!(calls(&fx).is_empty());
 }
 
@@ -499,9 +503,93 @@ fn dry_run_prints_the_command_the_model_and_the_tokens_and_runs_nothing() {
 }
 
 #[test]
-fn a_dry_run_still_refuses_a_running_chat() {
+fn a_dry_run_on_a_running_chat_prints_the_panel_plan_and_runs_nothing() {
     let fx = big();
-    assert_eq!(compact(&fx, &[("STUB_ROSTER", IDLE)], &["--dry-run"]).0, 1);
+    let before = fx.read(TRANSCRIPT);
+    let (code, out, err) = compact(&fx, &[("STUB_ROSTER", IDLE)], &["--dry-run"]);
+    assert_eq!(code, 0, "{out}{err}");
+    assert!(out.contains("through the panel") && out.contains("send -Session sid-1"), "{out}");
+    assert!(calls(&fx).is_empty());
+    assert_eq!(fx.read(TRANSCRIPT), before);
+}
+
+// ------------------------------------------------------------------ the panel driver after a closed-chat compaction
+
+fn panel_calls(fx: &Fx) -> Vec<Value> {
+    let Ok(text) = std::fs::read_to_string(fx.path("panel-calls.txt")) else { return Vec::new() };
+    text.lines().map(|l| serde_json::from_str(l).unwrap()).collect()
+}
+
+fn with_panel<'a>(fx: &Fx, env: &'a [(&'a str, &'a str)]) -> Vec<(String, String)> {
+    let mut all: Vec<(String, String)> = env.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+    all.push(("AF_PANEL_DRIVER".into(), panel_stub().to_string_lossy().into_owned()));
+    all.push(("STUB_PANEL_CALLS".into(), fx.p("panel-calls.txt")));
+    all
+}
+
+#[test]
+fn then_file_follows_a_closed_chat_compaction_as_the_chats_next_message_through_the_driver() {
+    let fx = big();
+    fx.write("then.md", "Continue the build.
+Read handoff.md first.");
+    let owned = with_panel(&fx, &[]);
+    let env: Vec<(&str, &str)> = owned.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    let (code, out, err) = compact(&fx, &env, &["--then-file", &fx.p("then.md")]);
+    assert_eq!(code, 0, "{out}{err}");
+    assert!(out.contains("system/x: compacted.") && out.contains("as its next message"), "{out}");
+    assert_eq!(boundaries(&fx), 1);
+    let made = panel_calls(&fx);
+    assert_eq!(made.len(), 1, "{made:?}");
+    assert_eq!(made[0]["args"][0], "send");
+    assert_eq!(made[0]["args"][2], "sid-1");
+    assert_eq!(made[0]["text"], "Continue the build.
+Read handoff.md first.");
+}
+
+#[test]
+fn then_file_is_not_sent_when_the_closed_chat_compaction_failed() {
+    let fx = big();
+    fx.write("then.md", "go on");
+    let owned = with_panel(&fx, &[("STUB_NO_BOUNDARY", "1")]);
+    let env: Vec<(&str, &str)> = owned.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    let (code, _, err) = compact(&fx, &env, &["--then-file", &fx.p("then.md")]);
+    assert_eq!(code, 1, "{err}");
+    assert!(panel_calls(&fx).is_empty());
+}
+
+#[test]
+fn when_idle_on_a_closed_chat_compacts_it_at_once_there_is_nothing_to_wait_for() {
+    let fx = big();
+    let owned = with_panel(&fx, &[]);
+    let env: Vec<(&str, &str)> = owned.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    let (code, out, err) = compact(&fx, &env, &["--when-idle"]);
+    assert_eq!(code, 0, "{out}{err}");
+    assert!(out.contains("system/x: compacted."), "{out}");
+    assert_eq!(boundaries(&fx), 1);
+    assert!(!fx.exists("system/logs/panel-waiters.log"));
+}
+
+#[test]
+fn a_waiter_job_runs_the_compaction_again_by_the_route_the_chat_has_then_and_logs_it() {
+    // The waiter chooses its route when it runs: this chat closed meanwhile, so it goes from outside.
+    let fx = big();
+    let job = fx.write("system/logs/claude-panel/waiter-1.json", r#"{"name":"system/x","instructions":"keep the plan","force":false,"then_file":null,"wait_minutes":60}"#);
+    let (code, out, err) = compact(&fx, &[], &["--waiter-job", &job]);
+    assert_eq!(code, 0, "{out}{err}");
+    assert_eq!(boundaries(&fx), 1);
+    assert_eq!(calls(&fx)[0].1[1], "/compact keep the plan");
+    let log = fx.read("system/logs/panel-waiters.log");
+    assert!(log.contains("system/x compact ok: system/x: compacted."), "{log}");
+    assert!(!fx.exists("system/logs/claude-panel/waiter-1.json"), "the job file is consumed");
+}
+
+#[test]
+fn a_waiter_job_that_fails_is_logged_as_failed() {
+    let fx = big();
+    let job = fx.write("system/logs/claude-panel/waiter-2.json", r#"{"name":"system/x","instructions":null,"force":false,"then_file":null,"wait_minutes":1}"#);
+    let (code, _, _) = compact(&fx, &[("STUB_NO_BOUNDARY", "1")], &["--waiter-job", &job]);
+    assert_eq!(code, 1);
+    assert!(fx.read("system/logs/panel-waiters.log").contains("system/x compact failed: system/x: compaction failed"));
 }
 
 // ------------------------------------------------------------------ failures

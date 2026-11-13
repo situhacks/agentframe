@@ -215,7 +215,7 @@ fn the_nudge_sequence_on_a_build_chat() {
     let hard = tool_call(&fx, "s-build", "Read", 600_000).expect("hard at 600k");
     assert_eq!(
         hard,
-        "Context: about 600k tokens, past this build chat's 600k limit. At the next natural stopping point: write the current state, decisions and next step into handoff.md and the plan, file anything that exists only in this conversation, then compact before starting new large work. If you cannot compact yourself, tell the operator in one line that this chat is ready for /compact."
+        "Context: about 600k tokens, past this build chat's 600k limit. At the next natural stopping point: write the current state, decisions and next step into handoff.md and the plan, file anything that exists only in this conversation. With the handoff up to date, run `af session compact system/cut --when-idle` before starting new large work: it compacts this chat once its turn ends."
     );
     assert_eq!(tool_call(&fx, "s-build", "Read", 620_000), None);
     assert!(tool_call(&fx, "s-build", "Read", 650_000).expect("hard again").contains("about 650k tokens"));

@@ -73,6 +73,115 @@ pub fn brief_rel(name: &str) -> String {
     format!("system/sessions/{name}/brief.md")
 }
 
+// ------------------------------------------------------------------ session classes
+
+/// How much context a chat is meant to carry. Not the permission class in `reach`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionClass {
+    Main,
+    Side,
+    Build,
+}
+
+/// One class's window and nudge thresholds, in tokens. `None` means no nudge: the
+/// harness's own auto-compact handles that class.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClassLimits {
+    pub class: SessionClass,
+    pub window: u64,
+    pub soft: Option<u64>,
+    pub hard: Option<u64>,
+}
+
+/// The one table of session classes.
+pub const CLASS_LIMITS: [ClassLimits; 3] = [
+    ClassLimits { class: SessionClass::Main, window: 350_000, soft: None, hard: None },
+    ClassLimits { class: SessionClass::Side, window: 300_000, soft: None, hard: None },
+    ClassLimits { class: SessionClass::Build, window: 1_000_000, soft: Some(400_000), hard: Some(600_000) },
+];
+
+pub const CLASS_NAMES: [&str; 3] = ["main", "side", "build"];
+
+impl SessionClass {
+    pub fn name(self) -> &'static str {
+        match self {
+            SessionClass::Main => "main",
+            SessionClass::Side => "side",
+            SessionClass::Build => "build",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<SessionClass> {
+        CLASS_LIMITS.iter().map(|l| l.class).find(|c| c.name() == s.trim())
+    }
+
+    pub fn limits(self) -> ClassLimits {
+        *CLASS_LIMITS.iter().find(|l| l.class == self).expect("every class has a row")
+    }
+}
+
+/// The class a name gets with no brief override: the main chat is `main`, `project/*` and
+/// `system/*` are `build`, `life/*` and `worker/*` are `side`.
+pub fn default_class(name: &str) -> SessionClass {
+    match (role_of(name), name.contains('/')) {
+        ("main", false) => SessionClass::Main,
+        ("builder" | "operator", _) => SessionClass::Build,
+        _ => SessionClass::Side,
+    }
+}
+
+/// Doctor: a brief whose `class:` line is not one of the three classes. Reading it falls back to
+/// the name default, so this is the only place the typo shows.
+pub fn bad_class_issues(ctx: &Ctx) -> R<Vec<String>> {
+    let root = vpath(ctx, "system/sessions");
+    let mut issues = Vec::new();
+    if !pyos::isdir(&root) {
+        return Ok(issues);
+    }
+    let mut briefs: Vec<String> = walkdir::WalkDir::new(&root)
+        .into_iter()
+        .flatten()
+        .filter(|e| e.file_type().is_file() && e.file_name() == "brief.md")
+        .map(|e| e.path().to_string_lossy().into_owned())
+        .collect();
+    briefs.sort();
+    for b in briefs {
+        let Some(tf) = TextFile::load(&b)? else { continue };
+        let Some((bfm, _)) = fm::split_fm_optional(&tf.text) else { continue };
+        let Some(value) = fm::get_scalar(&bfm, "class") else { continue };
+        if SessionClass::parse(&value).is_none() {
+            issues.push(format!(
+                "{}: class: '{value}' is not a session class; use one of {} (the name's default applies until then)",
+                ctx.rel(&b)?,
+                CLASS_NAMES.join(", ")
+            ));
+        }
+    }
+    Ok(issues)
+}
+
+/// The brief's `class:` line, when it holds one of the three classes.
+pub fn brief_class(ctx: &Ctx, name: &str) -> Option<SessionClass> {
+    let tf = TextFile::load(&vpath(ctx, &brief_rel(name))).ok()??;
+    let (bfm, _) = fm::split_fm_optional(&tf.text)?;
+    SessionClass::parse(&fm::get_scalar(&bfm, "class")?)
+}
+
+/// A chat's class: its brief's `class:` line, else the default for its name.
+pub fn class_of(ctx: &Ctx, name: &str) -> SessionClass {
+    brief_class(ctx, name).unwrap_or_else(|| default_class(name))
+}
+
+/// Write or update `class: <c>` in a brief's frontmatter, adding the block when it has none.
+fn write_brief_class(path: &str, class: SessionClass) -> R<()> {
+    let mut tf = TextFile::load(path)?.unwrap_or_else(|| TextFile::new(""));
+    tf.text = match fm::split_fm_optional(&tf.text) {
+        Some((bfm, body)) => fm::join_fm(fm::upsert_scalar(&bfm, "class", class.name(), None)?.trim_end(), &body),
+        None => fm::join_fm(&format!("class: {}", class.name()), &tf.text),
+    };
+    tf.save(path)
+}
+
 // ------------------------------------------------------------------ rows
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -286,41 +395,94 @@ fn abs_of(ctx: &Ctx, p: &str) -> String {
     }
 }
 
-/// True when the chat must write (or refresh) its handoff before it stops.
-pub fn handoff_required(ctx: &Ctx, row: &Row) -> R<bool> {
+/// Why a chat must write or refresh its handoff before it stops.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HandoffNeed {
+    Missing,
+    /// The file has no `written:` line that parses.
+    NoWritten,
+    /// A listed path (or write-surface path) changed after `written:`.
+    Stale { path: String, at: NaiveDateTime, written: NaiveDateTime },
+}
+
+impl HandoffNeed {
+    /// The Stop hook's reason: what is wrong and the edit that fixes it.
+    pub fn hook_reason(&self, rel: &str) -> String {
+        let now = life::now_min();
+        match self {
+            HandoffNeed::Missing => format!(
+                "Write {rel} before stopping: the file does not exist. It needs the sections State, Open questions, Next step and Files touched (one path per line) and `written: {now}` (YYYY-MM-DDTHH:MM, local time) in its frontmatter."
+            ),
+            HandoffNeed::NoWritten => format!(
+                "Fix {rel} before stopping: it has no `written:` line that parses. Add `written: {now}` (YYYY-MM-DDTHH:MM, local time) to its frontmatter."
+            ),
+            HandoffNeed::Stale { path, at, written } => format!(
+                "Refresh {rel} before stopping: {path} changed at {}, after its `written: {}`. Update the handoff to match, then set `written:` to the current time ({now}).",
+                fmt_min(*at),
+                fmt_min(*written)
+            ),
+        }
+    }
+
+    /// The short reason `af session stop` prints after the path.
+    pub fn short(&self) -> String {
+        let now = life::now_min();
+        match self {
+            HandoffNeed::Missing => "file missing".to_string(),
+            HandoffNeed::NoWritten => format!("no `written:` line; add written: {now}"),
+            HandoffNeed::Stale { path, at, written } => format!(
+                "stale: {path} changed at {}, after written: {}; refresh the handoff and its written:",
+                fmt_min(*at),
+                fmt_min(*written)
+            ),
+        }
+    }
+}
+
+/// What the chat must fix in its handoff before it stops, if anything.
+pub fn handoff_need(ctx: &Ctx, row: &Row) -> R<Option<HandoffNeed>> {
     if row.is_ended() {
-        return Ok(false);
+        return Ok(None);
     }
     let hpath = vpath(ctx, &handoff_rel(&row.name));
     let tf = match TextFile::load(&hpath)? {
         Some(t) => t,
-        None => return Ok(true),
+        None => return Ok(Some(HandoffNeed::Missing)),
     };
     let (hfm, body) = fm::split_fm_optional(&tf.text).unwrap_or_default();
-    let written = fm::get_scalar(&hfm, "written").and_then(|w| parse_ts(&w));
+    let written = match fm::get_scalar(&hfm, "written").and_then(|w| parse_ts(&w)) {
+        Some(w) => w,
+        None => return Ok(Some(HandoffNeed::NoWritten)),
+    };
     let touched = files_touched(&body);
-    let mut newest: Option<NaiveDateTime> = None;
-    let mut bump = |t: Option<NaiveDateTime>| {
+    let mut newest: Option<(String, NaiveDateTime)> = None;
+    let mut bump = |p: &str, t: Option<NaiveDateTime>| {
         if let Some(t) = t {
-            newest = Some(newest.map_or(t, |n: NaiveDateTime| n.max(t)));
+            if newest.as_ref().map_or(true, |(_, n)| t > *n) {
+                newest = Some((p.to_string(), t));
+            }
         }
     };
     if !touched.is_empty() {
         for p in &touched {
-            bump(life::newest_mtime(&abs_of(ctx, p), Some(&hpath)));
+            bump(p, life::newest_mtime(&abs_of(ctx, p), Some(&hpath)));
         }
     } else if let Some(btf) = TextFile::load(&vpath(ctx, &brief_rel(&row.name)))? {
         if let Some((bfm, _)) = fm::split_fm_optional(&btf.text) {
             for p in fm::fm_list_values(&bfm, "write_surface") {
-                bump(life::newest_mtime(&abs_of(ctx, &p), Some(&hpath)));
+                bump(&p, life::newest_mtime(&abs_of(ctx, &p), Some(&hpath)));
             }
         }
     }
-    Ok(match (written, newest) {
-        (None, _) => true,
-        (Some(w), Some(n)) => n > w,
-        (Some(_), None) => false,
+    Ok(match newest {
+        Some((path, at)) if at > written => Some(HandoffNeed::Stale { path, at, written }),
+        _ => None,
     })
+}
+
+/// True when the chat must write (or refresh) its handoff before it stops.
+pub fn handoff_required(ctx: &Ctx, row: &Row) -> R<bool> {
+    Ok(handoff_need(ctx, row)?.is_some())
 }
 
 /// Doctor: a handoff whose `written` is older than the newest other file in its folder.
@@ -429,6 +591,9 @@ pub enum SessionCmd {
         model: Option<String>,
         #[arg(long)]
         brief: Option<String>,
+        /// main, side, or build: written to the brief's `class:` line (default: from the name)
+        #[arg(long)]
+        class: Option<String>,
     },
     /// Print the registry, joined with the claude agents roster when available
     List {
@@ -449,6 +614,8 @@ pub enum SessionCmd {
         #[arg(long, value_parser = clap::builder::PossibleValuesParser::new(END_REASONS))]
         reason: String,
     },
+    /// A chat's class, context tokens, window and thresholds; every live chat with no name
+    Context { name: Option<String> },
     /// Print the SessionStart injection for a session id
     Bundle {
         #[arg(long)]
@@ -473,7 +640,10 @@ pub enum SessionCmd {
 
 pub fn run(ctx: &Ctx, cmd: SessionCmd) -> R<i32> {
     match cmd {
-        SessionCmd::Register { name, session, model, brief } => cmd_register(ctx, &name, &session, model.as_deref(), brief.as_deref()),
+        SessionCmd::Register { name, session, model, brief, class } => {
+            cmd_register(ctx, &name, &session, model.as_deref(), brief.as_deref(), class.as_deref())
+        }
+        SessionCmd::Context { name } => crate::context::cmd_context(ctx, name.as_deref()),
         SessionCmd::List { json } => cmd_list(ctx, json),
         SessionCmd::Stop { name, session } => cmd_stop(ctx, name.as_deref(), session.as_deref()),
         SessionCmd::End { name, session, reason } => cmd_end(ctx, name.as_deref(), session.as_deref(), &reason),
@@ -498,7 +668,7 @@ fn clean_cell(label: &str, v: &str) -> R<String> {
     Ok(v.to_string())
 }
 
-pub fn cmd_register(ctx: &Ctx, name: &str, session: &str, model: Option<&str>, brief: Option<&str>) -> R<i32> {
+pub fn cmd_register(ctx: &Ctx, name: &str, session: &str, model: Option<&str>, brief: Option<&str>, class: Option<&str>) -> R<i32> {
     if !valid_name(name) {
         die!("session name '{name}' is outside the grammar: {NAME_GRAMMAR}");
     }
@@ -517,13 +687,26 @@ pub fn cmd_register(ctx: &Ctx, name: &str, session: &str, model: Option<&str>, b
         }
         None => None,
     };
+    let class = match class {
+        Some(c) => match SessionClass::parse(c) {
+            Some(c) => Some(c),
+            None => die!("unknown --class '{c}': use one of {}", CLASS_NAMES.join(", ")),
+        },
+        None => None,
+    };
     let dir = vpath(ctx, &session_rel(name));
+    let dst = pyos::join(&dir, "brief.md");
+    if class.is_some() && src.is_none() && !pyos::isfile(&dst) {
+        die!("--class is written to the brief's class: line and {} has no brief; pass --brief <path> or write the brief first", brief_rel(name));
+    }
     pyos::makedirs(&dir)?;
     if let Some(p) = src {
-        let dst = pyos::join(&dir, "brief.md");
         if pyos::abspath(&p) != pyos::abspath(&dst) {
             std::fs::copy(&p, &dst).map_err(|e| pyos::os_error(&e, &dst))?;
         }
+    }
+    if let Some(c) = class {
+        write_brief_class(&dst, c)?;
     }
     let now = life::now_min();
     let row = Row {
@@ -568,6 +751,7 @@ pub fn cmd_list(ctx: &Ctx, as_json: bool) -> R<i32> {
             .enumerate()
             .map(|(i, r)| {
                 let mut v = r.to_json();
+                v["class"] = json!(class_of(ctx, &r.name).name());
                 if let Some(s) = &states {
                     v["live_state"] = json!(s[i]);
                 }
@@ -580,19 +764,20 @@ pub fn cmd_list(ctx: &Ctx, as_json: bool) -> R<i32> {
         }
         return Ok(0);
     }
+    let class = |r: &Row| class_of(ctx, &r.name).name();
     match &states {
         Some(s) => {
-            outln!("{} live_state |", HEADER);
-            outln!("{}---|", SEPARATOR);
+            outln!("{HEADER} class | live_state |");
+            outln!("{SEPARATOR}---|---|");
             for (r, st) in rows.iter().zip(s) {
-                outln!("{} {st} |", r.line());
+                outln!("{} {} | {st} |", r.line(), class(r));
             }
         }
         None => {
-            outln!("{HEADER}");
-            outln!("{SEPARATOR}");
+            outln!("{HEADER} class |");
+            outln!("{SEPARATOR}---|");
             for r in &rows {
-                outln!("{}", r.line());
+                outln!("{} {} |", r.line(), class(r));
             }
             outln!("af session list: {missing}");
         }
@@ -609,9 +794,9 @@ fn pick(reg: &Registry, name: Option<&str>, session: Option<&str>) -> R<Option<R
 }
 
 /// The stop mechanics shared by the verb and the Stop hook: stamp, then check.
-/// Some(handoff rel) when a handoff is required. With `exempt_main`, a `main` row is
+/// Some((handoff rel, why)) when a handoff is required. With `exempt_main`, a `main` row is
 /// only stamped: its state is life.md and open.md, which it writes all day.
-pub fn stop_row(ctx: &Ctx, name: Option<&str>, session: Option<&str>, exempt_main: bool) -> R<Option<String>> {
+pub fn stop_row(ctx: &Ctx, name: Option<&str>, session: Option<&str>, exempt_main: bool) -> R<Option<(String, HandoffNeed)>> {
     let mut reg = Registry::load(ctx)?;
     let mut row = match pick(&reg, name, session)? {
         Some(r) => r,
@@ -623,13 +808,13 @@ pub fn stop_row(ctx: &Ctx, name: Option<&str>, session: Option<&str>, exempt_mai
     if exempt_main && row.role == "main" {
         return Ok(None);
     }
-    Ok(if handoff_required(ctx, &row)? { Some(handoff_rel(&row.name)) } else { None })
+    Ok(handoff_need(ctx, &row)?.map(|need| (handoff_rel(&row.name), need)))
 }
 
 pub fn cmd_stop(ctx: &Ctx, name: Option<&str>, session: Option<&str>) -> R<i32> {
     match stop_row(ctx, name, session, false)? {
-        Some(rel) => {
-            outln!("HANDOFF_REQUIRED {rel}");
+        Some((rel, need)) => {
+            outln!("HANDOFF_REQUIRED {rel} ({})", need.short());
             Ok(3)
         }
         None => Ok(0),
@@ -865,8 +1050,8 @@ pub fn hook_stop(ctx: &Ctx, payload_text: &str) -> HookOutput {
         return HookOutput::quiet();
     }
     match stop_row(ctx, None, Some(id), true) {
-        Ok(Some(rel)) => {
-            let reason = format!("Write {rel} (State, Open questions, Next step, Files touched) before stopping.");
+        Ok(Some((rel, need))) => {
+            let reason = need.hook_reason(&rel);
             HookOutput { stdout: json!({"decision": "block", "reason": reason}).to_string(), exit: 0 }
         }
         _ => HookOutput::quiet(),

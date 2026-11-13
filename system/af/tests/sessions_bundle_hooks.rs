@@ -283,10 +283,10 @@ fn stop_hook_blocks_once_for_a_missing_handoff() {
     assert_eq!(o.exit, 0);
     let v: serde_json::Value = serde_json::from_str(&o.stdout).unwrap();
     assert_eq!(v["decision"], "block");
-    assert_eq!(
-        v["reason"],
-        "Write system/sessions/project/acme/handoff.md (State, Open questions, Next step, Files touched) before stopping."
-    );
+    let reason = v["reason"].as_str().unwrap();
+    assert!(reason.starts_with("Write system/sessions/project/acme/handoff.md before stopping: the file does not exist."), "{reason}");
+    assert!(reason.contains("State, Open questions, Next step and Files touched"), "{reason}");
+    assert!(reason.contains(&format!("`written: {}", &ts(0)[..11])), "the current local time fills in the shape: {reason}");
     assert_eq!(sessions::hook_stop(&ctx, r#"{"session_id":"s-acme","stop_hook_active":true}"#), HookOutput::quiet());
 }
 
@@ -313,7 +313,8 @@ fn stop_hook_never_blocks_main_and_still_stamps_it() {
     let fx = main_fixture();
     fx.write("system/sessions/main/handoff.md", &handoff(&ts(-10), &["system/backlog.md"]));
     let (code, out, _) = fx.run(&["session", "stop", "main"]);
-    assert_eq!((code, out.trim()), (3, "HANDOFF_REQUIRED system/sessions/main/handoff.md"), "the verb still reports it");
+    assert_eq!(code, 3, "the verb still reports it");
+    assert!(out.starts_with("HANDOFF_REQUIRED system/sessions/main/handoff.md ("), "{out}");
     let o = sessions::hook_stop(&fx.ctx(), r#"{"session_id":"s-main","stop_hook_active":false}"#);
     assert_eq!(o, HookOutput::quiet());
     assert!(recent(&find(&fx, "main").last_seen));
@@ -416,4 +417,56 @@ fn a_life_chat_alone_is_not_the_live_main() {
     assert!(sessions::live_main(&reg, afcore::life::now()).is_none());
     let d = fx.ok(&["session", "bundle", "--session", "s-new"]);
     assert!(directive(&d).contains("(A) make this chat main (rename it af-main with /rename af-main and register it with \"af session register af-main --session s-new\""), "{d}");
+}
+
+// A handoff that is required says which of the three cases applies and how to fix it.
+
+fn stop_reason(fx: &Fx) -> String {
+    let o = sessions::hook_stop(&fx.ctx(), r#"{"session_id":"s-acme","stop_hook_active":false}"#);
+    let v: serde_json::Value = serde_json::from_str(&o.stdout).unwrap();
+    assert_eq!(v["decision"], "block");
+    v["reason"].as_str().unwrap().to_string()
+}
+
+const HANDOFF: &str = "system/sessions/project/acme/handoff.md";
+
+#[test]
+fn the_stop_reason_for_a_handoff_with_no_written_line_gives_the_shape() {
+    let fx = main_fixture();
+    fx.write(HANDOFF, "## State\nwork\n## Open questions\n## Next step\n## Files touched\n");
+    let reason = stop_reason(&fx);
+    assert!(reason.starts_with("Fix system/sessions/project/acme/handoff.md before stopping: it has no `written:` line"), "{reason}");
+    assert!(reason.contains(&format!("`written: {}", &ts(0)[..11])) && reason.contains("YYYY-MM-DDTHH:MM"), "{reason}");
+    let (code, out, _) = fx.run(&["session", "stop", "project/acme"]);
+    assert_eq!(code, 3);
+    assert!(out.starts_with(&format!("HANDOFF_REQUIRED {HANDOFF} (no `written:` line; add written: {}", &ts(0)[..11])), "{out}");
+    // An unparseable stamp is the same case.
+    fx.write(HANDOFF, "---\nwritten: yesterday\n---\n## State\n");
+    assert!(stop_reason(&fx).contains("no `written:` line that parses"));
+}
+
+#[test]
+fn the_stop_reason_for_a_stale_handoff_names_the_newest_listed_path_and_its_time() {
+    let fx = main_fixture();
+    fx.write("workspace/projects/acme/old.md", "x");
+    fx.write("workspace/projects/acme/draft-v1.md", "x");
+    set_mtime_at(&fx, "workspace/projects/acme/old.md", "2026-05-01T08:00:30");
+    set_mtime_at(&fx, "workspace/projects/acme/draft-v1.md", "2026-06-01T10:30:45");
+    fx.write(HANDOFF, &handoff("2026-06-01T10:00", &["workspace/projects/acme/old.md", "workspace/projects/acme/draft-v1.md"]));
+    let reason = stop_reason(&fx);
+    assert!(reason.starts_with("Refresh system/sessions/project/acme/handoff.md before stopping: workspace/projects/acme/draft-v1.md changed at 2026-06-01T10:30, after its `written: 2026-06-01T10:00`."), "{reason}");
+    assert!(reason.contains("set `written:` to the current time"), "{reason}");
+    let (code, out, _) = fx.run(&["session", "stop", "project/acme"]);
+    assert_eq!(code, 3);
+    assert!(
+        out.starts_with(&format!("HANDOFF_REQUIRED {HANDOFF} (stale: workspace/projects/acme/draft-v1.md changed at 2026-06-01T10:30, after written: 2026-06-01T10:00;")),
+        "{out}"
+    );
+}
+
+#[test]
+fn the_verb_names_a_missing_file() {
+    let fx = main_fixture();
+    let (code, out, _) = fx.run(&["session", "stop", "project/acme"]);
+    assert_eq!((code, out.trim()), (3, format!("HANDOFF_REQUIRED {HANDOFF} (file missing)").as_str()));
 }

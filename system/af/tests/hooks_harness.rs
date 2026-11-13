@@ -19,7 +19,7 @@ fn test_claude_reference_wires_all_guards() {
             }
         }
     }
-    for event in ["session-start", "stop", "session-end", "notification", "pre-tool-use", "post-tool-use"] {
+    for event in ["session-start", "stop", "session-end", "notification", "pre-tool-use", "post-tool-use", "pre-compact", "post-compact"] {
         let want = format!("AF_ROOT=\"${{CLAUDE_PROJECT_DIR}}\" af hook {event}");
         assert!(commands.iter().any(|c| c == &want), "{event}");
     }
@@ -30,6 +30,10 @@ fn test_claude_reference_wires_all_guards() {
     for m in ["Edit|Write", "Bash|PowerShell", "mcp__substack__update_draft"] {
         assert!(matchers("PreToolUse").iter().any(|x| x == m), "{m}");
     }
+    // The nudge needs every tool; the shell-only guards pick their tools inside the dispatcher.
+    assert_eq!(matchers("PostToolUse"), ["*"]);
+    assert_eq!(matchers("PreCompact"), [""], "manual and auto compaction both");
+    assert_eq!(matchers("PostCompact"), [""], "the nudge re-arms after every compaction");
     assert_eq!(matchers("SessionStart"), ["startup|resume|clear|compact"]);
     assert_eq!(matchers("Notification"), ["agent_completed|agent_needs_input"]);
     assert_eq!(config["hooks"]["SessionEnd"][0]["hooks"][0]["timeout"], 10);
@@ -75,7 +79,7 @@ fn test_guard_entrypoints_emit_valid_empty_json_when_no_rule_matches() {
 #[test]
 fn test_unknown_event_or_flag_is_a_non_blocking_error() {
     let fx = fixture();
-    assert_eq!(hook(&fx, &["pre-compact"], "{}").0, 1);
+    assert_eq!(hook(&fx, &["pre-clear"], "{}").0, 1);
     assert_eq!(hook(&fx, &[], "{}").0, 1);
     assert_eq!(hook(&fx, &["pre-tool-use", "--verbose"], "{}").0, 1, "an unknown flag fails like an unknown event");
     assert_eq!(hook(&fx, &["pre-tool-use", "stop"], "{}").0, 1, "one event per call");

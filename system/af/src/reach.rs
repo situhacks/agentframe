@@ -18,6 +18,8 @@ use std::io::{BufRead, Read, Seek, SeekFrom};
 
 /// Bytes read from the end of a transcript to find the last permission mode.
 const MODE_TAIL: u64 = 512 * 1024;
+/// The most a context-size read takes from the end of a transcript before giving up.
+const CONTEXT_TAIL_MAX: u64 = 8 * 1024 * 1024;
 /// The shortest `--confirm` phrase: long enough to identify one message, not a common word.
 pub const MIN_PHRASE: usize = 12;
 const OPEN_TAG: &str = "<cross-session-message";
@@ -173,6 +175,83 @@ pub fn last_mode(path: &str) -> Option<String> {
     let text = String::from_utf8_lossy(&buf);
     let re = crate::fm::rx(r#""permissionMode":"([A-Za-z]+)""#);
     re.captures_iter(&text).last().map(|c| c[1].to_string())
+}
+
+/// The size and model of the last main-chain assistant line.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Usage {
+    pub tokens: u64,
+    pub model: Option<String>,
+}
+
+/// The last main-chain assistant line in these lines: its context tokens (input plus cache read
+/// plus cache creation) and `message.model`. Sidechain lines, lines with no usage, and lines
+/// that do not parse (a torn tail, a cut head) are skipped; an all-zero usage is an error stub,
+/// not a size.
+pub fn last_usage(text: &str) -> Option<Usage> {
+    for line in text.rsplit('\n') {
+        if !line.contains("\"usage\"") {
+            continue;
+        }
+        let rec: Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if rec.get("type").and_then(Value::as_str) != Some("assistant") || rec.get("isSidechain").and_then(Value::as_bool) == Some(true) {
+            continue;
+        }
+        let usage = match rec.pointer("/message/usage") {
+            Some(u) => u,
+            None => continue,
+        };
+        let tokens: u64 = ["input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"]
+            .iter()
+            .map(|k| usage.get(*k).and_then(Value::as_u64).unwrap_or(0))
+            .sum();
+        if tokens > 0 {
+            let model = rec.pointer("/message/model").and_then(Value::as_str).map(str::to_string);
+            return Some(Usage { tokens, model });
+        }
+    }
+    None
+}
+
+pub fn last_context_tokens(text: &str) -> Option<u64> {
+    last_usage(text).map(|u| u.tokens)
+}
+
+/// The chat's current usage from its transcript: the last 512 KB, then up to 8 MB when that tail
+/// holds no assistant line with usage. None when neither does.
+pub fn context_usage(path: &str) -> Option<Usage> {
+    let mut f = std::fs::File::open(path).ok()?;
+    let len = f.metadata().ok()?.len();
+    let mut tail = MODE_TAIL;
+    loop {
+        let from = len.saturating_sub(tail);
+        f.seek(SeekFrom::Start(from)).ok()?;
+        let mut buf = Vec::new();
+        (&mut f).take(tail).read_to_end(&mut buf).ok()?;
+        if let Some(u) = last_usage(&String::from_utf8_lossy(&buf)) {
+            return Some(u);
+        }
+        if from == 0 || tail >= CONTEXT_TAIL_MAX {
+            return None;
+        }
+        tail = CONTEXT_TAIL_MAX;
+    }
+}
+
+pub fn context_tokens(path: &str) -> Option<u64> {
+    context_usage(path).map(|u| u.tokens)
+}
+
+/// `modelSettings.<model>.autoCompactWindow` from the user-level Claude settings; a bracket
+/// suffix on the model id (`[1m]`) is ignored.
+pub fn auto_compact_window(model: &str) -> Option<u64> {
+    let text = std::fs::read_to_string(pyos::join(&config_dir()?, "settings.json")).ok()?;
+    let v: Value = serde_json::from_str(&text).ok()?;
+    let id = model.split('[').next().unwrap_or(model);
+    v.pointer("/modelSettings")?.get(id)?.get("autoCompactWindow")?.as_u64()
 }
 
 fn inbound_setting() -> Option<String> {

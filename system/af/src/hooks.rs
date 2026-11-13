@@ -1,6 +1,8 @@
 //! `af hook <event>`: the Claude Code hooks in one process start. The payload arrives on
 //! stdin; the hook's JSON (or nothing) goes to stdout. The tool events route to their
-//! guards by `tool_name`; the session events call the handlers in `sessions`.
+//! guards by `tool_name`; the session events call the handlers in `sessions`; `post-tool-use`
+//! also asks `context` for the chat's context-size nudge, and `pre-compact` prints its summary
+//! instructions and `post-compact` re-arms the nudge.
 
 pub mod index_refresh;
 pub mod pathlib;
@@ -131,10 +133,25 @@ pub fn dispatch(h: &HookCtx, event: &str, stdin_text: &str) -> Result<Option<PyV
         ("pre-tool-use", publish_guard::GATED_TOOL) => results.extend(publish_guard::decide(h, &payload)?),
         _ => {}
     }
+    // After every tool, whatever it is: the chat's context-size nudge.
+    if event == "post-tool-use" {
+        if let Some(text) = crate::context::nudge(&h.ctx, &payload) {
+            results.push(context("PostToolUse", &text));
+        }
+    }
     Ok(combine(results))
 }
 
-pub const EVENTS: [&str; 6] = ["pre-tool-use", "post-tool-use", "session-start", "stop", "session-end", "notification"];
+pub const EVENTS: [&str; 8] = [
+    "pre-tool-use",
+    "post-tool-use",
+    "session-start",
+    "stop",
+    "session-end",
+    "notification",
+    "pre-compact",
+    "post-compact",
+];
 
 fn emit(o: crate::sessions::HookOutput) -> i32 {
     if !o.stdout.is_empty() {
@@ -174,6 +191,12 @@ pub fn main(args: &[String]) -> i32 {
         "user-prompt-submit" => return 0,
         "session-end" => return emit(sessions::hook_session_end(&h.ctx, &text)),
         "notification" => return emit(sessions::hook_notification(&h.ctx, &text)),
+        // Plain stdout is the summary's standing instructions.
+        "post-compact" => {
+            crate::context::postcompact(&h.ctx, &text);
+            return 0;
+        }
+        "pre-compact" => return emit(sessions::HookOutput { stdout: crate::context::precompact(&h.ctx, &text), exit: 0 }),
         _ => {}
     }
     match dispatch(&h, event, &text) {

@@ -226,3 +226,22 @@ fn a_source_id_missing_from_the_index_is_a_note() {
         vec!["workspace/life/sources/orders/order-2026-10-25-02-more.md: id src-2026-10-25-02 has no INDEX.md row; add one".to_string()]
     );
 }
+
+#[test]
+fn a_brief_class_line_that_does_not_parse_is_an_issue() {
+    let fx = Fx::new();
+    let b = "system/sessions/system/cut/brief.md";
+    for ok in ["---\ngoal: x\nclass: build\n---\n", "---\ngoal: x\n---\n", "---\nclass: \"side\"\n---\n"] {
+        fx.write(b, ok);
+        assert_eq!(check(&fx), (vec![], vec![]), "{ok}");
+    }
+    fx.write(b, "---\ngoal: x\nclass: Build\n---\nbody\n");
+    let (i, _) = check(&fx);
+    assert_eq!(i.len(), 1, "{i:?}");
+    assert!(i[0].starts_with(&format!("{b}: ")) && i[0].contains("class: 'Build'") && i[0].contains("main, side, build"), "{}", i[0]);
+    let (code, out, _) = fx.run(&["doctor"]);
+    assert_eq!(code, 1);
+    assert!(out.contains("class: 'Build'"), "{out}");
+    // Reading still falls back to the name default.
+    assert_eq!(afcore::sessions::class_of(&fx.ctx(), "system/cut"), afcore::sessions::SessionClass::Build);
+}

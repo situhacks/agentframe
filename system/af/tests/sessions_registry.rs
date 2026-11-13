@@ -148,7 +148,7 @@ fn stop_requires_a_missing_handoff_and_stamps_last_seen() {
     write_registry(&fx, &[row("project/acme", "operator", "s1", "2026-10-01T09:00", "idle")]);
     let (code, out, _) = fx.run(&["session", "stop", "--session", "s1"]);
     assert_eq!(code, 3);
-    assert_eq!(out.trim(), "HANDOFF_REQUIRED system/sessions/project/acme/handoff.md");
+    assert_eq!(out.trim(), "HANDOFF_REQUIRED system/sessions/project/acme/handoff.md (file missing)");
     let r = find(&fx, "project/acme");
     assert_ne!(r.last_seen, "2026-10-01T09:00");
     assert_eq!(r.status, "live");

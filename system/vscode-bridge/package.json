@@ -1,0 +1,27 @@
+{
+  "name": "af-bridge",
+  "displayName": "AgentFrame Bridge",
+  "description": "A file inbox that lets agents list, open, reveal and close Claude Code chat tabs in this window, with no keyboard or mouse input.",
+  "version": "0.1.0",
+  "publisher": "agentframe",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.100.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./extension.js",
+  "extensionKind": [
+    "workspace"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    },
+    "virtualWorkspaces": false
+  }
+}

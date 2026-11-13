@@ -1,8 +1,9 @@
 //! `af session compact`: compacting a closed chat from outside it. The program it runs is a stub
 //! compiled for the test and named through `AF_CLAUDE_BIN`; the real `claude` is never called.
-//! The stub answers `agents` with the roster in `STUB_ROSTER`, and otherwise records its
-//! arguments in `STUB_CALLS`, appends a `compact_boundary` line to `STUB_TRANSCRIPT`, and prints
-//! `STUB_OUTPUT` (a success result by default).
+//! The stub answers `agents` with the roster in `STUB_ROSTER`, and otherwise records its working
+//! directory and arguments as a JSON line in `STUB_CALLS`, appends a `compact_boundary` line to
+//! `STUB_TRANSCRIPT`, and prints `STUB_OUTPUT` (a success result by default). Other `STUB_*`
+//! variables make it write a session record, sleep, or exit non-zero.
 
 mod common;
 use common::*;
@@ -16,6 +17,19 @@ fn append(path: &str, text: &str) {
     let mut f = std::fs::OpenOptions::new().create(true).append(true).open(path).unwrap();
     f.write_all(text.as_bytes()).unwrap();
 }
+fn esc(s: &str) -> String {
+    let mut o = String::new();
+    for c in s.chars() {
+        match c {
+            '\\' => o.push_str("\\\\"),
+            '"' => o.push_str("\\\""),
+            '\n' => o.push_str("\\n"),
+            '\r' => o.push_str("\\r"),
+            c => o.push(c),
+        }
+    }
+    o
+}
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.first().map(String::as_str) == Some("agents") {
@@ -27,7 +41,8 @@ fn main() {
     }
     if let Ok(calls) = std::env::var("STUB_CALLS") {
         let cwd = std::env::current_dir().unwrap();
-        append(&calls, &format!("{}\n{}\n", cwd.display(), args.join("\u{1f}")));
+        let quoted: Vec<String> = args.iter().map(|a| format!("\"{}\"", esc(a))).collect();
+        append(&calls, &format!("{{\"cwd\":\"{}\",\"args\":[{}]}}\n", esc(&cwd.display().to_string()), quoted.join(",")));
     }
     if let Ok(t) = std::env::var("STUB_TRANSCRIPT") {
         if std::env::var("STUB_NO_BOUNDARY").is_err() {
@@ -37,9 +52,19 @@ fn main() {
             append(&t, &format!("{line}\n"));
         }
     }
+    if let Ok(record) = std::env::var("STUB_WRITE_SESSION") {
+        std::fs::create_dir_all(std::path::Path::new(&record).parent().unwrap()).unwrap();
+        std::fs::write(&record, "{\"pid\":4242,\"sessionId\":\"sid-1\",\"status\":\"busy\"}").unwrap();
+    }
+    if let Ok(secs) = std::env::var("STUB_SLEEP_SECS") {
+        std::thread::sleep(std::time::Duration::from_secs_f64(secs.parse().unwrap()));
+    }
     println!("{}", std::env::var("STUB_OUTPUT").unwrap_or_else(|_| {
         "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"num_turns\":0,\"session_id\":\"sid-1\",\"total_cost_usd\":0.4321}".into()
     }));
+    if let Ok(code) = std::env::var("STUB_EXIT") {
+        std::process::exit(code.parse().unwrap());
+    }
 }
 "##;
 
@@ -60,27 +85,46 @@ fn stub() -> &'static Path {
     })
 }
 
-fn assistant(model: Option<&str>, total: u64) -> String {
+/// An assistant line as Claude Code writes it: `message.model` is the plain id and the optional
+/// top-level `requestedModel` is what the chat asked for, with `[1m]` on the large window.
+fn assistant_requested(model: Option<&str>, requested: Option<&str>, total: u64) -> String {
     let mut message = json!({"role": "assistant", "usage": {"input_tokens": 1, "cache_read_input_tokens": total - 1, "output_tokens": 5}});
     if let Some(m) = model {
         message["model"] = json!(m);
     }
-    json!({"type": "assistant", "message": message}).to_string()
+    let mut line = json!({"type": "assistant", "message": message});
+    if let Some(r) = requested {
+        line["requestedModel"] = json!(r);
+    }
+    line.to_string()
+}
+
+fn assistant(model: Option<&str>, total: u64) -> String {
+    assistant_requested(model, model, total)
 }
 
 const TRANSCRIPT: &str = "cfg/projects/p1/sid-1.jsonl";
 
-/// A registered chat `system/x` (session `sid-1`) whose transcript holds one assistant line.
-fn chat(model: Option<&str>, tokens: u64) -> Fx {
+fn registered() -> Fx {
     let fx = Fx::new();
     fx.ok(&["session", "register", "system/x", "--session", "sid-1"]);
-    fx.write(TRANSCRIPT, &format!("{}\n", assistant(model, tokens)));
     fx
 }
 
-/// A chat with a 312k-token context on a 1M model.
+fn with_lines(lines: &[String]) -> Fx {
+    let fx = registered();
+    fx.write(TRANSCRIPT, &format!("{}\n", lines.join("\n")));
+    fx
+}
+
+/// A registered chat `system/x` (session `sid-1`) whose transcript holds one assistant line.
+fn chat(model: Option<&str>, tokens: u64) -> Fx {
+    with_lines(&[assistant(model, tokens)])
+}
+
+/// A chat with a 312k-token context on the 1M window, as a real transcript records it.
 fn big() -> Fx {
-    chat(Some("claude-opus-5-5[1m]"), 312_000)
+    with_lines(&[assistant_requested(Some("claude-opus-5-5"), Some("claude-opus-5-5[1m]"), 312_000)])
 }
 
 const IDLE: &str = r#"[{"sessionId":"sid-1","status":"idle"}]"#;
@@ -101,24 +145,41 @@ fn compact(fx: &Fx, env: &[(&str, &str)], args: &[&str]) -> (i32, String, String
     (o.status.code().unwrap_or(-1), String::from_utf8_lossy(&o.stdout).into_owned(), String::from_utf8_lossy(&o.stderr).into_owned())
 }
 
-/// The arguments of each stub call, and where it ran.
+/// Where each stub call ran and its arguments.
 fn calls(fx: &Fx) -> Vec<(String, Vec<String>)> {
     let Ok(text) = std::fs::read_to_string(fx.path("calls.txt")) else { return Vec::new() };
-    let lines: Vec<&str> = text.lines().collect();
-    lines.chunks(2).map(|c| (c[0].to_string(), c[1].split('\u{1f}').map(str::to_string).collect())).collect()
+    text.lines()
+        .map(|l| {
+            let v: Value = serde_json::from_str(l).unwrap();
+            let args = v["args"].as_array().unwrap().iter().map(|a| a.as_str().unwrap().to_string()).collect();
+            (v["cwd"].as_str().unwrap().to_string(), args)
+        })
+        .collect()
+}
+
+fn model_arg(fx: &Fx, call: usize) -> String {
+    let args = &calls(fx)[call].1;
+    let at = args.iter().position(|a| a == "--model").unwrap();
+    args[at + 1].clone()
 }
 
 fn boundaries(fx: &Fx) -> usize {
     fx.read(TRANSCRIPT).lines().filter(|l| l.contains("compact_boundary")).count()
 }
 
+fn run_log_has(fx: &Fx, needle: &str) -> bool {
+    fx.run_log_rows().iter().any(|r| r.get("refusal").and_then(Value::as_str).is_some_and(|m| m.contains(needle)))
+}
+
+// ------------------------------------------------------------------ the happy path
+
 #[test]
 fn a_closed_chat_is_compacted_with_the_resume_command_from_the_vault_root() {
-    let fx = chat(Some("claude-opus-5-5[1m]"), 312_000);
+    let fx = big();
     let (code, out, err) = compact(&fx, &[], &[]);
     assert_eq!(code, 0, "{out}{err}");
     assert_eq!(boundaries(&fx), 1);
-    for part in ["system/x: compacted", "312k", "claude-opus-5-5[1m]", "$0.43", "next turn"] {
+    for part in ["system/x: compacted", "312k", "claude-opus-5-5[1m] (from requestedModel of its last reply)", "$0.43", "next turn"] {
         assert!(out.contains(part), "{part}: {out}");
     }
     let made = calls(&fx);
@@ -131,11 +192,23 @@ fn a_closed_chat_is_compacted_with_the_resume_command_from_the_vault_root() {
 #[test]
 fn instructions_follow_compact_and_a_new_usage_line_gives_the_context_after() {
     let fx = big();
-    let after = assistant(Some("claude-opus-5-5[1m]"), 41_000);
+    let after = assistant(Some("claude-opus-5-5"), 41_000);
     let (code, out, err) = compact(&fx, &[("STUB_AFTER_LINE", &after)], &["--instructions", "keep the plan path"]);
     assert_eq!(code, 0, "{out}{err}");
     assert_eq!(calls(&fx)[0].1[1], "/compact keep the plan path");
     assert!(out.contains("context after: 41k tokens"), "{out}");
+}
+
+#[test]
+fn instructions_with_quotes_and_a_newline_arrive_as_one_argument() {
+    let fx = big();
+    let text = "say \"hi\" to \"him\"\nthen stop";
+    let (code, out, err) = compact(&fx, &[], &["--instructions", text]);
+    assert_eq!(code, 0, "{out}{err}");
+    let args = &calls(&fx)[0].1;
+    assert_eq!(args.len(), 8, "{args:?}");
+    assert_eq!(args[1], format!("/compact {text}"));
+    assert_eq!(args[2], "--resume");
 }
 
 #[test]
@@ -147,29 +220,50 @@ fn an_ended_row_is_compacted_like_any_other() {
     assert_eq!(boundaries(&fx), 1);
 }
 
+// ------------------------------------------------------------------ the live-process guard
+
 #[test]
-fn a_running_chat_is_refused_and_the_program_is_never_called() {
+fn any_roster_entry_for_the_chat_refuses_whatever_its_status_and_names_it() {
     let fx = big();
-    for status in ["idle", "busy", "waiting"] {
+    for status in ["idle", "busy", "waiting", "shell", "completed", "a-status-nobody-has-seen"] {
         let roster = format!(r#"[{{"sessionId":"sid-1","status":"{status}"}}]"#);
         let (code, _, err) = compact(&fx, &[("STUB_ROSTER", &roster)], &["--force"]);
         assert_eq!(code, 1, "{status}: {err}");
         assert!(err.contains("system/x is running"), "{err}");
+        assert!(err.contains(&format!("with status {status}")), "{err}");
         assert!(err.contains("Close its tab and rerun, or type /compact in that chat"), "{err}");
     }
     assert!(calls(&fx).is_empty());
     assert_eq!(boundaries(&fx), 0);
-    assert!(
-        fx.run_log_rows().iter().any(|r| r.get("refusal").and_then(Value::as_str).is_some_and(|m| m.contains("is running"))),
-        "the refusal is in the run log"
-    );
+    assert!(run_log_has(&fx, "is running"), "the refusal is in the run log");
 }
 
 #[test]
 fn another_chat_on_the_roster_does_not_make_this_one_running() {
     let fx = big();
-    let roster = r#"[{"sessionId":"sid-other","status":"busy"},{"sessionId":"sid-1","status":"completed"}]"#;
+    let roster = r#"[{"sessionId":"sid-other","status":"busy"}]"#;
     let (code, out, err) = compact(&fx, &[("STUB_ROSTER", roster)], &[]);
+    assert_eq!(code, 0, "{out}{err}");
+}
+
+#[test]
+fn a_session_record_naming_the_chat_refuses_even_when_the_roster_is_empty() {
+    let fx = big();
+    fx.write("cfg/sessions/4242.json", r#"{"pid":4242,"sessionId":"sid-1","status":"shell"}"#);
+    let (code, _, err) = compact(&fx, &[], &["--force"]);
+    assert_eq!(code, 1, "{err}");
+    assert!(err.contains("system/x is running") && err.contains("sessions/4242.json"), "{err}");
+    assert!(calls(&fx).is_empty());
+}
+
+#[test]
+fn session_records_for_other_chats_or_that_do_not_parse_are_ignored() {
+    let fx = big();
+    fx.write("cfg/sessions/1.json", r#"{"pid":1,"sessionId":"sid-other"}"#);
+    fx.write("cfg/sessions/2.json", "{ this is not json");
+    fx.write("cfg/sessions/3.json", r#"["sid-1"]"#);
+    fx.write("cfg/sessions/4.key", "sid-1");
+    let (code, out, err) = compact(&fx, &[], &[]);
     assert_eq!(code, 0, "{out}{err}");
 }
 
@@ -181,6 +275,40 @@ fn an_unavailable_roster_refuses_because_a_process_cannot_be_ruled_out() {
     assert!(err.contains("cannot tell whether it is running"), "{err}");
     assert!(calls(&fx).is_empty());
 }
+
+#[test]
+fn a_missing_program_leaves_the_roster_unavailable_and_refuses() {
+    let fx = chat(Some("claude-opus-5-5"), 312_000);
+    let missing = fx.path("no-such-program");
+    let (code, _, err) = compact(&fx, &[("AF_CLAUDE_BIN", &missing.to_string_lossy())], &[]);
+    assert_eq!(code, 1);
+    assert!(err.contains("cannot tell whether it is running"), "{err}");
+}
+
+#[test]
+fn a_chat_opened_during_the_run_is_an_error_even_when_the_compaction_succeeded() {
+    let fx = big();
+    let record = fx.p("cfg/sessions/777.json");
+    let (code, out, err) = compact(&fx, &[("STUB_WRITE_SESSION", &record)], &[]);
+    assert_eq!(code, 1, "{out}{err}");
+    for part in ["system/x is live now", "opened during the compaction", "two processes may have written its transcript", "Close that chat and reopen it", "succeeded"] {
+        assert!(err.contains(part), "{part}: {err}");
+    }
+    assert!(!out.contains("compacted."), "no success report: {out}");
+    assert_eq!(boundaries(&fx), 1, "the compaction did run");
+    assert!(run_log_has(&fx, "live now"));
+}
+
+#[test]
+fn a_chat_opened_during_a_failed_run_gets_the_warning_and_the_failure() {
+    let fx = big();
+    let record = fx.p("cfg/sessions/777.json");
+    let (code, _, err) = compact(&fx, &[("STUB_WRITE_SESSION", &record), ("STUB_NO_BOUNDARY", "1")], &[]);
+    assert_eq!(code, 1);
+    assert!(err.contains("is live now") && err.contains("no compact_boundary line"), "{err}");
+}
+
+// ------------------------------------------------------------------ the size
 
 #[test]
 fn under_fifty_thousand_tokens_is_skipped_and_force_runs_it() {
@@ -200,8 +328,7 @@ fn under_fifty_thousand_tokens_is_skipped_and_force_runs_it() {
 
 #[test]
 fn no_transcript_and_an_unknown_name_are_refused() {
-    let fx = Fx::new();
-    fx.ok(&["session", "register", "system/x", "--session", "sid-1"]);
+    let fx = registered();
     let (code, _, err) = compact(&fx, &[], &[]);
     assert_eq!(code, 1);
     assert!(err.contains("no transcript found"), "{err}");
@@ -213,8 +340,7 @@ fn no_transcript_and_an_unknown_name_are_refused() {
 
 #[test]
 fn a_transcript_with_no_usage_needs_force() {
-    let fx = Fx::new();
-    fx.ok(&["session", "register", "system/x", "--session", "sid-1"]);
+    let fx = registered();
     fx.write(TRANSCRIPT, "{\"type\":\"user\",\"message\":{\"content\":\"hi\"}}\n");
     let (code, _, err) = compact(&fx, &[], &["--model", "claude-opus-5-5"]);
     assert_eq!(code, 1);
@@ -224,19 +350,50 @@ fn a_transcript_with_no_usage_needs_force() {
     assert!(out.contains("Before unknown tokens"), "{out}");
 }
 
+// ------------------------------------------------------------------ the summary model
+
+fn attachment(kind: &str, model: &str) -> String {
+    json!({"type": "attachment", "attachment": {"type": kind, "model": model}}).to_string()
+}
+
 #[test]
-fn the_model_defaults_to_the_last_reply_with_its_bracket_suffix_and_an_explicit_one_wins() {
-    let fx = Fx::new();
-    fx.ok(&["session", "register", "system/x", "--session", "sid-1"]);
-    let side = json!({"type": "assistant", "isSidechain": true, "message": {"model": "claude-sonnet-5-5", "usage": {"input_tokens": 9000}}});
-    fx.write(
-        TRANSCRIPT,
-        &format!("{}\n{}\n{side}\n", assistant(Some("claude-sonnet-5-5"), 80_000), assistant(Some("claude-fable-5-2[1m]"), 200_000)),
-    );
+fn the_model_is_the_last_replys_requested_id_with_its_bracket_and_says_where_it_came_from() {
+    let side = json!({"type": "assistant", "isSidechain": true, "requestedModel": "claude-sonnet-5-5", "message": {"model": "claude-sonnet-5-5", "usage": {"input_tokens": 9000}}});
+    let fx = with_lines(&[
+        assistant_requested(Some("claude-sonnet-5-5"), Some("claude-sonnet-5-5"), 80_000),
+        assistant_requested(Some("claude-fable-5-2"), Some("claude-fable-5-2[1m]"), 200_000),
+        side.to_string(),
+    ]);
     assert_eq!(compact(&fx, &[], &[]).0, 0);
-    assert_eq!(calls(&fx)[0].1[5], "claude-fable-5-2[1m]");
+    assert_eq!(model_arg(&fx, 0), "claude-fable-5-2[1m]");
+    let (code, out, _) = compact(&fx, &[], &["--model", "claude-opus-5-5", "--dry-run"]);
+    assert_eq!(code, 0);
+    assert!(out.contains("model claude-opus-5-5 (from --model)"), "{out}");
     assert_eq!(compact(&fx, &[], &["--model", "claude-opus-5-5"]).0, 0);
-    assert_eq!(calls(&fx)[1].1[5], "claude-opus-5-5");
+    assert_eq!(model_arg(&fx, 1), "claude-opus-5-5");
+}
+
+#[test]
+fn a_reply_that_requested_the_plain_id_stays_plain_over_an_older_bracketed_record() {
+    let fx = with_lines(&[
+        attachment("thinking_drop", "claude-opus-5-5[1m]"),
+        assistant_requested(Some("claude-opus-5-5"), Some("claude-opus-5-5"), 120_000),
+    ]);
+    assert_eq!(compact(&fx, &[], &[]).0, 0);
+    assert_eq!(model_arg(&fx, 0), "claude-opus-5-5");
+}
+
+#[test]
+fn a_reply_with_no_requested_id_takes_a_recent_bracketed_record_of_the_same_base() {
+    let plain = json!({"type": "assistant", "message": {"model": "claude-opus-5-5", "usage": {"input_tokens": 1, "cache_read_input_tokens": 119_999}}}).to_string();
+    let fx = with_lines(&[plain.clone(), attachment("thinking_drop", "claude-opus-5-5[1m]")]);
+    let (code, out, err) = compact(&fx, &[], &["--dry-run"]);
+    assert_eq!(code, 0, "{out}{err}");
+    assert!(out.contains("model claude-opus-5-5[1m] (from a recent attachment record)"), "{out}");
+    // A bracketed id of another model is not this chat's model.
+    let other = with_lines(&[plain, attachment("thinking_drop", "claude-fable-5-2[1m]")]);
+    let (_, out, _) = compact(&other, &[], &["--dry-run"]);
+    assert!(out.contains("model claude-opus-5-5 (from the model of its last reply)"), "{out}");
 }
 
 #[test]
@@ -262,13 +419,15 @@ fn a_haiku_summary_is_refused_unless_forced() {
     assert_eq!(calls(&fx).len(), 1);
 }
 
+// ------------------------------------------------------------------ dry run
+
 #[test]
 fn dry_run_prints_the_command_the_model_and_the_tokens_and_runs_nothing() {
-    let fx = chat(Some("claude-opus-5-5[1m]"), 312_000);
+    let fx = big();
     let before = fx.read(TRANSCRIPT);
     let (code, out, err) = compact(&fx, &[], &["--dry-run", "--instructions", "keep the plan"]);
     assert_eq!(code, 0, "{out}{err}");
-    for part in ["-p \"/compact keep the plan\"", "--resume sid-1", "--model claude-opus-5-5[1m]", "--output-format json", "312k tokens"] {
+    for part in ["-p \"/compact keep the plan\"", "--resume sid-1", "--model claude-opus-5-5[1m]", "--output-format json", "312k tokens", "from requestedModel of its last reply"] {
         assert!(out.contains(part), "{part}: {out}");
     }
     assert!(calls(&fx).is_empty());
@@ -277,13 +436,15 @@ fn dry_run_prints_the_command_the_model_and_the_tokens_and_runs_nothing() {
 
 #[test]
 fn a_dry_run_still_refuses_a_running_chat() {
-    let fx = chat(Some("claude-opus-5-5"), 312_000);
+    let fx = big();
     assert_eq!(compact(&fx, &[("STUB_ROSTER", IDLE)], &["--dry-run"]).0, 1);
 }
 
+// ------------------------------------------------------------------ failures
+
 #[test]
 fn a_reported_error_exits_one_and_shows_the_output() {
-    let fx = chat(Some("claude-opus-5-5"), 312_000);
+    let fx = big();
     let result = r#"{"type":"result","is_error":true,"result":"Prompt is too long","total_cost_usd":0}"#;
     let (code, _, err) = compact(&fx, &[("STUB_OUTPUT", result)], &[]);
     assert_eq!(code, 1);
@@ -291,17 +452,26 @@ fn a_reported_error_exits_one_and_shows_the_output() {
 }
 
 #[test]
+fn a_non_zero_exit_is_a_failure_even_with_is_error_false_and_a_boundary_line() {
+    let fx = big();
+    let (code, out, err) = compact(&fx, &[("STUB_EXIT", "3")], &[]);
+    assert_eq!(code, 1, "{out}");
+    assert!(err.contains("the command exited 3") && err.contains("\"is_error\":false"), "{err}");
+    assert!(!out.contains("compacted."), "{out}");
+}
+
+#[test]
 fn no_boundary_line_is_a_failure_even_when_the_output_says_success() {
-    let fx = chat(Some("claude-opus-5-5"), 312_000);
+    let fx = big();
     let (code, out, err) = compact(&fx, &[("STUB_NO_BOUNDARY", "1")], &[]);
     assert_eq!(code, 1, "{out}");
     assert!(err.contains("no compact_boundary line") && err.contains("\"is_error\":false"), "{err}");
-    assert!(!out.contains("compacted"), "{out}");
+    assert!(!out.contains("compacted."), "{out}");
 }
 
 #[test]
 fn output_that_is_not_json_fails_and_only_the_first_300_characters_show() {
-    let fx = chat(Some("claude-opus-5-5"), 312_000);
+    let fx = big();
     let noise = format!("{}{}", "x".repeat(300), "TAIL-MARKER");
     let (code, _, err) = compact(&fx, &[("STUB_OUTPUT", &noise)], &[]);
     assert_eq!(code, 1);
@@ -310,10 +480,38 @@ fn output_that_is_not_json_fails_and_only_the_first_300_characters_show() {
 }
 
 #[test]
-fn a_missing_program_leaves_the_roster_unavailable_and_refuses() {
-    let fx = chat(Some("claude-opus-5-5"), 312_000);
-    let missing = fx.path("no-such-program");
-    let (code, _, err) = compact(&fx, &[("AF_CLAUDE_BIN", &missing.to_string_lossy())], &[]);
+fn json_after_other_output_lines_is_parsed_and_the_last_json_line_wins() {
+    let ok = r#"{"type":"result","is_error":false,"num_turns":0,"total_cost_usd":0.5}"#;
+    let bad = r#"{"type":"result","is_error":true,"result":"nope"}"#;
+    let fx = big();
+    let (code, out, err) = compact(&fx, &[("STUB_OUTPUT", &format!("starting up\nwarning: slow disk\n{ok}"))], &[]);
+    assert_eq!(code, 0, "{out}{err}");
+    assert!(out.contains("$0.50"), "{out}");
+    let fx = big();
+    let (code, out, err) = compact(&fx, &[("STUB_OUTPUT", &format!("{bad}\n{ok}"))], &[]);
+    assert_eq!(code, 0, "{out}{err}");
+    let fx = big();
+    let (code, _, err) = compact(&fx, &[("STUB_OUTPUT", &format!("{ok}\n{bad}"))], &[]);
     assert_eq!(code, 1);
-    assert!(err.contains("cannot tell whether it is running"), "the roster call fails first: {err}");
+    assert!(err.contains("is_error: true"), "{err}");
+}
+
+// ------------------------------------------------------------------ the deadline
+
+#[test]
+fn a_command_past_the_deadline_is_stopped_and_the_transcript_is_checked() {
+    let started = std::time::Instant::now();
+    let fx = big();
+    let (code, out, err) = compact(&fx, &[("AF_COMPACT_DEADLINE_SECS", "1"), ("STUB_SLEEP_SECS", "60")], &[]);
+    assert_eq!(code, 1, "{out}");
+    assert!(started.elapsed() < std::time::Duration::from_secs(40), "the stub was killed, not waited for");
+    assert!(err.contains("ran past 1 second") && err.contains("stopped"), "{err}");
+    assert!(err.contains("the transcript changed and has a compact_boundary line"), "{err}");
+    assert!(!out.contains("compacted."), "{out}");
+    assert!(run_log_has(&fx, "ran past"));
+
+    let quiet = big();
+    let (code, _, err) = compact(&quiet, &[("AF_COMPACT_DEADLINE_SECS", "1"), ("STUB_SLEEP_SECS", "60"), ("STUB_NO_BOUNDARY", "1")], &[]);
+    assert_eq!(code, 1);
+    assert!(err.contains("the transcript did not change and has no compact_boundary line"), "{err}");
 }

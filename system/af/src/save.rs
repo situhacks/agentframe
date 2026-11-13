@@ -303,5 +303,5 @@ fn run_git(args: &[String], deadline: Option<Instant>, ceiling: Option<&Path>) -
         cmd.env("GIT_CEILING_DIRECTORIES", c);
     }
     cmd.args(args).env("GIT_TERMINAL_PROMPT", "0").env("GCM_INTERACTIVE", "never");
-    run_command(cmd, "git", deadline)
+    run_command(cmd, "git", deadline, false)
 }

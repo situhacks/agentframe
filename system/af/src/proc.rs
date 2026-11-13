@@ -43,8 +43,10 @@ impl Out {
 }
 
 /// Run `cmd` with stdin closed and both output streams captured. Past the deadline the process
-/// is killed and the run reports `timed out`. `name` is what a spawn failure calls the program.
-pub fn run_command(mut cmd: Command, name: &str, deadline: Option<Instant>) -> Out {
+/// is killed and the run reports `timed out`; with `kill_tree` its child processes die with it
+/// (Windows only: elsewhere only the process itself is killed). `name` is what a spawn failure
+/// calls the program.
+pub fn run_command(mut cmd: Command, name: &str, deadline: Option<Instant>, kill_tree: bool) -> Out {
     cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
     #[cfg(windows)]
     {
@@ -76,6 +78,9 @@ pub fn run_command(mut cmd: Command, name: &str, deadline: Option<Instant>) -> O
             Err(_) => break None,
         }
         if deadline.is_some_and(|d| Instant::now() >= d) {
+            if kill_tree {
+                kill_process_tree(child.id());
+            }
             let _ = child.kill();
             let _ = child.wait();
             return Out { code: None, stdout: String::new(), stderr: "timed out".into() };
@@ -88,3 +93,20 @@ pub fn run_command(mut cmd: Command, name: &str, deadline: Option<Instant>) -> O
     };
     Out { code, stdout: wait(out_rx), stderr: wait(err_rx) }
 }
+
+/// `taskkill /T /F`: the process and every process it started.
+#[cfg(windows)]
+fn kill_process_tree(pid: u32) {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let _ = Command::new("taskkill")
+        .args(["/PID", &pid.to_string(), "/T", "/F"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .creation_flags(CREATE_NO_WINDOW)
+        .status();
+}
+
+#[cfg(not(windows))]
+fn kill_process_tree(_pid: u32) {}

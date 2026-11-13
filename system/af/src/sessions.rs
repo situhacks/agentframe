@@ -533,7 +533,7 @@ pub fn stale_handoff_notes(ctx: &Ctx) -> R<Vec<String>> {
 pub fn claude_roster() -> Option<Value> {
     let mut cmd = std::process::Command::new(crate::proc::claude_bin());
     cmd.args(["agents", "--json", "--all"]);
-    let out = crate::proc::run_command(cmd, "claude", Some(std::time::Instant::now() + std::time::Duration::from_secs(5)));
+    let out = crate::proc::run_command(cmd, "claude", Some(std::time::Instant::now() + std::time::Duration::from_secs(5)), false);
     if !out.ok() {
         return None;
     }

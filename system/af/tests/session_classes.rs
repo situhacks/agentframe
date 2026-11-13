@@ -2,7 +2,7 @@
 //! instructions, and `af session context`.
 
 mod common;
-use afcore::reach::{context_tokens, last_context_tokens};
+use afcore::reach::{context_size, context_tokens, last_context_tokens, ContextSize};
 use afcore::sessions::{brief_class, class_of, default_class, SessionClass, CLASS_LIMITS};
 use common::*;
 use serde_json::{json, Value};
@@ -313,6 +313,45 @@ fn a_real_shaped_compaction_re_arms_both_tiers() {
 }
 
 #[test]
+fn a_boundary_after_the_last_reply_makes_the_size_unknown_and_nothing_fires() {
+    let fx = Fx::new();
+    register(&fx, "system/cut", "s-build");
+    let p = write_transcript(&fx, "t/just-compacted.jsonl", &[assistant(1, 482_000, 0), boundary(), json!({"type": "user", "message": {"content": "summary"}}).to_string()]);
+    assert_eq!(context_tokens(&p), None, "the 482k line describes the context before the compaction");
+    assert_eq!(context_size(&p), ContextSize::AfterCompact);
+    let (code, out) = hook(&fx, "post-tool-use", &json!({"session_id": "s-build", "tool_name": "Read", "transcript_path": p}));
+    assert_eq!((code, nudge_text(&out)), (0, None), "no nudge on a stale number");
+    assert!(!fx.exists("system/logs/context-nudge/s-build"), "and no marker claimed");
+    // The first reply after the boundary measures the new context; a boundary before the last reply changes nothing.
+    let mut later = std::fs::read_to_string(&p).unwrap();
+    later.push_str(&format!("{}\n", assistant(3, 78_000, 1_000)));
+    let p = fx.write("t/replied.jsonl", &later);
+    assert_eq!(context_tokens(&p), Some(79_003));
+    assert!(matches!(context_size(&p), ContextSize::Known(_)));
+}
+
+#[test]
+fn a_boundary_found_in_text_or_a_sidechain_boundary_is_not_a_compaction() {
+    let fx = Fx::new();
+    let said = json!({"type": "assistant", "message": {"content": "a compact_boundary line", "usage": {"input_tokens": 5_000}}}).to_string();
+    let p = write_transcript(&fx, "t/talk.jsonl", &[assistant(1, 9_000, 0), said]);
+    assert_eq!(context_tokens(&p), Some(5_000), "an assistant line that mentions the word is still an assistant line");
+    let side = json!({"type": "system", "subtype": "compact_boundary", "isSidechain": true}).to_string();
+    let p = write_transcript(&fx, "t/side.jsonl", &[assistant(1, 9_000, 0), side]);
+    assert_eq!(context_tokens(&p), Some(9_001));
+}
+
+#[test]
+fn a_boundary_beyond_the_first_tail_still_makes_the_size_unknown() {
+    let fx = Fx::new();
+    let filler = json!({"type": "user", "message": {"content": "x".repeat(1000)}}).to_string();
+    let mut lines = vec![assistant(7, 700, 70), boundary()];
+    lines.extend(std::iter::repeat(filler).take(1500));
+    let p = write_transcript(&fx, "t/long-compacted.jsonl", &lines);
+    assert_eq!(context_size(&p), ContextSize::AfterCompact);
+}
+
+#[test]
 fn post_compact_re_arms_at_once_and_prints_nothing() {
     let fx = Fx::new();
     register(&fx, "system/cut", "s-build");
@@ -475,6 +514,22 @@ auto-compact at 400k comes before this chat's 600k hard nudge; raise it with /au
     let out = context_out(&fx, &["session", "context", "project/none"]);
     assert!(out.contains("context: unknown") && out.ends_with("auto-compact: unknown\n"), "{out}");
     assert_eq!(fx.af().env("CLAUDE_CONFIG_DIR", fx.path("cfg")).args(["session", "context", "system/ghost"]).output().unwrap().status.code(), Some(1));
+}
+
+#[test]
+fn session_context_says_the_size_is_unknown_until_the_next_reply_after_a_compaction() {
+    let fx = context_fixture();
+    write_transcript(&fx, "cfg/projects/p1/s-build.jsonl", &[assistant_model("claude-opus-5-5[1m]", 483_000), boundary()]);
+    let out = context_out(&fx, &["session", "context", "system/cut"]);
+    assert!(out.contains("context: unknown until its next reply"), "{out}");
+    assert!(!out.contains("483"), "{out}");
+    assert!(out.ends_with("auto-compact: unknown\n"), "{out}");
+    let table = context_out(&fx, &["session", "context"]);
+    assert!(table.contains("| system/cut | build | unknown | 400k | 600k | unknown |"), "{table}");
+    let mut text = fx.read("cfg/projects/p1/s-build.jsonl");
+    text.push_str(&format!("{}\n", assistant_model("claude-opus-5-5[1m]", 79_000)));
+    fx.write("cfg/projects/p1/s-build.jsonl", &text);
+    assert!(context_out(&fx, &["session", "context", "system/cut"]).contains("context: 79k tokens (79000)"));
 }
 
 #[test]

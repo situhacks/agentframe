@@ -220,6 +220,69 @@ fn an_ended_row_is_compacted_like_any_other() {
     assert_eq!(boundaries(&fx), 1);
 }
 
+#[test]
+fn a_second_compact_on_a_just_compacted_chat_says_already_compact_and_runs_nothing() {
+    let fx = big();
+    let (code, out, err) = compact(&fx, &[], &[]);
+    assert_eq!(code, 0, "{out}{err}");
+    assert_eq!((boundaries(&fx), calls(&fx).len()), (1, 1));
+    for extra in [&[][..], &["--dry-run"][..], &["--model", "claude-opus-5-5"][..]] {
+        let (code, out, err) = compact(&fx, &[], extra);
+        assert_eq!(code, 0, "{out}{err}");
+        assert!(out.contains("system/x: already compact") && out.contains("--force runs it anyway"), "{out}");
+        assert!(!err.contains("no compact_boundary"), "{err}");
+    }
+    assert_eq!((boundaries(&fx), calls(&fx).len()), (1, 1), "no further run, no further boundary");
+}
+
+#[test]
+fn force_runs_the_compaction_on_a_chat_that_reads_as_already_compact() {
+    // After a compaction he pastes a file and the request fails "prompt too long": that error reply
+    // has all-zero usage, so the transcript still reads as compacted, but there is something to compact.
+    let fx = big();
+    compact(&fx, &[], &[]);
+    let (code, out, err) = compact(&fx, &[], &["--force", "--dry-run"]);
+    assert_eq!(code, 0, "{out}{err}");
+    assert!(out.contains("would run") && out.contains("model claude-opus-5-5[1m] (from requestedModel of its last reply)"), "the model still comes from the reply before the boundary: {out}");
+    assert_eq!(calls(&fx).len(), 1, "a dry run runs nothing");
+    let (code, out, err) = compact(&fx, &[], &["--force"]);
+    assert_eq!(code, 0, "{out}{err}");
+    assert!(out.contains("system/x: compacted") && out.contains("Before unknown tokens"), "{out}");
+    assert_eq!((boundaries(&fx), calls(&fx).len()), (2, 2));
+    assert_eq!(model_arg(&fx, 1), "claude-opus-5-5[1m]");
+}
+
+#[test]
+fn a_reply_after_the_boundary_makes_the_chat_compactable_again() {
+    let fx = big();
+    compact(&fx, &[], &[]);
+    let mut text = fx.read(TRANSCRIPT);
+    text.push_str(&format!("{}\n", assistant_requested(Some("claude-opus-5-5"), Some("claude-opus-5-5[1m]"), 120_000)));
+    fx.write(TRANSCRIPT, &text);
+    let (code, out, err) = compact(&fx, &[], &[]);
+    assert_eq!(code, 0, "{out}{err}");
+    assert!(out.contains("system/x: compacted"), "{out}");
+    assert_eq!(boundaries(&fx), 2);
+}
+
+#[test]
+fn a_roster_entry_with_no_status_or_status_shell_is_reported_as_running_by_list_and_reach() {
+    let fx = big();
+    for roster in [r#"[{"sessionId":"sid-1"}]"#, r#"[{"sessionId":"sid-1","status":"shell"}]"#] {
+        let run = |args: &[&str]| {
+            let o = fx.af().env("CLAUDE_CONFIG_DIR", fx.path("cfg")).env("AF_CLAUDE_BIN", stub()).env("STUB_ROSTER", roster).args(args).output().unwrap();
+            String::from_utf8_lossy(&o.stdout).into_owned()
+        };
+        let list: Value = serde_json::from_str(&run(&["session", "list", "--json"])).unwrap();
+        let state = list[0]["live_state"].as_str().unwrap().to_string();
+        assert!(state == "unknown" || state == "shell", "{roster}: {state}");
+        let reach: Value = serde_json::from_str(&run(&["session", "reach", "system/x", "--json"])).unwrap();
+        let line = reach["line"].as_str().unwrap();
+        assert_ne!(reach["state"], "closed", "{roster}: {line}");
+        assert!(!line.contains("not running"), "{roster}: {line}");
+    }
+}
+
 // ------------------------------------------------------------------ the live-process guard
 
 #[test]
@@ -366,10 +429,11 @@ fn the_model_is_the_last_replys_requested_id_with_its_bracket_and_says_where_it_
     ]);
     assert_eq!(compact(&fx, &[], &[]).0, 0);
     assert_eq!(model_arg(&fx, 0), "claude-fable-5-2[1m]");
-    let (code, out, _) = compact(&fx, &[], &["--model", "claude-opus-5-5", "--dry-run"]);
+    // No reply since the first compaction, so the next ones need --force.
+    let (code, out, _) = compact(&fx, &[], &["--model", "claude-opus-5-5", "--dry-run", "--force"]);
     assert_eq!(code, 0);
     assert!(out.contains("model claude-opus-5-5 (from --model)"), "{out}");
-    assert_eq!(compact(&fx, &[], &["--model", "claude-opus-5-5"]).0, 0);
+    assert_eq!(compact(&fx, &[], &["--model", "claude-opus-5-5", "--force"]).0, 0);
     assert_eq!(model_arg(&fx, 1), "claude-opus-5-5");
 }
 

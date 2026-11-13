@@ -540,16 +540,22 @@ pub fn claude_roster() -> Option<Value> {
     serde_json::from_str::<Value>(&out.stdout).ok().filter(|v| v.is_array())
 }
 
-/// The roster `status` for each row's session id; `absent` when the roster lacks it.
+/// The roster `status` for each row's session id: `absent` when the roster lacks it, `unknown`
+/// when it lists the chat with no status (claude prints none when it is not busy, shell, idle or
+/// waiting), so a chat that is there is never reported as gone.
 pub fn join_roster(rows: &[Row], roster: &Value) -> Vec<String> {
     let entries = roster.as_array().cloned().unwrap_or_default();
     rows.iter()
         .map(|r| {
-            entries
-                .iter()
-                .find(|e| e.get("sessionId").and_then(|v| v.as_str()) == Some(r.session_id.as_str()))
-                .and_then(|e| e.get("status").and_then(|v| v.as_str()).map(|s| s.to_string()))
-                .unwrap_or_else(|| "absent".to_string())
+            match entries.iter().find(|e| e.get("sessionId").and_then(|v| v.as_str()) == Some(r.session_id.as_str())) {
+                None => "absent".to_string(),
+                Some(e) => e
+                    .get("status")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| "unknown".to_string()),
+            }
         })
         .collect()
 }

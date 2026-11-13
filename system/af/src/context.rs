@@ -164,8 +164,8 @@ fn opt_k(v: Option<u64>) -> String {
     v.map(kfmt).unwrap_or_else(|| "none".to_string())
 }
 
-fn usage_of(row: &Row) -> Option<reach::Usage> {
-    reach::context_usage(&reach::transcript_path(&row.session_id)?)
+fn size_of(row: &Row) -> Option<reach::ContextSize> {
+    Some(reach::context_size(&reach::transcript_path(&row.session_id)?))
 }
 
 /// The auto-compact window that applies to the chat's model, from the user settings.
@@ -198,12 +198,19 @@ pub fn cmd_context(ctx: &Ctx, name: Option<&str>) -> R<i32> {
             };
             let class = sessions::class_of(ctx, &row.name);
             let lim = class.limits();
-            let usage = usage_of(&row);
+            let size = size_of(&row);
+            let usage = match &size {
+                Some(reach::ContextSize::Known(u)) => Some(u.clone()),
+                _ => None,
+            };
             outln!("name: {}", row.name);
             outln!("class: {}", class.name());
-            match &usage {
-                Some(u) => outln!("context: {} tokens ({})", kfmt(u.tokens), u.tokens),
-                None => outln!("context: unknown (no transcript with usage)"),
+            match (&usage, &size) {
+                (Some(u), _) => outln!("context: {} tokens ({})", kfmt(u.tokens), u.tokens),
+                (None, Some(reach::ContextSize::AfterCompact)) => {
+                    outln!("context: unknown until its next reply (it was compacted after its last one)")
+                }
+                (None, _) => outln!("context: unknown (no transcript with usage)"),
             }
             outln!("window: {}", kfmt(lim.window));
             outln!("soft: {}", opt_k(lim.soft));
@@ -226,19 +233,24 @@ pub fn cmd_context(ctx: &Ctx, name: Option<&str>) -> R<i32> {
         None => {
             let mut lines = Vec::new();
             for row in reg.rows().iter().filter(|r| !r.is_ended()) {
-                let Some(u) = usage_of(row) else { continue };
+                let (context, auto) = match size_of(row) {
+                    Some(reach::ContextSize::Known(u)) => {
+                        let auto = match auto_compact_of(Some(&u)) {
+                            AutoCompact::Unknown => "unknown".to_string(),
+                            AutoCompact::Default(_) => "default".to_string(),
+                            AutoCompact::Set(w, _) => kfmt(w),
+                        };
+                        (kfmt(u.tokens), auto)
+                    }
+                    Some(reach::ContextSize::AfterCompact) => ("unknown".to_string(), "unknown".to_string()),
+                    _ => continue,
+                };
                 let class = sessions::class_of(ctx, &row.name);
                 let lim = class.limits();
-                let auto = match auto_compact_of(Some(&u)) {
-                    AutoCompact::Unknown => "unknown".to_string(),
-                    AutoCompact::Default(_) => "default".to_string(),
-                    AutoCompact::Set(w, _) => kfmt(w),
-                };
                 lines.push(format!(
-                    "| {} | {} | {} | {} | {} | {auto} |",
+                    "| {} | {} | {context} | {} | {} | {auto} |",
                     row.name,
                     class.name(),
-                    kfmt(u.tokens),
                     opt_k(lim.soft),
                     opt_k(lim.hard)
                 ));

@@ -196,7 +196,19 @@ pub fn cmd_compact(ctx: &Ctx, name: &str, model: Option<&str>, instructions: Opt
     let Some(path) = reach::transcript_path(&row.session_id) else {
         die!("{name}: no transcript found for session {}; nothing to compact", row.session_id);
     };
-    let usage = reach::context_usage(&path);
+    let mut after_compact = false;
+    let usage = match reach::context_size(&path) {
+        reach::ContextSize::Known(u) => Some(u),
+        reach::ContextSize::AfterCompact if !force => {
+            outln!("{name}: already compact. Its transcript ends at a compact_boundary with no reply since, so nothing new exists to compact. --force runs it anyway.");
+            return Ok(0);
+        }
+        reach::ContextSize::AfterCompact => {
+            after_compact = true;
+            None
+        }
+        reach::ContextSize::Unknown => None,
+    };
     let tokens = usage.as_ref().map(|u| u.tokens);
     match tokens {
         Some(t) if t < MIN_TOKENS && !force => {
@@ -209,7 +221,12 @@ pub fn cmd_compact(ctx: &Ctx, name: &str, model: Option<&str>, instructions: Opt
 
     let chosen = match model.map(str::trim).filter(|m| !m.is_empty()) {
         Some(m) => Some((m.to_string(), "--model".to_string())),
-        None => usage.as_ref().and_then(|u| default_model(u, &reach::tail(&path).unwrap_or_default())),
+        None => {
+            let tail = reach::tail(&path).unwrap_or_default();
+            // After a compaction the size is unknown, but the reply before it still names the model.
+            let named = if after_compact { reach::last_usage(&tail) } else { usage.clone() };
+            named.as_ref().and_then(|u| default_model(u, &tail))
+        }
     };
     let Some((model, source)) = chosen else {
         die!("{name}: its transcript records no model; pass --model <id>");

@@ -645,12 +645,52 @@ class MainTests(MainBase):
         code, _ = self.run_main([loop("Bad reply loop"), loop("Quiet loop")],
                                 [stream(*searched(), reply="not json"), stream(*searched())])
         text = self.report.read_text(encoding="utf-8")
-        self.assertEqual(code, 1)
+        self.assertEqual(code, lw.EXIT_PARTIAL, "one loop failed, another was checked: partial, not a failed run")
         self.assertEqual(self.counts(text), (1, 0, 1, 0))
         self.assertIn("## Failures", text)
         self.assertIn("- Bad reply loop: ", text)
         self.assertIn("malformed", text)
         self.assertNotIn("not json", text, "a model's bad reply is never echoed")
+
+    def test_exit_0_when_every_loop_was_checked_cleanly(self):
+        code, _ = self.run_main([loop("One"), loop("Two")], [stream(*searched()), found(GOOD)])
+        self.assertEqual(code, 0)
+
+    def test_exit_3_when_some_loops_failed_alone_and_one_was_checked_cleanly(self):
+        code, out = self.run_main([loop("Bad reply loop"), loop("Quiet loop")],
+                                  [stream(*searched(), reply="not json"), stream(*searched())])
+        self.assertEqual(code, 3)
+        self.assertEqual(lw.EXIT_PARTIAL, 3)
+        self.assertIn("## Failures", self.report.read_text(encoding="utf-8"), "the report still lists the failure")
+        self.assertIn("failures 1", out)
+
+    def test_exit_1_when_every_loop_checked_failed(self):
+        code, _ = self.run_main([loop("Bad one"), loop("Bad two")],
+                                [stream(*searched(), reply="not json"), stream(*searched(), reply="still not json")])
+        self.assertEqual(code, 1)
+        self.assertEqual(self.counts(self.report.read_text(encoding="utf-8")), (0, 0, 2, 0))
+
+    def test_exit_1_when_the_run_stopped_early_even_after_a_clean_loop(self):
+        replies = [stream(*searched()), stream(gmail="needs-auth"), stream(gmail="needs-auth"),
+                   stream(gmail="needs-auth"), stream(gmail="needs-auth")]
+        code, _ = self.run_main([loop(f"Loop {i}") for i in range(5)], replies)
+        self.assertEqual(code, 1, "two Gmail failures in a row stop the run: a whole-run failure")
+        self.assertEqual(self.counts(self.report.read_text(encoding="utf-8"))[0], 1)
+
+    def test_exit_1_when_a_failure_is_the_raw_email_cleanup_even_with_loops_checked(self):
+        with mock.patch.object(bw, "saved_runs", side_effect=PermissionError("denied")):
+            code, _ = self.run_main([loop("Fine"), loop("Bad")], [stream(*searched()), stream(*searched(), reply="nope")])
+        self.assertEqual(code, 1)
+
+    def test_exit_1_when_the_report_cannot_be_written(self):
+        with mock.patch.object(Path, "write_text", side_effect=OSError("disk full")):
+            code, _ = self.run_main([loop("Fine")], [stream(*searched())])
+        self.assertEqual(code, 1)
+
+    def test_a_dry_run_with_a_partial_failure_exits_3(self):
+        code, _ = self.run_main([loop("Bad"), loop("Fine")], [stream(*searched(), reply="nope"), stream(*searched())],
+                                args=["--dry-run"])
+        self.assertEqual(code, 3)
 
     def test_a_skipped_loop_is_said_in_the_footer(self):
         due = [loop(f"Loop {i}") for i in range(lw.MAX_LOOPS + 2)]
@@ -673,14 +713,14 @@ class MainTests(MainBase):
         replies = [stream(gmail="needs-auth"), stream(gmail="needs-auth"), stream(*searched()),
                    stream(gmail="needs-auth"), stream(gmail="needs-auth"), stream(*searched())]
         code, _ = self.run_main([loop(f"Loop {i}") for i in range(4)], replies)
-        self.assertEqual(code, 1)
+        self.assertEqual(code, lw.EXIT_PARTIAL)
         self.assertEqual(self.counts(self.report.read_text(encoding="utf-8")), (2, 0, 2, 0))
 
     def test_a_crash_on_one_loop_costs_only_that_loop(self):
         replies = [stream(*searched(), *call("g", GET, '{"messages": "not a list"}'), reply=json.dumps(GOOD)),
                    stream(*searched())]
         code, _ = self.run_main([loop("Odd shape"), loop("Fine")], replies)
-        self.assertEqual(code, 1)
+        self.assertEqual(code, lw.EXIT_PARTIAL)
         self.assertEqual(self.counts(self.report.read_text(encoding="utf-8")), (1, 0, 1, 0))
 
     def test_an_unexpected_error_on_one_loop_costs_only_that_loop(self):
@@ -693,8 +733,30 @@ class MainTests(MainBase):
             return real(*args, **kw)
         with mock.patch.object(lw, "check_loop", side_effect=flaky):
             code, _ = self.run_main([loop("First"), loop("Fine")], [stream(*searched())])
-        self.assertEqual(code, 1)
+        self.assertEqual(code, lw.EXIT_PARTIAL)
         self.assertEqual(self.counts(self.report.read_text(encoding="utf-8")), (1, 0, 1, 0))
+
+    def test_a_hung_af_is_a_whole_run_failure_within_the_timeout(self):
+        import time
+        real_run = lw.subprocess.run
+
+        def sleeper(cmd, **kw):
+            self.assertEqual(cmd[:3], ["af", "open", "due"])
+            self.assertEqual(kw.get("timeout"), 1, "the call carries the module's timeout")
+            return real_run([sys.executable, "-c", "import time; time.sleep(30)"], **kw)
+        out, err = io.StringIO(), io.StringIO()
+        t = time.monotonic()
+        with mock.patch.object(lw, "AF_TIMEOUT_S", 1), mock.patch.object(lw.subprocess, "run", side_effect=sleeper), \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = lw.main([], now=NOW, run_claude=None, run_af=lw.af_due)
+        self.assertLess(time.monotonic() - t, 10)
+        self.assertEqual(code, 1)
+        text = self.report.read_text(encoding="utf-8")
+        self.assertIn("The whole run", text)
+        self.assertIn("did not answer within 1 seconds", text)
+
+    def test_the_af_call_has_a_short_default_timeout(self):
+        self.assertEqual(lw.AF_TIMEOUT_S, 60)
 
     def test_af_failing_still_writes_a_report_that_says_so(self):
         out, err = io.StringIO(), io.StringIO()
@@ -848,7 +910,7 @@ class SpendTests(MainBase):
                                 [stream(subtype="error_max_budget_usd", cost=0.2),
                                  stream(subtype="error_max_budget_usd", cost=0.2), stream(*searched())])
         text = self.text()
-        self.assertEqual(code, 1)
+        self.assertEqual(code, lw.EXIT_PARTIAL)
         self.assertEqual(len(self.prompts), 3, "no retry, and no stop for two in a row: Gmail is fine")
         self.assertEqual(self.counts(text), (1, 0, 2, 0))
         self.assertIn(f"- Costly: the run hit its ${lw.CALL_BUDGET_USD:.2f} budget", text)

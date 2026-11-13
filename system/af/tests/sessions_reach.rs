@@ -55,13 +55,40 @@ fn a_chat_off_the_roster_is_closed_and_the_line_names_the_resume() {
     let r = verdict(&facts(Some("absent"), Some(BYPASS), Some(BYPASS)));
     assert_eq!(r.state, "closed");
     assert!(r.line.contains("claude -p \"<message>\" --resume sid-1"), "{}", r.line);
-    assert_eq!(verdict(&facts(Some("completed"), None, None)).state, "closed");
+    assert_eq!(verdict(&facts(Some("absent"), None, None)).state, "closed");
     for tool in afcore::reach::ORDER_TOOLS {
         assert!(r.line.contains(tool), "the resume line denies {tool}: {}", r.line);
     }
     assert!(r.line.contains("--disallowedTools"), "{}", r.line);
     for tool in ["create_order_instruction", "create_option_instruction", "create_flow", "update_flow_status"] {
         assert!(afcore::reach::ORDER_TOOLS.iter().any(|t| t.ends_with(tool)), "{tool}");
+    }
+}
+
+#[test]
+fn a_chat_running_a_shell_is_working_not_closed() {
+    let r = verdict(&facts(Some("shell"), Some(BYPASS), Some(BYPASS)));
+    assert_eq!(r.state, "live-busy");
+    assert!(r.line.contains("between its tool calls"), "{}", r.line);
+    assert_eq!(verdict(&facts(Some("shell"), Some(BYPASS), Some("default"))).state, "holding", "the other checks still apply");
+}
+
+#[test]
+fn a_roster_entry_with_no_status_is_running_but_unknown_and_never_closed() {
+    let r = verdict(&facts(Some("unknown"), Some(BYPASS), Some(BYPASS)));
+    assert_eq!(r.state, "unknown");
+    assert!(r.line.contains("running") && r.line.contains("no status"), "{}", r.line);
+    assert!(r.line.contains("do not say a message started a turn"), "{}", r.line);
+    assert!(!r.line.contains("--resume"), "never offers to resume a chat that is running: {}", r.line);
+}
+
+#[test]
+fn a_status_this_build_does_not_know_is_unknown_never_closed() {
+    for status in ["starting", "compacting", "completed", "a-status-nobody-has-seen"] {
+        let r = verdict(&facts(Some(status), Some(BYPASS), Some(BYPASS)));
+        assert_eq!(r.state, "unknown", "{status}");
+        assert!(r.line.contains(status) && r.line.contains("do not say a message started a turn"), "{}", r.line);
+        assert!(!r.line.contains("--resume"), "never offers to resume a chat that is on the roster: {}", r.line);
     }
 }
 

@@ -17,6 +17,15 @@ Usage:
     python system/tools/loop_watch.py --dry-run    # read Gmail, print the report; write nothing
     python system/tools/loop_watch.py              # read Gmail, rewrite the report
     python system/tools/loop_watch.py --deadline-minutes 90   # as the batch run starts it
+
+Exit codes:
+    0  every loop was checked and none failed
+    3  partial: at least one loop was checked cleanly and every failure is one loop's own (a reply
+       that failed validation, a crash on its email, one Gmail failure between good runs); the
+       report lists them. The batch run records this as a partial step, not a failure (EXIT_PARTIAL)
+    1  anything else: the run stopped early (the due list unreadable, a deadline, the budget, Gmail
+       down), the raw email cleanup failed or left copies, the report could not be written, or
+       every loop checked failed
 """
 
 from __future__ import annotations
@@ -42,6 +51,8 @@ LOG = Path("system/logs/loop-watch.log")
 SELF_FILE = Path("workspace/life/systems/loop-watch-self.txt")  # his addresses, one a line; optional and private
 
 MODEL = bw.MODEL
+EXIT_PARTIAL = 3        # some loops failed on their own, others were checked; watch_batch.py reads this too
+AF_TIMEOUT_S = 60       # `af open due --json` reads a file; a hung af is a whole-run failure
 MAX_LOOPS = 25          # loops checked per run, oldest first
 MAX_TURNS = 6           # two searches, three threads, the reply
 MIN_QUOTE_WORDS = 4     # alphabetic words: "yes", a sum, an address or a date names no email
@@ -527,6 +538,7 @@ class Outcome:
     cost: float = 0.0     # what the result events reported
     uncosted: int = 0     # attempts with no figure, each charged the call cap against the run total
     undeleted: int | None = 0  # saved run copies, which hold email bodies, left on disk; None when unknown
+    whole_run: bool = False   # the run itself failed or stopped early, beyond any one loop's failure
 
     def spent(self) -> float:
         return self.cost + self.uncosted * CALL_BUDGET_USD
@@ -534,8 +546,11 @@ class Outcome:
 
 def af_due() -> str:
     root = _root()
-    r = subprocess.run(["af", "open", "due", "--json"], capture_output=True, text=True, encoding="utf-8",
-                       env={**os.environ, "AF_ROOT": str(root)}, cwd=root)
+    try:
+        r = subprocess.run(["af", "open", "due", "--json"], capture_output=True, text=True, encoding="utf-8",
+                           env={**os.environ, "AF_ROOT": str(root)}, cwd=root, timeout=AF_TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        raise SetupError(f"af open due did not answer within {AF_TIMEOUT_S} seconds") from None
     if r.returncode != 0:
         raise SetupError(f"af open due exited {r.returncode}: {bw.one_line(r.stderr, 160)}")
     return r.stdout
@@ -592,12 +607,14 @@ def watch(out: Outcome, model: str, run_claude, run_af, now: dt.datetime | None 
         if deadline is not None and clock() >= deadline[0]:
             reason = f"not checked: the run reached its {deadline[1]}-minute deadline"
             out.failures += [(x["text"], reason) for x in loops[i:]]
+            out.whole_run = True
             return
         try:
             found = check_loop(loop, model, run, out.notes, now, own)
         except OverRunBudget:
             reason = f"not checked: the run reached its ${RUN_BUDGET_USD:.2f} budget"
             out.failures += [(x["text"], reason) for x in loops[i:]]
+            out.whole_run = True
             return
         except bw.GmailError as e:
             out.failures.append((loop["text"], f"Gmail or Claude failed: {e}"))
@@ -605,6 +622,7 @@ def watch(out: Outcome, model: str, run_claude, run_af, now: dt.datetime | None 
             if in_a_row >= STOP_AFTER:
                 reason = f"not checked: the run stopped after {STOP_AFTER} Gmail failures in a row"
                 out.failures += [(x["text"], reason) for x in loops[i + 1:]]
+                out.whole_run = True
                 return
             continue
         except LoopFailure as e:
@@ -675,11 +693,21 @@ def _sweep(out: Outcome) -> None:
         out.undeleted = len(bw.saved_runs(PROJECT_DIR))
     except Exception as e:  # noqa: BLE001 - the report must still say what happened
         out.undeleted = None
+        out.whole_run = True
         out.failures.append(("Raw email cleanup", f"the sweep failed ({type(e).__name__}); check {PROJECT_DIR} by hand"))
         return
     if out.undeleted:
+        out.whole_run = True
         out.failures.append(("Raw email cleanup", f"{out.undeleted} saved run copies holding email could not be "
                                                   f"deleted from {PROJECT_DIR}; delete them by hand"))
+
+
+def exit_code(out: Outcome) -> int:
+    """0 clean; EXIT_PARTIAL when only single loops failed and at least one was checked cleanly;
+    1 for everything else."""
+    if not out.failures:
+        return 0
+    return 1 if out.whole_run or out.checked == 0 else EXIT_PARTIAL
 
 
 def init_report(now: dt.datetime) -> int:
@@ -724,10 +752,11 @@ def main(argv: list[str] | None = None, *, now: dt.datetime | None = None, run_c
         watch(out, a.model, run_claude, run_af, now, deadline, clock)
     except Exception as e:  # noqa: BLE001 - a scheduled run must never fail silently
         traceback.print_exc()
+        out.whole_run = True
         out.failures.append(("The whole run", f"it stopped early ({type(e).__name__}: {e})"))
     _sweep(out)
     text = render_report(out, now)
-    code = 1 if out.failures else 0
+    code = exit_code(out)
     if a.dry_run:
         print(text)
         print("".join(f"Note: {n}\n" for n in out.notes), end="")

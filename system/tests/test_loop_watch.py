@@ -534,7 +534,8 @@ class LockdownTests(unittest.TestCase):
         import watch_batch as wb
         names = [name for name, _, _ in wb.MORNING]
         self.assertLess(names.index("bills"), names.index("loop-watch"), "the loop watch skips Bills loops, so they come first")
-        self.assertEqual(next(m for n, s, m in wb.MORNING if s == "loop_watch.py"), 90)
+        self.assertEqual(next(m for n, s, m in wb.MORNING if s == "loop_watch.py"), 105, "the hard kill")
+        self.assertEqual(wb.STEP_ARGS["loop-watch"], ["--deadline-minutes", "90"], "it stops itself first and writes its report")
         ps1 = (ROOT / "system" / "tools" / "register-watch-batch.ps1").read_text(encoding="utf-8")
         m = re.search(r"-ExecutionTimeLimit \(New-TimeSpan -Hours (\d+)\)", ps1)
         self.assertGreater(int(m.group(1)) * 60, sum(minutes for _, _, minutes in wb.MORNING))
@@ -864,6 +865,35 @@ class SpendTests(MainBase):
         at = [call(f"g{i}", GET, json.dumps({"id": f"t-{i}", "messages": [MESSAGE]})) for i in range(lw.MAX_GET_THREADS)]
         flat = [e for pair in at for e in pair]
         self.assertIsNotNone(lw.check_loop(loop(), "model", lambda *a: stream(*searched(), *flat, reply=json.dumps(GOOD))))
+
+
+class DeadlineTests(MainBase):
+    def run_clocked(self, due, minutes_each, args):
+        ticks = iter(range(0, 10_000, minutes_each))   # each clock reading is one loop's worth of minutes later
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            code = lw.main(list(args), now=NOW, clock=lambda: next(ticks) * 60.0,
+                           run_claude=lambda p, t, m: self.prompts.append(p) or stream(*searched()),
+                           run_af=lambda: json.dumps(due))
+        return code, out.getvalue()
+
+    def test_past_the_deadline_no_loop_starts_and_the_report_still_lands(self):
+        due = [loop("First"), loop("Second"), loop("Third"), loop("Fourth")]
+        code, out = self.run_clocked(due, 40, ["--deadline-minutes", "90"])
+        self.assertEqual(code, 1, "a partial run exits 1, as a budget stop does")
+        self.assertEqual(len(self.prompts), 2, "the run starts at 0; loops start at 40 and 80 minutes, not at 120")
+        text = self.report.read_text(encoding="utf-8")
+        self.assertEqual(self.counts(text), (2, 0, 2, 0))
+        for left in ("- Third: not checked: the run reached its 90-minute deadline", "- Fourth: not checked"):
+            self.assertIn(left, text)
+        log = (self.root / lw.LOG).read_text(encoding="utf-8")
+        self.assertIn("loops checked 2", log)
+        self.assertIn("Run 2026-03-10 07:50", out)
+
+    def test_without_the_option_there_is_no_deadline(self):
+        due = [loop(f"Loop {i}") for i in range(4)]
+        code, _ = self.run_clocked(due, 400, [])
+        self.assertEqual((code, len(self.prompts)), (0, 4))
 
 
 class SurvivalTests(MainBase):

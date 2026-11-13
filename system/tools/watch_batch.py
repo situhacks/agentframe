@@ -5,7 +5,8 @@ sweeps expired items, finishes any item a crashed run left firing, checks every 
 `af watch list --due --json`, raises a loop and sends a phone message for each one that is met, and
 writes system/logs/watch-batch/<date-time>.md. The first run from 09:55 each day also runs the
 morning jobs, once, in this order: the bills watch, the loop watch, the loop sweep, then the loop
-push, which carries the queue's phone lines as its lead block, so the morning is one message.
+push, which carries the queue's phone lines as its lead block, so the morning is one message. A run
+that started before 09:55 and ends after it does the morning jobs then, after the queue.
 Shapes: library/schema/watch.md (the queue), loop-watch.md, loop-sweep.md, bills.md.
 
 Code conditions come from `af` (`code_met`). An email condition goes to a cheap model with the
@@ -16,10 +17,12 @@ once on a stronger model, then recorded as an error. Email words never reach a l
 report only inside code spans.
 
 A phone message is sent at most once per item: the row is set `firing` before anything is sent
-and `fired` after, and a row found `firing` by a later run gets its loop and no message.
+and `fired` after, and a row found `firing` by a later run gets its loop and no message. A met
+item never vanishes: whatever its action, it gets a loop unless its phone message provably went
+out, which is only when the send returned success with its line shown.
 
 Usage:
-    python system/tools/watch_batch.py --dry-run --slot afternoon  # check, print the report; write and send nothing
+    python system/tools/watch_batch.py --dry-run --slot afternoon  # list what is due; no model, Gmail, lock, write or send
     python system/tools/watch_batch.py                             # a real run
     python system/tools/watch_batch.py --sweep-live                # the morning sweep also closes loops on proof
 """
@@ -33,6 +36,7 @@ import io
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 import tempfile
@@ -69,15 +73,25 @@ HAIKU_BUDGET_USD = 0.20   # each first-try call
 SONNET_TURNS = 6
 SONNET_BUDGET_USD = 0.40  # each retry
 RUN_BUDGET_USD = 0.75     # all the queue's calls in one run
-LOCK_STALE = dt.timedelta(hours=3)
 MORNING_FROM = dt.time(9, 55)
 PHONE_LINES_MAX = 15
 KEEP_REPORTS = 60
 AF_TIMEOUT_S = 120
+KILL_WAIT_S = 10          # after a step's process tree is killed, the most this waits for it to go
 LOCK_HELD = "is held by another af process"
-# (name, script, timeout minutes); the push is the last morning step and runs after the queue.
-MORNING = (("bills", "bills_watch.py", 60), ("loop-watch", "loop_watch.py", 90), ("loop-sweep", "loop_sweep.py", 15))
+# (name, script, hard limit in minutes); the push is the last morning step and runs after the queue.
+# Each limit covers its old task's worst case. The loop watch stops itself at its deadline and still
+# writes its report; the kill at its limit is the backstop.
+MORNING = (("bills", "bills_watch.py", 130), ("loop-watch", "loop_watch.py", 105), ("loop-sweep", "loop_sweep.py", 30))
 PUSH = ("push", "push_due_loops.py", 10)
+LOOP_WATCH_DEADLINE_MIN = 90
+STEP_ARGS = {"loop-watch": ["--deadline-minutes", str(LOOP_WATCH_DEADLINE_MIN)]}
+QUEUE_MIN = 30            # the queue's own share of a run
+# Over every step at its limit plus the queue, so a live run's lock never looks stale; the task's
+# execution limit in register-watch-batch.ps1 is the same.
+LOCK_STALE = dt.timedelta(hours=6)
+NOT_SENT = "phone message not sent"
+NOT_CONFIRMED = "phone message not confirmed sent"
 ITEM_KEYS = {"id", "verdict", "thread", "sender", "date", "subject", "quote"}
 EVIDENCE = ("thread", "sender", "date", "subject", "quote")
 CODE_DETAIL = {"date": "date reached", "loop-closed": "loop closed", "loop-open": "loop still open",
@@ -127,18 +141,42 @@ def af(args: list[str]) -> tuple[int, str, str]:
     return r.returncode, r.stdout, r.stderr
 
 
+def kill_tree(proc: subprocess.Popen) -> None:
+    """Stop a step and every process it started: taskkill /T on Windows, its process group elsewhere."""
+    if os.name == "nt":
+        with contextlib.suppress(OSError, subprocess.SubprocessError):
+            subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True, timeout=30)
+    else:
+        with contextlib.suppress(OSError):
+            os.killpg(proc.pid, signal.SIGKILL)
+    with contextlib.suppress(OSError):
+        proc.kill()
+
+
 def step(name: str, args: list[str], timeout_s: int) -> tuple[int, str]:
     """One morning job as its own process: exit code and the last line it printed. `args` is the
-    script's file name and its flags."""
+    script's file name and its flags. Its output goes to files, not pipes, so a process it left
+    running cannot hold this run; past the timeout its whole process tree is killed."""
     root = _root()
-    try:
-        r = subprocess.run([sys.executable, str(HERE / args[0]), *args[1:]], capture_output=True, text=True,
-                           encoding="utf-8", errors="replace", env={**os.environ, "AF_ROOT": str(root),
-                           "PYTHONIOENCODING": "utf-8"}, cwd=root, timeout=timeout_s)
-    except subprocess.TimeoutExpired:
-        return 124, f"timed out after {timeout_s // 60} minutes"
-    lines = [x for x in (r.stdout.splitlines() + r.stderr.splitlines()) if x.strip()]
-    return r.returncode, lines[-1] if lines else ""
+    group = {} if os.name == "nt" else {"start_new_session": True}
+    with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
+        proc = subprocess.Popen([sys.executable, str(HERE / args[0]), *args[1:]], stdin=subprocess.DEVNULL, stdout=out,
+                                stderr=err, env={**os.environ, "AF_ROOT": str(root), "PYTHONIOENCODING": "utf-8"},
+                                cwd=root, **group)
+        try:
+            code = proc.wait(timeout=timeout_s)
+        except subprocess.TimeoutExpired:
+            kill_tree(proc)
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                proc.wait(timeout=KILL_WAIT_S)
+            span = f"{timeout_s // 60} minutes" if timeout_s >= 60 else f"{timeout_s} seconds"
+            return 124, f"timed out after {span}"
+        text = []
+        for f in (out, err):
+            f.seek(0)
+            text += f.read().decode("utf-8", errors="replace").splitlines()
+    lines = [x for x in text if x.strip()]
+    return code, lines[-1] if lines else ""
 
 
 def phone_configured() -> bool:
@@ -182,30 +220,36 @@ def lock_is_stale(path: Path, now: dt.datetime) -> bool:
         return True
 
 
-def take_lock(root: Path, now: dt.datetime) -> bool:
-    """O_CREAT|O_EXCL. False when another run holds it; a lock over three hours old is replaced."""
+def take_lock(root: Path, now: dt.datetime) -> str | None:
+    """O_CREAT|O_EXCL. The lock's text, this run's pid and start, or None when another run holds it;
+    a lock older than LOCK_STALE is replaced."""
     path = root / LOCK
     path.parent.mkdir(parents=True, exist_ok=True)
+    mine = f"pid {os.getpid()} started {now:%Y-%m-%dT%H:%M}\n"
     for _ in range(2):
         try:
             fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         except FileExistsError:
             if not lock_is_stale(path, now):
-                return False
+                return None
             try:
                 path.unlink()
             except FileNotFoundError:
                 pass
             continue
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(f"pid {os.getpid()} started {now:%Y-%m-%dT%H:%M}\n")
-        return True
-    return False
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
+            f.write(mine)
+        return mine
+    return None
 
 
-def release_lock(root: Path) -> None:
+def release_lock(root: Path, mine: str) -> None:
+    """Remove the lock only while it still holds this run's pid and start: a run that outlived the
+    stale age leaves its successor's lock alone."""
+    path = root / LOCK
     try:
-        (root / LOCK).unlink()
+        if path.read_text(encoding="utf-8") == mine:
+            path.unlink()
     except OSError:
         pass
 
@@ -346,13 +390,61 @@ def _thread_ids(payload: dict) -> list[str]:
     return [t["id"] for t in payload.get("threads") or [] if isinstance(t, dict) and isinstance(t.get("id"), str)]
 
 
+def _thread_messages(thread: str, search: dict, gets: list[Call]) -> list[dict]:
+    """Every fetched message of the named thread, once: the thread fetch's copy first, since it is
+    whole, then any the search result alone holds."""
+    pools = [c.payload.get("messages") for c in gets if c.payload and c.input.get("threadId") == thread]
+    pools += [t.get("messages") for t in search.get("threads") or [] if isinstance(t, dict) and t.get("id") == thread]
+    seen, out = set(), []
+    for m in (m for pool in pools if isinstance(pool, list) for m in pool if isinstance(m, dict)):
+        if isinstance(m.get("id"), str) and m["id"]:
+            if m["id"] in seen:
+                continue
+            seen.add(m["id"])
+        out.append(m)
+    return out
+
+
 def _in_thread(message: dict, thread: str, search: dict, gets: list[Call]) -> bool:
     """Whether a fetched email belongs to the named thread, by thread id as the search and the
     thread fetch show it."""
-    pools = [t.get("messages") for t in search.get("threads") or [] if isinstance(t, dict) and t.get("id") == thread]
-    pools += [c.payload.get("messages") for c in gets if c.payload and c.input.get("threadId") == thread]
     return any(m is message or (m.get("id") and m.get("id") == message.get("id"))
-               for pool in pools if isinstance(pool, list) for m in pool if isinstance(m, dict))
+               for m in _thread_messages(thread, search, gets))
+
+
+_FROM = re.compile(r'(?<![^\s(){}])(-?)from:\s*("[^"]*"|\([^)]*\)|\{[^}]*\}|[^\s(){}]+)', re.IGNORECASE)
+
+
+def _from_terms(query: str) -> tuple[list[str], list[str]]:
+    """The query's `from:` terms and its `-from:` terms, lower case; a group's OR is unpacked."""
+    pos: list[str] = []
+    neg: list[str] = []
+    for sign, body in _FROM.findall(query):
+        words = [w.strip('"').casefold() for w in body.strip('"(){}').split() if w.upper() != "OR" and w != "|"]
+        (neg if sign else pos).extend(w for w in words if w)
+    return pos, neg
+
+
+def _from_term_matches(term: str, address: str) -> bool:
+    """How Gmail's from: matches an address, at its narrowest: a full address is that address, `@d`
+    or `d` with a dot is that domain or one under it, and a bare word is the local part or one
+    label of the domain."""
+    local, _, domain = address.casefold().rpartition("@")
+    if "@" in term.lstrip("@"):
+        return term == address.casefold()
+    term = term.lstrip("@")
+    if "." in term:
+        return domain == term or domain.endswith("." + term)
+    return term == local or term in domain.split(".")
+
+
+def from_allows(query: str, address: str) -> bool:
+    """Whether an email's own sender address fits the item's query: it matches one of its from:
+    terms, when it has any, and none of its -from: terms."""
+    pos, neg = _from_terms(query)
+    if any(_from_term_matches(t, address) for t in neg):
+        return False
+    return not pos or any(_from_term_matches(t, address) for t in pos)
 
 
 def validate(items: list[dict], res: bw.RunResult, calls: list[Call], now: dt.datetime,
@@ -399,8 +491,12 @@ def validate(items: list[dict], res: bw.RunResult, calls: list[Call], now: dt.da
 
 def judge_met(it: dict, v: dict, search: Call, bound: list[Call], ids: list[str], now: dt.datetime,
               own: set[str]) -> Judged | Failed:
-    """A met claim stands only when its thread is in its own search result and the loop watch's
-    find_email finds the quote in an email from that item's own results, in the item's window."""
+    """A met claim stands only when its thread is in its own search result, the loop watch's
+    find_email finds the quote in an email of that thread in the item's window, the email's own
+    sender fits the query's from: terms, and the email passes the gate the loop watch puts on a
+    settling verdict (lw._cap): not his own mail, nor mail that cannot be told from his own, its
+    own text and not quoted history, and no newer message in the thread. Short of that the item is
+    not met."""
     if v["thread"] not in ids:
         return Failed("the thread the model named is not in this item's own search result")
     try:
@@ -410,15 +506,21 @@ def judge_met(it: dict, v: dict, search: Call, bound: list[Call], ids: list[str]
     payloads = [(SEARCH, search.payload)] + [(GET, c.payload) for c in bound if c.payload]
     try:
         hit = lw.find_email(payloads, verdict, it["start"], now)
+        if not _in_thread(hit.message, v["thread"], search.payload, bound):
+            return Failed("the email the quote came from is not in the thread the model named")
+        # Judged again against the whole thread as fetched, so a message the search result left
+        # out still counts toward newest and toward quoted history.
+        whole = _thread_messages(v["thread"], search.payload, bound)
+        hit = lw.find_email([(GET, {"messages": whole})], verdict, it["start"], now)
     except lw.LoopFailure as e:
         return Failed(str(e))
-    if not _in_thread(hit.message, v["thread"], search.payload, bound):
-        return Failed("the email the quote came from is not in the thread the model named")
-    if lw._his_own(hit.message, own) is True:
-        return Judged(why_not="the email is from his own mail")
-    return Judged(met=True, address=lw.address_of(hit.message.get("sender") or "") or "",
-                  date=str(lw._date_of(hit.message) or verdict.date), subject=hit.message.get("subject") or "(no subject)",
-                  quote=hit.text)
+    address = lw.address_of(hit.message.get("sender") or "") or ""
+    if not from_allows(it["query"], address):
+        return Failed("the email's sender does not match the item's from: term")
+    if cap := lw._cap(hit, own):
+        return Judged(why_not=f"the email cannot settle it: {cap}")
+    return Judged(met=True, address=address, date=str(lw._date_of(hit.message) or verdict.date),
+                  subject=hit.message.get("subject") or "(no subject)", quote=hit.text)
 
 
 # --- The run ----------------------------------------------------------------------
@@ -454,7 +556,7 @@ class Item:
     id: str
     say: str
     kind: str
-    outcome: str              # met, not met, error, error twice, deferred, already done, recovered
+    outcome: str              # met, not met, error, error twice, deferred, already done, recovered, would judge
     detail: str = ""
     evidence: Judged | None = None
 
@@ -471,13 +573,15 @@ class Run:
     run_af: object
     run_step: object
     send: object
+    clock: object = dt.datetime.now   # the time now, read again after the queue
     spend: Spend = field(default_factory=Spend)
     steps: list[tuple[str, int | None, str]] = field(default_factory=list)   # (name, exit code, footer)
     items: list[Item] = field(default_factory=list)
     failures: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
-    firing: list[Row] = field(default_factory=list)       # rows this run set firing, to mark fired
+    firing: list[tuple[Row, Item, str]] = field(default_factory=list)   # rows this run set firing, with their met detail
     held: set[str] = field(default_factory=set)           # firing rows whose loop could not be raised
+    sent: set[str] = field(default_factory=set)           # ids whose phone line provably went out
     sweep: dict = field(default_factory=dict)
     unparsed: int = 0
     lines: list[tuple[str, str]] = field(default_factory=list)   # (text, id) phone lines
@@ -508,7 +612,7 @@ class Run:
 
 def loop_text(row: Row, detail: str) -> str:
     """The loop a met item raises. Its words are the owner's and the runner's, never the email's:
-    the detail is an address and a date, or a fixed phrase."""
+    the detail is a date or a fixed phrase."""
     then = f"; then: {row['then']}" if row["then"] else ""
     return plain(f"Watch {row.id} met for {row['owner']}: {row['say']}; {detail}{then} [{row.id}]", 600)
 
@@ -560,26 +664,25 @@ def run_sweep(rn: Run) -> None:
 
 
 def recover(rn: Run, rows: list[Row]) -> None:
-    """A firing row is one a crashed run set. Raise its loop if it has none, then mark it fired;
-    never a phone message, so a message goes out at most once."""
+    """A firing row is one a crashed run set. Raise its loop if it has none, whatever its action,
+    since nothing proves its phone message went out; then mark it fired. Never a phone message, so
+    a message goes out at most once."""
     for row in rows:
         if row["status"] != "firing":
             continue
-        detail = plain(re.sub(r"\Amet: ", "", row["result"]), 160)
+        detail = plain(re.sub(r"\Amet: ", "", row["result"]), 160) + (f"; {NOT_CONFIRMED}" if row.does_notify else "")
         if rn.dry:
             rn.items.append(Item(row.id, row["say"], row["kind"], "recovered", "would recover (dry run)"))
             continue
-        note = ""
-        if row.does_loop:
-            note = raise_loop(rn, row, detail)
-            if note.startswith("failed"):
-                rn.fail(f"{row.id}: its loop could not be raised ({note}); it stays firing")
-                rn.items.append(Item(row.id, row["say"], row["kind"], "error", f"recovery: {note}"))
-                continue
+        note = raise_loop(rn, row, detail)
+        if note.startswith("failed"):
+            rn.fail(f"{row.id}: its loop could not be raised ({note}); it stays firing")
+            rn.items.append(Item(row.id, row["say"], row["kind"], "error", f"recovery: {note}"))
+            continue
         code, _, err = rn.af(["watch", "result", row.id, "fired"])
         if code != 0 and "not firing" not in err:
             rn.fail(f"{row.id}: could not mark it fired: {plain(err, 120)}")
-        rn.items.append(Item(row.id, row["say"], row["kind"], "recovered", f"loop {note}" if note else "no loop action"))
+        rn.items.append(Item(row.id, row["say"], row["kind"], "recovered", f"loop {note}"))
 
 
 def morning_due(rn: Run) -> bool:
@@ -595,7 +698,7 @@ def run_morning(rn: Run, done: list[str]) -> None:
         if name in done:
             rn.steps.append((name, None, "already ran today"))
             continue
-        args = [script]
+        args = [script, *STEP_ARGS.get(name, [])]
         if rn.dry:
             rn.steps.append((name, None, "would run (dry run)"))
             continue
@@ -626,10 +729,17 @@ def email_query(row: Row) -> str:
 
 
 def metered(rn: Run, budget: float):
-    """The queue's claude runner for one call size, charging the run's shared spend and refusing a
-    call once the run's cap is reached."""
-    return lw.metered(lambda prompt, turns, model: rn.run_claude(prompt, turns, model, budget), rn.spend,
-                      run_budget=RUN_BUDGET_USD, call_budget=budget)
+    """The queue's claude runner for one call size, charging the run's shared spend. A call starts
+    only when what is spent plus that call's own budget stays within the run's cap, so the cap
+    holds even if the call spends all it may; lw.metered's own check stays underneath."""
+    go = lw.metered(lambda prompt, turns, model: rn.run_claude(prompt, turns, model, budget), rn.spend,
+                    run_budget=RUN_BUDGET_USD, call_budget=budget)
+
+    def capped(prompt: str, max_turns: int, model: str) -> list[str]:
+        if rn.spend.spent() + budget > RUN_BUDGET_USD + 1e-9:
+            raise lw.OverRunBudget
+        return go(prompt, max_turns, model)
+    return capped
 
 
 def ask(rn: Run, items: list[dict], model: str, turns: int, budget: float) -> dict[str, Judged | Failed]:
@@ -663,6 +773,10 @@ def check_email(rn: Run, rows: list[Row]) -> None:
     for r in rows[EMAIL_MAX:]:
         rn.items.append(Item(r.id, r["say"], "email", "deferred", f"over the cap of {EMAIL_MAX} email items a run"))
     rows = rows[:EMAIL_MAX]
+    if rn.dry:   # no model call and no Gmail: only what each would be judged on
+        for r in rows:
+            rn.items.append(Item(r.id, r["say"], "email", "would judge", f"query `{lw._code(email_query(r), 300)}`"))
+        return
     for i in range(0, len(rows), EMAIL_BATCH):
         batch = rows[i:i + EMAIL_BATCH]
         items = [{"id": r.id, "query": email_query(r), "means": r["means"], "start": email_start(r)} for r in batch]
@@ -694,7 +808,7 @@ def settle(rn: Run, row: Row, item: dict, first: Judged | Failed) -> None:
             return
     judged = second if second is not None else first
     if judged.met:
-        record(rn, row, "met", f"email from {judged.address} {judged.date}", judged)
+        record(rn, row, "met", f"email dated {judged.date}", judged)   # sender, subject, quote: the report only
     else:
         record(rn, row, "not met", judged.why_not, judged)
 
@@ -733,7 +847,7 @@ def record(rn: Run, row: Row, outcome: str, detail: str = "", evidence: Judged |
 
 def act(rn: Run, row: Row, it: Item) -> None:
     """A met item, now firing: raise its loop, queue its phone line, and remember to mark it fired."""
-    rn.firing.append(row)
+    rn.firing.append((row, it, it.detail))
     if row.does_loop:
         note = raise_loop(rn, row, it.detail)
         it.detail += f"; loop {note}"
@@ -767,30 +881,31 @@ def check_queue(rn: Run) -> None:
 
 # --- Phone ------------------------------------------------------------------------
 
-def phone_lines(rn: Run) -> str:
-    """The queue's phone lines as bullets: each passes the off-Discord filter or counts, masked
-    when shown; at most PHONE_LINES_MAX, then a count of the rest. With no private terms file
-    nothing that names an item goes out, as the loop push does."""
+def phone_lines(rn: Run) -> tuple[str, set[str]]:
+    """The queue's phone lines as bullets, and the ids whose own line is among them: each passes
+    the off-Discord filter or counts, masked when shown; at most PHONE_LINES_MAX, then a count of
+    the rest. With no private terms file nothing that names an item goes out, as the loop push does."""
     terms = off_discord.private_terms(rn.root)
     shown, hidden = [], 0
-    for text, _ in rn.lines:
+    for text, id in rn.lines:
         if terms is None or off_discord.is_private((text,), terms):
             hidden += 1
         else:
-            shown.append(off_discord.mask(text))
-    out = [f"- {x}" for x in shown[:PHONE_LINES_MAX]]
+            shown.append((off_discord.mask(text), id))
+    out = [f"- {x}" for x, _ in shown[:PHONE_LINES_MAX]]
     if len(shown) > PHONE_LINES_MAX:
         out.append(f"- {len(shown) - PHONE_LINES_MAX} more in AgentFrame")
     if hidden:
         out.append(f"- {hidden} kept off Discord; see AgentFrame")
-    return "\n".join(out)
+    return "\n".join(out), {id for _, id in shown[:PHONE_LINES_MAX]}
 
 
 def deliver(rn: Run, done: list[str], morning: bool) -> None:
     """One phone message at most. At the morning run the loop push carries the lines as its lead
-    block; otherwise they go alone. With no phone channel nothing is sent and the run goes on."""
+    block; otherwise they go alone. With no phone channel nothing is sent and the run goes on.
+    A line counts as sent only when the push or notify returned success."""
     key = notify.names(CHANNEL)[0]
-    body, n = phone_lines(rn), len(rn.lines)
+    (body, shown), n = phone_lines(rn), len(rn.lines)
     if rn.dry:
         rn.phone = f"dry run: would send {n} line(s)" if n else "dry run: nothing to send"
         rn.block = body
@@ -812,13 +927,17 @@ def deliver(rn: Run, done: list[str], morning: bool) -> None:
                 code, footer = 1, f"it crashed ({type(e).__name__})"
             rn.steps.append((PUSH[0], code, plain(footer, 200)))
             rn.phone = f"sent by the loop push with {n} watch line(s)" if code == 0 else f"the loop push failed (exit {code})"
-            if code != 0:
+            if code == 0:
+                rn.sent = shown
+            else:
                 rn.fail(f"morning step {PUSH[0]} exited {code}")
         elif body:
             tmp.write_text(f"# Watch · {stamp(rn.now)}\n\n{body}\n", encoding="utf-8", newline="\n")
             code = rn.send(tmp)
             rn.phone = f"sent {n} line(s)" if code == 0 else f"send failed (notify exit {code})"
-            if code != 0:
+            if code == 0:
+                rn.sent = shown
+            else:
                 rn.fail(f"the phone message failed (notify exit {code})")
         else:
             rn.phone = "nothing to send"
@@ -827,11 +946,28 @@ def deliver(rn: Run, done: list[str], morning: bool) -> None:
             tmp.unlink()
 
 
+def cover_unsent(rn: Run) -> None:
+    """A met item never vanishes: one whose phone line did not provably go out, because the phone
+    is not configured, the send or the push failed, or its line was kept off Discord or over the
+    cap, gets its loop now if it has none. A loop that cannot be raised leaves the row firing, and
+    the next run's recovery raises it."""
+    if rn.dry:
+        return
+    for row, it, detail in rn.firing:
+        if row.id in rn.held or row.does_loop or not row.does_notify or row.id in rn.sent:
+            continue
+        note = raise_loop(rn, row, f"{detail}; {NOT_SENT}")
+        it.detail += f"; {NOT_SENT}, loop {note}"
+        if note.startswith("failed"):
+            rn.fail(f"{row.id}: its loop could not be raised ({note}); it stays firing and the next run retries")
+            rn.held.add(row.id)
+
+
 def mark_fired(rn: Run) -> None:
     """Last of all, so a crash before here leaves the row firing for the next run to finish."""
     if rn.dry:
         return
-    for row in rn.firing:
+    for row, _, _ in rn.firing:
         if row.id in rn.held:
             continue
         code, _, err = rn.af(["watch", "result", row.id, "fired"])
@@ -865,7 +1001,8 @@ def render_report(rn: Run) -> str:
         out.append("## Sweep\n\n" + "\n".join(f"- {k}: {', '.join(v) if v else 'none'}" for k, v in rn.sweep.items()
                                                 if isinstance(v, list)) + "\n")
     groups = (("Met", ("met",)), ("Not met", ("not met",)), ("Failed", ("error", "error twice")),
-              ("Deferred", ("deferred",)), ("Recovered", ("recovered",)), ("Already done", ("already done",)))
+              ("Deferred", ("deferred",)), ("Recovered", ("recovered",)), ("Already done", ("already done",)),
+              ("Would judge", ("would judge",)))
     for title, kinds in groups:
         mine = [i for i in rn.items if i.outcome in kinds]
         if not mine:
@@ -925,6 +1062,15 @@ def slot_for(now: dt.datetime, slot: str) -> str:
     return "morning" if now.hour < 12 else "afternoon" if now.hour < 17 else "evening"
 
 
+def morning_due_late(rn: Run) -> bool:
+    """Whether a run that began before 09:55 now finds the morning due: the scheduler drops a
+    trigger that comes while a run is still going, so the 10:00 run may never start."""
+    if rn.slot_arg != "auto":
+        return False
+    late = rn.clock()
+    return late.date() == rn.today and late.time() >= MORNING_FROM
+
+
 def execute(rn: Run) -> None:
     """The run itself, in the order the spec fixes: expiry, recovery, morning jobs, queue, phone."""
     morning = morning_due(rn)
@@ -940,14 +1086,21 @@ def execute(rn: Run) -> None:
         check_queue(rn)
     except SetupError as e:
         rn.fail(f"setup: {e}")
+    if not morning and morning_due_late(rn):
+        morning = True
+        run_morning(rn, done)
     deliver(rn, done, morning)
+    cover_unsent(rn)
     mark_fired(rn)
 
 
 def main(argv: list[str] | None = None, *, now: dt.datetime | None = None, run_claude=claude, run_af=af,
-         run_step=step, send=send_phone) -> int:
+         run_step=step, send=send_phone, clock=None) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--dry-run", action="store_true", help="check and print the report; write and send nothing")
+    p.add_argument("--dry-run", action="store_true",
+                   help="print what is due: code items as they stand, email items as 'would judge' with their query. "
+                        "It calls no model, reads no Gmail, cleans no shared folder, takes no lock, and writes and "
+                        "sends nothing")
     p.add_argument("--slot", choices=("auto", "morning", "afternoon", "evening"), default="auto",
                    help="morning forces the morning jobs due, afternoon and evening skip them; auto goes by the time")
     p.add_argument("--sweep-live", action="store_true", help="the morning loop sweep also closes loops on proof")
@@ -956,22 +1109,31 @@ def main(argv: list[str] | None = None, *, now: dt.datetime | None = None, run_c
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
     except Exception:  # noqa: BLE001
         pass
+    if clock is None:
+        clock = (lambda: now) if now else dt.datetime.now
     now = now or dt.datetime.now()
     root = _root()
-    rn = Run(root, now, slot_for(now, a.slot), a.dry_run, a.sweep_live, a.slot, run_claude, run_af, run_step, send)
-    if not a.dry_run and not take_lock(root, now):
-        log(root, now, "skipped: another run")
-        print("skipped: another run")
-        return 0
+    rn = Run(root, now, slot_for(now, a.slot), a.dry_run, a.sweep_live, a.slot, run_claude, run_af, run_step, send, clock)
+    mine = None
+    if not a.dry_run:
+        mine = take_lock(root, now)
+        if not mine:
+            log(root, now, "skipped: another run")
+            print("skipped: another run")
+            return 0
     try:
-        with contextlib.suppress(Exception):
-            bw.cleanup(None, older_than=0, project_dir=lw.PROJECT_DIR)  # a killed run leaves its copies for this one
+        if not a.dry_run:
+            with contextlib.suppress(Exception):
+                bw.cleanup(None, older_than=0, project_dir=lw.PROJECT_DIR)  # a killed run leaves its copies for this one
         try:
             execute(rn)
         except Exception as e:  # noqa: BLE001 - a scheduled run must never fail silently
             traceback.print_exc()
             rn.fail(f"the run stopped early ({type(e).__name__}: {e})")
-        sweep_saved(rn)
+        if a.dry_run:
+            rn.notes.append("raw email cleanup skipped: dry run, no model was called")
+        else:
+            sweep_saved(rn)
         text = render_report(rn)
         code = 1 if rn.failures else 0
         if a.dry_run:
@@ -987,8 +1149,8 @@ def main(argv: list[str] | None = None, *, now: dt.datetime | None = None, run_c
         print(footer_line(rn))
         return code
     finally:
-        if not a.dry_run:
-            release_lock(root)
+        if mine:
+            release_lock(root, mine)
 
 
 if __name__ == "__main__":

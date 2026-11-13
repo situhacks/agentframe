@@ -51,5 +51,5 @@ A brain dump splits into these, shown to him, before anything moves. Propose Opu
 - **Ask in prose,** with lettered options, never a question widget.
 - **Script files, not heredocs:** they mangle backslashes.
 - **Act on what is reversible.** Do it, report it; ask only before something irreversible, outward-facing, or his to decide. Fix a stale reference now, or dispatch it; the backlog holds only work not yet doable.
-- "Watch", "remind me", "check later": [`af watch add`](library/schema/watch.md), no timers.
+- "Watch for", "check later": [`af watch add`](library/schema/watch.md); never cron, `/loop`.
 - **Say what you mean.** The literal phrase over the flourish; one idea per paragraph. Text in his voice follows `workspace/life/voice/`.

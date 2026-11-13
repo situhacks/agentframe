@@ -27,8 +27,9 @@ $triggers = @(
     New-ScheduledTaskTrigger -Daily -At '19:00'
 )
 $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
+# Over every morning step at its limit plus the queue's share (watch_batch.py), and equal to the run's stale-lock age.
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
-    -ExecutionTimeLimit (New-TimeSpan -Hours 3) -MultipleInstances IgnoreNew
+    -ExecutionTimeLimit (New-TimeSpan -Hours 6) -MultipleInstances IgnoreNew
 
 Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $triggers -Principal $principal `
     -Settings $settings -Description "Three daily checks of the watch queue; the 10:00 run also does the morning jobs ($mode)" -Force | Out-Null

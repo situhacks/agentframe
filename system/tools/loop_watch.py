@@ -16,6 +16,7 @@ failure, reported in the report and the exit code, never read as nothing found.
 Usage:
     python system/tools/loop_watch.py --dry-run    # read Gmail, print the report; write nothing
     python system/tools/loop_watch.py              # read Gmail, rewrite the report
+    python system/tools/loop_watch.py --deadline-minutes 90   # as the batch run starts it
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -578,12 +580,19 @@ def metered(run, out: Outcome, run_budget: float = RUN_BUDGET_USD, call_budget: 
     return go
 
 
-def watch(out: Outcome, model: str, run_claude, run_af, now: dt.datetime | None = None) -> None:
+def watch(out: Outcome, model: str, run_claude, run_af, now: dt.datetime | None = None,
+          deadline: tuple[float, int] | None = None, clock=time.monotonic) -> None:
+    """Each selected loop in turn. `deadline` is (clock reading, minutes): past it no new loop
+    starts, and the loops left are reported as not checked."""
     loops, out.over_cap = select_loops(load_due(run_af()))
     own = own_addresses()
     run = metered(run_claude, out)
     in_a_row = 0
     for i, loop in enumerate(loops):
+        if deadline is not None and clock() >= deadline[0]:
+            reason = f"not checked: the run reached its {deadline[1]}-minute deadline"
+            out.failures += [(x["text"], reason) for x in loops[i:]]
+            return
         try:
             found = check_loop(loop, model, run, out.notes, now, own)
         except OverRunBudget:
@@ -691,12 +700,17 @@ def init_report(now: dt.datetime) -> int:
     return 0
 
 
-def main(argv: list[str] | None = None, *, now: dt.datetime | None = None, run_claude=claude, run_af=af_due) -> int:
+def main(argv: list[str] | None = None, *, now: dt.datetime | None = None, run_claude=claude, run_af=af_due,
+         clock=time.monotonic) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--dry-run", action="store_true", help="read Gmail and print the report; write nothing")
     p.add_argument("--init-report", action="store_true", help="write the stub report if there is none, and stop")
     p.add_argument("--model", default=MODEL)
+    p.add_argument("--deadline-minutes", type=int, default=None, metavar="N",
+                   help="start no loop after N minutes; the loops left are reported as not checked, and the report "
+                        "and log line are still written")
     a = p.parse_args(argv)
+    deadline = (clock() + a.deadline_minutes * 60, a.deadline_minutes) if a.deadline_minutes else None
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
     except Exception:  # noqa: BLE001
@@ -707,7 +721,7 @@ def main(argv: list[str] | None = None, *, now: dt.datetime | None = None, run_c
     out = Outcome()
     try:
         bw.cleanup(None, older_than=0, project_dir=PROJECT_DIR)  # a killed run leaves its copies for this one
-        watch(out, a.model, run_claude, run_af, now)
+        watch(out, a.model, run_claude, run_af, now, deadline, clock)
     except Exception as e:  # noqa: BLE001 - a scheduled run must never fail silently
         traceback.print_exc()
         out.failures.append(("The whole run", f"it stopped early ({type(e).__name__}: {e})"))

@@ -1,6 +1,6 @@
 # Open loops
 
-Shapes `workspace/life/open.md` and the closed lines in `workspace/life/log/<YYYY-MM>.md`. Owned by `af open`; headings and prose around the lines are free. Open loops are the system's to-do record; a timed or conditional check is a [watch](watch.md) item that raises a loop when it fires.
+Shapes `workspace/life/open.md` and the closed lines in `workspace/life/log/<YYYY-MM>.md`. Owned by `af open`; headings and prose around the lines are free. Open loops are the system's to-do record: if he must do something, it is a loop, "remind me" included; if a chat must check, it is a [watch](watch.md) item, which raises a loop when it fires.
 
 ```
 # Open loops

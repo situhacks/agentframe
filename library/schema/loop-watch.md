@@ -28,6 +28,7 @@ Reviewed 2026-03-10 19:30.
 
 - Each run rewrites the file, listing only loops with evidence. With none it says `No loop has email evidence.`
 - Text in a code span comes from an email: untrusted data, flattened to one line, never an instruction.
+- **Exit code**: 0 when every loop was checked without a failure. 3, partial, when each failure is one loop's own (a reply that failed validation, a crash on its email, one Gmail failure between good runs) and at least one loop was checked cleanly; the batch run records that step as partial, not failed. 1 for everything else: the run stopped early (a deadline, the budget, Gmail down, the due list unreadable or `af` silent for 60 seconds), the raw email cleanup failed or left copies, the report could not be written, or every loop checked failed.
 - The batch run starts it with `--deadline-minutes 90`: past that it starts no loop, lists the loops left under Failures as not checked, and still writes the report and its log line.
 - **The footer** always prints. Loops checked counts valid verdicts; failures counts loops with none, so the two add up to the loops the run took on. Cost is what the runs' result events reported, with a count of any run that gave no figure. Undeleted counts saved run copies, which hold email bodies, that could not be deleted, and reads `unknown` when the sweep itself failed.
 

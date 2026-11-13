@@ -24,7 +24,7 @@ If the task class changes, stop and read the new router.
 ## Main: Dispatch
 
 - **Inline**: a one-file answer, state change, or short reply.
-- **Subagent**: `reader` for transcripts and long deliverables, `filer` for every ingest, `researcher` for more than one source or a current fact, `writer` for kept text a reader sees, `reviewer` before anything ships or merges, `auditor` for tests and lints, `briefer` for catch-up.
+- **Subagent**: `reader` for transcripts and long deliverables, `filer` for every ingest, `researcher` for more than one source or a current fact, `writer` for kept text a reader sees, `reviewer` before anything ships or merges, `auditor` for tests and lints, `briefer` for catch-up, `consolidator` weekly.
 - **Side chat**: a feature to flesh out; once stable, main does the work. Write `system/sessions/<name>/brief.md` (model, class, why), then give him one prompt for a new VS Code chat to register and read it.
 - **Background worker**: bounded unattended work with a done-when, [started this way](library/schema/sessions-registry.md#start-a-worker). Its exit wakes you; read `handoff.md` and `report.md`.
 - **Message a chat**: `af session reach <name>`, then do what it prints; never say a turn started until its `--confirm` says delivered.
@@ -51,5 +51,5 @@ A brain dump splits into these, shown to him, before anything moves. Propose Opu
 - **Ask in prose,** with lettered options, never a question widget.
 - **Script files, not heredocs:** they mangle backslashes.
 - **Act on what is reversible.** Do it, report it; ask only before something irreversible, outward-facing, or his to decide. Fix a stale reference now, or dispatch it; the backlog holds only work not yet doable.
-- "Watch for", "remind me", "check later": [`af watch add`](library/schema/watch.md), never a timer.
+- "Watch", "remind me", "check later": [`af watch add`](library/schema/watch.md), no timers.
 - **Say what you mean.** The literal phrase over the flourish; one idea per paragraph. Text in his voice follows `workspace/life/voice/`.

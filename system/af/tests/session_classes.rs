@@ -63,7 +63,7 @@ fn class_defaults_follow_the_name() {
         ("af-main", SessionClass::Main),
         ("main", SessionClass::Main),
         ("life/finances", SessionClass::Side),
-        ("project/acme", SessionClass::Side),
+        ("project/acme", SessionClass::Build),
         ("worker/w1", SessionClass::Side),
         ("system/cut", SessionClass::Build),
     ] {
@@ -109,8 +109,20 @@ fn register_class_writes_the_brief_line_and_updates_it() {
     assert_eq!(fx.read("system/sessions/life/money/brief.md"), "---\ngoal: ship\nwindow: 200k\nclass: main\n---\nbody\n");
     // A brief with no frontmatter gains a block.
     fx.write("system/sessions/project/p/brief.md", "just text\n");
-    fx.ok(&["session", "register", "project/p", "--session", "s3", "--class", "build"]);
-    assert_eq!(fx.read("system/sessions/project/p/brief.md"), "---\nclass: build\n---\njust text\n");
+    fx.ok(&["session", "register", "project/p", "--session", "s3", "--class", "side"]);
+    assert_eq!(fx.read("system/sessions/project/p/brief.md"), "---\nclass: side\n---\njust text\n");
+}
+
+#[test]
+fn register_class_on_a_crlf_brief_keeps_its_line_endings_and_body() {
+    let fx = Fx::new();
+    fx.write_bytes("drafts/b.md", b"---\r\ngoal: ship\r\n---\r\nline one\r\nline two\r\n");
+    fx.ok(&["session", "register", "life/money", "--session", "s1", "--brief", "drafts/b.md", "--class", "build"]);
+    let got = std::fs::read(fx.path("system/sessions/life/money/brief.md")).unwrap();
+    assert_eq!(got, b"---\r\ngoal: ship\r\nclass: build\r\n---\r\nline one\r\nline two\r\n".to_vec());
+    fx.ok(&["session", "register", "life/money", "--session", "s2", "--class", "side"]);
+    let got = std::fs::read(fx.path("system/sessions/life/money/brief.md")).unwrap();
+    assert_eq!(got, b"---\r\ngoal: ship\r\nclass: side\r\n---\r\nline one\r\nline two\r\n".to_vec());
 }
 
 #[test]
@@ -212,33 +224,116 @@ fn the_nudge_sequence_on_a_build_chat() {
 }
 
 #[test]
-fn a_jump_past_hard_says_hard_only_and_a_corrupt_state_file_means_nothing_fired() {
+fn a_jump_past_hard_says_hard_only_and_removing_the_markers_re_arms() {
     let fx = Fx::new();
     register(&fx, "system/cut", "s-build");
     assert!(tool_call(&fx, "s-build", "Read", 610_000).unwrap().contains("past this build chat's 600k limit"));
     assert_eq!(tool_call(&fx, "s-build", "Read", 615_000), None, "soft is not said after hard");
-    fx.write("system/logs/context-nudge-s-build.json", "{not json");
-    assert!(tool_call(&fx, "s-build", "Read", 615_000).is_some());
+    fx.rmtree("system/logs/context-nudge/s-build");
+    assert!(tool_call(&fx, "s-build", "Read", 615_000).is_some(), "no markers means nothing fired yet");
 }
 
 #[test]
-fn the_state_is_one_small_file_per_session_id() {
+fn what_was_said_is_a_marker_folder_per_session_id() {
     let fx = Fx::new();
     register(&fx, "system/a", "s-a");
     register(&fx, "system/b", "s-b");
     tool_call(&fx, "s-a", "Read", 410_000);
-    assert!(fx.isfile("system/logs/context-nudge-s-a.json"));
-    assert!(!fx.exists("system/logs/context-nudge-s-b.json"));
-    assert!(tool_call(&fx, "s-b", "Read", 410_000).is_some(), "another chat has its own state");
-    let leftovers: Vec<_> = std::fs::read_dir(fx.path("system/logs")).unwrap().flatten().filter(|e| e.file_name().to_string_lossy().ends_with(".tmp")).collect();
-    assert!(leftovers.is_empty());
+    assert!(fx.isfile("system/logs/context-nudge/s-a/soft"));
+    assert!(!fx.exists("system/logs/context-nudge/s-b"));
+    assert!(tool_call(&fx, "s-b", "Read", 410_000).is_some(), "another chat has its own markers");
+    tool_call(&fx, "s-a", "Read", 705_000);
+    let mut names: Vec<String> =
+        std::fs::read_dir(fx.path("system/logs/context-nudge/s-a")).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+    names.sort();
+    assert_eq!(names, ["hard-600000", "hard-650000", "hard-700000", "soft"], "a jump claims the lower buckets silently");
+}
+
+#[test]
+fn a_partial_drop_fires_at_the_next_unclaimed_bucket_and_below_hard_re_arms_hard() {
+    let fx = Fx::new();
+    register(&fx, "system/cut", "s-build");
+    assert!(tool_call(&fx, "s-build", "Read", 705_000).unwrap().contains("about 705k"));
+    assert_eq!(tool_call(&fx, "s-build", "Read", 620_000), None, "bucket 600k was claimed on the way up");
+    assert_eq!(tool_call(&fx, "s-build", "Read", 690_000), None);
+    assert!(tool_call(&fx, "s-build", "Read", 750_000).is_some(), "the next unclaimed bucket");
+    assert_eq!(tool_call(&fx, "s-build", "Read", 500_000), None, "between soft and hard: the hard markers go");
+    assert!(!fx.exists("system/logs/context-nudge/s-build/hard-600000") && fx.isfile("system/logs/context-nudge/s-build/soft"));
+    assert!(tool_call(&fx, "s-build", "Read", 600_000).unwrap().contains("past this build chat's 600k limit"), "600k fires again on the way back up");
+}
+
+#[test]
+fn eight_processes_at_once_say_the_soft_nudge_exactly_once() {
+    let fx = Fx::new();
+    for round in 0..5 {
+        let id = format!("s-par-{round}");
+        register(&fx, &format!("system/par{round}"), &id);
+        let t = at(&fx, 410_000);
+        let payload = json!({"session_id": id, "tool_name": "Read", "transcript_path": t}).to_string();
+        let gate = std::sync::Barrier::new(8);
+        let outs: Vec<String> = std::thread::scope(|sc| {
+            let hs: Vec<_> = (0..8)
+                .map(|_| {
+                    sc.spawn(|| {
+                        let mut cmd = fx.af();
+                        cmd.args(["hook", "post-tool-use"]).write_stdin(payload.clone());
+                        gate.wait();
+                        String::from_utf8_lossy(&cmd.output().unwrap().stdout).into_owned()
+                    })
+                })
+                .collect();
+            hs.into_iter().map(|h| h.join().unwrap()).collect()
+        });
+        let said = outs.iter().filter(|o| nudge_text(o).is_some()).count();
+        assert_eq!(said, 1, "round {round}: {outs:?}");
+    }
+}
+
+fn boundary() -> String {
+    json!({"type": "system", "subtype": "compact_boundary", "compactMetadata": {"trigger": "auto", "preTokens": 450000}}).to_string()
+}
+
+#[test]
+fn a_real_shaped_compaction_re_arms_both_tiers() {
+    let fx = Fx::new();
+    register(&fx, "system/cut", "s-build");
+    let call = |lines: &[String]| {
+        let t = write_transcript(&fx, "t/real.jsonl", lines);
+        let (code, out) = hook(&fx, "post-tool-use", &json!({"session_id": "s-build", "tool_name": "Read", "transcript_path": t}));
+        assert_eq!(code, 0);
+        nudge_text(&out)
+    };
+    let before = vec![assistant(1, 449_000, 0)];
+    assert!(call(&before).is_some());
+    assert_eq!(call(&before), None);
+    let mut after = before.clone();
+    after.extend([boundary(), json!({"type": "user", "message": {"content": "summary"}}).to_string(), assistant(3, 78_000, 2_000)]);
+    assert_eq!(call(&after), None, "about 80k after the boundary");
+    assert!(call(&before).is_some(), "the next climb to 449k is a new first time");
+}
+
+#[test]
+fn post_compact_re_arms_at_once_and_prints_nothing() {
+    let fx = Fx::new();
+    register(&fx, "system/cut", "s-build");
+    assert!(tool_call(&fx, "s-build", "Read", 650_000).is_some());
+    assert!(fx.exists("system/logs/context-nudge/s-build"));
+    let (code, out) = hook(&fx, "post-compact", &json!({"session_id": "s-build", "trigger": "auto", "compact_summary": "..."}));
+    assert_eq!((code, out.as_str()), (0, ""));
+    assert!(!fx.exists("system/logs/context-nudge/s-build"));
+    assert!(tool_call(&fx, "s-build", "Read", 650_000).is_some(), "fires again without a measurement below soft");
+    fx.mkdir("system/logs/context-nudge/s-other");
+    assert_eq!(hook(&fx, "post-compact", &json!({"session_id": "s-other"})), (0, String::new()));
+    assert!(fx.exists("system/logs/context-nudge/s-other"), "an unregistered chat is left alone");
+    let o = fx.af().args(["hook", "post-compact"]).write_stdin("not json").output().unwrap();
+    assert_eq!((o.status.code(), o.stdout.len()), (Some(0), 0));
 }
 
 #[test]
 fn a_brief_class_override_turns_the_nudge_on_for_a_side_chat() {
     let fx = Fx::new();
     fx.write("drafts/b.md", "---\ngoal: x\n---\n");
-    fx.ok(&["session", "register", "project/big", "--session", "s-big", "--brief", "drafts/b.md", "--class", "build"]);
+    fx.ok(&["session", "register", "life/big", "--session", "s-big", "--brief", "drafts/b.md", "--class", "build"]);
     assert!(tool_call(&fx, "s-big", "Read", 450_000).is_some());
 }
 
@@ -247,6 +342,7 @@ fn no_nudge_for_side_main_or_unregistered_chats() {
     let fx = Fx::new();
     register(&fx, "af-main", "s-main");
     register(&fx, "life/money", "s-life");
+    fx.write("system/sessions/project/acme/brief.md", "---\nclass: side\n---\n");
     register(&fx, "project/acme", "s-proj");
     register(&fx, "worker/w", "s-work");
     for id in ["s-main", "s-life", "s-proj", "s-work", "s-nobody"] {
@@ -254,8 +350,7 @@ fn no_nudge_for_side_main_or_unregistered_chats() {
         let (code, out) = hook(&fx, "post-tool-use", &json!({"session_id": id, "tool_name": "Read", "transcript_path": t}));
         assert_eq!((code, out.as_str()), (0, "{}"), "{id}");
     }
-    let state = std::fs::read_dir(fx.path("system/logs")).into_iter().flatten().flatten().any(|e| e.file_name().to_string_lossy().starts_with("context-nudge"));
-    assert!(!state, "no state file for a chat that is never nudged");
+    assert!(!fx.exists("system/logs/context-nudge"), "no markers for a chat that is never nudged");
 }
 
 #[test]
@@ -305,7 +400,7 @@ fn a_non_shell_tool_gets_the_nudge_but_none_of_the_shell_only_work() {
     let both = nudge_text(&out).unwrap();
     assert!(both.to_lowercase().contains("promote") && both.contains("Context: about 500k"), "Bash gets the export reminder and the nudge: {both}");
 
-    fx.remove("system/logs/context-nudge-s-build.json");
+    fx.rmtree("system/logs/context-nudge/s-build");
     payload["tool_name"] = json!("Read");
     let (code, out) = hook(&fx, "post-tool-use", &payload);
     assert_eq!(code, 0);
@@ -341,36 +436,72 @@ fn pre_compact_is_silent_for_an_unregistered_chat_and_a_bad_payload() {
 
 // ------------------------------------------------------------------ af session context
 
+fn assistant_model(model: &str, total: u64) -> String {
+    json!({"type": "assistant", "message": {"model": model, "usage": {"input_tokens": 1, "cache_read_input_tokens": total - 1}}}).to_string()
+}
+
 fn context_fixture() -> Fx {
     let fx = Fx::new();
     register(&fx, "system/cut", "s-build");
     register(&fx, "life/money", "s-life");
     register(&fx, "project/none", "s-none");
-    write_transcript(&fx, "cfg/projects/p1/s-build.jsonl", &[assistant(1, 412_000, 344)]);
-    write_transcript(&fx, "cfg/projects/p1/s-life.jsonl", &[assistant(1, 120_000, 0)]);
+    write_transcript(&fx, "cfg/projects/p1/s-build.jsonl", &[assistant_model("claude-opus-5-5[1m]", 412_345)]);
+    write_transcript(&fx, "cfg/projects/p1/s-life.jsonl", &[assistant_model("claude-sonnet-5-5", 120_001)]);
+    fx.write(
+        "cfg/settings.json",
+        r#"{"modelSettings": {"claude-opus-5-5": {"autoCompactWindow": 400000}, "claude-fable-5-1": {"autoCompactWindow": 700000}}}"#,
+    );
     fx
 }
 
+fn context_out(fx: &Fx, args: &[&str]) -> String {
+    let o = fx.af().env("CLAUDE_CONFIG_DIR", fx.path("cfg")).args(args).output().unwrap();
+    String::from_utf8_lossy(&o.stdout).replace("\r\n", "\n")
+}
+
 #[test]
-fn session_context_for_one_chat_prints_class_tokens_window_and_thresholds() {
+fn session_context_for_one_chat_prints_class_tokens_window_thresholds_and_auto_compact() {
     let fx = context_fixture();
-    let run = |args: &[&str]| fx.af().env("CLAUDE_CONFIG_DIR", fx.path("cfg")).args(args).output().unwrap();
-    let out = String::from_utf8_lossy(&run(&["session", "context", "system/cut"]).stdout).replace("\r\n", "\n");
-    assert_eq!(out, "name: system/cut\nclass: build\ncontext: 412k tokens (412345)\nwindow: 1000k\nsoft: 400k\nhard: 600k\n");
-    let out = String::from_utf8_lossy(&run(&["session", "context", "life/money"]).stdout).replace("\r\n", "\n");
-    assert_eq!(out, "name: life/money\nclass: side\ncontext: 120k tokens (120001)\nwindow: 300k\nsoft: none\nhard: none\n");
-    let out = String::from_utf8_lossy(&run(&["session", "context", "project/none"]).stdout).into_owned();
-    assert!(out.contains("context: unknown"), "{out}");
-    assert_eq!(run(&["session", "context", "system/ghost"]).status.code(), Some(1));
+    assert_eq!(
+        context_out(&fx, &["session", "context", "system/cut"]),
+        "name: system/cut\nclass: build\ncontext: 412k tokens (412345)\nwindow: 1000k\nsoft: 400k\nhard: 600k\n\
+auto-compact: 400k (user settings, modelSettings.claude-opus-5-5)\n\
+auto-compact at 400k comes before this chat's 600k hard nudge; raise it with /autocompact in that chat or in user settings\n"
+    );
+    assert_eq!(
+        context_out(&fx, &["session", "context", "life/money"]),
+        "name: life/money\nclass: side\ncontext: 120k tokens (120001)\nwindow: 300k\nsoft: none\nhard: none\nauto-compact: default (not set for claude-sonnet-5-5)\n"
+    );
+    let out = context_out(&fx, &["session", "context", "project/none"]);
+    assert!(out.contains("context: unknown") && out.ends_with("auto-compact: unknown\n"), "{out}");
+    assert_eq!(fx.af().env("CLAUDE_CONFIG_DIR", fx.path("cfg")).args(["session", "context", "system/ghost"]).output().unwrap().status.code(), Some(1));
+}
+
+#[test]
+fn an_auto_compact_window_past_the_hard_threshold_adds_no_warning_and_a_missing_settings_file_is_default() {
+    let fx = context_fixture();
+    write_transcript(&fx, "cfg/projects/p1/s-build.jsonl", &[assistant_model("claude-fable-5-1", 100_000)]);
+    let out = context_out(&fx, &["session", "context", "system/cut"]);
+    assert!(out.ends_with("auto-compact: 700k (user settings, modelSettings.claude-fable-5-1)\n"), "{out}");
+    fx.remove("cfg/settings.json");
+    let out = context_out(&fx, &["session", "context", "system/cut"]);
+    assert!(out.ends_with("auto-compact: default (not set for claude-fable-5-1)\n"), "{out}");
+}
+
+#[test]
+fn session_context_never_writes_the_user_settings() {
+    let fx = context_fixture();
+    let before = fx.read("cfg/settings.json");
+    context_out(&fx, &["session", "context"]);
+    context_out(&fx, &["session", "context", "system/cut"]);
+    assert_eq!(fx.read("cfg/settings.json"), before);
 }
 
 #[test]
 fn session_context_with_no_name_tables_the_chats_that_have_a_transcript() {
     let fx = context_fixture();
-    let o = fx.af().env("CLAUDE_CONFIG_DIR", fx.path("cfg")).args(["session", "context"]).output().unwrap();
-    let out = String::from_utf8_lossy(&o.stdout).replace("\r\n", "\n");
     assert_eq!(
-        out,
-        "| name | class | context | soft | hard |\n|---|---|---|---|---|\n| system/cut | build | 412k | 400k | 600k |\n| life/money | side | 120k | none | none |\n"
+        context_out(&fx, &["session", "context"]),
+        "| name | class | context | soft | hard | auto-compact |\n|---|---|---|---|---|---|\n| system/cut | build | 412k | 400k | 600k | 400k |\n| life/money | side | 120k | none | none | default |\n"
     );
 }

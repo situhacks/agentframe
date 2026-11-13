@@ -1,6 +1,6 @@
 //! Context size per chat: the nudge on `post-tool-use`, the standing summary instructions on
-//! `pre-compact`, and `af session context`. A hook can measure a chat's context and add text to
-//! it; it cannot set the window or start a compaction.
+//! `pre-compact`, the re-arm on `post-compact`, and `af session context`. A hook can measure a
+//! chat's context and add text to it; it cannot set the window or start a compaction.
 
 use crate::core::Ctx;
 use crate::die;
@@ -11,46 +11,16 @@ use crate::outln;
 use crate::pyos;
 use crate::reach;
 use crate::sessions::{self, ClassLimits, Registry, Row, SessionClass};
-use serde_json::{json, Value};
+use serde_json::Value;
+use std::path::{Path, PathBuf};
 
 /// While a chat stays above its hard threshold, the hard nudge repeats every this many tokens.
 pub const HARD_REPEAT: u64 = 50_000;
-
-/// What has already been said to one chat: soft once, hard at the context size it last fired at.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct NudgeState {
-    pub soft: bool,
-    pub hard_at: u64,
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tier {
     Soft,
     Hard,
-}
-
-/// The tier to say now, if any; updates the state. Below the soft threshold both re-arm (the
-/// chat was compacted). A jump past hard says hard only.
-pub fn decide(limits: &ClassLimits, tokens: u64, st: &mut NudgeState) -> Option<Tier> {
-    let floor = limits.soft.or(limits.hard)?;
-    if tokens < floor {
-        *st = NudgeState::default();
-        return None;
-    }
-    if let Some(hard) = limits.hard {
-        if tokens >= hard && (st.hard_at == 0 || tokens >= st.hard_at + HARD_REPEAT) {
-            st.hard_at = tokens;
-            st.soft = true;
-            return Some(Tier::Hard);
-        }
-    }
-    match limits.soft {
-        Some(soft) if tokens >= soft && !st.soft => {
-            st.soft = true;
-            Some(Tier::Soft)
-        }
-        _ => None,
-    }
 }
 
 fn k(tokens: u64) -> u64 {
@@ -71,34 +41,59 @@ pub fn nudge_text(class: SessionClass, limits: &ClassLimits, tokens: u64, tier: 
     }
 }
 
-// ------------------------------------------------------------------ the state file
+// ------------------------------------------------------------------ the markers
 
-fn state_rel(session_id: &str) -> String {
+/// What has been said to one chat is a folder of marker files: `soft`, and `hard-<tokens>` for
+/// each hard bucket (the hard threshold plus a multiple of 50k). Creating a marker claims that
+/// firing, so of several hook processes started at the same instant exactly one emits it.
+fn marker_dir(ctx: &Ctx, session_id: &str) -> PathBuf {
     let safe: String = session_id.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' }).collect();
-    format!("system/logs/context-nudge-{safe}.json")
+    PathBuf::from(vpath(ctx, &format!("system/logs/context-nudge/{safe}")))
 }
 
-/// A missing or corrupt file is nothing fired yet.
-fn load_state(path: &str) -> NudgeState {
-    let read = || -> Option<NudgeState> {
-        let v: Value = serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()?;
-        Some(NudgeState { soft: v.get("soft")?.as_bool()?, hard_at: v.get("hard_at")?.as_u64()? })
-    };
-    read().unwrap_or_default()
+/// True for the one process that creates the marker.
+fn claim(dir: &Path, name: &str) -> bool {
+    std::fs::OpenOptions::new().write(true).create_new(true).open(dir.join(name)).is_ok()
 }
 
-/// Write beside the file, then rename over it.
-fn save_state(path: &str, st: &NudgeState) -> R<()> {
-    let tmp = format!("{path}.{}.tmp", std::process::id());
-    let dir = pyos::dirname(path);
-    if !dir.is_empty() {
-        pyos::makedirs(&dir)?;
+/// Forget everything said to this chat: both tiers fire again.
+pub fn rearm(dir: &Path) {
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+fn forget_hard(dir: &Path) {
+    for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        if e.file_name().to_string_lossy().starts_with("hard-") {
+            let _ = std::fs::remove_file(e.path());
+        }
     }
-    pyos::write(&tmp, &json!({"soft": st.soft, "hard_at": st.hard_at}).to_string())?;
-    std::fs::rename(&tmp, path).map_err(|e| {
-        let _ = std::fs::remove_file(&tmp);
-        pyos::os_error(&e, path)
-    })
+}
+
+/// The tier this measurement fires, if any, claiming its marker. Below the soft threshold both
+/// tiers re-arm (a compaction); below the hard threshold the hard markers go. A jump over several
+/// hard buckets fires the highest and claims the lower ones silently.
+pub fn settle(limits: &ClassLimits, tokens: u64, dir: &Path) -> Option<Tier> {
+    let floor = limits.soft.or(limits.hard)?;
+    if tokens < floor {
+        rearm(dir);
+        return None;
+    }
+    std::fs::create_dir_all(dir).ok()?;
+    if let Some(hard) = limits.hard {
+        if tokens >= hard {
+            let top = (tokens - hard) / HARD_REPEAT;
+            claim(dir, "soft");
+            for n in 0..top {
+                claim(dir, &format!("hard-{}", hard + n * HARD_REPEAT));
+            }
+            return claim(dir, &format!("hard-{}", hard + top * HARD_REPEAT)).then_some(Tier::Hard);
+        }
+        forget_hard(dir);
+    }
+    match limits.soft {
+        Some(soft) if tokens >= soft => claim(dir, "soft").then_some(Tier::Soft),
+        _ => None,
+    }
 }
 
 // ------------------------------------------------------------------ the hooks
@@ -114,7 +109,7 @@ fn transcript_for(payload: &Value, session_id: &str) -> Option<String> {
 }
 
 /// The nudge for this tool call, or None. Reads the registry, the brief and the transcript tail;
-/// writes one small state file when something fired or re-armed. Every failure is silence.
+/// creates marker files when something fires. Every failure is silence.
 pub fn nudge(ctx: &Ctx, payload: &Value) -> Option<String> {
     let id = payload.get("session_id").and_then(Value::as_str).unwrap_or("");
     // A subagent's tool call carries the parent's session id; the nudge is for the main chain.
@@ -128,14 +123,17 @@ pub fn nudge(ctx: &Ctx, payload: &Value) -> Option<String> {
         return None;
     }
     let tokens = reach::context_tokens(&transcript_for(payload, id)?)?;
-    let path = vpath(ctx, &state_rel(id));
-    let before = load_state(&path);
-    let mut st = before;
-    let tier = decide(&limits, tokens, &mut st);
-    if st != before {
-        let _ = save_state(&path, &st);
+    let tier = settle(&limits, tokens, &marker_dir(ctx, id))?;
+    Some(nudge_text(class, &limits, tokens, tier))
+}
+
+/// PostCompact: a registered chat's nudges re-arm at once. Prints nothing.
+pub fn postcompact(ctx: &Ctx, payload_text: &str) {
+    let p: Value = serde_json::from_str(payload_text).unwrap_or(Value::Null);
+    let id = p.get("session_id").and_then(Value::as_str).unwrap_or("");
+    if Registry::load(ctx).ok().and_then(|r| r.find_session(id)).is_some() {
+        rearm(&marker_dir(ctx, id));
     }
-    tier.map(|t| nudge_text(class, &limits, tokens, t))
 }
 
 /// PreCompact: the standing instructions for the summary, as plain stdout (the harness hands
@@ -166,8 +164,28 @@ fn opt_k(v: Option<u64>) -> String {
     v.map(kfmt).unwrap_or_else(|| "none".to_string())
 }
 
-fn tokens_of(row: &Row) -> Option<u64> {
-    reach::context_tokens(&reach::transcript_path(&row.session_id)?)
+fn usage_of(row: &Row) -> Option<reach::Usage> {
+    reach::context_usage(&reach::transcript_path(&row.session_id)?)
+}
+
+/// The auto-compact window that applies to the chat's model, from the user settings.
+enum AutoCompact {
+    Unknown,
+    Default(String),
+    Set(u64, String),
+}
+
+fn auto_compact_of(usage: Option<&reach::Usage>) -> AutoCompact {
+    match usage.and_then(|u| u.model.as_deref()) {
+        None => AutoCompact::Unknown,
+        Some(m) => {
+            let id = m.split('[').next().unwrap_or(m).to_string();
+            match reach::auto_compact_window(m) {
+                Some(w) => AutoCompact::Set(w, id),
+                None => AutoCompact::Default(id),
+            }
+        }
+    }
 }
 
 pub fn cmd_context(ctx: &Ctx, name: Option<&str>) -> R<i32> {
@@ -180,29 +198,56 @@ pub fn cmd_context(ctx: &Ctx, name: Option<&str>) -> R<i32> {
             };
             let class = sessions::class_of(ctx, &row.name);
             let lim = class.limits();
+            let usage = usage_of(&row);
             outln!("name: {}", row.name);
             outln!("class: {}", class.name());
-            match tokens_of(&row) {
-                Some(t) => outln!("context: {} tokens ({t})", kfmt(t)),
+            match &usage {
+                Some(u) => outln!("context: {} tokens ({})", kfmt(u.tokens), u.tokens),
                 None => outln!("context: unknown (no transcript with usage)"),
             }
             outln!("window: {}", kfmt(lim.window));
             outln!("soft: {}", opt_k(lim.soft));
             outln!("hard: {}", opt_k(lim.hard));
+            match auto_compact_of(usage.as_ref()) {
+                AutoCompact::Unknown => outln!("auto-compact: unknown"),
+                AutoCompact::Default(m) => outln!("auto-compact: default (not set for {m})"),
+                AutoCompact::Set(w, m) => {
+                    outln!("auto-compact: {} (user settings, modelSettings.{m})", kfmt(w));
+                    if let Some(hard) = lim.hard.filter(|h| w < *h) {
+                        outln!(
+                            "auto-compact at {} comes before this chat's {} hard nudge; raise it with /autocompact in that chat or in user settings",
+                            kfmt(w),
+                            kfmt(hard)
+                        );
+                    }
+                }
+            }
         }
         None => {
             let mut lines = Vec::new();
             for row in reg.rows().iter().filter(|r| !r.is_ended()) {
-                let Some(t) = tokens_of(row) else { continue };
+                let Some(u) = usage_of(row) else { continue };
                 let class = sessions::class_of(ctx, &row.name);
                 let lim = class.limits();
-                lines.push(format!("| {} | {} | {} | {} | {} |", row.name, class.name(), kfmt(t), opt_k(lim.soft), opt_k(lim.hard)));
+                let auto = match auto_compact_of(Some(&u)) {
+                    AutoCompact::Unknown => "unknown".to_string(),
+                    AutoCompact::Default(_) => "default".to_string(),
+                    AutoCompact::Set(w, _) => kfmt(w),
+                };
+                lines.push(format!(
+                    "| {} | {} | {} | {} | {} | {auto} |",
+                    row.name,
+                    class.name(),
+                    kfmt(u.tokens),
+                    opt_k(lim.soft),
+                    opt_k(lim.hard)
+                ));
             }
             if lines.is_empty() {
                 out::line("no registered chat has a transcript");
             } else {
-                outln!("| name | class | context | soft | hard |");
-                outln!("|---|---|---|---|---|");
+                outln!("| name | class | context | soft | hard | auto-compact |");
+                outln!("|---|---|---|---|---|---|");
                 for l in lines {
                     out::line(&l);
                 }

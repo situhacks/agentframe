@@ -191,7 +191,7 @@ enum Cmd {
         dry_run: bool,
     },
     /// Run a Claude Code hook: session-start, stop, session-end, notification, pre-tool-use,
-    /// post-tool-use, pre-compact (payload on stdin)
+    /// post-tool-use, pre-compact, post-compact (payload on stdin)
     Hook {
         event: String,
         #[arg(trailing_var_arg = true, allow_hyphen_values = true, hide = true)]

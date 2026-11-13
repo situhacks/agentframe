@@ -19,4 +19,4 @@ session_id: <uuid>
 <one vault-relative path per line>
 ```
 
-A handoff is stale when the newest mtime among `Files touched` (or, with none listed, under the brief's `write_surface`), floored to the minute, is later than `written`. The Stop hook then blocks once for `project/*`, `system/*`, and `worker/*` chats, never for `main`. `af doctor` notes a handoff older than its folder's newest file.
+`written:` is required (`YYYY-MM-DDTHH:MM`, local time); a handoff without one is refused. `Files touched` takes one vault-relative path per line. A handoff is stale when the newest mtime among `Files touched` (or, with none listed, under the brief's `write_surface`), floored to the minute, is later than `written`. The Stop hook then blocks once for `project/*`, `system/*`, and `worker/*` chats, never for `main`. `af doctor` notes a handoff older than its folder's newest file.

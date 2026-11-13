@@ -130,8 +130,8 @@ Third-party tools live in `system/vendor/`, each with a `VENDOR.md` that pins th
 | `session-start` | Prints the chat's role, brief, last handoff, and for main the whole of `life.md` and the due loops; has an unregistered chat ask whether it is main, a side chat, or a one-off; renames the tab to the registered name; refreshes a stale search index in the background |
 | `pre-tool-use` | Turns any shell command that runs `git push` into a permission prompt; blocks edits to old versions, published heads, and hand-made version files; blocks `af ready` on hard voice findings; keeps deck projects out of the vendor folder; refuses a Substack push until its row is ready |
 | `post-tool-use` | Prints the voice lint after `af version` and reminds the agent to promote a deck export; after any tool, nudges a build chat to bring its handoff up to date at 400k tokens of context and to compact at 600k |
-| `pre-compact` | Prints the chat's standing summary instructions (name, role, brief, handoff and plan paths, current step, decisions, open questions, files touched) so every compaction keeps them |
-| `stop` | Asks a registered side chat or worker for its handoff before it stops, once; when the chat really stops, commits the private layer (`af save`) |
+| `pre-compact`, `post-compact` | Print the chat's standing summary instructions (name, role, brief, handoff and plan paths, current step, decisions, open questions, files touched) so every compaction keeps them; after it, the context nudge re-arms |
+| `stop` | Asks a registered side chat or worker for its handoff before it stops, once, and says whether it is missing, lacks `written:`, or is stale; when the chat really stops, commits the private layer (`af save`) |
 | `session-end`, `notification` | Stamp the registry row ended or last seen |
 
 A push happens only on your explicit yes. A `permissions.ask` rule for `git push` prompts you for every push, in bypass-permissions mode too, and the pre-tool-use hook turns a push buried in a compound command into the same prompt. `AGENTS.md` carries the rule for the model.

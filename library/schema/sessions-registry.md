@@ -21,15 +21,15 @@ Each name has a folder, `system/sessions/<name>/`, holding an optional `brief.md
 
 ## Session classes
 
-A class says how much context a chat should carry. It is not stored in the registry: the name gives the default, and a `class: main|side|build` line in the chat's `brief.md` frontmatter overrides it (`af session register <name> --session <id> --class <c>` writes that line into the brief; it refuses when there is no brief, and on a value outside the three). A brief's old `window:` line is not read.
+A class says how much context a chat should carry. It is not stored in the registry: the name gives the default, and a `class: main|side|build` line in the chat's `brief.md` frontmatter overrides it (`af session register <name> --session <id> --class <c>` writes that line into the brief; it refuses when there is no brief, and on a value outside the three).
 
 | Class | Default for | Window | Soft nudge | Hard nudge |
 |---|---|---|---|---|
 | `main` | `af-main` (and a legacy `main`) | 350k | none | none |
-| `side` | `life/*`, `project/*`, `worker/*` | 300k | none | none |
-| `build` | `system/*` | 1M | 400k | 600k |
+| `side` | `life/*`, `worker/*` | 300k | none | none |
+| `build` | `project/*`, `system/*` | 1M | 400k | 600k |
 
-A hook cannot set a window or start a compaction. The window is the operator's (`/autocompact`); Claude Code's auto-compact handles `main` and `side`. For `build`, `af hook post-tool-use` runs after every tool, reads the last main-chain assistant usage from the transcript (input, cache read and cache creation tokens), and adds one nudge to the chat: soft once at the soft threshold, hard at the hard threshold and again each 50k above it. Falling back below the soft threshold (a compaction) re-arms both. What it has said is in `system/logs/context-nudge-<session id>.json`. `af hook pre-compact` prints the chat's standing summary instructions (its name, role, brief, handoff and plan paths, the current step, decisions, open questions, files touched) on every compaction, manual or automatic. `af session context [name]` prints a chat's class, measured context, window and thresholds.
+A hook cannot set a window or start a compaction. The window is the operator's (`/autocompact`); Claude Code's auto-compact handles `main` and `side`. For `build`, `af hook post-tool-use` runs after every tool, reads the last main-chain assistant usage from the transcript (input, cache read and cache creation tokens), and adds one nudge to the chat: soft once at the soft threshold, hard at the hard threshold and again each 50k above it. Each firing is claimed by creating a marker file in `system/logs/context-nudge/<session id>/` (`soft`, and `hard-<tokens>` for the hard threshold plus each 50k), so parallel tool calls say it once; a jump over several buckets fires the highest. Falling below the hard threshold removes the hard markers, falling below the soft threshold (or `af hook post-compact`, after every compaction) removes all of them. `af hook pre-compact` prints the chat's standing summary instructions (its name, role, brief, handoff and plan paths, the current step, decisions, open questions, files touched) on every compaction, manual or automatic. `af session context [name]` prints a chat's class, measured context, window and thresholds, and the auto-compact window that applies to its model (`modelSettings.<model id>.autoCompactWindow` in the user-level Claude settings, which it only reads): a chat that auto-compacts below its hard threshold never reaches that nudge, and the output says so.
 
 ## Start a worker
 
@@ -62,9 +62,9 @@ A live chat's held or expired message also reaches the sender as a system notice
 |---|---|
 | `af session register <name> --session <id> [--model <m>] [--brief <path>] [--class <c>]` | Writes the row, creates the folder, copies the brief, and with `--class` writes its `class:` line |
 | `af session list [--json]` | Prints the rows with their effective status and class |
-| `af session context [name]` | Prints a chat's class, context tokens, window and thresholds; with no name, a table of every live chat that has a transcript |
-| `af session stop`, `af hook stop` | Stamp `last_seen`; ask for a handoff when it is stale (never for `main`) |
+| `af session context [name]` | Prints a chat's class, context tokens, window, thresholds and auto-compact window; with no name, a table of every live chat that has a transcript |
+| `af session stop`, `af hook stop` | Stamp `last_seen`; ask for a handoff when it is missing, has no `written:` line, or is stale, and say which and how to fix it (never for `main`) |
 | `af session end`, `af hook session-end` | Set `ended` |
 | `af session reach <name> [--from <name>] [--confirm "<phrase>" --since <time>] [--json]` | Prints what a message would meet, what to do next, and the `--since` value; `--confirm` exits 0 once the target's Claude read an inbound message holding that phrase at or after that time, 3 until then, and refuses a phrase under 12 characters |
 | `af hook session-start`, `af hook notification` | Stamp `last_seen`; session start also revives an ended row |
-| `af hook post-tool-use`, `af hook pre-compact` | The context nudge for a `build` chat; the standing summary instructions at compaction |
+| `af hook post-tool-use`, `af hook pre-compact`, `af hook post-compact` | The context nudge for a `build` chat; the standing summary instructions at compaction; the nudge re-arms after it |

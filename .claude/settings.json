@@ -102,6 +102,17 @@
           }
         ]
       }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "AF_ROOT=\"${CLAUDE_PROJECT_DIR}\" af hook post-compact",
+            "timeout": 10
+          }
+        ]
+      }
     ]
   },
   "worktree": {

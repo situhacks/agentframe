@@ -645,6 +645,9 @@ pub enum SessionCmd {
         /// the model to pick in the new chat (as the panel's picker names it)
         #[arg(long)]
         model: Option<String>,
+        /// put the new chat in this existing session group of the panel (by name)
+        #[arg(long)]
+        group: Option<String>,
         /// minutes the panel driver waits for the operator (default 20)
         #[arg(long)]
         wait_minutes: Option<f64>,
@@ -705,8 +708,8 @@ pub fn run(ctx: &Ctx, cmd: SessionCmd) -> R<i32> {
             )
         }
         SessionCmd::Rename { name, to, wait_minutes } => crate::panel::cmd_rename(ctx, &name, to.as_deref(), wait_minutes),
-        SessionCmd::Start { name, brief_prompt_file, model, wait_minutes } => {
-            crate::panel::cmd_start(ctx, &name, &brief_prompt_file, model.as_deref(), wait_minutes)
+        SessionCmd::Start { name, brief_prompt_file, model, group, wait_minutes } => {
+            crate::panel::cmd_start(ctx, &name, &brief_prompt_file, model.as_deref(), group.as_deref(), wait_minutes)
         }
         SessionCmd::Panel { json } => crate::panel::cmd_panel(ctx, json),
         SessionCmd::Bundle { session } => {

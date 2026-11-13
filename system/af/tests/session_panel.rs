@@ -1,5 +1,5 @@
 //! The session verbs that use the VS Code panel driver: compacting a running chat, `--when-idle`,
-//! `--then-file`, `rename`, `start` and `panel`. The driver is a stub compiled for the test and named
+//! `--then-file`, `rename`, `start` (with `--group`) and `panel`. The driver is a stub compiled for the test and named
 //! through `AF_PANEL_DRIVER` (see `common::panel_stub`); the real driver is never run, no window is
 //! touched and no key is sent. The same stub answers `agents` for `AF_CLAUDE_BIN`, so the roster says
 //! whether the chat is running. It records each call (arguments and the text file's content) in
@@ -101,7 +101,7 @@ fn a_running_chat_is_compacted_by_typing_compact_through_the_driver() {
     assert_eq!(arg_after(args, "-Session").as_deref(), Some("sid-1"));
     assert!(arg_after(args, "-TextFile").is_some());
     assert_eq!(arg_after(args, "-WaitMinutes"), None, "the driver's own default wait applies");
-    assert_eq!(text.as_deref(), Some(" /compact"), "one leading space before the slash");
+    assert_eq!(text.as_deref(), Some("/compact"), "the slash text reaches the driver unchanged");
 }
 
 #[test]
@@ -111,7 +111,7 @@ fn the_instructions_arrive_in_the_file_with_quotes_and_newlines_intact() {
     let (code, out, err) = session(&fx, &[], &["compact", "system/x", "--instructions", instr]);
     assert_eq!(code, 0, "{out}{err}");
     let (args, text) = &sends(&fx)[0];
-    assert_eq!(text.as_deref(), Some(format!(" /compact {instr}").as_str()));
+    assert_eq!(text.as_deref(), Some(format!("/compact {instr}").as_str()));
     assert!(!args.iter().any(|a| a.contains("say")), "the text is not an argument: {args:?}");
 }
 
@@ -141,7 +141,7 @@ fn a_dry_run_on_a_running_chat_shows_the_driver_call_and_runs_nothing() {
     fx.write("then.md", "go on");
     let (code, out, err) = session(&fx, &[], &["compact", "system/x", "--dry-run", "--instructions", "keep the plan", "--then-file", &fx.p("then.md"), "--model", "claude-opus-5-5"]);
     assert_eq!(code, 0, "{out}{err}");
-    for part in ["through the panel", "send -Session sid-1 -TextFile", "\" /compact keep the plan\"", "compact_boundary", "312k tokens", "next message", "--model has no effect"] {
+    for part in ["through the panel", "send -Session sid-1 -TextFile", "\"/compact keep the plan\"", "compact_boundary", "312k tokens", "next message", "--model has no effect"] {
         assert!(out.contains(part), "{part}: {out}");
     }
     assert!(calls(&fx).is_empty());
@@ -193,7 +193,8 @@ fn driver_exit_codes_become_clear_refusals_and_nothing_else_runs() {
     let cases = [
         ("3", "exit 3", "operator was using the computer"),
         ("4", "exit 4", "draft typed in its input box"),
-        ("5", "exit 5", "safety check failed before typing"),
+        ("5", "exit 5", "safety check failed before anything was sent"),
+        ("6", "exit 6", "MODEL KEY MISMATCH"),
         ("2", "could not find", "no chat row for session sid-1"),
         ("1", "failed (exit 1)", "the stub driver refused"),
     ];
@@ -203,7 +204,7 @@ fn driver_exit_codes_become_clear_refusals_and_nothing_else_runs() {
         let (exit, out, err) = session(&fx, &[("STUB_PANEL_EXIT", code), ("STUB_PANEL_STDERR", stderr)], &["compact", "system/x"]);
         assert_eq!(exit, 1, "{code}: {out}{err}");
         assert!(err.contains("system/x: ") && err.contains(label) && err.contains(extra), "{code}: {err}");
-        assert!(err.contains("nothing was typed") || err.contains("nothing was sent") || code == "2" || code == "1", "{code}: {err}");
+        assert!(err.contains("nothing was sent") || code == "2" || code == "1" || code == "6", "{code}: {err}");
         assert_eq!(boundaries(&fx), 0);
         assert_eq!(calls(&fx).len(), 1);
         assert!(fx.run_log_rows().iter().any(|r| r.get("refusal").and_then(Value::as_str).is_some_and(|m| m.contains(label) || m.contains("could not find"))), "{code}: in the run log");
@@ -225,7 +226,7 @@ fn without_a_boundary_line_the_compaction_fails_honestly() {
     let started = Instant::now();
     let (code, out, err) = session(&fx, &[("STUB_PANEL_NO_BOUNDARY", "1")], &["compact", "system/x"]);
     assert_eq!(code, 1, "{out}");
-    assert!(err.contains("typed into the chat") && err.contains("no compact_boundary line within 2 seconds"), "{err}");
+    assert!(err.contains("sent to the chat") && err.contains("no compact_boundary line within 2 seconds"), "{err}");
     assert!(!out.contains("compacted"), "{out}");
     assert!(started.elapsed() < Duration::from_secs(30));
     assert_eq!(boundaries(&fx), 0);
@@ -267,7 +268,7 @@ fn when_idle_returns_at_once_and_the_waiter_sends_the_compact_and_logs_its_resul
     let made = sends(&fx);
     assert_eq!(made.len(), 1, "{made:?}");
     assert_eq!(arg_after(&made[0].0, "-WaitMinutes").as_deref(), Some("60"));
-    assert_eq!(made[0].1.as_deref(), Some(" /compact keep the plan"));
+    assert_eq!(made[0].1.as_deref(), Some("/compact keep the plan"));
     assert_eq!(boundaries(&fx), 1);
     assert!(fx.read("system/logs/panel-waiters.log").lines().count() == 1);
     let jobs: Vec<_> = std::fs::read_dir(fx.path("system/logs/claude-panel")).map(|d| d.flatten().collect()).unwrap_or_default();
@@ -307,7 +308,7 @@ fn then_file_is_sent_after_a_confirmed_compaction_as_the_next_message() {
     assert!(out.contains("compacted through the panel") && out.contains("as its next message"), "{out}");
     let made = sends(&fx);
     assert_eq!(made.len(), 2, "{made:?}");
-    assert_eq!(made[0].1.as_deref(), Some(" /compact"));
+    assert_eq!(made[0].1.as_deref(), Some("/compact"));
     assert_eq!(made[1].1.as_deref(), Some(then));
     assert_eq!(arg_after(&made[1].0, "-Session").as_deref(), Some("sid-1"));
     assert_eq!(arg_after(&made[1].0, "-WaitMinutes").as_deref(), Some("3"), "the same guards and wait");
@@ -347,8 +348,8 @@ fn a_then_file_that_is_missing_or_empty_is_refused_before_anything_is_sent() {
 }
 
 #[test]
-fn a_then_file_text_that_starts_with_a_slash_is_typed_with_one_leading_space_exactly() {
-    for (content, typed) in [("/status", " /status"), (" /status", " /status"), ("status", "status")] {
+fn a_then_file_text_reaches_the_driver_exactly_as_written_whether_or_not_it_starts_with_a_slash() {
+    for (content, typed) in [("/status", "/status"), (" /status", " /status"), ("status", "status")] {
         let fx = chat();
         fx.write("then.md", content);
         assert_eq!(session(&fx, &[], &["compact", "system/x", "--then-file", &fx.p("then.md")]).0, 0);
@@ -379,7 +380,7 @@ fn rename_types_the_registry_name_by_default_and_reads_the_panel_row_back() {
     assert!(out.contains("system/x: renamed to system/x"), "{out}");
     let (args, text) = &sends(&fx)[0];
     assert_eq!(arg_after(args, "-Session").as_deref(), Some("sid-1"));
-    assert_eq!(text.as_deref(), Some(" /rename system/x"));
+    assert_eq!(text.as_deref(), Some("/rename system/x"));
 }
 
 #[test]
@@ -389,7 +390,7 @@ fn rename_to_sends_that_text_and_fails_when_the_row_does_not_show_it() {
     let (code, _, err) = session(&fx, &[("STUB_PANEL_LIST", stale)], &["rename", "system/x", "--to", "a \"new\" title"]);
     assert_eq!(code, 1);
     assert!(err.contains("the panel row shows 'old title'"), "{err}");
-    assert_eq!(sends(&fx)[0].1.as_deref(), Some(" /rename a \"new\" title"));
+    assert_eq!(sends(&fx)[0].1.as_deref(), Some("/rename a \"new\" title"));
     let fresh = r#"[{"session_id":"sid-1","name":"a \"new\" title","status":"idle","active":false}]"#;
     let (code, out, err) = session(&fx, &[("STUB_PANEL_LIST", fresh)], &["rename", "system/x", "--to", "a \"new\" title"]);
     assert_eq!(code, 0, "{out}{err}");
@@ -434,7 +435,7 @@ fn start_opens_a_new_chat_with_the_file_as_its_first_message_and_prints_the_sess
 }
 
 #[test]
-fn start_without_a_model_refuses_and_lists_the_options_and_a_leading_slash_gets_one_space() {
+fn start_without_a_model_refuses_and_lists_the_options_and_a_leading_slash_is_not_changed() {
     let fx = Fx::new();
     fx.write("prompt.md", "/status please");
     let (code, _, err) = session(&fx, &[], &["start", "worker/y", "--brief-prompt-file", &fx.p("prompt.md")]);
@@ -448,7 +449,7 @@ fn start_without_a_model_refuses_and_lists_the_options_and_a_leading_slash_gets_
     assert_eq!(code, 0, "{out}{err}");
     let (args, text) = &calls(&fx)[0];
     assert_eq!(arg_after(args, "-Model").as_deref(), Some("Haiku 4.5"));
-    assert_eq!(text.as_deref(), Some(" /status please"));
+    assert_eq!(text.as_deref(), Some("/status please"));
 }
 
 #[test]
@@ -498,6 +499,106 @@ fn panel_refuses_when_the_driver_does() {
     let (code, _, err) = session(&fx, &[("STUB_PANEL_EXIT", "2"), ("STUB_PANEL_STDERR", "no VS Code window with 'x' in its title")], &["panel"]);
     assert_eq!(code, 1);
     assert!(err.contains("could not find") && err.contains("no VS Code window"), "{err}");
+}
+
+// ------------------------------------------------------------------ the text reaches the driver unchanged
+
+#[test]
+fn a_slash_text_reaches_the_driver_unchanged_through_every_verb() {
+    let fx = chat();
+    fx.write("prompt.md", "/status please\nsecond line");
+    let (code, out, err) = session(&fx, &[], &["start", "worker/y", "--brief-prompt-file", &fx.p("prompt.md"), "--model", "Haiku 5.5"]);
+    assert_eq!(code, 0, "{out}{err}");
+    assert_eq!(calls(&fx)[0].1.as_deref(), Some("/status please\nsecond line"), "no space is added in front of the slash");
+    let list = r#"[{"session_id":"sid-1","name":"/odd","status":"idle","active":false}]"#;
+    let (code, _, _) = session(&fx, &[("STUB_PANEL_LIST", list)], &["rename", "system/x", "--to", "/odd"]);
+    assert_eq!(code, 0);
+    assert_eq!(sends(&fx)[0].1.as_deref(), Some("/rename /odd"));
+}
+
+#[test]
+fn the_exit_6_message_tells_him_to_fix_the_settings_file_before_anything_else() {
+    let fx = Fx::new();
+    fx.write("prompt.md", "hello");
+    let (code, _, err) = session(&fx, &[("STUB_PANEL_EXIT", "6"), ("STUB_PANEL_STDERR", "MODEL KEY NOT RESTORED: was fable, is haiku")], &["start", "system/x", "--brief-prompt-file", &fx.p("prompt.md"), "--model", "Haiku 5.5"]);
+    assert_eq!(code, 1);
+    assert!(err.contains("MODEL KEY MISMATCH") && err.contains("settings.json by hand") && err.contains("MODEL KEY NOT RESTORED"), "{err}");
+}
+
+// ------------------------------------------------------------------ start --group
+
+/// A `state.vscdb` like VS Code's: table ItemTable, key `Anthropic.claude-code`, one JSON object whose
+/// `sessionGroups:<root>` entries hold the groups.
+fn state_db(fx: &Fx, root_key: &str, groups: &[(&str, &str)]) -> String {
+    let path = fx.path("state.vscdb");
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    conn.execute("CREATE TABLE ItemTable (key TEXT UNIQUE ON CONFLICT REPLACE, value BLOB)", []).unwrap();
+    let list: Vec<Value> = groups.iter().map(|(id, name)| json!({"id": id, "name": name, "collapsed": false, "sessionIds": ["x"]})).collect();
+    let state = json!({
+        format!("sessionGroups:{root_key}"): list,
+        "sessionGroups:c:\\elsewhere": [{"id": "other-id", "name": "Elsewhere", "collapsed": false, "sessionIds": []}],
+        "hiddenSessionIds": ["a", "b"],
+    });
+    conn.execute("INSERT INTO ItemTable (key, value) VALUES ('Anthropic.claude-code', ?1)", [state.to_string()]).unwrap();
+    drop(conn);
+    path.to_string_lossy().into_owned()
+}
+
+#[test]
+fn start_group_is_resolved_to_its_id_from_the_stored_groups_and_sent_to_the_driver() {
+    let fx = Fx::new();
+    fx.write("prompt.md", "hello");
+    // The extension keys groups by the vault path in its own spelling: lower-case drive, back slashes.
+    let key = fx.root().replace('/', "\\").to_lowercase();
+    let db = state_db(&fx, &key, &[("d00fc9eb-0001", "Main"), ("7880c530-0002", "AgentFrame Build")]);
+    let (code, out, err) = session(&fx, &[("AF_VSCODE_STATE_DB", &db)], &["start", "system/x", "--brief-prompt-file", &fx.p("prompt.md"), "--model", "Haiku 5.5", "--group", "AgentFrame Build"]);
+    assert_eq!(code, 0, "{out}{err}");
+    let (args, _) = &calls(&fx)[0];
+    assert_eq!(arg_after(args, "-GroupId").as_deref(), Some("7880c530-0002"));
+    assert_eq!(arg_after(args, "-Model").as_deref(), Some("Haiku 5.5"));
+    // A different case is accepted when it is not ambiguous.
+    let (code, _, err) = session(&fx, &[("AF_VSCODE_STATE_DB", &db)], &["start", "system/x", "--brief-prompt-file", &fx.p("prompt.md"), "--model", "Haiku 5.5", "--group", "main"]);
+    assert_eq!(code, 0, "{err}");
+    assert_eq!(arg_after(&calls(&fx)[1].0, "-GroupId").as_deref(), Some("d00fc9eb-0001"));
+    // No --group, no -GroupId.
+    let (code, _, _) = session(&fx, &[("AF_VSCODE_STATE_DB", &db)], &["start", "system/x", "--brief-prompt-file", &fx.p("prompt.md"), "--model", "Haiku 5.5"]);
+    assert_eq!(code, 0);
+    assert_eq!(arg_after(&calls(&fx)[2].0, "-GroupId"), None);
+}
+
+#[test]
+fn an_unknown_group_is_refused_with_the_names_there_are_and_nothing_reaches_the_driver() {
+    let fx = Fx::new();
+    fx.write("prompt.md", "hello");
+    let key = fx.root();
+    let db = state_db(&fx, &key, &[("id-1", "Main"), ("id-2", "AgentFrame Build")]);
+    let (code, _, err) = session(&fx, &[("AF_VSCODE_STATE_DB", &db)], &["start", "system/x", "--brief-prompt-file", &fx.p("prompt.md"), "--model", "Haiku 5.5", "--group", "Nope"]);
+    assert_eq!(code, 1);
+    assert!(err.contains("no session group named 'Nope'") && err.contains("'Main'") && err.contains("'AgentFrame Build'"), "{err}");
+    assert!(!err.contains("Elsewhere"), "only this vault's groups are listed: {err}");
+    assert!(calls(&fx).is_empty());
+    // A vault with no groups says none; a missing state file is a refusal too.
+    let other = Fx::new();
+    let empty = state_db(&other, "c:\\nowhere", &[]);
+    let (code, _, err) = session(&fx, &[("AF_VSCODE_STATE_DB", &empty)], &["start", "system/x", "--brief-prompt-file", &fx.p("prompt.md"), "--model", "Haiku 5.5", "--group", "Main"]);
+    assert_eq!(code, 1);
+    assert!(err.contains("The groups are: none"), "{err}");
+    let (code, _, err) = session(&fx, &[("AF_VSCODE_STATE_DB", &fx.p("missing.vscdb"))], &["start", "system/x", "--brief-prompt-file", &fx.p("prompt.md"), "--model", "Haiku 5.5", "--group", "Main"]);
+    assert_eq!(code, 1);
+    assert!(err.contains("cannot find VS Code's state file"), "{err}");
+    assert!(calls(&fx).is_empty());
+}
+
+#[test]
+fn the_state_file_is_only_read_and_a_worktree_root_finds_the_vaults_groups() {
+    let fx = Fx::new();
+    let db = state_db(&fx, &fx.root(), &[("id-1", "Main")]);
+    let before = std::fs::read(&db).unwrap();
+    let groups = afcore::panel::session_groups_at(std::path::Path::new(&db), &fx.root()).unwrap();
+    assert_eq!(groups, vec![("id-1".to_string(), "Main".to_string())]);
+    assert_eq!(std::fs::read(&db).unwrap(), before, "the original file is untouched");
+    let wt = format!("{}/.claude/worktrees/one-machine", fx.root());
+    assert_eq!(afcore::panel::session_groups_at(std::path::Path::new(&db), &wt).unwrap().len(), 1, "a worktree path resolves to the vault root's groups");
 }
 
 // ------------------------------------------------------------------ the real driver is addressed, never run

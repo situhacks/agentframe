@@ -37,4 +37,6 @@ There is no generic "run this command" action.
 
 ## Build and install
 
-`python system/vscode-bridge/build.py` writes `system/logs/panel-bridge/af-bridge-<version>.vsix` in the main checkout (no npm). Install with `code --install-extension <file.vsix>`. Never reload the window to load it: other chats run in that window.
+`python system/vscode-bridge/build.py` writes `system/logs/panel-bridge/af-bridge-<version>.vsix` in the main checkout (no npm; `--out <folder>` writes elsewhere). Install it once with `code --install-extension system/logs/panel-bridge/af-bridge-<version>.vsix`. A first install is picked up by the running window without a reload, and the extension answers `ping` within a few seconds.
+
+An update of an installed bridge needs an extension host restart (the host keeps the old copy running until then), and a restart ends every running chat in the window. So update it only at a moment when no chat is running, never to fix something in passing, and never reload the window to load it. The panel driver (`system/tools/claude_panel.ps1`) is built against the actions the installed version has (`ping`, `tabs`, `open`, `reveal`, `close-tab`); `group-pick` is built but not used by it.

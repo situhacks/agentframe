@@ -1,7 +1,9 @@
 """Build the af-bridge .vsix without npm: a zip with extension/..., extension.vsixmanifest and [Content_Types].xml.
 
-Output: system/logs/panel-bridge/af-bridge-<version>.vsix in the MAIN checkout (the vault root, never a worktree).
+Output: system/logs/panel-bridge/af-bridge-<version>.vsix in the MAIN checkout (the vault root, never a worktree),
+or in the folder named by --out (the tests build into a temp folder).
 """
+import argparse
 import json
 import re
 import sys
@@ -24,7 +26,10 @@ def xml_escape(s: str) -> str:
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
 
-def main() -> int:
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description="Build the af-bridge .vsix without npm.")
+    ap.add_argument("--out", default=None, help="the folder to write the .vsix into")
+    ns = ap.parse_args(argv)
     pkg = json.loads((HERE / "package.json").read_text(encoding="utf-8"))
     version = pkg["version"]
     publisher = pkg["publisher"]
@@ -71,7 +76,7 @@ def main() -> int:
         "</PackageManifest>\n"
     )
 
-    out_dir = vault_root() / "system" / "logs" / "panel-bridge"
+    out_dir = Path(ns.out) if ns.out else vault_root() / "system" / "logs" / "panel-bridge"
     out_dir.mkdir(parents=True, exist_ok=True)
     out = out_dir / f"{name}-{version}.vsix"
     if out.exists():

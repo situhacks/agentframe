@@ -3,7 +3,7 @@
 //! summary instructions and `post-compact` re-arms the nudges. A chat with a live process is
 //! never compacted this way: two processes would write one transcript, so the guard fails
 //! closed and is checked again after the run. A running chat is compacted through the VS Code
-//! panel instead: the panel driver types ` /compact ...` into it once the operator and the chat are
+//! panel instead: the panel driver sends `/compact ...` to it once the operator and the chat are
 //! idle, and the transcript must gain a `compact_boundary` line. `--when-idle` starts a detached
 //! waiter that does this once the chat finishes its turn; `--then-file` sends a file's text to the
 //! chat as its next message after the compaction.
@@ -248,9 +248,8 @@ fn compact_report(ctx: &Ctx, o: &Opts) -> R<String> {
     let mut after_compact = false;
     let usage = match reach::context_size(&path) {
         reach::ContextSize::Known(u) => Some(u),
-        reach::ContextSize::AfterCompact if !force => {
-            outln!("{name}: already compact. Its transcript ends at a compact_boundary with no reply since, so nothing new exists to compact. --force runs it anyway.");
-            return Ok(0);
+        reach::ContextSize::AfterCompact if !o.force => {
+            return Ok(format!("{name}: already compact. Its transcript ends at a compact_boundary with no reply since, so nothing new exists to compact. --force runs it anyway."));
         }
         reach::ContextSize::AfterCompact => {
             after_compact = true;
@@ -346,7 +345,7 @@ fn boundary_wait() -> Duration {
         .unwrap_or(BOUNDARY_WAIT)
 }
 
-/// Compact a chat that is running: the panel driver types ` /compact ...` into it, and the
+/// Compact a chat that is running: the panel driver sends `/compact ...` to it, and the
 /// transcript has to show the boundary.
 fn through_panel(ctx: &Ctx, o: &Opts, row: &sessions::Row, path: &str, tokens: Option<u64>, why: &str) -> R<String> {
     let name = o.name;
@@ -372,7 +371,7 @@ fn through_panel(ctx: &Ctx, o: &Opts, row: &sessions::Row, path: &str, tokens: O
         } else {
             lines.push("would run now:".to_string());
         }
-        lines.push(format!("{}  (the file holds {:?})", d.shown(&call), panel::typed(&text)));
+        lines.push(format!("{}  (the file holds {:?})", d.shown(&call), text));
         lines.push(format!("then it would wait up to {} for a compact_boundary line in the transcript; context before {before} tokens.{note}", span(boundary_wait())));
         if let Some(tf) = o.then_file {
             lines.push(format!("then it would send the text of {tf} to the chat as its next message."));
@@ -395,7 +394,7 @@ fn through_panel(ctx: &Ctx, o: &Opts, row: &sessions::Row, path: &str, tokens: O
         (boundary, after) = appended_since(path, len_before);
     }
     if !boundary {
-        die!("{name}: /compact was typed into the chat, but its transcript gained no compact_boundary line within {}; look at the chat before trusting it", span(limit));
+        die!("{name}: /compact was sent to the chat, but its transcript gained no compact_boundary line within {}; look at the chat before trusting it", span(limit));
     }
     let after = match after {
         Some(u) => format!("{} tokens", k(u.tokens)),

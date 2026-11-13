@@ -1,6 +1,5 @@
-# Moves AgentFrame's scheduled jobs between machines, so only one machine runs them. Register on
-# the machine that should run them; unregister on the other. The register-*.ps1 scripts it calls
-# live one folder up and stay the owners of each job's schedule.
+# Shows, registers or removes AgentFrame's scheduled jobs on this machine. The register-*.ps1
+# scripts it calls live in this folder and stay the owners of each job's schedule.
 #   .\timers.ps1               # show which of the jobs are registered here
 #   .\timers.ps1 -Register     # register them all on this machine
 #   .\timers.ps1 -Unregister   # remove them all from this machine
@@ -25,7 +24,7 @@ $timers = @(
 
 if ($Register -and $Unregister) { throw 'Use -Register or -Unregister, not both.' }
 
-$tools = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$tools = $PSScriptRoot
 $failed = 0
 
 foreach ($t in $timers) {

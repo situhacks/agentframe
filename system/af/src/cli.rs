@@ -184,11 +184,9 @@ enum Cmd {
         #[command(subcommand)]
         cmd: crate::places::PersonCmd,
     },
-    /// Keep this machine and the other in step through the hub folder; `init` sets it up
-    Sync {
-        #[command(subcommand)]
-        cmd: Option<crate::sync::SyncCmd>,
-        /// Print what would happen and change nothing
+    /// Commit the private layer (workspace/, its own local git repo)
+    Save {
+        /// Print how many files would be committed and commit nothing
         #[arg(long)]
         dry_run: bool,
     },
@@ -298,7 +296,7 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> R<i32> {
         Cmd::Backlog { cmd } => crate::backlog::run(ctx, cmd),
         Cmd::Place { cmd } => crate::places::run_place(ctx, cmd),
         Cmd::Person { cmd } => crate::places::run_person(ctx, cmd),
-        Cmd::Sync { cmd, dry_run } => crate::sync::run(ctx, cmd, dry_run),
+        Cmd::Save { dry_run } => crate::save::run(ctx, dry_run),
         // `af hook` is intercepted before the parser; the variant exists for --help.
         Cmd::Hook { .. } => Ok(0),
     }

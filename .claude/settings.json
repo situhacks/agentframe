@@ -18,17 +18,6 @@
         ]
       }
     ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "AF_ROOT=\"${CLAUDE_PROJECT_DIR}\" af hook user-prompt-submit",
-            "timeout": 30
-          }
-        ]
-      }
-    ],
     "Stop": [
       {
         "hooks": [

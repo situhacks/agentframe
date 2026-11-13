@@ -3,7 +3,7 @@
 # 08:30 loop push, so the push carries the overdue list. Report-only unless -Live: it writes the
 # report and the overdue handoff and changes no loop. -Live registers the run that also closes
 # loops on email proof. Only while the operator is logged on, from the vault root; a missed
-# run starts at the next logon. Rerunning replaces it; laptop/timers.ps1 shows the mode. Remove with:
+# run starts at the next logon. Rerunning replaces it; timers.ps1 shows the mode. Remove with:
 #   Unregister-ScheduledTask -TaskName 'AgentFrame loop sweep' -Confirm:$false
 
 param([switch]$Live)

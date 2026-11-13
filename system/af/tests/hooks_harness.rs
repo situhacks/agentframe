@@ -19,7 +19,7 @@ fn test_claude_reference_wires_all_guards() {
             }
         }
     }
-    for event in ["session-start", "stop", "session-end", "notification", "pre-tool-use", "post-tool-use", "user-prompt-submit"] {
+    for event in ["session-start", "stop", "session-end", "notification", "pre-tool-use", "post-tool-use"] {
         let want = format!("AF_ROOT=\"${{CLAUDE_PROJECT_DIR}}\" af hook {event}");
         assert!(commands.iter().any(|c| c == &want), "{event}");
     }
@@ -33,12 +33,11 @@ fn test_claude_reference_wires_all_guards() {
     assert_eq!(matchers("SessionStart"), ["startup|resume|clear|compact"]);
     assert_eq!(matchers("Notification"), ["agent_completed|agent_needs_input"]);
     assert_eq!(config["hooks"]["SessionEnd"][0]["hooks"][0]["timeout"], 10);
-    // The sync halves cap their network steps themselves; the harness timeout is only the
-    // backstop, long enough for a started merge to finish and release the sync lock.
-    for ev in ["SessionStart", "Stop", "UserPromptSubmit"] {
+    // The stop save bounds its own git steps; the harness timeout is only the backstop.
+    for ev in ["SessionStart", "Stop"] {
         assert_eq!(config["hooks"][ev][0]["hooks"][0]["timeout"], 30, "{ev}");
     }
-    assert_eq!(matchers("UserPromptSubmit"), [""]);
+    assert!(config["hooks"].get("UserPromptSubmit").is_none(), "no hook runs per message");
     let deny = config["permissions"]["deny"].as_array().cloned().unwrap_or_default();
     assert!(!deny.iter().any(|d| d.as_str().unwrap_or("").contains("git push")), "a push is a prompt, not a deny: {deny:?}");
     assert_eq!(config["permissions"]["ask"], serde_json::json!(["Bash(git push)", "Bash(git push *)"]));
@@ -80,6 +79,13 @@ fn test_unknown_event_or_flag_is_a_non_blocking_error() {
     assert_eq!(hook(&fx, &[], "{}").0, 1);
     assert_eq!(hook(&fx, &["pre-tool-use", "--verbose"], "{}").0, 1, "an unknown flag fails like an unknown event");
     assert_eq!(hook(&fx, &["pre-tool-use", "stop"], "{}").0, 1, "one event per call");
+}
+
+#[test]
+fn test_the_per_message_event_is_a_silent_no_op() {
+    let fx = fixture();
+    // Chats started under earlier settings still send this event: it exits 0 and says nothing.
+    assert_eq!(hook(&fx, &["user-prompt-submit"], r#"{"session_id":"s1","prompt":"hi"}"#), (0, String::new()));
 }
 
 #[test]

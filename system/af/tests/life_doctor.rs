@@ -91,42 +91,35 @@ fn remotes(fx: &Fx, rows: &[(&str, &str)]) {
 }
 
 #[test]
-fn the_private_repo_keeps_no_remote_or_one_folder_hub() {
+fn the_private_repo_keeps_no_remote() {
     let fx = Fx::new();
     remotes(&fx, &[]);
-    assert_eq!(check(&fx), (vec![], vec![]), "no remote: silent");
+    assert_eq!(check(&fx), (vec![], vec![]), "a repo with no remote is clean");
 
-    for url in [r"\\laptop\agentframe-hub\workspace.git", "//laptop/agentframe-hub/workspace.git", "D:/agentframe-hub/workspace.git"] {
-        remotes(&fx, &[("hub", url)]);
-        assert_eq!(check(&fx), (vec![], vec![]), "a folder hub is the supported remote: {url}");
-    }
-
-    remotes(&fx, &[("origin", "https://github.com/someone/life.git")]);
-    let (i, _) = check(&fx);
-    assert_eq!(i.len(), 1, "{i:?}");
-    assert!(i[0].contains("remote 'origin' (https://github.com/someone/life.git)"), "{}", i[0]);
-    assert!(i[0].contains("git -C workspace remote remove origin") && i[0].contains("af sync init"), "the message names the fix: {}", i[0]);
-
-    for url in ["git@github.com:someone/life.git", "https://github.com/someone/life.git", "ssh://laptop/srv/workspace.git"] {
-        remotes(&fx, &[("hub", url)]);
+    // Any remote is one issue that names the fix: a web address, a folder path, a share.
+    for (name, url) in [
+        ("origin", "https://github.com/someone/life.git"),
+        ("origin", "git@github.com:someone/life.git"),
+        ("nas", "D:/agentframe-copy/workspace.git"),
+        ("nas", "//machine/share/workspace.git"),
+        ("backup", "E:/elsewhere/workspace.git"),
+    ] {
+        remotes(&fx, &[(name, url)]);
         let (i, _) = check(&fx);
-        assert_eq!(i.len(), 1, "a web or SSH hub is an issue: {url}");
-        assert!(i[0].contains("not a folder path") && i[0].contains("af sync init"), "{}", i[0]);
+        assert_eq!(i.len(), 1, "{name} {url}: {i:?}");
+        assert!(i[0].contains(&format!("remote '{name}' ({url})")), "{}", i[0]);
+        assert!(i[0].ends_with(&format!("git -C workspace remote remove {name}")), "the message names the fix: {}", i[0]);
     }
 
-    // A folder url with a push address elsewhere sends the private layer there.
-    fx.write(
-        "workspace/.git/config",
-        "[core]\n\tbare = false\n[remote \"hub\"]\n\turl = D:/agentframe-hub/workspace.git\n\tpushurl = git@github.com:someone/life.git\n",
-    );
+    remotes(&fx, &[("origin", "https://github.com/someone/life.git"), ("nas", "D:/agentframe-copy/workspace.git")]);
     let (i, _) = check(&fx);
-    assert_eq!(i.len(), 1, "{i:?}");
-    assert!(i[0].contains("git@github.com:someone/life.git") && i[0].contains("pushurl"), "{}", i[0]);
+    assert_eq!(i.len(), 2, "each remote is its own issue: {i:?}");
+    assert!(i[0].contains("remote remove origin") && i[1].contains("remote remove nas"), "{i:?}");
 
-    remotes(&fx, &[("hub", "D:/agentframe-hub/workspace.git"), ("backup", "E:/elsewhere/workspace.git")]);
+    fx.write("workspace/.git/config", "[core]\n\tbare = false\n[remote \"origin\"]\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n");
     let (i, _) = check(&fx);
-    assert_eq!(i.len(), 1, "only the hub is allowed: {i:?}");
-    assert!(i[0].contains("remote 'backup'"), "{}", i[0]);
+    assert_eq!(i.len(), 1, "a remote with no url is still a remote: {i:?}");
+    assert!(i[0].contains("remote 'origin'; ") && i[0].ends_with("git -C workspace remote remove origin"), "{}", i[0]);
 
     remotes(&fx, &[("origin", "https://github.com/someone/life.git")]);
     let (code, out, _) = fx.run(&["doctor"]);

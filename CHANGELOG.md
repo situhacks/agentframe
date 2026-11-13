@@ -4,6 +4,7 @@ Notable changes to AgentFrame. Full release notes also live on the [GitHub relea
 
 ## Unreleased
 
+- One machine. `af save` commits the private layer (`workspace/`, its own local git repo) at every stop and on request; it never fetches, pulls, merges or pushes, and skips with one line when git holds a lock or a merge is in progress. `af sync`, the hub folder, the per-message hook, the laptop kit, and `library/process/sync.md` are gone. `af doctor` flags any remote on `workspace/.git` and names the command that removes it. `system/tools/laptop/timers.ps1` is now `system/tools/timers.ps1`.
 - `af needs` keeps one list of what main needs the operator to decide, in `workspace/life/needs.md`: a generated view of marked loops in `open.md`, each linking a full detail file, split into Now, Do, and Later. Every reply to him ends with one line naming how many need him now, in place of re-raising due loops.
 - One chat. No rule reserves a tool or work for one chat; each does its job and routes the rest to main. `af session reach` says what a message would meet and checks it arrived, because `SendMessage` answers success for a message that is then held. Workers start with `claude -p`, and their exit wakes the chat that started them.
 - `af place`, `af person`, and `af backlog ready` are new buttons. `af ready` lifts a head's `## Ship` region into `post-FINAL.md`, a deferred ingredient counts as finished, a post row can override the manifest, and a published record stays published. `af draft --file` registers a head written first.

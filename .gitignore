@@ -22,7 +22,7 @@ library/assets/audio/*
 system/models/*
 !system/models/README.md
 
-# === Operator layer: life, projects, pipeline, studio (private; its own git repo, synced only through the hub folder by af sync) ===
+# === Operator layer: life, projects, pipeline, studio (private; its own local git repo, committed by af save) ===
 workspace/
 
 # === Runtime / generated state ===

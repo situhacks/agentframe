@@ -959,6 +959,7 @@ function Do-SelfTest {
     $id = ''
     $r = Step-Run 'new (Haiku 5.5, two-line first prompt)' { Do-New $first $SelfTestModel '' } ''
     if ($null -eq $r) { return 1 }
+    $script:Notes = @()   # the new chat's own notes (its tab is open) do not apply: this run closes it
     $id = [string]($r | Select-Object -First 1)
     [Console]::Out.WriteLine("session id: $id")
     # let the first reply finish; a send waits for an idle chat anyway

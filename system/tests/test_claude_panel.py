@@ -440,7 +440,7 @@ class LogTests(unittest.TestCase):
         self.assertEqual(len(re.findall(r"AppendAllText", text)), 1)
         self.assertEqual(len(re.findall(r"Write-PanelLog ", text)), 1, "one call, in Invoke-Logged")
         call = re.search(r"Write-PanelLog \$ActionName .*", text).group(0)
-        self.assertEqual(call.strip(), "Write-PanelLog $ActionName $LogId $r.Code $r.Reason")
+        self.assertEqual(call.strip(), "Write-PanelLog $ActionName $LogId $logCode $logReason")
         logged = function_text("Invoke-Logged")
         self.assertLess(logged.index("Restore-Screen"), logged.index("Write-PanelLog"))
         self.assertIn("Get-PanelExit $_", logged)
@@ -1087,6 +1087,12 @@ class LogPrivacyTests(unittest.TestCase):
             line = m.group(0)
             for private in [r"\$title", r"\$Title", r"\$label", r"\$Label", r"\$chat\.Name", r"\.Current\.Name", r"\$Text\b", r"\$text\b"]:
                 self.assertNotRegex(line, private, line)
+
+    def test_a_failed_selftest_is_logged_with_its_own_exit_code(self):
+        logged = function_text("Invoke-Logged")
+        self.assertIn("$ActionName -eq 'selftest'", logged)
+        self.assertIn("$logCode = [int]$r.Value", logged)
+        self.assertIn("Write-PanelLog $ActionName $LogId $logCode $logReason", logged)
 
 
 class WaiterPairingTests(unittest.TestCase):

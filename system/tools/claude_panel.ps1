@@ -1335,7 +1335,14 @@ function Invoke-Logged([string]$ActionName, [string]$LogId, [bool]$Locked, [scri
         $script:Restoring = $false
         Exit-Lock
     }
-    Write-PanelLog $ActionName $LogId $r.Code $r.Reason
+    # The selftest returns its own exit code as its value; the log line carries that code.
+    $logCode = $r.Code
+    $logReason = $r.Reason
+    if ($logCode -eq 0 -and $ActionName -eq 'selftest' -and $null -ne $r.Value -and [int]$r.Value -ne 0) {
+        $logCode = [int]$r.Value
+        $logReason = 'a selftest step failed'
+    }
+    Write-PanelLog $ActionName $LogId $logCode $logReason
     $r
 }
 

@@ -226,10 +226,21 @@ class StubClaude:
 
 
 class StubSteps:
-    def __init__(self, root, codes=None):
+    """The morning steps' stand-in. The index refresh, which every run ends with, is kept apart: its calls are
+    `index_calls`, so what each test says about `calls` and `names` is about the other steps. `order` has every
+    call, the index's included. `codes` and `foots` set a step's exit code and last line; `raises` makes it crash."""
+
+    def __init__(self, root, codes=None, foots=None, raises=None):
         self.root, self.codes, self.calls = root, codes or {}, []
+        self.foots, self.raises, self.index_calls, self.order = foots or {}, raises or {}, [], []
 
     def __call__(self, name, args, timeout_s):
+        self.order.append(name)
+        if name == wb.INDEX[0]:
+            self.index_calls.append({"args": args, "timeout": timeout_s})
+            if name in self.raises:
+                raise self.raises[name]
+            return self.codes.get(name, 0), self.foots.get(name, "index updated")
         state = self.root / wb.STATE
         done = json.loads(state.read_text(encoding="utf-8"))["done"] if state.exists() else []
         lead = None
@@ -1300,6 +1311,130 @@ while time.time() < end:
 """
 
 
+class IndexRefreshTests(Base):
+    """`af index update` ends every run. Its failure or timeout is one line in the report and changes nothing else."""
+
+    LINE = "- search index refresh failed"
+
+    def lines_with(self, text, what):
+        return [x for x in text.splitlines() if x.startswith(what)]
+
+    def test_it_runs_once_on_a_normal_run_after_every_other_step_with_a_240_second_limit(self):
+        steps = StubSteps(self.root)
+        code = self.run_main([], now=MORNING, steps=steps, slot="auto")
+        self.assertEqual(code, 0)
+        self.assertEqual(steps.order, ["bills", "loop-watch", "loop-sweep", "harness-review", "push", "index-refresh"])
+        self.assertEqual(steps.index_calls, [{"args": ["index_update.py"], "timeout": 240}])
+        self.assertEqual(wb.INDEX, ("index-refresh", "index_update.py", 240))
+        self.assertNotIn("search index", self.report(), "a good refresh adds nothing to the report")
+        # An afternoon run has no morning steps and still refreshes the index.
+        steps = StubSteps(self.root)
+        self.run_main([mkrow(code_met=False)], now=AFTERNOON, steps=steps, slot="afternoon")
+        self.assertEqual(steps.order, ["index-refresh"])
+        self.assertEqual(steps.calls, [])
+
+    def test_it_comes_after_the_queue_and_the_phone(self):
+        row = mkrow(do="notify", code_met=True, say="Return the library books")
+        self.run_main([row], now=AFTERNOON, steps=StubSteps(self.root), slot="afternoon")
+        af_calls = [e[1] for e in self.events if e[0] == "af"]
+        self.assertTrue(any(x.startswith("watch result") for x in af_calls), af_calls)
+        self.assertEqual(len(self.sent()), 1)
+        self.assertEqual(self.lines_with(self.report(), self.LINE), [])
+
+    def test_a_failing_or_slow_or_crashing_refresh_leaves_the_result_and_report_as_they_would_be_plus_one_line(self):
+        cases = {
+            "failed": ({"index-refresh": 2}, {"index-refresh": "ollama is not running"}, None, "(exit 2): ollama is not running"),
+            "timed out": ({"index-refresh": 124}, {"index-refresh": "timed out after 4 minutes"}, None, "(exit 124): timed out after 4 minutes"),
+            "crashed": ({}, {}, {"index-refresh": OSError("no process")}, "(exit 1): it crashed (OSError)"),
+        }
+        rows = [mkrow(do="notify", code_met=True, say="Return the library books")]
+        base_code = self.run_main(rows, now=AFTERNOON, steps=StubSteps(self.root), slot="afternoon")
+        base_report, base_sent, base_log = self.report(), self.sent(), self.log()
+        for name, (codes, foots, raises, tail) in cases.items():
+            with self.subTest(case=name):
+                self.events.clear()
+                for p in (self.root / wb.REPORTS).glob("*.md"):
+                    p.unlink()
+                (self.root / wb.LOG).unlink(missing_ok=True)
+                steps = StubSteps(self.root, codes, foots, raises)
+                code = self.run_main(rows, now=AFTERNOON, steps=steps, slot="afternoon")
+                self.assertEqual(code, base_code, "the exit code is the run's own")
+                self.assertEqual(self.sent(), base_sent)
+                report = self.report()
+                added = self.lines_with(report, self.LINE)
+                self.assertEqual(len(added), 1, report)
+                self.assertTrue(added[0].endswith(tail), added)
+                self.assertEqual(report.replace(added[0] + "\n\n", "", 1), base_report, "nothing else in the report changed")
+                self.assertEqual(self.log().split(" · ", 1)[1:], base_log.split(" · ", 1)[1:])
+                self.assertNotIn("## Problems", report)
+
+    def test_a_failing_refresh_does_not_turn_a_good_run_into_a_failed_one_nor_hide_a_failed_one(self):
+        steps = StubSteps(self.root, {"index-refresh": 1})
+        self.assertEqual(self.run_main([], now=MORNING, steps=steps, slot="auto"), 0)
+        self.assertEqual(steps.order[-1], "index-refresh")
+        (self.root / wb.STATE).unlink()
+        steps = StubSteps(self.root, {"index-refresh": 1, "bills": 1})
+        self.assertEqual(self.run_main([], now=MORNING, steps=steps, slot="auto"), 1, "the failed step still fails the run")
+        report = self.report()
+        self.assertIn("morning step bills exited 1", report)
+        self.assertEqual(len(self.lines_with(report, self.LINE)), 1)
+        self.assertEqual(steps.names, ["bills", "loop-watch", "loop-sweep", "harness-review", "push"], "the other steps all ran")
+
+    def test_a_run_that_stops_early_still_refreshes_the_index(self):
+        fake = FakeAf(self.root, AFTERNOON, [], self.events)
+        real = fake.__call__
+        steps = StubSteps(self.root)
+        code = wb.main(["--slot", "afternoon"], now=AFTERNOON, run_claude=StubClaude(),
+                       run_af=lambda a: (1, "", "boom") if a[:2] == ["watch", "list"] else real(a), run_step=steps, send=self.send)
+        self.assertEqual(code, 1)
+        self.assertEqual(steps.order, ["index-refresh"])
+
+    def test_a_dry_run_starts_nothing(self):
+        steps = StubSteps(self.root)
+        self.run_main([], "--dry-run", now=MORNING, steps=steps, slot="morning")
+        self.assertEqual((steps.order, steps.index_calls), ([], []))
+
+    def test_a_run_that_skips_because_another_holds_the_lock_refreshes_nothing(self):
+        (self.root / wb.LOCK).parent.mkdir(parents=True, exist_ok=True)
+        (self.root / wb.LOCK).write_text(f"pid 1 started {AFTERNOON:%Y-%m-%dT%H:%M}\n", encoding="utf-8")
+        steps = StubSteps(self.root)
+        self.assertEqual(self.run_main([], now=AFTERNOON, steps=steps, slot="afternoon"), 0)
+        self.assertEqual(steps.order, [])
+
+
+class IndexUpdateScriptTests(unittest.TestCase):
+    """`system/tools/index_update.py`, the script the step runs: af's last line, af's exit code."""
+
+    def setUp(self):
+        import index_update
+        self.mod = index_update
+
+    def run_script(self, result=None, error=None):
+        out = io.StringIO()
+        fake = mock.Mock(return_value=result, side_effect=error)
+        with mock.patch.object(self.mod.subprocess, "run", fake), contextlib.redirect_stdout(out):
+            code = self.mod.main()
+        return code, out.getvalue(), fake
+
+    def test_it_runs_af_index_update_in_the_root_and_passes_the_last_line_and_the_exit_code_on(self):
+        import subprocess
+        done = subprocess.CompletedProcess([], 0, stdout="indexed 3 pages\nindex up to date\n", stderr="")
+        with mock.patch.dict(os.environ, {"AF_ROOT": "C:/somewhere"}):
+            code, out, fake = self.run_script(done)
+        self.assertEqual((code, out), (0, "index up to date\n"))
+        args, kwargs = fake.call_args
+        self.assertEqual(args[0], ["af", "index", "update"])
+        self.assertEqual(kwargs["env"]["AF_ROOT"], str(Path("C:/somewhere")))
+        self.assertEqual(Path(kwargs["cwd"]), Path("C:/somewhere"))
+        failed = subprocess.CompletedProcess([], 4, stdout="", stderr="trouble\n")
+        self.assertEqual(self.run_script(failed)[:2], (4, "trouble\n"))
+
+    def test_af_missing_is_exit_127_with_the_reason(self):
+        code, out, _ = self.run_script(error=FileNotFoundError("af"))
+        self.assertEqual(code, 127)
+        self.assertIn("af could not be started", out)
+
+
 class StepTests(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.TemporaryDirectory()
@@ -1372,8 +1507,9 @@ class WrapperTests(unittest.TestCase):
 
     def test_the_task_time_limit_and_the_stale_lock_cover_every_step_plus_the_queue(self):
         hours = int(re.search(r"-ExecutionTimeLimit \(New-TimeSpan -Hours (\d+)\)", self.text("register-watch-batch.ps1")).group(1))
-        worst = sum(minutes for _, _, minutes in wb.MORNING) + wb.PUSH[2] + 30   # every step at its limit, 30 for the queue
-        self.assertEqual(worst, 130 + 105 + 30 + 2 + 10 + 30)
+        # every step at its limit, 30 for the queue, and the index refresh that ends every run
+        worst = sum(minutes for _, _, minutes in wb.MORNING) + wb.PUSH[2] + 30 + wb.INDEX[2] // 60
+        self.assertEqual(worst, 130 + 105 + 30 + 2 + 10 + 30 + 4)
         self.assertGreater(hours * 60, worst, "the scheduler must not stop a run whose steps are all within their limits")
         self.assertGreater(wb.LOCK_STALE, dt.timedelta(minutes=worst), "a live run's lock must never look stale")
         self.assertGreaterEqual(wb.LOCK_STALE, dt.timedelta(hours=hours), "nor before the scheduler would have stopped it")
@@ -1388,7 +1524,7 @@ class WrapperTests(unittest.TestCase):
     def test_the_steps_keep_their_own_wrappers_for_running_by_hand(self):
         for name in ("bills-watch.ps1", "loop-watch.ps1", "loop-sweep.ps1", "push-due-loops.ps1"):
             self.assertTrue((self.TOOLS / name).is_file(), name)
-        for script in [s for _, s, _ in wb.MORNING] + [wb.PUSH[1]]:
+        for script in [s for _, s, _ in wb.MORNING] + [wb.PUSH[1], wb.INDEX[1]]:
             self.assertTrue((self.TOOLS / script).is_file(), script)
 
     def test_the_tracked_files_hold_no_address_beyond_generic_services(self):

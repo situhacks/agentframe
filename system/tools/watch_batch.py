@@ -8,6 +8,8 @@ morning jobs, once, in this order: the bills watch, the loop watch, the loop swe
 (it decides itself whether its 14 days are up), then the loop
 push, which carries the queue's phone lines as its lead block, so the morning is one message. A run
 that started before 09:55 and ends after it does the morning jobs then, after the queue.
+Last on every run, after all of that, `af index update` refreshes the search index (240 seconds at most, no model
+call); if it fails or runs out of time that is one line in the report and changes nothing else.
 Shapes: library/schema/watch.md (the queue), loop-watch.md, loop-sweep.md, bills.md.
 
 Code conditions come from `af` (`code_met`). An email condition goes to a cheap model with the
@@ -86,6 +88,9 @@ LOCK_HELD = "is held by another af process"
 MORNING = (("bills", "bills_watch.py", 130), ("loop-watch", "loop_watch.py", 105), ("loop-sweep", "loop_sweep.py", 30),
            ("harness-review", "harness_review.py", 2))
 PUSH = ("push", "push_due_loops.py", 10)
+# After every other step, on every run: `af index update`. Seconds, not minutes. It makes no model call and
+# can only add one line to the report: it never changes the run's exit code or any other step.
+INDEX = ("index-refresh", "index_update.py", 240)
 LOOP_WATCH_DEADLINE_MIN = 90
 EXIT_PARTIAL = lw.EXIT_PARTIAL   # a morning step's "some items failed, the rest were done": a step note, not a failure
 # Only a step with its own report can be partial; exit 3 from any other step is a failure.
@@ -722,6 +727,19 @@ def run_morning(rn: Run, done: list[str]) -> None:
             rn.fail(f"morning step {name} exited {code}")
 
 
+def refresh_index(rn: Run) -> None:
+    """The search index, refreshed after everything else. Its failure or timeout is one line in the report
+    and nothing more: not a failure of the run, not a step that stops another. A dry run starts nothing."""
+    if rn.dry:
+        return
+    try:
+        code, footer = rn.run_step(INDEX[0], [INDEX[1]], INDEX[2])
+    except Exception as e:  # noqa: BLE001 - the index is a convenience, never a reason for a run to stop
+        code, footer = 1, f"it crashed ({type(e).__name__})"
+    if code != 0:
+        rn.notes.append(f"search index refresh failed (exit {code}): {plain(footer, 160)}")
+
+
 def email_start(row: Row) -> dt.date:
     """The first day an email can speak to this item: the later of the day it was added and `after`."""
     day = dt.date.fromisoformat(row["added"])
@@ -1138,6 +1156,7 @@ def main(argv: list[str] | None = None, *, now: dt.datetime | None = None, run_c
         except Exception as e:  # noqa: BLE001 - a scheduled run must never fail silently
             traceback.print_exc()
             rn.fail(f"the run stopped early ({type(e).__name__}: {e})")
+        refresh_index(rn)
         if a.dry_run:
             rn.notes.append("raw email cleanup skipped: dry run, no model was called")
         else:

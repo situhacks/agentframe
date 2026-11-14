@@ -89,7 +89,8 @@ MORNING = (("bills", "bills_watch.py", 130), ("loop-watch", "loop_watch.py", 105
            ("harness-review", "harness_review.py", 2))
 PUSH = ("push", "push_due_loops.py", 10)
 # After every other step, on every run: `af index update`. Seconds, not minutes. It makes no model call and
-# can only add one line to the report: it never changes the run's exit code or any other step.
+# can only add lines to the report (its step line, and a note when it fails): it never changes the run's exit
+# code or any other step.
 INDEX = ("index-refresh", "index_update.py", 240)
 LOOP_WATCH_DEADLINE_MIN = 90
 EXIT_PARTIAL = lw.EXIT_PARTIAL   # a morning step's "some items failed, the rest were done": a step note, not a failure
@@ -728,14 +729,16 @@ def run_morning(rn: Run, done: list[str]) -> None:
 
 
 def refresh_index(rn: Run) -> None:
-    """The search index, refreshed after everything else. Its failure or timeout is one line in the report
-    and nothing more: not a failure of the run, not a step that stops another. A dry run starts nothing."""
+    """The search index, refreshed after everything else. Every run lists it under Steps with its result; its
+    failure or timeout is also one note and nothing more: not a failure of the run, not a step that stops
+    another. A dry run starts nothing and lists nothing."""
     if rn.dry:
         return
     try:
         code, footer = rn.run_step(INDEX[0], [INDEX[1]], INDEX[2])
     except Exception as e:  # noqa: BLE001 - the index is a convenience, never a reason for a run to stop
         code, footer = 1, f"it crashed ({type(e).__name__})"
+    rn.steps.append((INDEX[0], code, plain(footer, 160)))
     if code != 0:
         rn.notes.append(f"search index refresh failed (exit {code}): {plain(footer, 160)}")
 
@@ -1020,7 +1023,8 @@ def render_report(rn: Run) -> str:
     out = [HEADER, f"Slot: {rn.slot}. Phone: {rn.phone or 'nothing to send'}.\n"]
     if rn.steps:
         out.append("## Steps\n\n" + "\n".join(
-            f"- {name}: " + ("not run" if code is None else f"partial (exit {code})" if code == EXIT_PARTIAL and name in STEP_REPORT
+            f"- {name}: " + ("not run" if code is None else "ok" if code == 0 and name == INDEX[0]
+                            else f"partial (exit {code})" if code == EXIT_PARTIAL and name in STEP_REPORT
                             else f"exit {code}") + (f" · {lw._code(foot)}" if foot else "")
             for name, code, foot in rn.steps) + "\n")
     if rn.sweep:

@@ -181,7 +181,16 @@ public static class PanelNative {
     public static bool IsTopmost(IntPtr h) { return (GetWindowLongW(h, -20) & 0x8) != 0; }
     // The window directly above another one in the z-order (0 when it is at the very top): GW_HWNDPREV.
     [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr h, uint cmd);
-    public static IntPtr Above(IntPtr h) { return GetWindow(h, 3); }
+    [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+    [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr h, int attr, out int value, int size);
+    public static IntPtr Prev(IntPtr h) { return GetWindow(h, 3); }   // GW_HWNDPREV: the window directly above
+    public static IntPtr Owner(IntPtr h) { return GetWindow(h, 4); }  // GW_OWNER
+    public static bool IsVisible(IntPtr h) { return IsWindowVisible(h); }
+    public static uint ProcessOf(IntPtr h) { uint p = 0; GetWindowThreadProcessId(h, out p); return p; }
+    // DWMWA_CLOAKED = 14: non-zero when the shell hides the window (another virtual desktop, a suspended app).
+    // A failed call counts as not cloaked.
+    public static bool IsCloaked(IntPtr h) { int v = 0; if (DwmGetWindowAttribute(h, 14, out v, 4) != 0) return false; return v != 0; }
     // A window's placement, saved before the no-focus restore and put back when it is minimized again, with the
     // flag that says it restores to maximized. (Measured: SW_SHOWNOACTIVATE restores a window that was minimized
     // from maximized to maximized, and SW_SHOWMINNOACTIVE or a placement with showCmd 7 keeps that flag; a
@@ -902,7 +911,7 @@ function Restore-Screen {
             }
         }
     } catch {
-        Add-Note ('restore error: ' + $_.Exception.Message)
+        Add-Note ('could not put his previous chat back: ' + $_.Exception.Message)
     } finally {
         if ($script:WasMinimized) {
             try {
@@ -913,7 +922,7 @@ function Restore-Screen {
                     if ($null -ne $script:SavedPlacement) { [void][PanelNative]::MinimizeWithPlacement($script:Hwnd, $script:SavedPlacement) }
                     else { [void][PanelNative]::MinimizeNoActivate($script:Hwnd) }
                 } else { Add-Note 'VS Code was left open: it is visible on his screen and he is at the computer' }
-            } catch { Add-Note 'could not minimize the window again' }
+            } catch { Add-Note ('could not minimize the window again: ' + $_.Exception.Message) }
             $script:WasMinimized = $false
             $script:SavedPlacement = $null
         }
@@ -1801,24 +1810,67 @@ function Restore-Pointer($Old, $Placed) {
     else { Add-Note 'the pointer was moved by him after the driver put it on the row, so the driver left it where he put it' }
 }
 
-# Undoes the raise and puts VS Code exactly where it was in the z-order. Before the raise the window directly above
-# VS Code was recorded (Above, and whether it is always-on-top, AboveTop). Not topmost first. Then: when that window
-# still exists and is not always-on-top, directly behind it (where VS Code was). When it was always-on-top, or there
-# was none, VS Code was the top normal window and the first step has just put it there. When it is gone: directly
-# behind his foreground window if that is not VS Code and not always-on-top, else at the back, with a note. Never
-# behind an always-on-top window. At the end the always-on-top bit is read and cleared once more if it is set.
+# True when the owner chain of a window (followed upward, bounded) reaches the owner.
+function Test-OwnedBy($Window, $Owner) {
+    $o = [PanelNative]::Owner($Window)
+    for ($i = 0; $i -lt 20 -and $o -ne [IntPtr]::Zero; $i++) {
+        if ($o -eq $Owner) { return $true }
+        $o = [PanelNative]::Owner($o)
+    }
+    $false
+}
+
+# The first REAL window above VS Code in the z-order: walk upward with GW_HWNDPREV (at most 400 steps) and skip a window
+# that is not visible, that is cloaked, that belongs to VS Code's own process, or whose owner chain reaches the VS Code
+# window. (Windows keeps a window's owned windows directly above it, so a bare 'window above' is usually VS Code's own
+# hidden window, which rises and drops with it.) Known is false when the walk ran out of steps; Hwnd is zero when
+# nothing real is above (VS Code is the top real window); Top says whether that window is always-on-top.
+function Find-RealWindowAbove {
+    $mine = [PanelNative]::ProcessOf($script:Hwnd)
+    $w = $script:Hwnd
+    for ($i = 0; $i -lt 400; $i++) {
+        $w = [PanelNative]::Prev($w)
+        if ($w -eq [IntPtr]::Zero) { return [pscustomobject]@{ Hwnd = [IntPtr]::Zero; Top = $false; Known = $true } }
+        if (-not [PanelNative]::IsVisible($w)) { continue }
+        if ([PanelNative]::IsCloaked($w)) { continue }
+        if ($mine -ne 0 -and [PanelNative]::ProcessOf($w) -eq $mine) { continue }
+        if (Test-OwnedBy $w $script:Hwnd) { continue }
+        return [pscustomobject]@{ Hwnd = $w; Top = [PanelNative]::IsTopmost($w); Known = $true }
+    }
+    [pscustomobject]@{ Hwnd = [IntPtr]::Zero; Top = $false; Known = $false }
+}
+
+# Undoes the raise and puts VS Code exactly where it was in the z-order. Before the raise the first real window above VS
+# Code was recorded (Above, and whether it is always-on-top, AboveTop). Not topmost first. Then: when that window still
+# exists and is not always-on-top, directly behind it (where VS Code was). When it was always-on-top, or there was none,
+# VS Code was the top real window and the first step has just put it there. When it is gone, or was not found: directly
+# behind his foreground window if that is not VS Code and not always-on-top, else at the back, with a note. Never behind an
+# always-on-top window. Then the model is checked against the screen: when the window that covered the row still exists and
+# is visible, the row's centre must no longer belong to VS Code; if it does, VS Code is placed once more (behind that
+# window, else behind his foreground window, else at the back) and, if it is still in front, a note says so. At the end
+# the always-on-top bit is read and cleared once more if it is set.
 function Undo-Raise($Front) {
     if (-not $Front.Raised) { return }
     [void][PanelNative]::ClearTopmost($script:Hwnd)
-    if ($Front.Above -eq [IntPtr]::Zero -or $Front.AboveTop) {
-        # Already the top normal window.
-    } elseif ([PanelNative]::IsWindow($Front.Above)) {
-        [void](Set-VsCodeBehind $Front.Above)
-    } elseif (-not (Set-VsCodeBehind ([PanelNative]::Foreground()))) {
+    $lost = $false
+    if (-not $Front.AboveKnown) { $lost = $true }
+    elseif ($Front.Above -eq [IntPtr]::Zero -or $Front.AboveTop) { }
+    elseif ([PanelNative]::IsWindow($Front.Above)) { [void](Set-VsCodeBehind $Front.Above) }
+    else { $lost = $true }
+    if ($lost -and -not (Set-VsCodeBehind ([PanelNative]::Foreground()))) {
         [void][PanelNative]::PlaceBottom($script:Hwnd)
-        Add-Note 'the window that was above VS Code is gone, so VS Code was put at the back'
+        Add-Note 'the window that was above VS Code is gone or was not found, so VS Code was put at the back'
     }
     Confirm-VsCodeNotTopmost
+    $cover = $Front.Cover
+    $spot = $Front.Spot
+    if ($null -ne $spot -and $cover -ne [IntPtr]::Zero -and $cover -ne $script:Hwnd -and [PanelNative]::IsWindow($cover) -and [PanelNative]::IsVisible($cover)) {
+        if ([PanelNative]::RootAt($spot.X, $spot.Y) -eq $script:Hwnd) {
+            if (-not (Set-VsCodeBehind $cover) -and -not (Set-VsCodeBehind ([PanelNative]::Foreground()))) { [void][PanelNative]::PlaceBottom($script:Hwnd) }
+            Confirm-VsCodeNotTopmost
+            if ([PanelNative]::RootAt($spot.X, $spot.Y) -eq $script:Hwnd) { Add-Note 'VS Code is still in front of the window that covered the row' }
+        }
+    }
     $Front.Raised = $false
 }
 
@@ -1885,7 +1937,7 @@ function Invoke-ArchiveStage([string]$Id) {
     $sp = $null
     if ($row.TryGetCurrentPattern([System.Windows.Automation.ScrollItemPattern]::Pattern, [ref]$sp)) { try { $sp.ScrollIntoView() } catch { } }
     Start-Sleep -Milliseconds 300
-    $front = [pscustomobject]@{ Raised = $false; Cover = [IntPtr]::Zero; Above = [IntPtr]::Zero; AboveTop = $false }
+    $front = [pscustomobject]@{ Raised = $false; Cover = [IntPtr]::Zero; Spot = $null; Above = [IntPtr]::Zero; AboveTop = $false; AboveKnown = $true }
     $old = $null
     $placed = $null
     $spot = $null
@@ -1917,12 +1969,16 @@ function Invoke-ArchiveStage([string]$Id) {
             }
             $fsLogged = $false
             Clear-Waiting
+            # Where VS Code is in the window order, read now, so the raise can be undone to exactly there.
+            $above = Find-RealWindowAbove
+            $front.Above = $above.Hwnd
+            $front.AboveTop = $above.Top
+            $front.AboveKnown = $above.Known
+            $front.Spot = $spot
             # He may have come back since the idle wait: wait for him again rather than raise over his work.
             if ([PanelNative]::IdleMs() -lt ($IdleSeconds * 1000)) { continue }
             # Nothing waits from here to the raise, or after it.
             $front.Cover = $cover
-            $front.Above = [PanelNative]::Above($script:Hwnd)
-            if ($front.Above -ne [IntPtr]::Zero) { $front.AboveTop = [PanelNative]::IsTopmost($front.Above) }
             [void][PanelNative]::RaiseNoActivate($script:Hwnd)
             $front.Raised = $true
             break
@@ -1961,8 +2017,9 @@ function Invoke-ArchiveStage([string]$Id) {
         }
         if (-not $gone) { Stop-Panel 1 "the Archive button was invoked but the chat's row is still in the list after 5 seconds" }
     } finally {
-        Restore-Pointer $old $placed
-        Undo-Raise $front
+        # Each step in its own try, so one that throws cannot skip the next.
+        try { Restore-Pointer $old $placed } catch { Add-Note ('could not put the pointer back: ' + $_.Exception.Message) }
+        try { Undo-Raise $front } catch { Add-Note ('could not undo the raise of VS Code: ' + $_.Exception.Message) }
     }
 }
 

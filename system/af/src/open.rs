@@ -184,7 +184,7 @@ impl OpenDoc {
                     let why = if t.starts_with("- [x]") || t.starts_with("- [X]") {
                         "closed loop left in open.md (af open close moves it to the month log)"
                     } else {
-                        "line does not parse as '- [ ] YYYY-MM-DD · text[ · nudge YYYY-MM-DD[ · every monthly|weekly|Nd] | · need now|on YYYY-MM-DD|when <trigger> · rec: <few words>[ · options: a) ...; b) ...][ · why: ...][ · more: <path>]] · from: <id>'"
+                        "line does not parse as '- [ ] YYYY-MM-DD · text[ · nudge YYYY-MM-DD[ · every monthly|weekly|Nd]] · from: <id>', or as a needs item, '- [ ] YYYY-MM-DD · text · need now|on YYYY-MM-DD|when <trigger> · rec: <few words>[ · options: a) ...; b) ...][ · why: ...][ · more: <path>] · from: <id>' (the old form has ' · detail needs/<slug>.md' in place of the rec)"
                     };
                     bad.push((i + 1, t.to_string(), why.to_string()));
                 }

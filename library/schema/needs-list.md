@@ -28,7 +28,7 @@ Shapes what main needs the operator to decide: marked lines in `workspace/life/o
 | `rec:` | Required. At most 12 words. |
 | `options:` | Optional. Up to 5, written `a) ...; b) ...`, each at most 30 words. `af` adds the letters; the caller passes the texts. |
 | `why:` | Optional. At most 60 words. |
-| `more:` | Optional. A path relative to `workspace/life/` or to the vault root, with an optional `#anchor`. The file must exist and may not be under `workspace/life/needs/`. |
+| `more:` | Optional. A path relative to `workspace/life/` or to the vault root, with an optional `#anchor`. The file must exist and may not be under `workspace/life/needs/`; an absolute path, a drive letter or a `..` is refused, and `.` segments are dropped. |
 
 - A value may not contain ` · `, and an option may not contain `;`. `af` refuses and says to reword.
 - A dated item needs him from its date on: the line stays as written and the view moves it to Now. A trigger never fires by itself: when the event happens, `af needs move <target> --now`.
@@ -39,7 +39,7 @@ Shapes what main needs the operator to decide: marked lines in `workspace/life/o
 
 `workspace/life/needs.md` has `## Now`, `## Do`, and `## Later` sections, each a table with one row per item, or `Nothing.` when empty. Now and Later are the marked lines; More links the `more:` document (and an old detail file), and When holds the date or the trigger. Do is generated from `af open due`: the plain due loops outside `Waiting on others`. Main reviews those and closes the rest itself, so what stays is his to do; Waiting since is the loop's opened date.
 
-Under the Now and Later tables, an item that has options or a reason gets a block, in the table's order; an item with neither gets none.
+Under the Now and Later tables, an item that has options or a reason gets a block, in the table's order; an item with neither gets none. The view escapes what it prints from the line so it cannot change the page (a backslash before `<` and `>`, and before a leading `#`, `-`, `+`, `*`, `=` or `1.`); the line in `open.md` is never escaped.
 
 ```
 ## Now (1)
@@ -75,12 +75,12 @@ Every `af` read or write of the loops rewrites it, `af open due` and `af brief` 
 
 ## Doctor
 
-`af doctor` reports a field over its cap, a `more:` document that no longer exists, a file in `needs/` (not `closed/`) that no open item names, and a view it could not rewrite. For an old-style item it also reports a missing detail file, a file with no recommendation when the line has no `rec:`, and two items sharing a file. One note counts the open items that still keep an old detail file and gives the command that folds one in; the count is the measure for the migration.
+`af doctor` reports a field over its cap, a `more:` document that no longer exists, a file in `needs/` (not `closed/`) that no open item names (move it to `needs/closed/` or delete it), and a view it could not rewrite. For an old-style item it also reports a missing detail file, a file with no recommendation when the line has no `rec:`, and two items sharing a file. One note counts the open items that still keep an old detail file and gives the command that folds one in; the count is the measure for the migration.
 
 | Verb | Effect |
 |---|---|
 | `af needs add "<question>" --rec "<few words>" [--option "<text>"]... [--why "<text>"] [--more <path[#anchor]>] [--on <date or +Nd> \| --when "<trigger>"] [--from <id>]` | Appends a marked line under `## Decisions needed` and makes no file; refuses a missing `--rec`, a value over its cap (saying the cap and the count), a forbidden ` · ` or `;`, or a `--more` that does not exist or sits under `needs/`. The old `--detail needs/<slug>.md` form is still accepted, with a note that it is the old form |
-| `af needs set <n, slug, or text prefix> [--rec ...] [--option ...]... [--why ...] [--more ...] [--drop-detail]` | Changes the fields of an open item in place; fields not named stay as they are; `--option` given at all replaces the whole list, and an empty `--why`, `--more` or lone `--option ""` clears it. `--drop-detail` removes the old `detail` reference and moves that file to `needs/closed/`; it refuses unless the line has (or is given) a `rec:`. The slug form matches old-style lines only |
+| `af needs set <n, slug, or text prefix> [--rec ...] [--option ...]... [--why ...] [--more ...] [--drop-detail]` | Changes the fields of an open item in place; fields not named stay as they are; `--option` given at all replaces the whole list, and an empty `--why`, `--more` or lone `--option ""` clears it. `--drop-detail` removes the old `detail` reference and moves that file to `needs/closed/`; it refuses unless the line has (or is given) a `rec:`, prints where the file went (a `-2` name after a clash), logs a `folded:` line in the month log, and when the file cannot move changes nothing. The slug form matches old-style lines only |
 | `af needs close <n, slug, or text prefix> --outcome "<text>"` | Moves the loop to the month log, and an old detail file, if the item has one, to `needs/closed/`; refuses anything not on the list |
 | `af needs move <n, slug, or text prefix> --now \| --on <date or +Nd> \| --when "<trigger>"` | Changes the state in place; the log records it. `af open redate` refuses a marked loop and points here |
 | `af needs list` | The counts, then each item with the number `af open close` takes |

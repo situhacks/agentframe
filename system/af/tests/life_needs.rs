@@ -296,7 +296,7 @@ fn doctor_flags_a_missing_detail_an_orphan_a_shared_detail_and_no_recommendation
     assert!(i[0].contains("needs item 'Gone?' names workspace/life/needs/gone.md, which does not exist"), "{}", i[0]);
     assert!(i[1].contains("two needs items share"), "{}", i[1]);
     assert!(i[2].contains("bare.md: no 'recommendation:'"), "{}", i[2]);
-    assert!(i[3].contains("needs/orphan.md: no open needs item uses this detail file"), "{}", i[3]);
+    assert!(i[3].contains("needs/orphan.md: no open needs item names this file"), "{}", i[3]);
 }
 
 #[test]
@@ -630,10 +630,9 @@ fn a_null_or_a_bare_block_header_is_no_recommendation() {
 }
 
 #[test]
-fn doctor_never_advises_deleting_an_orphan_detail_file() {
+fn doctor_names_an_orphan_detail_file_and_what_to_do_with_it() {
     let fx = Fx::new();
     detail(&fx, "orphan", "yes");
     let found = issues(&fx).join("\n");
-    assert!(found.contains("needs/closed/"), "{found}");
-    assert!(!found.contains("delete"), "{found}");
+    assert!(found.contains("needs/closed/") && found.contains("no open needs item names this file"), "{found}");
 }

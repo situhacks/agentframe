@@ -164,6 +164,18 @@ class ParseTests(unittest.TestCase):
         self.assertEqual(got[0].due_on(), dt.date(2026, 3, 9))
         self.assertIn("needs list", got[1].owned)
 
+    def test_a_one_character_value_is_not_swallowed_by_the_fields_after_it(self):
+        # Rust and Python read these two lines the same way; the lazy `??` forms keep each value to itself.
+        one = "- [ ] 2026-03-01 · Q? · need now · rec: b · options: a) x; b) y · why: z · from: main"
+        plain, need, detail = ls._split_need(one)
+        self.assertEqual((plain, need, detail), ("- [ ] 2026-03-01 · Q? · from: main", "now", None))
+        trigger = "- [ ] 2026-03-01 · Q? · need when x · rec: ab · from: main"
+        plain, need, detail = ls._split_need(trigger)
+        self.assertEqual((plain, need, detail), ("- [ ] 2026-03-01 · Q? · from: main", "when x", None))
+        self.assertEqual([x.need for x in ls.parse_loops(chr(10).join([one, trigger]))], ["now", "when x"])
+        old = "- [ ] 2026-03-01 · Q? · need when x · detail needs/q.md · from: main"
+        self.assertEqual(ls._split_need(old)[1:], ("when x", "needs/q.md"))
+
     def test_a_line_that_breaks_the_grammar_gets_no_number(self):
         text = OPEN.replace("- [ ] 2026-03-01 · Pay the gym fee", "- [ ] 2026-13-01 · Pay the gym fee")
         self.assertEqual(len(ls.parse_loops(text)), 13)

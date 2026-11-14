@@ -247,11 +247,21 @@ fn check_more(ctx: &Ctx, v: &str) -> R<Option<String>> {
     check_value("--more", &v)?;
     let root = format!("{}/", ctx.root.replace('\\', "/"));
     let p = v.strip_prefix(&root).unwrap_or(&v);
-    let p = p.strip_prefix("./").unwrap_or(p).to_string();
-    let path = p.split_once('#').map(|(a, _)| a).unwrap_or(&p);
-    if path.is_empty() || path.starts_with('/') || path.split('/').any(|s| s == ".." || s.is_empty()) {
+    let (path, anchor) = match p.split_once('#') {
+        Some((a, b)) => (a, Some(b)),
+        None => (p, None),
+    };
+    // Not absolute in any form (a root, a drive, a share), and `.` segments are dropped before
+    // the check below, so `workspace/life/./needs/a.md` is the path it is.
+    let segs: Vec<&str> = path.split('/').filter(|s| *s != ".").collect();
+    if path.starts_with('/') || rx(r"\A[A-Za-z]:").is_match(path) || segs.is_empty() || segs.iter().any(|s| s.is_empty() || *s == "..") {
         die!("--more takes a path inside the vault, relative to workspace/life/ or the vault root, got '{v}'");
     }
+    let path = segs.join("/");
+    let p = match anchor {
+        Some(a) => format!("{path}#{a}"),
+        None => path.clone(),
+    };
     let lower = path.to_lowercase();
     if lower.starts_with("needs/") || lower.starts_with("workspace/life/needs/") {
         die!("--more may not point under workspace/life/needs/ (no file is kept for one decision); link the plan, project file, knowledge page or backlog row that holds the detail, got '{v}'");
@@ -273,6 +283,32 @@ fn more_link(ctx: &Ctx, more: &str) -> Option<String> {
     } else {
         None
     }
+}
+
+/// A `more:` path as a vault-relative one, for a reader that has no base to guess: under
+/// `workspace/life/` when it is there, else as written (already from the vault root).
+fn more_vault_path(ctx: &Ctx, more: &str) -> String {
+    let path = more.split_once('#').map(|(p, _)| p).unwrap_or(more);
+    if pyos::isfile(&vpath(ctx, &format!("{LIFE_REL}/{path}"))) {
+        format!("{LIFE_REL}/{more}")
+    } else {
+        more.to_string()
+    }
+}
+
+/// Text for a block in the view: `<` and `>` escaped wherever they are, so no tag or HTML
+/// comment opens, and with `leading` a marker at the start that would make a heading, a list,
+/// a rule or a quote. The line in open.md is never escaped; only the view is.
+fn esc_block(text: &str, leading: bool) -> String {
+    let mut s = text.replace('<', r"\<").replace('>', r"\>");
+    if leading {
+        if s.starts_with(['#', '-', '+', '*', '=']) {
+            s.insert(0, '\\');
+        } else if let Some(m) = rx(r"\A\d+[.)]").find(&s) {
+            s.insert(m.end() - 1, '\\');
+        }
+    }
+    s
 }
 
 /// The problems a line's fields have, one message each: what doctor reports for a hand edit.
@@ -396,10 +432,11 @@ fn items(ctx: &Ctx, doc: &OpenDoc, today: NaiveDate) -> (Vec<Item>, Vec<Item>) {
     (now, later)
 }
 
-/// Text fit for a table cell: one line, with a pipe that cannot split the row. A backslash is
-/// escaped too, or one ahead of a pipe would cancel that pipe's escape.
+/// Text fit for a table cell: one line, with a pipe that cannot split the row and no `<` or `>`
+/// that opens a tag or an HTML comment. A backslash is escaped too, or one ahead of a pipe
+/// would cancel that pipe's escape.
 pub fn cell(text: &str) -> String {
-    life::one_line(text).replace('\\', r"\\").replace('|', r"\|")
+    life::one_line(text).replace('\\', r"\\").replace('|', r"\|").replace('<', r"\<").replace('>', r"\>")
 }
 
 fn rec_of(i: &Item) -> String {
@@ -444,12 +481,12 @@ fn block(i: &Item) -> Option<String> {
     }
     let rec = rec_of(i);
     let stop = if rec.ends_with(['.', '!', '?']) { "" } else { "." };
-    let mut s = format!("**{}** Recommended: {rec}{stop}\n", life::one_line(&i.l.text));
+    let mut s = format!("**{}** Recommended: {}{stop}\n", esc_block(&life::one_line(&i.l.text), false), esc_block(&rec, false));
     for (n, o) in i.need.options.iter().enumerate() {
-        s.push_str(&format!("- {}) {o}\n", (b'a' + n as u8) as char));
+        s.push_str(&format!("- {}) {}\n", (b'a' + n as u8) as char, esc_block(o, true)));
     }
     if let Some(w) = &i.need.why {
-        s.push_str(&format!("\n{w}\n"));
+        s.push_str(&format!("\n{}\n", esc_block(w, true)));
     }
     Some(s)
 }
@@ -548,9 +585,9 @@ pub fn brief_parts(ctx: &Ctx, doc: Option<&OpenDoc>) -> (Option<String>, Value) 
     let lists = Lists::of(ctx, doc);
     let (now, later) = (&lists.now, &lists.later);
     let js = json!({
-        "now": now.iter().map(|i| json!({"text": i.l.text, "recommendation": i.rec, "detail": i.need.detail_rel(), "more": i.need.more})).collect::<Vec<_>>(),
+        "now": now.iter().map(|i| json!({"text": i.l.text, "recommendation": i.rec, "detail": i.need.detail_rel(), "more": i.need.more.as_ref().map(|m| more_vault_path(ctx, m))})).collect::<Vec<_>>(),
         "do": lists.todo.iter().map(|l| json!({"text": l.text, "due": l.due_on().map(|d| d.format("%Y-%m-%d").to_string())})).collect::<Vec<_>>(),
-        "later": later.iter().map(|i| json!({"text": i.l.text, "when": i.need.when.field(), "recommendation": i.rec, "detail": i.need.detail_rel(), "more": i.need.more})).collect::<Vec<_>>(),
+        "later": later.iter().map(|i| json!({"text": i.l.text, "when": i.need.when.field(), "recommendation": i.rec, "detail": i.need.detail_rel(), "more": i.need.more.as_ref().map(|m| more_vault_path(ctx, m))})).collect::<Vec<_>>(),
     });
     if lists.is_empty() {
         return (None, js);
@@ -590,12 +627,16 @@ pub fn move_detail(ctx: &Ctx, need: &Need, rel: &str) -> R<()> {
     let Some(from_rel) = need.detail_rel() else {
         return Ok(());
     };
-    let (from, to) = (vpath(ctx, &from_rel), vpath(ctx, &format!("{LIFE_REL}/{rel}")));
-    let moved = pyos::makedirs(&pyos::dirname(&to)).is_ok() && std::fs::rename(&from, &to).is_ok();
-    if !moved {
+    if !move_file(ctx, &from_rel, rel) {
         die!("the item is closed and logged, but {from_rel} could not move to {rel}; move it by hand");
     }
     Ok(())
+}
+
+/// Moves a file under the vault to `rel` (under `workspace/life/`); false when it could not.
+fn move_file(ctx: &Ctx, from_rel: &str, rel: &str) -> bool {
+    let (from, to) = (vpath(ctx, from_rel), vpath(ctx, &format!("{LIFE_REL}/{rel}")));
+    pyos::makedirs(&pyos::dirname(&to)).is_ok() && std::fs::rename(&from, &to).is_ok()
 }
 
 // ------------------------------------------------------------------ verbs
@@ -765,6 +806,11 @@ fn cmd_add_unlocked(ctx: &Ctx, a: &NewNeed) -> R<i32> {
     if text.is_empty() {
         die!("a needs item needs its question");
     }
+    for t in [" · need ", " · detail ", " · rec: ", " · options: ", " · why: ", " · more: "] {
+        if text.contains(t) {
+            die!("the question may not contain '{}' (it is a field separator on the line); reword it: {text}", t.trim());
+        }
+    }
     let from = life::one_line(a.from.unwrap_or(open::DEFAULT_FROM));
     if from.is_empty() {
         die!("--from may not be empty");
@@ -856,12 +902,28 @@ fn cmd_set_unlocked(ctx: &Ctx, target: &str, c: &Changes) -> R<i32> {
     }
     let line = format_line(hit.opened, &hit.text, &need, &hit.from);
     verify_line(&line, &hit.text, &need, &hit.from)?;
+    // The file moves first, so a failed move leaves the line naming it; a failed write puts it back.
+    if let (Some(to), Some(from_rel)) = (&archive, old.detail_rel()) {
+        if !move_file(ctx, &from_rel, to) {
+            die!("{from_rel} could not move to {LIFE_REL}/{to}; nothing was changed and the item still names it. Fix what blocks the move and run it again");
+        }
+    }
     doc.lines[hit.line_idx] = line.clone();
-    doc.save(ctx)?;
-    if let Some(to) = &archive {
-        move_detail(ctx, &old, to)?;
+    if let Err(e) = doc.save(ctx) {
+        if let (Some(to), Some(from_rel)) = (&archive, old.detail_rel()) {
+            let _ = std::fs::rename(vpath(ctx, &format!("{LIFE_REL}/{to}")), vpath(ctx, &from_rel));
+        }
+        return Err(e);
     }
     outln!("{line}");
+    if c.drop_detail {
+        let (what, kept) = match &archive {
+            Some(to) => (format!("moved to {LIFE_REL}/{to}"), format!(" (detail: {to})")),
+            None => ("the file was already gone".to_string(), String::new()),
+        };
+        let rel = life::append_log(ctx, "folded", &format!("{} → old detail file folded into the line{kept}", hit.text))?;
+        outln!("af needs set: #{} {} → detail file folded into the line; {what} (logged in {rel})", hit.n, hit.text);
+    }
     Ok(0)
 }
 
@@ -986,7 +1048,7 @@ pub fn doctor_checks(ctx: &Ctx) -> R<(Vec<String>, Vec<String>)> {
         let detail = format!("needs/{name}");
         if !seen.contains(&detail.as_str()) {
             issues.push(format!(
-                "{DETAIL_DIR_REL}/{name}: no open needs item uses this detail file; fold its recommendation into the item with af needs set, or move it to needs/closed/ if its close failed partway"
+                "{DETAIL_DIR_REL}/{name}: no open needs item names this file; move it to needs/closed/ or delete it"
             ));
         }
     }

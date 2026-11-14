@@ -3,9 +3,11 @@
 //! each) are in `life_needs.rs`.
 
 mod common;
+mod life_fx;
 use afcore::needs::{format_line, split_need, Need, When};
 use chrono::NaiveDate;
 use common::*;
+use life_fx::month;
 
 const OPEN: &str = "workspace/life/open.md";
 const VIEW: &str = "workspace/life/needs.md";
@@ -198,8 +200,8 @@ fn a_dot_separator_in_a_value_or_a_semicolon_in_an_option_is_refused_with_a_rewo
     }
     let e = fail(&fx, &["needs", "add", "Q?", "--rec", "r", "--option", "a; b"]);
     assert!(e.contains("may not contain ';'") && e.contains("reword"), "{e}");
-    let e = fail(&fx, &["needs", "add", "Q · rec: x?", "--rec", "r", "--why", "a · from: b"]);
-    assert!(e.contains("may not contain ' · '"), "{e}");
+    let e = fail(&fx, &["needs", "add", "Q?", "--rec", "r", "--why", "a · from: b"]);
+    assert!(e.contains("--why may not contain ' · '"), "{e}");
     assert!(!fx.path(OPEN).exists());
 }
 
@@ -500,5 +502,158 @@ fn doctor_still_reports_an_orphan_file_and_an_old_item_with_no_recommendation() 
     let i = issues(&fx);
     assert_eq!(i.len(), 2, "{i:?}");
     assert!(i[0].contains("bare.md: no 'recommendation:'"), "{}", i[0]);
-    assert!(i[1].contains("needs/orphan.md: no open needs item uses this detail file"), "{}", i[1]);
+    assert!(i[1].contains("needs/orphan.md: no open needs item names this file"), "{}", i[1]);
+}
+
+// ------------------------------------------------------------------ the review's fixes
+
+#[test]
+fn block_text_is_escaped_in_the_view_and_never_in_open_md() {
+    let fx = Fx::new();
+    fx.ok(&[
+        "needs", "add", "Q <!-- x?", "--rec", "r > s", "--option=- not a list <b>", "--option", "1. first", "--option", "2) second", "--option", "> quote",
+        "--option", "a | b", "--why", "# heading <!-- hide",
+    ]);
+    let view = lf(fx.read(VIEW));
+    let want = "**Q \\<!-- x?** Recommended: r \\> s.\n\
+- a) \\- not a list \\<b\\>\n\
+- b) 1\\. first\n\
+- c) 2\\) second\n\
+- d) \\> quote\n\
+- e) a | b\n\
+\n\
+\\# heading \\<!-- hide\n\
+\n## Do (0)\n\nNothing.\n\n## Later (0)\n";
+    assert!(view.contains(want), "{view}");
+    assert!(view.contains(r"| Q \<!-- x? | r \> s |  |"), "the cell escapes too: {view}");
+    // Only af's own header comment is left open-able; every other `<!--` has its backslash.
+    assert_eq!(view.matches("<!--").count() - view.matches(r"\<!--").count(), 1, "no comment can open: {view}");
+    let open = fx.read(OPEN);
+    assert!(open.contains("· options: a) - not a list <b>; b) 1. first;") && open.contains("· why: # heading <!-- hide ·"), "the line is as written: {open}");
+}
+
+#[test]
+fn a_leading_marker_is_escaped_only_at_the_start_and_a_pipe_does_not_break_a_block() {
+    let fx = Fx::new();
+    fx.ok(&["needs", "add", "Q?", "--rec", "r", "--option", "go - now", "--option", "#1 plan", "--option", "10 plans", "--why", "a | b # c"]);
+    let view = lf(fx.read(VIEW));
+    assert!(view.contains("- a) go - now\n- b) \\#1 plan\n- c) 10 plans\n\na | b # c\n"), "{view}");
+    assert!(view.contains("## Do (0)") && view.contains("## Later (0)"));
+}
+
+#[test]
+fn drop_detail_says_where_the_file_went_and_logs_it_even_after_a_name_clash() {
+    let fx = Fx::new();
+    old_detail(&fx, "q", "file rec");
+    fx.write("workspace/life/needs/closed/q.md", "# an earlier one\n");
+    fx.ok(&["needs", "add", "Old one?", "--detail", "needs/q.md"]);
+    let out = lf(fx.ok(&["needs", "set", "Old one", "--rec", "line rec", "--drop-detail"]));
+    assert!(out.contains("moved to workspace/life/needs/closed/q-2.md"), "{out}");
+    assert!(out.contains("(logged in workspace/life/log/"), "{out}");
+    assert!(fx.read("workspace/life/needs/closed/q-2.md").contains("Full notes."));
+    assert!(fx.read("workspace/life/needs/closed/q.md").contains("an earlier one"));
+    let log = fx.read(&log_rel());
+    assert!(log.contains("folded: Old one? → old detail file folded into the line (detail: needs/closed/q-2.md)"), "{log}");
+}
+
+fn log_rel() -> String {
+    format!("workspace/life/log/{}.md", month())
+}
+
+#[test]
+fn a_failed_move_in_drop_detail_changes_nothing_and_the_message_is_true_for_set() {
+    let fx = Fx::new();
+    old_detail(&fx, "q", "file rec");
+    fx.ok(&["needs", "add", "Old one?", "--detail", "needs/q.md"]);
+    fx.write("workspace/life/needs/closed", "a file where the folder belongs\n");
+    let before = lf(fx.read(OPEN));
+    let e = fail(&fx, &["needs", "set", "Old one", "--rec", "line rec", "--drop-detail"]);
+    assert!(e.contains("could not move") && e.contains("nothing was changed") && e.contains("still names it"), "{e}");
+    assert!(!e.contains("closed and logged"), "{e}");
+    assert_eq!(lf(fx.read(OPEN)), before, "the line keeps its detail reference, and its rec");
+    assert!(fx.path("workspace/life/needs/q.md").exists());
+    assert!(!fx.path(&log_rel()).exists(), "nothing is logged for a change that did not happen");
+}
+
+#[test]
+fn doctor_says_what_to_do_with_a_file_no_open_item_names() {
+    let fx = Fx::new();
+    old_detail(&fx, "orphan", "yes");
+    let i = issues(&fx);
+    assert_eq!(i.len(), 1, "{i:?}");
+    assert!(i[0].contains("no open needs item names this file; move it to needs/closed/ or delete it"), "{}", i[0]);
+    assert!(!i[0].contains("af needs set"), "there is no item to fold it into: {}", i[0]);
+}
+
+#[test]
+fn more_refuses_an_absolute_path_and_reads_dot_segments_before_the_needs_check() {
+    let fx = Fx::new();
+    fx.write("workspace/life/needs/a.md", "# a\n");
+    fx.write("workspace/life/knowledge/phone.md", "# Phone\n");
+    for p in ["D:/x.md", "D:\\x.md", "c:x.md", "//server/share/x.md", "\\\\server\\share\\x.md", "/x.md"] {
+        let e = fail(&fx, &["needs", "add", "Q?", "--rec", "r", "--more", p]);
+        assert!(e.contains("a path inside the vault"), "{p}: {e}");
+    }
+    for p in ["workspace/life/./needs/a.md", "./needs/./a.md", "workspace/./life/needs/./closed/a.md"] {
+        let e = fail(&fx, &["needs", "add", "Q?", "--rec", "r", "--more", p]);
+        assert!(e.contains("may not point under workspace/life/needs/"), "{p}: {e}");
+    }
+    assert!(!fx.path(OPEN).exists());
+    fx.ok(&["needs", "add", "Q?", "--rec", "r", "--more", "./knowledge/./phone.md#a"]);
+    assert!(fx.read(OPEN).contains("· more: knowledge/phone.md#a · from: main"), "{}", fx.read(OPEN));
+}
+
+#[test]
+fn a_one_character_value_is_not_swallowed_by_the_fields_after_it() {
+    // A one-character rec, then other fields: the lazy forms keep each value to itself.
+    let line = "- [ ] 2026-11-05 · Q? · need now · rec: b · options: a) x; b) y · why: z · from: main";
+    let need = split_need(line).1.expect("a need");
+    assert_eq!(need.rec.as_deref(), Some("b"));
+    assert_eq!(need.options, vec!["x".to_string(), "y".to_string()]);
+    assert_eq!(need.why.as_deref(), Some("z"));
+    // A one-character trigger.
+    let line = "- [ ] 2026-11-05 · Q? · need when x · rec: ab · from: main";
+    let (plain, need) = split_need(line);
+    let need = need.expect("a need");
+    assert_eq!((need.when, need.rec.as_deref()), (When::Trigger("x".to_string()), Some("ab")));
+    assert_eq!(plain, "- [ ] 2026-11-05 · Q? · from: main");
+    let line = "- [ ] 2026-11-05 · Q? · need when x · detail needs/q.md · from: main";
+    assert_eq!(split_need(line).1.unwrap().when, When::Trigger("x".to_string()));
+}
+
+#[test]
+fn a_question_with_a_field_separator_is_refused_for_its_question() {
+    let fx = Fx::new();
+    for t in ["Q · rec: x?", "Q · options: x?", "Q · why: x?", "Q · more: x?", "Q · detail x?", "Q · need x?"] {
+        let e = fail(&fx, &["needs", "add", t, "--rec", "r"]);
+        assert!(e.contains("the question may not contain"), "{t}: {e}");
+    }
+    assert!(!fx.path(OPEN).exists());
+}
+
+#[test]
+fn brief_json_gives_more_as_a_vault_relative_path() {
+    let fx = Fx::new();
+    fx.write("workspace/life/knowledge/phone.md", "# Phone\n");
+    fx.write("workspace/projects/p/project.md", "# P\n");
+    fx.ok(&["needs", "add", "Life?", "--rec", "r", "--more", "knowledge/phone.md#plans"]);
+    fx.ok(&["needs", "add", "Root?", "--rec", "r", "--more", "workspace/projects/p/project.md"]);
+    fx.ok(&["needs", "add", "None?", "--rec", "r"]);
+    let v: serde_json::Value = serde_json::from_str(&fx.ok(&["brief", "--json"])).unwrap();
+    let now = v["needs"]["now"].as_array().unwrap();
+    assert_eq!(now[0]["more"], "workspace/life/knowledge/phone.md#plans");
+    assert_eq!(now[1]["more"], "workspace/projects/p/project.md");
+    assert!(now[2]["more"].is_null());
+    // The line itself keeps what was given.
+    assert!(fx.read(OPEN).contains("· more: knowledge/phone.md#plans ·"));
+}
+
+#[test]
+fn the_hint_for_a_need_line_that_does_not_parse_names_both_forms_new_first() {
+    let fx = Fx::new();
+    fx.write(OPEN, "- [ ] 2026-11-05 · Bad order · need now · why: y · rec: r · from: main\n");
+    let doc = afcore::open::OpenDoc::load(&fx.ctx()).unwrap().unwrap();
+    let why = &doc.bad[0].2;
+    let (new, old) = (why.find("· rec:").expect(why), why.find("· detail needs/<slug>.md").expect(why));
+    assert!(new < old && why.contains("old form"), "{why}");
 }

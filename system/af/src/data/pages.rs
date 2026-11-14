@@ -1,0 +1,213 @@
+//! Pages filled from queries. A block in a markdown page under `workspace/life/`:
+//!
+//! ```text
+//! <!-- af-data: select date, weight from sets order by date desc limit 10 -->
+//! (generated table)
+//! <!-- /af-data -->
+//! ```
+//!
+//! Rendering replaces what is between the two markers with the query's result and touches no other
+//! byte of the page: the page is read and written as bytes-in-a-string, so its line endings stay.
+
+use super::ledger::{Registry, LIFE_REL};
+use super::query::{self, QueryErr};
+use crate::core::Ctx;
+use crate::life::{locked, vpath, TextFile};
+use regex::Regex;
+use rusqlite::Connection;
+
+/// One block: the line of its opening marker, its statement, and the byte range between the markers
+/// that rendering replaces.
+#[derive(Clone, Debug)]
+pub struct Block {
+    pub line: usize,
+    pub sql: String,
+    pub start: usize,
+    pub end: usize,
+}
+
+fn line_of(text: &str, offset: usize) -> usize {
+    text[..offset].matches('\n').count() + 1
+}
+
+/// The blocks of a page, in order. An opening marker with no closing marker before the next opening
+/// marker (or the end of the page) is a fault, as `(line, what)`; a closing marker alone is ignored.
+pub fn find_blocks(text: &str) -> Result<Vec<Block>, (usize, String)> {
+    let open = Regex::new(r"(?s)<!--\s*af-data:(.*?)-->").expect("regex");
+    let close = Regex::new(r"<!--\s*/af-data\s*-->").expect("regex");
+    // (offset, is_open, index into its list)
+    let opens: Vec<_> = open.captures_iter(text).map(|c| (c.get(0).unwrap().range(), c[1].to_string())).collect();
+    let closes: Vec<_> = close.find_iter(text).map(|m| m.range()).collect();
+    let mut events: Vec<(usize, bool, usize)> = Vec::new();
+    events.extend(opens.iter().enumerate().map(|(i, (r, _))| (r.start, true, i)));
+    events.extend(closes.iter().enumerate().map(|(i, r)| (r.start, false, i)));
+    events.sort();
+    let mut blocks = Vec::new();
+    let mut cur: Option<usize> = None;
+    for (_, is_open, i) in events {
+        if is_open {
+            if let Some(prev) = cur {
+                return Err((line_of(text, opens[prev].0.start), "this opening marker has no closing marker before the next opening marker".to_string()));
+            }
+            cur = Some(i);
+        } else if let Some(o) = cur.take() {
+            let (orange, sql) = &opens[o];
+            let c = &closes[i];
+            let line_start = text[..c.start].rfind('\n').map(|n| n + 1).unwrap_or(0);
+            let own_line = line_start >= orange.end && text[line_start..c.start].chars().all(|ch| ch == ' ' || ch == '\t');
+            blocks.push(Block { line: line_of(text, orange.start), sql: sql.trim().to_string(), start: orange.end, end: if own_line { line_start } else { c.start } });
+        }
+    }
+    if let Some(o) = cur {
+        return Err((line_of(text, opens[o].0.start), "this opening marker has no closing marker".to_string()));
+    }
+    Ok(blocks)
+}
+
+/// The page with every block refilled from `con`, and the faults (`line N: what`) of the blocks that
+/// could not be: those keep their old content.
+pub fn render_text(text: &str, blocks: &[Block], con: &Connection) -> (String, Vec<(usize, String)>) {
+    let eol = if text.contains("\r\n") { "\r\n" } else { "\n" };
+    let mut out = String::with_capacity(text.len());
+    let mut at = 0;
+    let mut faults = Vec::new();
+    for b in blocks {
+        out.push_str(&text[at..b.start]);
+        at = b.end;
+        let fill = if b.sql.is_empty() {
+            Err("the statement is empty".to_string())
+        } else {
+            match query::run(con, &b.sql, None) {
+                Ok((table, _)) => Ok(format!("{eol}{}{eol}", query::to_markdown(&table).replace('\n', eol))),
+                Err(QueryErr::Refused(m)) => Err(m),
+                Err(QueryErr::Sql(m)) => Err(format!("SQL error: {m}")),
+            }
+        };
+        match fill {
+            Ok(f) => out.push_str(&f),
+            Err(m) => {
+                faults.push((b.line, m));
+                out.push_str(&text[b.start..b.end]);
+            }
+        }
+    }
+    out.push_str(&text[at..]);
+    (out, faults)
+}
+
+/// What rendering one page did.
+#[derive(Debug, Default)]
+pub struct Outcome {
+    /// `file:line: what`
+    pub faults: Vec<String>,
+    pub blocks: usize,
+    pub changed: bool,
+}
+
+pub fn label(rel: &str) -> String {
+    format!("{LIFE_REL}/{rel}")
+}
+
+/// Render one page (relative to `workspace/life/`) and write it when it changed, under a lock on the
+/// page, so two renders never leave the older answer last. Nothing is written when the page is
+/// missing, has a marker fault, or the ledgers fail their checks.
+pub fn render_page(ctx: &Ctx, reg: &Registry, rel: &str) -> Outcome {
+    let label = label(rel);
+    let path = vpath(ctx, &label);
+    let mut out = Outcome::default();
+    if !crate::pyos::isfile(&path) {
+        out.faults.push(format!("{label}: the page is missing"));
+        return out;
+    }
+    let done = locked(&path, || {
+        let bytes = std::fs::read(&path).map_err(|e| crate::pyos::os_error(&e, &path))?;
+        let Ok(text) = String::from_utf8(bytes) else {
+            out.faults.push(format!("{label}: is not UTF-8 text"));
+            return Ok(());
+        };
+        let blocks = match find_blocks(&text) {
+            Ok(b) => b,
+            Err((line, what)) => {
+                out.faults.push(format!("{label}:{line}: {what}; the page was not written"));
+                return Ok(());
+            }
+        };
+        out.blocks = blocks.len();
+        if blocks.is_empty() {
+            return Ok(());
+        }
+        let con = match query::load_db(ctx, reg) {
+            Ok(c) => c,
+            Err(faults) => {
+                out.faults.push(format!("{label}: not rendered, a ledger file fails its checks:"));
+                out.faults.extend(super::ledger::shown(&faults));
+                return Ok(());
+            }
+        };
+        let (new, faults) = render_text(&text, &blocks, &con);
+        out.faults.extend(faults.into_iter().map(|(line, what)| format!("{label}:{line}: {what}")));
+        if new != text {
+            TextFile { text: new, crlf: false, bom: false }.save_atomic(&path)?;
+            out.changed = true;
+        }
+        Ok(())
+    });
+    if let Err(e) = done {
+        out.faults.push(format!("{label}: {e}"));
+    }
+    out
+}
+
+/// Every registered page, rendered. The faults of all of them.
+pub fn render_registered(ctx: &Ctx) -> Vec<String> {
+    let reg = match Registry::load(ctx) {
+        Ok(Some(r)) => r,
+        Ok(None) => return Vec::new(),
+        Err(e) => return vec![e.to_string()],
+    };
+    reg.pages.iter().flat_map(|p| render_page(ctx, &reg, p).faults).collect()
+}
+
+/// For the doctor: the notes about every registered page, and nothing written. A page that is
+/// missing, a block that fails, a page whose content differs from what the ledgers give now. The
+/// ledger files themselves are reported by the caller, so a failed load adds nothing here.
+pub fn doctor_notes(ctx: &Ctx, reg: &Registry) -> Vec<String> {
+    let mut notes = Vec::new();
+    if reg.pages.is_empty() {
+        return notes;
+    }
+    let con = query::load_db(ctx, reg).ok();
+    for rel in &reg.pages {
+        let label = label(rel);
+        let path = vpath(ctx, &label);
+        let text = match std::fs::read(&path) {
+            Ok(b) => match String::from_utf8(b) {
+                Ok(t) => t,
+                Err(_) => {
+                    notes.push(format!("{label}: is not UTF-8 text"));
+                    continue;
+                }
+            },
+            Err(_) => {
+                notes.push(format!("{label}: the registered page is missing; remove it from ledgers.yaml or restore it"));
+                continue;
+            }
+        };
+        let blocks = match find_blocks(&text) {
+            Ok(b) => b,
+            Err((line, what)) => {
+                notes.push(format!("{label}:{line}: {what}"));
+                continue;
+            }
+        };
+        let Some(con) = &con else { continue };
+        let (new, faults) = render_text(&text, &blocks, con);
+        for (line, what) in &faults {
+            notes.push(format!("{label}:{line}: the block fails: {what}"));
+        }
+        if faults.is_empty() && new != text {
+            notes.push(format!("{label}: its rendered content differs from what the ledgers give now; run `af data render`"));
+        }
+    }
+    notes
+}

@@ -7,6 +7,7 @@
 //! a page render loads the files into an in-memory SQLite and drops it.
 
 pub mod ledger;
+pub mod pages;
 pub mod query;
 
 use crate::core::Ctx;
@@ -17,7 +18,7 @@ use crate::life::locked;
 use crate::{outln, pyos};
 use clap::{ArgAction, Args, Subcommand};
 use ledger::{
-    append_records, bare_table_name_ok, check_value, encode, ledger_file_rel, load_checked, parse_col_spec, parse_csv, refuse_faults, rewrite, shown,
+    append_records, bare_table_name_ok, check_value, encode, ledger_file_rel, load_checked, page_rel, parse_col_spec, parse_csv, refuse_faults, rewrite, shown,
     valid_name, Col, Ledger, Raw, Registry, Ty,
 };
 use std::collections::HashMap;
@@ -38,6 +39,16 @@ pub enum DataCmd {
     },
     /// Run one read-only SELECT over every ledger (a table named after each)
     Sql(SqlArgs),
+    /// Refill the af-data blocks of these pages (none given: every registered page) from their queries
+    Render {
+        /// Pages inside workspace/life/
+        files: Vec<String>,
+    },
+    /// Register a page that holds af-data blocks, then render it
+    Page {
+        /// A page inside workspace/life/
+        file: String,
+    },
 }
 
 #[derive(Args, Debug)]
@@ -110,6 +121,8 @@ pub fn run(ctx: &Ctx, cmd: DataCmd) -> R<i32> {
         DataCmd::Import(a) => cmd_import(ctx, &a),
         DataCmd::List { ledger } => cmd_list(ctx, ledger.as_deref()),
         DataCmd::Sql(a) => cmd_sql(ctx, &a),
+        DataCmd::Render { files } => cmd_render(ctx, &files),
+        DataCmd::Page { file } => cmd_page(ctx, &file),
     }
 }
 
@@ -152,7 +165,9 @@ fn find_ledger(ctx: &Ctx, name: &str) -> R<(Registry, Ledger)> {
 
 /// After a write: refill every registered page. A fault is a warning; the write stands.
 fn render_after_write(ctx: &Ctx) {
-    let _ = ctx;
+    for fault in pages::render_registered(ctx) {
+        out::err_line(&format!("af: warning: {fault}"));
+    }
 }
 
 fn header_of(l: &Ledger) -> Vec<String> {
@@ -572,4 +587,66 @@ fn cmd_sql(ctx: &Ctx, a: &SqlArgs) -> R<i32> {
         }
     }
     Ok(0)
+}
+
+// ------------------------------------------------------------------ render, page
+
+/// Render these pages and say what happened to each; the faults make the exit 1, after every page
+/// that could be rendered was.
+fn render_pages(ctx: &Ctx, reg: &Registry, pages: &[String]) -> R<i32> {
+    let mut faults = 0;
+    for rel in pages {
+        let o = pages::render_page(ctx, reg, rel);
+        for f in &o.faults {
+            out::err_line(f);
+        }
+        faults += o.faults.len();
+        if o.faults.is_empty() || o.blocks > 0 {
+            let what = if o.changed { "updated" } else { "unchanged" };
+            let n = o.blocks;
+            outln!("{}: {n} block{}, {what}", pages::label(rel), if n == 1 { "" } else { "s" });
+        }
+    }
+    if faults > 0 {
+        die!("{faults} fault(s) while rendering; every block and page that could be rendered was");
+    }
+    Ok(0)
+}
+
+fn cmd_render(ctx: &Ctx, files: &[String]) -> R<i32> {
+    let reg = Registry::load(ctx)?.unwrap_or_default();
+    let pages: Vec<String> = if files.is_empty() {
+        reg.pages.clone()
+    } else {
+        // Every argument is checked before any page is touched.
+        files.iter().map(|f| page_rel(ctx, f)).collect::<R<Vec<_>>>()?
+    };
+    if pages.is_empty() {
+        outln!("no pages to render; af data page <file> registers one");
+        return Ok(0);
+    }
+    render_pages(ctx, &reg, &pages)
+}
+
+fn cmd_page(ctx: &Ctx, file: &str) -> R<i32> {
+    let rel = page_rel(ctx, file)?;
+    let path = crate::life::vpath(ctx, &pages::label(&rel));
+    let text = match std::fs::read(&path) {
+        Ok(b) => String::from_utf8(b).or_else(|_| -> R<String> { die!("{} is not UTF-8 text", pages::label(&rel)) })?,
+        Err(_) => die!("{} does not exist; a registered page has to exist", pages::label(&rel)),
+    };
+    match pages::find_blocks(&text) {
+        Ok(b) if b.is_empty() => die!("{} holds no <!-- af-data: ... --> block; add one first", pages::label(&rel)),
+        Ok(_) => {}
+        Err((line, what)) => die!("{}:{line}: {what}", pages::label(&rel)),
+    }
+    let reg = locked(&Registry::path(ctx), || {
+        let Some(mut reg) = Registry::load(ctx)? else { die!("no ledgers are registered ({} does not exist); af data new makes the first", ledger::REGISTRY_REL) };
+        if !reg.pages.contains(&rel) {
+            reg.pages.push(rel.clone());
+            reg.save(ctx)?;
+        }
+        Ok(reg)
+    })?;
+    render_pages(ctx, &reg, &[rel])
 }

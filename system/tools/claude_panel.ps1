@@ -10,8 +10,8 @@
 # restored behind the window he has in front (to the bottom of the stack, shown without activation, then
 # placed directly behind his foreground window unless that window is always-on-top; a window that was maximized
 # comes back maximized), which does not reset the system's last-input time, and is minimized again at the end
-# without activation, but only when he is idle or VS Code is covered and not his foreground window (else it is
-# left open, with a note). 'archive' alone changes what he sees: when another window covers the row it raises
+# without activation, but only when VS Code is not his foreground window (it can only be there because he brought
+# it there) and he is idle or another window covers it (else it is left open, with a note). 'archive' alone changes what he sees: when another window covers the row it raises
 # VS Code above it without keyboard focus (and puts it back exactly where it was in the window order), and it waits while a
 # full-screen window is in front (the shell's notification state 2, 3 or 4), then exits 3 at the deadline.
 #
@@ -865,9 +865,10 @@ function Test-VsCodeCovered {
 # Puts his active chat back, and the window as it was. Never fights him: what he can see is only his
 # previously active chat, so the idle wait is needed only when that chat has to be activated again (and a
 # cancelled run does not wait at all); if he is at the machine it waits a little (within the run's deadline)
-# and then says it did not restore. The window is minimized again only when this run restored it and either he is
-# idle (at or above the threshold) or VS Code is not his foreground window and is covered at its centre; else it
-# is visible on his screen and he is at the computer, so it is left open, with a note.
+# and then says it did not restore. The window is minimized again only when this run restored it, VS Code is not
+# his foreground window (with the no-focus restore it is only there because he brought it there: it is left open)
+# and either he is idle (at or above the threshold) or another window covers VS Code's centre; else it is visible
+# on his screen and he is at the computer, so it is left open, with a note.
 function Restore-Screen {
     if (-not $script:ScreenBegun) { return }
     $script:ScreenBegun = $false
@@ -906,7 +907,9 @@ function Restore-Screen {
         if ($script:WasMinimized) {
             try {
                 $idle = ([PanelNative]::IdleMs() -ge ($IdleSeconds * 1000))
-                if ($idle -or (([PanelNative]::Foreground() -ne $script:Hwnd) -and (Test-VsCodeCovered))) {
+                if ([PanelNative]::Foreground() -eq $script:Hwnd) {
+                    Add-Note 'VS Code was left open: he has it in front'
+                } elseif ($idle -or (Test-VsCodeCovered)) {
                     if ($null -ne $script:SavedPlacement) { [void][PanelNative]::MinimizeWithPlacement($script:Hwnd, $script:SavedPlacement) }
                     else { [void][PanelNative]::MinimizeNoActivate($script:Hwnd) }
                 } else { Add-Note 'VS Code was left open: it is visible on his screen and he is at the computer' }

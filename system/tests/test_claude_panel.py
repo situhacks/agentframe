@@ -2165,7 +2165,7 @@ class ArchiveBehaviourTests(unittest.TestCase):
         self.assertTrue(got["saved_cleared"])
         self.assertEqual(got["no_saved_placement"], "min7")
 
-    def test_the_window_is_minimized_again_only_when_he_is_away_or_it_is_covered_and_not_his_foreground(self):
+    def test_the_window_is_minimized_again_only_when_it_is_not_his_foreground_and_he_is_away_or_it_is_covered(self):
         """Second review item 2: the only guard was 'not the foreground window', so a VS Code he brought up himself and left
         visible behind another app was minimized under him."""
         got = self.run_screen(
@@ -2182,15 +2182,18 @@ class ArchiveBehaviourTests(unittest.TestCase):
             "$o.not_restored_in_this_run = Case 999999 9 7 $false\n"
         )
         mini = "minplace flags=2 rect=1,2"
-        left = "VS Code was left open: it is visible on his screen and he is at the computer"
-        self.assertEqual(got["idle_vscode_foreground"]["calls"], mini, "he is away: minimized whatever is in front")
+        visible = "VS Code was left open: it is visible on his screen and he is at the computer"
+        in_front = "VS Code was left open: he has it in front"
         self.assertEqual(got["idle_other_foreground"]["calls"], mini)
         self.assertEqual(got["busy_covered_other_foreground"]["calls"], mini, "he is at the computer but VS Code is behind another window and not his foreground")
-        for case in ("idle_vscode_foreground", "idle_other_foreground", "busy_covered_other_foreground"):
+        for case in ("idle_other_foreground", "busy_covered_other_foreground"):
             self.assertEqual(got[case]["notes"], [], case)
-        for case in ("busy_visible_other_foreground", "busy_vscode_foreground"):
-            self.assertEqual(got[case]["calls"], "", f"{case}: he can see it and is using the computer, so it is left restored")
-            self.assertEqual(got[case]["notes"], [left], case)
+        # With the no-focus restore VS Code is the foreground window only because he brought it there: always left open.
+        for case in ("idle_vscode_foreground", "busy_vscode_foreground"):
+            self.assertEqual(got[case]["calls"], "", f"{case}: he has VS Code in front, so it is never minimized")
+            self.assertEqual(got[case]["notes"], [in_front], case)
+        self.assertEqual(got["busy_visible_other_foreground"]["calls"], "", "he can see it and is using the computer, so it is left restored")
+        self.assertEqual(got["busy_visible_other_foreground"]["notes"], [visible])
         self.assertEqual(got["not_restored_in_this_run"], {"calls": "", "notes": []}, "a window the driver did not restore is never minimized")
 
     def test_the_placement_is_saved_once_and_the_first_one_wins(self):

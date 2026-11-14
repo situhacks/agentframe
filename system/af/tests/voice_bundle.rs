@@ -492,8 +492,8 @@ fn test_verb_chat_register_and_default_tiers() {
     }
     let out = fx.ok(&["voice", "bundle", "--register", "informal"]);
     assert!(out.contains("informal-general-standard.md"), "{out}");
-    let (code, _, _) = fx.run(&["voice", "bundle", "--register", "slang"]);
-    assert_eq!(code, 2);
+    let err = fx.refused(&["voice", "bundle", "--register", "slang"]);
+    assert!(err.contains("no register 'slang'") && err.contains("chat, formal, informal"), "{err}");
     let (code, _, _) = fx.run(&["voice", "bundle", "--register", "chat", "--tier", "huge"]);
     assert_eq!(code, 2);
 }
@@ -537,6 +537,139 @@ fn test_verb_refusals() {
     assert!(fx.refused(&["voice", "bundle", "nope", "essay"]).contains("project 'nope' not found"));
     fx.write("workspace/projects/p/essay/essay-v1.md", "---\nstatus: drafting\n---\nBody.\n");
     assert!(fx.refused(&["voice", "bundle", "p", "essay"]).contains("declares no voice recipe"));
-    let (code, _, _) = fx.run(&["voice", "bundle", "--register", "neither"]);
-    assert_eq!(code, 2);
+    assert!(fx.refused(&["voice", "bundle", "--register", "neither"]).contains("no register 'neither'"));
+}
+
+// ------------------------------------------------- the registers are the files
+
+/// The verb fixture with `registers/formal.md` moved out, so only chat and informal remain.
+fn two_register_fixture() -> Fx {
+    let fx = verb_fixture();
+    std::fs::remove_file(fx.path("workspace/life/voice/registers/formal.md")).unwrap();
+    fx
+}
+
+fn set_head(fx: &Fx, voice_block: &str) {
+    fx.write(
+        "workspace/projects/p/essay/essay-v1.md",
+        &format!("---
+status: drafting
+type: memo
+voice:
+{voice_block}---
+Body.
+"),
+    );
+}
+
+#[test]
+fn test_a_register_with_no_file_is_refused_and_the_ones_that_exist_are_listed() {
+    let fx = two_register_fixture();
+    let err = fx.refused(&["voice", "bundle", "--register", "formal"]);
+    assert!(err.contains("no register 'formal'"), "{err}");
+    assert!(err.contains("chat, informal"), "{err}");
+    assert!(!err.contains("slack"), "{err}");
+    // --borrow is held to the same list
+    let err = fx.refused(&["voice", "bundle", "--register", "informal", "--borrow", "formal"]);
+    assert!(err.contains("no register 'formal'") && err.contains("chat, informal"), "{err}");
+    // the two that have files build
+    assert!(fx.ok(&["voice", "bundle", "--register", "chat"]).contains("chat-general-quick.md"));
+    assert!(fx.ok(&["voice", "bundle", "--register", "informal"]).contains("informal-general-standard.md"));
+}
+
+#[test]
+fn test_a_new_register_file_is_a_register_with_no_code_change() {
+    let fx = two_register_fixture();
+    assert!(fx.refused(&["voice", "bundle", "--register", "slack"]).contains("no register 'slack'"));
+    fx.write("workspace/life/voice/registers/slack.md", "# slack register
+");
+    // a README beside the registers is documentation, not a register
+    fx.write("workspace/life/voice/registers/README.md", "# registers
+");
+    let out = fx.ok(&["voice", "bundle", "--register", "slack"]);
+    assert!(out.contains("slack-general-standard.md") && out.contains("register slack"), "{out}");
+    assert!(fx.read("system/index/voice/slack-general-standard.md").contains("# slack register"));
+    assert!(fx.ok(&["voice", "bundle", "--register", "informal", "--borrow", "slack"]).contains("borrow slack"));
+    let err = fx.refused(&["voice", "bundle", "--register", "README"]);
+    assert!(err.contains("chat, informal, slack"), "{err}");
+}
+
+#[test]
+fn test_a_head_that_names_a_retired_register_falls_back_and_says_so() {
+    let fx = two_register_fixture();
+    set_head(&fx, "  base_register: formal
+");
+    let out = fx.ok(&["voice", "bundle", "p", "essay"]);
+    assert_eq!(out.lines().filter(|l| l.contains("has no file")).count(), 1, "{out}");
+    assert_eq!(out.lines().next().unwrap().trim_end(), "register formal has no file; using informal", "{out}");
+    assert!(out.contains("informal-general-standard.md") && out.contains("register informal"), "{out}");
+    assert!(!out.contains("MISSING"), "{out}");
+    // the plain `register:` key too, and the bundle holds the informal register text
+    fx.write("workspace/projects/p/essay/essay-v1.md", "---
+status: drafting
+register: formal
+---
+Body.
+");
+    let out = fx.ok(&["voice", "bundle", "p", "essay"]);
+    assert!(out.contains("register formal has no file; using informal"), "{out}");
+    assert!(fx.read("system/index/voice/informal-general-standard.md").contains("# informal register"));
+    // a head that names a register with a file prints no such line
+    set_head(&fx, "  base_register: chat
+");
+    assert!(!fx.ok(&["voice", "bundle", "p", "essay"]).contains("has no file"));
+    // a flag overrides the head, so the head's retired register is not mentioned
+    set_head(&fx, "  base_register: formal
+");
+    let out = fx.ok(&["voice", "bundle", "p", "essay", "--register", "chat"]);
+    assert!(!out.contains("has no file") && out.contains("register chat"), "{out}");
+}
+
+#[test]
+fn test_a_retired_borrow_is_dropped() {
+    let fx = two_register_fixture();
+    set_head(&fx, "  base_register: informal
+  borrow_from: [formal, chat]
+");
+    let out = fx.ok(&["voice", "bundle", "p", "essay"]);
+    assert!(out.contains("register formal has no file; dropped from borrow"), "{out}");
+    assert!(out.contains("borrow chat") && !out.contains("borrow register formal"), "{out}");
+    assert!(!out.contains("MISSING"), "{out}");
+    set_head(&fx, "  base_register: informal
+  borrow_from: [formal]
+");
+    let out = fx.ok(&["voice", "bundle", "p", "essay"]);
+    assert!(out.contains("dropped from borrow") && !out.contains("borrow register"), "{out}");
+    assert!(fx.read("system/index/voice/informal-general-standard.md").contains("borrow none"));
+}
+
+#[test]
+fn test_default_register_is_informal_else_the_first_by_name() {
+    let names = |v: &[&str]| s(v);
+    assert_eq!(bundle::default_register(&names(&["chat", "formal", "informal"])).as_deref(), Some("informal"));
+    assert_eq!(bundle::default_register(&names(&["chat", "slack"])).as_deref(), Some("chat"));
+    assert_eq!(bundle::default_register(&names(&[])), None);
+    // through the verb: no informal file, so a head's retired register falls to the first by name
+    let fx = verb_fixture();
+    for gone in ["informal", "formal"] {
+        std::fs::remove_file(fx.path(&format!("workspace/life/voice/registers/{gone}.md"))).unwrap();
+    }
+    fx.write("workspace/life/voice/registers/slack.md", "# slack register
+");
+    set_head(&fx, "  base_register: formal
+");
+    let out = fx.ok(&["voice", "bundle", "p", "essay"]);
+    assert!(out.contains("register formal has no file; using chat"), "{out}");
+    assert!(out.contains("chat-general-quick.md"), "{out}");
+}
+
+#[test]
+fn test_a_value_naming_a_register_among_its_words_still_resolves() {
+    let regs = s(&["chat", "informal"]);
+    assert_eq!(bundle::resolve_base(&regs, "substack-informal".into()), ("informal".to_string(), None));
+    // "informal" is not found inside "formal"-style matching: a lone formal file is not chosen for it
+    assert_eq!(
+        bundle::resolve_base(&s(&["formal"]), "informal".into()),
+        ("formal".to_string(), Some("register informal has no file; using formal".to_string()))
+    );
 }

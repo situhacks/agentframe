@@ -6,7 +6,7 @@ A full-length essay for the operator's Substack publication — the long-form ho
 
 ## Inputs
 
-- **Voice**: mandatory — resolve a formal, informal, or base-plus-borrow recipe through `workspace/life/voice/README.md`. Select it from the essay's audience, purpose, and operator direction, never from the fact that it publishes on Substack. Draft against the selected base corpus, not rules alone.
+- **Voice**: mandatory — resolve a one-register or base-plus-borrow recipe through `workspace/life/voice/README.md`. Select it from the essay's audience, purpose, and operator direction, never from the fact that it publishes on Substack. Draft against the selected base corpus, not rules alone.
 - **Channel conventions**: `workspace/life/channels/substack/profile.md` (series/subtitle format, footer, subscribe CTA, image handling).
 - **Shape blueprint**: `workspace/life/voice/templates/substack-essay.md` (two-beat title, the acts-in-order subtitle, the opening run, colon act headers, so-what subheaders, no act cross-references, the editor's-note convention for day-of news, the close, and the hand-edit loop). Load it with the voice.
 - **Source material** when the essay reports a real event: transcript, notes, photos. What only the operator witnessed stays an open slot (see Hard Constraints).

@@ -7,7 +7,6 @@ use crate::pyos::{self, join, join_all, py_strip};
 use crate::voice::sha1_hex;
 
 pub const READ_LIMIT: usize = 2000;
-pub const REGISTERS: [&str; 3] = ["formal", "informal", "chat"];
 /// `core` is still accepted and means `standard`.
 pub const TIERS: [&str; 3] = ["quick", "standard", "full"];
 pub const CORE_EXEMPLAR_CAP: u64 = 20_000;
@@ -83,7 +82,37 @@ fn scalar(fm: &str, key: &str) -> Option<String> {
     }
 }
 
-/// (base register, borrow registers, deliverable type) from a head's frontmatter.
+/// The registers a voice folder has: the `.md` files in its `registers/` directory, by file
+/// name without the extension, sorted. A `README.md` there is documentation, not a register.
+pub fn registers(voice_dir: &str) -> R<Vec<String>> {
+    let dir = join(voice_dir, "registers");
+    if !pyos::isdir(&dir) {
+        return Ok(Vec::new());
+    }
+    Ok(pyos::sorted_listdir(&dir)?
+        .into_iter()
+        .filter(|n| n.ends_with(".md") && n.to_lowercase() != "readme.md" && pyos::isfile(&join(&dir, n)))
+        .map(|n| n[..n.len() - 3].to_string())
+        .collect())
+}
+
+/// The register used when none is named, or the one named has no file: `informal` when it
+/// exists, else the first register by name.
+pub fn default_register(regs: &[String]) -> Option<String> {
+    regs.iter().find(|r| *r == "informal").or_else(|| regs.first()).cloned()
+}
+
+/// What to say when a register is asked for that has no file.
+pub fn no_such_register(name: &str, regs: &[String]) -> String {
+    if regs.is_empty() {
+        format!("af voice bundle: no register '{name}': the voice folder has no files in registers/")
+    } else {
+        format!("af voice bundle: no register '{name}'; the registers that exist: {}", regs.join(", "))
+    }
+}
+
+/// A head's raw (base register, borrow registers, deliverable type) from its frontmatter,
+/// as written; `resolve_base` and `resolve_borrow` check them against the voice folder.
 pub fn recipe_from_head(path: &str) -> R<(Option<String>, Vec<String>, Option<String>)> {
     let text = pyos::read(path)?;
     let text = text.trim_start_matches('\u{feff}');
@@ -91,13 +120,7 @@ pub fn recipe_from_head(path: &str) -> R<(Option<String>, Vec<String>, Option<St
         .captures(text)
         .map(|c| c[1].to_string())
         .unwrap_or_default();
-    let mut base = scalar(&fm, "base_register").or_else(|| scalar(&fm, "register"));
-    if let Some(b) = &base {
-        if !REGISTERS.contains(&b.as_str()) {
-            // the first register named inside the value, in REGISTERS order
-            base = REGISTERS.iter().find(|r| b.contains(*r)).map(|r| r.to_string());
-        }
-    }
+    let base = scalar(&fm, "base_register").or_else(|| scalar(&fm, "register"));
     let mut borrow = Vec::new();
     if let Some(c) = rx(r"(?m)^\s*borrow_from:\s*\[([^\]]*)\]").captures(&fm) {
         for b in c[1].split(',') {
@@ -106,8 +129,34 @@ pub fn recipe_from_head(path: &str) -> R<(Option<String>, Vec<String>, Option<St
             }
         }
     }
-    borrow.retain(|b| REGISTERS.contains(&b.as_str()));
     Ok((base, borrow, scalar(&fm, "type")))
+}
+
+/// A head's base register made to fit the voice folder: one with a file stays; a value
+/// like `substack-informal` names the first register among its words; any other falls back
+/// to the default register, with the line to print. With no registers it stays as written.
+pub fn resolve_base(regs: &[String], base: String) -> (String, Option<String>) {
+    if regs.contains(&base) {
+        return (base, None);
+    }
+    if let Some(w) = base.split(|c: char| !c.is_alphanumeric()).find(|w| regs.iter().any(|r| r == w)) {
+        return (w.to_string(), None);
+    }
+    match default_register(regs) {
+        Some(d) => {
+            let note = format!("register {base} has no file; using {d}");
+            (d, Some(note))
+        }
+        None => (base, None),
+    }
+}
+
+/// A head's borrow registers with the ones that have no file dropped, and a line to print
+/// for each.
+pub fn resolve_borrow(regs: &[String], borrow: Vec<String>) -> (Vec<String>, Vec<String>) {
+    let (keep, drop): (Vec<String>, Vec<String>) = borrow.into_iter().partition(|b| regs.contains(b));
+    let notes = drop.iter().map(|b| format!("register {b} has no file; dropped from borrow")).collect();
+    (keep, notes)
 }
 
 // ---------------------------------------------------------------- the bundle

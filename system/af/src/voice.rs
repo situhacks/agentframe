@@ -18,13 +18,14 @@ pub enum VoiceCmd {
     Bundle {
         project: Option<String>,
         deliverable: Option<String>,
-        /// formal, informal, or chat (how he texts a friend)
-        #[arg(long, value_parser = ["formal", "informal", "chat"])]
+        /// a register: a file in the voice folder's registers/ (informal, chat: how he texts a friend, ...)
+        #[arg(long)]
         register: Option<String>,
         /// task context, repeatable: message (or chat), email, short-form, long-form, builder-pov, market-signal, slide, cover
         #[arg(long, action = clap::ArgAction::Append, value_parser = ["long-form", "short-form", "email", "builder-pov", "market-signal", "slide", "cover", "message", "chat"])]
         context: Vec<String>,
-        #[arg(long, action = clap::ArgAction::Append, value_parser = ["formal", "informal", "chat"])]
+        /// another register to borrow from, repeatable
+        #[arg(long, action = clap::ArgAction::Append)]
         borrow: Vec<String>,
         /// a file in voice/templates/, e.g. substack-essay.md
         #[arg(long)]
@@ -79,6 +80,14 @@ fn cmd_bundle(
     template: Option<String>,
     tier: Option<String>,
 ) -> R<()> {
+    let voice_dir = bundle::voice_dir(&ctx.root);
+    let regs = bundle::registers(&voice_dir)?;
+    for name in register.iter().chain(borrow.iter()).filter(|n| !n.is_empty()) {
+        if !regs.contains(name) {
+            die!("{}", bundle::no_such_register(name, &regs));
+        }
+    }
+    let mut notes = Vec::new();
     let mut head = None;
     let mut register = register;
     let mut borrow = borrow;
@@ -97,11 +106,18 @@ fn cmd_bundle(
             die!("af voice bundle: head not found: {rel}");
         }
         let (base, head_borrow, dtype) = bundle::recipe_from_head(&h)?;
+        // what a flag overrides is not resolved, so it prints no line
         if register.as_deref().map_or(true, str::is_empty) {
-            register = base;
+            if let Some(b) = base {
+                let (b, note) = bundle::resolve_base(&regs, b);
+                notes.extend(note);
+                register = Some(b);
+            }
         }
         if borrow.is_empty() {
-            borrow = head_borrow;
+            let (keep, dropped) = bundle::resolve_borrow(&regs, head_borrow);
+            notes.extend(dropped);
+            borrow = keep;
         }
         if template.as_deref().map_or(true, str::is_empty) {
             template = bundle::type_template(dtype.as_deref().unwrap_or("")).map(|s| s.to_string());
@@ -117,10 +133,12 @@ fn cmd_bundle(
         die!("af voice bundle: the head declares no voice recipe (voice.base_register or register); pass --register");
     };
     let recipe = bundle::Recipe { register, contexts, borrow, template };
-    let voice_dir = bundle::voice_dir(&ctx.root);
     let out_dir = bundle::out_dir(&ctx.root);
     let place = bundle::Place { root: &ctx.root, voice_dir: &voice_dir, out_dir: &out_dir, stamp: None };
     let b = bundle::build(&place, &recipe, head.as_deref(), tier.as_deref())?;
+    for n in &notes {
+        out::line(n);
+    }
     out::line(&bundle::format_report(&ctx.root, &b)?);
     Ok(())
 }

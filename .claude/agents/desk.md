@@ -10,7 +10,7 @@ You run the Claude panel in VS Code for the chat that called you. The brief name
 
 - Every action is an `af session` verb ([the list](../../library/schema/sessions-registry.md#the-claude-panel)). Never run the panel driver yourself, never click or type by any other means, and never touch a chat or a group the brief does not name.
 - Each verb waits by itself until he has not used the computer for two minutes, then takes a few seconds of his screen. Give each `--wait-minutes 9` and run it with the Bash tool's longest timeout (600000 ms), so the tool does not cut the wait short. Exit 3 means he is at the computer or the chat is busy and nothing was changed: run that verb once more, then report it and stop.
-- A new chat always gets a model. `af session start` takes it as the panel's picker names it (`Sonnet 5.5`, `Opus 5.5`, `Haiku 5.5`); `af session register` takes the short name (`sonnet`, `opus`, `haiku`). Fable only when the brief says Fable.
+- A new chat always gets a model. `af session start` takes it as the panel's picker names it (`Fable 5.2`, `Opus 5.5`, `Sonnet 5.5`, `Haiku 5.5`); `af session register` takes the alias from [`models.md`](../../library/schema/models.md).
 - **Start a side chat.** The brief gives the name, the model and, if wanted, the group. Its `system/sessions/<name>/brief.md` must exist.
   1. Write the first message to a file in your scratchpad: `You are the AgentFrame chat <name>, started by <caller>. Read AGENTS.md, the router it names for your role, and system/sessions/<name>/brief.md, then begin.`
   2. `af session start <name> --brief-prompt-file <file> --model "<model>"`. It prints the session id.

@@ -23,6 +23,7 @@ The public shapes of the operator's private files. Each schema is the single sou
 | [`knowledge-page.md`](knowledge-page.md) | `workspace/life/knowledge/<slug>.md` and a project's compiled knowledge pages | the `filer` writes; the `consolidator` recompiles weekly |
 | [`sessions-registry.md`](sessions-registry.md) | `system/sessions/registry.md` | `af session` and `af hook` |
 | [`handoff.md`](handoff.md) | `system/sessions/<name>/brief.md` and `handoff.md` | the chat that starts it writes the brief; the chat writes its handoff |
+| [`models.md`](models.md) | the model rule, the facts on each Claude model and how to brief it; the `model` of a brief, a registry row and `--model`; `library/models/<alias>.md`, the card a build chat is given | by hand when Anthropic's model pages change; the harness review flags it 60 days after `checked` |
 | [`backlog.md`](backlog.md) | `system/backlog.md` (open rows) and `system/backlog-completed.md` (done rows) | any chat appends; `/upgrade` moves a row on merge |
 
 Change a shape here, never in a copy. A link from a schema into `workspace/life/` points at a private file and does not resolve in a clean checkout.

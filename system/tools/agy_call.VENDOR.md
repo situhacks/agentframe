@@ -1,11 +1,12 @@
 # Antigravity CLI connector vendor record
 
 - Tool: `system/tools/agy_call.py` (AgentFrame-owned wrapper; stdlib only)
-- Upstream: Antigravity CLI (`agy`) by Google, verified 1.4.7 on 2026-10-23 (first verified 1.1.27 on 2026-09-08). The CLI updates itself in the background, so the installed version moves without a refresh; `agy update` only confirms it.
+- Upstream: Antigravity CLI (`agy`) by Google; the CLI was 1.5.7 on 2026-11-14 (last fence check on 1.4.7, 2026-10-23; first verified 1.1.27 on 2026-09-08). The CLI updates itself in the background, so the installed version moves without a refresh; `agy update` only confirms it.
 - Install (Windows): `irm https://antigravity.google/cli/install.ps1 | iex` → `%LOCALAPPDATA%\agy\bin\agy.exe`; macOS/Linux: `curl -fsSL https://antigravity.google/cli/install.sh | bash` → `~/.local/bin/agy`
 - Auth: the operator's Google account through the OS keyring; first interactive run signs in. Print mode reused the existing Antigravity IDE sign-in on this machine without prompting. Entitlement: Google AI Pro (the Gemini CLI is no longer served to individual accounts; its own error message says to move to Antigravity).
 - Settings: `~/.gemini/antigravity-cli/settings.json` (none needed for this connector)
-- Model slugs (from `agy models`, 2026-10-23): `gemini-4-argon-{high,medium,low}`, `gemini-3.8-flash-{high,medium,low}`, `claude-opus-5-5-{high,medium,low}`, `claude-sonnet-5-5-{high,medium,low}`, `gpt-oss-120b-medium`. Effort is the slug suffix; `--effort` alongside a suffixed slug is rejected (re-checked on 1.4.7).
+- Model slugs (from `agy models`: the first two on 2026-11-14, the rest on 2026-10-23): `gemini-4-hydrogen-{low,medium,high,xhigh}`, `gemini-pro-orchestrator-g1-pro`, beside the older `gemini-4-argon-{high,medium,low}`, `gemini-3.8-flash-{high,medium,low}`, `claude-opus-5-5-{high,medium,low}`, `claude-sonnet-5-5-{high,medium,low}`, `gpt-oss-120b-medium`. Effort is the slug suffix; `--effort` alongside a suffixed slug is rejected (re-checked on 1.4.7).
+- Measured 2026-11-14 on 1.5.7: one test call to `gemini-4-hydrogen-medium` through `agy_call.py` returned in 5 s for about 11,000 tokens. Gemini 4 Hydrogen is used for prose second drafts; see `library/schema/models.md`, "Other models". Any `claude-*` slug in this list must be one of the ids in `system/models.json`.
 
 ## What was measured (2026-09-08, one 4 s synthetic clip)
 

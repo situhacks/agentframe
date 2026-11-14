@@ -33,6 +33,7 @@ pub mod tags;
 pub mod places;
 pub mod reach;
 pub mod context;
+pub mod model_card;
 pub mod compact;
 pub mod panel;
 pub mod backlog;

@@ -1132,6 +1132,19 @@ pub fn bundle_with(ctx: &Ctx, session_id: &str, refresh: Option<&str>) -> R<(Str
 /// `bundle_with`, knowing the SessionStart `source`: an unregistered chat gets the A/B/C
 /// question on `startup` and `clear`, and only the reminder on `compact` and `resume`.
 pub fn bundle_with_source(ctx: &Ctx, session_id: &str, refresh: Option<&str>, source: Option<&str>) -> R<(String, Option<Row>)> {
+    bundle_for_start(ctx, session_id, refresh, source, None, None)
+}
+
+/// `bundle_with_source`, knowing what the hook's input said about the chat's model and transcript, which
+/// choose the model card a build chat is given (see `model_card`).
+pub fn bundle_for_start(
+    ctx: &Ctx,
+    session_id: &str,
+    refresh: Option<&str>,
+    source: Option<&str>,
+    hook_model: Option<&str>,
+    transcript: Option<&str>,
+) -> R<(String, Option<Row>)> {
     let reg = Registry::load(ctx)?;
     let row = reg.find_session(session_id);
     let mut parts: Vec<String> = Vec::new();
@@ -1183,6 +1196,7 @@ pub fn bundle_with_source(ctx: &Ctx, session_id: &str, refresh: Option<&str>, so
             parts.push(b);
         }
         parts.extend(handoff_blocks(ctx, &handoff_rel(&r.name))?);
+        parts.extend(crate::model_card::card_block(ctx, r, hook_model, transcript));
     }
     if is_main {
         let now = life::now();
@@ -1247,7 +1261,9 @@ pub fn hook_session_start_with(ctx: &Ctx, payload_text: &str, refresh: Option<&s
     }
     let source = field(&p, "source");
     let source = if source.is_empty() { None } else { Some(source) };
-    let (text, row) = match bundle_with_source(ctx, id, refresh, source) {
+    let model = Some(field(&p, "model")).filter(|m| !m.is_empty());
+    let transcript = crate::context::transcript_for(&p, id);
+    let (text, row) = match bundle_for_start(ctx, id, refresh, source, model, transcript.as_deref()) {
         Ok(b) => b,
         Err(_) => return alone(),
     };

@@ -31,11 +31,11 @@ pub fn nudge_text(class: SessionClass, name: &str, limits: &ClassLimits, tokens:
     let (n, c) = (k(tokens), class.name());
     match tier {
         Tier::Soft => format!(
-            "Context: about {n}k tokens; this {c} chat's soft limit is {}k. At the next stable point, bring handoff.md and the plan up to date so a fresh context could continue, then consider compacting. Not urgent: finish work that benefits from what is loaded.",
+            "Context: about {n}k tokens; this {c} chat's soft limit is {}k. Do not compact in the middle of a task: finish the task in hand first. When it is done, and before you start the next large task, bring handoff.md and the plan up to date and run `af session compact {name} --when-idle` (it compacts this chat once its turn ends). Compacting mid-task costs more than it saves, because the files must be read again.",
             k(limits.soft.unwrap_or(0))
         ),
         Tier::Hard => format!(
-            "Context: about {n}k tokens, past this {c} chat's {}k limit. At the next natural stopping point: write the current state, decisions and next step into handoff.md and the plan, file anything that exists only in this conversation. With the handoff up to date, run `af session compact {name} --when-idle` before starting new large work: it compacts this chat once its turn ends.",
+            "Context: about {n}k tokens, past this {c} chat's {}k limit. Finish the task in hand if it is close to done; start no new large task in this context. Then write the current state, decisions and next step into handoff.md and the plan, file anything that exists only in this conversation, and run `af session compact {name} --when-idle`.",
             k(limits.hard.unwrap_or(0))
         ),
     }
@@ -100,7 +100,7 @@ pub fn settle(limits: &ClassLimits, tokens: u64, dir: &Path) -> Option<Tier> {
 
 /// The transcript to measure: the hook payload's path when it names a file, else the
 /// lookup by session id.
-fn transcript_for(payload: &Value, session_id: &str) -> Option<String> {
+pub fn transcript_for(payload: &Value, session_id: &str) -> Option<String> {
     let given = payload.get("transcript_path").and_then(Value::as_str).unwrap_or("");
     if !given.is_empty() && pyos::isfile(given) {
         return Some(given.to_string());
@@ -233,6 +233,29 @@ fn auto_compact_of(usage: Option<&reach::Usage>) -> AutoCompact {
             }
         }
     }
+}
+
+/// `af doctor`: a `modelSettings.<id>.autoCompactWindow` in the user settings that is below the build
+/// class's hard limit, so Claude Code compacts such a chat by itself before the nudge. Reads the settings
+/// file only (`CLAUDE_CONFIG_DIR` or `~/.claude`); absent, unreadable or a model with no alias is silence.
+pub fn doctor_notes() -> Vec<String> {
+    let Some(hard) = SessionClass::Build.limits().hard else { return Vec::new() };
+    let Some(dir) = reach::config_dir() else { return Vec::new() };
+    let Ok(text) = std::fs::read_to_string(pyos::join(&dir, "settings.json")) else { return Vec::new() };
+    let Ok(v) = serde_json::from_str::<Value>(&text) else { return Vec::new() };
+    let Some(models) = v.get("modelSettings").and_then(Value::as_object) else { return Vec::new() };
+    models
+        .iter()
+        .filter_map(|(id, s)| {
+            let window = s.get("autoCompactWindow")?.as_u64().filter(|w| *w < hard)?;
+            let who = crate::model_card::display_with_article(crate::model_card::alias_of(id)?);
+            Some(format!(
+                "Claude Code compacts {who} chat by itself at {}, before a build chat's {} nudge: such a chat can be compacted in the middle of a task. Raising it is the operator's setting.",
+                kfmt(window),
+                kfmt(hard)
+            ))
+        })
+        .collect()
 }
 
 pub fn cmd_context(ctx: &Ctx, name: Option<&str>) -> R<i32> {

@@ -21,6 +21,7 @@ import models  # noqa: E402
 FILE = ROOT / "system" / "models.json"
 ID = re.compile(r"claude-(?:fable|opus|sonnet|haiku)-\d+-\d+")
 ALIASES = ("fable", "opus", "sonnet", "haiku")
+CARDS = ("fable", "opus")   # cards are for the big models only
 
 # (file, id) pairs that name an old id on purpose, as a fixture for what a transcript or a refusal says.
 # Any other stale id in those files still fails. The ids are split here so this file names none.
@@ -123,10 +124,10 @@ class ModelGuidanceTests(unittest.TestCase):
         self.assertRegex(head, r"(?m)^model: sonnet\s*$")
         self.assertIn("stronger model", text)
 
-    def test_each_alias_has_one_short_card(self):
+    def test_only_the_big_models_have_a_short_card(self):
         folder = ROOT / "library" / "models"
-        self.assertEqual(sorted(p.name for p in folder.iterdir()), sorted(f"{a}.md" for a in ALIASES))
-        for alias in ALIASES:
+        self.assertEqual(sorted(p.name for p in folder.iterdir()), sorted(f"{a}.md" for a in CARDS))
+        for alias in CARDS:
             rel = f"library/models/{alias}.md"
             text = (ROOT / rel).read_text(encoding="utf-8")
             self.assertTrue(text.startswith("# Model card: Claude "), rel)

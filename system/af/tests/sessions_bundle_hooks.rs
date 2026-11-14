@@ -583,6 +583,21 @@ fn an_unknown_model_or_a_missing_card_adds_nothing_and_does_not_fail() {
 }
 
 #[test]
+fn a_sonnet_or_haiku_build_chat_gets_no_card_when_only_fable_and_opus_have_one() {
+    let fx = main_fixture();
+    for a in ["fable", "opus"] {
+        fx.write(&format!("library/models/{a}.md"), &format!("# Model card: {a}\n\nchecked: 2026-11-14\n\n- the {a} line\n"));
+    }
+    for model in ["claude-sonnet-5-5", "sonnet", "claude-haiku-5-5[1m]", "haiku"] {
+        let text = start_text(&fx, serde_json::json!({"session_id": "s-acme", "source": "startup", "model": model}));
+        assert!(!text.contains("model card"), "{model}: {text}");
+        assert!(text.starts_with("af: you are project/acme (operator)"), "{model}: {text}");
+    }
+    let opus = start_text(&fx, serde_json::json!({"session_id": "s-acme", "source": "startup", "model": "claude-opus-5-5"}));
+    assert!(opus.contains("model card (opus):"), "{opus}");
+}
+
+#[test]
 fn af_hook_session_start_adds_the_card_and_it_follows_the_handoff() {
     let fx = card_fixture();
     fx.write("system/sessions/project/acme/handoff.md", &handoff(&ts(-10), &[]));
@@ -648,13 +663,4 @@ fn claude_codes_best_alias_is_opus() {
     assert_eq!(afcore::model_card::alias_of("best"), Some("opus"));
     assert_eq!(afcore::model_card::alias_of("default"), None);
     assert_eq!(afcore::model_card::alias_of("opusplan"), None);
-}
-
-#[test]
-fn the_display_name_has_the_right_article() {
-    use afcore::model_card::display_with_article;
-    assert_eq!(display_with_article("opus"), "an Opus");
-    assert_eq!(display_with_article("fable"), "a Fable");
-    assert_eq!(display_with_article("sonnet"), "a Sonnet");
-    assert_eq!(display_with_article("haiku"), "a Haiku");
 }

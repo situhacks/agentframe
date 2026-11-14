@@ -29,12 +29,8 @@ workspace/projects/{slug}/
 ## Ingest Workflow (Sources → Knowledge)
 
 When the operator pastes a new transcript, brief, or document:
-1. Write the raw content to `sources/{type}-{date}-{slug}.md`.
-2. Register the file in `sources/INDEX.md` with:
-   - `id`: unique kebab-case ID (e.g., `src-2026-06-25-01`)
-   - `file`: relative path
-   - `date`: date received
-   - `description`: 1-sentence summary
+1. File the raw content with `af source add` (its id, file and `sources/INDEX.md` row are made together; never write an id by hand, shape: [`source-record.md`](../schema/source-record.md)).
+2. The row holds the `id`, the relative file, the date received and a 1-sentence summary.
 3. Extract new decisions, risks, stakeholders, or milestones and update the corresponding `knowledge/` files. Reference the source ID for all extractions (e.g., `[src-2026-06-25-01]`).
 
 ### Pulling MeetCap transcripts

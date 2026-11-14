@@ -193,14 +193,78 @@ def _alpha_words(text: str) -> int:
     return sum(bool(_ALPHA_TOKEN.fullmatch(t)) for t in tokens)
 
 
-def _threads(payloads: list[tuple[str, dict]]) -> list[list[dict]]:
-    """Each thread's messages in a run's Gmail results: get_thread's and search_threads'."""
-    lists: list = []
+def merge_thread_copies(copies: list[list[dict]]) -> list[dict]:
+    """One thread's messages from its copies, in the order given: a message once by its `id`, from
+    the first copy that holds it. Pass the fetched copy first, since it is whole."""
+    seen: set[str] = set()
+    out: list[dict] = []
+    for m in (m for copy in copies for m in copy if isinstance(m, dict)):
+        if isinstance(m.get("id"), str) and m["id"]:
+            if m["id"] in seen:
+                continue
+            seen.add(m["id"])
+        out.append(m)
+    return out
+
+
+def _copy_keys(thread_id: object, messages: list[dict]) -> tuple[set[str], set[str]]:
+    """What ties a copy of a thread to another: its thread ids and its message ids."""
+    tids = {x for x in [thread_id, *(m.get("threadId") for m in messages)] if isinstance(x, str) and x}
+    return tids, {m["id"] for m in messages if isinstance(m.get("id"), str) and m["id"]}
+
+
+def _same_thread(a: tuple[set[str], set[str]], b: tuple[set[str], set[str]]) -> bool:
+    """Whether two copies, as (thread ids, message ids), are one thread: a thread id in common, or a
+    message id in common unless both name threads and the names disagree, which outranks a shared id."""
+    if a[0] & b[0]:
+        return True
+    return bool(a[1] & b[1]) and not (a[0] and b[0])
+
+
+def _thread_copies(payloads: list[tuple[str, dict]]) -> list[list[list[dict]]]:
+    """The copies of each thread in a run's Gmail results, get_thread's and search_threads', grouped,
+    the fetched copies first in each group. Two copies are one thread when their thread ids match (a payload's
+    own `id` or a message's `threadId`), or they share a message `id` and neither names a different
+    thread. An empty or non-string id is no id."""
+    copies: list[tuple[bool, object, list]] = []   # (fetched, the payload's thread id, its messages)
     for _, p in payloads:
-        lists.append(p.get("messages"))
+        copies.append((True, p.get("id"), p.get("messages")))
         threads = p.get("threads")
-        lists += [t.get("messages") for t in threads if isinstance(t, dict)] if isinstance(threads, list) else []
-    return [[m for m in found if isinstance(m, dict)] for found in lists if isinstance(found, list)]
+        if isinstance(threads, list):
+            copies += [(False, t.get("id"), t.get("messages")) for t in threads if isinstance(t, dict)]
+    groups: list[list] = []   # [thread ids, message ids, [(fetched, messages)]]
+    for fetched, tid, found in copies:
+        if not isinstance(found, list):
+            continue
+        messages = [m for m in found if isinstance(m, dict)]
+        keys = _copy_keys(tid, messages)
+        into = next((g for g in groups if _same_thread((g[0], g[1]), keys)), None)
+        if into is None:
+            groups.append([keys[0], keys[1], [(fetched, messages)]])
+            continue
+        into[0].update(keys[0]), into[1].update(keys[1]), into[2].append((fetched, messages))
+        for g in [g for g in groups if g is not into and _same_thread((g[0], g[1]), (into[0], into[1]))]:
+            into[0].update(g[0]), into[1].update(g[1]), into[2].extend(g[2])
+            groups.remove(g)
+    return [[c for f in (True, False) for fetched, c in g[2] if fetched is f] for g in groups]
+
+
+def _threads(payloads: list[tuple[str, dict]]) -> list[list[dict]]:
+    """Each thread's messages in a run's Gmail results, the copies of one thread merged."""
+    return [merge_thread_copies(copies) for copies in _thread_copies(payloads)]
+
+
+def _spans(copies: list[list[dict]]) -> dict:
+    """Each message's earliest and latest readable date over every copy that holds it, keyed by its
+    `id` (else by the message object), so the copy kept does not decide a thread's order."""
+    spans: dict = {}
+    for m in (m for copy in copies for m in copy if isinstance(m, dict)):
+        stamp = _stamp(m)
+        if stamp is not None:
+            key = m["id"] if isinstance(m.get("id"), str) and m["id"] else id(m)
+            lo, hi = spans.get(key, (stamp, stamp))
+            spans[key] = (min(lo, stamp), max(hi, stamp))
+    return spans
 
 
 def _find_words(text: str, words: list[str]) -> str | None:
@@ -322,17 +386,28 @@ def find_email(payloads: list[tuple[str, dict]], v: Verdict, start: dt.date, now
     subject are the ones the model named, and it dates from the loop's window. Each miss is a
     failure naming which, so the report cannot name the wrong email. Among emails that pass, the
     surest wins. Each thread's other messages decide whether this one is its newest."""
+    return find_in_copies(_thread_copies(payloads), v, start, now)
+
+
+def find_in_copies(threads: list[list[list[dict]]], v: Verdict, start: dt.date, now: dt.datetime) -> Hit:
+    """find_email over threads given as their copies (the fetched copy first). The messages come from
+    the merged copies; whether one is earlier or newest comes from the dates every copy gives, so a
+    copy that lacks a date cannot hide a neighbour. Each message counts at its worst: against a hit,
+    a neighbour's latest date and the hit's earliest decide newest, the neighbour's earliest and the
+    hit's latest decide earlier. A message no copy dates is no evidence either way."""
     words = _words(v.quote)
     hits, in_history = [], False
-    for thread in _threads(payloads):
-        stamps = [t for t in map(_stamp, thread) if t]
+    for copies in threads:
+        thread, spans = merge_thread_copies(copies), _spans(copies)
+        key = lambda m: m["id"] if isinstance(m.get("id"), str) and m["id"] else id(m)  # noqa: E731
         for m in thread:
-            stamp = _stamp(m)
-            hit = _locate(m, words, stamp is not None and any(t < stamp for t in stamps))
+            span = spans.get(key(m))
+            others = [spans[key(o)] for o in thread if o is not m and key(o) in spans]
+            hit = _locate(m, words, span is not None and any(lo < span[1] for lo, _ in others))
             if hit == _HISTORY:
                 in_history = True
             elif hit:
-                hit.newest = stamp is not None and not any(t > stamp for t in stamps)
+                hit.newest = span is not None and not any(hi > span[0] for _, hi in others)
                 hits.append(hit)
     if not hits:
         raise LoopFailure("the model's quote is only in an email's quoted history, so it may be old news" if in_history

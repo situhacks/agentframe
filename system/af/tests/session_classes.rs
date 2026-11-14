@@ -73,13 +73,13 @@ fn class_defaults_follow_the_name() {
 
 #[test]
 fn the_class_table_holds_each_window_and_threshold() {
-    let rows: Vec<_> = CLASS_LIMITS.iter().map(|l| (l.class.name(), l.window, l.soft, l.hard)).collect();
+    let rows: Vec<_> = CLASS_LIMITS.iter().map(|l| (l.class.name(), l.soft, l.hard)).collect();
     assert_eq!(
         rows,
         [
-            ("main", 350_000, None, None),
-            ("side", 300_000, None, None),
-            ("build", 1_000_000, Some(400_000), Some(600_000)),
+            ("main", Some(350_000), Some(450_000)),
+            ("side", Some(300_000), Some(400_000)),
+            ("build", Some(400_000), Some(600_000)),
         ]
     );
 }
@@ -209,13 +209,13 @@ fn the_nudge_sequence_on_a_build_chat() {
     let soft = tool_call(&fx, "s-build", "Read", 400_000).expect("soft at 400k");
     assert_eq!(
         soft,
-        "Context: about 400k tokens; this build chat's soft limit is 400k. Do not compact in the middle of a task: finish the task in hand first. When it is done, and before you start the next large task, bring handoff.md and the plan up to date and run `af session compact system/cut --when-idle` (it compacts this chat once its turn ends). Compacting mid-task costs more than it saves, because the files must be read again."
+        "Context: about 400k tokens; this build chat's soft limit is 400k. Do not compact in the middle of a task: finish the task in hand first. When it is done, and before you start the next large task, bring handoff.md up to date and run `af session compact system/cut --when-idle` (it compacts this chat once its turn ends). Compacting mid-task costs more than it saves, because the files must be read again."
     );
     assert_eq!(tool_call(&fx, "s-build", "Read", 420_000), None);
     let hard = tool_call(&fx, "s-build", "Read", 600_000).expect("hard at 600k");
     assert_eq!(
         hard,
-        "Context: about 600k tokens, past this build chat's 600k limit. Finish the task in hand if it is close to done; start no new large task in this context. Then write the current state, decisions and next step into handoff.md and the plan, file anything that exists only in this conversation, and run `af session compact system/cut --when-idle`."
+        "Context: about 600k tokens, past this build chat's 600k limit. Finish the task in hand if it is close to done; start no new large task in this context. Then write the current state, decisions and next step into handoff.md, file anything that exists only in this conversation, and run `af session compact system/cut --when-idle`."
     );
     assert_eq!(tool_call(&fx, "s-build", "Read", 620_000), None);
     assert!(tool_call(&fx, "s-build", "Read", 650_000).expect("hard again").contains("about 650k tokens"));
@@ -377,19 +377,152 @@ fn a_brief_class_override_turns_the_nudge_on_for_a_side_chat() {
 }
 
 #[test]
-fn no_nudge_for_side_main_or_unregistered_chats() {
+fn an_unregistered_chat_is_never_nudged() {
     let fx = Fx::new();
     register(&fx, "af-main", "s-main");
+    let t = at(&fx, 900_000);
+    let (code, out) = hook(&fx, "post-tool-use", &json!({"session_id": "s-nobody", "tool_name": "Read", "transcript_path": t}));
+    assert_eq!((code, out.as_str()), (0, "{}"));
+    assert!(!fx.exists("system/logs/context-nudge"), "no markers for a chat that is not registered");
+}
+
+#[test]
+fn a_main_chat_gets_the_soft_nudge_once_at_350k_and_the_hard_one_at_450k() {
+    let fx = Fx::new();
+    register(&fx, "af-main", "s-main");
+    assert_eq!(tool_call(&fx, "s-main", "Read", 349_000), None);
+    let soft = tool_call(&fx, "s-main", "Read", 350_000).expect("soft at 350k");
+    assert!(soft.starts_with("Context: about 350k tokens; this main chat's soft limit is 350k."), "{soft}");
+    assert!(soft.contains("`af session compact af-main --when-idle`"), "{soft}");
+    assert_eq!(tool_call(&fx, "s-main", "Read", 420_000), None, "said once");
+    let hard = tool_call(&fx, "s-main", "Read", 450_000).expect("hard at 450k");
+    assert!(hard.starts_with("Context: about 450k tokens, past this main chat's 450k limit."), "{hard}");
+    assert_eq!(tool_call(&fx, "s-main", "Read", 480_000), None);
+    assert!(tool_call(&fx, "s-main", "Read", 500_000).expect("hard repeats every 50k").contains("about 500k tokens"));
+}
+
+#[test]
+fn a_side_chat_gets_the_soft_nudge_once_at_300k_and_the_hard_one_at_400k() {
+    let fx = Fx::new();
     register(&fx, "life/money", "s-life");
-    fx.write("system/sessions/project/acme/brief.md", "---\nclass: side\n---\n");
-    register(&fx, "project/acme", "s-proj");
     register(&fx, "worker/w", "s-work");
-    for id in ["s-main", "s-life", "s-proj", "s-work", "s-nobody"] {
-        let t = at(&fx, 900_000);
-        let (code, out) = hook(&fx, "post-tool-use", &json!({"session_id": id, "tool_name": "Read", "transcript_path": t}));
-        assert_eq!((code, out.as_str()), (0, "{}"), "{id}");
+    assert_eq!(tool_call(&fx, "s-life", "Read", 299_000), None);
+    let soft = tool_call(&fx, "s-life", "Read", 300_000).expect("soft at 300k");
+    assert!(soft.starts_with("Context: about 300k tokens; this side chat's soft limit is 300k."), "{soft}");
+    assert_eq!(tool_call(&fx, "s-life", "Read", 350_000), None, "said once");
+    let hard = tool_call(&fx, "s-life", "Read", 400_000).expect("hard at 400k");
+    assert!(hard.starts_with("Context: about 400k tokens, past this side chat's 400k limit."), "{hard}");
+}
+
+#[test]
+fn a_worker_is_never_nudged_and_leaves_no_markers() {
+    let fx = Fx::new();
+    register(&fx, "worker/w", "s-work");
+    for total in [300_000, 400_000, 450_000, 900_000] {
+        assert_eq!(tool_call(&fx, "s-work", "Read", total), None, "{total}");
     }
-    assert!(!fx.exists("system/logs/context-nudge"), "no markers for a chat that is never nudged");
+    assert!(!fx.exists("system/logs/context-nudge/s-work"), "no markers for a worker");
+    fx.write("drafts/b.md", "---\ngoal: x\n---\n");
+    fx.ok(&["session", "register", "worker/b", "--session", "s-wb", "--brief", "drafts/b.md", "--class", "build"]);
+    assert_eq!(tool_call(&fx, "s-wb", "Read", 700_000), None, "even with a build class override");
+}
+
+#[test]
+fn the_nudges_name_the_plan_only_when_the_chat_has_a_plan_file() {
+    let fx = Fx::new();
+    register(&fx, "system/cut", "s-build");
+    register(&fx, "system/with-plan", "s-plan");
+    fx.write("system/sessions/system/with-plan/plan.md", "the plan\n");
+    let soft = tool_call(&fx, "s-build", "Read", 400_000).unwrap();
+    assert!(soft.contains("bring handoff.md up to date and run") && !soft.contains("the plan"), "{soft}");
+    let hard = tool_call(&fx, "s-build", "Read", 600_000).unwrap();
+    assert!(hard.contains("into handoff.md, file anything") && !hard.contains("the plan"), "{hard}");
+    let soft = tool_call(&fx, "s-plan", "Read", 400_000).unwrap();
+    assert!(soft.contains("bring handoff.md and the plan up to date and run"), "{soft}");
+    let hard = tool_call(&fx, "s-plan", "Read", 600_000).unwrap();
+    assert!(hard.contains("into handoff.md and the plan, file anything"), "{hard}");
+}
+
+#[test]
+fn session_context_shows_a_worker_with_no_limits_and_no_window_line() {
+    let fx = context_fixture();
+    register(&fx, "worker/w", "s-work");
+    write_transcript(&fx, "cfg/projects/p1/s-work.jsonl", &[assistant_model("claude-sonnet-5-5", 350_000)]);
+    let out = context_out(&fx, &["session", "context", "worker/w"]);
+    assert!(out.contains("class: side\ncontext: 350k tokens (350000)\nsoft: none\nhard: none\n"), "{out}");
+    assert!(!out.contains("window:"), "{out}");
+    let table = context_out(&fx, &["session", "context"]);
+    assert!(table.contains("| worker/w | side | 350k | none | none | default |"), "{table}");
+    assert!(!context_out(&fx, &["session", "context", "system/cut"]).contains("\nwindow:"));
+}
+
+#[test]
+fn session_context_falls_back_to_a_top_level_auto_compact_window() {
+    let fx = context_fixture();
+    fx.write("cfg/settings.json", r#"{"autoCompactWindow": 500000}"#);
+    let out = context_out(&fx, &["session", "context", "system/cut"]);
+    assert!(out.contains("auto-compact: 500k (user settings, autoCompactWindow)\n"), "{out}");
+    assert!(out.ends_with("that window is a blanket setting for every chat and subagent; AgentFrame nudges this chat at 400k and 600k instead, so the operator removes it\n"), "{out}");
+    fx.write("cfg/settings.json", r#"{"autoCompactWindow": 500000, "modelSettings": {"claude-opus-5-5": {"autoCompactWindow": 300000}}}"#);
+    let out = context_out(&fx, &["session", "context", "system/cut"]);
+    assert!(out.contains("auto-compact: 300k (user settings, modelSettings.claude-opus-5-5)\n"), "the model's own window wins: {out}");
+    assert_eq!(afcore::reach::auto_compact_window("claude-sonnet-5-5[1m]"), None, "no CLAUDE_CONFIG_DIR here: no settings read");
+}
+
+#[test]
+fn a_brief_soft_or_hard_line_moves_the_nudge_for_that_chat_only() {
+    let fx = Fx::new();
+    register(&fx, "life/money", "s-life");
+    register(&fx, "life/other", "s-other");
+    register(&fx, "system/cut", "s-build");
+    fx.write("system/sessions/life/money/brief.md", "---\ngoal: x\nsoft: 250k\n---\n");
+    fx.write("system/sessions/system/cut/brief.md", "---\ngoal: x\nhard: 500k\n---\n");
+    assert_eq!(tool_call(&fx, "s-life", "Read", 249_000), None);
+    let soft = tool_call(&fx, "s-life", "Read", 250_000).expect("soft moved to 250k");
+    assert!(soft.contains("soft limit is 250k"), "{soft}");
+    assert_eq!(tool_call(&fx, "s-other", "Read", 250_000), None, "another side chat keeps 300k");
+    assert!(tool_call(&fx, "s-other", "Read", 300_000).is_some());
+    let hard = tool_call(&fx, "s-life", "Read", 400_000).expect("the class hard limit stays for the chat that set only soft");
+    assert!(hard.contains("400k limit"), "{hard}");
+    assert!(tool_call(&fx, "s-build", "Read", 400_000).is_some(), "soft stays 400k for the chat that set only hard");
+    assert_eq!(tool_call(&fx, "s-build", "Read", 499_000), None);
+    assert!(tool_call(&fx, "s-build", "Read", 500_000).expect("hard moved to 500k").contains("500k limit"));
+}
+
+#[test]
+fn a_bad_limit_line_falls_back_to_the_class_and_the_doctor_reports_it() {
+    let fx = Fx::new();
+    register(&fx, "life/money", "s-life");
+    register(&fx, "life/two", "s-two");
+    register(&fx, "life/three", "s-three");
+    register(&fx, "life/four", "s-four");
+    fx.write("system/sessions/life/money/brief.md", "---\nsoft: lots\n---\n");
+    fx.write("system/sessions/life/two/brief.md", "---\nsoft: 50k\nhard: 2000k\n---\n");
+    fx.write("system/sessions/life/three/brief.md", "---\nsoft: 450k\nhard: 350k\n---\n");
+    fx.write("system/sessions/life/four/brief.md", "---\nsoft: 500k\n---\n");
+    assert_eq!(tool_call(&fx, "s-life", "Read", 250_000), None, "the class's 300k applies");
+    assert!(tool_call(&fx, "s-life", "Read", 300_000).is_some());
+    assert!(tool_call(&fx, "s-two", "Read", 300_000).is_some(), "both values bad: the class's pair");
+    assert!(tool_call(&fx, "s-three", "Read", 300_000).is_some(), "soft above hard: the class's pair");
+    assert!(tool_call(&fx, "s-four", "Read", 300_000).is_some(), "soft above the class's hard: the class's pair");
+    let o = fx.af().arg("doctor").output().unwrap();
+    let out = String::from_utf8_lossy(&o.stdout).replace("\r\n", "\n");
+    assert_eq!(o.status.code(), Some(1), "{out}");
+    assert!(out.contains("system/sessions/life/money/brief.md: soft: 'lots' is not a limit; use a number with k, 100k to 1000k (the side class's 300k applies until then)"), "{out}");
+    assert!(out.contains("life/two/brief.md: soft: '50k' is not a limit") && out.contains("life/two/brief.md: hard: '2000k' is not a limit"), "{out}");
+    assert!(out.contains("life/three/brief.md: soft 450k is not below hard 350k; the side class's limits apply until then"), "{out}");
+    assert!(out.contains("life/four/brief.md: soft 500k is not below hard 400k; the side class's limits apply until then"), "{out}");
+}
+
+#[test]
+fn session_context_prints_the_limits_in_force_for_a_brief_override() {
+    let fx = context_fixture();
+    fx.write("system/sessions/life/money/brief.md", "---\nsoft: 250k\nhard: 350k\n---\n");
+    let out = context_out(&fx, &["session", "context", "life/money"]);
+    assert!(out.contains("soft: 250k\nhard: 350k\n"), "{out}");
+    let table = context_out(&fx, &["session", "context"]);
+    assert!(table.contains("| life/money | side | 120k | 250k | 350k | default |"), "{table}");
+    assert!(table.contains("| system/cut | build | 412k | 400k | 600k | 400k |"), "{table}");
 }
 
 #[test]
@@ -503,13 +636,13 @@ fn session_context_for_one_chat_prints_class_tokens_window_thresholds_and_auto_c
     let fx = context_fixture();
     assert_eq!(
         context_out(&fx, &["session", "context", "system/cut"]),
-        "name: system/cut\nclass: build\ncontext: 412k tokens (412345)\nwindow: 1000k\nsoft: 400k\nhard: 600k\n\
+        "name: system/cut\nclass: build\ncontext: 412k tokens (412345)\nsoft: 400k\nhard: 600k\n\
 auto-compact: 400k (user settings, modelSettings.claude-opus-5-5)\n\
-auto-compact at 400k comes before this chat's 600k hard nudge; raise it with /autocompact in that chat or in user settings\n"
+that window is a blanket setting for every chat and subagent on claude-opus-5-5; AgentFrame nudges this chat at 400k and 600k instead, so the operator removes it\n"
     );
     assert_eq!(
         context_out(&fx, &["session", "context", "life/money"]),
-        "name: life/money\nclass: side\ncontext: 120k tokens (120001)\nwindow: 300k\nsoft: none\nhard: none\nauto-compact: default (not set for claude-sonnet-5-5)\n"
+        "name: life/money\nclass: side\ncontext: 120k tokens (120001)\nsoft: 300k\nhard: 400k\nauto-compact: default (not set for claude-sonnet-5-5)\n"
     );
     let out = context_out(&fx, &["session", "context", "project/none"]);
     assert!(out.contains("context: unknown") && out.ends_with("auto-compact: unknown\n"), "{out}");
@@ -533,11 +666,12 @@ fn session_context_says_the_size_is_unknown_until_the_next_reply_after_a_compact
 }
 
 #[test]
-fn an_auto_compact_window_past_the_hard_threshold_adds_no_warning_and_a_missing_settings_file_is_default() {
+fn any_auto_compact_window_is_called_a_blanket_setting_and_a_missing_settings_file_is_default() {
     let fx = context_fixture();
     write_transcript(&fx, "cfg/projects/p1/s-build.jsonl", &[assistant_model("claude-fable-5-1", 100_000)]);
     let out = context_out(&fx, &["session", "context", "system/cut"]);
-    assert!(out.ends_with("auto-compact: 700k (user settings, modelSettings.claude-fable-5-1)\n"), "{out}");
+    assert!(out.contains("auto-compact: 700k (user settings, modelSettings.claude-fable-5-1)\n"), "{out}");
+    assert!(out.ends_with("that window is a blanket setting for every chat and subagent on claude-fable-5-1; AgentFrame nudges this chat at 400k and 600k instead, so the operator removes it\n"), "{out}");
     fx.remove("cfg/settings.json");
     let out = context_out(&fx, &["session", "context", "system/cut"]);
     assert!(out.ends_with("auto-compact: default (not set for claude-fable-5-1)\n"), "{out}");
@@ -557,7 +691,7 @@ fn session_context_with_no_name_tables_the_chats_that_have_a_transcript() {
     let fx = context_fixture();
     assert_eq!(
         context_out(&fx, &["session", "context"]),
-        "| name | class | context | soft | hard | auto-compact |\n|---|---|---|---|---|---|\n| system/cut | build | 412k | 400k | 600k | 400k |\n| life/money | side | 120k | none | none | default |\n"
+        "| name | class | context | soft | hard | auto-compact |\n|---|---|---|---|---|---|\n| system/cut | build | 412k | 400k | 600k | 400k |\n| life/money | side | 120k | 300k | 400k | default |\n"
     );
 }
 
@@ -577,55 +711,98 @@ fn the_nudges_say_finish_the_task_in_hand_before_compacting() {
     assert!(hard.contains("`af session compact system/cut --when-idle`"), "{hard}");
 }
 
-// ------------------------------------------------------------------ af doctor: the auto-compact window
+// ------------------------------------------------------------------ af doctor: a blanket auto-compact window
 
 fn doctor_out(fx: &Fx) -> String {
     let o = fx.af().env("CLAUDE_CONFIG_DIR", fx.path("cfg")).arg("doctor").output().unwrap();
     String::from_utf8_lossy(&o.stdout).replace("\r\n", "\n")
 }
 
+const BLANKET: &str = "Claude Code compacts every chat and subagent";
+
 #[test]
-fn doctor_notes_an_auto_compact_window_below_the_build_hard_limit() {
+fn doctor_notes_a_per_model_window_of_any_size() {
     let fx = Fx::new();
     fx.write("cfg/settings.json", r#"{"modelSettings": {"claude-opus-5-5": {"autoCompactWindow": 400000}}}"#);
     let out = doctor_out(&fx);
     assert!(
-        out.contains("af doctor: note — Claude Code compacts an Opus chat by itself at 400k, before a build chat's 600k nudge: such a chat can be compacted in the middle of a task. Raising it is the operator's setting."),
+        out.contains("af doctor: note — user settings hold a blanket auto-compact window of 400k for `claude-opus-5-5`: Claude Code compacts every chat and subagent on that model there. AgentFrame sets this per chat with nudges; the operator removes the setting."),
         "{out}"
     );
+    fx.write("cfg/settings.json", r#"{"modelSettings": {"claude-opus-5-5": {"autoCompactWindow": 900000}, "claude-sonnet-5-5": {"autoCompactWindow": 600000}}}"#);
+    let out = doctor_out(&fx);
+    assert!(out.contains("blanket auto-compact window of 900k for `claude-opus-5-5`"), "above any class limit: {out}");
+    assert!(out.contains("blanket auto-compact window of 600k for `claude-sonnet-5-5`"), "{out}");
+    assert!(!out.contains("before a build chat"), "the old wording is gone: {out}");
 }
 
 #[test]
-fn doctor_says_nothing_for_a_window_at_or_over_the_limit_or_for_no_settings() {
+fn doctor_notes_a_top_level_window_without_a_model_id() {
     let fx = Fx::new();
-    fx.write("cfg/settings.json", r#"{"modelSettings": {"claude-opus-5-5": {"autoCompactWindow": 700000}, "claude-sonnet-5-5": {"autoCompactWindow": 600000}, "other-vendor": {"autoCompactWindow": 100000}}}"#);
-    assert!(!doctor_out(&fx).contains("compacts a"), "{}", doctor_out(&fx));
+    fx.write("cfg/settings.json", r#"{"autoCompactWindow": 500000}"#);
+    let out = doctor_out(&fx);
+    assert!(
+        out.contains("af doctor: note — user settings hold a blanket auto-compact window of 500k: Claude Code compacts every chat and subagent there. AgentFrame sets this per chat with nudges; the operator removes the setting."),
+        "{out}"
+    );
+    assert!(!out.contains("for `"), "{out}");
+}
+
+#[test]
+fn doctor_says_nothing_with_no_window_set_or_no_readable_settings() {
+    let fx = Fx::new();
+    fx.write("cfg/settings.json", r#"{"modelSettings": {"claude-opus-5-5": {"effort": "high"}, "other-vendor": {"autoCompactWindow": 100000}}, "theme": "dark"}"#);
+    assert!(!doctor_out(&fx).contains(BLANKET), "{}", doctor_out(&fx));
     fx.write("cfg/settings.json", "not json");
-    assert!(!doctor_out(&fx).contains("compacts a"));
+    assert!(!doctor_out(&fx).contains(BLANKET));
     fx.remove("cfg/settings.json");
-    assert!(!doctor_out(&fx).contains("compacts a"));
+    assert!(!doctor_out(&fx).contains(BLANKET));
 }
 
 #[test]
 fn doctor_never_writes_the_user_settings() {
     let fx = Fx::new();
-    fx.write("cfg/settings.json", r#"{"modelSettings": {"claude-fable-5-2": {"autoCompactWindow": 300000}}}"#);
+    fx.write("cfg/settings.json", r#"{"autoCompactWindow": 200000, "modelSettings": {"claude-fable-5-2": {"autoCompactWindow": 300000}}}"#);
     let before = fx.read("cfg/settings.json");
     let out = doctor_out(&fx);
-    assert!(out.contains("compacts a Fable chat by itself at 300k"), "{out}");
+    assert!(out.contains("blanket auto-compact window of 300k for `claude-fable-5-2`"), "{out}");
     assert_eq!(fx.read("cfg/settings.json"), before);
 }
 
 #[test]
-fn doctor_names_each_model_with_its_own_article() {
+fn doctor_names_each_model_by_its_id_and_drops_a_1m_suffix() {
     let fx = Fx::new();
     fx.write(
         "cfg/settings.json",
-        r#"{"modelSettings": {"claude-opus-5-5": {"autoCompactWindow": 300000}, "claude-fable-5-2": {"autoCompactWindow": 300000}, "claude-sonnet-5-5": {"autoCompactWindow": 300000}, "claude-haiku-5-5": {"autoCompactWindow": 300000}}}"#,
+        r#"{"modelSettings": {"claude-opus-5-5": {"autoCompactWindow": 300000}, "claude-fable-5-2": {"autoCompactWindow": 300000}, "claude-sonnet-5-5[1m]": {"autoCompactWindow": 300000}, "claude-haiku-5-5": {"autoCompactWindow": 300000}}}"#,
     );
     let out = doctor_out(&fx);
-    for who in ["an Opus chat", "a Fable chat", "a Sonnet chat", "a Haiku chat"] {
-        assert!(out.contains(&format!("Claude Code compacts {who} by itself at 300k")), "{who}: {out}");
+    for id in ["claude-opus-5-5", "claude-fable-5-2", "claude-sonnet-5-5", "claude-haiku-5-5"] {
+        assert!(out.contains(&format!("blanket auto-compact window of 300k for `{id}`:")), "{id}: {out}");
     }
-    assert!(!out.contains("a opus") && !out.contains("an Fable"), "{out}");
+    assert!(!out.contains("[1m]"), "{out}");
+}
+
+#[test]
+fn doctor_says_nothing_for_an_id_that_models_json_does_not_name_as_current() {
+    let fx = Fx::new();
+    fx.write("system/models.json", r#"{"fable": "claude-fable-5-2"}"#);
+    fx.write("cfg/settings.json", r#"{"modelSettings": {"claude-fable-5-1": {"autoCompactWindow": 500000}}}"#);
+    let out = doctor_out(&fx);
+    assert!(!out.contains(BLANKET), "{out}");
+    fx.write("cfg/settings.json", r#"{"modelSettings": {"claude-fable-5-1": {"autoCompactWindow": 500000}, "claude-fable-5-2[1m]": {"autoCompactWindow": 500000}}}"#);
+    let out = doctor_out(&fx);
+    assert!(out.contains("blanket auto-compact window of 500k for `claude-fable-5-2`:"), "{out}");
+    assert!(!out.contains("claude-fable-5-1"), "{out}");
+}
+
+#[test]
+fn doctor_without_models_json_names_an_old_id_by_its_id() {
+    let fx = Fx::new();
+    assert!(!fx.exists("system/models.json"));
+    fx.write("cfg/settings.json", r#"{"modelSettings": {"claude-fable-5-1": {"autoCompactWindow": 500000}}}"#);
+    let out = doctor_out(&fx);
+    assert!(out.contains("blanket auto-compact window of 500k for `claude-fable-5-1`:"), "{out}");
+    fx.write("system/models.json", "not json");
+    assert!(doctor_out(&fx).contains("for `claude-fable-5-1`:"));
 }

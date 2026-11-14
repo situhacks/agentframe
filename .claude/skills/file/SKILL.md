@@ -26,7 +26,7 @@ For each input, one at a time, dispatch the `filer` role. Its brief names:
 - the move rule: an input in `sources/inbox/` is moved into `sources/` (an order into `sources/orders/`) under its schema name, never copied; an input outside the inbox is copied and the original left alone;
 - the project, when the layer is a project.
 
-Wait for each return before the next dispatch, since two filers can pick the same next id.
+Wait for each return before the next dispatch: two filers can edit the same knowledge page or loop at once.
 
 ## Close
 

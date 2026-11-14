@@ -6,7 +6,7 @@ use crate::life::{vpath, TextFile};
 use crate::reach;
 use crate::sessions::{self, Row, SessionClass};
 
-/// The Claude Code aliases, one card each.
+/// The Claude Code aliases. Only `fable` and `opus` have a card file; a chat on another alias gets none.
 pub const ALIASES: [&str; 4] = ["fable", "opus", "sonnet", "haiku"];
 
 /// The alias for a model id (`claude-fable-5-2`, with or without a `[1m]` suffix), for an alias, or for
@@ -17,16 +17,6 @@ pub fn alias_of(model: &str) -> Option<&'static str> {
         return Some("opus");
     }
     ALIASES.iter().copied().find(|a| m == *a || m.starts_with(&format!("claude-{a}-")))
-}
-
-/// The alias's name as it is written in a sentence, with its article: `an Opus`, `a Fable`.
-pub fn display_with_article(alias: &str) -> String {
-    let mut name = alias.to_string();
-    if let Some(first) = name.get_mut(0..1) {
-        first.make_ascii_uppercase();
-    }
-    let article = if name.starts_with(['A', 'E', 'I', 'O', 'U']) { "an" } else { "a" };
-    format!("{article} {name}")
 }
 
 /// The alias of the model the chat runs on: the first source that maps to one, in this order: the hook

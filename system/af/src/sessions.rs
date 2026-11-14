@@ -84,21 +84,20 @@ pub enum SessionClass {
     Build,
 }
 
-/// One class's window and nudge thresholds, in tokens. `None` means no nudge: the
-/// harness's own auto-compact handles that class.
+/// One class's window and nudge thresholds, in tokens. Every class is nudged: AgentFrame decides per
+/// chat when it should compact, and Claude Code's own window is left at its default.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ClassLimits {
     pub class: SessionClass,
-    pub window: u64,
     pub soft: Option<u64>,
     pub hard: Option<u64>,
 }
 
 /// The one table of session classes.
 pub const CLASS_LIMITS: [ClassLimits; 3] = [
-    ClassLimits { class: SessionClass::Main, window: 350_000, soft: None, hard: None },
-    ClassLimits { class: SessionClass::Side, window: 300_000, soft: None, hard: None },
-    ClassLimits { class: SessionClass::Build, window: 1_000_000, soft: Some(400_000), hard: Some(600_000) },
+    ClassLimits { class: SessionClass::Main, soft: Some(350_000), hard: Some(450_000) },
+    ClassLimits { class: SessionClass::Side, soft: Some(300_000), hard: Some(400_000) },
+    ClassLimits { class: SessionClass::Build, soft: Some(400_000), hard: Some(600_000) },
 ];
 
 pub const CLASS_NAMES: [&str; 3] = ["main", "side", "build"];
@@ -131,8 +130,68 @@ pub fn default_class(name: &str) -> SessionClass {
     }
 }
 
-/// Doctor: a brief whose `class:` line is not one of the three classes. Reading it falls back to
-/// the name default, so this is the only place the typo shows.
+/// A brief's `soft:` or `hard:` value: a number with `k`, 100k to 1000k, in tokens.
+fn parse_limit(value: &str) -> Option<u64> {
+    let n: u64 = value.trim().strip_suffix('k')?.parse().ok()?;
+    (100..=1000).contains(&n).then_some(n * 1000)
+}
+
+/// The class limits with a brief's optional `soft:` and `hard:` lines applied, and what is wrong with
+/// those lines. A bad value falls back to the class's own; a pair with soft not below hard (either one
+/// checked against the other's class value when alone) falls back to the class's pair.
+fn override_limits(class: SessionClass, soft: Option<&str>, hard: Option<&str>) -> (ClassLimits, Vec<String>) {
+    let base = class.limits();
+    let mut problems = Vec::new();
+    let mut read = |key: &str, raw: Option<&str>| {
+        let raw = raw?;
+        let n = parse_limit(raw);
+        if n.is_none() {
+            problems.push(format!(
+                "{key}: '{raw}' is not a limit; use a number with k, 100k to 1000k (the {} class's {} applies until then)",
+                class.name(),
+                opt_limit(if key == "soft" { base.soft } else { base.hard })
+            ));
+        }
+        n
+    };
+    let (soft, hard) = (read("soft", soft), read("hard", hard));
+    let (s, h) = (soft.or(base.soft), hard.or(base.hard));
+    if let (Some(s), Some(h)) = (s, h) {
+        if (soft.is_some() || hard.is_some()) && s >= h {
+            problems.push(format!(
+                "soft {}k is not below hard {}k; the {} class's limits apply until then",
+                s / 1000,
+                h / 1000,
+                class.name()
+            ));
+            return (base, problems);
+        }
+    }
+    (ClassLimits { soft: s, hard: h, ..base }, problems)
+}
+
+fn opt_limit(v: Option<u64>) -> String {
+    v.map(|n| format!("{}k", n / 1000)).unwrap_or_else(|| "none".to_string())
+}
+
+/// A brief's frontmatter `soft:` and `hard:` values as written, when it has a frontmatter.
+fn brief_limit_lines(text: &str) -> (Option<String>, Option<String>) {
+    match fm::split_fm_optional(text) {
+        Some((bfm, _)) => (fm::get_scalar(&bfm, "soft"), fm::get_scalar(&bfm, "hard")),
+        None => (None, None),
+    }
+}
+
+/// The limits in force for a chat: its class's, with its brief's `soft:` and `hard:` lines applied.
+pub fn limits_of(ctx: &Ctx, name: &str, class: SessionClass) -> ClassLimits {
+    let text = TextFile::load(&vpath(ctx, &brief_rel(name))).ok().flatten().map(|t| t.text).unwrap_or_default();
+    let (soft, hard) = brief_limit_lines(&text);
+    override_limits(class, soft.as_deref(), hard.as_deref()).0
+}
+
+/// Doctor: a brief whose `class:` line is not one of the three classes, or whose `soft:` or `hard:` line
+/// is not a usable limit. Reading falls back to the name default or the class limit, so this is the only
+/// place the typo shows.
 pub fn bad_class_issues(ctx: &Ctx) -> R<Vec<String>> {
     let root = vpath(ctx, "system/sessions");
     let mut issues = Vec::new();
@@ -149,13 +208,19 @@ pub fn bad_class_issues(ctx: &Ctx) -> R<Vec<String>> {
     for b in briefs {
         let Some(tf) = TextFile::load(&b)? else { continue };
         let Some((bfm, _)) = fm::split_fm_optional(&tf.text) else { continue };
-        let Some(value) = fm::get_scalar(&bfm, "class") else { continue };
-        if SessionClass::parse(&value).is_none() {
+        let rel = ctx.rel(&b)?;
+        let value = fm::get_scalar(&bfm, "class");
+        if let Some(v) = value.as_deref().filter(|v| SessionClass::parse(v).is_none()) {
             issues.push(format!(
-                "{}: class: '{value}' is not a session class; use one of {} (the name's default applies until then)",
-                ctx.rel(&b)?,
+                "{rel}: class: '{v}' is not a session class; use one of {} (the name's default applies until then)",
                 CLASS_NAMES.join(", ")
             ));
+        }
+        let name = rel.strip_prefix("system/sessions/").and_then(|r| r.strip_suffix("/brief.md")).unwrap_or("");
+        let class = value.as_deref().and_then(SessionClass::parse).unwrap_or_else(|| default_class(name));
+        let (soft, hard) = (fm::get_scalar(&bfm, "soft"), fm::get_scalar(&bfm, "hard"));
+        for problem in override_limits(class, soft.as_deref(), hard.as_deref()).1 {
+            issues.push(format!("{rel}: {problem}"));
         }
     }
     Ok(issues)

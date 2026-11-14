@@ -409,6 +409,94 @@ class CheckTests(unittest.TestCase):
         self.assertEqual(e.verdict, "update")
         self.assertIn("newer message", e.capped)
 
+    def test_a_search_copy_of_a_thread_does_not_pass_a_message_the_fetched_thread_has_a_later_one_to(self):
+        retracts = {**MESSAGE, "id": "m-2", "threadId": "t-1", "date": "2026-03-09T16:00:00Z",
+                    "subject": "Re: Your licence is renewed", "htmlBody": "<p>Sorry, that was a mistake.</p>"}
+        lines = stream(*searched({"id": "t-1", "messages": [MESSAGE]}), *fetched(MESSAGE, retracts),
+                       reply=json.dumps(GOOD))
+        e = self.check(lines)
+        self.assertEqual(e.verdict, "update")
+        self.assertIn("a newer message in the thread may change it", e.capped)
+
+    def test_two_copies_that_share_only_a_message_id_are_one_thread(self):
+        retracts = {**MESSAGE, "id": "m-2", "date": "2026-03-09T16:00:00Z", "subject": "Re: Your licence is renewed",
+                    "htmlBody": "<p>Sorry, that was a mistake.</p>"}
+        bare = call("g", GET, json.dumps({"messages": [MESSAGE, retracts]}))
+        lines = stream(*searched({"id": "t-1", "messages": [MESSAGE]}), *bare, reply=json.dumps(GOOD))
+        e = self.check(lines)
+        self.assertEqual(e.verdict, "update")
+        self.assertIn("a newer message in the thread may change it", e.capped)
+
+    def test_the_fetched_copy_of_a_message_wins_over_the_search_copy(self):
+        snippet = {"id": "m-1", "threadId": "t-1", "date": MESSAGE["date"], "snippet": "Good news: your licence"}
+        payloads = [(SEARCH, {"threads": [{"id": "t-1", "messages": [snippet]}]}), (GET, {"id": "t-1", "messages": [MESSAGE]})]
+        threads = lw._threads(payloads)
+        self.assertEqual(threads, [[MESSAGE]])
+        self.assertEqual(lw.merge_thread_copies([[snippet], [MESSAGE]]), [snippet], "the first copy given wins")
+        self.assertEqual(lw.merge_thread_copies([[MESSAGE], [snippet, {"id": "m-2"}]]), [MESSAGE, {"id": "m-2"}])
+
+    def test_unrelated_threads_stay_apart_and_a_later_message_in_one_does_not_cap_a_hit_in_the_other(self):
+        elsewhere = {"id": "m-9", "threadId": "t-2", "date": "2026-03-09T16:00:00Z", "sender": "Bank <bank@bank.example>",
+                     "subject": "Your statement", "htmlBody": "<p>Your statement is ready to view online.</p>"}
+        lines = stream(*searched({"id": "t-1", "messages": [MESSAGE]}, {"id": "t-2", "messages": [elsewhere]}),
+                       *fetched(MESSAGE), reply=json.dumps(GOOD))
+        e = self.check(lines)
+        self.assertEqual((e.verdict, e.capped), ("done", None))
+        payloads = [(SEARCH, {"threads": [{"id": "t-1", "messages": [MESSAGE]}, {"id": "t-2", "messages": [elsewhere]}]})]
+        self.assertEqual(lw._threads(payloads), [[MESSAGE], [elsewhere]])
+
+    def test_a_thread_id_that_disagrees_outranks_a_shared_message_id(self):
+        a = {"id": "m-1", "threadId": "t-9", "date": MESSAGE["date"], "snippet": "one"}
+        b = {"id": "m-1", "threadId": "t-1", "date": MESSAGE["date"], "snippet": "two"}
+        by_payload = [(SEARCH, {"threads": [{"id": "t-9", "messages": [a]}, {"id": "t-1", "messages": [b]}]})]
+        self.assertEqual(lw._threads(by_payload), [[a], [b]])
+        bare_a, bare_b = {"id": "m-1", "snippet": "one"}, {"id": "m-1", "snippet": "two"}
+        by_message = [(SEARCH, {"threads": [{"messages": [dict(bare_a, threadId="t-9")]}]}),
+                      (GET, {"messages": [dict(bare_b, threadId="t-1")]})]
+        self.assertEqual(len(lw._threads(by_message)), 2)
+        mixed = [(SEARCH, {"threads": [{"id": "t-9", "messages": [bare_a]}]}), (GET, {"id": "t-1", "messages": [bare_b]})]
+        self.assertEqual(lw._threads(mixed), [[bare_a], [bare_b]], "a payload id against another payload's id")
+
+    def test_a_copy_with_no_thread_id_still_joins_by_a_shared_message_id(self):
+        a = {"id": "m-1", "snippet": "one"}
+        b = {"id": "m-1", "snippet": "two"}
+        c = {"id": "m-2", "snippet": "three"}
+        payloads = [(SEARCH, {"threads": [{"id": "t-1", "messages": [a]}]}), (GET, {"messages": [b, c]})]
+        self.assertEqual(lw._threads(payloads), [[b, c]])
+
+    def test_an_empty_or_non_string_id_is_no_id(self):
+        a, b = {"id": "", "snippet": "one"}, {"id": "", "snippet": "two"}
+        n1, n2 = {"id": 7, "snippet": "three"}, {"id": 7, "snippet": "four"}
+        self.assertEqual(lw.merge_thread_copies([[a, n1], [b, n2]]), [a, n1, b, n2], "no message is dropped")
+        payloads = [(SEARCH, {"threads": [{"id": "", "messages": [a]}, {"id": "", "messages": [b]}]}),
+                    (GET, {"id": 5, "messages": [n1]}), (GET, {"id": 5, "messages": [n2]})]
+        self.assertEqual(lw._threads(payloads), [[a], [b], [n1], [n2]], "no list is merged on an empty or odd id")
+
+    def test_a_later_messages_date_from_the_search_copy_still_counts_when_the_fetched_copy_has_none(self):
+        later = {**MESSAGE, "id": "m-2", "date": "2026-03-09T16:00:00Z", "subject": "Re: Your licence is renewed",
+                 "htmlBody": "<p>Actually it was cancelled.</p>"}
+        undated = {k: v for k, v in later.items() if k != "date"}
+        lines = stream(*searched({"id": "t-1", "messages": [MESSAGE, later]}), *fetched(undated), reply=json.dumps(GOOD))
+        e = self.check(lines)
+        self.assertEqual(e.verdict, "update")
+        self.assertIn("a newer message in the thread may change it", e.capped)
+
+    def test_an_earlier_messages_date_from_the_search_copy_still_counts_when_the_fetched_copy_has_none(self):
+        earlier = {**MESSAGE, "id": "m-0", "date": "2026-03-07T08:00:00Z", "subject": "Your licence", "htmlBody": "<p>Hello.</p>"}
+        undated = {k: v for k, v in earlier.items() if k != "date"}
+        lines = stream(*searched({"id": "t-1", "messages": [earlier, MESSAGE]}), *fetched(undated, MESSAGE),
+                       reply=json.dumps(GOOD))
+        e = self.check(lines)
+        self.assertEqual(e.verdict, "update")
+        self.assertIn("could not separate its own text from quoted history", e.capped)
+
+    def test_a_message_no_copy_dates_makes_no_hit_look_newer_or_surer(self):
+        undated = {k: v for k, v in {**MESSAGE, "id": "m-2", "htmlBody": "<p>Hello.</p>"}.items() if k != "date"}
+        lines = stream(*searched({"id": "t-1", "messages": [MESSAGE, undated]}), *fetched(MESSAGE, undated),
+                       reply=json.dumps(GOOD))
+        e = self.check(lines)
+        self.assertEqual((e.verdict, e.capped), ("done", None), "an undated message is no evidence either way")
+
     def test_an_email_dated_later_than_now_is_a_failure(self):
         now = dt.datetime(2026, 3, 8, 9, 0)
         later_today = {**MESSAGE, "date": "2026-03-08T23:30:00+00:00"}

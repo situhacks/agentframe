@@ -317,13 +317,23 @@ pub fn context_tokens(path: &str) -> Option<u64> {
     context_usage(path).map(|u| u.tokens)
 }
 
-/// `modelSettings.<model>.autoCompactWindow` from the user-level Claude settings; a bracket
-/// suffix on the model id (`[1m]`) is ignored.
-pub fn auto_compact_window(model: &str) -> Option<u64> {
+/// The auto-compact window in the user-level Claude settings that applies to a model, and whether it is
+/// the top-level `autoCompactWindow` (the model has none of its own) rather than
+/// `modelSettings.<model>.autoCompactWindow`. A bracket suffix on the model id (`[1m]`) is ignored.
+pub fn auto_compact_setting(model: &str) -> Option<(u64, bool)> {
     let text = std::fs::read_to_string(pyos::join(&config_dir()?, "settings.json")).ok()?;
     let v: Value = serde_json::from_str(&text).ok()?;
     let id = model.split('[').next().unwrap_or(model);
-    v.pointer("/modelSettings")?.get(id)?.get("autoCompactWindow")?.as_u64()
+    let own = v.pointer("/modelSettings").and_then(|m| m.get(id)).and_then(|m| m.get("autoCompactWindow")).and_then(Value::as_u64);
+    match own {
+        Some(w) => Some((w, false)),
+        None => v.get("autoCompactWindow").and_then(Value::as_u64).map(|w| (w, true)),
+    }
+}
+
+/// The window of `auto_compact_setting`.
+pub fn auto_compact_window(model: &str) -> Option<u64> {
+    auto_compact_setting(model).map(|s| s.0)
 }
 
 fn inbound_setting() -> Option<String> {

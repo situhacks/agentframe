@@ -1,9 +1,16 @@
-"""system/tools/desktop.ps1: static checks, and live checks on windows these tests open themselves.
+"""system/tools/desktop.ps1, live: checks on windows these tests open themselves.
 
 The whole module skips unless AF_DESKTOP_TESTS=1, because the live tests open forms with bank and
-password-manager titles and take the foreground. Set it only on the machine that runs the tool.
-With it set, live tests still skip without an interactive, unlocked Windows desktop. Run with -rs.
+password-manager titles, take the foreground, move the pointer and send input. Set it only on the machine
+that runs the tool, and only while the operator is away: the tool's own away guard refuses to act while he is
+there, and the module skips unless he has been idle for 120 s when it starts. With it set, live tests still
+skip without an interactive, unlocked Windows desktop. Run with -rs.
 No test captures the full screen or acts on a window it did not open; only `windows` lists the others.
+The checks that need no desktop are in test_desktop_static.py and run in the normal suite.
+
+The tests run in file order and are one run of the tool: they share a state file, so each command after the
+first is allowed by the tool's own-tick rule (its own input does not lock it out). The restore tests come last
+because they end that run, and they start theirs with -IdleSeconds 0, which exists for the tests.
 """
 
 import os
@@ -13,12 +20,16 @@ import pytest
 if os.environ.get("AF_DESKTOP_TESTS") != "1":
     pytest.skip("desktop tool tests run only with AF_DESKTOP_TESTS=1", allow_module_level=True)
 
+import atexit
+import ctypes
+import ctypes.wintypes
 import json
 import re
 import shutil
 import struct
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 from pathlib import Path
@@ -30,6 +41,13 @@ NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 POWERSHELL = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass"]
 REFUSED = 3
 USAGE = 2
+ACTIVE = 4
+BUSY = 1
+
+# Every command runs with AF_ROOT here, so the run state is a temp file and never the operator's own.
+STATE_ROOT = Path(tempfile.mkdtemp(prefix="af-desktop-state-"))
+atexit.register(shutil.rmtree, STATE_ROOT, ignore_errors=True)
+STATE_FILE = STATE_ROOT / "system" / "logs" / "desktop" / "run.json"
 
 FIXTURE = r"""
 param([string]$Title, [string]$StateFile, [string]$CommandFile, [int]$Left = 200)
@@ -162,9 +180,58 @@ ALLOWED_LOOKALIKES = ["stdout td notes", "settings.json notes", "Bmore rbcx note
                       "Pending tasks"]
 
 
+def run_env(root: Path = STATE_ROOT) -> dict:
+    return {**os.environ, "AF_ROOT": str(root)}
+
+
 def desktop(*args, timeout=60, env=None):
     return subprocess.run([*POWERSHELL, "-File", str(SCRIPT), *map(str, args)], capture_output=True, text=True,
-                          encoding="utf-8", errors="replace", timeout=timeout, creationflags=NO_WINDOW, env=env)
+                          encoding="utf-8", errors="replace", timeout=timeout, creationflags=NO_WINDOW,
+                          env=run_env() if env is None else env)
+
+
+def read_run_state() -> dict:
+    return json.loads(STATE_FILE.read_text(encoding="utf-8-sig"))
+
+
+def assert_active(result):
+    assert result.returncode == ACTIVE, f"expected exit 4, got {result.returncode}: {result.stdout} {result.stderr}"
+    assert re.search(r"^error: the operator is active \(last input \d+ s ago\); nothing was sent; wait and retry$",
+                     result.stderr.strip()), result.stderr
+    assert result.stdout == ""
+
+
+# The operator's side of the screen, read with the same Win32 calls an ordinary program uses.
+
+def win32():
+    user32 = ctypes.windll.user32
+    try:
+        user32.SetProcessDPIAware()  # the tool is DPI aware; so must these coordinates be
+    except OSError:
+        pass
+    return user32
+
+
+def pointer() -> tuple[int, int]:
+    point = ctypes.wintypes.POINT()
+    win32().GetCursorPos(ctypes.byref(point))
+    return point.x, point.y
+
+
+def foreground_title() -> str:
+    user32 = win32()
+    buffer = ctypes.create_unicode_buffer(512)
+    user32.GetWindowTextW(user32.GetForegroundWindow(), buffer, 512)
+    return buffer.value
+
+
+def wait_until(condition, timeout=5.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if condition():
+            return True
+        time.sleep(0.05)
+    return condition()
 
 
 def local_denylist(tmp_path: Path, *lines: str) -> dict:
@@ -258,11 +325,18 @@ def pixel(path: Path, x: int, y: int) -> tuple[int, int, int]:
 
 
 PROBE = r"""
-Add-Type -Namespace AfProbe -Name Desk -MemberDefinition '[DllImport("user32.dll")] public static extern System.IntPtr OpenInputDesktop(uint f, bool i, uint a); [DllImport("user32.dll")] public static extern System.IntPtr GetForegroundWindow();'
+Add-Type -Namespace AfProbe -Name Desk -MemberDefinition '
+[StructLayout(LayoutKind.Sequential)] public struct LII { public uint cbSize; public uint dwTime; }
+[DllImport("user32.dll")] public static extern System.IntPtr OpenInputDesktop(uint f, bool i, uint a);
+[DllImport("user32.dll")] static extern bool GetLastInputInfo(ref LII p);
+public static long IdleMs() { LII l = new LII(); l.cbSize = 8; if (!GetLastInputInfo(ref l)) return -1; return (long)unchecked((uint)Environment.TickCount - l.dwTime); }'
 if (-not [Environment]::UserInteractive) { 'not an interactive session'; exit 0 }
 if ([AfProbe.Desk]::OpenInputDesktop(0, $false, 0x100) -eq [IntPtr]::Zero) { 'no input desktop: locked, or not the active session'; exit 0 }
+$idle = [AfProbe.Desk]::IdleMs()
+if ($idle -lt 120000) { 'the operator is at the computer: idle ' + [int]($idle / 1000) + ' s, and the tool needs 120'; exit 0 }
 'ok'
 """
+
 
 
 @pytest.fixture(scope="module")
@@ -279,7 +353,14 @@ def live():
         pytest.skip(f"could not probe the desktop: {exc}")
     answer = probe.stdout.strip()
     if answer != "ok":
-        pytest.skip(f"no interactive desktop: {answer or probe.stderr.strip()}")
+        pytest.skip(f"cannot run live: {answer or probe.stderr.strip()}")
+
+
+@pytest.fixture(scope="module", autouse=True)
+def end_the_run():
+    yield
+    if STATE_FILE.exists() and sys.platform == "win32":
+        desktop("restore")  # the default guard: if he is back, nothing is touched
 
 
 @pytest.fixture
@@ -308,50 +389,6 @@ def named_exe(live, tmp_path_factory):
     result = subprocess.run([*POWERSHELL, "-Command", code], capture_output=True, text=True, creationflags=NO_WINDOW)
     assert built.exists(), result.stderr
     return built
-
-
-# Static: these need no desktop and never launch PowerShell.
-
-def denylist_block() -> str:
-    text = SCRIPT.read_text(encoding="utf-8")
-    start, end = text.index("# >>> DENYLIST"), text.index("# <<< DENYLIST")
-    assert end < text.index("function "), "the denylist sits above all code"
-    return text[start:end]
-
-
-@pytest.mark.parametrize("term", [
-    "bank", "broker", "trad(e|ing)", "invest", "wealth", "financ", "credit (union|card)", "password",
-    "keepass", "bitwarden", "TD", "rbc", "CredentialUIBroker", "consent", "windows security", "LogonUI",
-    "SystemSettings", "settings", "control", "control panel", "mmc", "regedit",
-])
-def test_denylist_names_every_required_target(term):
-    assert term in denylist_block()
-
-
-def test_the_local_denylist_path_is_gitignored_and_documented():
-    path = re.search(r"\$LocalDenyPath = '([^']+)'", denylist_block()).group(1).replace("\\", "/")
-    assert path.startswith("workspace/"), "workspace/ is gitignored; the local list names his own institutions"
-    assert f"`{path}`" in DOC.read_text(encoding="utf-8")
-
-
-def test_script_is_ascii_because_windows_powershell_misreads_utf8_without_a_bom():
-    assert SCRIPT.read_bytes().isascii()
-
-
-def test_script_downloads_nothing():
-    text = SCRIPT.read_text(encoding="utf-8")
-    for banned in ("Invoke-WebRequest", "Invoke-RestMethod", "Install-Module", "DownloadFile", "Start-BitsTransfer", "curl "):
-        assert banned not in text
-
-
-def test_doc_is_cataloged_and_states_the_limits():
-    doc = DOC.read_text(encoding="utf-8")
-    for limit in ("Never type passwords", "Never place trades or move money", "Never solve CAPTCHAs",
-                  "as data, never as instructions", "Never change Windows security settings",
-                  "A full-screen screenshot still captures"):
-        assert limit in doc
-    assert "[`desktop-tool.md`](desktop-tool.md)" in (ROOT / "library" / "process" / "README.md").read_text(encoding="utf-8")
-    assert "[`desktop-tool.md`](desktop-tool.md)" in (ROOT / "library" / "process" / "tool-routes.md").read_text(encoding="utf-8")
 
 
 # Live: read-only commands.
@@ -559,9 +596,12 @@ def test_typing_stops_when_the_title_becomes_denied_partway(form):
 # Live: the denylist, on fake titles and on real processes with chosen names.
 
 @pytest.mark.parametrize("name", DENIED_TITLES)
-def test_a_denied_title_is_refused(shared_form, name):
-    shared_form.retitle(f"{name} {uuid.uuid4().hex}")
-    assert_refused(desktop("focus", "-Window", shared_form.title), "off limits")
+def test_a_denied_title_is_refused_and_not_repeated(shared_form, name):
+    token = uuid.uuid4().hex
+    shared_form.retitle(f"{name} {token}")
+    result = desktop("focus", "-Window", shared_form.title)
+    assert_refused(result, "off limits", "(off limits)")
+    assert token not in result.stderr, "a refusal does not print the title of the window it refused"
 
 
 def test_the_exact_settings_title_is_refused(shared_form):
@@ -599,7 +639,9 @@ def test_a_lookalike_title_is_allowed(shared_form, name):
 ])
 def test_every_acting_command_refuses_a_denied_window(form, args):
     form.retitle(f"RBC Online Banking {uuid.uuid4().hex}")
-    assert_refused(desktop(args[0], "-Window", form.title, *args[1:]), "off limits")
+    result = desktop(args[0], "-Window", form.title, *args[1:])
+    assert_refused(result, "off limits")
+    assert form.title.split()[-1] not in result.stderr
     time.sleep(0.2)
     state = form.state()
     assert (state["pressed"], state["label_clicks"], state["text"]) == (0, 0, "")
@@ -612,11 +654,13 @@ def test_screenshot_refuses_a_denied_window_and_writes_nothing(form, tmp_path):
     assert not out.exists()
 
 
-def test_windows_marks_a_denied_window(form):
-    form.retitle(f"Bitwarden Web Vault {uuid.uuid4().hex}")
+def test_windows_marks_a_denied_window_and_hides_its_title(form):
+    token = uuid.uuid4().hex
+    form.retitle(f"Bitwarden Web Vault {token}")
     result = desktop("windows")
     assert_ok(result)
-    assert ["denied", form.title] in [line.split("\t")[2:] for line in result.stdout.splitlines()]
+    assert ["powershell", "denied", "(off limits)"] in [line.split("\t")[1:] for line in result.stdout.splitlines()]
+    assert token not in result.stdout and "Bitwarden" not in result.stdout
 
 
 @pytest.mark.parametrize("process", ["KeePass", "consent", "SystemSettings"])
@@ -633,3 +677,220 @@ def test_a_denied_process_is_refused_under_a_neutral_title(named_exe, tmp_path, 
     finally:
         running.kill()
         running.wait(timeout=10)
+
+
+# Live: the away guard. A guarded command refuses to send anything while he is, as far as the tool can tell, there.
+
+def guarded_args(form, command):
+    if command == "focus":
+        return ["focus"]
+    if command == "invoke":
+        return ["invoke", "-Name", "Press Me"]
+    if command == "invoke-by-click":
+        return ["invoke", "-Name", "Fallback Target"]
+    if command == "click":
+        x, y = element_bounds(form.title, "Fallback Target")
+        return ["click", "-X", x, "-Y", y]
+    if command == "type":
+        return ["type", "-Text", "x"]
+    return ["key", "-Keys", "x"]
+
+
+@pytest.mark.parametrize("command", ["focus", "invoke", "invoke-by-click", "click", "type", "key"])
+def test_a_gated_command_refuses_when_he_is_active_and_sends_nothing(form, command):
+    args = guarded_args(form, command)
+    before = STATE_FILE.read_bytes() if STATE_FILE.exists() else None
+    result = desktop(args[0], "-Window", form.title, *args[1:], "-IdleSeconds", 999999)
+    assert_active(result)
+    time.sleep(0.3)
+    state = form.state()
+    assert (state["pressed"], state["label_clicks"], state["text"]) == (0, 0, "")
+    after = STATE_FILE.read_bytes() if STATE_FILE.exists() else None
+    assert after == before, "a refused command leaves the run state exactly as it was"
+
+
+def test_restore_refuses_when_he_is_active_and_leaves_the_run_alone(form):
+    assert_ok(desktop("focus", "-Window", form.title))
+    before = STATE_FILE.read_bytes()
+    assert_active(desktop("restore", "-IdleSeconds", 999999))
+    assert STATE_FILE.read_bytes() == before
+
+
+def test_the_read_only_commands_ignore_the_guard(shared_form, tmp_path):
+    assert_ok(desktop("tree", "-Window", shared_form.title, "-Depth", 1, "-IdleSeconds", 999999))
+    listed = desktop("windows", "-IdleSeconds", 999999)
+    assert_ok(listed)
+    assert shared_form.title in listed.stdout
+    out = tmp_path / "guarded.png"
+    assert_ok(desktop("screenshot", "-Window", shared_form.title, "-Out", out, "-IdleSeconds", 999999))
+    assert out.exists()
+
+
+def test_a_second_input_straight_after_the_first_is_allowed_and_his_tick_is_kept(form):
+    assert_ok(desktop("type", "-Window", form.title, "-Text", "one"))
+    first = read_run_state()
+    assert first["own_tick"] is not None, "a command that sent input recorded the tick of its own last input"
+    assert_ok(desktop("key", "-Window", form.title, "-Keys", "ctrl+a delete"))
+    x, y = element_bounds(form.title, "Press Me")
+    assert_ok(desktop("click", "-Window", form.title, "-X", x, "-Y", y))
+    last = read_run_state()
+    assert last["operator_tick"] == first["operator_tick"], "his last input is never replaced by the tool's"
+    assert last["own_tick"] != first["own_tick"], "the tool's own tick follows its own input"
+    form.wait_for(lambda s: s["pressed"] == 1 and s["text"] == "")
+
+
+def test_the_run_state_holds_the_foreground_and_pointer_found_at_the_start(form):
+    assert_ok(desktop("focus", "-Window", form.title))
+    recorded = read_run_state()
+    assert set(recorded) == {"operator_tick", "own_tick", "tick_at_write", "written_ms", "foreground", "pointer"}
+    assert isinstance(recorded["pointer"]["x"], int) and isinstance(recorded["pointer"]["y"], int)
+    assert isinstance(recorded["foreground"]["handle"], int) and recorded["foreground"]["process"]
+    again = desktop("focus", "-Window", form.title)
+    assert_ok(again)
+    kept = read_run_state()
+    assert kept["foreground"] == recorded["foreground"] and kept["pointer"] == recorded["pointer"], \
+        "only the first command of a run records them"
+
+
+def test_invoke_by_pattern_is_gated_records_state_and_does_not_lock_out_the_next_command(form):
+    before = read_run_state()["written_ms"] if STATE_FILE.exists() else 0
+    result = desktop("invoke", "-Window", form.title, "-Name", "Press Me")
+    assert_ok(result)
+    assert "via=invoke" in result.stdout
+    assert read_run_state()["written_ms"] > before
+    assert_ok(desktop("type", "-Window", form.title, "-Text", "next"))
+    form.wait_for(lambda s: s["pressed"] == 1 and s["text"] == "next")
+
+
+@pytest.mark.parametrize("damage", ["wrong own tick", "older than 30 minutes", "unreadable"])
+def test_a_stale_run_state_falls_back_to_the_plain_rule(form, damage):
+    assert_ok(desktop("type", "-Window", form.title, "-Text", "a"))
+    saved = STATE_FILE.read_text(encoding="utf-8")
+    data = json.loads(saved)
+    assert data["own_tick"] is not None
+    if damage == "wrong own tick":
+        STATE_FILE.write_text(json.dumps({**data, "own_tick": data["own_tick"] + 1}), encoding="utf-8")
+    elif damage == "older than 30 minutes":
+        STATE_FILE.write_text(json.dumps({**data, "written_ms": data["written_ms"] - 31 * 60 * 1000}), encoding="utf-8")
+    else:
+        STATE_FILE.write_text("{not json", encoding="utf-8")
+    try:
+        result = desktop("type", "-Window", form.title, "-Text", "b")
+        assert_active(result)
+        # The tool's own input a moment ago is now plain input: the idle time is seconds, not his two minutes.
+        time.sleep(0.2)
+        assert form.state()["text"] == "a"
+    finally:
+        STATE_FILE.write_text(saved, encoding="utf-8")
+    assert_ok(desktop("type", "-Window", form.title, "-Text", "c"))
+    form.wait_for(lambda s: s["text"] == "ac")
+
+
+def test_a_second_screen_command_while_one_is_sending_is_refused_and_sends_nothing(form):
+    text = "a" * 400
+    first = subprocess.Popen([*POWERSHELL, "-File", str(SCRIPT), "type", "-Window", form.title, "-Text", text],
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, creationflags=NO_WINDOW,
+                             env=run_env())
+    try:
+        form.wait_for(lambda s: len(s["text"]) > 5, timeout=40)
+        second = desktop("key", "-Window", form.title, "-Keys", "b")
+        assert second.returncode == BUSY, f"{second.returncode}: {second.stderr}"
+        assert "another command that acts on the screen is running; nothing was sent" in second.stderr
+    finally:
+        out, err = first.communicate(timeout=120)
+    assert first.returncode == 0, err
+    form.wait_for(lambda s: s["text"] == text, timeout=10)
+
+
+def test_a_full_screen_screenshot_is_refused_while_a_denied_window_is_visible(form, tmp_path):
+    token = uuid.uuid4().hex
+    form.retitle(f"Acme Brokerage {token}")
+    out = tmp_path / "everything.png"
+    result = desktop("screenshot", "-Out", out)
+    assert_refused(result, "off-limits window", "-Window")
+    assert token not in result.stderr
+    assert not out.exists(), "nothing is written when a capture is refused"
+    assert_refused(desktop("screenshot", "-Window", form.title, "-Out", out), "off limits")
+
+
+# Live: restore. These come last: each ends the run, and each starts a new one with -IdleSeconds 0 (a start the
+# plain rule would refuse, since the tests' own input has just reset the clock).
+
+def start_new_run():
+    assert_ok(desktop("restore", "-IdleSeconds", 0))
+    assert not STATE_FILE.exists()
+
+
+def bring_to_front_in_a_scratch_run(title, tmp_path):
+    scratch = tmp_path / f"scratch-{uuid.uuid4().hex}"
+    assert_ok(desktop("focus", "-Window", title, "-IdleSeconds", 0, env=run_env(scratch)))
+    assert wait_until(lambda: foreground_title() == title), f"could not set up: {foreground_title()!r} is in front"
+
+
+def test_restore_puts_the_pointer_and_the_foreground_back_and_removes_the_state(live, tmp_path):
+    token = uuid.uuid4().hex
+    prior, target = Fixture(tmp_path, f"AF prior {token}"), Fixture(tmp_path, f"AF target {token}", left=800)
+    try:
+        start_new_run()
+        bring_to_front_in_a_scratch_run(prior.title, tmp_path)
+        win32().SetCursorPos(120, 140)
+        assert pointer() == (120, 140)
+        assert_ok(desktop("focus", "-Window", target.title, "-IdleSeconds", 0))
+        assert STATE_FILE.exists() and read_run_state()["pointer"] == {"x": 120, "y": 140}
+        x, y = element_bounds(target.title, "Press Me")
+        assert_ok(desktop("click", "-Window", target.title, "-X", x, "-Y", y, "-IdleSeconds", 0))
+        target.wait_for(lambda s: s["pressed"] == 1)
+        assert pointer() != (120, 140) and foreground_title() == target.title
+        result = desktop("restore", "-IdleSeconds", 0)
+        assert_ok(result)
+        assert "restored the pointer to 120,140" in result.stdout, result.stdout
+        assert "restored the foreground window (process 'powershell')" in result.stdout, result.stdout
+        assert pointer() == (120, 140)
+        assert wait_until(lambda: foreground_title() == prior.title), foreground_title()
+        assert not STATE_FILE.exists()
+    finally:
+        prior.close()
+        target.close()
+
+
+def test_restore_reports_a_foreground_window_that_is_gone_and_still_puts_the_pointer_back(live, tmp_path):
+    token = uuid.uuid4().hex
+    prior, target = Fixture(tmp_path, f"AF prior {token}"), Fixture(tmp_path, f"AF target {token}", left=800)
+    try:
+        start_new_run()
+        bring_to_front_in_a_scratch_run(prior.title, tmp_path)
+        win32().SetCursorPos(150, 170)
+        assert_ok(desktop("focus", "-Window", target.title, "-IdleSeconds", 0))
+        prior.close()
+        x, y = element_bounds(target.title, "Press Me")
+        assert_ok(desktop("click", "-Window", target.title, "-X", x, "-Y", y, "-IdleSeconds", 0))
+        result = desktop("restore", "-IdleSeconds", 0)
+        assert_ok(result)
+        assert "could not restore the foreground window (process 'powershell'): it is gone" in result.stdout, result.stdout
+        assert "restored the pointer to 150,170" in result.stdout
+        assert pointer() == (150, 170)
+        assert not STATE_FILE.exists()
+    finally:
+        prior.close()
+        target.close()
+
+
+def test_restore_with_no_run_says_so_and_changes_nothing(live):
+    start_new_run()
+    before = pointer()
+    result = desktop("restore", "-IdleSeconds", 0)
+    assert_ok(result)
+    assert "nothing to restore" in result.stdout
+    assert pointer() == before
+
+
+def test_the_run_state_is_under_the_checkout_when_af_root_is_not_set(form):
+    without = {k: v for k, v in os.environ.items() if k != "AF_ROOT"}
+    default_state = ROOT / "system" / "logs" / "desktop" / "run.json"
+    assert not default_state.exists(), "an earlier run left its state; it is git-ignored, delete it"
+    try:
+        assert_ok(desktop("focus", "-Window", form.title, "-IdleSeconds", 0, env=without))
+        assert default_state.exists()
+    finally:
+        desktop("restore", "-IdleSeconds", 0, env=without)
+    assert not default_state.exists()

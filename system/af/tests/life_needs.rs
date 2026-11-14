@@ -1,5 +1,6 @@
-//! `af needs`: marked loops in open.md, their detail files, the generated view, and the
-//! doctor, session-start, and brief surfaces.
+//! `af needs` with old-style items (a detail file each): marked loops in open.md, their detail
+//! files, the generated view, and the doctor, session-start, and brief surfaces. The new form,
+//! with the fields on the line, is in `life_needs_inline.rs`.
 
 mod common;
 mod life_fx;
@@ -8,9 +9,9 @@ use life_fx::*;
 
 const OPEN: &str = "workspace/life/open.md";
 const VIEW: &str = "workspace/life/needs.md";
-const NOW_HEAD: &str = "| Decision | Recommendation | Notes |\n|---|---|---|\n";
+const NOW_HEAD: &str = "| Decision | Recommendation | More |\n|---|---|---|\n";
 const DO_HEAD: &str = "| To do | Due | Waiting since |\n|---|---|---|\n";
-const LATER_HEAD: &str = "| When | Decision | Recommendation | Notes |\n|---|---|---|---|\n";
+const LATER_HEAD: &str = "| When | Decision | Recommendation | More |\n|---|---|---|---|\n";
 
 fn log_rel() -> String {
     format!("workspace/life/log/{}.md", month())
@@ -21,6 +22,13 @@ fn detail(fx: &Fx, slug: &str, rec: &str) {
         &format!("workspace/life/needs/{slug}.md"),
         &format!("---\nprivate: true\nrecommendation: {rec}\n---\n# Question\n\nFull notes.\n"),
     );
+}
+
+/// An item with its recommendation on the line and no detail file.
+fn with_inline(q: &str, rec: &str) -> Fx {
+    let fx = Fx::new();
+    fx.ok(&["needs", "add", q, "--rec", rec]);
+    fx
 }
 
 fn with_item(slug: &str, q: &str, rec: &str) -> Fx {
@@ -293,9 +301,11 @@ fn doctor_flags_a_missing_detail_an_orphan_a_shared_detail_and_no_recommendation
 
 #[test]
 fn doctor_reports_through_the_verb_and_stays_quiet_on_a_clean_list() {
-    let fx = with_item("q", "Decide?", "yes");
+    let fx = with_inline("Decide?", "yes");
     assert_eq!(issues(&fx), Vec::<String>::new());
     assert_eq!(notes(&fx), Vec::<String>::new());
+    let fx = with_item("q", "Decide?", "yes");
+    assert_eq!(issues(&fx), Vec::<String>::new());
     std::fs::remove_file(fx.path("workspace/life/needs/q.md")).unwrap();
     let (_, stdout, _) = fx.run(&["doctor"]);
     assert!(stdout.contains("needs item 'Decide?'"), "{stdout}");
@@ -303,7 +313,7 @@ fn doctor_reports_through_the_verb_and_stays_quiet_on_a_clean_list() {
 
 #[test]
 fn any_loop_read_overwrites_a_hand_edit_of_the_view() {
-    let fx = with_item("q", "Decide?", "yes");
+    let fx = with_inline("Decide?", "yes");
     fx.write(VIEW, "# hand edit\n");
     fx.ok(&["open", "due"]);
     assert!(fx.read(VIEW).contains("## Now (1)"), "{}", fx.read(VIEW));
@@ -312,7 +322,7 @@ fn any_loop_read_overwrites_a_hand_edit_of_the_view() {
 
 #[test]
 fn a_view_af_cannot_write_is_noted_and_never_stops_a_loop_verb() {
-    let fx = with_item("q", "Decide?", "yes");
+    let fx = with_inline("Decide?", "yes");
     std::fs::remove_file(fx.path(VIEW)).unwrap();
     std::fs::create_dir_all(fx.path(VIEW)).unwrap();
     fx.ok(&["open", "due"]);

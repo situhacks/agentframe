@@ -135,8 +135,13 @@ class PlanError(RuntimeError):
 
 _LOOP = re.compile(r"\A- \[ \] (\d{4}-\d{2}-\d{2}) · (.+?)(?: · nudge (\d{4}-\d{2}-\d{2})"
                    r"(?: · every (monthly|weekly|[1-9]\d{0,3}d))?)? · from: (\S(?:.*\S)?)\Z")
-_NEED = re.compile(r"\A(.*) · need (now|on \d{4}-\d{2}-\d{2}|when \S(?:.*?\S)?) · detail "
-                   r"(needs/[a-z0-9][a-z0-9-]*\.md) · from: (.*)\Z")
+# The fields after `need`, in af's order: an old `detail`, then `rec`, `options`, `why`, `more`. A line with
+# neither a detail nor a rec is no needs item. A lazy `??` keeps each value the shortest that fits.
+_VAL = r"(\S(?:.*?\S)??)"
+_NEED = re.compile(r"\A(.*) · need (now|on \d{4}-\d{2}-\d{2}|when \S(?:.*?\S)??)"
+                   r"(?: · detail (needs/[a-z0-9][a-z0-9-]*\.md))?(?: · rec: " + _VAL + r")?"
+                   r"(?: · options: " + _VAL + r")?(?: · why: " + _VAL + r")?(?: · more: " + _VAL + r")?"
+                   r" · from: (.*)\Z")
 _HEADING = re.compile(r"\A(#{1,6})\s+(.*?)\s*\Z")
 
 
@@ -180,14 +185,16 @@ class Loop:
 
 def _split_need(line: str) -> tuple[str, str | None, str | None]:
     m = _NEED.match(line)
-    if not m:
+    if not m or (m.group(3) is None and m.group(4) is None):
+        return line, None, None
+    if any(" · " in (m.group(i) or "") for i in range(3, 8)):  # a field out of order, or a separator in a value
         return line, None, None
     field_ = m.group(2)
     if field_.startswith("on ") and _date(field_[3:]) is None:
         return line, None, None
     if field_.startswith("when ") and " · " in field_[5:]:
         return line, None, None
-    return f"{m.group(1)} · from: {m.group(4)}", field_, m.group(3)
+    return f"{m.group(1)} · from: {m.group(8)}", field_, m.group(3)
 
 
 def parse_loops(text: str) -> list[Loop]:

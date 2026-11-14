@@ -150,6 +150,20 @@ class ParseTests(unittest.TestCase):
         self.assertIn("someone else", ls_[N["others"] - 1].owned)
         self.assertIsNone(ls_[N["hat"] - 1].owned)
 
+    def test_a_needs_item_with_its_fields_on_the_line_is_a_needs_item(self):
+        t = "2026-03-01 · {} · need {}"
+        full = ("- [ ] " + t.format("Which plan?", "on 2026-03-09") + " · rec: the cheaper plan · options: a) cheap; b) big"
+                " · why: low use · more: knowledge/phone.md#plans · from: src-1")
+        bare = "- [ ] " + t.format("Accept?", "when the quote arrives") + " · rec: wait · from: main"
+        wrong = "- [ ] " + t.format("Bad order?", "now") + " · why: y · rec: r · from: main"
+        norec = "- [ ] " + t.format("No rec?", "now") + " · why: y · from: main"
+        got = ls.parse_loops(chr(10).join(["## Decisions needed", "", full, bare, wrong, norec, ""]))
+        self.assertEqual([(x.text, x.need, x.detail, x.src) for x in got],
+                         [("Which plan?", "on 2026-03-09", None, "src-1"),
+                          ("Accept?", "when the quote arrives", None, "main")])
+        self.assertEqual(got[0].due_on(), dt.date(2026, 3, 9))
+        self.assertIn("needs list", got[1].owned)
+
     def test_a_line_that_breaks_the_grammar_gets_no_number(self):
         text = OPEN.replace("- [ ] 2026-03-01 · Pay the gym fee", "- [ ] 2026-13-01 · Pay the gym fee")
         self.assertEqual(len(ls.parse_loops(text)), 13)

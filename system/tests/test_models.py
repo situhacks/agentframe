@@ -22,12 +22,13 @@ FILE = ROOT / "system" / "models.json"
 ID = re.compile(r"claude-(?:fable|opus|sonnet|haiku)-\d+-\d+")
 ALIASES = ("fable", "opus", "sonnet", "haiku")
 
-# Files that name an old id on purpose, as a fixture for what a transcript or a refusal says.
+# (file, id) pairs that name an old id on purpose, as a fixture for what a transcript or a refusal says.
+# Any other stale id in those files still fails. The ids are split here so this file names none.
 OLD_ID_FIXTURES = {
-    "system/af/tests/session_classes.rs",
-    "system/af/tests/session_compact.rs",
+    ("system/af/tests/session_classes.rs", "claude-fable-" + "5-1"),
+    ("system/af/tests/session_compact.rs", "claude-haiku-" + "4-5"),
 }
-NOT_CHECKED = {"CHANGELOG.md"} | OLD_ID_FIXTURES
+NOT_CHECKED = {"CHANGELOG.md"}
 
 
 @functools.lru_cache(maxsize=1)
@@ -84,10 +85,12 @@ class ModelsTests(unittest.TestCase):
                 continue
             scanned += 1
             for found in ID.findall(text):
+                if (f, found) in OLD_ID_FIXTURES:
+                    continue
                 self.assertIn(found, models.ALL, f"{f} names {found}, which system/models.json does not hold")
         self.assertGreater(scanned, 100)
-        for f in OLD_ID_FIXTURES:
-            self.assertTrue((ROOT / f).is_file(), f"{f} is exempt but gone: drop it from OLD_ID_FIXTURES")
+        for f, old in OLD_ID_FIXTURES:
+            self.assertIn(old, (ROOT / f).read_text(encoding="utf-8"), f"{f} no longer names {old}: drop it from OLD_ID_FIXTURES")
 
 
 class ModelGuidanceTests(unittest.TestCase):
@@ -129,6 +132,38 @@ class ModelGuidanceTests(unittest.TestCase):
             self.assertTrue(text.startswith("# Model card: Claude "), rel)
             self.assertRegex(text, r"(?m)^checked: \d{4}-\d{2}-\d{2}$")
             self.assertLessEqual(words(rel), 180, rel)
+
+
+class ReviewFixTests(unittest.TestCase):
+    def read(self, rel: str) -> str:
+        return (ROOT / rel).read_text(encoding="utf-8")
+
+    def test_the_two_skills_keep_their_fixed_job_models_and_link_the_rule(self):
+        mail = self.read(".claude/skills/email-cleanup/SKILL.md")
+        self.assertIn("Hand the browser clicking to a Sonnet subagent", mail)
+        self.assertIn("library/schema/models.md", mail)
+        research = self.read(".claude/skills/deep-research/SKILL.md")
+        self.assertIn("sonnet; haiku for `quick` tier", research)
+        self.assertIn("library/schema/models.md", research)
+
+    def test_the_desk_agent_lists_every_picker_name(self):
+        desk = self.read(".claude/agents/desk.md")
+        for name in ("Fable 5.2", "Opus 5.5", "Sonnet 5.5", "Haiku 5.5"):
+            self.assertIn(f"`{name}`", desk)
+
+    def test_the_vendor_record_has_no_doubled_words(self):
+        text = self.read("system/tools/agy_call.VENDOR.md")
+        self.assertNotIn("fence last fence", text)
+
+    def test_the_card_sentence_does_not_say_once(self):
+        self.assertNotIn("once, at the start", self.read("library/schema/models.md"))
+
+    def test_the_schema_index_row_for_models_has_the_link_alone_in_its_first_column(self):
+        rows = [r for r in self.read("library/schema/README.md").splitlines() if "(models.md)" in r]
+        self.assertEqual(len(rows), 1)
+        cells = [c.strip() for c in rows[0].strip().strip("|").split("|")]
+        self.assertEqual(cells[0], "[`models.md`](models.md)")
+        self.assertEqual(len(cells), 3)
 
 
 if __name__ == "__main__":

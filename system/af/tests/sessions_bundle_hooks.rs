@@ -204,7 +204,9 @@ fn session_start_after_compaction_reinjects_the_same_bundle() {
 #[test]
 fn session_start_stamps_and_revives_the_row() {
     let fx = main_fixture();
-    sessions::hook_session_start(&fx.ctx(), r#"{"session_id":"s-acme","source":"resume"}"#);
+    // A build chat: an explicit transcript keeps the card's lookup off the real `~/.claude`.
+    let transcript = fx.write("t/s-acme.jsonl", "{\"type\":\"user\"}\n");
+    sessions::hook_session_start(&fx.ctx(), &serde_json::json!({"session_id": "s-acme", "source": "resume", "transcript_path": transcript}).to_string());
     let r = find(&fx, "project/acme");
     assert!(recent(&r.last_seen) && r.status == "live", "{r:?}");
     sessions::hook_session_start(&fx.ctx(), r#"{"session_id":"s-old","source":"resume"}"#);
@@ -479,8 +481,13 @@ fn with_cards(fx: &Fx) {
     }
 }
 
-/// The additionalContext the session-start handler gives for a hook input.
-fn start_text(fx: &Fx, input: serde_json::Value) -> String {
+/// The additionalContext the session-start handler gives for a hook input. The handler runs in this
+/// process, where the subprocess-only `CLAUDE_CONFIG_DIR` does not reach, so an input with no
+/// `transcript_path` gets one for an empty transcript: the lookup by session id never lists `~/.claude`.
+fn start_text(fx: &Fx, mut input: serde_json::Value) -> String {
+    if input.get("transcript_path").is_none() {
+        input["transcript_path"] = serde_json::json!(fx.write("t/no-reply-yet.jsonl", "{\"type\":\"user\"}\n"));
+    }
     let o = sessions::hook_session_start(&fx.ctx(), &input.to_string());
     context(&o)["hookSpecificOutput"]["additionalContext"].as_str().unwrap().to_string()
 }
@@ -555,7 +562,15 @@ fn an_unknown_model_or_a_missing_card_adds_nothing_and_does_not_fail() {
     let fx = card_fixture();
     let plain = start_text(&fx, serde_json::json!({"session_id": "s-acme", "source": "startup", "model": ""}));
     assert!(plain.contains("model card (opus):"), "an empty model is not there: {plain}");
-    for model in ["gemini-4-hydrogen-high", "claude-mythical-9-9", "claude-"] {
+    // No source maps to an alias: the hook input, no transcript reply, and a registry row with no model.
+    write_registry(
+        &fx,
+        &[
+            row("main", "main", "s-main", &ts(-5), "live"),
+            row("project/acme", "operator", "s-acme", &ts(-300), "live").replace("| opus |", "| - |"),
+        ],
+    );
+    for model in ["gemini-4-hydrogen-high", "claude-mythical-9-9", "claude-", "default", "opusplan"] {
         let text = start_text(&fx, serde_json::json!({"session_id": "s-acme", "source": "startup", "model": model}));
         assert!(!text.contains("model card"), "{model}: {text}");
         assert!(text.starts_with("af: you are project/acme (operator)"), "{text}");
@@ -594,4 +609,52 @@ fn model_names_map_to_aliases_by_prefix() {
     ] {
         assert_eq!(alias_of(m), want, "{m}");
     }
+}
+
+#[test]
+fn a_value_that_maps_to_no_alias_passes_the_search_on_to_the_next_source() {
+    let fx = card_fixture();
+    write_registry(
+        &fx,
+        &[
+            row("main", "main", "s-main", &ts(-5), "live"),
+            row("project/acme", "operator", "s-acme", &ts(-300), "live").replace("| opus |", "| sonnet |"),
+        ],
+    );
+    let line = |model: &str| format!("{{\"type\":\"assistant\",\"message\":{{\"model\":\"{model}\",\"usage\":{{\"input_tokens\":5}}}}}}\n");
+    let opus_chat = fx.write("t/opus.jsonl", &line("claude-opus-5-5"));
+    for hook_model in ["default", "opusplan", "claude-mythical-9-9"] {
+        let text = start_text(&fx, serde_json::json!({"session_id": "s-acme", "source": "startup", "model": hook_model, "transcript_path": opus_chat}));
+        assert!(text.contains("model card (opus):") && !text.contains("the sonnet line"), "{hook_model}: {text}");
+    }
+    // The transcript's own unknown model passes the search to the registry row.
+    let odd_chat = fx.write("t/odd.jsonl", &line("claude-mythical-9-9"));
+    let text = start_text(&fx, serde_json::json!({"session_id": "s-acme", "source": "startup", "model": "default", "transcript_path": odd_chat}));
+    assert!(text.contains("model card (sonnet):"), "{text}");
+}
+
+#[test]
+fn claude_codes_best_alias_is_opus() {
+    let fx = card_fixture();
+    write_registry(
+        &fx,
+        &[
+            row("main", "main", "s-main", &ts(-5), "live"),
+            row("project/acme", "operator", "s-acme", &ts(-300), "live").replace("| opus |", "| sonnet |"),
+        ],
+    );
+    let text = start_text(&fx, serde_json::json!({"session_id": "s-acme", "source": "startup", "model": "best"}));
+    assert!(text.contains("model card (opus):") && !text.contains("the sonnet line"), "{text}");
+    assert_eq!(afcore::model_card::alias_of("best"), Some("opus"));
+    assert_eq!(afcore::model_card::alias_of("default"), None);
+    assert_eq!(afcore::model_card::alias_of("opusplan"), None);
+}
+
+#[test]
+fn the_display_name_has_the_right_article() {
+    use afcore::model_card::display_with_article;
+    assert_eq!(display_with_article("opus"), "an Opus");
+    assert_eq!(display_with_article("fable"), "a Fable");
+    assert_eq!(display_with_article("sonnet"), "a Sonnet");
+    assert_eq!(display_with_article("haiku"), "a Haiku");
 }

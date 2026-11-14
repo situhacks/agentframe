@@ -9,28 +9,38 @@ use crate::sessions::{self, Row, SessionClass};
 /// The Claude Code aliases, one card each.
 pub const ALIASES: [&str; 4] = ["fable", "opus", "sonnet", "haiku"];
 
-/// The alias for a model id (`claude-fable-5-2`, with or without a `[1m]` suffix) or for an alias.
+/// The alias for a model id (`claude-fable-5-2`, with or without a `[1m]` suffix), for an alias, or for
+/// Claude Code's `best` (which is Opus). `default`, `opusplan` and unknown ids have none.
 pub fn alias_of(model: &str) -> Option<&'static str> {
     let m = model.split('[').next().unwrap_or(model).trim().to_ascii_lowercase();
+    if m == "best" {
+        return Some("opus");
+    }
     ALIASES.iter().copied().find(|a| m == *a || m.starts_with(&format!("claude-{a}-")))
 }
 
-/// The model the chat runs on: the hook input's `model`, else the model of the last assistant line in
-/// its transcript, else its registry row's model. The first one that is there decides, so an unknown
-/// model gets no card rather than another source's.
-fn model_of(row: &Row, hook_model: Option<&str>, transcript: Option<&str>) -> Option<String> {
-    if let Some(m) = hook_model.map(str::trim).filter(|m| !m.is_empty()) {
-        return Some(m.to_string());
+/// The alias's name as it is written in a sentence, with its article: `an Opus`, `a Fable`.
+pub fn display_with_article(alias: &str) -> String {
+    let mut name = alias.to_string();
+    if let Some(first) = name.get_mut(0..1) {
+        first.make_ascii_uppercase();
     }
-    let from_transcript = transcript
-        .and_then(reach::tail)
-        .and_then(|text| reach::last_usage(&text))
-        .and_then(|u| u.model.or(u.requested));
-    if from_transcript.is_some() {
-        return from_transcript;
+    let article = if name.starts_with(['A', 'E', 'I', 'O', 'U']) { "an" } else { "a" };
+    format!("{article} {name}")
+}
+
+/// The alias of the model the chat runs on: the first source that maps to one, in this order: the hook
+/// input's `model`, the model of the last assistant line in the transcript, the registry row's model. A
+/// value that maps to none (`default`, `opusplan`, an unknown id) passes the search on to the next source.
+fn alias_for(row: &Row, hook_model: Option<&str>, transcript: Option<&str>) -> Option<&'static str> {
+    if let Some(a) = hook_model.and_then(alias_of) {
+        return Some(a);
     }
-    let m = row.model.trim();
-    (!m.is_empty() && m != "-").then(|| m.to_string())
+    let usage = transcript.and_then(reach::tail).and_then(|text| reach::last_usage(&text));
+    if let Some(a) = usage.and_then(|u| [u.model, u.requested].into_iter().flatten().find_map(|m| alias_of(&m))) {
+        return Some(a);
+    }
+    alias_of(&row.model)
 }
 
 /// The bundle's card block for a build chat (never a worker), or None: no card file, no known model, or
@@ -47,7 +57,7 @@ pub fn card_block(ctx: &Ctx, row: &Row, hook_model: Option<&str>, transcript: Op
             found.as_deref()
         }
     };
-    let alias = alias_of(&model_of(row, hook_model, transcript)?)?;
+    let alias = alias_for(row, hook_model, transcript)?;
     let text = TextFile::load(&vpath(ctx, &format!("library/models/{alias}.md"))).ok()??.text;
     let text = text.trim_end();
     (!text.is_empty()).then(|| format!("model card ({alias}):\n{text}"))

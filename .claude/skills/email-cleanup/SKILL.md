@@ -15,7 +15,7 @@ Search each inbox by sender over recent years. Group the senders into keep, unsu
 
 ## 3. Unsubscribe
 
-Use the mail client's own unsubscribe first (Outlook's Subscriptions page, Gmail's unsubscribe button). Next, the unsubscribe link in the sender's latest email, when opening it alone unsubscribes. Anything that needs a form submit, a login, or a CAPTCHA goes on a short list for him. Never block a sender or create a rule unless he asks. Hand the browser clicking to a subagent, its model chosen by [the model rule](../../../library/schema/models.md).
+Use the mail client's own unsubscribe first (Outlook's Subscriptions page, Gmail's unsubscribe button). Next, the unsubscribe link in the sender's latest email, when opening it alone unsubscribes. Anything that needs a form submit, a login, or a CAPTCHA goes on a short list for him. Never block a sender or create a rule unless he asks. Hand the browser clicking to a Sonnet subagent ([the model rule](../../../library/schema/models.md)).
 
 ## 4. Trash old promotions
 

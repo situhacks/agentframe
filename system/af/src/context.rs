@@ -248,9 +248,9 @@ pub fn doctor_notes() -> Vec<String> {
         .iter()
         .filter_map(|(id, s)| {
             let window = s.get("autoCompactWindow")?.as_u64().filter(|w| *w < hard)?;
-            let alias = crate::model_card::alias_of(id)?;
+            let who = crate::model_card::display_with_article(crate::model_card::alias_of(id)?);
             Some(format!(
-                "Claude Code compacts a {alias} chat by itself at {}, before a build chat's {} nudge: such a chat can be compacted in the middle of a task. Raising it is the operator's setting.",
+                "Claude Code compacts {who} chat by itself at {}, before a build chat's {} nudge: such a chat can be compacted in the middle of a task. Raising it is the operator's setting.",
                 kfmt(window),
                 kfmt(hard)
             ))

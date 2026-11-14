@@ -1119,6 +1119,9 @@ pub fn check_system(ctx: &Ctx) -> R<(Vec<String>, Vec<String>)> {
     let (pi, pn) = crate::places::doctor_checks(ctx)?;
     issues.extend(pi);
     notes.extend(pn);
+    let (di, dn) = crate::data::doctor_checks(ctx)?;
+    issues.extend(di);
+    notes.extend(dn);
     notes.extend(crate::loop_watch::doctor_notes(ctx));
     notes.extend(crate::watch::doctor_notes(ctx));
     notes.extend(crate::context::doctor_notes(ctx));

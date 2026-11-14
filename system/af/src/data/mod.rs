@@ -650,3 +650,34 @@ fn cmd_page(ctx: &Ctx, file: &str) -> R<i32> {
     })?;
     render_pages(ctx, &reg, &[rel])
 }
+
+// ------------------------------------------------------------------ the doctor
+
+/// What `af doctor` adds for ledgers: (issues, notes). No registry file means silence.
+///
+/// Issues, at most five lines per ledger and then a count: a file that is missing, a header that
+/// differs from the registry, a row that fails a check, a repeated key. Notes: a registered page that
+/// is missing, a block that fails, a page whose content differs from what the ledgers give now.
+pub fn doctor_checks(ctx: &Ctx) -> R<(Vec<String>, Vec<String>)> {
+    let (mut issues, mut notes) = (Vec::new(), Vec::new());
+    let reg = match crate::error::soft(Registry::load(ctx))? {
+        None => {
+            issues.push(format!("{}: does not parse; see the af data error above", ledger::REGISTRY_REL));
+            return Ok((issues, notes));
+        }
+        Some(None) => return Ok((issues, notes)),
+        Some(Some(r)) => r,
+    };
+    for l in &reg.ledgers {
+        let faults = match load_checked(ctx, l) {
+            Ok((_, f)) => f,
+            Err(f) => f,
+        };
+        issues.extend(faults.iter().take(ledger::FAULTS_SHOWN).cloned());
+        if faults.len() > ledger::FAULTS_SHOWN {
+            issues.push(format!("{}: ... and {} more faults in ledger '{}'", l.label(), faults.len() - ledger::FAULTS_SHOWN, l.name));
+        }
+    }
+    notes.extend(pages::doctor_notes(ctx, &reg));
+    Ok((issues, notes))
+}

@@ -445,6 +445,33 @@ class CheckTests(unittest.TestCase):
         payloads = [(SEARCH, {"threads": [{"id": "t-1", "messages": [MESSAGE]}, {"id": "t-2", "messages": [elsewhere]}]})]
         self.assertEqual(lw._threads(payloads), [[MESSAGE], [elsewhere]])
 
+    def test_a_thread_id_that_disagrees_outranks_a_shared_message_id(self):
+        a = {"id": "m-1", "threadId": "t-9", "date": MESSAGE["date"], "snippet": "one"}
+        b = {"id": "m-1", "threadId": "t-1", "date": MESSAGE["date"], "snippet": "two"}
+        by_payload = [(SEARCH, {"threads": [{"id": "t-9", "messages": [a]}, {"id": "t-1", "messages": [b]}]})]
+        self.assertEqual(lw._threads(by_payload), [[a], [b]])
+        bare_a, bare_b = {"id": "m-1", "snippet": "one"}, {"id": "m-1", "snippet": "two"}
+        by_message = [(SEARCH, {"threads": [{"messages": [dict(bare_a, threadId="t-9")]}]}),
+                      (GET, {"messages": [dict(bare_b, threadId="t-1")]})]
+        self.assertEqual(len(lw._threads(by_message)), 2)
+        mixed = [(SEARCH, {"threads": [{"id": "t-9", "messages": [bare_a]}]}), (GET, {"id": "t-1", "messages": [bare_b]})]
+        self.assertEqual(lw._threads(mixed), [[bare_a], [bare_b]], "a payload id against another payload's id")
+
+    def test_a_copy_with_no_thread_id_still_joins_by_a_shared_message_id(self):
+        a = {"id": "m-1", "snippet": "one"}
+        b = {"id": "m-1", "snippet": "two"}
+        c = {"id": "m-2", "snippet": "three"}
+        payloads = [(SEARCH, {"threads": [{"id": "t-1", "messages": [a]}]}), (GET, {"messages": [b, c]})]
+        self.assertEqual(lw._threads(payloads), [[b, c]])
+
+    def test_an_empty_or_non_string_id_is_no_id(self):
+        a, b = {"id": "", "snippet": "one"}, {"id": "", "snippet": "two"}
+        n1, n2 = {"id": 7, "snippet": "three"}, {"id": 7, "snippet": "four"}
+        self.assertEqual(lw.merge_thread_copies([[a, n1], [b, n2]]), [a, n1, b, n2], "no message is dropped")
+        payloads = [(SEARCH, {"threads": [{"id": "", "messages": [a]}, {"id": "", "messages": [b]}]}),
+                    (GET, {"id": 5, "messages": [n1]}), (GET, {"id": 5, "messages": [n2]})]
+        self.assertEqual(lw._threads(payloads), [[a], [b], [n1], [n2]], "no list is merged on an empty or odd id")
+
     def test_an_email_dated_later_than_now_is_a_failure(self):
         now = dt.datetime(2026, 3, 8, 9, 0)
         later_today = {**MESSAGE, "date": "2026-03-08T23:30:00+00:00"}

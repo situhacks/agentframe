@@ -275,3 +275,91 @@ fn project_files_into_that_projects_sources() {
     let err = fx.refused(&["source", "add", "--type", "note", "--date", DATE, "--slug", "p", "--summary", "s", "--body-file", &input, "--project", "ghost"]);
     assert!(err.contains("workspace/projects/ghost/sources"), "{err}");
 }
+
+#[test]
+fn a_date_must_be_exactly_four_two_two_digits() {
+    let fx = Fx::new();
+    layer(&fx);
+    let body = body_file(&fx, "a.txt", b"x");
+    for date in ["+202-11-14", "+2026-11-14", " 2026-11-14", "2026-11-14 ", "2026-11-1", "20261-1-14", "\u{662}\u{660}\u{662}\u{666}-11-14"] {
+        let (code, _, err) = fx.run(&["source", "add", "--type", "note", "--date", date, "--slug", "x", "--summary", "s", "--body-file", &body]);
+        assert_eq!(code, 1, "{date:?}: {err}");
+    }
+    assert_eq!(files_in_sources(&fx), Vec::<String>::new());
+}
+
+#[test]
+fn a_failed_index_write_removes_the_file_and_leaves_the_index_alone() {
+    let fx = Fx::new();
+    layer(&fx);
+    let index: &[u8] = b"# Source Index\n\n| ID | File | Date | Description |\n|---|---|---|---|\n| `x` | \xff\xfe not utf-8 |\n";
+    fx.write_bytes("workspace/life/sources/INDEX.md", index);
+    let (code, _, err) = add(&fx, "doomed", &[]);
+    assert_ne!(code, 0, "{err}");
+    assert_eq!(files_in_sources(&fx), ["INDEX.md".to_string()], "no file is left without its row");
+    assert_eq!(std::fs::read(fx.path("workspace/life/sources/INDEX.md")).unwrap(), index);
+    assert!(!fx.exists("workspace/life/sources/INDEX.md.lock"), "the lock is released");
+}
+
+#[test]
+fn a_file_extension_is_one_to_ten_letters_or_digits_and_lower_cased() {
+    let fx = Fx::new();
+    layer(&fx);
+    let go = |fx: &Fx, path: &str| fx.run(&["source", "add", "--type", "document", "--date", DATE, "--slug", "d", "--summary", "s", "--file", path]);
+    for name in ["in/b.my)file", "in/noext", "in/x.pdf:s", "in/long.abcdefghijk", "in/dot.", "in/sp ace.p df", "in/u.p\u{e9}f"] {
+        let path = fx.p(name);
+        let (code, _, err) = go(&fx, &path);
+        assert_eq!(code, 1, "{name}: {err}");
+        assert!(err.contains("extension"), "{name}: {err}");
+    }
+    assert_eq!(files_in_sources(&fx), Vec::<String>::new());
+    let ok = fx.write_bytes("in/Scan.PDF", b"%PDF");
+    let (code, out, err) = go(&fx, &ok);
+    assert_eq!(code, 0, "{err}");
+    assert!(out.contains(&format!("document-{DATE}-d.pdf")), "{out}");
+    assert!(fx.isfile(&format!("workspace/life/sources/document-{DATE}-d.pdf")));
+}
+
+#[test]
+fn private_with_a_file_does_nothing_to_the_file() {
+    let fx = Fx::new();
+    layer(&fx);
+    let f = fx.write_bytes("in/p.png", &[0, 1, 2, 255]);
+    fx.ok(&["source", "add", "--type", "receipt", "--date", DATE, "--slug", "p", "--summary", "s", "--file", &f, "--private"]);
+    assert_eq!(std::fs::read(fx.path(&format!("workspace/life/sources/receipt-{DATE}-p.png"))).unwrap(), [0, 1, 2, 255]);
+}
+
+#[test]
+fn move_prints_the_id_first_and_a_failed_delete_is_a_warning_not_a_failure() {
+    let fx = Fx::new();
+    layer(&fx);
+    let f = fx.write_bytes("in/held.pdf", b"%PDF");
+    // Windows only: a handle opened with no delete sharing makes the original undeletable while af still reads it.
+    #[cfg(windows)]
+    let held = {
+        use std::os::windows::fs::OpenOptionsExt;
+        std::fs::OpenOptions::new().read(true).share_mode(1).open(&f).unwrap()
+    };
+    let (code, out, err) = fx.run(&["source", "add", "--type", "document", "--date", DATE, "--slug", "l", "--summary", "s", "--file", &f, "--move"]);
+    assert_eq!(code, 0, "{err}");
+    assert_eq!(out.lines().collect::<Vec<_>>(), [format!("src-{DATE}-01"), format!("workspace/life/sources/document-{DATE}-l.pdf")]);
+    assert_eq!(ids(&fx), [format!("src-{DATE}-01")]);
+    assert!(fx.isfile(&format!("workspace/life/sources/document-{DATE}-l.pdf")));
+    #[cfg(windows)]
+    {
+        assert!(err.contains("warning") && err.contains("could not be removed"), "{err}");
+        assert!(fx.isfile("in/held.pdf"), "the original stays when its delete fails");
+        drop(held);
+    }
+}
+
+#[test]
+fn an_id_at_the_top_of_the_number_range_is_refused_not_a_panic_or_a_repeat() {
+    let fx = Fx::new();
+    layer(&fx);
+    fx.write("workspace/life/sources/huge.md", &format!("---\nid: src-{DATE}-18446744073709551615\n---\n"));
+    let (code, _, err) = add(&fx, "x", &[]);
+    assert_eq!(code, 1, "{err}");
+    assert!(err.contains("largest"), "{err}");
+    assert_eq!(files_in_sources(&fx), ["huge.md".to_string()]);
+}

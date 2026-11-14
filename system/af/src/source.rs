@@ -36,7 +36,7 @@ pub struct AddArgs {
     /// Where it came from, in a few words
     #[arg(long)]
     origin: Option<String>,
-    /// Mark the record private (a text record only)
+    /// Mark the record private (frontmatter only: a file copied with --file has none, so this does nothing to it)
     #[arg(long)]
     private: bool,
     /// A text file: its content becomes the body, byte for byte, under the record's frontmatter
@@ -64,7 +64,7 @@ fn check_args(a: &AddArgs) -> R<()> {
     if !rx(r"\A[a-z0-9-]+\z").is_match(&a.slug) {
         die!("--slug {:?} must be lower-case letters, digits and hyphens", a.slug);
     }
-    if a.date.len() != 10 || chrono::NaiveDate::parse_from_str(&a.date, "%Y-%m-%d").is_err() {
+    if !rx(r"\A\d{4}-\d{2}-\d{2}\z").is_match(&a.date) || chrono::NaiveDate::parse_from_str(&a.date, "%Y-%m-%d").is_err() {
         die!("--date {:?} is not a real date as YYYY-MM-DD", a.date);
     }
     let summary = a.summary.trim();
@@ -88,8 +88,11 @@ fn check_args(a: &AddArgs) -> R<()> {
     if a.file.is_some() && a.type_ == "order" {
         die!("an order is text: file it with --body-file");
     }
-    if a.file.is_some() && a.private {
-        die!("--private marks a record's frontmatter, and a file copied with --file has none");
+    if let Some(f) = &a.file {
+        match file_extension(f) {
+            Some(_) => {}
+            None => die!("--file {f:?} needs an extension of 1 to 10 letters or digits, nothing else"),
+        }
     }
     if let Some(p) = &a.project {
         if !fm::valid_slug(p) {
@@ -101,9 +104,11 @@ fn check_args(a: &AddArgs) -> R<()> {
 
 /// One more than the highest `src-<date>-NN` anywhere under the layer's `sources/`: INDEX.md, the
 /// frontmatter `id` of every `.md` file, and the `order-<date>-NN-` in an order's file name.
-fn next_number(sources: &str, date: &str) -> u64 {
+fn next_number(sources: &str, date: &str) -> R<u64> {
+    let date = regex::escape(date);
     let id = rx(&format!(r"src-{date}-(\d+)"));
     let order_name = rx(&format!(r"\Aorder-{date}-(\d+)-"));
+    let fm_id = rx(&format!(r"\Asrc-{date}-(\d+)\z"));
     let mut highest = 0u64;
     let mut note = |digits: &str| {
         if let Ok(n) = digits.parse::<u64>() {
@@ -124,13 +129,23 @@ fn next_number(sources: &str, date: &str) -> u64 {
             if f == "INDEX.md" && dirpath == sources {
                 id.captures_iter(text).for_each(|c| note(&c[1]));
             } else if let Some((front, _)) = fm::split_fm_optional(text) {
-                if let Some(c) = fm::get_scalar(&front, "id").and_then(|v| rx(&format!(r"\Asrc-{date}-(\d+)\z")).captures(&v).map(|c| c[1].to_string())) {
+                if let Some(c) = fm::get_scalar(&front, "id").and_then(|v| fm_id.captures(&v).map(|c| c[1].to_string())) {
                     note(&c);
                 }
             }
         }
     });
-    highest + 1
+    match highest.checked_add(1) {
+        Some(n) => Ok(n),
+        None => die!("the highest id for {date} is already the largest number there is; nothing was written"),
+    }
+}
+
+/// The extension of a `--file` for the target name, lower-cased: 1 to 10 ASCII letters or digits. Anything
+/// else (none, a `)` that breaks the INDEX link, a `:` that names an NTFS stream) is None.
+fn file_extension(path: &str) -> Option<String> {
+    let ext = std::path::Path::new(path).extension()?.to_str()?;
+    (!ext.is_empty() && ext.len() <= 10 && ext.chars().all(|c| c.is_ascii_alphanumeric())).then(|| ext.to_ascii_lowercase())
 }
 
 /// A frontmatter scalar: plain when it is plainly safe, else a double-quoted string.
@@ -185,18 +200,21 @@ fn cmd_add(ctx: &Ctx, a: &AddArgs) -> R<i32> {
     }
     let index = pyos::join(&sources, "INDEX.md");
     let (id, rel) = locked(&index, || file_under_lock(a, &sources, &index, body, &data))?;
-    if a.move_ {
-        std::fs::remove_file(&input).map_err(|e| io_err(&e, &input))?;
-    }
     outln!("{id}");
     outln!("{}", ctx.rel(&pyos::join(&sources, &rel))?);
+    if a.move_ {
+        // The source is filed; a failed delete leaves the original, which is a warning and not a failure.
+        if let Err(e) = std::fs::remove_file(&input) {
+            crate::out::err_line(&format!("af: warning: {id} is filed, but the original {input} could not be removed: {e}"));
+        }
+    }
     Ok(0)
 }
 
 /// From choosing the id to the INDEX row, with the lock held. Returns the id and the file's path
 /// relative to `sources/`.
 fn file_under_lock(a: &AddArgs, sources: &str, index: &str, body: bool, data: &[u8]) -> R<(String, String)> {
-    let n = next_number(sources, &a.date);
+    let n = next_number(sources, &a.date)?;
     let id = format!("src-{}-{n:02}", a.date);
     let rel = if body {
         match a.type_.as_str() {
@@ -205,7 +223,7 @@ fn file_under_lock(a: &AddArgs, sources: &str, index: &str, body: bool, data: &[
         }
     } else {
         let input = a.file.as_deref().unwrap_or_default();
-        let ext = std::path::Path::new(input).extension().and_then(|e| e.to_str()).map(|e| format!(".{e}")).unwrap_or_default();
+        let ext = file_extension(input).map(|e| format!(".{e}")).unwrap_or_default();
         format!("{}-{}-{}{ext}", a.type_, a.date, a.slug)
     };
     let target = pyos::join(sources, &rel);

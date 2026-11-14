@@ -506,6 +506,11 @@ def judge_met(it: dict, v: dict, search: Call, bound: list[Call], ids: list[str]
         hit = lw.find_email(payloads, verdict, it["start"], now)
         if not _in_thread(hit.message, v["thread"], search.payload, bound):
             return Failed("the email the quote came from is not in the thread the model named")
+        # Judged again against the whole thread as the call's own threadId input binds it, so a message
+        # the search result left out, or a fetched copy no payload id or message id ties to the thread,
+        # still counts toward newest and toward quoted history.
+        whole = _thread_messages(v["thread"], search.payload, bound)
+        hit = lw.find_email([(GET, {"messages": whole})], verdict, it["start"], now)
     except lw.LoopFailure as e:
         return Failed(str(e))
     address = lw.address_of(hit.message.get("sender") or "") or ""

@@ -3,7 +3,7 @@
 //! `- [ ] 2026-10-24 · text · nudge 2026-10-27 · every monthly · from: src-2026-10-23-02`
 //! A loop is closed by moving it to the month log; nothing closed stays in open.md. A loop
 //! with `every <period>` is logged as closed and re-dated one period on instead. A loop
-//! with `need` and `detail` fields is an item on the needs list (`crate::needs`).
+//! with a `need` field and a `rec` (or an old `detail`) is an item on the needs list (`crate::needs`).
 
 use crate::core::{today_date, Ctx};
 use crate::die;
@@ -184,7 +184,7 @@ impl OpenDoc {
                     let why = if t.starts_with("- [x]") || t.starts_with("- [X]") {
                         "closed loop left in open.md (af open close moves it to the month log)"
                     } else {
-                        "line does not parse as '- [ ] YYYY-MM-DD · text[ · nudge YYYY-MM-DD[ · every monthly|weekly|Nd] | · need now|on YYYY-MM-DD|when <trigger> · detail needs/<slug>.md] · from: <id>'"
+                        "line does not parse as '- [ ] YYYY-MM-DD · text[ · nudge YYYY-MM-DD[ · every monthly|weekly|Nd]] · from: <id>', or as a needs item, '- [ ] YYYY-MM-DD · text · need now|on YYYY-MM-DD|when <trigger> · rec: <few words>[ · options: a) ...; b) ...][ · why: ...][ · more: <path>] · from: <id>' (the old form has ' · detail needs/<slug>.md' in place of the rec)"
                     };
                     bad.push((i + 1, t.to_string(), why.to_string()));
                 }
@@ -461,8 +461,8 @@ fn cmd_close_unlocked(ctx: &Ctx, target: &str, outcome: &str, final_: bool) -> R
     close_loop(ctx, &mut doc, &hit, outcome, final_, "af open close")
 }
 
-/// The one way a loop closes, whichever verb named it. A needs item's detail file moves to
-/// `needs/closed/` and the view is rewritten.
+/// The one way a loop closes, whichever verb named it. A needs item's old detail file, if it
+/// has one, moves to `needs/closed/` and the view is rewritten.
 pub fn close_loop(ctx: &Ctx, doc: &mut OpenDoc, hit: &Loop, outcome: &str, final_: bool, verb: &str) -> R<i32> {
     let outcome = life::one_line(outcome);
     if outcome.is_empty() {

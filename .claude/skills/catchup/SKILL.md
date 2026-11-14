@@ -26,8 +26,8 @@ Catch-up mode. The operator is back after time away and wants to know what is ou
    - Resolve: `af open close "<text prefix>" --outcome "<his words>"`. Closing a recurring loop (one with `every` in the JSON) re-dates it a period on; add `--final` when he says it is over for good.
    - Re-date: `af open redate "<text prefix>" --nudge <date or +Nd>`; the loop keeps its opened date, text, section, and source.
    - Do: no command.
-   - Decide later: write the detail file per [`needs-list.md`](../../../library/schema/needs-list.md), run `af needs add "<question>" --detail needs/<slug>.md`, then close the plain loop with the outcome `moved to the needs list`.
-   - A loop whose JSON carries `detail` is already on the needs list: resolve it with `af needs close`, re-date it with `af needs move`, and offer no `d`.
+   - Decide later: run `af needs add "<question>" --rec "<a few words>" [--option "<text>"]... [--why "<text>"] [--more <existing document>]` per [`needs-list.md`](../../../library/schema/needs-list.md), then close the plain loop with the outcome `moved to the needs list`.
+   - A loop whose JSON carries `need` is already on the needs list: resolve it with `af needs close`, re-date it with `af needs move`, and offer no `d`.
 
    If a close refuses an ambiguous prefix, rerun it with a longer prefix. Never edit `open.md` by hand.
 7. Run the visit sweep: list the past seven days of his calendar through the Calendar connector. For each event whose title or location names a page under `workspace/life/places/` (`af place list`), read that page's `## Visits`. Show the events with no row for that date as a lettered list and ask which happened. For each yes, run `af place visit <slug> --date <date> --what "<title>" --from catchup`, which writes the row and raises the verdict loop. With no connector, or nothing to add, say so in one line. Group chats stay out of this.

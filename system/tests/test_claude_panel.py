@@ -701,7 +701,8 @@ class BridgeExtensionTests(unittest.TestCase):
         data = EXTENSION.read_bytes()
         self.assertEqual([i for i, b in enumerate(data) if b > 127], [])
         text = data.decode("ascii")
-        block = re.search(r"const ACTIONS = \{(.*?)\n\};\n", text, re.DOTALL).group(1)
+        # \r?\n: a checkout with autocrlf has CRLF in the working copy.
+        block = re.search(r"const ACTIONS = \{(.*?)\r?\n\};\r?\n", text, re.DOTALL).group(1)
         names = set(re.findall(r"^  '?([\w-]+)'?: async function", block, re.MULTILINE))
         self.assertEqual(names, BRIDGE_ACTIONS)
         for gone in ["group-pick", "addSessionTabToGroup", "quickOpen", "acceptSelected"]:

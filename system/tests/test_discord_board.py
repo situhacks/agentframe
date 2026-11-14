@@ -203,21 +203,21 @@ class BoardToolCase(unittest.TestCase):
         self.addCleanup(patcher.stop)
         self.addCleanup(self.tmp.cleanup)
 
-    def run_tool(self, *args, text=None):
+    def run_tool(self, *args, text=None, today=TODAY):
         if text is not None:
             self.note.write_text(text, encoding="utf-8")
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-            code = discord_board.main(list(args), opener=self.fake, sleep=self.sleeps.append, today=TODAY)
+            code = discord_board.main(list(args), opener=self.fake, sleep=self.sleeps.append, today=today)
         self.assertNotIn(TOKEN, out.getvalue() + err.getvalue())
         self.assertFalse(self.lock.exists(), "a run always releases its lock")
         return code, out.getvalue(), err.getvalue()
 
-    def board(self, text):
-        return self.run_tool("board", "open", str(self.note), text=text)
+    def board(self, text, *extra):
+        return self.run_tool("board", "open", str(self.note), *extra, text=text)
 
-    def post(self, text, *extra, title="Ramen"):
-        return self.run_tool("post", "food", "ramen", str(self.note), "--title", title, *extra, text=text)
+    def post(self, text, *extra, title="Ramen", today=TODAY):
+        return self.run_tool("post", "food", "ramen", str(self.note), "--title", title, *extra, text=text, today=today)
 
     def state(self):
         return json.loads(self.state_path.read_text(encoding="utf-8"))
@@ -247,7 +247,7 @@ class BoardTests(BoardToolCase):
         self.board("- one\n")
         first = self.board_ids()
         self.fake.calls.clear()
-        code, _, _ = self.board("- one\n- two\n")
+        code, _, _ = self.board("- one\n- two\n", "--no-bump")
         self.assertEqual(code, 0)
         self.assertEqual(self.board_ids(), first)
         self.assertEqual(self.fake.count("POST"), 0)
@@ -258,7 +258,7 @@ class BoardTests(BoardToolCase):
     def test_the_board_grows_and_shrinks_across_messages(self):
         self.board("short\n")
         first = self.board_ids()[0]
-        self.board(self.long_text(6))
+        self.board(self.long_text(6), "--no-bump")
         ids = self.board_ids()
         self.assertGreaterEqual(len(ids), 3)
         self.assertEqual(ids[0], first)
@@ -268,7 +268,7 @@ class BoardTests(BoardToolCase):
         self.assertEqual(self.fake.count("PUT"), 1)
 
         self.fake.calls.clear()
-        self.board("short again\n")
+        self.board("short again\n", "--no-bump")
         self.assertEqual(self.board_ids(), [first])
         self.assertEqual(self.fake.count("DELETE"), len(ids) - 1)
         self.assertEqual(self.fake.channel_contents(OPEN_ID), [f"short again\n\n{STAMP}"])
@@ -473,7 +473,7 @@ class PostTests(BoardToolCase):
         self.assertEqual(self.fake.messages[tid]["content"], f"Try the miso.\n\n{STAMP}")
 
         self.fake.calls.clear()
-        code, _, err = self.post("Miso was great.\n", "--tag", "done", title="Ramen, tried")
+        code, _, err = self.post("Miso was great.\n", "--tag", "done", "--no-bump", title="Ramen, tried")
         self.assertEqual(code, 0, err)
         self.assertIn(("PATCH", f"/channels/{tid}/messages/{tid}", {"content": f"Miso was great.\n\n{STAMP}", "allowed_mentions": NO_MENTIONS}), self.fake.calls)
         self.assertEqual(self.fake.threads[tid]["name"], "Ramen, tried")
@@ -507,7 +507,7 @@ class PostTests(BoardToolCase):
         for mid in item["messages"]:
             self.assertEqual(self.fake.messages[mid]["channel"], tid)
         extra = item["messages"]
-        self.post("short\n")
+        self.post("short\n", "--no-bump")
         self.assertEqual(self.state()["posts"]["food"]["ramen"]["messages"], [])
         for mid in extra:
             self.assertNotIn(mid, self.fake.messages)
@@ -554,6 +554,195 @@ class DryRunAndStateTests(BoardToolCase):
         self.fake.channels.add("200000000000000999")
         self.board("x\n")
         self.assertEqual(self.fake.calls[0][1], "/channels/200000000000000999/messages")
+
+
+class BumpTests(BoardToolCase):
+    """A changed post or board ends with one "Updated" message so it shows as unread."""
+
+    BUMP = f"Updated {TODAY.isoformat()}"
+
+    def item(self):
+        return self.state()["posts"]["food"]["ramen"]
+
+    def thread(self):
+        return self.item()["thread"]
+
+    def test_a_changed_post_edits_deletes_the_old_bump_and_sends_a_new_one_last(self):
+        self.post(self.long_text(5))
+        self.post(self.long_text(5) + "\nmore\n")  # first change: the first bump
+        old = self.item()["bump"]
+        tid, extra = self.thread(), self.item()["messages"]
+        self.assertEqual(self.fake.messages[old]["content"], f"{self.BUMP}: Ramen")
+        self.fake.calls.clear()
+        code, out, err = self.post(self.long_text(5) + "\nmore still\n")
+        self.assertEqual(code, 0, err)
+        self.assertIn(", bumped.", out)
+        kinds = [(m, p) for m, p, _ in self.fake.calls if m in ("PATCH", "DELETE", "POST")]
+        self.assertEqual(kinds[-2:], [("DELETE", f"/channels/{tid}/messages/{old}"), ("POST", f"/channels/{tid}/messages")])
+        self.assertTrue(all(m == "PATCH" for m, _ in kinds[:-2]) and kinds[:-2])
+        item = self.item()
+        self.assertNotEqual(item["bump"], old)
+        self.assertNotIn(old, self.fake.messages)
+        self.assertEqual(item["messages"], extra, "the bump is apart from the messages list")
+        self.assertEqual(item["hash"], discord_board.content_hash("Ramen", discord_board.compose(self.note.read_text(encoding="utf-8"), TODAY)))
+        self.assertEqual(self.fake.channel_contents(tid)[-1], f"{self.BUMP}: Ramen")
+        self.assertEqual(self.fake.calls[-1][2], {"content": f"{self.BUMP}: Ramen", "allowed_mentions": NO_MENTIONS})
+
+    def test_the_same_content_twice_sends_no_bump_and_deletes_nothing(self):
+        self.post("a\n")
+        self.post("b\n")
+        bump = self.item()["bump"]
+        self.fake.calls.clear()
+        code, out, _ = self.post("b\n")
+        self.assertEqual(code, 0)
+        self.assertEqual(self.fake.count("POST"), 0)
+        self.assertEqual(self.fake.count("DELETE"), 0)
+        self.assertNotIn("bumped", out)
+        self.assertEqual(self.item()["bump"], bump)
+
+    def test_the_same_content_on_a_later_day_is_not_a_change(self):
+        self.post("a\n")
+        self.post("b\n")
+        self.fake.calls.clear()
+        code, _, _ = self.post("b\n", today=dt.date(2026, 1, 3))
+        self.assertEqual(code, 0)
+        self.assertEqual(self.fake.count("POST"), 0)
+        self.assertEqual(self.fake.count("DELETE"), 0)
+
+    def test_an_item_with_no_stored_hash_is_bumped_once(self):
+        self.post("a\n")
+        state = self.state()
+        del state["posts"]["food"]["ramen"]["hash"]
+        self.state_path.write_text(json.dumps(state), encoding="utf-8")
+        self.fake.calls.clear()
+        code, out, _ = self.post("a\n")
+        self.assertEqual(code, 0)
+        self.assertEqual(self.fake.count("POST"), 1)
+        self.assertIn(", bumped.", out)
+        self.assertIn("bump", self.item())
+        self.post("a\n")
+        self.assertEqual(self.fake.count("POST"), 1, "the rerun does not bump again")
+
+    def test_a_new_post_and_a_first_board_get_no_bump(self):
+        code, out, _ = self.post("a\n")
+        self.assertEqual(code, 0)
+        self.assertEqual(self.fake.channel_contents(self.thread()), [f"a\n\n{STAMP}"])
+        self.assertNotIn("bump", self.item())
+        self.assertIn("hash", self.item())
+        self.assertNotIn("bumped", out)
+        code, out, _ = self.board("- one\n")
+        self.assertEqual(code, 0)
+        self.assertEqual(self.fake.channel_contents(OPEN_ID), [f"- one\n\n{STAMP}"])
+        self.assertNotIn("bump", self.state()["boards"]["open"])
+        self.assertIn("hash", self.state()["boards"]["open"])
+        self.assertNotIn("bumped", out)
+
+    def test_a_post_started_over_because_its_starter_was_deleted_gets_no_bump(self):
+        self.post("a\n")
+        self.post("b\n")
+        old = self.item()
+        del self.fake.messages[old["thread"]]
+        code, _, err = self.post("c\n")
+        self.assertEqual(code, 0, err)
+        self.assertNotIn("bump", self.item())
+        self.assertEqual(self.item()["hash"], discord_board.content_hash("Ramen", discord_board.compose("c\n", TODAY)))
+
+    def test_an_old_bump_deleted_by_hand_does_not_stop_the_run(self):
+        self.post("a\n")
+        self.post("b\n")
+        old = self.item()["bump"]
+        del self.fake.messages[old]
+        code, _, err = self.post("c\n")
+        self.assertEqual(code, 0, err)
+        new = self.item()["bump"]
+        self.assertNotEqual(new, old)
+        self.assertEqual(self.fake.messages[new]["content"], f"{self.BUMP}: Ramen")
+
+    def test_a_failed_delete_of_the_old_bump_stops_the_run_and_keeps_its_id(self):
+        self.post("a\n")
+        self.post("b\n")
+        old = self.item()["bump"]
+        self.fake.fail.append(("DELETE", f"/messages/{old}$", 500, {"message": "oops"}))
+        self.fake.calls.clear()
+        code, _, err = self.post("c\n")
+        self.assertEqual(code, 2)
+        self.assertIn("500", err)
+        self.assertEqual(self.item()["bump"], old)
+        self.assertEqual(self.fake.count("POST"), 0)
+
+    def test_a_failed_bump_still_stores_the_hash_so_a_rerun_does_not_bump_twice(self):
+        self.post("a\n")
+        self.fake.fail.append(("POST", "/messages$", 500, {"message": "oops"}))
+        code, _, err = self.post("b\n")
+        self.assertEqual(code, 2)
+        self.assertIn("500", err)
+        self.assertNotIn("bump", self.item())
+        self.assertEqual(self.item()["hash"], discord_board.content_hash("Ramen", discord_board.compose("b\n", TODAY)))
+        self.fake.calls.clear()
+        code, _, _ = self.post("b\n")
+        self.assertEqual(code, 0)
+        self.assertEqual(self.fake.count("POST"), 0)
+
+    def test_no_bump_sends_nothing_beyond_the_edits_and_stores_the_hash(self):
+        self.post("a\n")
+        self.fake.calls.clear()
+        code, out, _ = self.post("b\n", "--no-bump")
+        self.assertEqual(code, 0)
+        self.assertEqual(self.fake.count("POST"), 0)
+        self.assertEqual(self.fake.count("DELETE"), 0)
+        self.assertEqual(self.fake.count("PATCH"), 1)
+        self.assertNotIn("bumped", out)
+        self.assertNotIn("bump", self.item())
+        self.assertEqual(self.item()["hash"], discord_board.content_hash("Ramen", discord_board.compose("b\n", TODAY)))
+        self.board("- one\n")
+        self.fake.calls.clear()
+        code, _, _ = self.run_tool("board", "open", str(self.note), "--no-bump", text="- one\n- two\n")
+        self.assertEqual(code, 0)
+        self.assertEqual(self.fake.count("POST"), 0)
+        self.assertNotIn("bump", self.state()["boards"]["open"])
+        self.assertEqual(self.state()["boards"]["open"]["hash"], discord_board.content_hash(None, discord_board.compose("- one\n- two\n", TODAY)))
+
+    def test_dry_run_says_would_bump_and_changes_nothing(self):
+        self.post("a\n")
+        self.board("- one\n")
+        before = self.state_path.read_bytes()
+        self.fake.calls.clear()
+        _, out, _ = self.run_tool("post", "food", "ramen", str(self.note), "--title", "Ramen", "--dry-run", text="b\n")
+        self.assertIn("would bump", out)
+        _, out, _ = self.run_tool("board", "open", str(self.note), "--dry-run", text="- two\n")
+        self.assertIn("would bump", out)
+        _, out, _ = self.run_tool("board", "open", str(self.note), "--dry-run", "--no-bump", text="- two\n")
+        self.assertNotIn("would bump", out)
+        self.assertEqual(self.fake.calls, [])
+        self.assertEqual(self.state_path.read_bytes(), before)
+        _, out, _ = self.run_tool("post", "food", "ramen", str(self.note), "--title", "Ramen", "--dry-run", text="a\n")
+        self.assertNotIn("would bump", out, "the content last sent")
+
+    def test_a_changed_board_gets_one_bump_after_its_messages_and_the_pin_stays(self):
+        self.board(self.long_text(4))
+        first = self.board_ids()
+        self.board(self.long_text(4) + "\nmore\n")
+        self.fake.calls.clear()
+        code, out, err = self.board(self.long_text(4) + "\nmore still\n")
+        self.assertEqual(code, 0, err)
+        self.assertIn(", bumped.", out)
+        self.assertEqual(self.board_ids(), first)
+        self.assertEqual(self.fake.count("PUT"), 0)
+        self.assertEqual(self.fake.pins, {first[0]})
+        self.assertEqual(self.state()["boards"]["open"]["pinned"], first[0])
+        self.assertEqual(self.fake.channel_contents(OPEN_ID)[-1], self.BUMP)
+        self.assertEqual(self.fake.count("POST"), 1)
+        self.assertEqual(self.fake.count("DELETE"), 1, "the previous bump")
+        self.assertEqual([m for m, _, _ in self.fake.calls][-1], "POST")
+        self.assertEqual(self.fake.calls[-1][2], {"content": self.BUMP, "allowed_mentions": NO_MENTIONS})
+
+    def test_a_title_change_alone_counts_as_changed(self):
+        self.post("a\n")
+        self.fake.calls.clear()
+        code, out, _ = self.post("a\n", title="Ramen, tried")
+        self.assertEqual(code, 0)
+        self.assertIn(", bumped.", out)
+        self.assertEqual(self.fake.channel_contents(self.thread())[-1], f"{self.BUMP}: Ramen, tried")
 
 
 if __name__ == "__main__":

@@ -4,6 +4,10 @@ Standard library only; reuses notify.py's .env loading and message split.
 A text channel holds one pinned board, edited on every run. A forum channel
 holds one post per item (a slug), its starter message edited on every run.
 Nothing is date-bound: each run appends "_Updated YYYY-MM-DD_" (local date).
+An edit alone shows him nothing (Discord marks a thread unread only on a new
+message), so a post or board that already existed and whose content changed
+gets one short "Updated YYYY-MM-DD" message at its end, the previous one
+deleted first; --no-bump skips it. A new post or first board gets none.
 
 Paths resolve from the vault root: AF_ROOT, else the repo holding this file.
 
@@ -27,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 import os
 import re
@@ -186,6 +191,13 @@ def compose(text: str, today: dt.date) -> list[str]:
     return out
 
 
+def content_hash(title: str | None, parts: list[str]) -> str:
+    """SHA-256 over the title and parts, without the daily "_Updated_" stamp, so
+    only a real change in the content differs between days."""
+    stable = [re.sub(r"\n\n_Updated \d{4}-\d{2}-\d{2}_\Z", "", part) for part in parts]
+    return hashlib.sha256(json.dumps([title, stable], ensure_ascii=False).encode("utf-8")).hexdigest()
+
+
 def load_state(path: Path) -> dict:
     if not path.exists():
         return {}
@@ -296,6 +308,17 @@ def sync_messages(api: Discord, channel: str, record: list[str], parts: list[str
         record.remove(mid)
 
 
+def send_bump(api: Discord, channel: str, holder: dict, text: str) -> None:
+    """One bump at a time: delete the stored one (already gone is fine), then send.
+    The old id is dropped once its delete is confirmed, the new one stored once
+    the send has landed; any other failure keeps the stored id."""
+    old = holder.get("bump")
+    if old:
+        api.delete(channel, old)
+        del holder["bump"]
+    holder["bump"] = api.send(channel, text)
+
+
 # --- commands ---------------------------------------------------------------
 
 
@@ -314,6 +337,9 @@ def run_board(a, state: dict, env: dict, api: Discord | None, parts: list[str]) 
     boards = state.setdefault("boards", {})
     board = boards.get(a.key) or {}
     stored = list(board.get("messages") or [])
+    stored_before = bool(stored)
+    digest = content_hash(None, parts)
+    changed = board.get("hash") != digest
     if a.dry_run:
         print(f"board {a.key}: {len(parts)} message(s); {len(stored)} stored")
         print_parts(parts, ["edit" if i < len(stored) else "post" for i in range(len(parts))])
@@ -321,25 +347,33 @@ def run_board(a, state: dict, env: dict, api: Discord | None, parts: list[str]) 
             print("would pin message 1")
         if len(stored) > len(parts):
             print(f"would delete {len(stored) - len(parts)} leftover message(s)")
+        if stored and changed and not a.no_bump:
+            print("would bump")
         return "dry run: nothing sent, state unchanged."
     if not channel:
         raise no_channel(a.key)
-    board = boards[a.key] = {"messages": stored, "pinned": board.get("pinned")}
+    board = boards[a.key] = {**board, "messages": stored, "pinned": board.get("pinned")}
     sync_messages(api, channel, stored, parts)
     pinned = ""
     if board["pinned"] != stored[0]:
         api.pin(channel, stored[0])
         board["pinned"] = stored[0]  # only once the pin has landed
         pinned = ", pinned"
-    return f"board {a.key}: {len(parts)} message(s) current{pinned}."
+    board["hash"] = digest  # stored before the bump, so a failed bump is not repeated
+    bumped = ""
+    if stored_before and changed and not a.no_bump:
+        send_bump(api, channel, board, f"Updated {a.today.isoformat()}")
+        bumped = ", bumped"
+    return f"board {a.key}: {len(parts)} message(s) current{pinned}{bumped}."
 
 
 def create_post(api: Discord, posts: dict, forum: str, slug: str, title: str,
-                tags: list[tuple[str, str]], parts: list[str]) -> None:
-    """A fresh thread; the stored item is replaced only once the thread exists."""
+                tags: list[tuple[str, str]], parts: list[str], digest: str) -> None:
+    """A fresh thread; the stored item is replaced only once the thread exists.
+    A new thread is not bumped: creating it already shows."""
     thread = api.create_thread(forum, title, parts[0], [t for _, t in tags])
     record: list[str] = []
-    posts[slug] = {"thread": thread, "title": title, "tags": [n for n, _ in tags], "messages": record}
+    posts[slug] = {"thread": thread, "title": title, "tags": [n for n, _ in tags], "messages": record, "hash": digest}
     sync_messages(api, thread, record, parts[1:])
 
 
@@ -353,6 +387,8 @@ def run_post(a, state: dict, env: dict, api: Discord | None, parts: list[str]) -
     item = posts.get(a.slug) or {}
     thread = item.get("thread")
     extra = list(item.get("messages") or [])
+    digest = content_hash(title, parts)
+    changed = item.get("hash") != digest
     if a.dry_run:
         if not thread:
             print(f"post {a.key}/{a.slug}: would create thread \"{title}\" tags [{', '.join(n for n, _ in tags)}]")
@@ -366,11 +402,13 @@ def run_post(a, state: dict, env: dict, api: Discord | None, parts: list[str]) -
             print_parts(parts, ["edit starter"] + ["edit" if i < len(extra) else "post" for i in range(len(parts) - 1)])
             if len(extra) > len(parts) - 1:
                 print(f"would delete {len(extra) - len(parts) + 1} leftover message(s)")
+            if changed and not a.no_bump:
+                print("would bump")
         return "dry run: nothing sent, state unchanged."
     if not forum:
         raise no_channel(a.key)
     if not thread:
-        create_post(api, posts, forum, a.slug, title, tags, parts)
+        create_post(api, posts, forum, a.slug, title, tags, parts, digest)
         return f"post {a.key}/{a.slug}: created with {len(parts)} message(s)."
 
     try:
@@ -386,7 +424,7 @@ def run_post(a, state: dict, env: dict, api: Discord | None, parts: list[str]) -
         if not a.tag:  # keep the tags it had
             known = entry.get("tags") or {}
             tags = [(n, str(known[n])) for n in item.get("tags") or [] if n in known]
-        create_post(api, posts, forum, a.slug, title, tags, parts)
+        create_post(api, posts, forum, a.slug, title, tags, parts, digest)
         return f"post {a.key}/{a.slug}: starter was gone; created afresh with {len(parts)} message(s)."
     item = posts[a.slug] = {**item, "messages": extra}
     change: dict = {}
@@ -400,7 +438,13 @@ def run_post(a, state: dict, env: dict, api: Discord | None, parts: list[str]) -
     if a.tag:
         item["tags"] = [n for n, _ in tags]
     sync_messages(api, thread, extra, parts[1:])
-    return f"post {a.key}/{a.slug}: {len(parts)} message(s) current" + (f", updated {' and '.join(change)}" if change else "") + "."
+    item["hash"] = digest  # stored before the bump, so a failed bump is not repeated
+    bumped = ""
+    if changed and not a.no_bump:
+        send_bump(api, thread, item, f"Updated {a.today.isoformat()}: {title}")
+        bumped = ", bumped"
+    return (f"post {a.key}/{a.slug}: {len(parts)} message(s) current"
+            + (f", updated {' and '.join(change)}" if change else "") + bumped + ".")
 
 
 def execute(a, state_path: Path, env: dict, api: Discord | None, parts: list[str]) -> str:
@@ -429,6 +473,7 @@ def main(argv: list[str] | None = None, *, opener=None, sleep=time.sleep, today:
     f.add_argument("--tag", action="append", help="forum tag name; repeat for several")
     for sp in (b, f):
         sp.add_argument("--dry-run", action="store_true", help="print what would be sent; change nothing")
+        sp.add_argument("--no-bump", action="store_true", help='skip the "Updated" message that shows a changed post or board as unread')
         sp.add_argument("--env", type=Path, default=None, help=f"credentials file (default <root>/{ENV_REL.as_posix()})")
         sp.add_argument("--state", type=Path, default=None, help=f"state file (default <root>/{STATE_REL.as_posix()})")
     a = p.parse_args(argv)
@@ -437,10 +482,11 @@ def main(argv: list[str] | None = None, *, opener=None, sleep=time.sleep, today:
     except Exception:  # noqa: BLE001
         pass
     a.key = a.key.strip().lower()
+    a.today = today or dt.date.today()
     env_path = a.env or root() / ENV_REL
     state_path = a.state or root() / STATE_REL
     try:
-        parts = compose(a.file.read_text(encoding="utf-8"), today or dt.date.today())
+        parts = compose(a.file.read_text(encoding="utf-8"), a.today)
         if not parts:
             raise BoardError(f"{a.file} is empty; nothing to post.")
         env = {**os.environ, **load_env(env_path)}

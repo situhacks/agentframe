@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import time
+import types
 import uuid
 from pathlib import Path
 
@@ -72,17 +73,17 @@ T0 = 1_000_000_000_000  # a wall-clock time in ms
 WRAP = 4294967296
 
 
-def powershell(*args, timeout=120):
+def powershell(*args, timeout=120, cwd=None):
     return subprocess.run([*POWERSHELL, *map(str, args)], capture_output=True, text=True, encoding="utf-8",
-                          errors="replace", timeout=timeout, creationflags=NO_WINDOW)
+                          errors="replace", timeout=timeout, creationflags=NO_WINDOW, cwd=cwd)
 
 
-def run_functions(folder: Path, cases: list[dict], names=PURE) -> dict:
+def run_functions(folder: Path, cases: list[dict], names=PURE, cwd=None) -> dict:
     harness = folder / "harness.ps1"
     harness.write_text(HARNESS, encoding="utf-8")
     cases_file = folder / "cases.json"
     cases_file.write_text(json.dumps(cases), encoding="utf-8")
-    out = powershell("-File", harness, "-Script", SCRIPT, "-Names", ",".join(names), "-CasesFile", cases_file)
+    out = powershell("-File", harness, "-Script", SCRIPT, "-Names", ",".join(names), "-CasesFile", cases_file, cwd=cwd)
     assert out.returncode == 0, out.stderr + out.stdout
     rows = json.loads(out.stdout)
     return {row["id"]: row for row in rows}
@@ -258,7 +259,7 @@ public static class AfDesktop {
     public static bool CursorOk = true, FrontOk = true, Intruded;
     public static void Arm(long tick) { Expected = tick; Intruded = false; }
     public static void Accept(long tick) { OwnTick = tick; Expected = tick; }
-    public static bool FakeCall(int ms, long bump) { System.Threading.Thread.Sleep(ms); if (bump >= 0) Last = bump; return true; }
+    public static bool FakeCall(int ms, long bump, bool apply) { System.Threading.Thread.Sleep(ms); if (apply) Last = bump; return true; }
     public static long LastInput() { return Last; }
     public static long TickNow() { return Now; }
     public static IntPtr GetForegroundWindow() { return new IntPtr(Front); }
@@ -288,6 +289,7 @@ $env:AF_ROOT = $Root
 $StateRelative = 'system\logs\desktop\run.json'
 $RunMutexName = $MutexName
 $TimedCallLimitMs = 250
+$ClockOwnLabels = @('InvokePattern')
 $GatedCommands = @('focus', 'invoke', 'click', 'type', 'key', 'restore')
 $Command = 'focus'
 $SettleMs = 0
@@ -354,8 +356,9 @@ foreach ($s in $steps) {
             foreach ($c in @($calls)) {
                 if ($null -ne (Get-StateField $c 'pre_bump')) { [AfDesktop]::Last = [long]$c.pre_bump }
                 $callMs = [int]$c.ms
-                $callBump = if ($null -ne (Get-StateField $c 'bump')) { [long]$c.bump } else { -1 }
-                [void](Invoke-Timed ([string]$c.label) { [AfDesktop]::FakeCall($callMs, $callBump) })
+                $hasBump = $null -ne (Get-StateField $c 'bump')
+                $callBump = if ($hasBump) { [long]$c.bump } else { 0 }
+                [void](Invoke-Timed ([string]$c.label) { [AfDesktop]::FakeCall($callMs, $callBump, $hasBump) })
             }
         }
         $fail = Get-StateField $s 'send_fail'
@@ -481,16 +484,48 @@ def test_a_command_that_stops_partway_still_records_its_own_input(tmp_path):
 # A call that sends no input is timed on its own (Invoke-Timed): the clock is read straight before and after it.
 
 @needs_powershell
-def test_a_quick_call_that_moved_the_clock_is_the_tools_own(tmp_path):
-    raised, next_command, trace = run_flow(tmp_path, [
-        guard_step("raise moved the clock, 5 ms", T, T - 600_000, M, calls=[{"label": "SetForegroundWindow", "ms": 5, "bump": T + 80}]),
+def test_a_fast_pattern_invoke_that_moved_the_clock_is_the_tools_own(tmp_path):
+    invoked, next_command = run_flow(tmp_path, [
+        guard_step("pattern Invoke moved the clock, 5 ms", T, T - 600_000, M, calls=[{"label": "InvokePattern", "ms": 5, "bump": T + 80}]),
         guard_step("the next command", T + 800, T + 80, M + 800),
-        guard_step("traced", T + 1600, T + 80, M + 1600, calls=[{"label": "SetForegroundWindow", "ms": 0}]),
     ])
-    assert raised["exit"] == 0 and raised["state"]["own_tick"] == T + 80
-    assert raised["stderr"] == "", "nothing extra is printed without -Verbose"
+    assert invoked["exit"] == 0 and invoked["state"]["own_tick"] == T + 80
+    assert invoked["stderr"] == "", "nothing extra is printed without -Verbose"
     assert next_command["exit"] == 0
-    assert trace["stderr"] == ""
+
+
+@needs_powershell
+@pytest.mark.parametrize("label", ["SetForegroundWindow", "ShowWindow", "SetCursorPos"])
+def test_a_fast_raise_or_pointer_move_that_moved_the_clock_is_his(tmp_path, label):
+    moved, next_command, later = run_flow(tmp_path, [
+        guard_step(f"{label} moved the clock, 5 ms", T, T - 600_000, M, calls=[{"label": label, "ms": 5, "bump": T + 80}]),
+        guard_step("the next command", T + 800, T + 80, M + 800),
+        guard_step("130 quiet seconds on", T + 131_000, T + 80, M + 131_000),
+    ])
+    assert moved["exit"] == 0 and moved["state"]["own_tick"] is None, "the moved clock is not taken as the tool's own"
+    assert next_command["exit"] == 4 and "last input 0 s ago" in next_command["stderr"]
+    assert later["exit"] == 0
+
+
+@needs_powershell
+def test_a_raise_that_moved_the_clock_stops_the_next_timed_call(tmp_path):
+    stopped, = run_flow(tmp_path, [
+        guard_step("raise moves the clock, then the pointer move", T + 1000, T - 600_000, M,
+                   calls=[{"label": "SetForegroundWindow", "ms": 0, "bump": T + 80}, {"label": "SetCursorPos", "ms": 0}]),
+    ])
+    assert stopped["exit"] == 4 and "nothing more was sent" in stopped["stderr"]
+
+
+@needs_powershell
+@pytest.mark.parametrize("call", [{"label": "InvokePattern", "ms": 0, "bump": -1}, {"label": "SetForegroundWindow", "ms": 0, "bump": -1},
+                                  {"label": "InvokePattern", "ms": 0, "pre_bump": -1}])
+def test_an_unreadable_clock_around_a_timed_call_is_his_input_and_stops_the_command(tmp_path, call):
+    stopped, next_command = run_flow(tmp_path, [
+        guard_step("the clock cannot be read", T + 1000, T - 600_000, M, calls=[call]),
+        guard_step("the next command", T + 1500, T - 600_000, M + 500),
+    ])
+    assert stopped["exit"] == 4 and "the operator is active" in stopped["stderr"] and "nothing more was sent" in stopped["stderr"]
+    assert next_command["exit"] == 0, "once Windows reads the clock again the plain rule decides"
 
 
 @needs_powershell
@@ -528,7 +563,7 @@ def test_a_command_that_moved_no_tick_and_sent_nothing_records_no_own_tick(tmp_p
 def test_his_input_before_a_timed_call_stops_the_command_and_the_next_one_waits(tmp_path):
     stopped, next_command, later = run_flow(tmp_path, [
         guard_step("two calls, he clicks between them", T + 1000, T - 600_000, M, calls=[
-            {"label": "ShowWindow", "ms": 0, "bump": T + 40}, {"label": "SetForegroundWindow", "ms": 0, "pre_bump": T + 900}]),
+            {"label": "InvokePattern", "ms": 0, "bump": T + 40}, {"label": "SetForegroundWindow", "ms": 0, "pre_bump": T + 900}]),
         guard_step("the next command", T + 1500, T + 900, M + 1500),
         guard_step("130 quiet seconds on", T + 131_000, T + 900, M + 131_000),
     ])
@@ -589,13 +624,13 @@ def test_a_run_has_a_five_minute_limit_that_rewriting_the_state_does_not_extend(
 @needs_powershell
 def test_a_trace_line_per_call_shows_whether_the_clock_moved_and_how_long_it_took(tmp_path):
     traced, plain = run_flow(tmp_path, [
-        {**guard_step("traced", T, T - 600_000, M, calls=[{"label": "SetForegroundWindow", "ms": 20, "bump": T + 80},
-                                                          {"label": "InvokePattern", "ms": 0}]), "trace": True},
-        {**guard_step("untraced", T + 1000, T + 80, M + 1000, calls=[{"label": "InvokePattern", "ms": 0}]), "trace": False},
+        {**guard_step("traced", T, T - 600_000, M, calls=[{"label": "InvokePattern", "ms": 20, "bump": T + 80},
+                                                          {"label": "SetForegroundWindow", "ms": 0}]), "trace": True},
+        {**guard_step("untraced", T + 1000, T + 80, M + 1000, calls=[{"label": "SetForegroundWindow", "ms": 0}]), "trace": False},
     ])
     lines = traced["stderr"].splitlines()
-    assert re.fullmatch(r"trace: SetForegroundWindow clock_moved=True ms=\d+ accepted=True", lines[0]), lines
-    assert re.fullmatch(r"trace: InvokePattern clock_moved=False ms=\d+ accepted=False", lines[1]), lines
+    assert re.fullmatch(r"trace: InvokePattern clock_moved=True ms=\d+ accepted=True", lines[0]), lines
+    assert re.fullmatch(r"trace: SetForegroundWindow clock_moved=False ms=\d+ accepted=False", lines[1]), lines
     assert plain["stderr"] == ""
 
 
@@ -746,6 +781,9 @@ SEND_CASES = [
     {"id": "an unreadable clock before a send stops it", "expected": 100, "sends": [{"events": 1, "returns": 1, "clocks": [-1]}]},
     {"id": "nothing accepted when the sender sent none", "expected": 100,
      "sends": [{"events": 1, "returns": 0, "clocks": [100, 130]}]},
+    {"id": "an unreadable clock after a send is his input and later sends stop", "expected": 100, "sends": [
+        {"events": 2, "returns": 2, "clocks": [100, -1]}, {"events": 2, "returns": 2, "clocks": [-1, -1]},
+        {"events": 2, "returns": 2, "clocks": [130, 140]}]},
 ]
 
 
@@ -797,6 +835,15 @@ def test_send_stops_a_command_at_the_second_send_when_he_acts_between_two(send_r
 def test_send_treats_a_partial_send_as_a_failure_not_an_intrusion(send_results):
     row = send_results["a partial send is a failure, not an intrusion, and its tick is kept"]
     assert row["sends"][0]["result"] is False and row["intruded"] is False and row["own"] == 112
+
+
+@needs_powershell
+def test_send_treats_a_clock_that_fails_after_a_send_as_his_input(send_results):
+    row = send_results["an unreadable clock after a send is his input and later sends stop"]
+    assert [s["result"] for s in row["sends"]] == [True, False, False], "the callers stop on Intruded after the first"
+    assert [s["called"] for s in row["sends"]] == [1, 0, 0], "nothing is sent after the clock could not be read"
+    assert row["intruded"] is True and row["own"] == -2, "a reading of -1 is never kept as the tool's own tick"
+    assert row["expected"] == 100
 
 
 @needs_powershell
@@ -881,6 +928,42 @@ def test_the_screenshot_path_rule_as_the_script_applies_it_from_a_worktree_with_
 
 
 @needs_powershell
+def test_a_long_path_prefix_is_stripped_and_a_network_path_is_refused_outright(tmp_path):
+    main, worktree, af_root = make_repositories(tmp_path)
+    roots = [str(worktree), str(af_root), str(main)]
+    drive, rest = str(worktree / "library" / "x.png").split(":", 1)
+    share_rest = rest.lstrip("\\")
+    cases = {
+        "long prefix, tracked folder": "\\\\?\\" + str(worktree / "library" / "x.png"),
+        "long prefix, ignored folder": "\\\\?\\" + str(worktree / "workspace" / "x.png"),
+        "long prefix, outside": "\\\\?\\" + str(tmp_path / "scratch" / "x.png"),
+        "long UNC": "\\\\?\\UNC\\server\\share\\x.png",
+        "UNC": "\\\\server\\share\\x.png",
+        "UNC to this machine's own drive": f"\\\\localhost\\{drive}$\\{share_rest}",
+        "device path": "\\\\.\\C:\\x.png",
+    }
+    rows = run_functions(tmp_path, [{"id": k, "fn": "Test-OutAllowed", "args": [v, roots]} for k, v in cases.items()], PURE)
+    assert {k: rows[k]["value"] for k in cases} == {
+        "long prefix, tracked folder": False, "long prefix, ignored folder": True, "long prefix, outside": True,
+        "long UNC": False, "UNC": False, "UNC to this machine's own drive": False, "device path": False}
+
+
+@needs_powershell
+def test_a_relative_gitdir_is_read_against_the_folder_that_holds_the_git_file(tmp_path):
+    main = tmp_path / "main"
+    (main / ".git" / "worktrees" / "wt").mkdir(parents=True)
+    (main / ".git" / "worktrees" / "wt" / "commondir").write_text("../..\n", encoding="utf-8")
+    (main / "wt").mkdir()
+    (main / "wt" / ".git").write_text("gitdir: ../.git/worktrees/wt\n", encoding="utf-8")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    rows = run_functions(tmp_path, [{"id": "r", "fn": "Get-RepositoryRoots", "args": [str(main / "wt"), ""]}], PURE, cwd=elsewhere)
+    value = rows["r"]["value"]
+    roots = {Path(r).resolve() for r in ([value] if isinstance(value, str) else value)}
+    assert roots == {(main / "wt").resolve(), main.resolve()}, roots
+
+
+@needs_powershell
 def test_the_repository_roots_of_a_plain_checkout_and_without_af_root(tmp_path):
     (tmp_path / "plain" / ".git").mkdir(parents=True)
     rows = run_functions(tmp_path, [{"id": "r", "fn": "Get-RepositoryRoots", "args": [str(tmp_path / "plain"), ""]}], PURE)
@@ -946,6 +1029,21 @@ def test_a_damaged_cache_file_with_the_right_name_falls_back_to_a_build_and_is_r
     result = run_import(tmp_path, cache)
     assert result["from"] == "built" and result["usable"] is True
     assert run_import(tmp_path, cache)["from"] == "cache"
+
+
+@needs_powershell
+def test_building_the_cache_deletes_its_own_temp_files_older_than_an_hour_and_keeps_newer_ones(tmp_path):
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    old, recent, other = cache / "AfDesktop-1111111111111111.dll.4242.tmp", cache / "AfDesktop-2222222222222222.dll.4343.tmp", cache / "run.json.1.tmp"
+    for p in (old, recent, other):
+        p.write_bytes(b"x")
+    two_hours_ago = time.time() - 7200
+    for p in (old, other):
+        os.utime(p, (two_hours_ago, two_hours_ago))
+    result = run_import(tmp_path, cache)
+    assert result["from"] == "built"
+    assert not old.exists() and recent.exists() and other.exists(), "only its own old temp files go"
 
 
 @needs_powershell
@@ -1063,7 +1161,7 @@ def test_every_send_checks_the_clock_first_and_keeps_the_tick_it_reads_right_aft
     source = SCRIPT.read_text(encoding="utf-8")
     send = source[source.index("public static bool SendGuarded("):]
     send = send[:send.index("\n    }") + 6]
-    assert send.index("before != Expected") < send.index("send(events)") < send.index("Accept(clock())")
+    assert send.index("before != Expected") < send.index("send(events)") < send.index("Accept(after)")
     assert "if (!GetLastInputInfo(ref l)) return -1;" in source, "an unreadable clock fails closed"
     plain = source[source.index("static bool Send(INPUT[] events)"):]
     assert "SendGuarded(events," in plain[:plain.index("}")], "every SendInput goes through the guarded send"
@@ -1077,7 +1175,14 @@ def test_a_clock_change_is_the_tools_own_only_through_a_timed_call_or_its_own_se
     timed = function_text("Invoke-Timed")
     assert "$TimedCallLimitMs" in timed and "Accept(" in timed and "Stop-Intruded" in timed
     assert timed.index("LastInput()") < timed.rindex("& $Call") < timed.rindex("LastInput()")
-    assert re.search(r"\$TimedCallLimitMs = 250\b", SCRIPT.read_text(encoding="utf-8"))
+    text = SCRIPT.read_text(encoding="utf-8")
+    assert re.search(r"\$TimedCallLimitMs = 250\b", text)
+    # Only the pattern Invoke may take a moved clock as its own; a raise or a pointer move may not.
+    assert re.search(r"^\$ClockOwnLabels = @\('InvokePattern'\)$", text, re.M)
+    assert "$ClockOwnLabels -contains $Label" in timed
+    assert "$before -lt 0" in timed and "$after -lt 0" in timed, "an unreadable clock is his input"
+    assert "if (before < 0 || before != Expected)" in text and "if (after < 0)" in text
+    assert "The state is left as it is" not in text, "Complete-Run rewrites the state; the comment must say what it keeps"
 
 
 def test_every_call_that_may_move_the_clock_is_timed_and_every_send_checks_for_his_input():
@@ -1087,7 +1192,8 @@ def test_every_call_that_may_move_the_clock_is_timed_and_every_send_checks_for_h
         if re.search(r"\[AfDesktop\]::(BringToFront|ShowWindow|SetCursorPos)\(|\$pattern\.Invoke\(\)", line):
             assert "Invoke-Timed" in line, f"an untimed call that may move the clock: {line.strip()}"
     for name in ("Invoke-GuardedClick", "Invoke-Type", "Invoke-Key"):
-        assert "Stop-IfIntruded" in function_text(name), name
+        body = function_text(name)
+        assert body.count("Stop-IfIntruded") >= 2, f"{name} checks after a failed send and after a successful one"
     assert "Arm(" in function_text("Invoke-Restore") and "Invoke-Timed" in function_text("Invoke-Restore")
     assert "Arm(" in function_text("Enter-AwayGuard")
     assert "-IdleSeconds must be 0 or more" not in function_text("Enter-AwayGuard"), "one shared check, Assert-Usage"
@@ -1198,6 +1304,8 @@ def test_doc_names_the_away_guard_restore_exit_4_and_the_decided_findings():
     assert "A full-screen screenshot still captures" not in text
     assert "5 minutes" in text and "250 ms" in text and "AF_DESKTOP_TRACE" in text and "Before every send" in text
     assert "inside its run" in text
+    assert "pattern Invoke" in text and "same clock tick" in text and "junction" in text
+    assert "`system/logs/desktop/`" in text and "AfDesktop-" not in text
     assert "never lower `-idleseconds`" in text.lower()
     assert "away guard" in text.lower() and "away guard" in (ROOT / "library" / "process" / "README.md").read_text(encoding="utf-8")
     assert "`system/logs/desktop/run.json`" in text
@@ -1237,3 +1345,172 @@ def test_every_helper_window_closes_itself_soon_after_the_test_run_stops():
     assert f"failsafe.Interval = {NAMED_EXE_LIFETIME_SECONDS * 1000}" in NAMED_EXE
     live = (ROOT / "system" / "tests" / "test_desktop_tool.py").read_text(encoding="utf-8")
     assert '"-HeartbeatFile", str(HEARTBEAT)' in live and "HEARTBEAT.write_text" in live
+
+
+# The live harness's own decisions, run without a desktop. The live module cannot be imported (it skips without
+# AF_DESKTOP_TESTS), so its source is executed here with the skip line removed, and the Windows reads (the
+# last-input clock, the pointer, subprocess.run) are replaced by fakes. No window, input or cursor is touched.
+
+LIVE = ROOT / "system" / "tests" / "test_desktop_tool.py"
+LIVE_SKIP = 'pytest.skip("desktop tool tests run only with AF_DESKTOP_TESTS=1", allow_module_level=True)'
+SKIPPED = pytest.skip.Exception
+
+
+def load_live():
+    source = LIVE.read_text(encoding="utf-8")
+    assert LIVE_SKIP in source
+    module = types.ModuleType("live_under_test")
+    module.__file__ = str(LIVE)
+    exec(compile(source.replace(LIVE_SKIP, "pass"), str(LIVE), "exec"), module.__dict__)
+    return module
+
+
+@pytest.fixture
+def harness(monkeypatch):
+    live = load_live()
+    clock = {"now": 1000}
+    calls = []
+    live.Watch.expected = 1000
+    live.Watch.operator_tick = 10
+    monkeypatch.setattr(live, "last_input_tick", lambda: clock["now"])
+    monkeypatch.setattr(live, "pointer", lambda: (1, 2))
+    monkeypatch.setattr(live, "close_helpers", lambda: calls.append("close_helpers"))
+    monkeypatch.setattr(live, "put_back", lambda: calls.append("put_back"))
+    live.STATE_FILE.unlink(missing_ok=True)
+    return live, clock, calls
+
+
+def fake_tool(live, monkeypatch, clock, returncode, moved_to=None, own_tick=None):
+    """A tool call that exits with this code, moves the clock to moved_to, and writes this own_tick to its state."""
+    ran = []
+
+    def run(*args, **kwargs):
+        ran.append(args)
+        if moved_to is not None:
+            clock["now"] = moved_to
+        if own_tick is not None:
+            live.STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+            live.STATE_FILE.write_text(json.dumps({"own_tick": own_tick}), encoding="utf-8")
+        return types.SimpleNamespace(returncode=returncode, stdout="", stderr="")
+
+    monkeypatch.setattr(live.subprocess, "run", run)
+    return ran
+
+
+# (command, exit code, clock after, own_tick the tool wrote, expect_active) -> adopted tick, or None for "he is back"
+ADOPTION = {
+    "a refusal that sent nothing: the unchanged tick stays": (("focus", 3, None, None, False), 1000),
+    "input sent: the tick the tool wrote is adopted": (("type", 0, 1500, 1500, False), 1500),
+    "input stopped partway by a refusal: the tool's tick is adopted": (("type", 3, 1500, 1500, False), 1500),
+    "the clock moved to a tick the tool did not write: his": (("type", 0, 1500, 1400, False), None),
+    "the clock moved and the tool wrote nothing (it sent nothing): his, never adopted": (("focus", 3, 1500, None, False), None),
+    "the clock moved during a command that exited 0 and wrote no tick: his": (("focus", 0, 1500, None, False), None),
+    "exit 4 the test did not set up: he is back": (("focus", 4, None, None, False), None),
+    "exit 4 the test set up, nothing moved": (("focus", 4, None, None, True), 1000),
+    "exit 4 the test set up, but the clock moved: his": (("type", 4, 1500, 1500, True), None),
+    "a read-only command that moved the clock: his": (("windows", 0, 1500, 1500, False), None),
+    "a read-only command, nothing moved": (("tree", 0, None, None, False), 1000),
+}
+
+
+@pytest.mark.parametrize("case", list(ADOPTION))
+def test_after_a_tool_call_the_harness_adopts_only_what_the_tool_wrote_or_nothing_changed(harness, monkeypatch, case):
+    live, clock, calls = harness
+    (command, code, moved_to, own_tick, expect_active), adopted = ADOPTION[case]
+    fake_tool(live, monkeypatch, clock, code, moved_to, own_tick)
+    if adopted is None:
+        with pytest.raises(SKIPPED, match="the operator came back"):
+            live.desktop(command, "-Window", "x", expect_active=expect_active)
+        assert live.Watch.came_back and "close_helpers" in calls and "put_back" in calls
+    else:
+        result = live.desktop(command, "-Window", "x", expect_active=expect_active)
+        assert result.returncode == code
+        assert live.Watch.expected == adopted and not live.Watch.came_back
+
+
+def test_the_tick_is_checked_before_a_tool_call_and_the_tool_is_not_run_if_it_moved(harness, monkeypatch):
+    live, clock, calls = harness
+    ran = fake_tool(live, monkeypatch, clock, 0)
+    clock["now"] = 1001  # he nudged the mouse before the call
+    with pytest.raises(SKIPPED, match="the operator came back"):
+        live.desktop("focus", "-Window", "x")
+    assert ran == []
+
+
+@pytest.mark.parametrize("code, moved_to, own_tick, adopted", [
+    (0, 1500, 1500, 1500), (0, 1500, 1400, None), (0, 1500, None, None), (4, 1500, 1500, None), (0, None, None, 1000)])
+def test_after_a_background_command_the_tool_s_tick_is_adopted_and_exit_4_means_he_is_back(harness, monkeypatch, code, moved_to, own_tick, adopted):
+    live, clock, calls = harness
+    if moved_to is not None:
+        clock["now"] = moved_to
+    if own_tick is not None:
+        live.STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        live.STATE_FILE.write_text(json.dumps({"own_tick": own_tick}), encoding="utf-8")
+    process = types.SimpleNamespace(returncode=code)
+    if adopted is None:
+        with pytest.raises(SKIPPED, match="the operator came back"):
+            live.adopt_after_background(process)
+    else:
+        live.adopt_after_background(process)
+        assert live.Watch.expected == adopted
+
+
+def test_moving_the_pointer_in_a_test_is_checked_and_a_moved_clock_is_never_adopted(harness, monkeypatch):
+    live, clock, calls = harness
+    moves = []
+    monkeypatch.setattr(live, "win32", lambda: types.SimpleNamespace(SetCursorPos=lambda x, y: moves.append((x, y))))
+    live.move_pointer(5, 6)
+    assert moves == [(5, 6)] and live.Watch.expected == 1000
+    monkeypatch.setattr(live, "win32", lambda: types.SimpleNamespace(SetCursorPos=lambda x, y: clock.update(now=1700)))
+    with pytest.raises(SKIPPED, match="the operator came back"):
+        live.move_pointer(7, 8)
+    assert live.Watch.expected == 1000
+
+
+def test_a_run_that_starts_after_stillness_waits_and_watches_the_clock_the_whole_time(harness, monkeypatch):
+    live, clock, calls = harness
+    checks = []
+    real_check = live.check_away
+    monkeypatch.setattr(live.time, "sleep", lambda s: clock.update(now=1000 if len(checks) < 3 else 1900))
+    monkeypatch.setattr(live, "check_away", lambda: (checks.append(1), real_check()))
+    with pytest.raises(SKIPPED, match="the operator came back"):
+        live.still_for(3)
+    assert len(checks) >= 3, "it looked at the clock more than once, not only at the end"
+
+
+def test_a_helper_window_is_not_opened_while_he_is_at_the_machine(harness, monkeypatch, tmp_path):
+    live, clock, calls = harness
+    opened = []
+    monkeypatch.setattr(live.subprocess, "Popen", lambda *a, **k: opened.append(a))
+    clock["now"] = 1234
+    with pytest.raises(SKIPPED, match="the operator came back"):
+        live.Fixture(tmp_path, "AF helper")
+    assert opened == []
+
+
+def source_of(function_name: str) -> str:
+    text = LIVE.read_text(encoding="utf-8")
+    start = text.index(f"def {function_name}(")
+    following = re.search(r"^(def |@pytest|class |# ---)", text[start + 5:], re.M)
+    return text[start:start + 5 + following.start()] if following else text[start:]
+
+
+def test_every_window_the_live_module_opens_checks_the_clock_first():
+    assert source_of("shared_form").index("check_away()") < source_of("shared_form").index("Fixture(")
+    assert source_of("named_exe").index("check_away()") < source_of("named_exe").index("mktemp")
+
+
+def test_the_finalizer_reads_the_clock_before_it_touches_anything_of_his():
+    body = source_of("live")
+    after = body[body.index("yield"):]
+    assert after.index("moved = last_input_tick() != Watch.expected") < after.index("close_helpers()")
+    assert after.index("if moved:") < after.index("put_back()")
+    assert re.search(r"if not Watch\.came_back:\s+if STATE_FILE\.exists\(\):\s+desktop\(\"restore\", watch=False\)[^\n]*\s+put_back\(\)", after)
+
+
+def test_the_live_module_uses_no_zero_idle_seconds_and_adopts_no_tick_it_read_itself():
+    text = LIVE.read_text(encoding="utf-8")
+    assert not re.search(r'"-IdleSeconds",\s*0\b', text), "-IdleSeconds 0 leaves a gap between the harness's check and the tool's"
+    assert "note_own_action" not in text
+    assert re.search(r"^AWAY = 3 ", text, re.M), "the stillness a run waits for, and the -IdleSeconds it passes, is 3"
+    assert text.count("still_for()") >= 3 and "still_for()" in source_of("start_new_run")

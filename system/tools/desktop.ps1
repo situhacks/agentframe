@@ -24,10 +24,12 @@
 # see Get-OperatorIdleMs. A run lasts at most 5 minutes; after that the plain idle rule applies, so
 # end a job with restore inside its run. Before every send the tool reads that clock and stops with
 # exit 4 (saying how much was sent) if it is not the tool's own last tick, so input he makes between
-# two sends is seen. A call that sends no input (raise, Invoke pattern, pointer) counts as the tool's
-# own only if the clock moved within 250 ms of that call. Not seen: input in the same clock tick as a
-# send or call (about 16 ms). -Verbose or AF_DESKTOP_TRACE=1 prints, for each such call, whether the
-# clock moved. Procedure and standing limits: library/process/desktop-tool.md.
+# two sends is seen. A clock that cannot be read is treated as his input. A call that sends no input
+# counts as moving the clock itself only for the Invoke pattern, and only if it returned within 250 ms
+# ($ClockOwnLabels); for a raise or a pointer move a moved clock is his. Not seen: his input in the same
+# clock tick as a send (about 16 ms), and his input during a pattern Invoke that returns within 250 ms.
+# -Verbose or AF_DESKTOP_TRACE=1 prints, for each timed call, whether the clock moved.
+# Procedure and standing limits: library/process/desktop-tool.md.
 
 [CmdletBinding(PositionalBinding = $false)]
 param(
@@ -99,8 +101,11 @@ $GatedCommands = @('focus', 'invoke', 'click', 'type', 'key', 'restore')
 # Under the checkout, or under AF_ROOT when set so a worktree and the main checkout share one run. Git-ignored.
 $StateRelative = 'system\logs\desktop\run.json'
 $RunMutexName = 'Local\AgentFrameDesktopTool'
-# A call that moves the last-input clock within this many ms is taken as the tool's own (Invoke-Timed).
+# A call that moves the last-input clock within this many ms is taken as the tool's own (Invoke-Timed), but
+# only a call whose label is listed here. Every other timed call (SetForegroundWindow, ShowWindow, SetCursorPos)
+# is not known to move the clock, so for it a moved clock is his; -Verbose shows whether any of them ever does.
 $TimedCallLimitMs = 250
+$ClockOwnLabels = @('InvokePattern')
 # Explorer owns the taskbar and the desktop, so a click there would pass the same-process check
 # for any File Explorer target and could launch an app.
 $ShellSurfaces = @('Shell_TrayWnd', 'Shell_SecondaryTrayWnd', 'Progman', 'WorkerW')
@@ -303,14 +308,20 @@ public static class AfDesktop {
     // Before every send the last-input tick must still be the one the tool expects. If it is not, the
     // operator touched the machine since the tool's last event: nothing is sent, Intruded is set, and the
     // expected and own ticks stay as they were, so the next command finds a tick that is not the tool's own
-    // and falls to the plain idle rule. After a send the clock is read at once and kept as the own tick.
-    // (The send and the clock are parameters so a test can run this with a scripted clock and no input.)
+    // and falls to the plain idle rule. After a send the clock is read at once and kept as the own tick. A
+    // reading below 0 (Windows would not say), before or after a send, is treated as his input: the callers
+    // check Intruded after every send and stop. (The send and the clock are parameters so a test can run this
+    // with a scripted clock and no input.)
     public static bool SendGuarded(INPUT[] events, SendFn send, ClockFn clock) {
         if (Expected == -2) { Intruded = true; IntrudedTick = -1; return false; }
         long before = clock();
-        if (before != Expected) { Intruded = true; IntrudedTick = before; return false; }
+        if (before < 0 || before != Expected) { Intruded = true; IntrudedTick = before; return false; }
         uint sent = send(events);
-        if (sent > 0) Accept(clock());
+        if (sent > 0) {
+            long after = clock();
+            if (after < 0) { Intruded = true; IntrudedTick = after; }
+            else Accept(after);
+        }
         return sent == (uint)events.Length;
     }
 
@@ -376,8 +387,9 @@ function Stop-Active([int64]$IdleMs, [string]$Note = 'nothing was sent') {
     Exit-Tool 4
 }
 
-# He touched the machine after the tool's last event: stop at once. The state is left as it is, so the next
-# command sees a last input that is not the tool's own and waits for -IdleSeconds of quiet.
+# He touched the machine after the tool's last event: stop at once. Complete-Run still rewrites the state, but
+# with the own tick as the tool last made it (never this tick), so the next command sees a last input that is
+# not the tool's own and waits for -IdleSeconds of quiet.
 function Stop-Intruded([int64]$Tick, [string]$Note) {
     $age = if ($Tick -lt 0) { 0 } else { Get-TickAge ([AfDesktop]::TickNow()) $Tick }
     if (-not $Note) { $Note = 'nothing was sent' }
@@ -517,7 +529,10 @@ function Get-RepositoryRoots([string]$Checkout, [string]$AfRoot) {
         $dotGit = Join-Path $Checkout '.git'
         if ([System.IO.File]::Exists($dotGit)) {
             $line = ([System.IO.File]::ReadAllText($dotGit) -split "`n" | Where-Object { $_ -like 'gitdir:*' } | Select-Object -First 1)
-            $gitDir = [System.IO.Path]::GetFullPath(($line.Substring(7).Trim() -replace '/', '\'))
+            $raw = $line.Substring(7).Trim() -replace '/', '\'
+            # A relative gitdir is relative to the folder that holds the .git file, never the current directory.
+            if (-not [System.IO.Path]::IsPathRooted($raw)) { $raw = Join-Path ([System.IO.Path]::GetFullPath($Checkout)) $raw }
+            $gitDir = [System.IO.Path]::GetFullPath($raw)
             $commonFile = Join-Path $gitDir 'commondir'
             $common = if ([System.IO.File]::Exists($commonFile)) {
                 [System.IO.Path]::GetFullPath((Join-Path $gitDir (([System.IO.File]::ReadAllText($commonFile)).Trim() -replace '/', '\')))
@@ -531,6 +546,11 @@ function Get-RepositoryRoots([string]$Checkout, [string]$AfRoot) {
 # True when a screenshot may be written there: outside every root, or inside the ignored workspace/ or
 # system/sessions/ of one of them.
 function Test-OutAllowed([string]$Full, $Roots) {
+    # The \\?\ prefix is the same path (strip it before comparing); any other \\ path is a network share or
+    # a device, which this check cannot place, so it is refused outright.
+    if ($Full.StartsWith('\\?\UNC\', [StringComparison]::OrdinalIgnoreCase)) { return $false }
+    if ($Full.StartsWith('\\?\')) { $Full = $Full.Substring(4) }
+    if ($Full.StartsWith('\\')) { return $false }
     $inside = $false
     foreach ($root in $Roots) {
         $prefix = ([string]$root).TrimEnd('\') + '\'
@@ -572,6 +592,11 @@ function Import-Native([string]$Source, [string]$Folder) {
     }
     try {
         [void][System.IO.Directory]::CreateDirectory($Folder)
+        # Temp files of its own left by a killed compile, once they are an hour old (a newer one may be a
+        # compile in progress).
+        foreach ($stray in [System.IO.Directory]::GetFiles($Folder, 'AfDesktop-*.tmp')) {
+            if ([System.IO.File]::GetLastWriteTimeUtc($stray) -lt [DateTime]::UtcNow.AddHours(-1)) { try { [System.IO.File]::Delete($stray) } catch { } }
+        }
         $temp = "$file.$PID.tmp"
         Add-Type -TypeDefinition $Source -IgnoreWarnings -OutputAssembly $temp
         try { [System.IO.File]::Move($temp, $file) }
@@ -663,18 +688,20 @@ function Write-Trace([string]$Text) {
 function Invoke-Timed([string]$Label, [scriptblock]$Call) {
     if ([AfDesktop]::Expected -eq -2) { return (& $Call) }
     $before = [AfDesktop]::LastInput()
-    if ($before -ne [AfDesktop]::Expected) { Stop-Intruded $before 'nothing more was sent' }
+    if ($before -lt 0 -or $before -ne [AfDesktop]::Expected) { Stop-Intruded $before 'nothing more was sent' }
     $watch = [System.Diagnostics.Stopwatch]::StartNew()
     $result = & $Call
     $ms = $watch.ElapsedMilliseconds
     $after = [AfDesktop]::LastInput()
     $moved = $after -ne $before
     $accepted = $false
-    if ($moved -and $after -ge 0 -and $ms -le $TimedCallLimitMs) {
+    if ($moved -and $after -ge 0 -and $ms -le $TimedCallLimitMs -and $ClockOwnLabels -contains $Label) {
         [AfDesktop]::Accept($after)
         $accepted = $true
     }
     Write-Trace "$Label clock_moved=$moved ms=$ms accepted=$accepted"
+    # A clock that cannot be read after the call is his input like any other.
+    if ($after -lt 0) { Stop-Intruded $after 'nothing more was sent' }
     $result
 }
 
@@ -917,6 +944,8 @@ function Invoke-GuardedClick($Target, [int]$ScreenX, [int]$ScreenY) {
         Stop-IfIntruded 'no click was sent'
         Stop-Error 'Windows rejected the click'
     }
+    Stop-IfIntruded 'the click was sent'
+
 }
 
 function Assert-NotPasswordField([string]$Progress) {
@@ -967,7 +996,7 @@ function Assert-IgnoredOut([string]$Path) {
     # A screenshot holds whatever is on screen, and the repository is public. This checkout, AF_ROOT and
     # the main repository of a worktree each have tracked folders; only their workspace/ and system/sessions/
     # are ignored.
-    $full = [System.IO.Path]::GetFullPath($Path)
+    try { $full = [System.IO.Path]::GetFullPath($Path) } catch { Stop-Failed "-Out $Path is not a path this tool can place" }
     $roots = Get-RepositoryRoots ([System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))) $env:AF_ROOT
     if (Test-OutAllowed $full $roots) { return }
     Stop-Failed "-Out $full is inside a repository, which is public; write to the scratchpad or under workspace/"
@@ -1165,6 +1194,7 @@ function Invoke-Type {
             Stop-Error "Windows rejected the input. $progress"
         }
         $sent++
+        Stop-IfIntruded "$sent of $($chars.Count) characters were sent."
         # Enter and Tab can retitle the window or move the focus; let that land before the next check.
         Start-Sleep -Milliseconds $delay
     }
@@ -1189,6 +1219,7 @@ function Invoke-Key {
             Stop-Error "Windows rejected '$($chord.Text)'. $progress"
         }
         $sent++
+        Stop-IfIntruded "$sent of $($chords.Count) chords were sent."
         # A chord can switch tabs or retitle the window; let that land before the next check.
         Start-Sleep -Milliseconds $SettleMs
     }

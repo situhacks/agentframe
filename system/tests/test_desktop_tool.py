@@ -3,22 +3,26 @@
 The whole module skips unless AF_DESKTOP_TESTS=1, because the live tests open forms with bank and
 password-manager titles, take the foreground, move the pointer and send input. Set it only on the machine
 that runs the tool, and only while the operator is away. The module skips unless he has been idle for 120 s
-when it starts, and it keeps watching: it remembers the last-input tick straight after each tool call or
-action of its own, reads it again before every test and every tool call, and if it moved he is back. Then it
-closes every helper window, puts his pointer and foreground window back (the foreground only if it is one of
-these helpers' or none; the pointer only if he has not moved it), and skips the rest with "the operator came
-back". At the start it records his pointer and foreground window and puts both back at the end, on every path.
-With it set, live tests still skip without an interactive, unlocked Windows desktop. Run with -rs.
+when it starts, and it keeps watching. It remembers the last-input tick as of its last known state and reads it
+again before every test, every tool call and every helper window it opens. The only tick it ever adopts after a
+gated tool call is the own_tick the TOOL wrote to the state file for that call, or the unchanged tick; a tick
+it reads itself after a call that sent nothing is never adopted. If the clock is anything else, or the tool
+exits 4 for a reason the test did not set up (expect_active), he is back: it closes every helper window, puts
+his pointer and foreground window back (the foreground only if it is one of these helpers' or none; the pointer
+only if he has not moved it), and skips the rest with "the operator came back". At the start it records his
+pointer and foreground window and puts both back at the end, except when the clock moved since the last known
+tick (Ctrl+C is his input too): then only the helpers are closed. With it set, live tests still skip without an
+interactive, unlocked Windows desktop. Run with -rs.
 No test captures the full screen or acts on a window it did not open; only `windows` lists the others.
 The checks that need no desktop are in test_desktop_static.py and run in the normal suite.
 
 Every command runs with its own AF_ROOT, so the run state is a temp file and never the operator's. A run lasts
 at most 5 minutes, so before each test the harness plants a fresh run in that state file: his last input is the
-one it saw at the start, and the tool's own last tick is the one it read after its last action. The default
--IdleSeconds then works as it does for a real job (the tool's own-tick rule). -IdleSeconds 0 is used only where a
-test must begin a run of its own, since the tests' own input has just reset the clock; the harness has already
-proved he is away. The restore tests come last because each ends a run, and the test of his input in the middle
-of a type is the very last, because it makes the clock his.
+one it saw at the start, and the tool's own last tick is the one it last adopted. The default -IdleSeconds then
+works as it does for a real job (the tool's own-tick rule). A test that must begin a run of its own waits until
+the harness has seen the clock still for 3 s (still_for) and passes -IdleSeconds 3, so the tool's own guard covers
+its start-up; the value 0 is used nowhere. The restore tests come last because each ends a run, and the test of
+his input in the middle of a type is the very last, because it makes the clock his.
 """
 
 import os
@@ -55,6 +59,7 @@ USAGE = 2
 ACTIVE = 4
 BUSY = 1
 GATED = {"focus", "invoke", "click", "type", "key", "restore"}
+AWAY = 3  # seconds of stillness a test run waits for, and the -IdleSeconds it then passes
 WRAP = 2 ** 32
 
 STATE_ROOT = Path(tempfile.mkdtemp(prefix="af-desktop-state-"))
@@ -189,11 +194,11 @@ def put_back():
             raise_window(hwnd)
 
 
-def operator_returned():
+def operator_returned(detail="the clock is not where the harness left it"):
     Watch.came_back = True
     close_helpers()
     put_back()
-    pytest.skip("the operator came back")
+    pytest.skip(f"the operator came back ({detail})")
 
 
 def check_away():
@@ -206,15 +211,22 @@ def check_away():
         operator_returned()
 
 
-def note_own_action():
-    Watch.expected = last_input_tick()
-    Watch.pointer = pointer()
+def still_for(seconds=AWAY):
+    """Wait until the harness has seen the clock still for this long (it is checked all the while)."""
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        check_away()
+        time.sleep(0.2)
+    check_away()
 
 
 def move_pointer(x, y):
     check_away()
     win32().SetCursorPos(x, y)
-    note_own_action()
+    # A tick read here is never adopted: if the move itself moved the clock, the harness cannot tell it from him.
+    if last_input_tick() != Watch.expected:
+        operator_returned("the clock moved when the harness moved the pointer")
+    Watch.pointer = pointer()
 
 
 # --- Tool calls and the run state ----------------------------------------------------------------------
@@ -223,19 +235,52 @@ def run_env(root: Path = STATE_ROOT) -> dict:
     return {**os.environ, "AF_ROOT": str(root)}
 
 
-def desktop(*args, timeout=60, env=None, watch=True):
+def tool_own_tick(env):
+    """The own_tick the tool wrote to the state file it used for that call, or None."""
+    root = STATE_ROOT if env is None else (Path(env["AF_ROOT"]) if env.get("AF_ROOT") else ROOT)
+    try:
+        return json.loads((root / "system" / "logs" / "desktop" / "run.json").read_text(encoding="utf-8-sig")).get("own_tick")
+    except (OSError, ValueError):
+        return None
+
+
+def adopt_after(command, returncode, env, expect_active, before):
+    """After a tool call: keep the unchanged tick, or the one the tool says it made. Anything else is him."""
+    after = last_input_tick()
+    problem = None
+    if returncode == ACTIVE and not expect_active:
+        problem = f"{command} exited 4 and the test had not set that up"
+    elif after != before:
+        own = tool_own_tick(env) if command in GATED else None
+        if own is None or after != own:
+            problem = f"the clock moved during {command} and the tool did not make that move"
+        elif returncode == ACTIVE:
+            problem = f"{command} exited 4 after the clock moved"
+    if problem:
+        operator_returned(problem)
+    Watch.expected = after
+    Watch.pointer = pointer()
+
+
+def desktop(*args, timeout=60, env=None, watch=True, expect_active=False):
+    """Run the tool. expect_active: the test itself makes the tool refuse with exit 4 (-IdleSeconds 999999, a damaged state)."""
+    command = str(args[0])
     if watch:
         check_away()
+    before = Watch.expected
     result = subprocess.run([*POWERSHELL, "-File", str(SCRIPT), *map(str, args)], capture_output=True, text=True,
                             encoding="utf-8", errors="replace", timeout=timeout, creationflags=NO_WINDOW,
                             env=run_env() if env is None else env)
     if watch:
-        after = last_input_tick()
-        if str(args[0]) in GATED and result.returncode != ACTIVE:
-            note_own_action()  # the tool may have sent input; the tool itself watches for him while it does
-        elif after != Watch.expected:
-            operator_returned()
+        adopt_after(command, result.returncode, env, expect_active, before)
     return result
+
+
+def adopt_after_background(first, env=None):
+    """After a command started with Popen has finished: it must not have been stopped by him, and its tick is the tool's."""
+    if first.returncode == ACTIVE:
+        operator_returned("the background command was stopped by input the test did not make")
+    adopt_after("type", first.returncode, env, False, Watch.expected if Watch.expected is not None else last_input_tick())
 
 
 def read_run_state() -> dict:
@@ -282,6 +327,7 @@ class Fixture:
     """A small form in its own PowerShell process; its state file is the test's independent readback."""
 
     def __init__(self, folder: Path, title: str, left: int = 200):
+        check_away()  # a topmost window that takes focus is not opened while he is at the machine
         self.title = title
         self.folder = folder
         self.state_file = folder / f"state-{uuid.uuid4().hex}.json"
@@ -396,13 +442,18 @@ def live():
     thread = threading.Thread(target=beat, daemon=True)
     thread.start()
     yield
-    # The finalizer runs on every path, including after "the operator came back".
+    # The finalizer runs on every path, including after "the operator came back" and after Ctrl+C. Read the clock
+    # first: if it moved since the last known tick it was him (Ctrl+C is his input), and nothing of his is touched.
+    moved = last_input_tick() != Watch.expected
     close_helpers()
     stop.set()
     thread.join(timeout=5)
-    if not Watch.came_back and STATE_FILE.exists():
-        desktop("restore", watch=False)  # the default guard: if he is back, nothing is touched
-    put_back()
+    if moved:
+        Watch.came_back = True
+    if not Watch.came_back:
+        if STATE_FILE.exists():
+            desktop("restore", watch=False)  # the default guard: if he is back, nothing is touched
+        put_back()
 
 
 @pytest.fixture(autouse=True)
@@ -421,6 +472,7 @@ def form(live, tmp_path):
 
 @pytest.fixture(scope="module")
 def shared_form(live, tmp_path_factory):
+    check_away()
     fixture = Fixture(tmp_path_factory.mktemp("desktop"), f"AF Desktop Fixture {uuid.uuid4().hex}")
     yield fixture
     fixture.close()
@@ -429,6 +481,7 @@ def shared_form(live, tmp_path_factory):
 @pytest.fixture(scope="module")
 def named_exe(live, tmp_path_factory):
     """A real executable whose process name the test chooses, so process rules run against a real process."""
+    check_away()
     folder = tmp_path_factory.mktemp("named")
     source = folder / "named.cs"
     source.write_text(NAMED_EXE, encoding="utf-8")
@@ -749,7 +802,7 @@ def guarded_args(form, command):
 def test_a_gated_command_refuses_when_he_is_active_and_sends_nothing(form, command):
     args = guarded_args(form, command)
     before = STATE_FILE.read_bytes()
-    result = desktop(args[0], "-Window", form.title, *args[1:], "-IdleSeconds", 999999)
+    result = desktop(args[0], "-Window", form.title, *args[1:], "-IdleSeconds", 999999, expect_active=True)
     assert_active(result)
     time.sleep(0.3)
     state = form.state()
@@ -759,7 +812,7 @@ def test_a_gated_command_refuses_when_he_is_active_and_sends_nothing(form, comma
 
 def test_restore_refuses_when_he_is_active_and_leaves_the_run_alone(form):
     before = STATE_FILE.read_bytes()
-    assert_active(desktop("restore", "-IdleSeconds", 999999))
+    assert_active(desktop("restore", "-IdleSeconds", 999999, expect_active=True))
     assert STATE_FILE.read_bytes() == before
 
 
@@ -800,16 +853,17 @@ def test_a_second_input_straight_after_the_first_is_allowed_and_his_tick_is_kept
 
 
 def test_the_first_command_of_a_run_records_the_foreground_and_pointer_and_later_ones_keep_them(form):
-    # A run of its own: -IdleSeconds 0, because the harness has already proved he is away and the tests' own input
-    # has just reset the clock, which the plain rule would count against the first command.
-    assert_ok(desktop("restore", "-IdleSeconds", 0))
+    # A run of its own. The tests' own input has just reset the clock, which the plain rule would count against the
+    # first command, so wait until the clock has been still for 3 s and let the tool's guard check 3 s itself.
+    assert_ok(desktop("restore"))
     assert not STATE_FILE.exists()
-    assert_ok(desktop("focus", "-Window", form.title, "-IdleSeconds", 0))
+    still_for()
+    assert_ok(desktop("focus", "-Window", form.title, "-IdleSeconds", AWAY))
     recorded = read_run_state()
     assert set(recorded) == {"operator_tick", "own_tick", "run_start_tick", "run_start_ms", "foreground", "pointer"}
     assert isinstance(recorded["pointer"]["x"], int) and isinstance(recorded["pointer"]["y"], int)
     assert isinstance(recorded["foreground"]["handle"], int) and recorded["foreground"]["process"]
-    assert_ok(desktop("focus", "-Window", form.title, "-IdleSeconds", 0))
+    assert_ok(desktop("focus", "-Window", form.title, "-IdleSeconds", AWAY))
     kept = read_run_state()
     assert kept["foreground"] == recorded["foreground"] and kept["pointer"] == recorded["pointer"]
     assert kept["run_start_ms"] == recorded["run_start_ms"], "only the first command of a run records them"
@@ -858,7 +912,7 @@ def test_a_stale_run_state_falls_back_to_the_plain_rule(form, damage):
         broken = None
     STATE_FILE.write_text("{not json" if broken is None else json.dumps(broken), encoding="utf-8")
     try:
-        result = desktop("type", "-Window", form.title, "-Text", "b")
+        result = desktop("type", "-Window", form.title, "-Text", "b", expect_active=True)
         assert_active(result)
         # The tool's own input a moment ago is now plain input: the idle time is seconds, not his two minutes.
         time.sleep(0.2)
@@ -893,7 +947,7 @@ def test_a_second_screen_command_while_one_is_sending_is_refused_and_sends_nothi
         assert "another command that acts on the screen is running; nothing was sent" in second.stderr
     finally:
         out, err = first.communicate(timeout=120)
-    note_own_action()
+    adopt_after_background(first)
     assert first.returncode == 0, err
     form.wait_for(lambda s: s["text"] == text, timeout=10)
 
@@ -909,18 +963,18 @@ def test_a_full_screen_screenshot_is_refused_while_a_denied_window_is_visible(fo
     assert_refused(desktop("screenshot", "-Window", form.title, "-Out", out), "off limits")
 
 
-# Live: restore. These come after the guard tests: each ends a run, and each starts a new one with -IdleSeconds 0
-# (the plain rule would refuse that start, since the tests' own input has just reset the clock; the harness has
-# already proved he is away).
+# Live: restore. These come after the guard tests: each ends a run, and each starts a new one after 3 s of stillness
+# with -IdleSeconds 3 (the plain rule would refuse a start right after the tests' own input).
 
 def start_new_run():
-    assert_ok(desktop("restore", "-IdleSeconds", 0))
+    assert_ok(desktop("restore"))  # ends the planted run; the tool's own-tick rule lets it through
     assert not STATE_FILE.exists()
+    still_for()
 
 
 def bring_to_front_in_a_scratch_run(title, tmp_path):
     scratch = tmp_path / f"scratch-{uuid.uuid4().hex}"
-    assert_ok(desktop("focus", "-Window", title, "-IdleSeconds", 0, env=run_env(scratch)))
+    assert_ok(desktop("focus", "-Window", title, "-IdleSeconds", AWAY, env=run_env(scratch)))
     assert wait_until(lambda: foreground_title() == title), f"could not set up: {foreground_title()!r} is in front"
 
 
@@ -932,13 +986,13 @@ def test_restore_puts_the_pointer_and_the_foreground_back_and_removes_the_state(
         bring_to_front_in_a_scratch_run(prior.title, tmp_path)
         move_pointer(120, 140)
         assert pointer() == (120, 140)
-        assert_ok(desktop("focus", "-Window", target.title, "-IdleSeconds", 0))
+        assert_ok(desktop("focus", "-Window", target.title, "-IdleSeconds", AWAY))
         assert STATE_FILE.exists() and read_run_state()["pointer"] == {"x": 120, "y": 140}
         x, y = element_bounds(target.title, "Press Me")
-        assert_ok(desktop("click", "-Window", target.title, "-X", x, "-Y", y, "-IdleSeconds", 0))
+        assert_ok(desktop("click", "-Window", target.title, "-X", x, "-Y", y, "-IdleSeconds", AWAY))
         target.wait_for(lambda s: s["pressed"] == 1)
         assert pointer() != (120, 140) and foreground_title() == target.title
-        result = desktop("restore", "-IdleSeconds", 0)
+        result = desktop("restore", "-IdleSeconds", AWAY)
         assert_ok(result)
         assert "restored the pointer to 120,140" in result.stdout, result.stdout
         assert "restored the foreground window (process 'powershell')" in result.stdout, result.stdout
@@ -957,11 +1011,11 @@ def test_restore_reports_a_foreground_window_that_is_gone_and_still_puts_the_poi
         start_new_run()
         bring_to_front_in_a_scratch_run(prior.title, tmp_path)
         move_pointer(150, 170)
-        assert_ok(desktop("focus", "-Window", target.title, "-IdleSeconds", 0))
+        assert_ok(desktop("focus", "-Window", target.title, "-IdleSeconds", AWAY))
         prior.close()
         x, y = element_bounds(target.title, "Press Me")
-        assert_ok(desktop("click", "-Window", target.title, "-X", x, "-Y", y, "-IdleSeconds", 0))
-        result = desktop("restore", "-IdleSeconds", 0)
+        assert_ok(desktop("click", "-Window", target.title, "-X", x, "-Y", y, "-IdleSeconds", AWAY))
+        result = desktop("restore", "-IdleSeconds", AWAY)
         assert_ok(result)
         assert "could not restore the foreground window (process 'powershell'): it is gone" in result.stdout, result.stdout
         assert "restored the pointer to 150,170" in result.stdout
@@ -975,7 +1029,7 @@ def test_restore_reports_a_foreground_window_that_is_gone_and_still_puts_the_poi
 def test_restore_with_no_run_says_so_and_changes_nothing(live):
     start_new_run()
     before = pointer()
-    result = desktop("restore", "-IdleSeconds", 0)
+    result = desktop("restore")  # no run is recorded, so there is nothing to gate
     assert_ok(result)
     assert "nothing to restore" in result.stdout
     assert pointer() == before
@@ -985,11 +1039,12 @@ def test_the_run_state_is_under_the_checkout_when_af_root_is_not_set(form):
     without = {k: v for k, v in os.environ.items() if k != "AF_ROOT"}
     default_state = ROOT / "system" / "logs" / "desktop" / "run.json"
     assert not default_state.exists(), "an earlier run left its state; it is git-ignored, delete it"
+    still_for()
     try:
-        assert_ok(desktop("focus", "-Window", form.title, "-IdleSeconds", 0, env=without))
+        assert_ok(desktop("focus", "-Window", form.title, "-IdleSeconds", AWAY, env=without))
         assert default_state.exists()
     finally:
-        desktop("restore", "-IdleSeconds", 0, env=without)
+        desktop("restore", "-IdleSeconds", AWAY, env=without)
     assert not default_state.exists()
 
 

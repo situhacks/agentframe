@@ -291,3 +291,83 @@ fn sql_is_logged_as_data_sql() {
     let rows = fx.run_log_rows();
     assert_eq!(rows[0]["verb"], "data sql");
 }
+
+// ------------------------------------------------------------------ review: blocker 3
+
+const ENDLESS: &str = "with recursive r(n) as (select 1 union all select n+1 from r) select n from r";
+
+fn timed(fx: &Fx, ms: &str, args: &[&str]) -> (i32, String, String, std::time::Duration) {
+    let t = std::time::Instant::now();
+    let out = fx.af().env("AF_DATA_SQL_TIMEOUT_MS", ms).args(args).output().unwrap();
+    (out.status.code().unwrap_or(-1), String::from_utf8_lossy(&out.stdout).into_owned(), String::from_utf8_lossy(&out.stderr).into_owned(), t.elapsed())
+}
+
+#[test]
+fn the_default_time_limit_is_ten_seconds() {
+    assert_eq!(afcore::data::query::DEFAULT_TIMEOUT_MS, 10_000);
+}
+
+#[test]
+fn an_endless_query_with_a_limit_prints_the_limit_and_says_more_than_after_the_time_limit() {
+    let fx = Fx::new();
+    let (code, out, err, took) = timed(&fx, "300", &["data", "sql", ENDLESS, "--limit", "3"]);
+    assert_eq!(code, 0, "{err}");
+    assert!(took.as_secs() < 5, "{took:?}");
+    assert!(out.contains("| 3 |") && !out.contains("| 4 |"), "{out}");
+    assert!(out.contains("showing 3 of more than "), "{out}");
+    let (code, out, err, _) = timed(&fx, "300", &["data", "sql", ENDLESS, "--limit", "2", "--json"]);
+    assert_eq!(code, 0, "{err}");
+    assert_eq!(serde_json::from_str::<serde_json::Value>(&out).unwrap().as_array().unwrap().len(), 2);
+    assert!(err.contains("showing 2 of more than "), "{err}");
+}
+
+#[test]
+fn a_query_that_gives_no_row_in_time_is_stopped_with_an_error_naming_the_time() {
+    let fx = Fx::new();
+    let (code, out, err, took) = timed(&fx, "300", &["data", "sql", "with recursive r(n) as (select 1 union all select n+1 from r) select count(*) from r"]);
+    assert_eq!(code, 1, "{out}");
+    assert!(took.as_secs() < 5, "{took:?}");
+    assert!(err.contains("the query was stopped after") && err.contains("second"), "{err}");
+    assert!(out.is_empty());
+    assert!(fx.ok(&["data", "sql", "select 1 as one"]).contains("| 1 |"));
+}
+
+#[test]
+fn a_registered_page_with_an_endless_block_does_not_hang_add_render_or_the_doctor() {
+    let fx = Fx::new();
+    new_sets(&fx);
+    let counting = "with recursive r(n) as (select 1 union all select n+1 from r) select count(*) from r";
+    fx.write("workspace/life/p.md", &format!("<!-- af-data: {counting} -->\nkept\n<!-- /af-data -->\n<!-- af-data: {ENDLESS} -->\n<!-- /af-data -->\n"));
+    let (code, _, err, took) = timed(&fx, "300", &["data", "page", "p.md"]);
+    assert_eq!(code, 1, "{err}");
+    assert!(took.as_secs() < 8, "{took:?}");
+    assert!(err.contains("p.md:1:") && err.contains("stopped after"), "{err}");
+    let page = fx.read("workspace/life/p.md");
+    assert!(page.starts_with(&format!("<!-- af-data: {counting} -->\nkept\n<!-- /af-data -->")), "kept: {page}");
+    assert_eq!(page.matches("\n| 500 |\n").count(), 1, "the second block holds 500 rows");
+    assert!(!page.contains("\n| 501 |\n") && page.contains("(showing 500 of more than 100000 rows)"), "{}", &page[page.len().saturating_sub(300)..]);
+    let (code, out, err, took) = timed(&fx, "300", &["data", "add", "sets", "date=2026-11-14", "exercise=Squat", "set=1", "source=log"]);
+    assert_eq!(code, 0, "{err}");
+    assert!(took.as_secs() < 8 && out.contains("added 1 row") && err.contains("af: warning:"), "{took:?} {out} {err}");
+    let (_, out, err, took) = timed(&fx, "300", &["doctor"]);
+    assert!(took.as_secs() < 15, "{took:?}");
+    assert!(format!("{out}{err}").contains("p.md:1: the block fails"), "{out}{err}");
+}
+
+#[test]
+fn a_block_keeps_at_most_500_rows_and_says_how_many_of_how_many() {
+    let fx = Fx::new();
+    new_sets(&fx);
+    let mut csv = String::from("date,exercise,set,source\n");
+    for i in 1..=600 {
+        csv.push_str(&format!("2026-11-14,Squat,{i},log\n"));
+    }
+    fx.ok(&["data", "import", "sets", "--csv", &fx.write("in/many.csv", &csv)]);
+    fx.write("workspace/life/p.md", "<!-- af-data: select \"set\" from sets order by \"set\" -->\n<!-- /af-data -->\n");
+    fx.ok(&["data", "render", "p.md"]);
+    let page = fx.read("workspace/life/p.md");
+    assert!(page.contains("\n| 500 |\n") && !page.contains("\n| 501 |\n"), "{page}");
+    assert!(page.contains("\n\n(showing 500 of 600 rows)\n<!-- /af-data -->"), "{}", &page[page.len().saturating_sub(120)..]);
+    fx.ok(&["data", "render", "p.md"]);
+    assert_eq!(fx.read("workspace/life/p.md"), page, "stable");
+}

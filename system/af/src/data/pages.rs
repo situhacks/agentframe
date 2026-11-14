@@ -30,14 +30,55 @@ fn line_of(text: &str, offset: usize) -> usize {
     text[..offset].matches('\n').count() + 1
 }
 
-/// The blocks of a page, in order. An opening marker with no closing marker before the next opening
-/// marker (or the end of the page) is a fault, as `(line, what)`; a closing marker alone is ignored.
+/// The byte ranges of fenced code blocks (``` or ~~~), which a page may use to show an example of a
+/// block. An unclosed fence runs to the end of the page, as in markdown.
+fn fenced_ranges(text: &str) -> Vec<std::ops::Range<usize>> {
+    let mut out = Vec::new();
+    let mut open: Option<(char, usize, usize)> = None; // (fence character, its length, where it began)
+    let mut off = 0;
+    for line in text.split_inclusive('\n') {
+        let trimmed = line.trim_start_matches(' ');
+        if line.len() - trimmed.len() <= 3 {
+            if let Some(ch) = trimmed.chars().next().filter(|c| *c == '`' || *c == '~') {
+                let n = trimmed.chars().take_while(|c| *c == ch).count();
+                let rest = &trimmed[n..];
+                if n >= 3 {
+                    match open {
+                        None if ch == '~' || !rest.contains('`') => open = Some((ch, n, off)),
+                        Some((c, len, start)) if c == ch && n >= len && rest.trim().is_empty() => {
+                            out.push(start..off + line.len());
+                            open = None;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        off += line.len();
+    }
+    if let Some((_, _, start)) = open {
+        out.push(start..text.len());
+    }
+    out
+}
+
+/// The blocks of a page, in order. A fault is `(line, what)` and means the page is not touched: an
+/// opening marker that is not ended by `-->` before a closing marker (a typo), or that has no closing
+/// marker before the next opening marker or the end of the page. A closing marker alone is ignored, and
+/// so is anything inside a fenced code block.
 pub fn find_blocks(text: &str) -> Result<Vec<Block>, (usize, String)> {
     let open = Regex::new(r"(?s)<!--\s*af-data:(.*?)-->").expect("regex");
     let close = Regex::new(r"<!--\s*/af-data\s*-->").expect("regex");
+    let fences = fenced_ranges(text);
+    let fenced = |at: usize| fences.iter().any(|r| r.contains(&at));
+    let opens: Vec<_> = open.captures_iter(text).filter_map(|c| c.get(0).map(|m| (m.range(), c[1].to_string()))).filter(|(r, _)| !fenced(r.start)).collect();
+    let closes: Vec<_> = close.find_iter(text).map(|m| m.range()).filter(|r| !fenced(r.start)).collect();
+    for (r, _) in &opens {
+        if closes.iter().any(|c| c.start >= r.start && c.start < r.end) {
+            return Err((line_of(text, r.start), "this opening marker is not ended by `-->` before a closing marker; check it for a typo".to_string()));
+        }
+    }
     // (offset, is_open, index into its list)
-    let opens: Vec<_> = open.captures_iter(text).map(|c| (c.get(0).unwrap().range(), c[1].to_string())).collect();
-    let closes: Vec<_> = close.find_iter(text).map(|m| m.range()).collect();
     let mut events: Vec<(usize, bool, usize)> = Vec::new();
     events.extend(opens.iter().enumerate().map(|(i, (r, _))| (r.start, true, i)));
     events.extend(closes.iter().enumerate().map(|(i, r)| (r.start, false, i)));
@@ -55,7 +96,11 @@ pub fn find_blocks(text: &str) -> Result<Vec<Block>, (usize, String)> {
             let c = &closes[i];
             let line_start = text[..c.start].rfind('\n').map(|n| n + 1).unwrap_or(0);
             let own_line = line_start >= orange.end && text[line_start..c.start].chars().all(|ch| ch == ' ' || ch == '\t');
-            blocks.push(Block { line: line_of(text, orange.start), sql: sql.trim().to_string(), start: orange.end, end: if own_line { line_start } else { c.start } });
+            let end = if own_line { line_start } else { c.start };
+            if end < orange.end {
+                return Err((line_of(text, orange.start), "this opening marker overlaps its closing marker".to_string()));
+            }
+            blocks.push(Block { line: line_of(text, orange.start), sql: sql.trim().to_string(), start: orange.end, end });
         }
     }
     if let Some(o) = cur {
@@ -64,8 +109,13 @@ pub fn find_blocks(text: &str) -> Result<Vec<Block>, (usize, String)> {
     Ok(blocks)
 }
 
+/// The most rows a block keeps, and how far past that rows are counted for the note.
+pub const BLOCK_ROWS: usize = 500;
+pub const BLOCK_COUNT_CAP: usize = 100_000;
+
 /// The page with every block refilled from `con`, and the faults (`line N: what`) of the blocks that
-/// could not be: those keep their old content.
+/// could not be: those keep their old content. A block keeps at most 500 rows and ends with one line
+/// saying how many of how many are shown.
 pub fn render_text(text: &str, blocks: &[Block], con: &Connection) -> (String, Vec<(usize, String)>) {
     let eol = if text.contains("\r\n") { "\r\n" } else { "\n" };
     let mut out = String::with_capacity(text.len());
@@ -77,9 +127,15 @@ pub fn render_text(text: &str, blocks: &[Block], con: &Connection) -> (String, V
         let fill = if b.sql.is_empty() {
             Err("the statement is empty".to_string())
         } else {
-            match query::run(con, &b.sql, None) {
-                Ok((table, _)) => Ok(format!("{eol}{}{eol}", query::to_markdown(&table).replace('\n', eol))),
-                Err(QueryErr::Refused(m)) => Err(m),
+            match query::run(con, &b.sql, BLOCK_ROWS, Some(BLOCK_COUNT_CAP)) {
+                Ok((table, total)) => {
+                    let mut md = query::to_markdown(&table);
+                    if !total.exact || total.n > table.rows.len() {
+                        md.push_str(&format!("\n\n(showing {} of {} rows)", table.rows.len(), total.text()));
+                    }
+                    Ok(format!("{eol}{}{eol}", md.replace('\n', eol)))
+                }
+                Err(QueryErr::Refused(m)) | Err(QueryErr::Stopped(m)) => Err(m),
                 Err(QueryErr::Sql(m)) => Err(format!("SQL error: {m}")),
             }
         };

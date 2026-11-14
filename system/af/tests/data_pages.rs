@@ -279,3 +279,102 @@ edited by hand
 | 1 |
 ") && !fx.read(PAGE).contains("edited by hand"), "{}", fx.read(PAGE));
 }
+
+// ------------------------------------------------------------------ review: blockers 1 and 2
+
+fn register_page_by_hand(fx: &Fx, rel: &str) {
+    let reg = fx.read("workspace/life/ledgers.yaml");
+    fx.write("workspace/life/ledgers.yaml", &reg.replace("pages: []", &format!("pages:\n  - {rel}")));
+}
+
+fn no_crash(text: &str) {
+    assert!(!text.contains("panicked") && !text.contains("CRASH"), "{text}");
+}
+
+#[test]
+fn a_mistyped_opening_marker_is_a_fault_on_that_page_never_a_panic() {
+    let fx = Fx::new();
+    new_sets(&fx);
+    let typo = "A\n<!-- af-data: select 1 as one ->\nOLD\n<!-- /af-data -->\nB\n";
+    fx.write("workspace/life/typo.md", typo);
+    let (code, _, err) = fx.run(&["data", "render", "typo.md"]);
+    assert_eq!(code, 1, "{err}");
+    no_crash(&err);
+    assert!(err.contains("workspace/life/typo.md:2:"), "{err}");
+    assert_eq!(fx.read("workspace/life/typo.md"), typo, "the page is not written");
+    let (code, _, err) = fx.run(&["data", "page", "typo.md"]);
+    assert_eq!(code, 1, "{err}");
+    no_crash(&err);
+    // Registered by hand, it must not break the doctor or any write.
+    register_page_by_hand(&fx, "typo.md");
+    let (_, out, err) = fx.run(&["doctor"]);
+    no_crash(&format!("{out}{err}"));
+    assert!(format!("{out}{err}").contains("typo.md:2:"), "{out}{err}");
+    let (code, out, err) = fx.run(&["data", "add", "sets", "date=2026-11-14", "exercise=Squat", "set=1", "source=log"]);
+    assert_eq!(code, 0, "the row stands and the exit is 0: {err}");
+    no_crash(&err);
+    assert!(out.contains("added 1 row") && err.contains("af: warning: workspace/life/typo.md:2:"), "{out}{err}");
+    assert!(fx.read("workspace/life/systems/fitness/sets.csv").contains("Squat,1,,log"));
+    let input = fx.write("in/x.csv", "date,exercise,set,source\n2026-11-14,Squat,2,log\n");
+    let (code, ..) = fx.run(&["data", "import", "sets", "--csv", &input]);
+    assert_eq!(code, 0);
+    let (code, ..) = fx.run(&["data", "column", "sets", "rpe:number"]);
+    assert_eq!(code, 0);
+}
+
+#[test]
+fn no_text_makes_page_parsing_or_rendering_panic() {
+    use afcore::data::pages::{find_blocks, render_text};
+    let con = rusqlite::Connection::open_in_memory().unwrap();
+    let frags = [
+        "<!--", "-->", "->", " af-data:", "<!-- af-data:", "<!-- af-data: select 1 as one -->", "<!-- /af-data -->", "<!--/af-data-->", "select 1", "\n", "\r\n", "```", "~~~", "x", "\u{e9}", " ",
+        "-- ", "/*", "*/", "<!-- af-data: select nope -->", "    ", "\t",
+    ];
+    let mut seed: u64 = 0x9E3779B97F4A7C15;
+    let mut next = move || {
+        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        (seed >> 33) as usize
+    };
+    for _ in 0..4000 {
+        let n = next() % 14;
+        let text: String = (0..n).map(|_| frags[next() % frags.len()]).collect();
+        if let Ok(blocks) = find_blocks(&text) {
+            let mut at = 0;
+            for b in &blocks {
+                assert!(at <= b.start && b.start <= b.end && b.end <= text.len(), "{text:?} {blocks:?}");
+                assert!(text.is_char_boundary(b.start) && text.is_char_boundary(b.end), "{text:?}");
+                at = b.end;
+            }
+            let _ = render_text(&text, &blocks, &con);
+        }
+    }
+}
+
+#[test]
+fn a_ledger_value_holding_a_marker_cannot_close_or_open_a_block_and_the_page_stays_stable() {
+    let fx = Fx::new();
+    fx.ok(&["data", "new", "tx", "--file", "tx.csv", "--column", "id:text!", "--column", "memo:text", "--key", "id"]);
+    fx.write("workspace/life/page.md", "# Page\n\n<!-- af-data: select id, memo from tx order by id -->\n<!-- /af-data -->\n\ntail text\n");
+    fx.ok(&["data", "page", "page.md"]);
+    fx.ok(&["data", "add", "tx", "id=a", "memo=x <!-- /af-data --> y"]);
+    fx.ok(&["data", "add", "tx", "id=b", "memo=<!-- af-data: select 1 as injected -->"]);
+    fx.ok(&["data", "add", "tx", "id=c", "memo=a\\|b"]);
+    fx.ok(&["data", "add", "tx", "id=d", "memo=ends with a backslash\\"]);
+    fx.ok(&["data", "add", "tx", "id=e", "memo=pipe | and <b>tags</b>"]);
+    let first = bytes(&fx, "workspace/life/page.md");
+    let text = String::from_utf8(first.clone()).unwrap();
+    assert_eq!(text.matches("<!-- /af-data -->").count(), 1, "{text}");
+    assert_eq!(text.matches("<!-- af-data:").count(), 1, "{text}");
+    assert_eq!(text.matches("|---|---|").count(), 1, "one table: {text}");
+    assert!(!text.contains("| injected |"), "{text}");
+    assert!(text.contains("| a | x &lt;!-- /af-data --> y |"), "{text}");
+    assert!(text.contains("| b | &lt;!-- af-data: select 1 as injected --> |"), "{text}");
+    assert!(text.contains("| c | a\\\\\\|b |"), "a backslash before a pipe stays one backslash and one pipe: {text}");
+    assert!(text.contains("| d | ends with a backslash\\ |"), "{text}");
+    assert!(text.contains("| e | pipe \\| and &lt;b>tags&lt;/b> |"), "{text}");
+    assert!(text.ends_with("\ntail text\n"));
+    fx.ok(&["data", "render"]);
+    fx.ok(&["data", "render"]);
+    assert_eq!(bytes(&fx, "workspace/life/page.md"), first, "rendered again, the page does not change");
+    assert!(!fx.run(&["doctor"]).1.contains("page.md"), "no doctor note");
+}

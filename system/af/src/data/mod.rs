@@ -165,7 +165,10 @@ fn find_ledger(ctx: &Ctx, name: &str) -> R<(Registry, Ledger)> {
 
 /// After a write: refill every registered page. A fault is a warning; the write stands.
 fn render_after_write(ctx: &Ctx) {
-    for fault in pages::render_registered(ctx) {
+    // Nothing in the re-render may change the exit code: the write stands. Even a panic is a warning.
+    let faults = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| pages::render_registered(ctx)))
+        .unwrap_or_else(|_| vec!["re-rendering the registered pages failed unexpectedly".to_string()]);
+    for fault in faults {
         out::err_line(&format!("af: warning: {fault}"));
     }
 }
@@ -552,9 +555,9 @@ fn cmd_sql(ctx: &Ctx, a: &SqlArgs) -> R<i32> {
         }
     };
     let limit = a.limit.map(|l| l as usize).unwrap_or(DEFAULT_LIMIT);
-    let (table, total) = match query::run(&con, &a.statement, Some(limit)) {
+    let (table, total) = match query::run(&con, &a.statement, limit, None) {
         Ok(x) => x,
-        Err(query::QueryErr::Refused(m)) => die!("{m}"),
+        Err(query::QueryErr::Refused(m)) | Err(query::QueryErr::Stopped(m)) => die!("{m}"),
         Err(query::QueryErr::Sql(m)) => {
             let e = refuse(format!("SQL error: {m}"));
             for l in query::schema_lines(&reg) {
@@ -574,8 +577,8 @@ fn cmd_sql(ctx: &Ctx, a: &SqlArgs) -> R<i32> {
         query::to_markdown(&table)
     };
     outln!("{text}");
-    if total > table.rows.len() {
-        let note = format!("showing {} of {total} rows; --limit shows more", table.rows.len());
+    if !total.exact || total.n > table.rows.len() {
+        let note = format!("showing {} of {} rows; --limit shows more", table.rows.len(), total.text());
         if a.json || a.csv {
             // Stdout stays the data alone, so a reader of it still parses.
             out::err_line(&note);

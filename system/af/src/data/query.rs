@@ -23,7 +23,12 @@ pub struct Table {
     pub rows: Vec<Vec<Cell>>,
 }
 
+/// Seconds a statement may run before it is stopped (10), in milliseconds; AF_DATA_SQL_TIMEOUT_MS overrides it.
+pub const DEFAULT_TIMEOUT_MS: u64 = 10_000;
+
 pub enum QueryErr {
+    /// The statement ran past the time limit and was stopped.
+    Stopped(String),
     /// The statement is not one af runs (not a single read-only select).
     Refused(String),
     /// SQLite's own message.
@@ -149,10 +154,79 @@ fn first_word(sql: &str) -> Option<String> {
     (i > start).then(|| sql[start..i].to_ascii_lowercase())
 }
 
+/// How long a statement may run before it is stopped: `DEFAULT_TIMEOUT_MS`, or `AF_DATA_SQL_TIMEOUT_MS`.
+pub fn timeout_ms() -> u64 {
+    std::env::var("AF_DATA_SQL_TIMEOUT_MS").ok().and_then(|v| v.trim().parse().ok()).filter(|ms| *ms > 0).unwrap_or(DEFAULT_TIMEOUT_MS)
+}
+
+fn seconds_text(ms: u64) -> String {
+    if ms % 1000 == 0 {
+        let s = ms / 1000;
+        format!("{s} second{}", if s == 1 { "" } else { "s" })
+    } else {
+        format!("{:.1} seconds", ms as f64 / 1000.0)
+    }
+}
+
+/// Stops the statement that is running on a connection once the time is up. Dropping it (the statement
+/// is done) ends the thread without an interrupt.
+struct Watchdog {
+    done: Option<std::sync::mpsc::Sender<()>>,
+    thread: Option<std::thread::JoinHandle<()>>,
+    fired: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl Watchdog {
+    fn start(con: &Connection, ms: u64) -> Watchdog {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let (tx, rx) = std::sync::mpsc::channel::<()>();
+        let fired = std::sync::Arc::new(AtomicBool::new(false));
+        let (flag, handle) = (fired.clone(), con.get_interrupt_handle());
+        let thread = std::thread::spawn(move || {
+            if let Err(std::sync::mpsc::RecvTimeoutError::Timeout) = rx.recv_timeout(std::time::Duration::from_millis(ms)) {
+                flag.store(true, Ordering::SeqCst);
+                handle.interrupt();
+            }
+        });
+        Watchdog { done: Some(tx), thread: Some(thread), fired }
+    }
+
+    fn fired(&self) -> bool {
+        self.fired.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+impl Drop for Watchdog {
+    fn drop(&mut self) {
+        self.done.take();
+        if let Some(t) = self.thread.take() {
+            let _ = t.join();
+        }
+    }
+}
+
+/// How many rows a statement gave: all of them, or more than `n` when counting stopped.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Total {
+    pub n: usize,
+    pub exact: bool,
+}
+
+impl Total {
+    pub fn text(&self) -> String {
+        if self.exact {
+            self.n.to_string()
+        } else {
+            format!("more than {}", self.n)
+        }
+    }
+}
+
 /// Run one statement: it must start with `select` or `with`, be a single statement, and be reported
-/// read-only by SQLite. At most `limit` rows are kept (None keeps all); the second value is how many
-/// rows the statement gave in all.
-pub fn run(con: &Connection, sql: &str, limit: Option<usize>) -> Result<(Table, usize), QueryErr> {
+/// read-only by SQLite. At most `keep` rows are kept. Rows past that are only counted: up to
+/// `count_cap` of them when given, else until the time limit, when the count is "more than n". A
+/// statement still giving no row (or fewer than `keep`) when the time is up is stopped with an error.
+pub fn run(con: &Connection, sql: &str, keep: usize, count_cap: Option<usize>) -> Result<(Table, Total), QueryErr> {
     match first_word(sql).as_deref() {
         Some("select") | Some("with") => {}
         _ => return Err(QueryErr::Refused("only a single select (or with ... select) statement is run; af data sql is read-only".to_string())),
@@ -168,14 +242,37 @@ pub fn run(con: &Connection, sql: &str, limit: Option<usize>) -> Result<(Table, 
     if !stmt.readonly() {
         return Err(QueryErr::Refused("the statement is not read-only; af data sql only reads".to_string()));
     }
+    let ms = timeout_ms();
+    let stopped = || QueryErr::Stopped(format!("the query was stopped after {}", seconds_text(ms)));
+    let dog = Watchdog::start(con, ms);
     let headers: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
     let n = headers.len();
-    let mut rows = stmt.query([]).map_err(|e| QueryErr::Sql(e.to_string()))?;
+    let mut rows = match stmt.query([]) {
+        Ok(r) => r,
+        Err(_) if dog.fired() => return Err(stopped()),
+        Err(e) => return Err(QueryErr::Sql(e.to_string())),
+    };
     let mut table = Table { headers, rows: Vec::new() };
-    let mut total = 0usize;
-    while let Some(row) = rows.next().map_err(|e| QueryErr::Sql(e.to_string()))? {
-        total += 1;
-        if limit.is_some_and(|l| table.rows.len() >= l) {
+    let mut total = Total { n: 0, exact: true };
+    loop {
+        let row = match rows.next() {
+            Ok(Some(row)) => row,
+            Ok(None) => break,
+            Err(_) if dog.fired() => {
+                if table.rows.len() >= keep {
+                    total.exact = false;
+                    break;
+                }
+                return Err(stopped());
+            }
+            Err(e) => return Err(QueryErr::Sql(e.to_string())),
+        };
+        total.n += 1;
+        if table.rows.len() >= keep {
+            if count_cap.is_some_and(|cap| total.n > cap) {
+                total = Total { n: count_cap.unwrap_or(0), exact: false };
+                break;
+            }
             continue;
         }
         let mut cells = Vec::with_capacity(n);
@@ -196,8 +293,11 @@ pub fn run(con: &Connection, sql: &str, limit: Option<usize>) -> Result<(Table, 
 
 // ------------------------------------------------------------------ formats
 
+/// One markdown table cell that cannot break its table or the page around it: line breaks become spaces,
+/// `|` is escaped (a backslash before it is doubled first, so `\|` stays one backslash and one pipe), and
+/// `<` becomes `&lt;`, so a value can never hold a marker comment.
 fn md_cell(s: &str) -> String {
-    s.replace("\r\n", " ").replace(['\n', '\r'], " ").replace('|', "\\|")
+    s.replace("\r\n", " ").replace(['\n', '\r'], " ").replace("\\|", "\\\\|").replace('|', "\\|").replace('<', "&lt;")
 }
 
 /// A markdown table; no rows gives the header, then a line `(no rows)`.

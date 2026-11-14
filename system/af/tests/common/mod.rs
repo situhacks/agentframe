@@ -338,6 +338,9 @@ posted_at: {posted_at}\nurl: {url}\nmetrics_captured_at: null\n\n# LIFECYCLE\nla
 /// unless `STUB_PANEL_NO_BOUNDARY` is set. `STUB_PANEL_SLEEP_SECS` makes every call slow;
 /// `STUB_PANEL_NOTE` prints a `note: ...` line on stderr, as the driver does, on success and failure.
 /// With `STUB_LOCK_SNAPSHOT` and `STUB_LOCK_FILE` every call appends what the lock file holds then.
+/// `STUB_PANEL_OUT` is what an action other than list, new and send prints (default `ok`).
+/// `STUB_PANEL_WAIT_FOR_CANCEL` (seconds), `STUB_PANEL_SENDING` and `STUB_PANEL_IGNORE_CANCEL` make a call that
+/// is given `-CancelFile` wait for that file as the real driver does (see below).
 const PANEL_STUB_SRC: &str = r##"
 use std::io::Write;
 fn append(path: &str, text: &str) {
@@ -388,6 +391,25 @@ fn main() {
     if let Ok(secs) = std::env::var("STUB_PANEL_SLEEP_SECS") {
         std::thread::sleep(std::time::Duration::from_secs_f64(secs.parse().unwrap()));
     }
+    // A driver that waits and honours -CancelFile: it looks for the file for up to STUB_PANEL_WAIT_FOR_CANCEL
+    // seconds and exits 7 when it finds it. STUB_PANEL_SENDING makes it write the `.sending` marker first (the
+    // real driver does that when it first changes the panel) and ignore the cancel; STUB_PANEL_IGNORE_CANCEL
+    // ignores it with no marker (a driver that does not stop in time).
+    if let (Some(cancel), Ok(secs)) = (value("-CancelFile"), std::env::var("STUB_PANEL_WAIT_FOR_CANCEL")) {
+        let sending = std::env::var("STUB_PANEL_SENDING").is_ok();
+        if sending {
+            std::fs::write(std::path::Path::new(&cancel).with_extension("sending"), "begun").unwrap();
+        }
+        let honour = !sending && std::env::var("STUB_PANEL_IGNORE_CANCEL").is_err();
+        let until = std::time::Instant::now() + std::time::Duration::from_secs_f64(secs.parse().unwrap());
+        while std::time::Instant::now() < until {
+            if honour && std::path::Path::new(&cancel).exists() {
+                eprintln!("cancelled; nothing was changed");
+                std::process::exit(7);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+    }
     let code = match std::env::var("STUB_PANEL_EXITS") {
         Ok(list) => {
             let codes: Vec<i32> = list.split(',').map(|c| c.trim().parse().unwrap()).collect();
@@ -419,7 +441,7 @@ fn main() {
             }
             println!("sent");
         }
-        _ => println!("ok"),
+        _ => println!("{}", std::env::var("STUB_PANEL_OUT").unwrap_or_else(|_| "ok".into())),
     }
 }
 "##;

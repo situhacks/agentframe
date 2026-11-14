@@ -4,10 +4,11 @@
 //! UTF-8 file, never as an argument, and reaches the driver exactly as given: a text that starts with
 //! `/` is not changed. The driver's exit code says why it did not act: 3 the operator was at the
 //! machine, the chat was busy or another driver run held the panel for the whole wait, 4 the chat's
-//! input holds text that is not the driver's, 5 a safety check failed; on all three nothing was sent,
-//! and the driver's message says what it changed and where the chat's tab is now. 2 the bridge,
-//! window, chat or control was not found, 6 the global model key or the settings file did not match
-//! after a model pick. Its notes (lines `note: ...` on stderr) are printed on success too.
+//! input holds text that is not the driver's, 5 a safety check failed; on all three nothing was sent
+//! (nothing was archived, for `archive`), and the driver's message says what it changed and where the
+//! chat's tab is now. 2 the bridge, window, chat or control was not found, 6 the global model key or the
+//! settings file did not match after a model pick, 7 the run was cancelled through its cancel file before it
+//! changed anything. Its notes (lines `note: ...` on stderr) are printed on success too.
 
 use crate::core::Ctx;
 use crate::die;
@@ -20,6 +21,8 @@ use rusqlite::Connection;
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 /// The driver program: `AF_PANEL_DRIVER` names another program (tests use a stub), else
@@ -77,6 +80,8 @@ pub struct Call<'a> {
     pub model: Option<&'a str>,
     pub group_id: Option<&'a str>,
     pub wait_minutes: Option<f64>,
+    /// `-CancelFile`: the run stops with exit 7 when this file exists while it has changed nothing yet.
+    pub cancel_file: Option<&'a Path>,
 }
 
 impl Driver {
@@ -97,6 +102,9 @@ impl Driver {
         }
         if let Some(w) = c.wait_minutes {
             a.extend(["-WaitMinutes".to_string(), format!("{w}")]);
+        }
+        if let Some(f) = c.cancel_file {
+            a.extend(["-CancelFile".to_string(), f.to_string_lossy().into_owned()]);
         }
         a
     }
@@ -324,6 +332,10 @@ pub fn acquire_lock_within(ctx: &Ctx, session_id: &str, action: &str, budget: Du
         match acquire_lock(ctx, session_id, action) {
             Ok(l) => return Ok(l),
             Err(m) if Instant::now() >= until => return Err(format!("{m}, for the whole wait of {} seconds", budget.as_secs())),
+            Err(_) if cancel_requested() => {
+                note_cancelled();
+                return Err("cancelled while waiting for the panel lock; nothing was changed".to_string());
+            }
             Err(_) => std::thread::sleep(Duration::from_millis(500)),
         }
     }
@@ -384,6 +396,73 @@ impl Drop for TextFile {
     }
 }
 
+// ------------------------------------------------------------------ cancelling a queued run
+
+/// The cancel marker of a detached waiter: its job file with the extension `.cancel`.
+pub fn cancel_marker(job: &Path) -> PathBuf {
+    job.with_extension("cancel")
+}
+
+/// The file the driver writes when it first changes the panel (and the closed route writes when it starts
+/// the compaction): from then on a cancel no longer stops the run.
+pub fn sending_marker(job: &Path) -> PathBuf {
+    job.with_extension("sending")
+}
+
+/// In a waiter process: the marker its waits and its driver runs look for.
+static CANCEL_FILE: OnceLock<PathBuf> = OnceLock::new();
+/// Cleared once the waiter has begun changing things: a cancel is no longer looked for.
+static CANCEL_ON: AtomicBool = AtomicBool::new(false);
+/// Set when a wait or a driver run ended because of the marker.
+static CANCELLED: AtomicBool = AtomicBool::new(false);
+
+/// In a waiter: from now on its waits and driver runs stop for this marker.
+pub fn set_cancel_file(marker: PathBuf) {
+    let _ = CANCEL_FILE.set(marker);
+    CANCEL_ON.store(true, Ordering::SeqCst);
+}
+
+/// The marker to pass to the driver, while cancelling is still possible.
+fn cancel_file() -> Option<PathBuf> {
+    if CANCEL_ON.load(Ordering::SeqCst) {
+        CANCEL_FILE.get().cloned()
+    } else {
+        None
+    }
+}
+
+/// The waiter has begun changing things (or the driver did): stop looking for a cancel.
+pub fn cancel_off() {
+    CANCEL_ON.store(false, Ordering::SeqCst);
+}
+
+/// A cancel marker exists and cancelling is still possible.
+pub fn cancel_requested() -> bool {
+    cancel_file().is_some_and(|f| f.exists())
+}
+
+pub fn note_cancelled() {
+    CANCELLED.store(true, Ordering::SeqCst);
+}
+
+pub fn was_cancelled() -> bool {
+    CANCELLED.load(Ordering::SeqCst)
+}
+
+/// The closed route is about to change something: refuse when a cancel is waiting, else leave the
+/// `.sending` marker and stop looking for a cancel.
+pub fn begin_changes() -> Result<(), String> {
+    if cancel_requested() {
+        note_cancelled();
+        return Err("cancelled before anything was changed".to_string());
+    }
+    if let Some(f) = CANCEL_FILE.get().filter(|_| CANCEL_ON.load(Ordering::SeqCst)) {
+        let _ = std::fs::write(f.with_extension("sending"), crate::core::now_iso());
+    }
+    cancel_off();
+    Ok(())
+}
+
 /// What the driver printed on success: its output and its notes.
 #[derive(Debug, Default)]
 pub struct Answer {
@@ -419,13 +498,22 @@ fn whole(out: &Out) -> String {
 /// The driver's answer: its output and notes on exit 0, else the sentence that says what it refused
 /// and why, with everything the driver said (what it changed, where the tab is now, its notes).
 fn answer(out: &Out) -> Result<Answer, String> {
+    answer_as(out, "sent")
+}
+
+/// The same, for a verb whose refusals say what was not done: `sent`, or `archived`.
+fn answer_as(out: &Out, nothing: &str) -> Result<Answer, String> {
     let why = whole(out);
     match out.code {
         Some(0) => Ok(Answer { value: out.stdout.trim().to_string(), notes: notes_of(&out.stderr) }),
         Some(2) => Err(format!("the panel driver could not find what it needs (the bridge extension, the VS Code window, the chat or a control): {why}. A chat running in a terminal has no panel row")),
-        Some(3) => Err(format!("refused (exit 3): nothing was sent. The operator was using the computer, the chat was busy, or another driver run held the panel, for the whole wait. {why}")),
-        Some(4) => Err(format!("refused (exit 4): nothing was sent. The chat's input holds a draft typed in its input box or other text that is not the driver's; ask him to send or clear it. {why}")),
-        Some(5) => Err(format!("refused (exit 5): a safety check failed, so nothing was sent. {why}")),
+        Some(3) => Err(format!("refused (exit 3): nothing was {nothing}. The operator was using the computer, the chat was busy or running, the chat is the one he has in front (archive), a full-screen window stayed in front of its row (archive), or another driver run held the panel, for the whole wait. {why}")),
+        Some(4) => Err(format!("refused (exit 4): nothing was {nothing}. The chat's input holds a draft typed in its input box or other text that is not the driver's; ask him to send or clear it. {why}")),
+        Some(5) => Err(format!("refused (exit 5): a safety check failed, so nothing was {nothing}. {why}")),
+        Some(7) => {
+            note_cancelled();
+            Err(format!("cancelled (exit 7): the run was cancelled while it was only waiting, and nothing was changed. {why}"))
+        }
         Some(6) => Err(format!("MODEL KEY MISMATCH (exit 6): after a model pick the global model key or ~/.claude/settings.json did not match what the driver saved, and the driver could not put it back. Fix settings.json by hand before anything else runs. {why}")),
         Some(n) => Err(format!("the panel driver failed (exit {n}): {why}")),
         None => Err(format!("the panel driver did not run to the end: {why}")),
@@ -436,8 +524,17 @@ fn answer(out: &Out) -> Result<Answer, String> {
 pub fn send(ctx: &Ctx, session: &str, text: &str, wait_minutes: Option<f64>) -> Result<Answer, String> {
     let d = driver(ctx).map_err(|e| e.to_string())?;
     let file = TextFile::new(ctx, text).map_err(|e| e.to_string())?;
-    let call = Call { action: "send", session: Some(session), text_file: Some(file.path()), wait_minutes, ..Call::default() };
+    let cancel = cancel_file();
+    let call = Call { action: "send", session: Some(session), text_file: Some(file.path()), wait_minutes, cancel_file: cancel.as_deref(), ..Call::default() };
     answer(&d.run(ctx, &call))
+}
+
+/// Archive the chat with this session id through the panel; the driver's message (what it archived, or
+/// that the list has no row for it) and notes. Err carries the refusal sentence.
+pub fn archive(ctx: &Ctx, session: &str, wait_minutes: Option<f64>) -> Result<Answer, String> {
+    let d = driver(ctx).map_err(|e| e.to_string())?;
+    let call = Call { action: "archive", session: Some(session), wait_minutes, ..Call::default() };
+    answer_as(&d.run(ctx, &call), "archived")
 }
 
 /// A new chat with this first message; its session id and the driver's notes.
@@ -644,6 +741,61 @@ pub fn cmd_rename(ctx: &Ctx, name: &str, to: Option<&str>, wait_minutes: Option<
         }
     }
     die!("{name}: /rename {to} was sent, but the panel row shows '{shown}', not the new name; check the chat")
+}
+
+/// A session id as the driver takes it: hex digits and dashes.
+fn valid_session_id(id: &str) -> bool {
+    (8..=64).contains(&id.len()) && id.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
+}
+
+/// `af session archive [<name>] [--session-id <id>] [--wait-minutes N] [--dry-run]`: archive a chat in the
+/// panel's list. The driver closes the chat's open tab first (when it has one and it holds no draft), rests
+/// the pointer on the row and invokes the row's Archive button. The registry row is not changed.
+pub fn cmd_archive(ctx: &Ctx, name: Option<&str>, session_id: Option<&str>, wait_minutes: Option<f64>, dry_run: bool) -> R<i32> {
+    let reg = Registry::load(ctx)?;
+    let session_id = session_id.map(str::trim).filter(|s| !s.is_empty());
+    let (label, id, registered) = match (name, session_id) {
+        (None, None) => die!("af session archive needs a chat name, or --session-id <id> for a chat with no registry row"),
+        (Some(n), sid) => {
+            let row = reach::row_or_refuse(&reg, n)?;
+            if let Some(s) = sid {
+                if s != row.session_id {
+                    die!("{n}: --session-id {s} is not the session id of that registry row ({}); give the name or the id, not two different chats", row.session_id);
+                }
+            }
+            (n.to_string(), row.session_id, true)
+        }
+        (None, Some(s)) => {
+            if !valid_session_id(s) {
+                die!("--session-id is a session id (8 to 64 hex digits and dashes), got '{s}'; nothing was archived");
+            }
+            let known = reg.find_session(s).map(|r| r.name);
+            (known.clone().unwrap_or_else(|| s.to_string()), s.to_string(), known.is_some())
+        }
+    };
+    if let Some(me) = crate::compact::caller_session() {
+        if me == id {
+            die!("{label}: this is the chat that is running this command; af session archive does not archive the calling chat. Ask him, or another chat, to archive it from outside; nothing was archived");
+        }
+    }
+    let d = driver(ctx)?;
+    let call = Call { action: "archive", session: Some(&id), wait_minutes, ..Call::default() };
+    if dry_run {
+        outln!("{label}: would archive session {id} through the panel driver:");
+        outln!("{}", d.shown(&call));
+        outln!("The driver closes the chat's open tab first (a draft in it refuses, exit 4), rests the pointer on its row in the panel's list, invokes the row's Archive button and puts the pointer back. It never takes the foreground. The registry row is not changed. Nothing was run.");
+        return Ok(0);
+    }
+    match archive(ctx, &id, wait_minutes) {
+        Ok(a) => {
+            outln!("{label}: {}{}", a.value, a.notes_sentence());
+            if registered {
+                outln!("The registry row for {label} is unchanged. To mark it ended: af session end {label} --reason other.");
+            }
+            Ok(0)
+        }
+        Err(m) => die!("{label}: {m}"),
+    }
 }
 
 fn readback_pause_ms() -> u64 {

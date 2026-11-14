@@ -10,10 +10,12 @@
 //! file's text to the chat as its next message after the compaction. While a panel driver run holds
 //! the panel lock for the chat, the chat counts as running, so the closed route never races it; and the
 //! closed route holds the same lock for its whole run, so no driver run opens the chat meanwhile.
+//! `--cancel` stops a queued `--when-idle` compaction: it writes a cancel marker next to the job file, which
+//! the waiter and its driver run look for while they only wait, and says what happened.
 
 use crate::core::Ctx;
 use crate::die;
-use crate::error::R;
+use crate::error::{AfError, R};
 use crate::outln;
 use crate::panel;
 use crate::pyos;
@@ -217,11 +219,18 @@ pub struct Opts<'a> {
     pub wait_minutes: Option<f64>,
     pub then_file: Option<&'a str>,
     pub waiter_job: Option<&'a str>,
+    /// `--cancel`: stop the chat's queued `--when-idle` compaction.
+    pub cancel: bool,
 }
 
 pub fn cmd_compact(ctx: &Ctx, o: &Opts) -> R<i32> {
     if let Some(job) = o.waiter_job {
         return run_waiter(ctx, job);
+    }
+    if o.cancel {
+        let (report, code) = cancel_report(ctx, o.name)?;
+        outln!("{report}");
+        return Ok(code);
     }
     let report = compact_report(ctx, o)?;
     outln!("{report}");
@@ -322,6 +331,10 @@ fn compact_report(ctx: &Ctx, o: &Opts) -> R<String> {
         Live::Unknown => die!("{name}: cannot tell whether it is running, the claude agents roster is unavailable; nothing was compacted"),
         Live::Running(why) => die!("{name}: it is running now ({why}); nothing was compacted"),
     }
+    // From here the compaction changes things: a queued cancel is honoured only before this point.
+    if let Err(m) = panel::begin_changes() {
+        die!("{name}: {m}; nothing was compacted");
+    }
     let len_before = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
     let limit = window_cap(deadline());
     let mut cmd = Command::new(&bin);
@@ -397,7 +410,7 @@ fn through_panel(ctx: &Ctx, o: &Opts, row: &sessions::Row, path: &str, tokens: O
         };
         let mut lines = vec![format!("{name}: running ({why}), so it is compacted through the panel, not from outside.")];
         if o.when_idle {
-            lines.push(format!("would start a detached waiter, which runs this once the chat is idle, within {} minutes:", wait.unwrap_or(WHEN_IDLE_MINUTES)));
+            lines.push(format!("would start a detached waiter, which runs this once the chat is idle, within {} minutes (to cancel it: af session compact --cancel {name}):", wait.unwrap_or(WHEN_IDLE_MINUTES)));
         } else {
             lines.push("would run now:".to_string());
         }
@@ -421,6 +434,8 @@ fn through_panel(ctx: &Ctx, o: &Opts, row: &sessions::Row, path: &str, tokens: O
         Ok(a) => a,
         Err(m) => die!("{name}: {m}"),
     };
+    // The compaction was sent: a cancel no longer applies to anything after it (the --then-file send).
+    panel::cancel_off();
     let limit = window_cap(boundary_wait());
     let started = Instant::now();
     let (mut boundary, mut after) = appended_since(path, len_before);
@@ -440,7 +455,64 @@ fn through_panel(ctx: &Ctx, o: &Opts, row: &sessions::Row, path: &str, tokens: O
     Ok(report)
 }
 
-//// The job file of the one waiter a chat may have: `system/logs/claude-panel/waiter-<session id>.json`.
+/// How long `--cancel` waits for the waiter to stop.
+const CANCEL_WAIT_SECS: f64 = 20.0;
+/// Test hook: seconds that replace CANCEL_WAIT_SECS.
+const CANCEL_WAIT_ENV: &str = "AF_CANCEL_WAIT_SECS";
+
+fn cancel_wait() -> Duration {
+    Duration::from_secs_f64(std::env::var(CANCEL_WAIT_ENV).ok().and_then(|v| v.trim().parse::<f64>().ok()).filter(|s| *s > 0.0).unwrap_or(CANCEL_WAIT_SECS))
+}
+
+/// `af session compact --cancel <name>`: write the cancel marker next to the chat's job file, wait up to 20
+/// seconds for the job file to go, and say exactly what happened. The report and the exit code: 0 when the
+/// compaction was cancelled or none was queued, 1 for every outcome where it was not cancelled. No process is
+/// ever killed.
+fn cancel_report(ctx: &Ctx, name: &str) -> R<(String, i32)> {
+    let reg = Registry::load(ctx)?;
+    let row = reach::row_or_refuse(&reg, name)?;
+    let job = waiter_job_path(ctx, &row.session_id);
+    let marker = panel::cancel_marker(&job);
+    let sending = panel::sending_marker(&job);
+    let log = panel::waiter_log_path();
+    let Some((pid, queued)) = pending_waiter(&job) else {
+        let left = if job.exists() { " A job file is there, but the waiter it names is gone, so it stops nothing and was left alone." } else { "" };
+        return Ok((format!("{name}: no --when-idle compaction is queued for this chat, so there was nothing to cancel.{left}"), 0));
+    };
+    let note = json!({"requested": crate::core::now_iso(), "by": caller_session()}).to_string();
+    if let Err(e) = std::fs::write(&marker, note) {
+        die!("{name}: cannot write the cancel marker {}: {e}; nothing was cancelled", marker.display());
+    }
+    let until = Instant::now() + cancel_wait();
+    let gone = || !job.exists() || pending_waiter(&job).is_none();
+    while !gone() && Instant::now() < until {
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    if gone() {
+        // A cancelled waiter removes the marker before the job file; a marker that is still there means the
+        // waiter ended some other way and never looked at it.
+        if marker.exists() {
+            let _ = std::fs::remove_file(&marker);
+            let _ = std::fs::remove_file(&sending);
+            die!("{name}: the --when-idle waiter queued at {queued} had already ended before it looked at the cancel, so nothing was cancelled. Its outcome is in {log}");
+        }
+        return Ok((format!("{name}: cancelled. The --when-idle compaction queued at {queued} stopped while it was only waiting; nothing was changed, nothing was sent, and no --then-file step ran. The waiter logged it in {log}."), 0));
+    }
+    let waiter = pending_waiter(&job).and_then(|(p, _)| p).or(pid).map(|p| format!("the waiter (pid {p})")).unwrap_or_else(|| "the waiter".to_string());
+    let driver = panel::lock_holder(ctx, &row.session_id).map(|p| format!(" and the panel driver run (pid {p})")).unwrap_or_default();
+    if sending.exists() {
+        let _ = std::fs::remove_file(&marker);
+        die!("{name}: the compaction was already being sent when the cancel arrived ({waiter}{driver}), so it was not cancelled and will finish or fail on its own. Its outcome goes to {log}.");
+    }
+    die!(
+        "{name}: the cancel marker {} is written, and {waiter}{driver} {} still running after {} seconds. Nothing was killed. If the driver has already begun changing the panel it will finish the compaction; otherwise it stops at its next check of the marker (every 2 seconds while it waits for the operator, and never while it is putting the panel back). Run af session compact --cancel {name} again to see; the outcome goes to {log}.",
+        marker.display(),
+        if driver.is_empty() { "is" } else { "are" },
+        cancel_wait().as_secs_f64()
+    )
+}
+
+/// The job file of the one waiter a chat may have: `system/logs/claude-panel/waiter-<session id>.json`.
 fn waiter_job_path(ctx: &Ctx, session_id: &str) -> std::path::PathBuf {
     let safe: String = session_id.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' }).collect();
     std::path::PathBuf::from(&ctx.root).join("system").join("logs").join("claude-panel").join(format!("waiter-{safe}.json"))
@@ -621,7 +693,11 @@ fn start_waiter(ctx: &Ctx, o: &Opts, row: &sessions::Row, path: &str, wait: f64,
         "pid": Value::Null,
     });
     match claim_job(&job, &body) {
-        Ok(Claim::Created) => {}
+        Ok(Claim::Created) => {
+            // A marker left by an earlier job (a cancel that came too late) must not stop this one.
+            let _ = std::fs::remove_file(panel::cancel_marker(&job));
+            let _ = std::fs::remove_file(panel::sending_marker(&job));
+        }
         Ok(Claim::Pending(pid, queued)) => return Ok(already_pending(name, pid, &queued)),
         Err(m) => die!("{m}"),
     }
@@ -638,7 +714,7 @@ fn start_waiter(ctx: &Ctx, o: &Opts, row: &sessions::Row, path: &str, wait: f64,
         // for STARTING_MS. (Writing it from here could recreate a job the waiter already finished.)
         Ok(pid) => {
             Ok(format!(
-                "{name}: running ({why}). A detached waiter (pid {pid}) compacts it once the chat and the operator are idle, within {wait} minutes{}. It decides when it fires: if the chat was compacted meanwhile it does nothing. Its outcome is appended to {}; a failure is also shown once, at the next tool call or stop, to the chat that queued it (to this chat when af cannot tell which chat that is).",
+                "{name}: running ({why}). A detached waiter (pid {pid}) compacts it once the chat and the operator are idle, within {wait} minutes{}. It decides when it fires: if the chat was compacted meanwhile it does nothing. Its outcome is appended to {}; a failure is also shown once, at the next tool call or stop, to the chat that queued it (to this chat when af cannot tell which chat that is). To cancel it: af session compact --cancel {name}",
                 if o.then_file.is_some() { ", then sends the --then-file text as the next message" } else { "" },
                 panel::waiter_log_path()
             ))
@@ -702,8 +778,21 @@ fn run_waiter(ctx: &Ctx, job_path: &str) -> R<i32> {
     v["pid"] = json!(me);
     v["pid_start"] = json!(panel::pid_start(me));
     write_job(std::path::Path::new(job_path), &v);
+    // Its waits, and the driver runs it starts, stop for this marker while nothing has been changed.
+    let marker = panel::cancel_marker(std::path::Path::new(job_path));
+    let sending = panel::sending_marker(std::path::Path::new(job_path));
+    panel::set_cancel_file(marker.clone());
     let name = v.get("name").and_then(Value::as_str).unwrap_or("").to_string();
     let outcome = fire_waiter(ctx, &v, &name);
+    let cancelled = outcome.is_err() && panel::was_cancelled();
+    // The marker that says the run began changing things is this waiter's own, whatever the outcome. A
+    // cancel marker is removed only for a cancelled job (it is the cancel's proof); after any other outcome
+    // it stays until the cancel verb or the next queued job removes it. The job file goes last: its
+    // disappearance is what `--cancel` waits for.
+    let _ = std::fs::remove_file(&sending);
+    if cancelled {
+        let _ = std::fs::remove_file(&marker);
+    }
     // Removed only while it is still this waiter's job.
     let still_mine = std::fs::read_to_string(job_path).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok()).is_some_and(|j| j.get("pid").and_then(Value::as_u64) == Some(me as u64));
     if still_mine {
@@ -713,6 +802,12 @@ fn run_waiter(ctx: &Ctx, job_path: &str) -> R<i32> {
     match outcome {
         Ok(report) => {
             panel::waiter_log(ctx, &format!("{name} compact ok: {report}"));
+            Ok(0)
+        }
+        // Cancelled by the operator's own command: logged, never shown to a chat as a failure, and the
+        // --then-file step was not run.
+        Err(e) if cancelled => {
+            panel::waiter_log(ctx, &format!("{name} compact cancelled: {e}"));
             Ok(0)
         }
         Err(e) => {
@@ -727,7 +822,7 @@ fn run_waiter(ctx: &Ctx, job_path: &str) -> R<i32> {
 }
 
 /// The session that ran this af, when Claude Code says so (`CLAUDE_CODE_SESSION_ID` in a chat's tools).
-fn caller_session() -> Option<String> {
+pub fn caller_session() -> Option<String> {
     std::env::var("CLAUDE_CODE_SESSION_ID").ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
 }
 
@@ -755,6 +850,10 @@ fn fire_waiter(ctx: &Ctx, v: &Value, name: &str) -> R<String> {
     let len = v.get("transcript_len").and_then(Value::as_u64).unwrap_or(0);
     let poll = std::env::var(POLL_ENV).ok().and_then(|p| p.trim().parse::<u64>().ok()).unwrap_or(3000);
     loop {
+        if panel::cancel_requested() {
+            panel::note_cancelled();
+            return Err(AfError::Refusal(format!("{name}: cancelled while it was waiting for the chat and the operator; nothing was changed and nothing was sent")));
+        }
         if let Some(path) = reach::transcript_path(&session_id) {
             if appended_since(&path, len).0 {
                 return Ok(format!("{name}: nothing to do; its transcript gained a compact_boundary line after this waiter was queued, so it was compacted meanwhile."));
@@ -781,6 +880,7 @@ fn fire_waiter(ctx: &Ctx, v: &Value, name: &str) -> R<String> {
         wait_minutes: Some(left),
         then_file: then_file.as_deref(),
         waiter_job: None,
+        cancel: false,
     };
     compact_report(ctx, &o)
 }

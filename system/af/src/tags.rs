@@ -613,14 +613,19 @@ fn scan_sides(ctx: &Ctx, sides: &[&'static str]) -> R<Vec<Page>> {
 /// `raw` with its `tags:` field set to an inline list and not one other byte changed: the line
 /// endings, the BOM, the body (trailing blank lines, a `---` line of its own, a missing final
 /// newline) and every other frontmatter line stay as they are. A `tags:` field already there goes as
-/// one unit, a block list or a flow list wrapped over lines included, so no item line is left behind;
-/// an indented line after it that is not part of it is refused, not clobbered. No field yet: the line
-/// is added at the end of the frontmatter. No frontmatter: refused, unless `create_fm` (a knowledge
-/// page may start with its heading), which puts a block of its own above the text.
+/// one unit, a block list or a flow list wrapped over lines included, so no item line is left behind.
+/// A field this cannot own is refused and the text left alone: an indented line or list item after
+/// it (blank and comment lines skipped) that is not part of it, two `tags` keys, or one spelled
+/// another way (`"tags":`, `tags :`). No field yet: the line is added at the end of the frontmatter.
+/// No frontmatter: refused, unless `create_fm` (a knowledge page may start with its heading), which
+/// puts a block of its own above the text; a block opened with `---` and never closed is refused.
 pub fn rewrite_tags(raw: &str, tags: &[String], path: &str, create_fm: bool) -> R<String> {
     let line = format!("tags: [{}]", tags.join(", "));
     let b = match fm_bounds(raw) {
         Some(b) => b,
+        None if create_fm && opens_a_block(raw) => {
+            die!("{path}: the frontmatter is opened with --- and never closed; close it by hand, then rerun");
+        }
         None if create_fm => {
             let bom = if raw.starts_with('\u{feff}') { '\u{feff}'.len_utf8() } else { 0 };
             let eol = if raw[bom..].find('\n').is_some_and(|i| raw[bom..][..i].ends_with('\r')) { "\r\n" } else { "\n" };
@@ -629,10 +634,20 @@ pub fn rewrite_tags(raw: &str, tags: &[String], path: &str, create_fm: bool) -> 
         None => die!("{path} has no frontmatter block"),
     };
     let fm = &raw[b.start..b.close];
-    let new_fm = match fm_list_span(fm, "tags") {
+    let keys = rx(r#"(?m)^["']?tags["']?[ \t]*:"#).find_iter(fm).count();
+    let span = fm_list_span(fm, "tags");
+    if keys > 1 || (keys == 1 && span.is_none()) {
+        die!("{path}: the frontmatter has {keys} tags keys or one that is not written `tags:`; fix the frontmatter by hand, then rerun");
+    }
+    let new_fm = match span {
         Some((s, e)) => {
             let after = &fm[e..];
-            let next = after.strip_prefix('\n').unwrap_or(after).lines().next().unwrap_or("");
+            let next = after
+                .strip_prefix('\n')
+                .unwrap_or(after)
+                .lines()
+                .find(|l| !l.trim().is_empty() && !l.trim_start().starts_with('#'))
+                .unwrap_or("");
             if next.starts_with(' ') || next.starts_with('\t') || rx(r"\A-([ \t]|$)").is_match(next) {
                 die!("{path}: the tags: field is followed by an indented line that is not part of it ({next:?}); fix the frontmatter by hand, then rerun");
             }
@@ -642,6 +657,12 @@ pub fn rewrite_tags(raw: &str, tags: &[String], path: &str, create_fm: bool) -> 
         None => format!("{fm}{line}{}", b.eol),
     };
     Ok(format!("{}{new_fm}{}", &raw[..b.start], &raw[b.close..]))
+}
+
+/// Does the text open a frontmatter block (a first line of `---`, after an optional BOM)?
+fn opens_a_block(raw: &str) -> bool {
+    let rest = raw.strip_prefix('\u{feff}').unwrap_or(raw);
+    rest.lines().next().is_some_and(|l| l.trim_end() == "---")
 }
 
 /// A page's text exactly as it lies on disk.
@@ -657,38 +678,93 @@ fn read_raw(path: &str) -> R<String> {
     }
 }
 
-/// Write a text byte for byte through a temp file and a rename, so a reader sees the old file or
-/// the new one.
-fn write_raw(path: &str, text: &str) -> R<()> {
-    TextFile { text: text.to_string(), crlf: false, bom: false }.save_atomic(path)
-}
-
-/// Rewrite the `tags:` field on one page; see `rewrite_tags`.
+/// Rewrite the `tags:` field on one page; see `rewrite_tags`. The page is the only thing written
+/// (`af tag add` leaves the registry and the log alone), through a temp file and a rename, so a
+/// failure leaves the page as it was and ends in a refusal that names it.
 pub fn write_page_tags(path: &str, tags: &[String], create_fm: bool) -> R<()> {
     let raw = read_raw(path)?;
     let new = rewrite_tags(&raw, tags, path, create_fm)?;
     if new != raw {
-        write_raw(path, &new)?;
+        if std::fs::metadata(path).map(|m| m.permissions().readonly()).unwrap_or(false) {
+            die!("{path} is read-only; nothing was written");
+        }
+        if let Err(why) = try_write_raw(path, &new) {
+            die!("{path} could not be written ({why}); nothing was changed");
+        }
     }
     Ok(())
 }
 
-/// Give each page its tag list through `f`. Every new text is made before any file is written, so a
-/// page that cannot be rewritten refuses the whole change. Returns the pages' paths relative to the
-/// vault, in order.
-fn rewrite_pages(used: &[&Page], f: &dyn Fn(&[String]) -> Vec<String>) -> R<Vec<String>> {
-    let mut plan: Vec<(&Page, String, String)> = Vec::new();
-    for p in used {
-        let raw = read_raw(&p.path)?;
-        let new = rewrite_tags(&raw, &f(&p.tags), &p.path, false)?;
-        plan.push((p, raw, new));
-    }
-    for (p, raw, new) in &plan {
-        if raw != new {
-            write_raw(&p.path, new)?;
+/// `write_raw` for a caller that must turn a failure into its own refusal: the reason, not a crash.
+fn try_write_raw(path: &str, text: &str) -> Result<(), String> {
+    TextFile { text: text.to_string(), crlf: false, bom: false }
+        .save_atomic(path)
+        .map_err(|_| "it is read-only or open in another program".to_string())
+}
+
+/// A change to the tag lists of several pages. `plan` makes every new text first, and refuses a page
+/// that cannot be rewritten (a tags field it cannot own, a text that is not UTF-8, a read-only
+/// file) before any file is written. `commit` then writes the pages in order, each through a temp
+/// file and a rename; each page's original text is kept, so a write that fails puts back every
+/// page already written and ends in a refusal that names the failing page. `rollback` does the
+/// same for a caller whose next step (the registry) failed after the pages were written.
+struct Rewrite {
+    /// (path, vault-relative path, original text, new text)
+    pages: Vec<(String, String, String, String)>,
+    written: Vec<usize>,
+}
+
+impl Rewrite {
+    fn plan(used: &[&Page], f: &dyn Fn(&[String]) -> Vec<String>) -> R<Rewrite> {
+        let mut pages = Vec::new();
+        for p in used {
+            let raw = read_raw(&p.path)?;
+            let new = rewrite_tags(&raw, &f(&p.tags), &p.path, false)?;
+            if new != raw && std::fs::metadata(&p.path).map(|m| m.permissions().readonly()).unwrap_or(false) {
+                die!("{} is read-only; nothing was written", p.rel);
+            }
+            pages.push((p.path.clone(), p.rel.clone(), raw, new));
         }
+        Ok(Rewrite { pages, written: Vec::new() })
     }
-    Ok(plan.iter().map(|(p, _, _)| p.rel.clone()).collect())
+
+    fn rels(&self) -> Vec<String> {
+        self.pages.iter().map(|p| p.1.clone()).collect()
+    }
+
+    /// Put back every page written so far; the pages that could not be put back.
+    fn rollback(&mut self) -> Vec<String> {
+        let mut stuck = Vec::new();
+        for &i in self.written.iter().rev() {
+            let (path, rel, raw, _) = &self.pages[i];
+            if try_write_raw(path, raw).is_err() {
+                stuck.push(rel.clone());
+            }
+        }
+        self.written.clear();
+        stuck
+    }
+
+    fn commit(&mut self) -> R<()> {
+        for i in 0..self.pages.len() {
+            if self.pages[i].2 == self.pages[i].3 {
+                continue;
+            }
+            if let Err(why) = try_write_raw(&self.pages[i].0, &self.pages[i].3) {
+                let rel = self.pages[i].1.clone();
+                let stuck = self.rollback();
+                if stuck.is_empty() {
+                    die!("{rel} could not be written ({why}); every page already written was put back, and the registry did not change");
+                }
+                die!(
+                    "{rel} could not be written ({why}), and putting back failed for {}: they now hold the new tag while the registry does not; make them writable and rerun the same command",
+                    stuck.join(", ")
+                );
+            }
+            self.written.push(i);
+        }
+        Ok(())
+    }
 }
 
 /// Replace `from` with `to` in a tag list, keeping order and dropping the duplicate.
@@ -930,6 +1006,18 @@ pub fn cmd_drop(ctx: &Ctx, slug: &str) -> R<i32> {
 
 /// `merge <from> --into <to>`: `from` is a tag (it becomes merged), an alt label of `to`, or
 /// a label on pages that no tag owns; every page is rewritten and `to` gains the alt label.
+/// Save the registry after the pages were written; if that fails, put the pages back.
+fn save_or_put_back(ctx: &Ctx, reg: &Registry, rewrite: &mut Rewrite) -> R<()> {
+    if let Err(e) = reg.save(ctx) {
+        let stuck = rewrite.rollback();
+        if !stuck.is_empty() {
+            die!("{REGISTRY_REL} could not be saved, and putting back failed for {}: they hold the new tag while the registry does not; rerun the same command", stuck.join(", "));
+        }
+        return Err(e);
+    }
+    Ok(())
+}
+
 pub fn cmd_merge(ctx: &Ctx, from: &str, into: &str) -> R<i32> {
     let mut reg = Registry::require(ctx)?;
     let from = normalize(from);
@@ -969,7 +1057,9 @@ pub fn cmd_merge(ctx: &Ctx, from: &str, into: &str) -> R<i32> {
     } else {
         "label"
     };
-    let rewritten = rewrite_pages(&used, &|tags| swap_tag(tags, &from, &to.id))?;
+    let mut rewrite = Rewrite::plan(&used, &|tags| swap_tag(tags, &from, &to.id))?;
+    rewrite.commit()?;
+    let rewritten = rewrite.rels();
     let mut moved_alts: Vec<String> = vec![from.clone()];
     if let Some(f) = reg.get_mut(&from) {
         moved_alts.extend(f.alt.drain(..));
@@ -984,7 +1074,9 @@ pub fn cmd_merge(ctx: &Ctx, from: &str, into: &str) -> R<i32> {
             }
         }
     }
-    reg.save(ctx)?;
+    // Order: the pages, then the registry, the log and the view. A registry that cannot be saved
+    // puts the pages back; once it is saved the pages and the registry agree.
+    save_or_put_back(ctx, &reg, &mut rewrite)?;
     append_log(ctx, "merge", &format!("{from} -> {} · {} page(s) rewritten", to.id, rewritten.len()))?;
     render_view(ctx, &reg)?;
     out::line(&format!("af tag merge: {from} ({kind}) -> {} · {} page(s) rewritten", to.id, rewritten.len()));
@@ -1019,8 +1111,10 @@ pub fn cmd_rename(ctx: &Ctx, old: &str, new: &str) -> R<i32> {
         o.merged_into = Some(new.to_string());
     }
     let pages = scan_tagged(ctx)?;
-    let rewritten = rewrite_pages(&uses_of(&pages, old), &|tags| swap_tag(tags, old, new))?.len();
-    reg.save(ctx)?;
+    let mut rewrite = Rewrite::plan(&uses_of(&pages, old), &|tags| swap_tag(tags, old, new))?;
+    rewrite.commit()?;
+    let rewritten = rewrite.rels().len();
+    save_or_put_back(ctx, &reg, &mut rewrite)?;
     append_log(ctx, "rename", &format!("{old} -> {new} · {rewritten} page(s) rewritten"))?;
     render_view(ctx, &reg)?;
     out::line(&format!("af tag rename: {old} -> {new} · {} · {rewritten} page(s) rewritten; {old} stays an alt label", t.status));
@@ -1470,11 +1564,14 @@ pub fn cmd_lint(ctx: &Ctx, fix: bool, embed: bool) -> R<i32> {
             }
         }
     }
+    // What was read, by side: pages is places and people, as it always was.
+    let side = |s: &str| pages.iter().filter(|p| p.side == s).count();
+    let counted = format!("{} pages · {} knowledge pages · {} sources", side("places") + side("people"), side("knowledge"), side("sources"));
     if findings.is_empty() {
-        out::line(&format!("af tag lint: clean · {} tags · {} pages", reg.tags.len(), pages.len()));
+        out::line(&format!("af tag lint: clean · {} tags · {counted}", reg.tags.len()));
         return Ok(0);
     }
-    out::line(&format!("af tag lint: {} finding(s) · {} tags · {} pages", findings.len(), reg.tags.len(), pages.len()));
+    out::line(&format!("af tag lint: {} finding(s) · {} tags · {counted}", findings.len(), reg.tags.len()));
     for f in &findings {
         out::line(&format!("  {} · {}", f.class, f.text));
     }

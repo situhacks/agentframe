@@ -625,6 +625,9 @@ pub enum SessionCmd {
         /// the waiter's job file (internal)
         #[arg(long, hide = true)]
         waiter_job: Option<String>,
+        /// stop the chat's queued --when-idle compaction (it must not have begun changing the panel)
+        #[arg(long, conflicts_with_all = ["model", "instructions", "force", "dry_run", "when_idle", "wait_minutes", "then_file", "waiter_job"])]
+        cancel: bool,
     },
     /// Type /rename into a chat through the VS Code panel; the default name is the registry name
     Rename {
@@ -635,6 +638,20 @@ pub enum SessionCmd {
         /// minutes the panel driver waits for the operator and the chat (default 20)
         #[arg(long)]
         wait_minutes: Option<f64>,
+    },
+    /// Archive a chat in the VS Code panel's list (its row's Archive button); the registry row is not changed
+    Archive {
+        /// the chat's registry name; omit it with --session-id for a chat with no registry row
+        name: Option<String>,
+        /// the chat's session id, for a chat with no registry row
+        #[arg(long)]
+        session_id: Option<String>,
+        /// minutes the panel driver waits for the operator and the chat (default 20)
+        #[arg(long)]
+        wait_minutes: Option<f64>,
+        /// print what would run; change nothing
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Open a new chat in the VS Code panel with a file as its first message; prints its session id
     Start {
@@ -691,7 +708,7 @@ pub fn run(ctx: &Ctx, cmd: SessionCmd) -> R<i32> {
         SessionCmd::Reach { name, from, confirm, since, json } => {
             crate::reach::cmd_reach(ctx, &name, from.as_deref(), confirm.as_deref(), since.as_deref(), json)
         }
-        SessionCmd::Compact { name, model, instructions, force, dry_run, when_idle, wait_minutes, then_file, waiter_job } => {
+        SessionCmd::Compact { name, model, instructions, force, dry_run, when_idle, wait_minutes, then_file, waiter_job, cancel } => {
             crate::compact::cmd_compact(
                 ctx,
                 &crate::compact::Opts {
@@ -704,8 +721,12 @@ pub fn run(ctx: &Ctx, cmd: SessionCmd) -> R<i32> {
                     wait_minutes,
                     then_file: then_file.as_deref(),
                     waiter_job: waiter_job.as_deref(),
+                    cancel,
                 },
             )
+        }
+        SessionCmd::Archive { name, session_id, wait_minutes, dry_run } => {
+            crate::panel::cmd_archive(ctx, name.as_deref(), session_id.as_deref(), wait_minutes, dry_run)
         }
         SessionCmd::Rename { name, to, wait_minutes } => crate::panel::cmd_rename(ctx, &name, to.as_deref(), wait_minutes),
         SessionCmd::Start { name, brief_prompt_file, model, group, wait_minutes } => {

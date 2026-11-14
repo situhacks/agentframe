@@ -1080,3 +1080,314 @@ fn the_closed_route_waits_for_the_lock_and_runs_once_it_is_let_go() {
     let seen = fx.read("lock-seen.txt");
     assert!(seen.lines().any(|l| l.contains("headless-compact")), "claude -p ran under the lock once it was free: {seen}");
 }
+
+// ------------------------------------------------------------------ archive
+
+fn archives(fx: &Fx) -> Vec<Vec<String>> {
+    calls(fx).into_iter().map(|(a, _)| a).filter(|a| a[0] == "archive").collect()
+}
+
+#[test]
+fn archive_asks_the_driver_for_the_chats_session_and_leaves_the_registry_row_alone() {
+    let fx = chat();
+    let before = fx.read("system/sessions/registry.md");
+    let (code, out, err) = session(&fx, &[("STUB_PANEL_NOTE", "pointer put back")], &["archive", "system/x"]);
+    assert_eq!(code, 0, "{out}{err}");
+    let made = archives(&fx);
+    assert_eq!(made.len(), 1, "{made:?}");
+    assert_eq!(arg_after(&made[0], "-Session").as_deref(), Some("sid-1"));
+    assert_eq!(arg_after(&made[0], "-WaitMinutes"), None, "the driver's own default wait applies");
+    assert_eq!(arg_after(&made[0], "-CancelFile"), None, "only a waiter passes a cancel file");
+    assert!(out.contains("system/x: ok") && out.contains("Driver notes: pointer put back"), "{out}");
+    assert!(out.contains("registry row for system/x is unchanged") && out.contains("af session end system/x --reason other"), "{out}");
+    assert_eq!(fx.read("system/sessions/registry.md"), before, "the registry row is not changed");
+    assert_eq!(calls(&fx).len(), 1, "no send, no claude -p");
+}
+
+#[test]
+fn archive_passes_the_wait_and_dry_run_prints_the_call_and_runs_nothing() {
+    let fx = chat();
+    let (code, out, err) = session(&fx, &[], &["archive", "system/x", "--wait-minutes", "3"]);
+    assert_eq!(code, 0, "{out}{err}");
+    assert_eq!(arg_after(&archives(&fx)[0], "-WaitMinutes").as_deref(), Some("3"));
+    let fx = chat();
+    let (code, out, err) = session(&fx, &[], &["archive", "system/x", "--dry-run", "--wait-minutes", "3"]);
+    assert_eq!(code, 0, "{out}{err}");
+    assert!(out.contains("would archive session sid-1") && out.contains("archive -Session sid-1 -WaitMinutes 3"), "{out}");
+    assert!(out.contains("registry row is not changed") && out.contains("never takes the foreground"), "{out}");
+    assert!(calls(&fx).is_empty(), "a dry run starts no driver");
+}
+
+#[test]
+fn archive_by_session_id_works_for_a_chat_with_no_registry_row() {
+    let fx = chat();
+    let id = "0a1b2c3d-1111-2222-3333-444455556666";
+    let (code, out, err) = session(&fx, &[], &["archive", "--session-id", id]);
+    assert_eq!(code, 0, "{out}{err}");
+    assert_eq!(arg_after(&archives(&fx)[0], "-Session").as_deref(), Some(id));
+    assert!(out.starts_with(&format!("{id}: ok")), "{out}");
+    assert!(!out.contains("registry row"), "an unregistered chat has no row to name: {out}");
+    // An id the driver would not take is refused here.
+    let (code, _, _) = session(&fx, &[], &["archive", "--session-id", "sid-1"]);
+    assert_eq!(code, 1);
+    assert_eq!(archives(&fx).len(), 1);
+}
+
+#[test]
+fn archive_refuses_bad_arguments_before_the_driver_runs() {
+    let fx = chat();
+    let (code, _, err) = session(&fx, &[], &["archive"]);
+    assert_eq!(code, 1);
+    assert!(err.contains("needs a chat name, or --session-id"), "{err}");
+    let (code, _, err) = session(&fx, &[], &["archive", "system/nope"]);
+    assert_eq!(code, 1);
+    assert!(err.contains("no registry row for system/nope"), "{err}");
+    let (code, _, err) = session(&fx, &[], &["archive", "--session-id", "not an id"]);
+    assert_eq!(code, 1);
+    assert!(err.contains("8 to 64 hex digits and dashes") && err.contains("nothing was archived"), "{err}");
+    let (code, _, err) = session(&fx, &[], &["archive", "system/x", "--session-id", "0a1b2c3d-1111-2222-3333-444455556666"]);
+    assert_eq!(code, 1);
+    assert!(err.contains("not the session id of that registry row"), "{err}");
+    assert!(calls(&fx).is_empty());
+}
+
+#[test]
+fn archive_never_archives_the_chat_that_runs_it() {
+    let fx = chat();
+    let (code, _, err) = session(&fx, &[("CLAUDE_CODE_SESSION_ID", "sid-1")], &["archive", "system/x"]);
+    assert_eq!(code, 1);
+    assert!(err.contains("does not archive the calling chat") && err.contains("nothing was archived"), "{err}");
+    let own = "0a1b2c3d-1111-2222-3333-444455556666";
+    let (code, _, err) = session(&fx, &[("CLAUDE_CODE_SESSION_ID", own)], &["archive", "--session-id", own]);
+    assert_eq!(code, 1);
+    assert!(err.contains("does not archive the calling chat"), "{err}");
+    let (code, _, err) = session(&fx, &[("CLAUDE_CODE_SESSION_ID", own)], &["archive", "system/x", "--dry-run"]);
+    assert_eq!(code, 0, "another chat may archive it: {err}");
+    assert!(calls(&fx).is_empty());
+}
+
+#[test]
+fn archive_driver_exit_codes_become_refusals_that_say_nothing_was_archived() {
+    let cases = [
+        ("3", "exit 3", "nothing was archived", "chat was busy or running"),
+        ("4", "exit 4", "nothing was archived", "draft typed in its input box"),
+        ("5", "exit 5", "nothing was archived", "safety check failed"),
+        ("7", "cancelled (exit 7)", "nothing was changed", "cancelled"),
+        ("2", "could not find", "no chat row", "no chat row for session sid-1"),
+        ("1", "failed (exit 1)", "the stub driver refused", "the stub driver refused"),
+        ("6", "MODEL KEY MISMATCH", "", "MODEL"),
+    ];
+    for (code, label, extra, _) in cases {
+        let fx = chat();
+        let stderr = if code == "2" { "no chat row for session sid-1 in the panel" } else { "the stub driver refused" };
+        let (exit, out, err) = session(&fx, &[("STUB_PANEL_EXIT", code), ("STUB_PANEL_STDERR", stderr)], &["archive", "system/x"]);
+        assert_eq!(exit, 1, "{code}: {out}{err}");
+        assert!(err.contains("system/x: ") && err.contains(label) && err.contains(extra), "{code}: {err}");
+        assert!(!err.contains("nothing was sent"), "{code}: archive never says sent: {err}");
+        assert_eq!(archives(&fx).len(), 1);
+        assert!(!out.contains("registry row"), "{code}: nothing succeeded: {out}");
+    }
+}
+
+// ------------------------------------------------------------------ cancel a queued compaction
+
+const JOB: &str = "system/logs/claude-panel/waiter-sid-1.json";
+const MARKER: &str = "system/logs/claude-panel/waiter-sid-1.cancel";
+const SENDING: &str = "system/logs/claude-panel/waiter-sid-1.sending";
+
+fn leftovers(fx: &Fx) -> Vec<String> {
+    std::fs::read_dir(fx.path("system/logs/claude-panel")).map(|d| d.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect()).unwrap_or_default()
+}
+
+fn wait_until(what: &str, mut ok: impl FnMut() -> bool) {
+    let until = Instant::now() + Duration::from_secs(40);
+    while !ok() {
+        assert!(Instant::now() < until, "timed out waiting for {what}");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+#[test]
+fn a_queued_compaction_is_cancelled_while_its_driver_only_waits_and_nothing_runs_after() {
+    let fx = chat();
+    let then = fx.write("then.txt", "send this next");
+    let env = [("STUB_PANEL_WAIT_FOR_CANCEL", "60"), ("AF_WAITER_POLL_MS", "100")];
+    let (code, out, err) = session(&fx, &env, &["compact", "system/x", "--when-idle", "--then-file", &then]);
+    assert_eq!(code, 0, "{out}{err}");
+    assert!(out.contains("af session compact --cancel system/x"), "the verb says how to cancel: {out}");
+    wait_until("the driver to start waiting", || !sends(&fx).is_empty());
+    assert!(fx.exists(JOB), "the waiter holds its job while the driver waits");
+    let sent_args = sends(&fx)[0].0.clone();
+    let cancel_path = arg_after(&sent_args, "-CancelFile").expect("the waiter hands the driver its cancel file");
+    assert!(cancel_path.replace('\\', "/").ends_with(MARKER), "{cancel_path}");
+
+    let (code, out, err) = session(&fx, &env, &["compact", "--cancel", "system/x"]);
+    assert_eq!(code, 0, "{out}{err}");
+    assert!(out.contains("system/x: cancelled") && out.contains("no --then-file step ran"), "{out}");
+    assert!(!fx.exists(JOB) && !fx.exists(MARKER) && !fx.exists(SENDING), "job file and marker are gone: {:?}", leftovers(&fx));
+    assert!(leftovers(&fx).is_empty(), "and so is the text copy: {:?}", leftovers(&fx));
+    let log = fx.read("system/logs/panel-waiters.log");
+    assert!(log.contains("system/x compact cancelled:") && !log.contains("compact failed"), "{log}");
+    assert_eq!(calls(&fx).len(), 1, "the then-step never started a driver run");
+    assert_eq!(boundaries(&fx), 0, "nothing was sent");
+    assert!(!fx.exists("system/logs/context-nudge/sid-1/waiter-result.txt"), "a cancelled job is not a failure for the chat");
+
+    // A later --when-idle queues again and runs.
+    let (code, out, err) = session(&fx, &[], &["compact", "system/x", "--when-idle"]);
+    assert_eq!(code, 0, "{out}{err}");
+    assert!(out.contains("detached waiter") && !out.contains("already pending"), "{out}");
+    let log = wait_for(&fx, "system/logs/panel-waiters.log", "compact ok");
+    assert!(log.contains("system/x compact ok:"), "{log}");
+    assert_eq!(boundaries(&fx), 1);
+}
+
+#[test]
+fn cancel_with_no_job_says_so() {
+    let fx = chat();
+    let (code, out, err) = session(&fx, &[], &["compact", "--cancel", "system/x"]);
+    assert_eq!(code, 0, "{out}{err}");
+    assert!(out.contains("no --when-idle compaction is queued for this chat") && out.contains("nothing to cancel"), "{out}");
+    assert!(!fx.exists(MARKER), "no marker is left for a job that does not exist");
+    // A job whose waiter is gone is no job.
+    fx.write(JOB, &json!({"name": "system/x", "session_id": "sid-1", "pid": dead_pid(), "queued_ms": 1}).to_string());
+    let (code, out, _) = session(&fx, &[], &["compact", "--cancel", "system/x"]);
+    assert_eq!(code, 0);
+    assert!(out.contains("no --when-idle compaction is queued") && out.contains("waiter it names is gone"), "{out}");
+    assert!(!fx.exists(MARKER));
+    let (code, _, err) = session(&fx, &[], &["compact", "--cancel", "system/nope"]);
+    assert_eq!(code, 1);
+    assert!(err.contains("no registry row for system/nope"), "{err}");
+}
+
+#[test]
+fn a_waiter_that_waits_for_the_chat_is_cancelled_before_it_starts_any_driver() {
+    let fx = chat();
+    let me = std::process::id();
+    fx.write("cfg/sessions/1.json", &json!({"pid": me, "sessionId": "sid-1", "entrypoint": "claude-vscode", "status": "busy"}).to_string());
+    let env = [("AF_WAITER_POLL_MS", "100")];
+    let (code, out, err) = session(&fx, &env, &["compact", "system/x", "--when-idle"]);
+    assert_eq!(code, 0, "{out}{err}");
+    wait_until("the waiter to write its pid", || fx.exists(JOB) && fx.read(JOB).contains("\"pid\":") && !fx.read(JOB).contains("\"pid\":null"));
+    let (code, out, err) = session(&fx, &env, &["compact", "--cancel", "system/x"]);
+    assert_eq!(code, 0, "{out}{err}");
+    assert!(out.contains("cancelled"), "{out}");
+    assert!(calls(&fx).is_empty(), "no driver run ever started");
+    assert!(leftovers(&fx).is_empty(), "{:?}", leftovers(&fx));
+    assert!(fx.read("system/logs/panel-waiters.log").contains("compact cancelled:"));
+}
+
+#[test]
+fn a_cancel_that_comes_after_the_driver_began_changing_the_panel_is_refused_honestly() {
+    let fx = chat();
+    let env = [("STUB_PANEL_WAIT_FOR_CANCEL", "4"), ("STUB_PANEL_SENDING", "1"), ("AF_CANCEL_WAIT_SECS", "1.5")];
+    let (code, out, err) = session(&fx, &env, &["compact", "system/x", "--when-idle"]);
+    assert_eq!(code, 0, "{out}{err}");
+    wait_until("the stub to mark that it began", || fx.exists(SENDING));
+    let (code, out, err) = session(&fx, &env, &["compact", "--cancel", "system/x"]);
+    assert_eq!(code, 1, "{out}{err}");
+    assert!(err.contains("already being sent") && err.contains("not cancelled") && err.contains("(the waiter (pid"), "{err}");
+    assert!(!fx.exists(MARKER), "the refused cancel takes its marker back");
+    // The compaction itself finishes and is logged as ok.
+    let log = wait_for(&fx, "system/logs/panel-waiters.log", "compact ok");
+    assert!(log.contains("compact ok") && !log.contains("cancelled"), "{log}");
+    assert_eq!(boundaries(&fx), 1);
+    wait_until("the job file to go", || !fx.exists(JOB));
+    assert!(!fx.exists(SENDING));
+}
+
+#[test]
+fn a_waiter_and_driver_that_do_not_stop_in_time_are_named_and_not_killed() {
+    let fx = chat();
+    let env = [("STUB_PANEL_WAIT_FOR_CANCEL", "4"), ("STUB_PANEL_IGNORE_CANCEL", "1"), ("AF_CANCEL_WAIT_SECS", "1")];
+    let (code, out, err) = session(&fx, &env, &["compact", "system/x", "--when-idle"]);
+    assert_eq!(code, 0, "{out}{err}");
+    wait_until("the driver to start", || !sends(&fx).is_empty());
+    let (code, out, err) = session(&fx, &env, &["compact", "--cancel", "system/x"]);
+    assert_eq!(code, 1, "{out}{err}");
+    assert!(err.contains("did not stop within 1 seconds") && err.contains("the waiter (pid ") && err.contains("Nothing was killed"), "{err}");
+    assert!(fx.exists(MARKER), "the marker stays, so they stop when they look");
+    // Nothing was killed: the waiter finishes the send by itself.
+    let log = wait_for(&fx, "system/logs/panel-waiters.log", "compact ok");
+    assert!(log.contains("compact ok"), "{log}");
+}
+
+#[test]
+fn a_waiter_that_ended_before_it_saw_the_cancel_is_reported_as_not_cancelled() {
+    let fx = chat();
+    let me = std::process::id();
+    let start = afcore::panel::pid_start(me).unwrap();
+    fx.write(JOB, &json!({"name": "system/x", "session_id": "sid-1", "pid": me, "pid_start": start, "queued": "2026-11-13T10:00:00+00:00", "queued_ms": now_ms(), "wait_minutes": 60}).to_string());
+    let job = fx.path(JOB);
+    let remover = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(400));
+        std::fs::remove_file(job).unwrap();
+    });
+    let (code, _, err) = session(&fx, &[], &["compact", "--cancel", "system/x"]);
+    remover.join().unwrap();
+    assert_eq!(code, 1, "{err}");
+    assert!(err.contains("had already ended before it looked at the cancel") && err.contains("nothing was cancelled"), "{err}");
+    assert!(!fx.exists(MARKER), "the stale marker is removed");
+}
+
+#[test]
+fn a_stale_marker_is_removed_when_a_new_job_is_queued_and_does_not_stop_it() {
+    let fx = chat();
+    fx.write(MARKER, "{\"requested\":\"2026-11-13T09:00:00+00:00\"}");
+    fx.write(SENDING, "begun");
+    let (code, out, err) = session(&fx, &[("STUB_PANEL_WAIT_FOR_CANCEL", "1")], &["compact", "system/x", "--when-idle"]);
+    assert_eq!(code, 0, "{out}{err}");
+    let log = wait_for(&fx, "system/logs/panel-waiters.log", "compact");
+    assert!(log.contains("compact ok") && !log.contains("cancelled"), "{log}");
+    assert_eq!(boundaries(&fx), 1);
+    assert!(!fx.exists(MARKER) && !fx.exists(SENDING), "{:?}", leftovers(&fx));
+}
+
+#[test]
+fn cancel_cannot_be_combined_with_the_options_of_a_compaction() {
+    let fx = chat();
+    for extra in [vec!["--when-idle"], vec!["--force"], vec!["--dry-run"], vec!["--instructions", "x"]] {
+        let mut args = vec!["compact", "--cancel", "system/x"];
+        args.extend(extra);
+        let (code, _, err) = session(&fx, &[], &args);
+        assert_eq!(code, 2, "{err}");
+        assert!(err.contains("cannot be used with"), "{err}");
+    }
+    assert!(calls(&fx).is_empty());
+}
+
+#[test]
+fn the_cancel_command_is_printed_by_a_when_idle_dry_run_too() {
+    let fx = chat();
+    let (code, out, _) = session(&fx, &[], &["compact", "system/x", "--when-idle", "--dry-run"]);
+    assert_eq!(code, 0);
+    assert!(out.contains("af session compact --cancel system/x"), "{out}");
+}
+
+#[test]
+fn a_driver_that_exits_7_is_a_cancelled_run_not_a_failure_in_the_message() {
+    let fx = chat();
+    let (code, _, err) = session(&fx, &[("STUB_PANEL_EXIT", "7"), ("STUB_PANEL_STDERR", "cancelled; nothing was changed")], &["compact", "system/x"]);
+    assert_eq!(code, 1);
+    assert!(err.contains("cancelled (exit 7)") && err.contains("nothing was changed"), "{err}");
+    assert!(!err.contains("failed (exit 7)"), "{err}");
+}
+
+#[test]
+fn a_waiter_on_the_closed_route_stops_for_the_cancel_marker_while_it_waits_for_the_lock() {
+    let fx = chat();
+    let held = hold_lock(&fx, "send", "sid-other");
+    let job = fx.write(JOB, &json!({"name": "system/x", "session_id": "sid-1", "instructions": null, "force": false, "then_file": null, "wait_minutes": 60, "queued_ms": now_ms(), "transcript_len": 0}).to_string());
+    let mut c = fx.af();
+    stub_env(&fx, &mut c);
+    c.env("STUB_ROSTER", "[]").env("AF_WAITER_POLL_MS", "100");
+    let mut child = std::process::Command::new(c.get_program()).args(["session", "compact", "system/x", "--waiter-job", &job]).envs(c.get_envs().filter_map(|(k, v)| v.map(|v| (k.to_owned(), v.to_owned())))).current_dir(fx.path(".")).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn().unwrap();
+    std::thread::sleep(Duration::from_millis(1500));
+    assert!(child.try_wait().unwrap().is_none(), "it waits for the lock");
+    fx.write(MARKER, "{}");
+    wait_until("the waiter to stop", || child.try_wait().unwrap().is_some());
+    drop(held);
+    let log = fx.read("system/logs/panel-waiters.log");
+    assert!(log.contains("compact cancelled:") && log.contains("panel lock"), "{log}");
+    assert!(!fx.exists(JOB) && !fx.exists(MARKER));
+    assert!(!fx.exists("lock-seen.txt") || !fx.read("lock-seen.txt").contains("headless-compact"), "claude -p never ran");
+}

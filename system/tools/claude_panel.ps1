@@ -1,9 +1,17 @@
 # The Claude panel driver, version 2. It manages chats in the Claude Code panel of the one VS Code window
 # whose title holds the vault folder name, and nothing else. It sends no key events and no mouse events:
 # it reads and acts through Windows UI Automation patterns (read, Invoke, ExpandCollapse, SelectionItem,
-# Window) and through the AgentFrame bridge extension (system/vscode-bridge), which opens, reveals and
-# closes chat tabs and prefills a chat's input from a file inbox. Text always arrives in a UTF-8 file,
-# never as an argument, and is never logged.
+# ScrollItem) and through the AgentFrame bridge extension (system/vscode-bridge), which opens, reveals and
+# closes chat tabs and prefills a chat's input from a file inbox. The one exception is 'archive': the
+# row's Archive button exists only while the pointer rests on the row, so 'archive' moves the pointer onto
+# the row and back; nothing is clicked or typed. Text always arrives in a UTF-8 file, never as an argument,
+# and is never logged.
+# The driver never takes the foreground and never activates VS Code. A minimized VS Code window is
+# restored behind the window he has in front (to the bottom of the stack, shown without activation, then
+# placed directly behind his foreground window), which does not reset the system's last-input time, and is
+# minimized again at the end without activation. 'archive' alone changes what he sees: when another window
+# covers the row it raises VS Code above it without keyboard focus (and puts it back), and it waits while a
+# full-screen window is in front (the shell's notification state 2, 3 or 4), then exits 3 at the deadline.
 #
 #   list                                       JSON array: session_id, name, status, active
 #   send  -Session <id> -TextFile <path>       send the file's text to that chat (a prompt or a slash command)
@@ -11,6 +19,8 @@
 #                                              start a chat on that model with the file as its first message;
 #                                              prints its session id on the last line
 #   model -Session <id> [-Model <name>]        switch an idle chat's model; without -Model, list the options
+#   archive -Session <id>                      archive an idle chat: close its tab if open, rest the pointer on its
+#                                              row, invoke the row's 'Archive session' button, confirm the row left
 #   close-untitled                             close empty untitled 'Claude Code' tabs (no transcript, no row, no draft)
 #   selftest                                   the whole path on a Haiku 5.5 chat it creates
 #
@@ -53,8 +63,19 @@
 # Exit codes: 0 done and confirmed; 1 failed or could not confirm; 2 bridge, window, chat or control not
 # found; 3 operator active, chat busy or another run holding the lock; 4 the input holds text that is
 # not the driver's; 5 a safety check failed; 6 the model key or settings file does not match after a
-# pick. 3, 4 and 5 mean nothing was sent.
+# pick; 7 cancelled through -CancelFile before anything was changed. 3, 4 and 5 mean nothing was sent
+# (nothing was archived, for 'archive').
 # Every run appends one line to system/logs/claude-panel.log: time, action, session id, exit code, seconds.
+# While a run waits it also appends one line per change of reason: time, action, session id, 'waiting: <reason>'
+# (never a chat title or text), so a long run can be explained afterwards.
+# Cancel: with -CancelFile <path> a run that is only waiting and has changed nothing yet (the operator and the
+# chat guards, the wait for an idle row, the lock wait) stops when that file exists: exit 7, 'cancelled;
+# nothing was changed'. Once it has closed a tab, opened one or prefilled text it never cancels. It writes
+# <path with the extension .sending> when it first changes the panel, so af can tell the two apart.
+# Archive (exit codes): 0 archived and the row left the list, or no row for the chat (nothing changed);
+# 3 operator active or chat running or busy; 4 a draft in the open tab; 5 a safety check failed (a record from
+# outside the panel, the row covered by another window, no Archive button, the operator came back); 1 the
+# row did not leave the list. The pointer is put back only if it is still where the driver put it.
 
 param(
     [Parameter(Position = 0)][string]$Action = '',
@@ -63,7 +84,8 @@ param(
     [string]$Model = '',
     [string]$GroupId = '',
     [int]$IdleSeconds = 120,
-    [double]$WaitMinutes = 20
+    [double]$WaitMinutes = 20,
+    [string]$CancelFile = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -104,6 +126,55 @@ public static class PanelNative {
         return unchecked((uint)Environment.TickCount - l.dwTime);
     }
     public static string Title(IntPtr h) { StringBuilder sb = new StringBuilder(512); GetWindowTextW(h, sb, 512); return sb.ToString(); }
+
+    // Only for 'archive': the pointer is moved onto a row and back, and VS Code is raised above a covering
+    // window without taking the keyboard focus (and put back). Nothing here presses, types or activates.
+    [StructLayout(LayoutKind.Sequential)]
+    struct PT { public int X; public int Y; }
+    [DllImport("user32.dll")] static extern bool GetCursorPos(out PT p);
+    [DllImport("user32.dll")] static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")] static extern IntPtr WindowFromPoint(PT p);
+    [DllImport("user32.dll")] static extern IntPtr GetAncestor(IntPtr h, uint flags);
+    [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
+    const uint SWP_NOSIZE = 0x1, SWP_NOMOVE = 0x2, SWP_NOACTIVATE = 0x10;
+    // The pointer's position as { x, y }, or null when it cannot be read.
+    public static int[] PointerPos() {
+        PT p = new PT();
+        if (!GetCursorPos(out p)) return null;
+        return new int[] { p.X, p.Y };
+    }
+    public static bool MovePointer(int x, int y) { return SetCursorPos(x, y); }
+    // The top-level window under a screen point (0 when there is none).
+    public static IntPtr RootAt(int x, int y) {
+        PT p = new PT(); p.X = x; p.Y = y;
+        IntPtr h = WindowFromPoint(p);
+        if (h == IntPtr.Zero) return IntPtr.Zero;
+        return GetAncestor(h, 2);
+    }
+    // Always-on-top, no move, no resize, no activation: the window comes forward but gets no keyboard focus.
+    public static bool RaiseNoActivate(IntPtr h) { return SetWindowPos(h, new IntPtr(-1), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE); }
+    public static bool ClearTopmost(IntPtr h) { return SetWindowPos(h, new IntPtr(-2), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE); }
+    // The window directly behind another one.
+    public static bool PlaceBehind(IntPtr h, IntPtr front) { return SetWindowPos(h, front, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE); }
+
+    // Restoring and minimizing the VS Code window without the foreground or the idle time changing (measured:
+    // the Window pattern does both). The window goes to the bottom of the stack while still minimized, is shown
+    // without activation, and is put directly behind the window that has the foreground (PlaceBehind).
+    [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int cmd);
+    [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+    [DllImport("shell32.dll")] static extern int SHQueryUserNotificationState(out int state);
+    // Only reads which window has the foreground, so the driver can prove it did not change.
+    public static IntPtr Foreground() { return GetForegroundWindow(); }
+    public static bool PlaceBottom(IntPtr h) { return SetWindowPos(h, new IntPtr(1), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE); }
+    public static bool ShowNoActivate(IntPtr h) { return ShowWindow(h, 4); }
+    public static bool MinimizeNoActivate(IntPtr h) { return ShowWindow(h, 7); }
+    // The shell's view of the screen: 2 a full-screen window is in front, 3 a Direct3D full-screen
+    // application, 4 presentation mode (0 when it cannot be read). Idle time alone cannot see a video.
+    public static int NotificationState() {
+        int s = 0;
+        if (SHQueryUserNotificationState(out s) != 0) return 0;
+        return s;
+    }
 }
 '@
 
@@ -149,12 +220,58 @@ $script:TxCache = @{}
 $script:Lock = $null
 $script:St = $null
 $script:Clock = [Diagnostics.Stopwatch]::StartNew()
+$script:RunAction = ''
+$script:RunId = ''
+$script:LastWait = ''
 
 function Stop-Panel([int]$Code, [string]$Reason) {
     throw (New-Object PanelExit($Code, $Reason))
 }
 
 function Add-Note([string]$Note) { $script:Notes += $Note }
+
+# ---------------------------------------------------------------- cancel, and why a run is waiting
+
+# -CancelFile names a file that exists, and the run has changed nothing yet (never while it is putting
+# things back): the run stops. A run that has begun changing the panel finishes or fails as it would have.
+function Test-CancelRequested {
+    if (-not $CancelFile -or $script:Restoring) { return $false }
+    if ($null -ne $script:St -and (Test-Touched)) { return $false }
+    [bool](Test-Path -LiteralPath $CancelFile)
+}
+
+# Called in every loop that only waits and has changed nothing yet.
+function Stop-IfCancelled {
+    if (Test-CancelRequested) { Stop-Panel 7 'cancelled; nothing was changed' }
+}
+
+# Called when the run first changes the panel: <CancelFile with the extension .sending> tells af that a
+# cancel can no longer stop the run.
+function Set-Begun {
+    if (-not $CancelFile) { return }
+    try { [System.IO.File]::WriteAllText([System.IO.Path]::ChangeExtension($CancelFile, 'sending'), (Get-Date).ToString('yyyy-MM-ddTHH:mm:ss'), $Utf8) }
+    catch { Add-Note 'could not write the marker that says the run has begun changing the panel' }
+}
+
+# The one place that appends to claude-panel.log.
+function Add-LogLine([string]$Line) {
+    try {
+        if (-not (Test-Path -LiteralPath $LogDir)) { New-Item -ItemType Directory -Force -Path $LogDir | Out-Null }
+        [System.IO.File]::AppendAllText($LogFile, $Line + "`r`n", $Utf8)
+    } catch { }
+}
+
+# Why the run is waiting, as its own log line, once per change of reason (never a title or text).
+function Write-Waiting([string]$Reason) {
+    if ($Reason -eq $script:LastWait) { return }
+    $script:LastWait = $Reason
+    $id = '-'
+    if ($script:RunId -ne '') { $id = $script:RunId }
+    Add-LogLine ('{0} {1} {2} waiting: {3}' -f (Get-Date).ToString('yyyy-MM-ddTHH:mm:ss'), $script:RunAction, $id, ($Reason -replace '[\r\n]+', ' '))
+}
+
+# A wait ended: the next wait, even for the same reason, is logged again.
+function Clear-Waiting { $script:LastWait = '' }
 
 # The PanelExit inside an error record, or $null for any other error.
 function Get-PanelExit($Err) {
@@ -323,7 +440,7 @@ function Read-ChatInput {
 
 # Runs the part of an action that changes the chat. On a failure the chat is put back where that is safe
 # (never after Send was pressed), and the reason gains what changed and the tab's final state.
-function Invoke-Guarded([scriptblock]$Body) {
+function Invoke-Guarded([scriptblock]$Body, [string]$NothingText = 'Nothing was sent.', [string]$DoneText = 'Send was pressed, so the text may have reached the chat.') {
     try {
         return (& $Body)
     } catch {
@@ -335,9 +452,10 @@ function Invoke-Guarded([scriptblock]$Body) {
         if (-not $script:St.Sent) { Restore-Chat }
         if ($script:St.Sent -and $code -ge 3 -and $code -le 5) { $code = 1 }
         $state = Get-StateText
-        if ($code -ge 3 -and $code -le 5) { $reason = $reason.TrimEnd('.') + '. Nothing was sent. ' + $state }
-        elseif ($script:St.Sent) { $reason = $reason.TrimEnd('.') + '. Send was pressed, so the text may have reached the chat. ' + $state }
-        else { $reason = $reason.TrimEnd('.') + '. Nothing was sent. ' + $state }
+        if ($code -eq 7) { $reason = $reason.TrimEnd('.') + '. ' + $state }
+        elseif ($code -ge 3 -and $code -le 5) { $reason = $reason.TrimEnd('.') + '. ' + $NothingText + ' ' + $state }
+        elseif ($script:St.Sent) { $reason = $reason.TrimEnd('.') + '. ' + $DoneText + ' ' + $state }
+        else { $reason = $reason.TrimEnd('.') + '. ' + $NothingText + ' ' + $state }
         Stop-Panel $code $reason
     }
 }
@@ -406,7 +524,7 @@ function Get-ClaudeTabs { @(Get-BridgeTabs | Where-Object { $_.claude }) }
 # is read again to learn what happened.
 function Close-TabByLabel([string]$Label, [int]$Count) {
     $s = $script:St
-    if ($null -ne $s -and -not $script:Restoring -and -not $s.Opened) { $s.CloseAsked = $true }
+    if ($null -ne $s -and -not $script:Restoring -and -not $s.Opened) { $s.CloseAsked = $true; Set-Begun }
     $r = Invoke-Bridge 'close-tab' @{ label = $Label; all = $false; requireActive = $true } 25
     if ($null -eq $r) {
         $now = $null
@@ -465,9 +583,12 @@ function Enter-Lock([string]$ActionName, [string]$Id) {
             $fs.Write($bytes, 0, $bytes.Length)
             $fs.Flush()
             $script:Lock = $fs
+            Clear-Waiting
             return
         }
         if ((Get-Date) -ge $script:WaitUntil) { Stop-Panel 3 ('another driver run held the panel for the whole wait (' + (Read-LockHolder) + ')') }
+        Stop-IfCancelled
+        Write-Waiting ('another driver run holds the panel (' + (Read-LockHolder) + ')')
         Start-Sleep -Seconds 2
     }
 }
@@ -484,8 +605,10 @@ function Exit-Lock {
 
 function Wait-Idle([string]$What) {
     while ($true) {
-        if ([PanelNative]::IdleMs() -ge ($IdleSeconds * 1000)) { return }
+        Stop-IfCancelled
+        if ([PanelNative]::IdleMs() -ge ($IdleSeconds * 1000)) { Clear-Waiting; return }
         if ((Get-Date) -ge (Get-WaitUntil)) { Stop-Panel 3 "the operator kept using the computer until the deadline ($What)" }
+        Write-Waiting "the operator is using the computer (needed to $What)"
         Start-Sleep -Seconds 2
     }
 }
@@ -553,6 +676,7 @@ function Get-RecordAgeSeconds($Rec) {
 # Guards 1 and 2 before the screen is touched: operator idle and the chat's records idle, up to -WaitMinutes.
 function Wait-Guards([string]$Id) {
     while ($true) {
+        Stop-IfCancelled
         $why = ''
         if ([PanelNative]::IdleMs() -lt ($IdleSeconds * 1000)) { $why = 'the operator is using the computer' }
         elseif ($Id -ne '') {
@@ -560,8 +684,9 @@ function Wait-Guards([string]$Id) {
             if ($rs.Terminal -ne '') { Stop-Panel 5 $rs.Terminal }
             $why = $rs.Busy
         }
-        if ($why -eq '') { return }
+        if ($why -eq '') { Clear-Waiting; return }
         if ((Get-Date) -ge $script:WaitUntil) { Stop-Panel 3 "gave up after $WaitMinutes minutes: $why" }
+        Write-Waiting $why
         Start-Sleep -Seconds 2
     }
 }
@@ -591,11 +716,6 @@ function Find-Window {
     $found[0]
 }
 
-function Set-WindowState([string]$State) {
-    $wp = $script:Win.GetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern)
-    $wp.SetWindowVisualState([System.Windows.Automation.WindowVisualState]::$State)
-}
-
 function Find-Named($win, [string]$Name, $Type) {
     $c1 = New-Object System.Windows.Automation.PropertyCondition($AE::NameProperty, $Name)
     $c2 = New-Object System.Windows.Automation.PropertyCondition($AE::ControlTypeProperty, $Type)
@@ -617,18 +737,29 @@ function Open-Window {
     $script:Hwnd = [IntPtr][int64]$script:Win.Current.NativeWindowHandle
 }
 
+# A minimized window's tree is stale, so it is restored, and the run remembers to minimize it again at
+# the end. It never takes the foreground and never resets the idle time (measured): the window goes to
+# the bottom of the stack while still minimized, is shown without activation, and is then put directly
+# behind the window that has the foreground, so VS Code does not appear over his work. Used by
+# Ensure-Screen and by the close retry (the window may be minimized again after Ensure-Screen ran).
+function Restore-Minimized {
+    Wait-Idle 'restore the minimized VS Code window'
+    $front = [PanelNative]::Foreground()
+    [void][PanelNative]::PlaceBottom($script:Hwnd)
+    [void][PanelNative]::ShowNoActivate($script:Hwnd)
+    if ($front -ne [IntPtr]::Zero -and $front -ne $script:Hwnd) { [void][PanelNative]::PlaceBehind($script:Hwnd, $front) }
+    $script:WasMinimized = $true
+    Start-Sleep -Milliseconds 2500
+    if ([PanelNative]::Foreground() -ne $front) { Add-Note 'the foreground window changed while the minimized VS Code window was restored' }
+    Wait-Tree
+}
+
 # Before the first read or step on the screen: the window is made visible (a minimized window's tree is
 # stale), and his active chat is noted so it can be restored. Runs once per run.
 function Ensure-Screen {
     if ($script:ScreenBegun) { return }
     Open-Window
-    if ([PanelNative]::IsIconic($script:Hwnd)) {
-        Wait-Idle 'restore the minimized VS Code window'
-        Set-WindowState 'Normal'
-        $script:WasMinimized = $true
-        Start-Sleep -Milliseconds 2500
-    }
-    Wait-Tree
+    if ([PanelNative]::IsIconic($script:Hwnd)) { Restore-Minimized } else { Wait-Tree }
     $script:ScreenBegun = $true
     $script:PrevActive = @(Get-Chats $script:Win | Where-Object { $_.Active } | ForEach-Object { $_.Id })
 }
@@ -663,7 +794,7 @@ function Restore-Screen {
         Add-Note ('restore error: ' + $_.Exception.Message)
     } finally {
         if ($script:WasMinimized) {
-            try { Set-WindowState 'Minimized' } catch { Add-Note 'could not minimize the window again' }
+            try { [void][PanelNative]::MinimizeNoActivate($script:Hwnd) } catch { Add-Note 'could not minimize the window again' }
             $script:WasMinimized = $false
         }
     }
@@ -927,24 +1058,24 @@ function Get-UntitledBlock {
 # the chat's one process is the one the driver's open started (a tab he reopened has another). Returns
 # Code 0, the label to close by and how many tabs carry it, or a Code, a Why and whether waiting may help.
 function Test-SafeToClose([string]$RowId, [string]$RecId, [string]$Mode, [string]$ExpectLabel, [bool]$FirstOfMany = $false, [int]$OwnPid = 0) {
-    if ([PanelNative]::IsIconic($script:Hwnd)) { return [pscustomobject]@{ Code = 3; Why = 'the VS Code window is minimized'; Retry = $true; Label = '' } }
+    if ([PanelNative]::IsIconic($script:Hwnd)) { return [pscustomobject]@{ Code = 3; Why = 'the VS Code window is minimized'; Retry = $true; Label = ''; Minimized = $true; Reveal = $false } }
     $claude = @(Get-ClaudeTabs)
     $label = $ExpectLabel
     if ($label -eq '') {
         $act = @($claude | Where-Object { $_.isActive })
-        if ($act.Count -ne 1) { return [pscustomobject]@{ Code = 5; Why = "$($act.Count) Claude tabs are active, so the chat's tab cannot be told"; Retry = $true; Label = '' } }
+        if ($act.Count -ne 1) { return [pscustomobject]@{ Code = 5; Why = "$($act.Count) Claude tabs are active, so the chat's tab cannot be told"; Retry = $true; Label = ''; Reveal = $true } }
         $label = [string]$act[0].label
     }
     $same = @($claude | Where-Object { $_.label -ceq $label })
     if ($same.Count -lt 1) { return [pscustomobject]@{ Code = 5; Why = "no Claude tab carries the chat's label"; Retry = $true; Label = '' } }
     if ($same.Count -gt 1 -and -not $FirstOfMany) { return [pscustomobject]@{ Code = 5; Why = "$($same.Count) Claude tabs carry the chat's label (labels are cut at 25 characters)"; Retry = $false; Label = '' } }
-    if (-not $same[0].isActive) { return [pscustomobject]@{ Code = 5; Why = "the chat's tab is not the active tab"; Retry = $true; Label = '' } }
+    if (-not $same[0].isActive) { return [pscustomobject]@{ Code = 5; Why = "the chat's tab is not the active tab"; Retry = $true; Label = ''; Reveal = $true } }
     $rows = @(Get-Chats $script:Win)
     $act = @($rows | Where-Object { $_.Active })
     if ($RowId -ne '') {
-        if (-not ($act.Count -eq 1 -and $act[0].Id -eq $RowId)) { return [pscustomobject]@{ Code = 5; Why = "the chat's row is not the only active row"; Retry = $true; Label = '' } }
+        if (-not ($act.Count -eq 1 -and $act[0].Id -eq $RowId)) { return [pscustomobject]@{ Code = 5; Why = "the chat's row is not the only active row"; Retry = $true; Label = ''; Reveal = $true } }
         if ($act[0].Status -ne 'idle') { return [pscustomobject]@{ Code = 3; Why = "the chat's row says $($act[0].Status)"; Retry = $true; Label = '' } }
-    } elseif ($act.Count -ne 0) { return [pscustomobject]@{ Code = 5; Why = 'a chat row is active, so the active tab is not an untitled chat'; Retry = $true; Label = '' } }
+    } elseif ($act.Count -ne 0) { return [pscustomobject]@{ Code = 5; Why = 'a chat row is active, so the active tab is not an untitled chat'; Retry = $true; Label = ''; Reveal = $true } }
     if ($RecId -eq '*') {
         $block = Get-UntitledBlock
         if ($block -ne '') { return [pscustomobject]@{ Code = 5; Why = $block; Retry = $false; Label = '' } }
@@ -978,14 +1109,15 @@ function Test-SafeToClose([string]$RowId, [string]$RecId, [string]$Mode, [string
 
 # Closes a chat tab after the unbroken check, then waits for the chat's process to end (a budget of its own,
 # not what is left of the wait for him). Whenever the check fails in a way waiting may cure, the whole check
-# (and the reveal, when $RevealId is given) runs again.
+# runs again after 2 seconds. The chat is revealed (when $RevealId is given) on the first try, and on a later
+# try only when the last failure was that its tab or its row was not the active one. When the check says the
+# window is minimized, the window is restored again (under Wait-Idle) and minimized again at the end of the
+# run. Why the run is waiting is logged once per change of reason.
 function Close-Checked([string]$RowId, [string]$RecId, [string]$Mode, [string]$ExpectLabel, [string]$RevealId = '', [bool]$FirstOfMany = $false, [int]$OwnPid = 0) {
-    $first = $true
+    $reveal = $true
     while ($true) {
         Wait-Idle 'close a chat tab'
-        if ($RevealId -ne '') { Show-Chat $RevealId }
-        elseif (-not $first) { Start-Sleep -Milliseconds 600 }
-        $first = $false
+        if ($RevealId -ne '' -and $reveal) { Show-Chat $RevealId }
         $c = Test-SafeToClose $RowId $RecId $Mode $ExpectLabel $FirstOfMany $OwnPid
         if ($c.Code -eq 0) {
             # Nothing waits between the check above and this close.
@@ -995,7 +1127,11 @@ function Close-Checked([string]$RowId, [string]$RecId, [string]$Mode, [string]$E
             break
         }
         if (-not $c.Retry -or (Get-Date) -ge (Get-WaitUntil)) { Stop-Panel $c.Code ('the tab was not closed: ' + $c.Why) }
+        Write-Waiting ('before closing the chat tab: ' + $c.Why)
+        $reveal = [bool]$c.Reveal
+        if ($c.Minimized) { Restore-Minimized } else { Start-Sleep -Seconds 2 }
     }
+    Clear-Waiting
     if ($RecId -ne '' -and $RecId -ne '*') {
         if (-not (Wait-ProcessEnd $RecId)) { Stop-Panel 1 "the tab was closed but the chat's process did not end in time" }
     }
@@ -1022,6 +1158,7 @@ function Open-WithText([string]$Id, [string]$Text) {
     $n0 = @(Get-ClaudeTabs).Count
     if (@(Get-ChatRecords $Id).Count -gt 0) { Stop-Panel 5 "the chat has a process again (someone opened its tab after the driver closed it); the driver opened nothing and left that tab alone" }
     $s.OpenCalled = $true
+    Set-Begun
     $r = Invoke-Bridge 'open' @{ sessionId = $Id; prompt = $Text } 25
     if ($null -ne $r -and -not $r.ok) { Stop-Panel 1 "the bridge refused 'open': $($r.error)" }
     $sw = [Diagnostics.Stopwatch]::StartNew()
@@ -1316,10 +1453,13 @@ function Wait-ChatIdle([string]$Id, [int]$Seconds) {
 function Wait-RowIdle([string]$Id) {
     $chat = Get-Chat $Id
     while ($chat.Status -eq 'running') {
+        Stop-IfCancelled
         if ((Get-Date) -ge (Get-WaitUntil)) { Stop-Panel 3 'the chat is running (its row says so)' }
+        Write-Waiting "the chat's row says it is running"
         Start-Sleep -Seconds 2
         $chat = Get-Chat $Id
     }
+    Clear-Waiting
     $chat
 }
 
@@ -1402,6 +1542,7 @@ function Do-New([string]$Text, [string]$ModelName, [string]$Group) {
         $bargs = @{ prompt = $Text }
         if ($Group -ne '') { $bargs.groupId = $Group }
         $s.OpenCalled = $true
+        Set-Begun
         $r = Invoke-Bridge 'open' $bargs 25
         if ($null -ne $r -and -not $r.ok) { Stop-Panel 1 "the bridge refused 'open': $($r.error)" }
         $sw = [Diagnostics.Stopwatch]::StartNew()
@@ -1474,7 +1615,7 @@ function Do-Model([string]$Id, [string]$ModelName) {
         Set-TabLabel (Get-TabLabel $chat.Name)
         Wait-Idle 'show the chat'
         $n0 = @(Get-ClaudeTabs).Count
-        if (-not $s.HadTab) { $s.OpenCalled = $true }
+        if (-not $s.HadTab) { $s.OpenCalled = $true; Set-Begun }
         Show-Chat $Id
         if (-not $s.HadTab -and @(Get-ClaudeTabs).Count -eq $n0 + 1) { $s.Opened = $true; $s.TabOpen = $true }
         $act = @(Get-ActiveIds)
@@ -1487,6 +1628,188 @@ function Do-Model([string]$Id, [string]$ModelName) {
     }
     if ($s.Opened) { Add-Note 'the chat had no open tab; its tab is left open because the pick lives in its process' }
     $out
+}
+
+# ---------------------------------------------------------------- archive
+
+# A session row's element, by its AutomationId (null when the list has no such row).
+function Find-RowElement([string]$Id) {
+    $cond = New-Object System.Windows.Automation.PropertyCondition($AE::AutomationIdProperty, ($RowPrefix + $Id))
+    $script:Win.FindFirst($TS::Descendants, $cond)
+}
+
+# The centre of a row's bounding rectangle, or $null when the rectangle is empty, the row is off screen or
+# its centre lies outside the VS Code window.
+function Get-RowCenter($Row) {
+    if ($Row.Current.IsOffscreen) { return $null }
+    $r = $Row.Current.BoundingRectangle
+    foreach ($v in @($r.X, $r.Y, $r.Width, $r.Height)) {
+        if ([double]::IsNaN($v) -or [double]::IsInfinity($v)) { return $null }
+    }
+    if ($r.Width -le 0 -or $r.Height -le 0) { return $null }
+    $cx = [int]($r.X + $r.Width / 2)
+    $cy = [int]($r.Y + $r.Height / 2)
+    $w = $script:Win.Current.BoundingRectangle
+    if ($cx -lt $w.X -or $cx -gt ($w.X + $w.Width) -or $cy -lt $w.Y -or $cy -gt ($w.Y + $w.Height)) { return $null }
+    [pscustomobject]@{ X = $cx; Y = $cy }
+}
+
+# The 'Archive session' button among the target row's own children (it exists only while the pointer rests
+# on the row), or $null; a button whose parent is another row does not count.
+function Get-ArchiveButton([string]$Id) {
+    $row = Find-RowElement $Id
+    if ($null -eq $row) { return $null }
+    $c1 = New-Object System.Windows.Automation.PropertyCondition($AE::NameProperty, 'Archive session')
+    $c2 = New-Object System.Windows.Automation.PropertyCondition($AE::ControlTypeProperty, $CT::Button)
+    $btn = $row.FindFirst($TS::Children, (New-Object System.Windows.Automation.AndCondition($c1, $c2)))
+    if ($null -eq $btn) { return $null }
+    $parent = [System.Windows.Automation.TreeWalker]::RawViewWalker.GetParent($btn)
+    if ($null -eq $parent -or [string]$parent.Current.AutomationId -ne ($RowPrefix + $Id)) { return $null }
+    $btn
+}
+
+function Test-PointerAt($Spot) {
+    $p = [PanelNative]::PointerPos()
+    [bool]($null -ne $p -and $p[0] -eq $Spot.X -and $p[1] -eq $Spot.Y)
+}
+
+# The pointer goes back where it was, but only while it is still where the driver put it: if he moved it,
+# it is his and is left alone.
+function Restore-Pointer($Old, $Placed) {
+    if ($null -eq $Old -or $null -eq $Placed) { return }
+    if (Test-PointerAt $Placed) { [void][PanelNative]::MovePointer($Old[0], $Old[1]) }
+    else { Add-Note 'the pointer was moved by him after the driver put it on the row, so the driver left it where he put it' }
+}
+
+# Undoes the raise: not topmost, then directly behind the window that had covered the row (when it is still there).
+function Undo-Raise($Front) {
+    if (-not $Front.Raised) { return }
+    [void][PanelNative]::ClearTopmost($script:Hwnd)
+    if ($Front.Cover -ne [IntPtr]::Zero -and [PanelNative]::IsWindow($Front.Cover)) { [void][PanelNative]::PlaceBehind($script:Hwnd, $Front.Cover) }
+    $Front.Raised = $false
+}
+
+# The shell says a full-screen window, a Direct3D full-screen application or a presentation is in front.
+function Test-FullScreenFront {
+    $q = [PanelNative]::NotificationState()
+    [bool]($q -eq 2 -or $q -eq 3 -or $q -eq 4)
+}
+
+# The raise is the one step that shows on his screen, so it waits while a full-screen window is in front
+# (his idle time alone cannot see a video), up to the run's wait budget, then exit 3.
+function Wait-NoFullScreen {
+    while (Test-FullScreenFront) {
+        Stop-IfCancelled
+        if ((Get-Date) -ge $script:WaitUntil) { Stop-Panel 3 'a full-screen window stayed in front of the row until the deadline; VS Code was not raised and the pointer was not moved' }
+        Write-Waiting 'a full-screen window is in front'
+        Start-Sleep -Seconds 2
+    }
+    Clear-Waiting
+}
+
+# '' while he has not come back, else why he has: the pointer is not exactly where the driver put it, or the
+# idle time fell below what it was before the move (he used the keyboard or the pointer since).
+function Get-OperatorBack($Placed, [double]$IdleBefore) {
+    if (-not (Test-PointerAt $Placed)) { return 'the pointer is no longer where the driver put it' }
+    if ([PanelNative]::IdleMs() -lt $IdleBefore) { return 'the idle time fell, so he used the computer after the driver moved the pointer' }
+    ''
+}
+
+# The part of an archive that shows on his screen. The row is scrolled into view, its centre is found, VS Code
+# is raised above a covering window without keyboard focus (and put back), the pointer rests on the row until
+# the row's Archive button exists, and that button is invoked. In every outcome the pointer goes back (if it is
+# still where the driver put it) and the raise is undone. Nothing is clicked or typed.
+function Invoke-ArchiveStage([string]$Id) {
+    $row = Find-RowElement $Id
+    if ($null -eq $row) { Stop-Panel 5 "the chat's row left the list while the driver was getting ready; nothing was archived" }
+    $sp = $null
+    if ($row.TryGetCurrentPattern([System.Windows.Automation.ScrollItemPattern]::Pattern, [ref]$sp)) { try { $sp.ScrollIntoView() } catch { } }
+    Start-Sleep -Milliseconds 300
+    $row = Find-RowElement $Id
+    if ($null -eq $row) { Stop-Panel 5 "the chat's row left the list while the driver was getting ready; nothing was archived" }
+    $spot = Get-RowCenter $row
+    if ($null -eq $spot) { Stop-Panel 5 "the chat's row has no usable place on the screen (an empty rectangle, off screen, or outside the VS Code window); nothing was archived" }
+    $front = [pscustomobject]@{ Raised = $false; Cover = [IntPtr]::Zero }
+    $old = $null
+    $placed = $null
+    try {
+        if ([PanelNative]::RootAt($spot.X, $spot.Y) -ne $script:Hwnd) {
+            Wait-NoFullScreen
+            Wait-Idle 'raise VS Code above the window that covers the row'
+            $cover = [PanelNative]::RootAt($spot.X, $spot.Y)
+            if ($cover -ne $script:Hwnd) {
+                $front.Cover = $cover
+                [void][PanelNative]::RaiseNoActivate($script:Hwnd)
+                $front.Raised = $true
+                Start-Sleep -Milliseconds 500
+                if ([PanelNative]::RootAt($spot.X, $spot.Y) -ne $script:Hwnd) { Stop-Panel 5 'the row is covered by another window that VS Code could not be raised above without taking the keyboard focus; the pointer was not moved and nothing was archived' }
+            }
+        }
+        Wait-Idle 'put the pointer on the chat row'
+        # Read again after the waits: the list may have moved.
+        $row = Find-RowElement $Id
+        if ($null -eq $row) { Stop-Panel 5 "the chat's row left the list while the driver was getting ready; nothing was archived" }
+        $spot = Get-RowCenter $row
+        if ($null -eq $spot) { Stop-Panel 5 "the chat's row has no usable place on the screen any more; nothing was archived" }
+        if ([PanelNative]::RootAt($spot.X, $spot.Y) -ne $script:Hwnd) { Stop-Panel 5 'the row is covered by another window; the pointer was not moved and nothing was archived' }
+        $idleBefore = [PanelNative]::IdleMs()
+        $old = [PanelNative]::PointerPos()
+        if ($null -eq $old) { Stop-Panel 5 'the pointer position could not be read; the pointer was not moved and nothing was archived' }
+        if (-not [PanelNative]::MovePointer($spot.X, $spot.Y)) { Stop-Panel 5 'the pointer could not be moved onto the row; nothing was archived' }
+        $at = [PanelNative]::PointerPos()
+        if ($null -eq $at) { Stop-Panel 5 'the pointer position could not be read after the move; nothing was archived' }
+        $placed = [pscustomobject]@{ X = $at[0]; Y = $at[1] }
+        $btn = $null
+        $until = (Get-Date).AddSeconds(3)
+        while ($null -eq $btn -and (Get-Date) -lt $until) {
+            Start-Sleep -Milliseconds 150
+            $btn = Get-ArchiveButton $Id
+        }
+        if ($null -eq $btn) { Stop-Panel 5 'no archive button appeared under the row within 3 seconds of the pointer resting on it; nothing was archived' }
+        $inv = $btn.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
+        # Right before the Invoke: he has not come back.
+        $back = Get-OperatorBack $placed $idleBefore
+        if ($back -ne '') { Stop-Panel 3 "the operator came back ($back); nothing was archived" }
+        $script:St.Sent = $true
+        $inv.Invoke()
+        $gone = $false
+        $until = (Get-Date).AddSeconds(5)
+        while ((Get-Date) -lt $until) {
+            if ($null -eq (Find-RowElement $Id)) { $gone = $true; break }
+            Start-Sleep -Milliseconds 200
+        }
+        if (-not $gone) { Stop-Panel 1 "the Archive button was invoked but the chat's row is still in the list after 5 seconds" }
+    } finally {
+        Restore-Pointer $old $placed
+        Undo-Raise $front
+    }
+}
+
+function Do-Archive([string]$Id) {
+    New-RunState $Id ''
+    $s = $script:St
+    Invoke-Guarded {
+        Wait-Guards $Id
+        Ensure-Screen
+        if ($null -eq (Find-RowElement $Id)) {
+            return "no row for session $Id in the panel's list (it is already archived, or it was never listed there); nothing was changed"
+        }
+        $chat = Wait-RowIdle $Id
+        $rs = Get-RecordState $Id
+        if ($rs.Terminal -ne '') { Stop-Panel 5 $rs.Terminal }
+        if ($rs.Busy -ne '') { Stop-Panel 3 "the chat is busy: $($rs.Busy)" }
+        $s.HadTab = ($rs.Count -gt 0)
+        $s.TabOpen = $s.HadTab
+        if ($s.HadTab) {
+            # His open tab: only now is the bridge needed. Reveal it, prove it holds no draft, close it.
+            Test-Bridge
+            Set-TabLabel (Get-TabLabel $chat.Name)
+            Close-Checked $Id $Id 'empty' (Get-TabLabel $chat.Name) $Id
+        }
+        Invoke-ArchiveStage $Id
+        if ($s.HadTab) { return "archived session $Id; its row left the list (its open tab was closed first)" }
+        "archived session $Id; its row left the list"
+    } 'Nothing was archived.' 'The Archive button was invoked, so the chat may be archived.'
 }
 
 function Do-CloseUntitled {
@@ -1534,12 +1857,11 @@ function Do-CloseUntitled {
 
 function Write-PanelLog([string]$ActionName, [string]$Id, [int]$Code, [string]$Reason) {
     try {
-        if (-not (Test-Path -LiteralPath $LogDir)) { New-Item -ItemType Directory -Force -Path $LogDir | Out-Null }
         $why = ''
         if ($Code -ne 0) { $why = ' ' + ($Reason -replace '[\r\n]+', ' ') }
         if ($script:Notes.Count -gt 0) { $why += ' [' + (($script:Notes -join '; ') -replace '[\r\n]+', ' ') + ']' }
         $line = '{0} {1} {2} exit={3} secs={4:N1}{5}' -f (Get-Date).ToString('yyyy-MM-ddTHH:mm:ss'), $ActionName, $(if ($Id -ne '') { $Id } else { '-' }), $Code, $script:Clock.Elapsed.TotalSeconds, $why
-        [System.IO.File]::AppendAllText($LogFile, $line + "`r`n", $Utf8)
+        Add-LogLine $line
     } catch { }
 }
 
@@ -1548,6 +1870,9 @@ function Write-PanelLog([string]$ActionName, [string]$Id, [int]$Code, [string]$R
 function Invoke-Logged([string]$ActionName, [string]$LogId, [bool]$Locked, [scriptblock]$Body) {
     $script:Notes = @()
     $script:Clock = [Diagnostics.Stopwatch]::StartNew()
+    $script:RunAction = $ActionName
+    $script:RunId = $LogId
+    $script:LastWait = ''
     Set-Deadlines $ActionName
     $r = [pscustomobject]@{ Code = 0; Reason = 'ok'; Value = $null }
     try {
@@ -1677,6 +2002,11 @@ switch ($Action) {
             $code = Out-Result (Invoke-Logged 'model' $Session $true { Do-Model $Session $Model })
         }
     }
+    'archive' {
+        if ($Session -eq '') { [Console]::Error.WriteLine('archive needs -Session'); $code = 1 } else {
+            $code = Out-Result (Invoke-Logged 'archive' $Session $true { Do-Archive $Session })
+        }
+    }
     'close-untitled' { $code = Out-Result (Invoke-Logged 'close-untitled' '' $true { Do-CloseUntitled }) }
     'selftest' {
         $r = Invoke-Logged 'selftest' '' $true { Do-SelfTest }
@@ -1684,6 +2014,6 @@ switch ($Action) {
         if ($r.Code -ne 0) { [Console]::Error.WriteLine($r.Reason); $code = $r.Code }
         foreach ($n in $script:Notes) { [Console]::Error.WriteLine('note: ' + $n) }
     }
-    default { [Console]::Error.WriteLine('usage: claude_panel.ps1 list | send | new | model | close-untitled | selftest'); $code = 1 }
+    default { [Console]::Error.WriteLine('usage: claude_panel.ps1 list | send | new | model | archive | close-untitled | selftest'); $code = 1 }
 }
 exit $code

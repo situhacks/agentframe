@@ -127,6 +127,11 @@ enum Cmd {
         #[command(subcommand)]
         cmd: crate::source::SourceCmd,
     },
+    /// Ledgers: rows kept in CSV files, asked with SQL, shown on pages
+    Data {
+        #[command(subcommand)]
+        cmd: crate::data::DataCmd,
+    },
     /// The needs list: what needs the operator's decision, now or later
     Needs {
         #[command(subcommand)]
@@ -291,6 +296,7 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> R<i32> {
         Cmd::Open { cmd } => crate::open::run(ctx, cmd),
         Cmd::Watch { cmd } => crate::watch::run(ctx, cmd),
         Cmd::Source { cmd } => crate::source::run(ctx, cmd),
+        Cmd::Data { cmd } => crate::data::run(ctx, cmd),
         Cmd::Needs { cmd } => crate::needs::run(ctx, cmd),
         Cmd::Brief { json, write } => crate::brief::cmd_brief(ctx, json, write),
         Cmd::Close { slug, force } => crate::close::cmd_close(ctx, &slug, force),

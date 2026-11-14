@@ -17,6 +17,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "system" / "tools"))
@@ -68,15 +69,16 @@ class Base(unittest.TestCase):
         self.root = self.base / "repo"
         self.root.mkdir()
         self.git("init", "-b", "master")
+        self.git("config", "core.quotepath", "true")
         self.put("AGENTS.md", "main router words\n")
         self.put("README.md", "readme\n")
         self.put(".gitignore", "system/logs/\nsystem/sessions/\nworkspace/\n")
         self.fake = FakeAf(self.root)
         self.scratch = self.base / "scratch" / "af-*"
 
-    def git(self, *args, cwd=None):
+    def git(self, *args, cwd=None, env=None):
         r = subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.test", *args], cwd=cwd or self.root,
-                           capture_output=True, text=True, encoding="utf-8")
+                           capture_output=True, text=True, encoding="utf-8", env={**os.environ, **(env or {})})
         self.assertEqual(r.returncode, 0, r.stderr)
         return r.stdout
 
@@ -86,9 +88,11 @@ class Base(unittest.TestCase):
         p.write_text(text, encoding="utf-8", newline="")
         return p
 
-    def commit(self, msg="c"):
+    def commit(self, msg="c", days_ago=None):
+        stamp = f"{ago(days_ago)}T12:00:00" if days_ago is not None else None
         self.git("add", "-A")
-        self.git("commit", "-m", msg, "--allow-empty")
+        self.git("commit", "-m", msg, "--allow-empty",
+                 env={"GIT_AUTHOR_DATE": stamp, "GIT_COMMITTER_DATE": stamp} if stamp else None)
 
     def registry(self, *rows):
         self.put("system/sessions/registry.md", HEAD + "".join(rows))
@@ -111,26 +115,96 @@ class Base(unittest.TestCase):
 
 
 class GitTests(Base):
-    def test_a_merged_branch_and_a_clean_merged_worktree_are_listed_and_an_unmerged_branch_is_not_a_candidate(self):
-        self.commit("first")
+    def blocks(self):
+        """The four lists of the git section, in order: free branches, branches in use, removable worktrees, unmerged."""
+        sec = self.section(self.report(), 3)
+        parts = re.split(r"\n(?=\*\*)", sec.split("\n", 2)[2])
+        self.assertEqual(len(parts), 4, sec)
+        return parts
+
+    def test_a_merged_branch_is_listed_and_an_unmerged_branch_is_not(self):
+        self.commit("first", days_ago=20)
         self.git("branch", "merged-one")
         self.git("checkout", "-b", "unmerged-two")
         self.put("x.md", "x\n")
         self.commit("work")
         self.git("checkout", "master")
-        self.git("worktree", "add", str(self.base / "wt-clean"), "-b", "merged-wt")
-        self.git("worktree", "add", str(self.base / "wt-dirty"), "-b", "merged-dirty")
-        (self.base / "wt-dirty" / "edit.txt").write_text("unsaved\n", encoding="utf-8")
         self.assertEqual(self.run_review(), 0, self.err)
-        sec = self.section(self.report(), 3)
-        head, _, rest = sec.partition("**Not merged")
-        self.assertIn("merged-one", head)
-        self.assertNotIn("unmerged-two", head)
-        self.assertIn("unmerged-two (last commit", rest)
-        wt_part = head.split("**Worktrees")[1]
-        self.assertIn("wt-clean", wt_part)
-        self.assertNotIn("wt-dirty", wt_part, "a worktree with changes is not listed")
-        self.assertNotRegex(head.split("**Worktrees")[0].replace("merged-one", ""), r"- master\b")
+        free, busy, removable, unmerged = self.blocks()
+        self.assertTrue(free.startswith("**Merged into master (no commits of its own) (1)**"), free)
+        self.assertIn("merged-one", free)
+        self.assertNotIn("unmerged-two", free)
+        self.assertNotRegex(free.replace("merged-one", ""), r"- master\b")
+        self.assertIn("unmerged-two (last commit", unmerged)
+
+    def test_a_branch_checked_out_in_a_worktree_is_never_listed_as_free_and_neither_is_its_worktree_while_fresh(self):
+        self.commit("first", days_ago=20)
+        self.git("worktree", "add", str(self.base / "wt-busy"), "-b", "merged-busy")
+        self.commit("second", days_ago=2)
+        self.git("worktree", "add", str(self.base / "wt-fresh"), "-b", "merged-fresh")
+        self.assertEqual(self.run_review(), 0, self.err)
+        free, busy, removable, _ = self.blocks()
+        self.assertNotIn("merged-busy", free)
+        self.assertNotIn("merged-fresh", free)
+        self.assertRegex(busy, r"merged-busy \(in use by worktree .*wt-busy\)")
+        self.assertRegex(busy, r"merged-fresh \(in use by worktree .*wt-fresh\)")
+        self.assertIn("wt-busy", removable, "merged, clean, its last commit 20 days old")
+        self.assertNotIn("wt-fresh", removable, "its last commit is 2 days old: still in use")
+
+    def test_a_worktree_is_removable_only_when_clean_and_its_last_commit_is_over_7_days_old(self):
+        self.commit("old", days_ago=20)
+        self.git("worktree", "add", str(self.base / "wt-clean"), "-b", "b-clean")
+        self.git("worktree", "add", str(self.base / "wt-dirty"), "-b", "b-dirty")
+        (self.base / "wt-dirty" / "edit.txt").write_text("unsaved\n", encoding="utf-8")
+        self.git("worktree", "add", str(self.base / "wt-clean-too"), "-b", "b-clean-too")
+        self.assertEqual(self.run_review(), 0, self.err)
+        removable = self.blocks()[2]
+        self.assertIn("wt-clean", removable)
+        self.assertNotIn("wt-dirty", removable, "a worktree with changes is not listed")
+        self.assertIn("(2)", removable.splitlines()[0])
+
+    def test_a_worktree_whose_last_commit_is_exactly_7_days_old_is_not_removable_and_8_days_is(self):
+        self.commit("eight", days_ago=8)
+        self.git("worktree", "add", str(self.base / "wt-eight"), "-b", "b-eight")
+        self.commit("seven", days_ago=7)
+        self.git("worktree", "add", str(self.base / "wt-seven"), "-b", "b-seven")
+        self.assertEqual(self.run_review(), 0, self.err)
+        removable = self.blocks()[2]
+        self.assertIn("wt-eight", removable)
+        self.assertNotIn("wt-seven", removable)
+
+    def test_a_detached_head_is_not_a_branch(self):
+        self.commit("first", days_ago=20)
+        self.git("checkout", "--detach")
+        self.assertEqual(self.run_review(), 0, self.err)
+        text = self.report()
+        self.assertNotIn("(HEAD", text)
+        self.assertNotIn("detached", text)
+        self.assertNotIn("- at\n", text)
+
+    def test_every_git_call_runs_with_optional_locks_off(self):
+        self.commit("first", days_ago=20)
+        self.git("worktree", "add", str(self.base / "wt-a"), "-b", "b-a")
+        seen, real = [], subprocess.run
+
+        def spy(cmd, *a, **kw):
+            seen.append((list(cmd), kw.get("env") or {}))
+            return real(cmd, *a, **kw)
+
+        with mock.patch.object(hr.subprocess, "run", spy):
+            self.assertEqual(self.run_review(), 0, self.err)
+        calls = [c for c in seen if c[0][0] == "git"]
+        self.assertGreaterEqual(len(calls), 5)
+        for cmd, env in calls:
+            self.assertEqual(cmd[1], "--no-optional-locks", cmd)
+            self.assertEqual(env.get("GIT_OPTIONAL_LOCKS"), "0", cmd)
+
+    def test_a_path_with_non_ascii_characters_is_read(self):
+        self.put(".claude/skills/solo-skill/SKILL.md", "---\nname: solo-skill\n---\nBody\n")
+        self.put("notes/caf\u00e9 notes.md", "Load solo-skill when asked.\n")
+        self.commit()
+        self.assertEqual(self.run_review(), 0, self.err)
+        self.assertNotIn("solo-skill", self.section(self.report(), 5).split("| Skill")[0])
 
 
 class SkillToolProcessTests(Base):
@@ -194,6 +268,30 @@ class SessionTests(Base):
         self.assertNotIn("system/old", orphans)
         self.assertNotIn("system/empty", orphans, "no brief or page")
         self.assertIn("system/gone", missing)
+
+
+class RegistryShapeTests(Base):
+    def test_a_table_with_unexpected_columns_gets_one_line_not_a_list_of_every_folder(self):
+        self.put("system/sessions/registry.md", "| name | role | extra | session_id | model | started | last_seen | status | handoff |\n"
+                 "|---|---|---|---|---|---|---|---|---|\n| system/a | builder | x | 1 | opus | s | l | idle | h |\n")
+        self.put("system/sessions/system/a/handoff.md", "page\n")
+        self.put("system/sessions/system/b/brief.md", "brief\n")
+        self.commit()
+        self.assertEqual(self.run_review(), 0, self.err)
+        sec = self.section(self.report(), 4)
+        self.assertIn("(0)", sec.splitlines()[0])
+        self.assertIn("holds a table but no row could be read from it (unexpected columns)", sec)
+        self.assertNotIn("system/a", sec)
+        self.assertNotIn("system/b", sec)
+
+    def test_a_registry_with_only_its_header_is_a_normal_empty_one(self):
+        self.registry()
+        self.put("system/sessions/system/b/brief.md", "brief\n")
+        self.commit()
+        self.assertEqual(self.run_review(), 0, self.err)
+        sec = self.section(self.report(), 4)
+        self.assertNotIn("no row could be read", sec)
+        self.assertIn("system/b", sec)
 
 
 class WordsTests(Base):
@@ -337,13 +435,63 @@ class PagesAndLoopTests(Base):
         self.assertEqual(self.fake.adds(), [])
         self.assertIn("0 items worth a look", self.report().splitlines()[0])
 
-    def test_a_loop_that_cannot_be_raised_is_an_error_and_leaves_the_review_due(self):
+    def reports(self):
+        return sorted((self.root / "system/logs").glob("harness-review-2*.md"))
+
+    def state(self):
+        return json.loads((self.root / hr.STATE).read_text(encoding="utf-8"))
+
+    def test_a_failed_loop_is_retried_without_writing_a_new_report(self):
         self.commit()
         self.git("branch", "merged-one")
-        self.fake.add_code = 1
-        self.assertEqual(self.run_review(), 1)
-        self.assertEqual(self.run_review(fake=FakeAf(self.root)), 0)
-        self.assertIn("wrote", self.out, "not saved as done, so the next run tries again")
+        bad = FakeAf(self.root, add_code=1)
+        self.assertEqual(self.run_review(fake=bad), 1)
+        self.assertEqual((self.state()["date"], bool(self.state()["loop_pending"])), ("2026-11-14", True))
+        self.assertEqual(self.run_review(today=TODAY + dt.timedelta(days=1), fake=bad), 1)
+        self.assertEqual(len(self.reports()), 1, "two failing runs, one report")
+        self.assertEqual(len(bad.adds()), 2, "the second run only retried the loop")
+        good = FakeAf(self.root)
+        self.assertEqual(self.run_review(today=TODAY + dt.timedelta(days=2), fake=good), 0, self.err)
+        self.assertEqual(len(self.reports()), 1)
+        self.assertEqual(len(good.adds()), 1, "the loop is raised once, for the report already written")
+        self.assertIn("system/logs/harness-review-2026-11-14.md", good.adds()[0][2])
+        self.assertFalse(self.state()["loop_pending"])
+        self.assertEqual(self.state()["date"], "2026-11-14", "the period still counts from the report")
+        self.assertEqual(self.run_review(today=TODAY + dt.timedelta(days=3), fake=good), 0)
+        self.assertIn("not due", self.out)
+        self.assertEqual(len(good.adds()), 1)
+
+    def test_an_af_missing_from_the_path_is_a_failure_to_retry_and_never_a_crash(self):
+        self.commit()
+        self.git("branch", "merged-one")
+
+        def missing(args, root):
+            raise FileNotFoundError("af")
+
+        self.assertEqual(self.run_review(fake=missing), 1)
+        self.assertTrue(self.state()["loop_pending"])
+        self.assertEqual(self.run_review(today=TODAY + dt.timedelta(days=1), fake=missing), 1)
+        self.assertEqual(len(self.reports()), 1)
+        self.assertEqual(self.run_review(today=TODAY + dt.timedelta(days=1), fake=FakeAf(self.root)), 0)
+        self.assertFalse(self.state()["loop_pending"])
+
+    def test_the_real_helper_reports_a_missing_af_as_exit_127(self):
+        with mock.patch.object(hr.subprocess, "run", side_effect=FileNotFoundError("af")):
+            self.assertEqual(hr.af(["session", "tidy"], self.root)[0], 127)
+        with mock.patch.object(hr.subprocess, "run", side_effect=PermissionError("denied")):
+            self.assertEqual(hr.af(["session", "tidy"], self.root)[0], 127)
+
+    def test_a_pending_loop_already_raised_by_hand_clears_the_flag(self):
+        self.commit()
+        self.git("branch", "merged-one")
+        self.assertEqual(self.run_review(fake=FakeAf(self.root, add_code=1)), 1)
+        page = self.root / "workspace/life/open.md"
+        page.parent.mkdir(parents=True, exist_ok=True)
+        page.write_text(f"- [ ] {TODAY} · by hand · from: harness-review\n", encoding="utf-8")
+        good = FakeAf(self.root)
+        self.assertEqual(self.run_review(today=TODAY + dt.timedelta(days=1), fake=good), 0)
+        self.assertEqual(good.adds(), [])
+        self.assertFalse(self.state()["loop_pending"])
 
     def test_an_error_in_git_is_a_non_zero_exit(self):
         self.root.joinpath(".git").rename(self.base / "gone")
@@ -355,10 +503,16 @@ class SafetyAndSizeTests(Base):
         out = {}
         for p in sorted(self.root.rglob("*")):
             rel = p.relative_to(self.root).as_posix()
-            if rel.startswith(".git/") or rel == ".git" or rel == "system/logs" or rel.startswith("workspace") or rel.startswith("system/logs/harness-review"):
+            if rel.startswith(".git/") or rel == ".git" or rel == "system/logs" or rel.startswith("system/logs/harness-review"):
                 continue
+            if rel == "workspace/life/open.md":
+                continue   # the one file af's own verb may add a loop line to
             out[rel] = p.read_bytes() if p.is_file() else None
         return out
+
+    def indexes(self):
+        paths = [self.root / ".git/index", *sorted((self.root / ".git/worktrees").glob("*/index"))]
+        return {p.relative_to(self.root).as_posix(): p.read_bytes() for p in paths}
 
     def test_it_writes_nothing_outside_its_report_and_state(self):
         self.put(".claude/skills/orphan-skill/SKILL.md", "---\nname: orphan-skill\n---\nBody\n")
@@ -368,12 +522,22 @@ class SafetyAndSizeTests(Base):
         self.put("system/backlog.md", f"## BB-{ago(90)}-01 · old\nSurfaced: main, {ago(90)}\n")
         self.registry(row("system/old", status=f"ended {ago(40)}T10:00 exit"))
         self.put("system/sessions/system/old/handoff.md", "page\n")
-        self.commit()
+        self.put("workspace/life/life.md", "life words\n")
+        self.put("workspace/projects/p/project.md", "project\n")
+        self.commit(days_ago=30)
         self.git("branch", "merged-one")
+        wt = self.base / "wt-index"
+        self.git("worktree", "add", str(wt), "-b", "merged-wt")
+        stamp = (wt / "AGENTS.md").stat().st_mtime + 100
+        os.utime(wt / "AGENTS.md", (stamp, stamp))   # a plain `git status` would refresh this worktree's index
+        os.utime(self.root / "AGENTS.md", (stamp, stamp))
         before = self.snapshot()
+        indexes = self.indexes()
+        self.assertEqual(len(indexes), 2, "the main index and the worktree's")
         listing = self.git("ls-files")
         self.assertEqual(self.run_review(), 0, self.err)
         self.assertEqual(self.snapshot(), before)
+        self.assertEqual(self.indexes(), indexes, "no worktree's index file was rewritten")
         self.assertEqual(len(self.fake.adds()), 1, "the only other write is af's own loop, through the verb")
         self.assertEqual(self.git("ls-files"), listing)
         self.assertEqual(self.git("status", "--porcelain").strip(), "", "the logs folder is git-ignored; nothing else changed")
@@ -417,6 +581,13 @@ class RepositoryDocTests(unittest.TestCase):
         self.assertNotIn("| Skill |", readme)
         self.assertIn("](.claude/skills/README.md)", readme)
         self.assertIn("| Skill |", self.text(".claude/skills/README.md"))
+
+    def test_the_upgrade_skill_makes_the_builders_worktree_from_local_master(self):
+        text = self.text(".claude/skills/upgrade/SKILL.md")
+        make = "git worktree add .claude/worktrees/<name> -b build/<name> master"
+        self.assertIn(make, text)
+        self.assertLess(text.index(make), text.index("dispatch the `builder` role"), "the worktree exists before the dispatch")
+        self.assertIn("the worktree path", text.split("Its brief carries:")[1].split("4.")[0])
 
     def test_the_readme_describes_what_settings_json_holds(self):
         settings = json.loads(self.text(".claude/settings.json"))

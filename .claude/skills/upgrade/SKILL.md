@@ -8,7 +8,8 @@ Upgrade mode. The operator picks backlog rows; a `builder` fixes each in its own
 
 1. Read `system/backlog.md`. Every `BB-` row without a `Status: done` line is open; a row in an older shape counts the same. If none is open, say so and stop.
 2. Show the open rows as a lettered list (id, title, `Fix:` line, and what a `Waits:` line waits on) and ask which to run: letters, or `all`. Wait for his answer.
-3. For each pick, one at a time, dispatch the `builder` role. Its brief carries:
+3. For each pick, one at a time, make its worktree from local master: `git worktree add .claude/worktrees/<name> -b build/<name> master` (`<name>` from the BB id). Then dispatch the `builder` role. Its brief carries:
+   - the worktree path;
    - the row text whole, its `Verify:` line as the check (an older row without one: the builder writes one and says so);
    - "Write `system/logs/report.md` in your worktree, in plain language: what changed, why, how it was verified, what to watch. Commit nothing. Return the worktree path, its branch, and the report text."
 4. When it returns, run `git -C <worktree> add -A`, then `git -C <worktree> diff --cached --stat`. Show the report and the stat; ask: **a. Merge** or **b. Discard**. Wait for his answer.

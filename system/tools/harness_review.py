@@ -40,6 +40,7 @@ MAX_ROWS = 15             # rows a list shows before "and N more"
 ENDED_DAYS = 14           # an ended registry row older than this is listed
 BACKLOG_DAYS = 30
 SCRATCH_DAYS = 14
+WORKTREE_DAYS = 7         # a worktree whose last commit is newer than this is still in use
 MODELS_DAYS = 60
 AF_TIMEOUT_S = 60
 ROLE_DIRS = ("life", "project", "system", "worker")
@@ -61,6 +62,8 @@ def af(args: list[str], root: Path) -> tuple[int, str, str]:
                            env={**os.environ, "AF_ROOT": str(root)}, cwd=root, timeout=AF_TIMEOUT_S)
     except FileNotFoundError:
         return 127, "", "af is not on the path"
+    except OSError as e:
+        return 127, "", f"af could not start: {e}"
     except subprocess.TimeoutExpired:
         return 124, "", f"af timed out after {AF_TIMEOUT_S}s"
     return r.returncode, r.stdout, r.stderr
@@ -68,8 +71,9 @@ def af(args: list[str], root: Path) -> tuple[int, str, str]:
 
 def git(root: Path, *args: str) -> str:
     try:
-        r = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, encoding="utf-8",
-                           errors="replace", timeout=120)
+        r = subprocess.run(["git", "--no-optional-locks", "-C", str(root), *args], capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=120,
+                           env={**os.environ, "GIT_OPTIONAL_LOCKS": "0"})
     except (OSError, subprocess.SubprocessError) as e:
         raise ReviewError(f"git {args[0]} failed: {e}") from None
     if r.returncode != 0:
@@ -122,7 +126,7 @@ def mentioned(name_patterns: list[str], text: str) -> bool:
 def tracked_text(root: Path) -> dict[str, str]:
     """Every tracked text file: its path (forward slashes) and its text."""
     out = {}
-    for rel in git(root, "ls-files").splitlines():
+    for rel in git(root, "ls-files", "-z").split("\0"):
         if rel.endswith(TEXT_EXT):
             out[rel] = read(root / rel)
     return out
@@ -130,18 +134,22 @@ def tracked_text(root: Path) -> dict[str, str]:
 
 # --- The registry ---------------------------------------------------------------------
 
-def registry_rows(root: Path) -> list[dict]:
-    """The registry's table rows (shape: library/schema/sessions-registry.md): eight cells a row."""
-    rows = []
+def read_registry(root: Path) -> tuple[list[dict], bool]:
+    """The registry's table rows (shape: library/schema/sessions-registry.md): eight cells a row.
+    The flag is true when the file holds a table but no row could be read from it."""
+    rows, odd = [], False
     for line in read(root / REGISTRY).splitlines():
         t = line.strip()
         if not (t.startswith("|") and t.endswith("|")):
             continue
         cells = [c.strip() for c in t[1:-1].split("|")]
-        if len(cells) != 8 or not cells[0] or cells[0] == "name" or set(cells[0]) <= set("-:"):
+        if cells[0] == "name" and len(cells) == 8 or set("".join(cells)) <= set("-: "):
+            continue
+        if len(cells) != 8 or not cells[0]:
+            odd = True
             continue
         rows.append(dict(zip(("name", "role", "session_id", "model", "started", "last_seen", "status", "handoff"), cells)))
-    return rows
+    return rows, odd and not rows
 
 
 def ended_on(row: dict) -> dt.date | None:
@@ -175,7 +183,10 @@ def check_words(root: Path, rows: list[dict]) -> tuple[int, list[str]]:
 
 
 def check_pages(root: Path, run_af) -> tuple[int, list[str]]:
-    code, out, err = run_af(["session", "tidy", "--all", "--check"], root)
+    try:
+        code, out, err = run_af(["session", "tidy", "--all", "--check"], root)
+    except OSError:
+        code, out, err = 127, "", ""
     if code == 127:
         return 0, ["af is not on the path; the pages were not checked."]
     if code not in (0, 1):
@@ -193,13 +204,17 @@ def check_pages(root: Path, run_af) -> tuple[int, list[str]]:
     return len(lines), bullets(lines) or ["nothing"]
 
 
-def check_git(root: Path) -> tuple[int, list[str]]:
-    merged = [b for b in git(root, "branch", "--merged", "master", "--format=%(refname:short)").split() if b != "master"]
+def branch_lines(root: Path, *args: str) -> list[str]:
+    """Local branch lines; a detached HEAD, which git prints as "(HEAD detached at ...)", is no branch."""
+    return [x.strip() for x in git(root, "branch", *args).splitlines() if x.strip() and not x.strip().startswith("(")]
+
+
+def check_git(root: Path, today: dt.date) -> tuple[int, list[str]]:
+    merged = [b for b in branch_lines(root, "--merged", "master", "--format=%(refname:short)") if b != "master"]
     unmerged = []
-    for line in git(root, "branch", "--no-merged", "master", "--format=%(refname:short)|%(committerdate:short)").splitlines():
-        name, _, date = line.strip().partition("|")
-        if name:
-            unmerged.append(f"{name} (last commit {date})")
+    for line in branch_lines(root, "--no-merged", "master", "--format=%(refname:short)|%(committerdate:short)"):
+        name, _, date = line.partition("|")
+        unmerged.append(f"{name} (last commit {date})")
     trees, block = [], {}
     for line in (git(root, "worktree", "list", "--porcelain") + "\n").splitlines():
         if line.strip():
@@ -208,21 +223,29 @@ def check_git(root: Path) -> tuple[int, list[str]]:
         elif block:
             trees.append(block)
             block = {}
-    clean = []
+    in_use = {t["branch"].removeprefix("refs/heads/"): t["worktree"] for t in trees if t.get("branch")}
+    free = [b for b in merged if b not in in_use]
+    busy = [f"{b} (in use by worktree {in_use[b]})" for b in merged if b in in_use]
+    removable = []
     for t in trees[1:]:
         branch = t.get("branch", "").removeprefix("refs/heads/")
         if not branch or branch not in merged:
             continue
         try:
             dirty = git(Path(t["worktree"]), "status", "--porcelain").strip()
-        except ReviewError:
+            stamp = int(git(Path(t["worktree"]), "log", "-1", "--format=%ct").strip())
+        except (ReviewError, ValueError):
             continue
-        if not dirty:
-            clean.append(f"{t['worktree']} ({branch})")
-    out = [f"**Merged into master, safe to delete ({len(merged)})**", *(bullets(merged) or ["nothing"]), "",
-           f"**Worktrees on a merged branch with no changes ({len(clean)})**", *(bullets(clean) or ["nothing"]), "",
+        last = dt.datetime.fromtimestamp(stamp).date()
+        if not dirty and (today - last).days > WORKTREE_DAYS:
+            removable.append(f"{t['worktree']} ({branch}, last commit {last.isoformat()})")
+    out = [f"**Merged into master (no commits of its own) ({len(free)})**", *(bullets(free) or ["nothing"]), "",
+           f"**Merged, but checked out in a worktree, listed for information, not counted ({len(busy)})**",
+           *(bullets(busy) or ["nothing"]), "",
+           f"**Worktrees on a merged branch, no changes, last commit over {WORKTREE_DAYS} days ago ({len(removable)})**",
+           *(bullets(removable) or ["nothing"]), "",
            f"**Not merged, listed for information, not counted ({len(unmerged)})**", *(bullets(unmerged) or ["nothing"])]
-    return len(merged) + len(clean), out
+    return len(free) + len(removable), out
 
 
 def session_folders(root: Path) -> list[str]:
@@ -237,7 +260,10 @@ def session_folders(root: Path) -> list[str]:
     return names
 
 
-def check_sessions(root: Path, rows: list[dict], today: dt.date) -> tuple[int, list[str]]:
+def check_sessions(root: Path, rows: list[dict], today: dt.date, unreadable: bool = False) -> tuple[int, list[str]]:
+    if unreadable:
+        return 0, [f"{REGISTRY} holds a table but no row could be read from it (unexpected columns); "
+                   "rows and folders were not compared."]
     old = []
     for r in rows:
         d = ended_on(r)
@@ -342,13 +368,13 @@ def check_models(root: Path, today: dt.date) -> tuple[int, list[str]] | None:
 # --- The report -------------------------------------------------------------------------
 
 def build(root: Path, today: dt.date, run_af, scratch_glob: str) -> tuple[int, str]:
-    rows = registry_rows(root)
+    rows, unreadable = read_registry(root)
     files = tracked_text(root)
     sections = [
         ("Words loaded at session start", check_words(root, rows)),
         ("Pages with items to fix or review", check_pages(root, run_af)),
-        ("Git", check_git(root)),
-        ("Sessions", check_sessions(root, rows, today)),
+        ("Git", check_git(root, today)),
+        ("Sessions", check_sessions(root, rows, today, unreadable)),
         ("Skills", check_skills(root, files)),
         ("Tools no file mentions", check_tools(root, files)),
         ("Process files named only by the catalog", check_process(root, files)),
@@ -376,18 +402,30 @@ def loop_text(items: int, report: str) -> str:
     return (f"Harness review: {items} items to look at ({report}); dispatch a builder chat for what should go")
 
 
-def load_state(root: Path) -> dt.date | None:
+def load_state(root: Path) -> dict | None:
     try:
         d = json.loads(read(root / STATE))
-        return dt.date.fromisoformat(d["date"])
+        dt.date.fromisoformat(d["date"])
+        return d
     except (ValueError, KeyError, TypeError):
         return None
 
 
-def save_state(root: Path, today: dt.date, report: str, items: int) -> None:
+def save_state(root: Path, today: dt.date, report: str, items: int, pending: str = "") -> None:
+    """`loop_pending` holds the loop text when the loop could not be raised, else it is false."""
     path = root / STATE
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"date": today.isoformat(), "report": report, "items": items}), encoding="utf-8", newline="\n")
+    d = {"date": today.isoformat(), "report": report, "items": items, "loop_pending": pending or False}
+    path.write_text(json.dumps(d), encoding="utf-8", newline="\n")
+
+
+def raise_loop(root: Path, run_af, text: str, today: dt.date) -> tuple[bool, str]:
+    """`af open add` for main; an af that is missing or cannot start is a failure to retry, never a crash."""
+    try:
+        code, _, err = run_af(["open", "add", text, "--nudge", today.isoformat(), "--from", LOOP_FROM], root)
+    except OSError as e:
+        code, err = 127, str(e)
+    return code == 0, f"({code}) {err.strip()[:160]}"
 
 
 def main(argv: list[str] | None = None, *, today: dt.date | None = None, run_af=af, scratch_glob: str | None = None) -> int:
@@ -398,7 +436,21 @@ def main(argv: list[str] | None = None, *, today: dt.date | None = None, run_af=
     args = ap.parse_args(argv)
     root = Path(args.root or os.environ.get("AF_ROOT") or ROOT).resolve()
     today = today or dt.date.today()
-    last = load_state(root)
+    state = load_state(root)
+    last = dt.date.fromisoformat(state["date"]) if state else None
+    if state and isinstance(state.get("loop_pending"), str) and not args.force:
+        # The report is written; only its loop is owed.
+        if loop_open(root):
+            ok, why = True, ""
+        else:
+            ok, why = raise_loop(root, run_af, state["loop_pending"], today)
+        if not ok:
+            print(f"harness_review: the loop for the report of {state['date']} is still not raised, af open add failed {why}",
+                  file=sys.stderr)
+            return 1
+        save_state(root, last, state.get("report", ""), state.get("items", 0))
+        print(f"harness_review: raised the loop for the report of {state['date']}")
+        return 0
     if last and 0 <= (today - last).days < DUE_DAYS and not args.force:
         print(f"harness_review: not due (last report {last.isoformat()}, next from {(last + dt.timedelta(days=DUE_DAYS)).isoformat()})")
         return 0
@@ -414,10 +466,12 @@ def main(argv: list[str] | None = None, *, today: dt.date | None = None, run_af=
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(text, encoding="utf-8", newline="\n")
     if items and not loop_open(root):
-        code, _, err = run_af(["open", "add", loop_text(items, rel), "--nudge", today.isoformat(), "--from", LOOP_FROM], root)
-        if code != 0:
-            # No state saved: the next run writes a report again and tries the loop again.
-            print(f"harness_review: wrote {out}, but af open add failed ({code}): {err.strip()[:160]}", file=sys.stderr)
+        loop = loop_text(items, rel)
+        ok, why = raise_loop(root, run_af, loop, today)
+        if not ok:
+            # The report stands as this period's; the next runs retry the loop and write no new report.
+            save_state(root, today, str(out), items, pending=loop)
+            print(f"harness_review: wrote {out}, but af open add failed {why}", file=sys.stderr)
             return 1
     save_state(root, today, str(out), items)
     print(f"harness_review: wrote {out}; {items} item(s) worth a look")

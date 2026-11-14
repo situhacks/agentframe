@@ -114,3 +114,22 @@ fn brief_on_an_empty_root_still_prints_the_skeleton() {
     assert!(out.contains("## Due loops (0)") && out.contains("## Open loops (0)"));
     assert!(!out.contains("## Chats") && !out.contains("## Backlog") && !out.contains("last written brief"));
 }
+
+#[test]
+fn brief_calls_a_page_that_only_needs_tidying_current() {
+    let fx = brief_fixture();
+    let page = |w: &str| format!("---\nwritten: {w}\n---\n## State\ns\n\n## Notes\nnot an allowed heading\n\n## Next step\nn\n\n## Files touched\n- system/backlog.md\n");
+    fx.write("system/sessions/project/acme/handoff.md", &page(&ts(60)));
+    let md = fx.ok(&["brief"]);
+    assert!(md.contains("handoff current") && !md.contains("handoff stale"), "{md}");
+    let v: serde_json::Value = serde_json::from_str(&fx.ok(&["brief", "--json"])).unwrap();
+    assert_eq!(v["chats"][1]["name"], "project/acme");
+    assert_eq!(v["chats"][1]["handoff_current"], true);
+    // The three real causes still read as not current.
+    fx.write("system/sessions/project/acme/handoff.md", &page("2026-01-01T00:00"));
+    assert!(fx.ok(&["brief"]).contains("handoff stale"));
+    fx.write("system/sessions/project/acme/handoff.md", "---\nsession_id: s\n---\n## State\ns\n");
+    assert!(fx.ok(&["brief"]).contains("handoff stale"), "no written: line");
+    fx.remove("system/sessions/project/acme/handoff.md");
+    assert!(fx.ok(&["brief"]).contains("no handoff"));
+}

@@ -36,3 +36,4 @@ pub mod context;
 pub mod compact;
 pub mod panel;
 pub mod backlog;
+pub mod page;

@@ -228,8 +228,12 @@ fn is_handoff_signal(r: &serde_json::Map<String, Value>) -> bool {
         .and_then(Value::as_array)
         .map(|a| a.iter().filter_map(Value::as_str).filter(|t| !t.starts_with('-')).take(2).collect())
         .unwrap_or_default();
-    let signals = first_two == ["session", "stop"];
-    signals && r.get("exit").and_then(Value::as_i64) == Some(3)
+    let stop = first_two == ["session", "stop"] && r.get("exit").and_then(Value::as_i64) == Some(3);
+    // `session tidy` exits 1 when a page still has an issue: that is its answer, not a refusal (a refusal has a message).
+    let tidy = first_two == ["session", "tidy"]
+        && r.get("exit").and_then(Value::as_i64) == Some(1)
+        && r.get("refusal").map_or(true, |v| v.is_null());
+    stop || tidy
 }
 
 /// What the buttons did lately, per state verb, against the open rows that name them.

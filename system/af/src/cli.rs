@@ -330,6 +330,19 @@ pub fn main_entry(argv: Vec<String>) -> i32 {
     code
 }
 
+/// Run `f(argv)` on a thread with `stack` bytes of stack and return its exit code. A panic in `f` ends the
+/// process the way a panic on the main thread did (exit code 101, after the panic hook has printed); a thread
+/// that cannot start prints one line to stderr and returns 1.
+pub fn run_on_stack(stack: usize, argv: Vec<String>, f: impl FnOnce(Vec<String>) -> i32 + Send + 'static) -> i32 {
+    match std::thread::Builder::new().stack_size(stack).spawn(move || f(argv)) {
+        Ok(t) => t.join().unwrap_or(101),
+        Err(e) => {
+            eprintln!("af: cannot start its worker thread ({stack} bytes of stack): {e}");
+            1
+        }
+    }
+}
+
 /// `main()` against a given root, with an injectable dispatcher (tests drive the crash path
 /// and the run log through it).
 pub fn main_with(ctx: &Ctx, argv: Vec<String>, dispatch: &dyn Fn(&Ctx, &[String]) -> R<i32>) -> i32 {

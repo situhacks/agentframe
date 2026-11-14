@@ -285,7 +285,7 @@ fn stop_hook_blocks_once_for_a_missing_handoff() {
     assert_eq!(v["decision"], "block");
     let reason = v["reason"].as_str().unwrap();
     assert!(reason.starts_with("Write system/sessions/project/acme/handoff.md before stopping: the file does not exist."), "{reason}");
-    assert!(reason.contains("State, Open questions, Next step and Files touched"), "{reason}");
+    assert!(reason.contains("State, Next step and Files touched"), "{reason}");
     assert!(reason.contains(&format!("`written: {}", &ts(0)[..11])), "the current local time fills in the shape: {reason}");
     assert_eq!(sessions::hook_stop(&ctx, r#"{"session_id":"s-acme","stop_hook_active":true}"#), HookOutput::quiet());
 }

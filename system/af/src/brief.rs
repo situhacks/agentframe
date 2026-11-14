@@ -132,7 +132,11 @@ pub fn build(ctx: &Ctx) -> R<(String, Value)> {
         if st != "live" && st != "idle" {
             continue;
         }
-        let current = !sessions::handoff_required(ctx, &r)?;
+        // Only a missing, unstamped or stale handoff is "not current"; a page that needs tidying is current.
+        let current = !matches!(
+            sessions::handoff_need(ctx, &r)?,
+            Some(sessions::HandoffNeed::Missing | sessions::HandoffNeed::NoWritten | sessions::HandoffNeed::Stale { .. })
+        );
         let hpath = vpath(ctx, &sessions::handoff_rel(&r.name));
         let has = pyos::isfile(&hpath);
         let label = if !has { "no handoff" } else if current { "handoff current" } else { "handoff stale" };

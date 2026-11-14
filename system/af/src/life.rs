@@ -571,5 +571,6 @@ pub fn doctor_checks(ctx: &Ctx) -> R<(Vec<String>, Vec<String>)> {
     issues.extend(crate::sessions::bad_class_issues(ctx)?);
 
     notes.extend(crate::sessions::stale_handoff_notes(ctx)?);
+    notes.extend(crate::page::doctor_notes(ctx)?);
     Ok((issues, notes))
 }

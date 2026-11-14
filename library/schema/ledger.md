@@ -21,9 +21,9 @@ Types: `date` (`YYYY-MM-DD`), `integer`, `number` (plain decimal, at most 12 sig
 - `af data new <name> --file <path> --column name:type[!]... --key a,b`: `!` marks required. An existing CSV is adopted if every row passes.
 - `af data column <ledger> name:type`: an optional column; run again to finish a half-added one.
 - `af data add <ledger> col=value...`; `--replace` merges into the row with that key: columns given are set (`col=` empties), the rest keep their values.
-- `af data import <ledger> --csv <file>`: any column order; a same row is skipped, a changed row refused unless `--replace`, which merges per row. A repeated key or bad row writes nothing.
+- `af data import <ledger> --csv <file>`: any column order; a same row is skipped, a changed row refused unless `--replace`, which merges per row. A repeated key or bad row writes nothing. `--scope col=value...` replaces the rows matching every pair with the file's rows (each file row must match); `--whole` replaces every row.
 - `af data delete <ledger> col=value... [--dry-run]`: removes and lists rows matching every condition (by value); other lines keep their bytes.
-- `af data list [<ledger>]`; `af data sql "<select>" [--json|--csv] [--limit N]`: read-only, 200 rows, stopped after 10 seconds.
+- `af data list [<ledger>]`; `af data sql "<select>" [--json|--csv] [--limit N]`: read-only, 200 rows, stopped after 10 seconds. It prints numbers to at most 12 significant digits; the file keeps what was written.
 
 `af doctor` flags a bad file or `pages:` entry.
 
@@ -39,16 +39,11 @@ A block in a `.md` page under `workspace/life/`, outside code fences, refilled b
 
 ## Suggested shapes
 
-`*` is the key; `month` is text.
+`*` is the key.
 
 | Ledger | Columns | Example |
 |---|---|---|
 | `sets` | `date`, `exercise*`, `set*`, `weight` | 2026-03-02, Squat, 1, 100 |
 | `body` | `date*`, `kg` | 2026-03-02, 80.5 |
-| `runs` | `date*`, `km`, `minutes` | 2026-03-03, 5.2, 28 |
-| `meals` | `date*`, `meal*`, `kcal` | 2026-03-02, lunch, 650 |
 | `transactions` | `date`, `account*`, `ref*`, `amount` | 2026-03-04, chequing, t-102, -12.5 |
 | `balances` | `as_of*`, `account*`, `balance` | 2026-03-31, chequing, 1520.4 |
-| `card_statements` | `statement_date*`, `card*`, `balance` | 2026-03-20, visa, 310 |
-| `budget` | `month*`, `category*`, `planned` | 2026-03, food, 400 |
-| `prices` | `date*`, `item*`, `store*`, `price` | 2026-03-02, milk, corner, 4.5 |

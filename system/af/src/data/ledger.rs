@@ -698,6 +698,34 @@ pub fn delete_lines(path: &str, ledger: &Ledger, lines: &[u64], expected: &[Vec<
     TextFile { text, crlf: false, bom: false }.save_atomic(path)
 }
 
+/// Cut the physical lines numbered `lines` out of a ledger file, then append `added` after what is left,
+/// in one atomic write. Every kept line keeps its bytes. The result is read back and checked against
+/// `expected` (the kept rows, then `added`) before it replaces the file; a file this cannot write cleanly
+/// is refused and left alone.
+pub fn cut_and_append(path: &str, ledger: &Ledger, lines: &[u64], added: &[Vec<String>], expected: &[Vec<String>]) -> R<()> {
+    let bytes = std::fs::read(path).map_err(|e| pyos::os_error(&e, path))?;
+    let label = ledger.label();
+    let before = raw_from_bytes(&bytes, &label).map_err(|e| refuse(&e))?;
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    for (i, chunk) in bytes.split_inclusive(|b| *b == b'\n').enumerate() {
+        if !lines.contains(&(i as u64 + 1)) {
+            out.extend_from_slice(chunk);
+        }
+    }
+    if !added.is_empty() {
+        if !out.is_empty() && !out.ends_with(b"\n") {
+            out.extend_from_slice(if before.crlf { b"\r\n" } else { b"\n" });
+        }
+        out.extend(encode(added, before.crlf));
+    }
+    let clean = raw_from_bytes(&out, &label).is_ok_and(|raw| raw.rows.iter().map(|(_, r)| r).eq(expected.iter()) && check(ledger, &label, &raw).is_empty());
+    if !clean {
+        die!("{label}: the rows could not be written cleanly (the file's lines do not match its rows); nothing was written");
+    }
+    let text = String::from_utf8_lossy(&out).into_owned();
+    TextFile { text, crlf: false, bom: false }.save_atomic(path)
+}
+
 /// The physical lines numbered `lines` as they stand in the file, without their line ending.
 pub fn lines_text(path: &str, lines: &[u64]) -> Vec<String> {
     let bytes = std::fs::read(path).unwrap_or_default();

@@ -53,21 +53,30 @@ fn delete_by_two_columns_removes_only_the_rows_matching_both() {
 }
 
 #[test]
-fn no_match_is_exit_one_and_writes_nothing() {
+fn no_match_says_so_exits_zero_and_writes_nothing() {
     let fx = Fx::new();
     seeded(&fx);
+    fx.write("workspace/life/p.md", "<!-- af-data: select count(*) as n from sets -->\n<!-- /af-data -->\n");
+    fx.ok(&["data", "page", "p.md"]);
+    let page = fx.read("workspace/life/p.md");
     let before = bytes(&fx, SETS);
     let (code, out, err) = fx.run(&["data", "delete", "sets", "exercise=Deadlift"]);
-    assert_eq!(code, 1, "{out}{err}");
-    assert!(err.contains("no row matches"), "{err}");
-    assert!(out.is_empty());
-    let (code, _, err) = fx.run(&["data", "delete", "sets", "exercise=Squat", "set=9"]);
-    assert_eq!(code, 1);
-    assert!(err.contains("no row matches"), "{err}");
+    assert_eq!(code, 0, "{out}{err}");
+    assert_eq!(out.trim_end(), "0 rows match; nothing removed");
+    let (code, out, err) = fx.run(&["data", "delete", "sets", "exercise=Squat", "set=9"]);
+    assert_eq!(code, 0, "{out}{err}");
+    assert_eq!(out.trim_end(), "0 rows match; nothing removed");
     assert_eq!(bytes(&fx, SETS), before);
+    assert_eq!(fx.read("workspace/life/p.md"), page, "nothing was written, so nothing re-rendered");
     assert!(!fx.exists(&format!("{SETS}.lock")));
-    // Even a dry run says so with exit 1.
-    assert_eq!(fx.run(&["data", "delete", "sets", "exercise=Deadlift", "--dry-run"]).0, 1);
+    // A dry run says the same, with exit 0.
+    let (code, out, _) = fx.run(&["data", "delete", "sets", "exercise=Deadlift", "--dry-run"]);
+    assert_eq!(code, 0);
+    assert_eq!(out.trim_end(), "0 rows match; nothing removed");
+    assert_eq!(bytes(&fx, SETS), before);
+    // A column that does not exist is still a refusal.
+    let err = fx.refused(&["data", "delete", "sets", "colour=red"]);
+    assert!(err.contains("no column 'colour'"), "{err}");
 }
 
 #[test]

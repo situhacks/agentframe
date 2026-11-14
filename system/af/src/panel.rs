@@ -507,7 +507,7 @@ fn answer_as(out: &Out, nothing: &str) -> Result<Answer, String> {
     match out.code {
         Some(0) => Ok(Answer { value: out.stdout.trim().to_string(), notes: notes_of(&out.stderr) }),
         Some(2) => Err(format!("the panel driver could not find what it needs (the bridge extension, the VS Code window, the chat or a control): {why}. A chat running in a terminal has no panel row")),
-        Some(3) => Err(format!("refused (exit 3): nothing was {nothing}. The operator was using the computer, the chat was busy or running, a full-screen window stayed in front, or another driver run held the panel, for the whole wait. {why}")),
+        Some(3) => Err(format!("refused (exit 3): nothing was {nothing}. The operator was using the computer, the chat was busy or running, the chat is the one he has in front (archive), a full-screen window stayed in front of its row (archive), or another driver run held the panel, for the whole wait. {why}")),
         Some(4) => Err(format!("refused (exit 4): nothing was {nothing}. The chat's input holds a draft typed in its input box or other text that is not the driver's; ask him to send or clear it. {why}")),
         Some(5) => Err(format!("refused (exit 5): a safety check failed, so nothing was {nothing}. {why}")),
         Some(7) => {

@@ -46,6 +46,7 @@ ALLOWED_IMPORTS = {
     "GetLastInputInfo", "IsIconic", "IsWindow", "GetWindowTextW", "GetProcessTimes",
     "GetCursorPos", "SetCursorPos", "WindowFromPoint", "GetAncestor", "SetWindowPos", "ShowWindow",
     "GetForegroundWindow", "SHQueryUserNotificationState",
+    "GetWindowLongW", "GetWindowPlacement", "SetWindowPlacement",
 }
 # Words that would mean synthetic input, clipboard use or taking the foreground. SetWindowVisualState is the
 # Window pattern's restore: it takes the foreground and resets the idle time (measured), so it is never used.
@@ -224,13 +225,18 @@ class WindowRuleTests(unittest.TestCase):
         self.assertIn("Restore-Minimized", ensure)
         restore_fn = function_text("Restore-Minimized")
         # Under Wait-Idle, then: bottom of the stack while minimized, shown without activation, behind his window.
-        for part in ["Wait-Idle 'restore the minimized VS Code window'", "PlaceBottom", "ShowNoActivate", "PlaceBehind($script:Hwnd, $front)", "Foreground()", "Add-Note", "$script:WasMinimized = $true"]:
+        for part in ["Wait-Idle 'restore the minimized VS Code window'", "GetPlacement", "PlaceBottom", "ShowNoActivate", "Set-VsCodeBehind $front", "Foreground()", "Add-Note", "$script:WasMinimized = $true"]:
             self.assertIn(part, restore_fn)
-        self.assertLess(restore_fn.index("Wait-Idle"), restore_fn.index("PlaceBottom"))
+        self.assertLess(restore_fn.index("Wait-Idle"), restore_fn.index("GetPlacement"), "the placement is saved before the restore")
+        self.assertLess(restore_fn.index("GetPlacement"), restore_fn.index("PlaceBottom"))
         self.assertLess(restore_fn.index("PlaceBottom"), restore_fn.index("ShowNoActivate"))
-        self.assertLess(restore_fn.index("ShowNoActivate"), restore_fn.index("PlaceBehind"))
-        self.assertLess(restore_fn.index("PlaceBehind"), restore_fn.index("Wait-Tree"))
+        self.assertLess(restore_fn.index("ShowNoActivate"), restore_fn.index("Set-VsCodeBehind"))
+        self.assertLess(restore_fn.index("Set-VsCodeBehind"), restore_fn.index("Wait-Tree"))
+        behind = function_text("Set-VsCodeBehind")
+        for part in ["PlaceBehind", "PlaceBottom", "IsTopmost", "ClearTopmost", "Add-Note"]:
+            self.assertIn(part, behind)
         restore = function_text("Restore-Screen")
+        self.assertIn("MinimizeWithPlacement", restore)
         self.assertIn("MinimizeNoActivate", restore)
         self.assertIn("InvokePattern", restore, "his previous chat is put back by Invoke on its row")
         code = code_lines(source())
@@ -286,7 +292,7 @@ class TextRuleTests(unittest.TestCase):
                 "$out = @(foreach ($f in $files) { Read-Text $f })\n"
                 "ConvertTo-Json -InputObject $out -Compress\n"
             )
-            got = run_functions(["Stop-Panel", "Read-Text"], body.replace("\\\\", "\\\\"))
+            got = run_functions(["Stop-Panel", "Read-Text"], body.replace("\\", "\\"))
         self.assertEqual(got, cases, "no leading space is added anywhere, line breaks are LF and trailing breaks are dropped")
 
     def test_the_driver_has_no_leading_space_rule(self):
@@ -1431,6 +1437,9 @@ class CloseLoopBehaviourTests(unittest.TestCase):
             "public static class PanelNative { public static List<string> Calls = new List<string>(); public static IntPtr Fg = new IntPtr(9); public static bool MoveFg = false;\n"
             "  public static string Log { get { return string.Join(\" \", Calls.ToArray()); } }\n"
             "  public static double IdleMs() { return 999999; }\n"
+            "  public static bool IsWindow(IntPtr h) { return true; }\n"
+            "  public static bool IsTopmost(IntPtr h) { return false; }\n"
+            "  public static int[] GetPlacement(IntPtr h) { return null; }\n"
             "  public static IntPtr Foreground() { return Fg; }\n"
             "  public static bool PlaceBottom(IntPtr h) { Calls.Add(\"bottom\"); return true; }\n"
             "  public static bool ShowNoActivate(IntPtr h) { Calls.Add(\"show4\"); if (MoveFg) Fg = new IntPtr(5); return true; }\n"
@@ -1453,7 +1462,7 @@ class CloseLoopBehaviourTests(unittest.TestCase):
             "$out.moved_notes = @($script:Notes)\n"
             "ConvertTo-Json -Compress -InputObject $out\n"
         )
-        got = run_functions(["Restore-Minimized"], body)
+        got = run_functions(["Restore-Minimized", "Set-VsCodeBehind"], body)
         self.assertEqual(got["native"], "bottom show4 behind9", "bottom while minimized, shown without activation, directly behind his foreground window")
         self.assertEqual(got["steps"], "wait sleep2500 tree")
         self.assertTrue(got["min"])
@@ -1655,8 +1664,11 @@ class WaitingLogAndCancelTests(unittest.TestCase):
 
 @unittest.skipUnless(POWERSHELL, "needs Windows PowerShell")
 class ArchiveBehaviourTests(unittest.TestCase):
-    """The archive stage and Do-Archive run against a staged screen: a native stand-in that records the pointer
-    and window calls, a fake row and a fake Archive button. Nothing touches the real desktop."""
+    """The archive stage and Do-Archive run against a staged screen: a native stand-in that records every pointer
+    and window call (Calls) and every driver step in order (Seq), and that can run a hook when a named step
+    happens, so a test can make him come back, make a full-screen window appear or make the chat start running at
+    a chosen moment. The stand-in Wait-Idle fails the run when he is not idle (the real one would wait), so a
+    wait that comes after the raise shows up as a 'wait-idle' step after 'raise'. Nothing touches the desktop."""
 
     NATIVE = (
         "Add-Type -AssemblyName UIAutomationClient\n"
@@ -1665,69 +1677,91 @@ class ArchiveBehaviourTests(unittest.TestCase):
         "using System.Collections.Generic;\n"
         "public class PanelExit : Exception { public int Code; public string Reason; public PanelExit(int c, string r) : base(r) { Code = c; Reason = r; } }\n"
         "public static class PanelNative {\n"
-        "  public static double Idle = 999999; public static List<string> Calls = new List<string>();\n"
-        "  public static int[] Ptr = new int[] { 10, 20 }; public static IntPtr RootUnder = new IntPtr(5); public static IntPtr RootAfterRaise = new IntPtr(5);\n"
-        "  public static int Quns = 5; public static bool Alive = true; public static double IdleAfterMove = -1;\n"
+        "  public static double Idle = 999999; public static List<string> Calls = new List<string>(); public static List<string> Seq = new List<string>();\n"
+        "  public static Action<string> OnStep;\n"
+        "  public static int[] Ptr = new int[] { 10, 20 }; public static IntPtr RootUnder = new IntPtr(5); public static IntPtr RootAfterRaise = new IntPtr(5); public static IntPtr Fg = new IntPtr(9);\n"
+        "  public static int Quns = 5; public static bool Alive = true; public static bool Topmost = false; public static bool BehindTopmost = false; public static bool Stubborn = false; public static int FailReads = 0;\n"
+        "  public static int[] Placement = new int[] { 2, 2, 0, 0, 0, 0, 100, 100, 900, 700 };\n"
         "  public static string Log { get { return string.Join(\" \", Calls.ToArray()); } }\n"
+        "  public static string Order { get { return string.Join(\" \", Seq.ToArray()); } }\n"
+        "  public static void Ev(string n) { Seq.Add(n); if (OnStep != null) OnStep(n); }\n"
         "  public static double IdleMs() { return Idle; }\n"
-        "  public static bool IsWindow(IntPtr h) { return Alive; }\n"
-        "  public static int[] PointerPos() { return new int[] { Ptr[0], Ptr[1] }; }\n"
-        "  public static bool MovePointer(int x, int y) { Calls.Add(\"move \" + x + \",\" + y); Ptr = new int[] { x, y }; if (IdleAfterMove >= 0) Idle = IdleAfterMove; return true; }\n"
+        "  public static bool IsWindow(IntPtr h) { return Alive || h.ToInt64() != 7; }\n"
+        "  public static bool IsTopmost(IntPtr h) { return Topmost; }\n"
+        "  public static IntPtr Foreground() { return Fg; }\n"
+        "  public static int[] PointerPos() { if (FailReads > 0) { FailReads--; return null; } return new int[] { Ptr[0], Ptr[1] }; }\n"
+        "  public static bool MovePointer(int x, int y) { Calls.Add(\"move \" + x + \",\" + y); Ptr = new int[] { x, y }; Ev(\"move\"); return true; }\n"
         "  public static IntPtr RootAt(int x, int y) { return RootUnder; }\n"
-        "  public static bool RaiseNoActivate(IntPtr h) { Calls.Add(\"raise\"); RootUnder = RootAfterRaise; return true; }\n"
-        "  public static bool ClearTopmost(IntPtr h) { Calls.Add(\"notopmost\"); return true; }\n"
-        "  public static bool PlaceBehind(IntPtr h, IntPtr f) { Calls.Add(\"behind\" + f.ToInt64()); return true; }\n"
-        "  public static int NotificationState() { return Quns; }\n"
-        "  public static void Reset() { Idle = 999999; Calls.Clear(); Ptr = new int[] { 10, 20 }; RootUnder = new IntPtr(5); RootAfterRaise = new IntPtr(5); Quns = 5; Alive = true; IdleAfterMove = -1; }\n"
+        "  public static bool RaiseNoActivate(IntPtr h) { Calls.Add(\"raise\"); Topmost = true; RootUnder = RootAfterRaise; Ev(\"raise\"); return true; }\n"
+        "  public static bool ClearTopmost(IntPtr h) { Calls.Add(\"notopmost\"); if (!Stubborn) Topmost = false; Ev(\"notopmost\"); return true; }\n"
+        "  public static bool PlaceBehind(IntPtr h, IntPtr f) { Calls.Add(\"behind\" + f.ToInt64()); if (BehindTopmost) Topmost = true; Ev(\"behind\"); return true; }\n"
+        "  public static bool PlaceBottom(IntPtr h) { Calls.Add(\"bottom\"); Topmost = false; Ev(\"bottom\"); return true; }\n"
+        "  public static bool ShowNoActivate(IntPtr h) { Calls.Add(\"show4\"); Ev(\"show4\"); return true; }\n"
+        "  public static bool MinimizeNoActivate(IntPtr h) { Calls.Add(\"min7\"); return true; }\n"
+        "  public static int[] GetPlacement(IntPtr h) { Calls.Add(\"getplacement\"); return Placement; }\n"
+        "  public static bool MinimizeWithPlacement(IntPtr h, int[] q) { Calls.Add(\"minplace flags=\" + q[0] + \" rect=\" + q[6] + \",\" + q[7]); return true; }\n"
+        "  public static int NotificationState() { Ev(\"fs?\" + Quns); return Quns; }\n"
+        "  public static void Reset() { Idle = 999999; Calls.Clear(); Seq.Clear(); OnStep = null; Ptr = new int[] { 10, 20 }; RootUnder = new IntPtr(5); RootAfterRaise = new IntPtr(5); Fg = new IntPtr(9); Quns = 5; Alive = true; Topmost = false; BehindTopmost = false; Stubborn = false; FailReads = 0; }\n"
         "}\n"
         "'@\n"
+        "$CT = [System.Windows.Automation.ControlType]\n"
         "$IdleSeconds = 120; $RowPrefix = 'sessions-list-row-'\n"
-        "$script:Hwnd = [IntPtr]5; $script:Notes = @(); $script:Log = @(); $script:Sleeps = 0; $script:Restoring = $false\n"
-        "$script:WaitUntil = (Get-Date).AddMinutes(5); $script:Waits = @(); $script:RowGone = $false; $script:ButtonAfter = 1; $script:Polls = 0; $script:InvokeMoves = $false\n"
+        "$script:Hwnd = [IntPtr]5; $script:Notes = @(); $script:Log = @(); $script:Sleeps = 0; $script:Restoring = $false; $script:Cancelled = $false\n"
+        "$script:WaitUntil = (Get-Date).AddMinutes(5); $script:Waits = @(); $script:RowGone = $false; $script:ButtonAfter = 1; $script:Polls = 0\n"
+        "$script:RowStatus = 'idle'; $script:RowActive = $false; $script:Rs = [pscustomobject]@{ Count = 0; Busy = ''; Terminal = '' }; $script:KeepRow = $false\n"
         "$script:Win = [pscustomobject]@{ Current = [pscustomobject]@{ BoundingRectangle = [pscustomobject]@{ X = 0; Y = 0; Width = 2000; Height = 1200 } } }\n"
         "$script:St = [pscustomobject]@{ Sent = $false }\n"
         "function Add-Note([string]$Note) { $script:Notes += $Note }\n"
         "function Stop-Panel([int]$Code, [string]$Reason) { throw (New-Object PanelExit($Code, $Reason)) }\n"
-        "function Wait-Idle([string]$What) { $script:Log += ('idle: ' + $What) }\n"
+        "function Wait-Idle([string]$What) { [PanelNative]::Ev('wait-idle'); if ([PanelNative]::IdleMs() -lt 120000) { Stop-Panel 3 'the operator kept using the computer until the deadline' }; [PanelNative]::Ev('idle-ok') }\n"
         "function Stop-IfCancelled { }\n"
         "function Write-Waiting([string]$Reason) { $script:Waits += $Reason }\n"
         "function Clear-Waiting { }\n"
-        "function Start-Sleep { param([int]$Seconds = 0, [int]$Milliseconds = 0) $script:Sleeps++; if ($null -ne $script:OnSleep) { & $script:OnSleep } }\n"
-        "$script:OnSleep = $null\n"
+        "function Start-Sleep { param([int]$Seconds = 0, [int]$Milliseconds = 0) $script:Sleeps++; if ($Seconds -gt 0) { [PanelNative]::Ev('sleep' + $Seconds + 's') } else { [PanelNative]::Ev('sleep' + $Milliseconds) } }\n"
+        "function Hook([scriptblock]$Block) { [PanelNative]::OnStep = [System.Action[string]]$Block }\n"
         "function Fake-Row { $r = [pscustomobject]@{ Current = [pscustomobject]@{ IsOffscreen = $false; BoundingRectangle = [pscustomobject]@{ X = 100; Y = 200; Width = 300; Height = 40 } } }\n"
         "  $r | Add-Member -MemberType ScriptMethod -Name TryGetCurrentPattern -Value { param($p, $ref) $false }; $r }\n"
         "function Find-RowElement([string]$Id) { if ($script:RowGone) { $null } else { Fake-Row } }\n"
+        "function Get-Chats($Window) { @([pscustomobject]@{ Id = 'id-a'; Status = $script:RowStatus; Active = $script:RowActive }) }\n"
+        "function Get-RecordState([string]$Id) { $script:Rs }\n"
         "function Get-ArchiveButton([string]$Id) {\n"
         "  $script:Polls++\n"
         "  if ($script:Polls -lt $script:ButtonAfter) { return $null }\n"
-        "  if ($script:JumpPointer) { [PanelNative]::Ptr = [int[]]@(900, 900) }\n"
+        "  [PanelNative]::Ev('button')\n"
         "  $b = [pscustomobject]@{ }\n"
-        "  $b | Add-Member -MemberType ScriptMethod -Name GetCurrentPattern -Value { param($p) $inv = [pscustomobject]@{ }; $inv | Add-Member -MemberType ScriptMethod -Name Invoke -Value { $script:Log += 'invoke'; if (-not $script:KeepRow) { $script:RowGone = $true } }; $inv }\n"
+        "  $b | Add-Member -MemberType ScriptMethod -Name GetCurrentPattern -Value { param($p) $inv = [pscustomobject]@{ }; $inv | Add-Member -MemberType ScriptMethod -Name Invoke -Value { [PanelNative]::Ev('invoke'); if (-not $script:KeepRow) { $script:RowGone = $true } }; $inv }\n"
         "  $b\n"
         "}\n"
         "function Scenario([scriptblock]$Setup) {\n"
-        "  [PanelNative]::Reset(); $script:Notes = @(); $script:Log = @(); $script:Waits = @(); $script:Sleeps = 0; $script:RowGone = $false; $script:ButtonAfter = 1; $script:Polls = 0\n"
-        "  $script:JumpPointer = $false; $script:KeepRow = $false; $script:OnSleep = $null; $script:St.Sent = $false; $script:WaitUntil = (Get-Date).AddMinutes(5)\n"
+        "  [PanelNative]::Reset(); $script:Notes = @(); $script:Waits = @(); $script:Sleeps = 0; $script:RowGone = $false; $script:ButtonAfter = 1; $script:Polls = 0\n"
+        "  $script:KeepRow = $false; $script:St.Sent = $false; $script:WaitUntil = (Get-Date).AddMinutes(5); $script:RowStatus = 'idle'; $script:RowActive = $false\n"
+        "  $script:Rs = [pscustomobject]@{ Count = 0; Busy = ''; Terminal = '' }\n"
         "  & $Setup\n"
         "  $code = 0; $reason = ''\n"
         "  try { Invoke-ArchiveStage 'id-a' } catch { $e = $_.Exception; while ($null -ne $e -and -not ($e -is [PanelExit])) { $e = $e.InnerException }; if ($null -ne $e) { $code = $e.Code; $reason = $e.Reason } else { $code = 99; $reason = $_.Exception.Message } }\n"
-        "  [pscustomobject]@{ code = $code; reason = $reason; calls = [PanelNative]::Log; ptr = ([string][PanelNative]::Ptr[0] + ',' + [string][PanelNative]::Ptr[1]); log = (@($script:Log) -join ' | '); notes = @($script:Notes); waits = @($script:Waits); sent = $script:St.Sent }\n"
+        "  [pscustomobject]@{ code = $code; reason = $reason; calls = [PanelNative]::Log; order = [PanelNative]::Order; ptr = ([string][PanelNative]::Ptr[0] + ',' + [string][PanelNative]::Ptr[1]); notes = @($script:Notes); waits = @($script:Waits); sent = $script:St.Sent; sleeps = $script:Sleeps }\n"
         "}\n"
     )
     FUNCS = [
-        "Invoke-ArchiveStage", "Get-RowCenter", "Test-PointerAt", "Restore-Pointer", "Undo-Raise", "Test-FullScreenFront",
-        "Wait-NoFullScreen", "Get-OperatorBack",
+        "Invoke-ArchiveStage", "Get-RowCenter", "Test-PointerAt", "Restore-Pointer", "Undo-Raise", "Set-VsCodeBehind",
+        "Test-FullScreenFront", "Get-OperatorBack", "Get-ArchiveBlock",
     ]
 
     def run_scenarios(self, body: str):
         return run_functions(self.FUNCS, self.NATIVE + "$o = [ordered]@{}\n" + body + "ConvertTo-Json -Compress -Depth 5 -InputObject $o\n")
+
+    @staticmethod
+    def after(order: str, step: str) -> list:
+        """The steps that came after the first `step`."""
+        words = order.split()
+        return words[words.index(step) + 1:] if step in words else []
 
     def test_an_uncovered_row_gets_the_pointer_then_the_archive_button_then_the_pointer_goes_back(self):
         got = self.run_scenarios("$o.ok = Scenario { }\n")["ok"]
         self.assertEqual(got["code"], 0, got)
         self.assertEqual(got["calls"], "move 250,220 move 10,20", "onto the row's centre, and back where it was")
         self.assertEqual(got["ptr"], "10,20")
-        self.assertIn("invoke", got["log"])
+        self.assertIn("invoke", got["order"])
         self.assertTrue(got["sent"], "the point of no return is recorded before the Invoke")
         self.assertNotIn("raise", got["calls"])
 
@@ -1736,7 +1770,35 @@ class ArchiveBehaviourTests(unittest.TestCase):
         self.assertEqual(got["code"], 0, got)
         # raise, then the pointer, then (pointer first) the pointer back, the topmost flag off, VS Code directly behind the cover.
         self.assertEqual(got["calls"], "raise move 250,220 move 10,20 notopmost behind7")
-        self.assertIn("idle: raise VS Code above the window that covers the row", got["log"], "the raise waits for him to be idle")
+        # Order before the raise: wait for idle, check full screen, then the raise with nothing between.
+        self.assertEqual(got["order"].split()[1:5], ["wait-idle", "idle-ok", "fs?5", "raise"], "after the scroll settle (sleep300)")
+
+    def test_nothing_waits_after_the_raise_and_he_touching_the_pointer_then_undoes_it_at_once(self):
+        """Found in review: the driver raised VS Code and then waited for idle again, so a touch right after the raise
+        left VS Code over his work until the step deadline."""
+        got = self.run_scenarios(
+            "$o.touch = Scenario { [PanelNative]::RootUnder = [IntPtr]7; Hook { param($n) if ($n -eq 'raise') { [PanelNative]::Idle = 5 } } }\n"
+            "$o.calm = Scenario { [PanelNative]::RootUnder = [IntPtr]7 }\n"
+        )
+        touch = got["touch"]
+        self.assertEqual(touch["code"], 3, touch)
+        self.assertIn("operator came back", touch["reason"])
+        self.assertEqual(touch["calls"], "raise notopmost behind7", "no pointer move; the raise is undone")
+        steps = self.after(touch["order"], "raise")
+        self.assertNotIn("wait-idle", steps, "no wait for idle after the raise")
+        self.assertFalse([s for s in steps if s.startswith("sleep")], f"nothing sleeps between the raise and its undo: {steps}")
+        # And on the calm path only the button poll and the row-gone confirm sleep after the raise.
+        sleeps = [s for s in self.after(got["calm"]["order"], "raise") if s.startswith("sleep")]
+        self.assertTrue(all(s in ("sleep150", "sleep200") for s in sleeps), sleeps)
+        self.assertNotIn("wait-idle", self.after(got["calm"]["order"], "raise"))
+
+    def test_if_he_comes_back_between_the_idle_wait_and_the_raise_nothing_is_raised(self):
+        got = self.run_scenarios(
+            "$o.back = Scenario { [PanelNative]::RootUnder = [IntPtr]7; $script:Fired = $false; Hook { param($n) if ($n -eq 'fs?5' -and -not $script:Fired) { $script:Fired = $true; [PanelNative]::Idle = 5 } } }\n"
+        )["back"]
+        self.assertEqual(got["code"], 3, got)
+        self.assertEqual(got["calls"], "", "no raise, no pointer move")
+        self.assertEqual(got["order"].split()[1:], ["wait-idle", "idle-ok", "fs?5", "wait-idle"], "idle is waited for again instead of raising over him")
 
     def test_a_row_that_stays_covered_after_the_raise_stops_with_exit_5_and_the_raise_undone(self):
         got = self.run_scenarios("$o.c = Scenario { [PanelNative]::RootUnder = [IntPtr]7; [PanelNative]::RootAfterRaise = [IntPtr]7 }\n")["c"]
@@ -1745,28 +1807,91 @@ class ArchiveBehaviourTests(unittest.TestCase):
         self.assertIn("nothing was archived", got["reason"])
         self.assertFalse(got["sent"])
 
-    def test_the_raise_is_undone_even_when_the_covering_window_is_gone(self):
-        got = self.run_scenarios("$o.c = Scenario { [PanelNative]::RootUnder = [IntPtr]7; [PanelNative]::Alive = $false }\n")["c"]
-        self.assertEqual(got["calls"], "raise move 250,220 move 10,20 notopmost", "no 'behind' for a window that no longer exists")
-
-    def test_a_full_screen_window_in_front_blocks_the_raise_and_logs_why_once(self):
+    def test_the_raise_is_undone_to_a_place_that_is_never_the_always_on_top_band(self):
+        """Review item 4: with the cover gone VS Code went only 'not topmost' (above every normal window), and behind an
+        always-on-top window it stayed topmost."""
         got = self.run_scenarios(
-            "$o.wait = Scenario { [PanelNative]::RootUnder = [IntPtr]7; [PanelNative]::RootAfterRaise = [IntPtr]5; [PanelNative]::Quns = 2; $script:OnSleep = { if ($script:Sleeps -ge 3) { [PanelNative]::Quns = 5 } } }\n"
-            "$o.deadline = Scenario { [PanelNative]::RootUnder = [IntPtr]7; [PanelNative]::Quns = 3; $script:WaitUntil = (Get-Date).AddSeconds(-1) }\n"
-            "$o.presentation = Scenario { [PanelNative]::RootUnder = [IntPtr]7; [PanelNative]::Quns = 4; $script:WaitUntil = (Get-Date).AddSeconds(-1) }\n"
-            "$o.not_covered = Scenario { [PanelNative]::Quns = 2; $script:WaitUntil = (Get-Date).AddSeconds(-1) }\n"
+            "$o.gone_fg = Scenario { [PanelNative]::RootUnder = [IntPtr]7; [PanelNative]::Alive = $false }\n"
+            "$o.gone_fg_is_vscode = Scenario { [PanelNative]::RootUnder = [IntPtr]7; [PanelNative]::Alive = $false; [PanelNative]::Fg = [IntPtr]5 }\n"
+            "$o.cover_topmost = Scenario { [PanelNative]::RootUnder = [IntPtr]7; [PanelNative]::BehindTopmost = $true }\n"
+            "$o.stubborn = Scenario { [PanelNative]::RootUnder = [IntPtr]7; [PanelNative]::BehindTopmost = $true; [PanelNative]::Stubborn = $true }\n"
+        )
+        self.assertEqual(got["gone_fg"]["calls"], "raise move 250,220 move 10,20 notopmost behind9", "the cover is gone: directly behind his foreground window")
+        self.assertEqual(got["gone_fg_is_vscode"]["calls"], "raise move 250,220 move 10,20 notopmost bottom", "his foreground is VS Code itself: the bottom")
+        self.assertEqual(got["cover_topmost"]["calls"], "raise move 250,220 move 10,20 notopmost behind7 notopmost", "behind an always-on-top cover it is topmost again, so the flag is cleared again")
+        self.assertEqual(got["cover_topmost"]["notes"], [])
+        self.assertTrue(any("still in the always-on-top band" in n for n in got["stubborn"]["notes"]), got["stubborn"]["notes"])
+
+    def test_a_full_screen_window_blocks_the_raise_and_a_video_that_starts_during_the_idle_wait_is_seen(self):
+        got = self.run_scenarios(
+            "$o.wait = Scenario { [PanelNative]::RootUnder = [IntPtr]7; [PanelNative]::Quns = 2; Hook { param($n) if ($n -eq 'sleep2s') { [PanelNative]::Quns = 5 } } }\n"
+            "$o.video_after_idle = Scenario { [PanelNative]::RootUnder = [IntPtr]7; $script:Fired = $false; Hook { param($n) if ($n -eq 'idle-ok' -and -not $script:Fired) { $script:Fired = $true; [PanelNative]::Quns = 2 } elseif ($n -eq 'sleep2s') { [PanelNative]::Quns = 5 } } }\n"
+            "$o.not_covered = Scenario { [PanelNative]::Quns = 2 }\n"
             "$o.other_states = Scenario { [PanelNative]::RootUnder = [IntPtr]7; [PanelNative]::Quns = 6 }\n"
         )
         self.assertEqual(got["wait"]["code"], 0, got["wait"])
-        self.assertEqual(got["wait"]["waits"], ["a full-screen window is in front"] * 2, "the stand-in logs each call; the real Write-Waiting logs it once")
-        self.assertEqual(got["wait"]["calls"], "raise move 250,220 move 10,20 notopmost behind7", "it raised only once the full-screen window was gone")
-        for case in ("deadline", "presentation"):
-            self.assertEqual(got[case]["code"], 3, case)
-            self.assertEqual(got[case]["calls"], "", f"{case}: nothing raised, nothing moved")
-            self.assertIn("full-screen window stayed in front", got[case]["reason"])
+        self.assertEqual(got["wait"]["waits"], ["a full-screen window is in front"], "one wait, then it raised")
+        self.assertEqual(got["wait"]["calls"], "raise move 250,220 move 10,20 notopmost behind7")
+        # Review item 3: the check comes after the last idle wait, so a video that started during it blocks the raise.
+        order = got["video_after_idle"]["order"].split()
+        self.assertEqual(got["video_after_idle"]["code"], 0, got["video_after_idle"])
+        self.assertLess(order.index("fs?2"), order.index("sleep2s"))
+        self.assertLess(order.index("sleep2s"), order.index("raise"))
+        self.assertEqual(order[order.index("raise") - 1], "fs?5", "the full-screen check is the step right before the raise")
+        self.assertEqual(order[order.index("raise") - 2], "idle-ok", "and the idle wait came just before that")
+        self.assertEqual(got["video_after_idle"]["waits"], ["a full-screen window is in front"])
         self.assertEqual(got["not_covered"]["code"], 0, "an uncovered row needs no raise, so the guard does not apply")
         self.assertEqual(got["not_covered"]["calls"], "move 250,220 move 10,20")
         self.assertEqual(got["other_states"]["code"], 0, "states 5, 6 and 7 do not block")
+
+    def test_a_full_screen_window_that_never_leaves_ends_in_exit_3_with_nothing_raised_or_moved(self):
+        got = self.run_scenarios(
+            # A clock that moves 20 seconds on every look, so the 60 seconds pass in a few looks.
+            "$script:Clock = Get-Date\n"
+            "function Get-Date { $script:Clock = $script:Clock.AddSeconds(20); $script:Clock }\n"
+            "$o.deadline = Scenario { [PanelNative]::RootUnder = [IntPtr]7; [PanelNative]::Quns = 3; $script:WaitUntil = $script:Clock.AddSeconds(-1) }\n"
+        )["deadline"]
+        self.assertEqual(got["code"], 3, got)
+        self.assertIn("full-screen window stayed in front", got["reason"])
+        self.assertEqual(got["calls"], "", "nothing raised, nothing moved")
+        self.assertGreaterEqual(got["sleeps"], 2, "it waited first; with the run's wait already spent it has 60 seconds of its own")
+
+    def test_with_the_wait_budget_already_spent_a_full_screen_window_still_gets_its_own_wait(self):
+        """Review minor item: after a tab close the original deadline may have passed; the wait must not exit 3 at once."""
+        got = self.run_scenarios(
+            "$o.own = Scenario { [PanelNative]::RootUnder = [IntPtr]7; [PanelNative]::Quns = 2; $script:WaitUntil = (Get-Date).AddSeconds(-30); Hook { param($n) if ($n -eq 'sleep2s') { [PanelNative]::Quns = 5 } } }\n"
+        )["own"]
+        self.assertEqual(got["code"], 0, got)
+        self.assertEqual(got["calls"], "raise move 250,220 move 10,20 notopmost behind7")
+
+    def test_a_chat_that_started_running_while_the_driver_waited_is_not_archived(self):
+        """Review item 2: busy and running were read once, before the tab close and waits that can last minutes."""
+        got = self.run_scenarios(
+            "$o.running = Scenario { Hook { param($n) if ($n -eq 'button') { $script:RowStatus = 'running' } } }\n"
+            "$o.record = Scenario { Hook { param($n) if ($n -eq 'button') { $script:Rs = [pscustomobject]@{ Count = 1; Busy = ''; Terminal = '' } } } }\n"
+            "$o.in_front = Scenario { Hook { param($n) if ($n -eq 'button') { $script:RowActive = $true } } }\n"
+            "$o.fine = Scenario { }\n"
+        )
+        for case, why in (("running", "row says it is running"), ("record", "live session record again"), ("in_front", "the active row")):
+            c = got[case]
+            self.assertEqual(c["code"], 3, case)
+            self.assertIn(why, c["reason"], case)
+            self.assertIn("nothing was archived", c["reason"], case)
+            self.assertNotIn("invoke", c["order"], f"{case}: the button was never invoked")
+            self.assertFalse(c["sent"], case)
+            self.assertEqual(c["calls"], "move 250,220 move 10,20", f"{case}: the pointer goes back")
+        self.assertEqual(got["fine"]["code"], 0)
+        # The re-read is the last step before the Invoke: nothing waits between them.
+        order = got["fine"]["order"].split()
+        between = order[order.index("button") + 1: order.index("invoke")]
+        self.assertEqual([s for s in between if s.startswith("sleep") or s == "wait-idle"], [])
+
+    def test_a_pointer_that_cannot_be_read_back_after_the_move_is_still_put_back(self):
+        """Review item 7: the placed position came from the read-back, so a failed read left the pointer moved."""
+        got = self.run_scenarios("$o.m = Scenario { Hook { param($n) if ($n -eq 'move') { [PanelNative]::OnStep = $null; [PanelNative]::FailReads = 1 } } }\n")["m"]
+        self.assertEqual(got["code"], 0, got)
+        self.assertEqual(got["calls"], "move 250,220 move 10,20")
+        self.assertEqual(got["ptr"], "10,20")
 
     def test_no_archive_button_is_exit_5_and_the_pointer_still_goes_back(self):
         got = self.run_scenarios("$o.n = Scenario { $script:ButtonAfter = 2000000000 }\n")["n"]
@@ -1776,20 +1901,20 @@ class ArchiveBehaviourTests(unittest.TestCase):
         self.assertFalse(got["sent"])
 
     def test_if_he_moves_the_pointer_nothing_is_archived_and_the_pointer_is_left_where_he_put_it(self):
-        got = self.run_scenarios("$o.m = Scenario { $script:JumpPointer = $true }\n")["m"]
+        got = self.run_scenarios("$o.m = Scenario { Hook { param($n) if ($n -eq 'button') { [PanelNative]::Ptr = [int[]]@(900, 900) } } }\n")["m"]
         self.assertEqual(got["code"], 3)
         self.assertIn("operator came back", got["reason"])
         self.assertIn("nothing was archived", got["reason"])
-        self.assertNotIn("invoke", got["log"])
+        self.assertNotIn("invoke", got["order"])
         self.assertEqual(got["calls"], "move 250,220", "not moved back: it is his pointer now")
         self.assertEqual(got["ptr"], "900,900")
         self.assertTrue(any("left it where he put it" in n for n in got["notes"]), got["notes"])
 
     def test_if_the_idle_time_falls_after_the_move_nothing_is_archived(self):
-        got = self.run_scenarios("$o.i = Scenario { [PanelNative]::IdleAfterMove = 40 }\n")["i"]
+        got = self.run_scenarios("$o.i = Scenario { Hook { param($n) if ($n -eq 'move') { [PanelNative]::Idle = 40 } } }\n")["i"]
         self.assertEqual(got["code"], 3)
         self.assertIn("idle time fell", got["reason"])
-        self.assertNotIn("invoke", got["log"])
+        self.assertNotIn("invoke", got["order"])
         self.assertEqual(got["calls"], "move 250,220 move 10,20", "the pointer is still where the driver put it, so it goes back")
 
     def test_a_row_that_stays_in_the_list_after_the_invoke_is_exit_1_with_the_pointer_back(self):
@@ -1819,13 +1944,16 @@ class ArchiveBehaviourTests(unittest.TestCase):
         got = self.run_scenarios("function Find-RowElement([string]$Id) { $null }\n$o.gone = Scenario { }\n")["gone"]
         self.assertEqual((got["code"], got["calls"]), (5, ""))
 
-    # Do-Archive: the order of the guards and when the bridge is needed.
+    # Do-Archive: the order of the guards, when the bridge is needed, the chat in front, and the list reading.
 
     DO = (
-        "$script:Log = @(); $script:Rows = @('id-a'); $script:Rs = [pscustomobject]@{ Count = 0; Busy = ''; Terminal = '' }; $script:RowStatus = 'idle'\n"
+        "$script:Log = @(); $script:Rows = @('id-a'); $script:Rs = [pscustomobject]@{ Count = 0; Busy = ''; Terminal = '' }; $script:RowStatus = 'idle'; $script:ListReadable = $true\n"
         "function Wait-Guards([string]$Id) { $script:Log += 'guards' }\n"
         "function Ensure-Screen { $script:Log += 'screen' }\n"
+        "function Find-Named($win, [string]$Name, $Type) { if ($script:ListReadable) { @('button') } else { @() } }\n"
         "function Find-RowElement([string]$Id) { if ($script:Rows -contains $Id) { 'row' } else { $null } }\n"
+        "function Wait-NotInFront([string]$Id) { $script:Log += 'front' }\n"
+        "function Wait-RowNotActive([string]$Id) { $script:Log += 'notactive' }\n"
         "function Wait-RowIdle([string]$Id) { $script:Log += 'rowidle'; if ($script:RowStatus -eq 'running') { Stop-Panel 3 'the chat is running (its row says so)' }; [pscustomobject]@{ Name = 'a chat title'; Status = $script:RowStatus } }\n"
         "function Get-RecordState([string]$Id) { $script:Rs }\n"
         "function Test-Bridge { $script:Log += 'bridge' }\n"
@@ -1849,18 +1977,30 @@ class ArchiveBehaviourTests(unittest.TestCase):
             "$o.no_tab = Run-Do\n"
             "$script:Rs = [pscustomobject]@{ Count = 1; Busy = ''; Terminal = '' }; $o.tab = Run-Do\n"
         )
-        self.assertEqual(got["no_tab"]["log"], "guards screen rowidle stage")
+        self.assertEqual(got["no_tab"]["log"], "guards screen front rowidle stage")
         self.assertEqual(got["no_tab"]["value"], "archived session id-a; its row left the list")
-        self.assertEqual(got["tab"]["log"], "guards screen rowidle bridge label close empty id-a lbl id-a stage")
+        self.assertEqual(got["tab"]["log"], "guards screen front rowidle bridge label close empty id-a lbl id-a notactive stage")
         self.assertIn("its open tab was closed first", got["tab"]["value"])
 
-    def test_no_row_is_exit_0_with_a_message_that_says_nothing_was_changed_and_the_tab_is_not_touched(self):
+    def test_the_chat_he_has_in_front_is_waited_for_before_any_tab_or_row_work(self):
+        got = self.run_do("$script:Rs = [pscustomobject]@{ Count = 1; Busy = ''; Terminal = '' }; $o.r = Run-Do\n")["r"]
+        words = got["log"].split()
+        self.assertLess(words.index("front"), words.index("rowidle"))
+        self.assertLess(words.index("front"), words.index("bridge"))
+        self.assertLess(words.index("front"), words.index("close"))
+
+    def test_no_row_is_exit_0_worded_as_what_is_known_and_the_tab_is_not_touched(self):
         got = self.run_do("$script:Rows = @(); $script:Rs = [pscustomobject]@{ Count = 1; Busy = ''; Terminal = '' }; $o.r = Run-Do\n")["r"]
         self.assertEqual(got["code"], 0)
-        self.assertIn("no row for session id-a in the panel's list", got["value"])
-        self.assertIn("already archived, or it was never listed there", got["value"])
-        self.assertIn("nothing was changed", got["value"])
+        self.assertEqual(got["value"], "no row for this chat is in the list as shown (already archived, never listed, or inside a collapsed group); nothing was changed")
         self.assertEqual(got["log"], "guards screen", "no bridge, no close, no stage")
+
+    def test_an_unreadable_sessions_list_is_exit_2_not_a_no_row_answer(self):
+        got = self.run_do("$script:ListReadable = $false; $script:Rows = @(); $o.r = Run-Do\n")["r"]
+        self.assertEqual(got["code"], 2)
+        self.assertIn("sessions list is not readable", got["reason"])
+        self.assertIn("nothing was changed", got["reason"])
+        self.assertEqual(got["log"], "guards screen restore-chat", "nothing was touched, so the restore has nothing to put back")
 
     def test_a_running_a_busy_or_a_terminal_chat_is_refused_before_the_tab_or_the_pointer_is_touched(self):
         got = self.run_do(
@@ -1877,27 +2017,236 @@ class ArchiveBehaviourTests(unittest.TestCase):
             self.assertIn("Nothing was archived.", got[case]["reason"], case)
             self.assertNotIn("Nothing was sent", got[case]["reason"], case)
 
+    # The chat he has in front and the row that stays active after its tab closes.
+
+    LOOPS = (
+        "$script:Active = @('id-a'); $script:PrevActive = @('id-a'); $script:Waits = @(); $script:Sleeps = 0\n"
+        "function Get-ActiveIds { @($script:Active) }\n"
+        "function Stop-IfCancelled { }\nfunction Clear-Waiting { }\n"
+        "function Write-Waiting([string]$Reason) { $script:Waits += $Reason }\n"
+        "function Get-WaitUntil { $script:WaitUntil }\n"
+        "function Start-Sleep { param([int]$Seconds = 0, [int]$Milliseconds = 0) $script:Sleeps++; if ($null -ne $script:OnSleep) { & $script:OnSleep } }\n"
+        "$script:OnSleep = $null\n"
+        "function Try-Run([scriptblock]$B) { try { & $B; [pscustomobject]@{ code = 0; reason = '' } } catch { $pe = Get-PanelExit $_; [pscustomobject]@{ code = $pe.Code; reason = $pe.Reason } } }\n"
+    )
+
+    def run_loops(self, body: str):
+        script = self.NATIVE + self.LOOPS + "$o = [ordered]@{}\n" + body + "ConvertTo-Json -Compress -Depth 5 -InputObject $o\n"
+        return run_functions(["Wait-NotInFront", "Wait-RowNotActive", "Get-PanelExit"], script)
+
+    def test_a_chat_he_has_in_front_is_waited_for_then_refused_at_the_deadline(self):
+        got = self.run_loops(
+            "$script:OnSleep = { if ($script:Sleeps -ge 2) { $script:Active = @('id-b') } }\n"
+            "$o.leaves = Try-Run { Wait-NotInFront 'id-a' }\n"
+            "$o.prev = @($script:PrevActive); $o.waits = @($script:Waits)\n"
+            "$script:Active = @('id-a'); $script:OnSleep = $null; $script:WaitUntil = (Get-Date).AddSeconds(-1); $script:Waits = @()\n"
+            "$o.stays = Try-Run { Wait-NotInFront 'id-a' }\n"
+            "$o.stays_sleeps = $script:Sleeps\n"
+        )
+        self.assertEqual(got["leaves"]["code"], 0)
+        self.assertEqual(got["prev"], ["id-b"], "what he has in front when the wait ends is what his view is put back to")
+        self.assertEqual(got["waits"], ["the chat is the one he has in front"] * 2)
+        self.assertEqual(got["stays"]["code"], 3)
+        self.assertEqual(got["stays"]["reason"], "it is the chat he has in front; nothing was changed")
+        self.assertEqual(got["stays_sleeps"], 2, "it did not sleep again once the deadline had passed")
+
+    def test_the_row_must_stop_being_the_active_row_within_a_few_seconds_of_its_tab_closing(self):
+        got = self.run_loops(
+            "$script:OnSleep = { $script:Active = @('id-b') }\n"
+            "$o.leaves = Try-Run { Wait-RowNotActive 'id-a' }\n"
+            "$script:Active = @('id-a'); $script:OnSleep = $null\n"
+            "function Get-Date { param($Format) $script:T = $script:T.AddSeconds(3); $script:T }\n"
+            "$script:T = [datetime]'2026-11-13T10:00:00'\n"
+            "$o.stays = Try-Run { Wait-RowNotActive 'id-a' }\n"
+        )
+        self.assertEqual(got["leaves"]["code"], 0)
+        self.assertEqual(got["stays"]["code"], 3)
+        self.assertIn("still the active row after its tab was closed", got["stays"]["reason"])
+
+    # The window: restore without the foreground, always-on-top, and the maximized placement.
+
+    SCREEN = (
+        "$script:PrevActive = @('id-b'); $script:ScreenBegun = $true; $script:WasMinimized = $true; $script:SavedPlacement = $null\n"
+        "$script:RestoreUntil = (Get-Date).AddMinutes(5); $script:ActiveNow = @('id-b'); $script:Invoked = 0; $script:IdleOnSleep = $null\n"
+        "function Get-Chats($Window) { foreach ($id in @('id-a', 'id-b')) { $e = [pscustomobject]@{ Id = $id; Active = ($script:ActiveNow -contains $id); Element = $null }\n"
+        "  $e.Element = [pscustomobject]@{ }; $e.Element | Add-Member -MemberType ScriptMethod -Name GetCurrentPattern -Value { param($p) $i = [pscustomobject]@{ }; $i | Add-Member -MemberType ScriptMethod -Name Invoke -Value { $script:Invoked++; $script:ActiveNow = @('id-b') }; $i }; $e } }\n"
+        "function Wait-Tree { }\n"
+        "function Start-Sleep { param([int]$Seconds = 0, [int]$Milliseconds = 0) $script:Sleeps++; if ($Seconds -gt 0 -and $script:Sleeps -ge 5) { [PanelNative]::Idle = 999999 } }\n"
+    )
+
+    def run_screen(self, body: str, names=None):
+        script = self.NATIVE + self.SCREEN + "$o = [ordered]@{}\n" + body + "ConvertTo-Json -Compress -Depth 5 -InputObject $o\n"
+        return run_functions(["Restore-Screen", "Restore-Minimized", "Set-VsCodeBehind"] + (names or []), script)
+
+    def test_a_cancelled_run_or_one_with_nothing_to_put_back_does_not_wait_for_him_at_the_end(self):
+        """Review item 6: Restore-Screen waited up to 60 seconds for idle even with nothing visible to restore, so a
+        cancelled run outlived the cancel verb's 20 seconds."""
+        got = self.run_screen(
+            "function Reset-Screen { [PanelNative]::Reset(); $script:Sleeps = 0; $script:Notes = @(); $script:ScreenBegun = $true; $script:WasMinimized = $true; $script:SavedPlacement = $null; $script:Cancelled = $false; $script:Invoked = 0 }\n"
+            "Reset-Screen; [PanelNative]::Idle = 0; $script:ActiveNow = @('id-b'); Restore-Screen\n"
+            "$o.nothing_to_restore = [pscustomobject]@{ sleeps = $script:Sleeps; notes = @($script:Notes); calls = [PanelNative]::Log; invoked = $script:Invoked }\n"
+            "Reset-Screen; [PanelNative]::Idle = 0; $script:ActiveNow = @('id-a'); $script:Cancelled = $true; Restore-Screen\n"
+            "$o.cancelled = [pscustomobject]@{ sleeps = $script:Sleeps; notes = @($script:Notes); calls = [PanelNative]::Log; invoked = $script:Invoked }\n"
+            "Reset-Screen; [PanelNative]::Idle = 0; $script:ActiveNow = @('id-a'); Restore-Screen\n"
+            "$o.must_restore_waits = [pscustomobject]@{ sleeps = $script:Sleeps; notes = @($script:Notes); invoked = $script:Invoked }\n"
+        )
+        self.assertEqual(got["nothing_to_restore"]["sleeps"], 0)
+        self.assertEqual(got["nothing_to_restore"]["notes"], [])
+        self.assertEqual(got["nothing_to_restore"]["invoked"], 0)
+        self.assertIn("min7", got["nothing_to_restore"]["calls"], "the window is still minimized again, with no idle wait")
+        self.assertEqual(got["cancelled"]["sleeps"], 0, "a cancelled run does not wait")
+        self.assertTrue(any("not restored" in n for n in got["cancelled"]["notes"]), got["cancelled"]["notes"])
+        self.assertEqual(got["cancelled"]["invoked"], 0)
+        self.assertGreater(got["must_restore_waits"]["sleeps"], 0, "a normal run still waits for him before it re-activates his chat")
+        self.assertEqual(got["must_restore_waits"]["invoked"], 1)
+
+    def test_a_window_that_was_maximized_is_minimized_again_with_its_saved_placement(self):
+        got = self.run_screen(
+            "[PanelNative]::Reset(); $script:Notes = @(); $script:SavedPlacement = $null; $script:ActiveNow = @('id-b'); $script:Sleeps = 0\n"
+            "[PanelNative]::Placement = [int[]]@(2, 2, 0, 0, 0, 0, 100, 100, 900, 700)\n"
+            "Restore-Minimized\n"
+            "[PanelNative]::Placement = [int[]]@(0, 1, 0, 0, 0, 0, 5, 5, 5, 5)\n"
+            "$o.after_restore = [PanelNative]::Log\n"
+            "[PanelNative]::Calls.Clear(); Restore-Screen\n"
+            "$o.after_end = [PanelNative]::Log; $o.saved_cleared = ($null -eq $script:SavedPlacement)\n"
+            "[PanelNative]::Calls.Clear(); $script:ScreenBegun = $true; $script:WasMinimized = $true; $script:SavedPlacement = $null; Restore-Screen\n"
+            "$o.no_saved_placement = [PanelNative]::Log\n"
+            "[PanelNative]::Calls.Clear(); $script:ScreenBegun = $true; $script:WasMinimized = $true; $script:SavedPlacement = [int[]]@(2, 2, 0, 0, 0, 0, 1, 2, 3, 4); [PanelNative]::Fg = [IntPtr]5; $script:Notes = @(); Restore-Screen\n"
+            "$o.vscode_is_foreground = [PanelNative]::Log; $o.fg_notes = @($script:Notes)\n"
+        )
+        self.assertEqual(got["after_restore"], "getplacement bottom show4 behind9", "the placement as found is saved before the restore")
+        self.assertEqual(got["after_end"], "minplace flags=2 rect=100,100", "WPF_RESTORETOMAXIMIZED and the normal rectangle are kept")
+        self.assertTrue(got["saved_cleared"])
+        self.assertEqual(got["no_saved_placement"], "min7")
+        self.assertEqual(got["vscode_is_foreground"], "", "with VS Code in front he is using it: it is left as it is")
+        self.assertTrue(any("foreground window now" in n for n in got["fg_notes"]), got["fg_notes"])
+
+    def test_the_placement_is_saved_once_and_the_first_one_wins(self):
+        got = self.run_screen(
+            "[PanelNative]::Reset(); $script:SavedPlacement = $null\n"
+            "[PanelNative]::Placement = [int[]]@(2, 2, 0, 0, 0, 0, 100, 100, 900, 700); Restore-Minimized\n"
+            "[PanelNative]::Placement = [int[]]@(0, 2, 0, 0, 0, 0, 7, 7, 7, 7); Restore-Minimized\n"
+            "$o.flags = $script:SavedPlacement[0]; $o.left = $script:SavedPlacement[6]\n"
+        )
+        self.assertEqual((got["flags"], got["left"]), (2, 100))
+
+    def test_the_restore_never_leaves_vs_code_in_the_always_on_top_band(self):
+        got = self.run_screen(
+            "[PanelNative]::Reset(); $script:Notes = @(); [PanelNative]::BehindTopmost = $true; Restore-Minimized\n"
+            "$o.topmost_front = [pscustomobject]@{ calls = [PanelNative]::Log; notes = @($script:Notes) }\n"
+            "[PanelNative]::Reset(); $script:Notes = @(); [PanelNative]::BehindTopmost = $true; [PanelNative]::Stubborn = $true; Restore-Minimized\n"
+            "$o.stubborn = @($script:Notes)\n"
+            "[PanelNative]::Reset(); $script:Notes = @(); [PanelNative]::Fg = [IntPtr]5; Restore-Minimized\n"
+            "$o.fg_is_vscode = [PanelNative]::Log\n"
+        )
+        self.assertEqual(got["topmost_front"]["calls"], "getplacement bottom show4 behind9 notopmost")
+        self.assertEqual(got["topmost_front"]["notes"], [])
+        self.assertTrue(any("always-on-top band" in n for n in got["stubborn"]), got["stubborn"])
+        self.assertIn("bottom show4 bottom", got["fg_is_vscode"], "no window to go behind: the bottom")
+
+    # What a failed archive says, in its own words, and the tab it puts back.
+
+    def archive_failure(self, setup: str, stop: str, row: str = "'row'") -> dict:
+        body = (
+            WORLD
+            + "$script:Restored = $false\n"
+            f"function Find-RowElement([string]$Id) {{ {row} }}\n"
+            "New-RunState 'id-a' ''; $s = $script:St; $s.Archive = $true; $s.Label = 'chat-a'\n"
+            + setup
+            + "$out = [ordered]@{}\n"
+            f"try {{ Invoke-Guarded {{ {stop} }} 'Nothing was archived.' '' }} catch {{ $pe = Get-PanelExit $_; $out.code = $pe.Code; $out.reason = $pe.Reason }}\n"
+            "$out.log = @($W.Log); $out.notes = @($script:Notes); $out.tab_open = $W.TabOpen\n"
+            "ConvertTo-Json -Compress -Depth 4 -InputObject $out\n"
+        )
+        return run_functions(WORLD_FUNCTIONS + ["Get-ArchiveStateText"], body)
+
+    def test_a_failure_before_anything_changed_says_the_panel_was_not_changed(self):
+        got = self.archive_failure("$W.TabOpen = $true\n", "Stop-Panel 3 'it is the chat he has in front; nothing was changed'")
+        self.assertEqual(got["code"], 3)
+        self.assertEqual(got["reason"], "it is the chat he has in front; nothing was changed. Nothing was archived. The panel was not changed: the chat's tab is as it was.")
+        self.assertNotIn("Send", got["reason"])
+
+    def test_a_failure_after_the_tab_close_reopens_the_tab_and_says_so(self):
+        """Review item 5: a failure after the tab close and before the archive must reopen the tab as send does."""
+        got = self.archive_failure(
+            "$s.HadTab = $true; $s.Closed = $true; $s.CloseAsked = $true; $W.TabOpen = $false\n",
+            "Stop-Panel 3 'the chat started running while the driver waited'",
+        )
+        self.assertEqual(got["code"], 3)
+        self.assertTrue(got["tab_open"])
+        self.assertIn("reveal", got["log"])
+        self.assertIn("The driver closed the chat's tab, then opened the chat's tab again.", got["reason"])
+        self.assertIn("Nothing was archived.", got["reason"])
+        self.assertIn("The chat's tab is now open", got["reason"])
+        self.assertNotIn("pressed Send", got["reason"])
+
+    def test_a_tab_that_could_not_be_reopened_is_reported_with_the_reveal_command(self):
+        got = self.archive_failure(
+            "$s.HadTab = $true; $s.Closed = $true; $s.CloseAsked = $true; $W.TabOpen = $false; $W.RevealWorks = $false\n",
+            "Stop-Panel 3 'the operator kept using the computer'",
+        )
+        self.assertFalse(got["tab_open"])
+        self.assertIn("The chat's tab is now closed. It was open before the run.", got["reason"])
+        self.assertNotIn("opened the chat's tab again", got["reason"])
+        self.assertTrue(any("did not come back after reveal" in n and "panel_bridge.py reveal" in n for n in got["notes"]), got["notes"])
+
+    def test_after_the_archive_button_was_invoked_the_message_says_what_the_list_shows(self):
+        listed = self.archive_failure("$s.HadTab = $true; $s.Closed = $true; $s.CloseAsked = $true; $s.Sent = $true; $W.TabOpen = $false\n", "Stop-Panel 1 'the Archive button was invoked but the chat''s row is still in the list after 5 seconds'")
+        gone = self.archive_failure("$s.Sent = $true\n", "Stop-Panel 1 'x'", row="$null")
+        unknown = self.archive_failure("$s.Sent = $true\n", "Stop-Panel 1 'x'", row="throw 'cannot read'")
+        for got in (listed, gone, unknown):
+            self.assertEqual(got["code"], 1)
+            self.assertNotIn("pressed Send", got["reason"])
+            self.assertNotIn("The panel was not changed", got["reason"])
+            self.assertNotIn("reveal", got["log"], "nothing is put back after the button was invoked")
+        self.assertIn("The driver closed the chat's tab, then invoked the row's Archive button. The chat's row is still in the list, so the chat is not known to be archived.", listed["reason"])
+        self.assertIn("The chat's row is no longer in the list: it is archived.", gone["reason"])
+        self.assertIn("whether the chat is archived is unknown", unknown["reason"])
+        self.assertNotIn("Nothing was archived.", listed["reason"])
+
     def test_the_archive_run_is_one_logged_locked_action_with_the_driver_header_amended(self):
         text = source()
         self.assertRegex(text, r"Invoke-Logged 'archive' \$Session \$true \{ Do-Archive \$Session \}")
-        header = text.split("param(")[0]
-        for part in ["'archive' moves the pointer onto", "nothing is clicked or typed", "never takes the foreground", "behind the window he has in front", "waits while a", "full-screen window is in front", "exit 7"]:
-            self.assertIn(part, " ".join(header.replace("# ", "").split()), part)
+        header = " ".join(text.split("param(")[0].replace("# ", "").split())
+        for part in ["'archive' moves the pointer onto", "nothing is clicked or typed", "never takes the foreground", "behind the window he has in front",
+                     "waits while a", "full-screen window is in front", "exit 7", "A chat he has in front is never archived",
+                     "after VS Code is raised nothing waits except the 3 second button poll and the 5 second row-gone confirm",
+                     "3 the operator is active or came back", "5 a safety check failed (a record from outside the panel, the row covered by another window or with no usable place, no Archive button)",
+                     "saved placement"]:
+            self.assertIn(part, header, part)
+        self.assertNotIn("no Archive button, the operator came back", header, "the operator coming back is exit 3, not 5")
         self.assertEqual(code_lines(text).count("Archive session"), 1, "the one control archive names")
         archive = function_text("Do-Archive")
         self.assertLess(archive.index("Wait-Guards"), archive.index("Ensure-Screen"))
         self.assertLess(archive.index("Test-Bridge"), archive.index("Close-Checked"))
+        self.assertLess(archive.index("Wait-NotInFront"), archive.index("Wait-RowIdle"))
+        self.assertLess(archive.index("Close-Checked"), archive.index("Wait-RowNotActive"))
+        self.assertLess(archive.index("Wait-RowNotActive"), archive.index("Invoke-ArchiveStage"))
         stage = function_text("Invoke-ArchiveStage")
-        for part in ["ScrollIntoView", "Wait-NoFullScreen", "RaiseNoActivate", "finally", "Restore-Pointer $old $placed", "Undo-Raise $front", "Get-OperatorBack $placed $idleBefore"]:
+        for part in ["ScrollIntoView", "RaiseNoActivate", "finally", "Restore-Pointer $old $placed", "Undo-Raise $front", "Get-OperatorBack $placed $idleBefore", "Get-ArchiveBlock $Id"]:
             self.assertIn(part, stage)
+        # Review item 1 and 3, as text: one idle wait, in the loop, then the full-screen check, the idle re-check and the raise.
+        self.assertEqual(stage.count("Wait-Idle"), 1)
+        self.assertLess(stage.index("Wait-Idle"), stage.index("Test-FullScreenFront"))
+        self.assertLess(stage.index("Test-FullScreenFront"), stage.index("IdleMs() -lt"))
+        self.assertLess(stage.index("IdleMs() -lt"), stage.index("RaiseNoActivate"))
+        between = stage[stage.index("IdleMs() -lt"):stage.index("RaiseNoActivate")]
+        for waiting in ["Start-Sleep", "Wait-", "Find-RowElement", "Get-Chats"]:
+            self.assertNotIn(waiting, between, f"{waiting} between the last idle check and the raise")
+        after_raise = stage[stage.index("RaiseNoActivate"):]
+        self.assertNotIn("Wait-Idle", after_raise)
+        self.assertEqual(after_raise.count("Start-Sleep"), 2, "only the 3 second button poll and the 5 second row-gone confirm sleep after the raise")
+        self.assertLess(stage.index("Get-ArchiveBlock"), stage.index(".Invoke()"))
         self.assertLess(stage.index("Get-OperatorBack"), stage.index(".Invoke()"))
+        between = stage[stage.index("Get-ArchiveBlock $Id"):stage.index(".Invoke()")]
+        for waiting in ["Start-Sleep", "Wait-"]:
+            self.assertNotIn(waiting, between, f"{waiting} between the last re-read and the Invoke")
         self.assertLess(stage.index("Restore-Pointer"), stage.index("Undo-Raise"), "the pointer goes back before the raise is undone")
-        self.assertLess(stage.index("Wait-NoFullScreen"), stage.index("RaiseNoActivate"))
-        self.assertLess(stage.index("Wait-Idle 'raise VS Code"), stage.index("RaiseNoActivate"))
-        self.assertEqual(code_lines(source()).count("RaiseNoActivate("), 2, "its definition and one raise, inside the archive stage")
-        self.assertEqual(code_lines(source()).count("MovePointer("), 3, "its definition, and two calls: onto the row, and back")
+        self.assertEqual(code_lines(text).count("RaiseNoActivate("), 2, "its definition and one raise, inside the archive stage")
+        self.assertEqual(code_lines(text).count("MovePointer("), 3, "its definition, and two calls: onto the row, and back")
         self.assertIn("GetParent($btn)", function_text("Get-ArchiveButton"))
         self.assertIn("-ne ($RowPrefix + $Id)", function_text("Get-ArchiveButton"), "the button must belong to the target row")
+        self.assertNotIn("Wait-NoFullScreen", code_lines(text))
 
 
 @unittest.skipUnless(POWERSHELL, "needs Windows PowerShell")

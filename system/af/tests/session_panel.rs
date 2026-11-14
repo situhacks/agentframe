@@ -1304,7 +1304,7 @@ fn a_waiter_and_driver_that_do_not_stop_in_time_are_named_and_not_killed() {
     wait_until("the driver to start", || !sends(&fx).is_empty());
     let (code, out, err) = session(&fx, &env, &["compact", "--cancel", "system/x"]);
     assert_eq!(code, 1, "{out}{err}");
-    assert!(err.contains("did not stop within 1 seconds") && err.contains("the waiter (pid ") && err.contains("Nothing was killed"), "{err}");
+    assert!(err.contains("cancel marker") && err.contains("still running after 1 seconds") && err.contains("the waiter (pid ") && err.contains("Nothing was killed") && err.contains("finish the compaction; otherwise it stops at its next check") && err.contains("Run af session compact --cancel system/x again"), "{err}");
     assert!(fx.exists(MARKER), "the marker stays, so they stop when they look");
     // Nothing was killed: the waiter finishes the send by itself.
     let log = wait_for(&fx, "system/logs/panel-waiters.log", "compact ok");
@@ -1390,4 +1390,17 @@ fn a_waiter_on_the_closed_route_stops_for_the_cancel_marker_while_it_waits_for_t
     assert!(log.contains("compact cancelled:") && log.contains("panel lock"), "{log}");
     assert!(!fx.exists(JOB) && !fx.exists(MARKER));
     assert!(!fx.exists("lock-seen.txt") || !fx.read("lock-seen.txt").contains("headless-compact"), "claude -p never ran");
+}
+
+#[test]
+fn archive_prints_what_the_driver_says_when_the_list_has_no_row_unchanged_and_names_the_chat_in_front_refusal() {
+    let fx = chat();
+    let said = "no row for this chat is in the list as shown (already archived, never listed, or inside a collapsed group); nothing was changed";
+    let (code, out, err) = session(&fx, &[("STUB_PANEL_OUT", said)], &["archive", "system/x"]);
+    assert_eq!(code, 0, "{out}{err}");
+    assert!(out.contains(&format!("system/x: {said}")), "the driver's words are printed unchanged: {out}");
+    let fx = chat();
+    let (code, _, err) = session(&fx, &[("STUB_PANEL_EXIT", "3"), ("STUB_PANEL_STDERR", "it is the chat he has in front; nothing was changed. Nothing was archived.")], &["archive", "system/x"]);
+    assert_eq!(code, 1);
+    assert!(err.contains("refused (exit 3): nothing was archived") && err.contains("the chat is the one he has in front") && err.contains("it is the chat he has in front; nothing was changed"), "{err}");
 }

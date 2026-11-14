@@ -338,6 +338,7 @@ posted_at: {posted_at}\nurl: {url}\nmetrics_captured_at: null\n\n# LIFECYCLE\nla
 /// unless `STUB_PANEL_NO_BOUNDARY` is set. `STUB_PANEL_SLEEP_SECS` makes every call slow;
 /// `STUB_PANEL_NOTE` prints a `note: ...` line on stderr, as the driver does, on success and failure.
 /// With `STUB_LOCK_SNAPSHOT` and `STUB_LOCK_FILE` every call appends what the lock file holds then.
+/// `STUB_PANEL_OUT` is what an action other than list, new and send prints (default `ok`).
 /// `STUB_PANEL_WAIT_FOR_CANCEL` (seconds), `STUB_PANEL_SENDING` and `STUB_PANEL_IGNORE_CANCEL` make a call that
 /// is given `-CancelFile` wait for that file as the real driver does (see below).
 const PANEL_STUB_SRC: &str = r##"
@@ -440,7 +441,7 @@ fn main() {
             }
             println!("sent");
         }
-        _ => println!("ok"),
+        _ => println!("{}", std::env::var("STUB_PANEL_OUT").unwrap_or_else(|_| "ok".into())),
     }
 }
 "##;

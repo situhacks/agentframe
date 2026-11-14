@@ -505,9 +505,10 @@ fn cancel_report(ctx: &Ctx, name: &str) -> R<(String, i32)> {
         die!("{name}: the compaction was already being sent when the cancel arrived ({waiter}{driver}), so it was not cancelled and will finish or fail on its own. Its outcome goes to {log}.");
     }
     die!(
-        "{name}: {waiter}{driver} did not stop within {} seconds of the cancel marker being written, so it is not known to be cancelled. Nothing was killed. The marker {} is still there, and each stops by itself when it next looks at it (the driver looks every 2 seconds while it waits for the operator); look at {log}, or end those processes yourself if they are stuck.",
-        cancel_wait().as_secs_f64(),
-        marker.display()
+        "{name}: the cancel marker {} is written, and {waiter}{driver} {} still running after {} seconds. Nothing was killed. If the driver has already begun changing the panel it will finish the compaction; otherwise it stops at its next check of the marker (every 2 seconds while it waits for the operator, and never while it is putting the panel back). Run af session compact --cancel {name} again to see; the outcome goes to {log}.",
+        marker.display(),
+        if driver.is_empty() { "is" } else { "are" },
+        cancel_wait().as_secs_f64()
     )
 }
 

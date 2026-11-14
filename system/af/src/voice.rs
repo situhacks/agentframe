@@ -18,18 +18,22 @@ pub enum VoiceCmd {
     Bundle {
         project: Option<String>,
         deliverable: Option<String>,
-        #[arg(long, value_parser = ["formal", "informal"])]
+        /// formal, informal, or chat (how he texts a friend)
+        #[arg(long, value_parser = ["formal", "informal", "chat"])]
         register: Option<String>,
-        /// task context, repeatable: long-form, short-form, email, builder-pov, market-signal, slide, cover
+        /// task context, repeatable: message (or chat), email, short-form, long-form, builder-pov, market-signal, slide, cover
         #[arg(long, action = clap::ArgAction::Append)]
         context: Vec<String>,
-        #[arg(long, action = clap::ArgAction::Append, value_parser = ["formal", "informal"])]
+        #[arg(long, action = clap::ArgAction::Append, value_parser = ["formal", "informal", "chat"])]
         borrow: Vec<String>,
         /// a file in voice/templates/, e.g. substack-essay.md
         #[arg(long)]
         template: Option<String>,
-        /// core: rules + one exemplar for a short write or a copyedit pass; full: everything. Default from the context
-        #[arg(long, value_parser = ["core", "full"])]
+        /// quick: the anti-patterns, the register and a short excerpt, for a text, a comment or a one-paragraph reply;
+        /// standard: the rules and one whole exemplar, for an email, a short write or a copyedit (core is the old name);
+        /// full: adds the pairs and the whole corpus, for a first draft or anything over a page.
+        /// With no --tier, the context decides
+        #[arg(long, value_parser = ["quick", "standard", "core", "full"])]
         tier: Option<String>,
     },
     /// AgentFrame voice lint (zero-budget rules and the hyphen alarm)

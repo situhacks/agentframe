@@ -157,7 +157,7 @@ fn test_version_lints_the_closed_version_against_the_one_before() {
     assert!(ctx.contains("hyphen-normalised"));
     assert!(ctx.contains("essay-v3.md now holds that text"));
     assert!(ctx.contains("voice/README.md"));
-    assert!(ctx.contains("voice bundle vg-demo essay --tier core"));
+    assert!(ctx.contains("voice bundle vg-demo essay --tier standard"));
     assert!(ctx.contains("already in your context"));
 }
 

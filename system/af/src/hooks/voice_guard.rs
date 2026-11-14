@@ -18,7 +18,7 @@ fn version_context(report: &str, new: &str, project: &str, deliverable: &str) ->
     format!(
         "{report}\n{new} now holds that text. If a VOICE BUNDLE for this register is already in your context with no \
 compaction since, it is current: continue. Otherwise run `af voice bundle {project} {deliverable} \
---tier core` for a copyedit pass over his text, or without --tier before drafting a new section, and read the \
+--tier standard` for a copyedit pass over his text, or without --tier before drafting a new section, and read the \
 file it names whole (voice/README.md and the rest of the voice system in one read). Hard findings above are \
 yours to fix in this version, and every region you rewrite gets anti-patterns.md before it is surfaced."
     )

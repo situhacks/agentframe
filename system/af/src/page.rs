@@ -8,7 +8,7 @@ use crate::core::Ctx;
 use crate::die;
 use crate::error::R;
 use crate::fm;
-use crate::life::vpath;
+use crate::life::{vpath, TextFile};
 use crate::outln;
 use crate::pyos;
 use crate::sessions::{self, Registry, Row};
@@ -77,15 +77,17 @@ pub struct Page {
     pub body: String,
     /// The body's lines without their line ends.
     pub lines: Vec<String>,
+    /// Per body line: inside a fenced code block (the fence lines included).
+    pub fenced: Vec<bool>,
     pub sections: Vec<Section>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
-    /// Mechanical: a chat fixes it in a minute, and the Stop hook asks for it.
-    Shape,
-    /// Needs the chat's judgment; never blocks a stop.
-    Age,
+    /// `[fix]`: mechanical, a chat fixes it in a minute, and the Stop hook asks for it.
+    Fix,
+    /// `[review]`: needs the chat's judgment; never blocks a stop.
+    Review,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -103,8 +105,12 @@ impl Page {
             None => (String::new(), text.to_string()),
         };
         let lines: Vec<String> = body.lines().map(|l| l.to_string()).collect();
+        let fenced = fence_lines(&lines);
         let mut sections: Vec<Section> = Vec::new();
         for (i, l) in lines.iter().enumerate() {
+            if fenced[i] {
+                continue;
+            }
             if let Some(name) = l.strip_prefix("## ") {
                 if let Some(prev) = sections.last_mut() {
                     prev.end = i;
@@ -112,7 +118,7 @@ impl Page {
                 sections.push(Section { name: name.trim().to_string(), heading: i, start: i + 1, end: lines.len() });
             }
         }
-        Page { front, body, lines, sections }
+        Page { front, body, lines, fenced, sections }
     }
 
     pub fn words(&self) -> usize {
@@ -137,6 +143,15 @@ impl Page {
             if l.trim().is_empty() {
                 continue;
             }
+            if self.fenced[i] {
+                // A fenced block is never an item; under an item it belongs to it.
+                if let Some(it) = out.last_mut() {
+                    it.end = i + 1;
+                    it.text.push(' ');
+                    it.text.push_str(l.trim());
+                }
+                continue;
+            }
             if l.starts_with(char::is_whitespace) {
                 if let Some(it) = out.last_mut() {
                     it.end = i + 1;
@@ -154,15 +169,15 @@ impl Page {
         out
     }
 
-    /// Every issue of the page, shape issues first, in the order of the spec's list.
+    /// Every issue of the page, `[fix]` issues first, then `[review]` ones.
     pub fn issues(&self, today: NaiveDate) -> Vec<Issue> {
-        let mut shape: Vec<String> = Vec::new();
-        let mut age: Vec<String> = Vec::new();
+        let mut fix: Vec<String> = Vec::new();
+        let mut review: Vec<String> = Vec::new();
         let list = SECTIONS.join(", ");
 
         let words = self.words();
         if words > PAGE_WORD_CAP {
-            shape.push(format!(
+            fix.push(format!(
                 "the page is {words} words, over the {PAGE_WORD_CAP}-word cap: move finished items out (af session tidy moves old Done items to archive.md), cut what no longer matters, and shorten the long sections"
             ));
         }
@@ -170,13 +185,13 @@ impl Page {
         let mut last: Option<usize> = None;
         for s in &self.sections {
             match SECTIONS.iter().position(|n| *n == s.name) {
-                None => shape.push(format!(
+                None => fix.push(format!(
                     "heading \"## {}\" is not allowed: use only {list}; fold its content into one of them",
                     s.name
                 )),
                 Some(idx) => {
                     if last.is_some_and(|l| idx <= l) {
-                        shape.push(format!(
+                        fix.push(format!(
                             "\"## {}\" is out of order or repeated: keep the sections in this order: {list}",
                             s.name
                         ));
@@ -188,14 +203,14 @@ impl Page {
         }
         for r in REQUIRED {
             if self.section(r).is_none() {
-                shape.push(format!("required section \"## {r}\" is missing: add it"));
+                fix.push(format!("required section \"## {r}\" is missing: add it"));
             }
         }
 
         if let Some(s) = self.section("State") {
             let w = self.section_words(s);
             if w > STATE_WORD_CAP {
-                shape.push(format!(
+                review.push(format!(
                     "State is {w} words, over {STATE_WORD_CAP}: keep where the work is and move the rest to Doing, To do or Done"
                 ));
             }
@@ -206,13 +221,13 @@ impl Page {
             let items = self.items(s);
             for it in &items {
                 if it.date.is_none() {
-                    shape.push(format!(
+                    fix.push(format!(
                         "{name}: item {} does not start with \"- YYYY-MM-DD · \": start the line with the date it was added",
                         quote(&it.head)
                     ));
                 }
                 if name == "Gated" && !has_waits_on(&it.text) {
-                    shape.push(format!(
+                    fix.push(format!(
                         "Gated: item {} has no \"waits on: <condition>\": end it with \"· waits on: <condition>\", or move it to To do",
                         quote(&it.head)
                     ));
@@ -220,7 +235,7 @@ impl Page {
             }
             if name == "Done" {
                 if items.len() > DONE_MAX_ITEMS {
-                    shape.push(format!(
+                    fix.push(format!(
                         "Done: {} items, more than {DONE_MAX_ITEMS}: run af session tidy to move the extra ones to archive.md",
                         items.len()
                     ));
@@ -229,7 +244,7 @@ impl Page {
                     if let Some(d) = it.date {
                         let days = (today - d).num_days();
                         if days > DONE_MAX_DAYS {
-                            shape.push(format!(
+                            fix.push(format!(
                                 "Done: item {} is {days} days old, over {DONE_MAX_DAYS}: run af session tidy to move it to archive.md",
                                 quote(&it.head)
                             ));
@@ -247,7 +262,7 @@ impl Page {
                 if let Some(d) = it.date {
                     let days = (today - d).num_days();
                     if days > limit {
-                        age.push(format!(
+                        review.push(format!(
                             "{name}: item {} is dated {d}, {days} days ago (over {limit}): {fix}",
                             quote(&it.head)
                         ));
@@ -256,15 +271,15 @@ impl Page {
             }
         }
 
-        shape
-            .into_iter()
-            .map(|text| Issue { kind: Kind::Shape, text })
-            .chain(age.into_iter().map(|text| Issue { kind: Kind::Age, text }))
+        fix.into_iter()
+            .map(|text| Issue { kind: Kind::Fix, text })
+            .chain(review.into_iter().map(|text| Issue { kind: Kind::Review, text }))
             .collect()
     }
 
-    /// The frontmatter and the first lines of the body that fit in `cap` words, cut at a line end.
-    pub fn cut(&self, cap: usize) -> String {
+    /// The frontmatter and the first lines of the body that fit in `cap` words, cut at a line end, and
+    /// the number of words that are shown.
+    pub fn cut(&self, cap: usize) -> (String, usize) {
         let mut out = self.front.clone();
         let mut used = 0usize;
         let mut kept: Vec<&str> = Vec::new();
@@ -277,7 +292,7 @@ impl Page {
             kept.push(l);
         }
         out.push_str(&kept.join("\n"));
-        out.trim_end().to_string()
+        (out.trim_end().to_string(), used)
     }
 }
 
@@ -287,6 +302,33 @@ fn dated(line: &str) -> Option<(NaiveDate, &str)> {
     let stamp = rest.get(..10)?;
     let text = rest[10..].strip_prefix(" \u{b7} ")?;
     Some((NaiveDate::parse_from_str(stamp, "%Y-%m-%d").ok()?, text))
+}
+
+/// Which lines sit inside a fenced code block (``` or ~~~, closed by the same mark at least as long);
+/// the fence lines count as inside, and an unclosed fence runs to the end.
+fn fence_lines(lines: &[String]) -> Vec<bool> {
+    let mut out = vec![false; lines.len()];
+    let mut open: Option<(char, usize)> = None;
+    for (i, l) in lines.iter().enumerate() {
+        let t = l.trim_start();
+        let run = t.chars().next().filter(|c| *c == '`' || *c == '~').map(|c| (c, t.chars().take_while(|x| *x == c).count()));
+        match (open, run) {
+            (None, Some((c, n))) if n >= 3 => {
+                open = Some((c, n));
+                out[i] = true;
+            }
+            (Some((oc, on)), run) => {
+                out[i] = true;
+                if let Some((c, n)) = run {
+                    if c == oc && n >= on && t[n..].trim().is_empty() {
+                        open = None;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    out
 }
 
 fn has_waits_on(text: &str) -> bool {
@@ -318,7 +360,7 @@ pub struct Moved {
     pub lines: Vec<String>,
 }
 
-/// The page with the `Done` items beyond the tenth, and those older than 14 days, taken out,
+/// The page with the `Done` items beyond the ten newest by date, and those older than 14 days, taken out,
 /// and the items taken. Every other byte of `raw` (line ends, the byte-order mark) is kept. An
 /// item with no usable date stays: the archive files by month.
 pub fn tidy_text(raw: &str, today: NaiveDate) -> (String, Vec<Moved>) {
@@ -330,9 +372,17 @@ pub fn tidy_text(raw: &str, today: NaiveDate) -> (String, Vec<Moved>) {
     let mut moved: Vec<Moved> = Vec::new();
     let mut drop = vec![false; page.lines.len()];
     if let Some(done) = page.section("Done") {
-        for (n, it) in page.items(done).iter().enumerate() {
+        let items = page.items(done);
+        // The newest ten by date stay (a tie keeps the page's order); an item with no date is never moved.
+        let mut by_date: Vec<usize> = (0..items.len()).filter(|&n| items[n].date.is_some()).collect();
+        by_date.sort_by(|&a, &b| items[b].date.cmp(&items[a].date));
+        let mut keep = vec![false; items.len()];
+        for &n in by_date.iter().take(DONE_MAX_ITEMS) {
+            keep[n] = true;
+        }
+        for (n, it) in items.iter().enumerate() {
             let Some(date) = it.date else { continue };
-            if n >= DONE_MAX_ITEMS || (today - date).num_days() > DONE_MAX_DAYS {
+            if !keep[n] || (today - date).num_days() > DONE_MAX_DAYS {
                 for flag in &mut drop[it.first..it.end] {
                     *flag = true;
                 }
@@ -354,7 +404,8 @@ pub fn tidy_text(raw: &str, today: NaiveDate) -> (String, Vec<Moved>) {
 }
 
 /// The archive's text with the items appended: each under the `## YYYY-MM` heading of its date,
-/// at the end of that month's lines, the heading added at the end of the file when missing.
+/// at the end of that month's lines, the heading added at the end of the file when missing. An item whose
+/// lines already stand verbatim in that month's section is not added again.
 pub fn archive_with(existing: Option<&str>, moved: &[Moved]) -> String {
     let existing = existing.unwrap_or("");
     let eol = if existing.contains("\r\n") { "\r\n" } else { "\n" };
@@ -370,6 +421,13 @@ pub fn archive_with(existing: Option<&str>, moved: &[Moved]) -> String {
         match segs.iter().position(|s| s.trim_end() == heading) {
             Some(h) => {
                 let end = segs.iter().skip(h + 1).position(|s| s.starts_with("## ")).map_or(segs.len(), |p| h + 1 + p);
+                // A re-run after a crash between the two writes finds its items already filed.
+                let n = m.lines.len();
+                let filed = end >= h + 1 + n
+                    && (h + 1..=end - n).any(|i| (0..n).all(|k| segs[i + k].trim_end() == m.lines[k].trim_end()));
+                if filed {
+                    continue;
+                }
                 let at = (h + 1..end).rev().find(|&i| !segs[i].trim().is_empty()).map_or(h + 1, |i| i + 1);
                 for (k, l) in lines.into_iter().enumerate() {
                     segs.insert(at + k, l);
@@ -385,6 +443,11 @@ pub fn archive_with(existing: Option<&str>, moved: &[Moved]) -> String {
         }
     }
     segs.concat()
+}
+
+/// Write exactly this text, through a temp file and a rename: a failed write leaves the old file, never half of one.
+fn write_raw(path: &str, text: &str) -> R<()> {
+    TextFile { text: text.to_string(), crlf: false, bom: false }.save_atomic(path)
 }
 
 fn read_raw(path: &str) -> R<Option<String>> {
@@ -429,8 +492,8 @@ pub fn cmd_tidy(ctx: &Ctx, name: Option<&str>, check: bool, all: bool) -> R<i32>
             let apath = vpath(ctx, &archive_rel(&row.name));
             let archive = archive_with(read_raw(&apath)?.as_deref(), &moved);
             // The archive first: a failure between the two writes repeats an item and never loses one.
-            pyos::write(&apath, &archive)?;
-            pyos::write(&path, &text)?;
+            write_raw(&apath, &archive)?;
+            write_raw(&path, &text)?;
         }
         let page = Page::parse(&text);
         outln!("{rel}: {} of {PAGE_WORD_CAP} words", page.words());
@@ -443,8 +506,8 @@ pub fn cmd_tidy(ctx: &Ctx, name: Option<&str>, check: bool, all: bool) -> R<i32>
         }
         for i in &issues {
             let kind = match i.kind {
-                Kind::Shape => "shape",
-                Kind::Age => "age",
+                Kind::Fix => "fix",
+                Kind::Review => "review",
             };
             outln!("  [{kind}] {}", i.text);
         }
@@ -455,10 +518,16 @@ pub fn cmd_tidy(ctx: &Ctx, name: Option<&str>, check: bool, all: bool) -> R<i32>
 
 // ------------------------------------------------------------------ where the checks show
 
-/// The `- issue` lines of the block a chat gets at session start.
+/// The block a chat gets at session start: every issue, and whether the page needs tidying first (a `[fix]`
+/// issue) or only has items to review.
 pub fn tidy_block(issues: &[Issue]) -> String {
     let lines: Vec<String> = issues.iter().map(|i| format!("- {}", i.text)).collect();
-    format!("af: your page needs tidying before other work:\n{}", lines.join("\n"))
+    let head = if issues.iter().any(|i| i.kind == Kind::Fix) {
+        "af: your page needs tidying before other work:"
+    } else {
+        "af: your page has items to review when this task allows:"
+    };
+    format!("{head}\n{}", lines.join("\n"))
 }
 
 /// Doctor: one note per issue of every chat whose row has not ended.
@@ -617,18 +686,20 @@ mod tests {
         assert!(!has(&at_14, "Done:"), "exactly 14 days old stays");
         let at_15 = page(&format!("## Done\n{}", items(1, 15)));
         assert!(has(&at_15, "Done: item \"item 0\" is 15 days old, over 14"));
-        assert!(issues_of(&at_15, d(TODAY)).iter().all(|i| i.kind == Kind::Shape));
+        assert!(issues_of(&at_15, d(TODAY)).iter().all(|i| i.kind == Kind::Fix));
     }
 
     #[test]
-    fn issue_6_state_is_150_words() {
+    fn issue_6_state_is_150_words_and_is_a_review_issue() {
         let with_state = |n: usize| format!("## State\n{}\n## Next step\nn\n## Files touched\nf\n", words(n));
         assert_eq!(texts(&with_state(150)), Vec::<String>::new());
         assert!(has(&with_state(151), "State is 151 words, over 150"));
+        let over = issues_of(&with_state(151), d(TODAY));
+        assert!(over.iter().all(|i| i.kind == Kind::Review), "a long State never blocks a stop: {over:?}");
     }
 
     #[test]
-    fn issues_7_to_9_are_age_issues_at_21_45_and_30_days() {
+    fn issues_7_to_9_are_review_issues_at_21_45_and_30_days() {
         let cases = [("To do", 21, "do it, re-date it"), ("Gated", 45, "check what it waits on"), ("Rules", 30, "confirm the rule still applies")];
         for (sec, limit, fix) in cases {
             let wait = if sec == "Gated" { " · waits on: x" } else { "" };
@@ -636,7 +707,7 @@ mod tests {
             assert_eq!(texts(&p(limit)), Vec::<String>::new(), "{sec} at exactly {limit}");
             let over = issues_of(&p(limit + 1), d(TODAY));
             assert_eq!(over.len(), 1, "{sec}: {over:?}");
-            assert_eq!(over[0].kind, Kind::Age);
+            assert_eq!(over[0].kind, Kind::Review);
             assert!(over[0].text.starts_with(&format!("{sec}: item \"the item")), "{}", over[0].text);
             assert!(over[0].text.contains(&format!("{} days ago (over {limit})", limit + 1)) && over[0].text.contains(fix), "{}", over[0].text);
         }
@@ -645,10 +716,10 @@ mod tests {
     }
 
     #[test]
-    fn shape_issues_come_before_age_issues() {
+    fn fix_issues_come_before_review_issues() {
         let p = page(&format!("## To do\n- {} · stale\n## Notes\nx\n", ago(30)));
         let kinds: Vec<Kind> = issues_of(&p, d(TODAY)).iter().map(|i| i.kind).collect();
-        assert_eq!(kinds, [Kind::Shape, Kind::Age]);
+        assert_eq!(kinds, [Kind::Fix, Kind::Review]);
     }
 
     #[test]
@@ -685,22 +756,87 @@ mod tests {
 
     #[test]
     fn tidy_leaves_an_item_with_no_date_where_it_is() {
-        let raw = page(&format!("## Done
-- undated
-{}", (0..10).map(|i| format!("- {} · n{i}
-", ago(1))).collect::<String>()));
+        let dated = |n: usize| (0..n).map(|i| format!("- {} · n{i}\n", ago(1))).collect::<String>();
+        let raw = page(&format!("## Done\n- undated\n{}", dated(11)));
         let (out, moved) = tidy_text(&raw, d(TODAY));
-        assert_eq!(moved.len(), 1, "the eleventh position is n9");
-        assert_eq!(moved[0].lines, [format!("- {} · n9", ago(1))]);
-        assert!(out.contains("- undated
-") && !out.contains("n9"));
-        let old_undated = page(&format!("## Done
-- 2026-01-01 no dot
-- {} · old
-", ago(30)));
+        assert_eq!(moved.len(), 1, "the undated item takes no one's place among the ten newest");
+        assert_eq!(moved[0].lines, [format!("- {} · n10", ago(1))]);
+        assert!(out.contains("- undated\n") && !out.contains("n10"));
+        let old_undated = page(&format!("## Done\n- 2026-01-01 no dot\n- {} · old\n", ago(30)));
         let (out, moved) = tidy_text(&old_undated, d(TODAY));
         assert_eq!(moved.len(), 1);
         assert!(out.contains("no dot"), "an item with no usable date cannot be filed by month");
+    }
+
+    #[test]
+    fn tidy_keeps_the_ten_newest_by_date_not_the_first_ten() {
+        // Page order is not date order: the oldest items come first, and the newest one is last.
+        let mut done = String::new();
+        for i in 0..10 {
+            done.push_str(&format!("- {} · old {i}\n", ago(10 - (i % 2))));
+        }
+        done.push_str(&format!("- {} · newest\n", ago(0)));
+        let (out, moved) = tidy_text(&page(&format!("## Done\n{done}")), d(TODAY));
+        assert_eq!(moved.len(), 1);
+        assert_eq!(moved[0].lines, [format!("- {} · old 8", ago(10))], "the oldest; of the ties the later on the page goes");
+        assert!(out.contains("newest") && !out.contains("old 8\n") && out.contains("old 0\n"));
+    }
+
+    #[test]
+    fn a_tie_keeps_the_pages_order() {
+        let done: String = (0..12).map(|i| format!("- {} · same {i}\n", ago(3))).collect();
+        let (_, moved) = tidy_text(&page(&format!("## Done\n{done}")), d(TODAY));
+        let names: Vec<String> = moved.iter().map(|m| m.lines[0].rsplit(" · ").next().unwrap().to_string()).collect();
+        assert_eq!(names, ["same 10", "same 11"]);
+    }
+
+    #[test]
+    fn a_fenced_line_is_not_a_heading_not_an_item_and_not_the_end_of_a_section() {
+        for fence in ["```", "~~~", "````"] {
+            let p = page(&format!(
+                "## Doing\n- {} · run this\n{fence}\n## Not a heading\n- not an item\n{fence}\n- {} · second\n",
+                ago(1),
+                ago(1)
+            ));
+            assert_eq!(texts(&p), Vec::<String>::new(), "{fence}: {:?}", texts(&p));
+            let pg = Page::parse(&p);
+            let names: Vec<&str> = pg.sections.iter().map(|s| s.name.as_str()).collect();
+            assert_eq!(names, ["State", "Doing", "Next step", "Files touched"], "{fence}");
+            let items = pg.items(pg.section("Doing").unwrap());
+            assert_eq!(items.len(), 2, "{fence}");
+            assert_eq!(items[0].end - items[0].first, 5, "the fenced block belongs to the item above it");
+        }
+        // Without the fence the same lines are a heading and an item with no date.
+        let bare = page(&format!("## Doing\n- {} · run this\n## Not a heading\n- not an item\n", ago(1)));
+        assert!(has(&bare, "\"## Not a heading\" is not allowed") || has(&bare, "heading \"## Not a heading\" is not allowed"));
+        // A shorter mark does not close a fence; an unclosed one runs to the end.
+        let open = page("## Doing\n````\n```\n## Still inside\n");
+        assert!(!has(&open, "Still inside"));
+        let unclosed = "## State\ns\n## Next step\nn\n## Files touched\nf\n```\n## Nothing after this counts\n";
+        assert!(!has(unclosed, "not allowed"), "{:?}", texts(unclosed));
+    }
+
+    #[test]
+    fn tidy_moves_a_fenced_block_with_its_item_and_ignores_fenced_headings() {
+        let raw = page(&format!("## Done\n- {} · old\n```\n## Done\n- {} · fake\n```\n- {} · new\n", ago(30), ago(30), ago(1)));
+        let (out, moved) = tidy_text(&raw, d(TODAY));
+        assert_eq!(moved.len(), 1, "the fake item inside the fence is not an item");
+        assert_eq!(moved[0].lines.len(), 5);
+        assert!(!out.contains("fake") && out.contains("new"));
+    }
+
+    #[test]
+    fn a_rerun_after_a_crash_does_not_file_an_item_twice() {
+        let m = |date: &str, text: &str| Moved { date: d(date), lines: vec![format!("- {date} · {text}"), "  more".to_string()] };
+        let once = archive_with(None, &[m("2026-10-30", "a")]);
+        assert_eq!(archive_with(Some(&once), &[m("2026-10-30", "a")]), once);
+        let two = archive_with(Some(&once), &[m("2026-10-30", "a"), m("2026-10-29", "b")]);
+        assert_eq!(two.matches("· a").count(), 1);
+        assert!(two.contains("· b"));
+        let other_month = archive_with(Some(&once), &[m("2026-11-01", "a")]);
+        assert_eq!(other_month.matches("· a").count(), 2, "another month is another section: not filed");
+        let changed = archive_with(Some(&once), &[Moved { date: d("2026-10-30"), lines: vec!["- 2026-10-30 · a".into(), "  different".into()] }]);
+        assert!(changed.contains("  different"), "only a verbatim copy counts as filed");
     }
 
     #[test]
@@ -723,10 +859,11 @@ mod tests {
     fn cut_keeps_whole_lines_within_the_cap() {
         let body: String = (0..30).map(|i| format!("{}\n", words(100 + i % 2))).collect();
         let p = Page::parse(&format!("---\nwritten: x\n---\n{body}"));
-        let cut = p.cut(1200);
+        let (cut, shown) = p.cut(1200);
         assert!(cut.starts_with("---\nwritten: x\n---\n"));
         let w = Page::parse(&cut).words();
         assert!(w <= 1200 && w > 1100, "{w}");
+        assert_eq!(shown, w, "the count returned is the words shown");
         assert!(cut.ends_with('w'), "cut at a line end, trailing newline trimmed");
         for l in cut.lines().skip(3) {
             assert!(l.split_whitespace().count() >= 100, "no line is cut in half");

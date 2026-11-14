@@ -137,8 +137,8 @@ fn tidy_check_prints_the_issues_and_writes_nothing() {
     assert!(!fx.exists(CUT_ARCHIVE));
     assert!(out.starts_with("system/sessions/system/cut/handoff.md: "), "{out}");
     assert!(out.contains(" of 1200 words"), "{out}");
-    assert!(out.contains("[shape] Done: item \"old\" is 30 days old, over 14"), "{out}");
-    assert!(out.contains("[shape] heading \"## Notes\" is not allowed"), "{out}");
+    assert!(out.contains("[fix] Done: item \"old\" is 30 days old, over 14"), "{out}");
+    assert!(out.contains("[fix] heading \"## Notes\" is not allowed"), "{out}");
     assert!(!out.contains("clean"));
 }
 
@@ -156,12 +156,12 @@ fn tidy_exits_1_while_an_issue_remains_and_0_when_clean() {
 }
 
 #[test]
-fn tidy_prints_age_issues_and_they_count_for_the_exit_code() {
+fn tidy_prints_review_issues_and_they_count_for_the_exit_code() {
     let fx = fixture();
     fx.write(CUT, &page(&format!("## To do\n{}", item(30, "stale thing"))));
     let (code, out, _) = fx.run(&["session", "tidy", "system/cut", "--check"]);
     assert_eq!(code, 1);
-    assert!(out.contains("[age] To do: item \"stale thing\" is dated "), "{out}");
+    assert!(out.contains("[review] To do: item \"stale thing\" is dated "), "{out}");
 }
 
 #[test]
@@ -227,31 +227,31 @@ fn a_tidy_exit_1_is_not_counted_as_a_button_refusal() {
 // ------------------------------------------------------------------ the Stop hook
 
 #[test]
-fn stop_blocks_on_a_shape_issue_for_a_builder_and_names_the_fix() {
+fn stop_blocks_on_a_fix_issue_for_a_builder_and_names_the_fix() {
     let fx = fixture();
     fx.write(CUT, &page("## Notes\nx\n"));
     let reason = block(&stop(&fx, "s-cut"));
-    assert!(reason.starts_with("Fix system/sessions/system/cut/handoff.md before stopping: the page has 1 shape issue(s):"), "{reason}");
+    assert!(reason.starts_with("Fix system/sessions/system/cut/handoff.md before stopping: the page has 1 issue(s) to fix:"), "{reason}");
     assert!(reason.contains("- heading \"## Notes\" is not allowed"), "{reason}");
     assert!(reason.contains("Run `af session tidy`, fix the rest, then set `written:`"), "{reason}");
     let (code, out, _) = fx.run(&["session", "stop", "system/cut"]);
     assert_eq!(code, 3);
-    assert!(out.starts_with("HANDOFF_REQUIRED system/sessions/system/cut/handoff.md (the page has 1 shape issue(s)"), "{out}");
+    assert!(out.starts_with("HANDOFF_REQUIRED system/sessions/system/cut/handoff.md (the page has 1 issue(s) to fix"), "{out}");
     let again = sessions::hook_stop(&fx.ctx(), r#"{"session_id":"s-cut","stop_hook_active":true}"#);
     assert_eq!(again, HookOutput::quiet(), "it blocks once");
 }
 
 #[test]
-fn stop_is_quiet_for_a_clean_page_and_for_an_age_issue() {
+fn stop_is_quiet_for_a_clean_page_and_for_a_review_issue() {
     let fx = fixture();
     fx.write(CUT, &page(""));
     assert_eq!(stop(&fx, "s-cut"), HookOutput::quiet());
     fx.write(CUT, &page(&format!("## To do\n{}## Rules\n{}", item(100, "ancient"), item(100, "old rule"))));
-    assert_eq!(stop(&fx, "s-cut"), HookOutput::quiet(), "age issues never block a stop");
+    assert_eq!(stop(&fx, "s-cut"), HookOutput::quiet(), "review issues never block a stop");
 }
 
 #[test]
-fn stop_never_blocks_a_main_row_for_a_shape_issue_but_the_verb_reports_it() {
+fn stop_never_blocks_a_main_row_for_a_fix_issue_but_the_verb_reports_it() {
     let fx = fixture();
     fx.write("system/sessions/af-main/handoff.md", &page("## Notes\nx\n"));
     assert_eq!(stop(&fx, "s-main"), HookOutput::quiet());
@@ -260,7 +260,7 @@ fn stop_never_blocks_a_main_row_for_a_shape_issue_but_the_verb_reports_it() {
 }
 
 #[test]
-fn stop_still_asks_about_staleness_before_the_shape() {
+fn stop_still_asks_about_staleness_before_the_fix_issues() {
     let fx = fixture();
     fx.write("system/touched.md", "x");
     let text = page("## Notes\nx\n")
@@ -308,11 +308,12 @@ fn the_bundle_adds_the_tidy_block_for_a_page_with_an_issue_and_not_for_a_clean_o
 }
 
 #[test]
-fn the_bundle_shows_age_issues_to_every_role_main_included() {
+fn the_bundle_shows_review_issues_to_every_role_main_included() {
     let fx = fixture();
     fx.write("system/sessions/af-main/handoff.md", &page(&format!("## Rules\n{}", item(40, "always do this"))));
     let out = bundle(&fx, "s-main");
-    assert!(out.contains("af: your page needs tidying before other work:\n- Rules: item \"always do this\" is dated "), "{out}");
+    assert!(out.contains("af: your page has items to review when this task allows:\n- Rules: item \"always do this\" is dated "), "{out}");
+    assert!(!out.contains("needs tidying"), "only review issues: the page does not need tidying first");
 }
 
 #[test]
@@ -327,8 +328,10 @@ fn an_over_long_page_is_cut_at_1200_words_with_a_line_saying_so() {
     assert!(out.contains("written: ") && out.contains("session_id: s1"), "the frontmatter is shown");
     assert!(out.contains("LINE-0 ") && out.contains("LINE-118 "), "{out}");
     assert!(!out.contains("LINE-119 ") && !out.contains("LINE-129") && !out.contains("## Files touched"), "cut after the 1200th word at a line end");
+    let shown = afcore::page::Page::parse(&text).cut(1200).1;
+    assert!(shown < 1200 && shown > 1150, "the cut is at a line end, so fewer than 1200 words are shown: {shown}");
     assert!(
-        out.contains(&format!("af: this page was cut after 1200 words; it has {words}. Read system/sessions/system/cut/handoff.md for the rest")),
+        out.contains(&format!("af: this page was cut: {shown} of its {words} words are shown. Read system/sessions/system/cut/handoff.md for the rest")),
         "{out}"
     );
     assert!(out.contains(&format!("the page is {words} words, over the 1200-word cap")), "the issue block says it too");
@@ -363,4 +366,113 @@ fn doctor_has_one_note_per_issue_for_chats_that_have_not_ended() {
     fx.write(CUT, &page(""));
     let (_, notes) = afcore::life::doctor_checks(&fx.ctx()).unwrap();
     assert!(!notes.iter().any(|n| n.contains("system/cut")), "{notes:?}");
+}
+
+// ------------------------------------------------------------------ review round
+
+fn long_state() -> String {
+    format!(
+        "---\nwritten: {}\nsession_id: s1\n---\n## State\n{}\n\n## Next step\ntest\n\n## Files touched\n- system/backlog.md\n",
+        written(),
+        vec!["w"; 200].join(" ")
+    )
+}
+
+#[test]
+fn a_long_state_is_a_review_issue_that_never_blocks_a_stop() {
+    let fx = fixture();
+    fx.write(CUT, &long_state());
+    assert_eq!(stop(&fx, "s-cut"), HookOutput::quiet());
+    let (code, out, _) = fx.run(&["session", "stop", "system/cut"]);
+    assert_eq!((code, out.as_str()), (0, ""));
+    let (code, out, _) = fx.run(&["session", "tidy", "system/cut", "--check"]);
+    assert_eq!(code, 1, "it is still an issue for tidy");
+    assert!(out.contains("[review] State is 200 words, over 150"), "{out}");
+    let out = bundle(&fx, "s-cut");
+    assert!(out.contains("af: your page has items to review when this task allows:\n- State is 200 words"), "{out}");
+    assert!(!out.contains("needs tidying"), "{out}");
+}
+
+#[test]
+fn the_start_block_says_tidy_first_when_any_issue_is_a_fix_issue() {
+    let fx = fixture();
+    fx.write(CUT, &long_state().replace("## Next step", "## Notes\nx\n\n## Next step"));
+    let out = bundle(&fx, "s-cut");
+    assert!(out.contains("af: your page needs tidying before other work:\n"), "{out}");
+    assert!(out.contains("- heading \"## Notes\" is not allowed") && out.contains("- State is 200 words"), "both kinds are listed: {out}");
+    assert!(!out.contains("items to review when this task allows"), "{out}");
+}
+
+#[test]
+fn tidy_writes_the_page_by_replacing_it_not_by_overwriting_in_place() {
+    let fx = fixture();
+    let text = page(&format!("## Done\n{}", item(30, "old")));
+    fx.write(CUT, &text);
+    // A second name for the same file keeps the old bytes only when the page is replaced through a temp file.
+    std::fs::hard_link(fx.path(CUT), fx.path("system/sessions/system/cut/link.md")).unwrap();
+    fx.ok(&["session", "tidy", "system/cut"]);
+    assert_eq!(fx.read("system/sessions/system/cut/link.md"), text, "the old file was left whole");
+    assert!(!fx.read(CUT).contains("old"));
+    let leftovers: Vec<String> = std::fs::read_dir(fx.path("system/sessions/system/cut"))
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.contains(".tmp"))
+        .collect();
+    assert!(leftovers.is_empty(), "{leftovers:?}");
+}
+
+#[test]
+fn a_failed_archive_write_leaves_the_page_whole() {
+    let fx = fixture();
+    let text = page(&format!("## Done\n{}", item(30, "old")));
+    fx.write(CUT, &text);
+    fx.mkdir("system/sessions/system/cut/archive.md"); // a folder where the archive file must go
+    let (code, _, _) = fx.run(&["session", "tidy", "system/cut"]);
+    assert_ne!(code, 0);
+    assert_eq!(fx.read(CUT), text, "the archive goes first: a failure there never loses an item from the page");
+}
+
+#[test]
+fn a_rerun_after_a_crash_between_the_two_writes_files_nothing_twice() {
+    let fx = fixture();
+    let text = page(&format!("## Done\n{}{}", item(30, "old"), item(1, "new")));
+    fx.write(CUT, &text);
+    fx.ok(&["session", "tidy", "system/cut"]);
+    let archive = fx.read(CUT_ARCHIVE);
+    // The crash: the archive was written, the page was not.
+    fx.write(CUT, &text);
+    fx.ok(&["session", "tidy", "system/cut"]);
+    assert_eq!(fx.read(CUT_ARCHIVE), archive, "the item already stands in its month");
+    assert_eq!(archive.matches("· old").count(), 1);
+    assert!(!fx.read(CUT).contains("· old"));
+}
+
+#[test]
+fn tidy_keeps_the_ten_newest_by_date_whatever_the_page_order() {
+    let fx = fixture();
+    let mut done = String::new();
+    for i in 0..10 {
+        done.push_str(&item(5 + i, &format!("older {i}")));
+    }
+    done.push_str(&item(0, "newest"));
+    fx.write(CUT, &page(&format!("## Done\n{done}")));
+    fx.ok(&["session", "tidy", "system/cut"]);
+    let after = fx.read(CUT);
+    assert!(after.contains("· newest") && after.contains("· older 8\n") && !after.contains("older 9"), "{after}");
+    assert!(fx.read(CUT_ARCHIVE).contains("· older 9"));
+}
+
+#[test]
+fn fenced_lines_are_not_headings_or_items_in_the_checks_or_in_tidy() {
+    let fx = fixture();
+    let text = page(&format!("## Doing\n{}```\n## Not a heading\n- not an item\n```\n## Done\n{}", item(1, "run this"), item(30, "old")));
+    fx.write(CUT, &text);
+    let (code, out, _) = fx.run(&["session", "tidy", "system/cut", "--check"]);
+    assert_eq!(code, 1);
+    assert!(out.contains("Done: item \"old\" is 30 days old") && !out.contains("Not a heading") && !out.contains("not an item"), "{out}");
+    let (code, out, _) = fx.run(&["session", "tidy", "system/cut"]);
+    assert_eq!(code, 0, "{out}");
+    let after = fx.read(CUT);
+    assert!(after.contains("## Not a heading\n- not an item\n") && !after.contains("· old"), "{after}");
 }

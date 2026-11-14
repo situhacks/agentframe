@@ -404,8 +404,8 @@ pub enum HandoffNeed {
     NoWritten,
     /// A listed path (or write-surface path) changed after `written:`.
     Stale { path: String, at: NaiveDateTime, written: NaiveDateTime },
-    /// The page has shape issues (`page::Page::issues`, kind Shape); age issues never land here.
-    Shape(Vec<String>),
+    /// The page has `[fix]` issues (`page::Page::issues`); `[review]` issues never land here.
+    Fix(Vec<String>),
 }
 
 impl HandoffNeed {
@@ -424,8 +424,8 @@ impl HandoffNeed {
                 fmt_min(*at),
                 fmt_min(*written)
             ),
-            HandoffNeed::Shape(issues) => format!(
-                "Fix {rel} before stopping: the page has {} shape issue(s):
+            HandoffNeed::Fix(issues) => format!(
+                "Fix {rel} before stopping: the page has {} issue(s) to fix:
 {}
 Run `af session tidy`, fix the rest, then set `written:` to the current time ({now}).",
                 issues.len(),
@@ -446,8 +446,8 @@ Run `af session tidy`, fix the rest, then set `written:` to the current time ({n
                 fmt_min(*at),
                 fmt_min(*written)
             ),
-            HandoffNeed::Shape(issues) => format!(
-                "the page has {} shape issue(s), the first: {}; run af session tidy --check for the list",
+            HandoffNeed::Fix(issues) => format!(
+                "the page has {} issue(s) to fix, the first: {}; run af session tidy --check for the list",
                 issues.len(),
                 issues[0]
             ),
@@ -493,12 +493,12 @@ pub fn handoff_need(ctx: &Ctx, row: &Row) -> R<Option<HandoffNeed>> {
     if let Some((path, at)) = newest.filter(|(_, at)| *at > written) {
         return Ok(Some(HandoffNeed::Stale { path, at, written }));
     }
-    let shape: Vec<String> = page::issues_of(&tf.text, crate::core::today_date())
+    let fix: Vec<String> = page::issues_of(&tf.text, crate::core::today_date())
         .into_iter()
-        .filter(|i| i.kind == page::Kind::Shape)
+        .filter(|i| i.kind == page::Kind::Fix)
         .map(|i| i.text)
         .collect();
-    Ok(if shape.is_empty() { None } else { Some(HandoffNeed::Shape(shape)) })
+    Ok(if fix.is_empty() { None } else { Some(HandoffNeed::Fix(fix)) })
 }
 
 /// True when the chat must write (or refresh) its handoff before it stops.
@@ -1071,12 +1071,8 @@ fn handoff_blocks(ctx: &Ctx, rel: &str) -> R<Vec<String>> {
     let pg = page::Page::parse(text);
     let words = pg.words();
     let shown = if words > page::PAGE_WORD_CAP {
-        format!(
-            "{}
-af: this page was cut after {} words; it has {words}. Read {rel} for the rest, and shorten it.",
-            pg.cut(page::PAGE_WORD_CAP),
-            page::PAGE_WORD_CAP
-        )
+        let (cut, shown) = pg.cut(page::PAGE_WORD_CAP);
+        format!("{cut}\naf: this page was cut: {shown} of its {words} words are shown. Read {rel} for the rest, and shorten it.")
     } else {
         text.to_string()
     };

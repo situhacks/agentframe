@@ -30,7 +30,7 @@ A brief's `model` field, a registry row's `model` column and `--model` take one 
 | `sonnet` | `claude-sonnet-5-5` | 1M / 128K | 2 / 10 | The best speed and intelligence mix for everyday coding and agent work |
 | `haiku` | `claude-haiku-5-5` | 1M / 128K | 0.10 / 0.50 (prompts over 100K: 0.50 / 2.50) | High-volume, latency-sensitive work: classification, extraction, routing, subagent tasks |
 
-Claude Code compacts a chat at about 967K tokens by default, and a chat's class in [`sessions-registry.md`](sessions-registry.md#session-classes) sets a smaller working limit.
+Claude Code compacts a chat at about 967K tokens by default, and a chat's class in [`sessions-registry.md`](sessions-registry.md#session-classes) sets a smaller working limit. Claude Code's settings set no model window.
 
 ## Briefing each model
 
@@ -39,7 +39,7 @@ Claude Code compacts a chat at about 967K tokens by default, and a chat's class 
 - Sonnet: at low or medium effort it checks in before finishing; at higher effort it adds tests and documents nobody asked for. Say "finish the whole task" and "add nothing that was not asked". At the highest efforts it starts review rounds; say not to. For the hardest long work Anthropic says to use Opus.
 - Haiku: give it today's date, or it may skip a search it needs. At low effort on a long prompt it stops early, and it may report a change done without checking it. A refused request refuses again when resent.
 
-A model card in [`library/models/`](../models/) is a short list of instructions addressed to one model. `af hook session-start` (and `af session bundle`) adds the card of a build chat's model at the start. Only Fable and Opus have a card; a build chat on Sonnet or Haiku gets none. A model changed in the middle of a chat gets its card at the next session start or compaction.
+A model card in [`library/models/`](../models/) is a short list of instructions addressed to one model. `af hook session-start` (and `af session bundle`) adds the card of a build chat's model at the start. Only Fable and Opus have a card; other models get none. A model changed in the middle of a chat gets its card at the next session start or compaction.
 
 ## Keeping this file true
 

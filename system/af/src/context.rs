@@ -118,10 +118,7 @@ pub fn nudge(ctx: &Ctx, payload: &Value) -> Option<String> {
     }
     let row = Registry::load(ctx).ok()?.find_session(id)?;
     let class = sessions::class_of(ctx, &row.name);
-    let limits = class.limits();
-    if limits.soft.is_none() && limits.hard.is_none() {
-        return None;
-    }
+    let limits = sessions::limits_of(ctx, &row.name, class);
     let tokens = reach::context_tokens(&transcript_for(payload, id)?)?;
     let tier = settle(&limits, tokens, &marker_dir(ctx, id))?;
     Some(nudge_text(class, &row.name, &limits, tokens, tier))
@@ -243,36 +240,36 @@ fn current_model_ids(ctx: &Ctx) -> Option<Vec<String>> {
     Some(v.as_object()?.values().filter_map(|id| id.as_str().map(str::to_string)).collect())
 }
 
-/// `af doctor`: a `modelSettings.<id>.autoCompactWindow` in the user settings that is below the build
-/// class's hard limit, so Claude Code compacts such a chat by itself before the nudge. The note names the
-/// id from the settings key (a `[1m]` suffix is dropped). Only a current id in `system/models.json` is
-/// noted; with no readable `models.json`, any id that maps to an alias is. Reads the settings file only
-/// (`CLAUDE_CONFIG_DIR` or `~/.claude`); absent or unreadable is silence.
+/// `af doctor`: any `modelSettings.<id>.autoCompactWindow` (for an id current in `system/models.json`) or
+/// top-level `autoCompactWindow` in the user settings, of any size. AgentFrame nudges each chat by its
+/// goal, so a blanket window, which also cuts every subagent on that model, is the operator's to remove.
+/// With no readable `models.json`, any id that maps to an alias counts. Reads the settings file only
+/// (`CLAUDE_CONFIG_DIR` or `~/.claude`); absent or unreadable is silence. The settings are never written.
 pub fn doctor_notes(ctx: &Ctx) -> Vec<String> {
-    let Some(hard) = SessionClass::Build.limits().hard else { return Vec::new() };
     let Some(dir) = reach::config_dir() else { return Vec::new() };
     let Ok(text) = std::fs::read_to_string(pyos::join(&dir, "settings.json")) else { return Vec::new() };
     let Ok(v) = serde_json::from_str::<Value>(&text) else { return Vec::new() };
-    let Some(models) = v.get("modelSettings").and_then(Value::as_object) else { return Vec::new() };
+    let tail = "Claude Code compacts every chat and subagent there. AgentFrame sets this per chat with nudges; the operator removes the setting.";
+    let mut notes = Vec::new();
+    if let Some(window) = v.get("autoCompactWindow").and_then(Value::as_u64) {
+        notes.push(format!("user settings hold a blanket auto-compact window of {}: {tail}", kfmt(window)));
+    }
     let current = current_model_ids(ctx);
-    models
-        .iter()
-        .filter_map(|(key, s)| {
-            let window = s.get("autoCompactWindow")?.as_u64().filter(|w| *w < hard)?;
-            let id = key.split('[').next().unwrap_or(key);
-            let known = match &current {
-                Some(ids) => ids.iter().any(|c| c == id),
-                None => crate::model_card::alias_of(id).is_some(),
-            };
-            known.then(|| {
-                format!(
-                    "Claude Code compacts a `{id}` chat by itself at {}, before a build chat's {} nudge: such a chat can be compacted in the middle of a task. Raising it is the operator's setting.",
-                    kfmt(window),
-                    kfmt(hard)
-                )
-            })
-        })
-        .collect()
+    for (key, s) in v.get("modelSettings").and_then(Value::as_object).into_iter().flatten() {
+        let Some(window) = s.get("autoCompactWindow").and_then(Value::as_u64) else { continue };
+        let id = key.split('[').next().unwrap_or(key);
+        let known = match &current {
+            Some(ids) => ids.iter().any(|c| c == id),
+            None => crate::model_card::alias_of(id).is_some(),
+        };
+        if known {
+            notes.push(format!(
+                "user settings hold a blanket auto-compact window of {} for `{id}`: Claude Code compacts every chat and subagent on that model there. AgentFrame sets this per chat with nudges; the operator removes the setting.",
+                kfmt(window)
+            ));
+        }
+    }
+    notes
 }
 
 pub fn cmd_context(ctx: &Ctx, name: Option<&str>) -> R<i32> {
@@ -284,7 +281,7 @@ pub fn cmd_context(ctx: &Ctx, name: Option<&str>) -> R<i32> {
                 None => die!("no registry row for {n}"),
             };
             let class = sessions::class_of(ctx, &row.name);
-            let lim = class.limits();
+            let lim = sessions::limits_of(ctx, &row.name, class);
             let size = size_of(&row);
             let usage = match &size {
                 Some(reach::ContextSize::Known(u)) => Some(u.clone()),
@@ -307,13 +304,11 @@ pub fn cmd_context(ctx: &Ctx, name: Option<&str>) -> R<i32> {
                 AutoCompact::Default(m) => outln!("auto-compact: default (not set for {m})"),
                 AutoCompact::Set(w, m) => {
                     outln!("auto-compact: {} (user settings, modelSettings.{m})", kfmt(w));
-                    if let Some(hard) = lim.hard.filter(|h| w < *h) {
-                        outln!(
-                            "auto-compact at {} comes before this chat's {} hard nudge; raise it with /autocompact in that chat or in user settings",
-                            kfmt(w),
-                            kfmt(hard)
-                        );
-                    }
+                    outln!(
+                        "that window is a blanket setting for every chat and subagent on {m}; AgentFrame nudges this chat at {} and {} instead, so the operator removes it",
+                        opt_k(lim.soft),
+                        opt_k(lim.hard)
+                    );
                 }
             }
         }
@@ -333,7 +328,7 @@ pub fn cmd_context(ctx: &Ctx, name: Option<&str>) -> R<i32> {
                     _ => continue,
                 };
                 let class = sessions::class_of(ctx, &row.name);
-                let lim = class.limits();
+                let lim = sessions::limits_of(ctx, &row.name, class);
                 lines.push(format!(
                     "| {} | {} | {context} | {} | {} | {auto} |",
                     row.name,

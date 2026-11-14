@@ -11,7 +11,8 @@ pub mod query;
 
 use crate::core::Ctx;
 use crate::die;
-use crate::error::R;
+use crate::error::{refuse, R};
+use crate::out;
 use crate::life::locked;
 use crate::{outln, pyos};
 use clap::{ArgAction, Args, Subcommand};
@@ -35,7 +36,28 @@ pub enum DataCmd {
     List {
         ledger: Option<String>,
     },
+    /// Run one read-only SELECT over every ledger (a table named after each)
+    Sql(SqlArgs),
 }
+
+#[derive(Args, Debug)]
+pub struct SqlArgs {
+    /// One statement starting with select or with (a leading comment is fine)
+    #[arg(allow_hyphen_values = true)]
+    statement: String,
+    /// An array of objects instead of a markdown table
+    #[arg(long, conflicts_with = "csv")]
+    json: bool,
+    /// CSV instead of a markdown table
+    #[arg(long)]
+    csv: bool,
+    /// Rows to print (default 200)
+    #[arg(long, value_parser = clap::value_parser!(u64).range(1..))]
+    limit: Option<u64>,
+}
+
+/// Rows `af data sql` prints unless --limit says otherwise.
+pub const DEFAULT_LIMIT: usize = 200;
 
 #[derive(Args, Debug)]
 pub struct NewArgs {
@@ -87,6 +109,7 @@ pub fn run(ctx: &Ctx, cmd: DataCmd) -> R<i32> {
         DataCmd::Add(a) => cmd_add(ctx, &a),
         DataCmd::Import(a) => cmd_import(ctx, &a),
         DataCmd::List { ledger } => cmd_list(ctx, ledger.as_deref()),
+        DataCmd::Sql(a) => cmd_sql(ctx, &a),
     }
 }
 
@@ -501,6 +524,52 @@ fn cmd_list(ctx: &Ctx, name: Option<&str>) -> R<i32> {
             }
             _ => outln!("no ledgers are registered; af data new makes the first"),
         },
+    }
+    Ok(0)
+}
+
+// ------------------------------------------------------------------ sql
+
+fn cmd_sql(ctx: &Ctx, a: &SqlArgs) -> R<i32> {
+    let reg = Registry::load(ctx)?.unwrap_or_default();
+    let con = match query::load_db(ctx, &reg) {
+        Ok(c) => c,
+        Err(faults) => {
+            return Err(refuse_faults(&faults, &format!("{} fault(s) in the ledger files; nothing was queried: a wrong number is worse than no number", faults.len())))
+        }
+    };
+    let limit = a.limit.map(|l| l as usize).unwrap_or(DEFAULT_LIMIT);
+    let (table, total) = match query::run(&con, &a.statement, Some(limit)) {
+        Ok(x) => x,
+        Err(query::QueryErr::Refused(m)) => die!("{m}"),
+        Err(query::QueryErr::Sql(m)) => {
+            let e = refuse(format!("SQL error: {m}"));
+            for l in query::schema_lines(&reg) {
+                out::err_line(&l);
+            }
+            if m.contains("syntax error") {
+                out::err_line("a name that is an SQL keyword (set, group, order) needs double quotes: select \"set\" from ...");
+            }
+            return Err(e);
+        }
+    };
+    let text = if a.json {
+        query::to_json(&table)
+    } else if a.csv {
+        query::to_csv(&table)
+    } else {
+        query::to_markdown(&table)
+    };
+    outln!("{text}");
+    if total > table.rows.len() {
+        let note = format!("showing {} of {total} rows; --limit shows more", table.rows.len());
+        if a.json || a.csv {
+            // Stdout stays the data alone, so a reader of it still parses.
+            out::err_line(&note);
+        } else {
+            outln!("");
+            outln!("{note}");
+        }
     }
     Ok(0)
 }

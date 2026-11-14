@@ -67,7 +67,7 @@ pub fn load_db(ctx: &Ctx, reg: &Registry) -> Result<Connection, Vec<String>> {
     for l in &reg.ledgers {
         match load_checked(ctx, l) {
             Ok((raw, f)) if f.is_empty() => loaded.push((l, raw)),
-            Ok((_, f)) => faults.extend(super::ledger::shown(&f)),
+            Ok((_, f)) => faults.extend(f),
             Err(f) => faults.extend(f),
         }
     }

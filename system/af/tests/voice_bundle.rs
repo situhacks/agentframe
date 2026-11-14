@@ -673,3 +673,115 @@ fn test_a_value_naming_a_register_among_its_words_still_resolves() {
         ("formal".to_string(), Some("register informal has no file; using formal".to_string()))
     );
 }
+
+// ----------------------------------------------- review fixes
+
+fn tree(dir: &std::path::Path, out: &mut Vec<String>) {
+    for e in std::fs::read_dir(dir).unwrap().flatten() {
+        let p = e.path();
+        out.push(p.to_string_lossy().into_owned());
+        if p.is_dir() {
+            tree(&p, out);
+        }
+    }
+}
+
+fn snapshot(fx: &Fx) -> Vec<String> {
+    let mut v = Vec::new();
+    tree(fx.dir.path(), &mut v);
+    // the run log is af's own record of every call, refused or not
+    v.retain(|p| {
+        let rel = p.replace('\\', "/");
+        !rel.ends_with("/system") && !rel.contains("/system/logs")
+    });
+    v.sort();
+    v
+}
+
+#[test]
+fn test_a_head_register_is_refused_when_the_folder_has_no_registers() {
+    // an empty registers/ folder, one holding only a README, and none at all
+    for setup in ["empty", "readme", "missing"] {
+        let fx = verb_fixture();
+        let reg = "workspace/life/voice/registers";
+        for n in ["informal", "formal", "chat"] {
+            std::fs::remove_file(fx.path(&format!("{reg}/{n}.md"))).unwrap();
+        }
+        match setup {
+            "readme" => {
+                fx.write(&format!("{reg}/README.md"), "# registers\n");
+            }
+            "missing" => std::fs::remove_dir(fx.path(reg)).unwrap(),
+            _ => {}
+        }
+        for head_register in ["formal", "../../../x"] {
+            set_head(&fx, &format!("  base_register: {head_register}\n"));
+            let before = snapshot(&fx);
+            let err = fx.refused(&["voice", "bundle", "p", "essay"]);
+            assert!(err.contains("the voice folder has no registers"), "{setup} {head_register}: {err}");
+            assert_eq!(snapshot(&fx), before, "{setup} {head_register}: the refusal wrote files");
+        }
+        // the plain `register:` key is held to it too
+        fx.write("workspace/projects/p/essay/essay-v1.md", "---\nstatus: drafting\nregister: ../../../x\n---\nBody.\n");
+        let before = snapshot(&fx);
+        assert!(fx.refused(&["voice", "bundle", "p", "essay"]).contains("no registers"), "{setup}");
+        assert_eq!(snapshot(&fx), before, "{setup}");
+        assert!(!fx.path("x-general-standard.md").exists());
+        assert!(!fx.path("system/index/voice").exists(), "{setup}: the output folder was made");
+    }
+}
+
+#[test]
+fn test_the_header_says_what_the_head_named_when_its_register_was_replaced() {
+    let fx = two_register_fixture();
+    set_head(&fx, "  base_register: formal\n");
+    fx.ok(&["voice", "bundle", "p", "essay"]);
+    let text = fx.read("system/index/voice/informal-general-standard.md");
+    let header = text.lines().next().unwrap();
+    assert!(header.contains("register informal (head named formal); context general"), "{header}");
+    // a head that names a register with a file, and a flag, add nothing
+    set_head(&fx, "  base_register: chat\n");
+    fx.ok(&["voice", "bundle", "p", "essay"]);
+    let header = fx.read("system/index/voice/chat-general-quick.md");
+    assert!(!header.lines().next().unwrap().contains("head named"));
+    set_head(&fx, "  base_register: formal\n");
+    fx.ok(&["voice", "bundle", "p", "essay", "--register", "chat"]);
+    assert!(!fx.read("system/index/voice/chat-general-quick.md").lines().next().unwrap().contains("head named"));
+}
+
+#[test]
+fn test_a_borrow_equal_to_the_base_is_dropped() {
+    let fx = verb_fixture();
+    let out = fx.ok(&["voice", "bundle", "--register", "informal", "--borrow", "informal", "--context", "message"]);
+    assert!(!out.contains("borrow register informal") && !out.contains(", borrow"), "{out}");
+    assert!(fx.read("system/index/voice/informal-message-quick.md").contains("borrow none"));
+    // a head's borrow too, and the others stay in order
+    set_head(&fx, "  base_register: chat\n  borrow_from: [chat, informal]\n");
+    let out = fx.ok(&["voice", "bundle", "p", "essay"]);
+    assert!(out.contains("borrow informal") && !out.contains("borrow register chat"), "{out}");
+    assert!(fx.read("system/index/voice/chat-general-quick.md").contains("borrow informal;"));
+}
+
+#[test]
+fn test_register_names_and_the_md_extension_match_without_regard_to_case() {
+    let fx = verb_fixture();
+    let reg = "workspace/life/voice/registers";
+    std::fs::remove_file(fx.path(&format!("{reg}/informal.md"))).unwrap();
+    fx.write(&format!("{reg}/Informal.md"), "# informal register, capitalised file\n");
+    std::fs::remove_file(fx.path(&format!("{reg}/chat.md"))).unwrap();
+    fx.write(&format!("{reg}/chat.MD"), "# chat register, capital extension\n");
+    let out = fx.ok(&["voice", "bundle", "--register", "informal"]);
+    assert!(out.contains("register Informal") && !out.contains("MISSING"), "{out}");
+    assert!(fx.read("system/index/voice/Informal-general-standard.md").contains("capitalised file"));
+    let out = fx.ok(&["voice", "bundle", "--register", "CHAT"]);
+    assert!(out.contains("register chat") && !out.contains("MISSING"), "{out}");
+    assert!(fx.read("system/index/voice/chat-general-quick.md").contains("capital extension"));
+    let out = fx.ok(&["voice", "bundle", "--register", "informal", "--borrow", "Chat", "--context", "message"]);
+    assert!(out.contains("borrow chat") && !out.contains("MISSING"), "{out}");
+    // a head's spelling resolves the same way
+    set_head(&fx, "  base_register: INFORMAL\n");
+    let out = fx.ok(&["voice", "bundle", "p", "essay"]);
+    assert!(out.contains("register Informal") && !out.contains("has no file"), "{out}");
+    // the default register is found whatever its case
+    assert_eq!(bundle::default_register(&s(&["chat", "Informal"])).as_deref(), Some("Informal"));
+}

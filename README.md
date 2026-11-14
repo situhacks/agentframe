@@ -60,7 +60,7 @@ Three ideas hold it together.
 
 ### The voice system
 
-- It is built from pieces you have published, split into a formal and an informal register, plus contrastive pairs: a generic line next to your own rewrite.
+- It is built from pieces you have published, split into registers (one file each, for example informal and chat), plus contrastive pairs: a generic line next to your own rewrite.
 - `af voice bundle` writes the files a draft needs into one file the agent reads once.
 - Every draft runs four passes: content, style against your corpus, a clean pass against your anti-patterns, and a register test.
 - `af voice lint` checks the rules a regex can check. The voice guard refuses `af ready` on a draft with hard findings.

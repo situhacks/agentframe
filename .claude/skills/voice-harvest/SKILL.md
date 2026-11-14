@@ -87,15 +87,15 @@ Do the first pass yourself. For each pair candidate:
 ```
 ### tag — one-line label
 BASE: <generic / pre-edit version>
-BRANDON: <the operator's actual rewrite>
+YOU: <the operator's actual rewrite>
 MOVE: <what changed + why — generatively useful; cite the source delta, e.g. "Post 5 v9→v10op">
-register: formal | informal | both
+register: <the name of a file in `registers/`> | both
 context: builder-pov | market-signal | slide | cover | email | long-form | <other task context>
 ```
 
 A MOVE note states the move in the present tense and may end with a short source tag, as in the example above; it never narrates what happened in the session. A rule patched into a voice file carries no source tag at all.
 
-**Pairs hygiene** (from `pairs/README.md`): keep register and task context separate; never use a channel as either one. There is no numeric cap; a pair that teaches a live move earns its context. Every harvest prunes before it adds, on three tests: a pair that duplicates another pair's move, a pair that only restates a rule already in `anti-patterns.md` or `voice-profile.md`, and a pair whose BRANDON side shows a move the current corpus no longer makes. Name each retirement and what absorbs it.
+**Pairs hygiene** (from `pairs/README.md`): keep register and task context separate; never use a channel as either one. There is no numeric cap; a pair that teaches a live move earns its context. Every harvest prunes before it adds, on three tests: a pair that duplicates another pair's move, a pair that only restates a rule already in `anti-patterns.md` or `voice-profile.md`, and a pair whose YOU side shows a move the current corpus no longer makes. Name each retirement and what absorbs it.
 
 **Voice-file patches:** name the target file, the section, and the proposed text. Apply the Builder pre-write gate in `AGENTS.builder.md`: name the tendency the rule counters, find the prior rule on the topic (if it has patch history, name why the prior shape failed), and cut before adding.
 

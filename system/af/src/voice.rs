@@ -82,12 +82,23 @@ fn cmd_bundle(
 ) -> R<()> {
     let voice_dir = bundle::voice_dir(&ctx.root);
     let regs = bundle::registers(&voice_dir)?;
-    for name in register.iter().chain(borrow.iter()).filter(|n| !n.is_empty()) {
-        if !regs.contains(name) {
-            die!("{}", bundle::no_such_register(name, &regs));
-        }
+    // a flag names a register that has a file, in the file's own spelling
+    let flag = |name: &str| match bundle::match_register(&regs, name) {
+        Some(r) => Ok(r),
+        None => Err(crate::error::refuse(bundle::no_such_register(name, &regs))),
+    };
+    let mut resolved_register = None;
+    if let Some(r) = register.as_deref().filter(|r| !r.is_empty()) {
+        resolved_register = Some(flag(r)?);
     }
+    let mut resolved_borrow = Vec::new();
+    for b in borrow.iter().filter(|b| !b.is_empty()) {
+        resolved_borrow.push(flag(b)?);
+    }
+    let register = resolved_register;
+    let borrow = resolved_borrow;
     let mut notes = Vec::new();
+    let mut head_named = None;
     let mut head = None;
     let mut register = register;
     let mut borrow = borrow;
@@ -109,9 +120,12 @@ fn cmd_bundle(
         // what a flag overrides is not resolved, so it prints no line
         if register.as_deref().map_or(true, str::is_empty) {
             if let Some(b) = base {
-                let (b, note) = bundle::resolve_base(&regs, b);
+                let (resolved, note) = bundle::resolve_base(&regs, b.clone());
                 notes.extend(note);
-                register = Some(b);
+                if resolved != b {
+                    head_named = Some(b);
+                }
+                register = Some(resolved);
             }
         }
         if borrow.is_empty() {
@@ -132,7 +146,13 @@ fn cmd_bundle(
     let Some(register) = register.filter(|r| !r.is_empty()) else {
         die!("af voice bundle: the head declares no voice recipe (voice.base_register or register); pass --register");
     };
-    let recipe = bundle::Recipe { register, contexts, borrow, template };
+    // the base is never also a borrow, so its file is not loaded twice; and it must have a
+    // file, whatever supplied it, before any path is built from it
+    if !regs.contains(&register) {
+        die!("{}", bundle::no_such_register(&register, &regs));
+    }
+    borrow.retain(|b| *b != register);
+    let recipe = bundle::Recipe { register, contexts, borrow, template, head_named };
     let out_dir = bundle::out_dir(&ctx.root);
     let place = bundle::Place { root: &ctx.root, voice_dir: &voice_dir, out_dir: &out_dir, stamp: None };
     let b = bundle::build(&place, &recipe, head.as_deref(), tier.as_deref())?;

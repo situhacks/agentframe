@@ -3377,7 +3377,11 @@ class GroupReadTests(unittest.TestCase):
         walk = function_text("Get-ListItems")
         info = function_text("Get-HeaderInfo")
         self.assertIn("groupHeader_", walk)
-        self.assertIn("Get-HeaderInfo $b $tw", walk)
+        # Seen live after the merge: a header's Text children are not in the control view, so every group name read as
+        # empty and every count as unknown. The header's children and the name field's text are read in the raw view.
+        self.assertIn("Get-HeaderInfo $b ([System.Windows.Automation.TreeWalker]::RawViewWalker)", walk)
+        self.assertIn("RawViewWalker", function_text("Get-FieldText"))
+        self.assertNotIn("ControlViewWalker", function_text("Get-FieldText"))
         self.assertIn("GetFirstChild", info)
         self.assertIn("$CT::Text", info)
         self.assertNotIn("$Button.Current.Name", info, "the group name is the first Text child; the button's own name ends in the count")

@@ -1177,7 +1177,8 @@ function Get-ListItems($win) {
                 Active = [bool]($b.Current.ClassName -match '(^|\s)active_'); Group = $group; Editing = $false; Element = $b
             }
         } elseif ($cls -match '(^|\s)groupHeader_' -and (Test-UnderSessions $b)) {
-            $h = Get-HeaderInfo $b $tw
+            # The raw view: a header's Text children are not in the control view (seen live: every name read as empty).
+            $h = Get-HeaderInfo $b ([System.Windows.Automation.TreeWalker]::RawViewWalker)
             $group = $h.Name
             $out += [pscustomobject]@{ Kind = 'header'; Id = ''; Name = $h.Name; Status = ''; Count = $h.Count; Active = $false; Group = ''; Editing = $h.Editing; Element = $b }
         }
@@ -1226,9 +1227,9 @@ function Get-HeaderInfo($Button, $Walker) {
     [pscustomobject]@{ Name = $name; Count = $count; Editing = [bool]($null -ne $field) }
 }
 
-# The text a name field shows: its Text children's names, joined.
+# The text a name field shows: its Text children's names, joined (the raw view: Text children are not in the control view).
 function Get-FieldText($Field) {
-    $tw = [System.Windows.Automation.TreeWalker]::ControlViewWalker
+    $tw = [System.Windows.Automation.TreeWalker]::RawViewWalker
     $s = ''
     try {
         $ch = $tw.GetFirstChild($Field)

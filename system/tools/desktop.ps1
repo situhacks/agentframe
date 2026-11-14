@@ -21,8 +21,13 @@
 # for -IdleSeconds (default 120; a lower value is for the tests, never for a real job). windows,
 # tree and screenshot do not change what he sees and are not gated. The tool's own input resets the
 # system's last-input clock, so a run keeps a state file (system/logs/desktop/run.json, git-ignored);
-# see Get-OperatorIdleMs. Input he makes while one command is sending is not detected until the
-# next command. Procedure and standing limits: library/process/desktop-tool.md.
+# see Get-OperatorIdleMs. A run lasts at most 5 minutes; after that the plain idle rule applies, so
+# end a job with restore inside its run. Before every send the tool reads that clock and stops with
+# exit 4 (saying how much was sent) if it is not the tool's own last tick, so input he makes between
+# two sends is seen. A call that sends no input (raise, Invoke pattern, pointer) counts as the tool's
+# own only if the clock moved within 250 ms of that call. Not seen: input in the same clock tick as a
+# send or call (about 16 ms). -Verbose or AF_DESKTOP_TRACE=1 prints, for each such call, whether the
+# clock moved. Procedure and standing limits: library/process/desktop-tool.md.
 
 [CmdletBinding(PositionalBinding = $false)]
 param(
@@ -94,6 +99,8 @@ $GatedCommands = @('focus', 'invoke', 'click', 'type', 'key', 'restore')
 # Under the checkout, or under AF_ROOT when set so a worktree and the main checkout share one run. Git-ignored.
 $StateRelative = 'system\logs\desktop\run.json'
 $RunMutexName = 'Local\AgentFrameDesktopTool'
+# A call that moves the last-input clock within this many ms is taken as the tool's own (Invoke-Timed).
+$TimedCallLimitMs = 250
 # Explorer owns the taskbar and the desktop, so a click there would pass the same-process check
 # for any File Explorer target and could launch an app.
 $ShellSurfaces = @('Shell_TrayWnd', 'Shell_SecondaryTrayWnd', 'Progman', 'WorkerW')
@@ -102,6 +109,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $script:Guard = $null
 $script:RunLock = $null
+$script:Trace = ($VerbosePreference -eq 'Continue') -or ($env:AF_DESKTOP_TRACE -eq '1')
 
 $NativeSource = @'
 #pragma warning disable 618
@@ -169,8 +177,21 @@ public static class AfDesktop {
         return (long)unchecked((uint)Environment.TickCount);
     }
 
-    // The last-input tick read straight after this process's latest SendInput; -2 while it has sent none.
+    // The tool's own latest tick (read straight after its own SendInput, or accepted after a quick API
+    // call), -2 while it has none.
     public static long OwnTick = -2;
+
+    // The last-input tick the tool expects to find before its next send or call: what the guard accepted,
+    // then each own tick. -2 until the guard arms it, and nothing is sent while it is unarmed.
+    public static long Expected = -2;
+    public static bool Intruded;
+    public static long IntrudedTick;
+
+    public static void Arm(long tick) { Expected = tick; Intruded = false; }
+    public static void Accept(long tick) { OwnTick = tick; Expected = tick; }
+
+    public delegate uint SendFn(INPUT[] events);
+    public delegate long ClockFn();
 
     public static int[] Pointer() {
         POINT p;
@@ -276,9 +297,20 @@ public static class AfDesktop {
     }
 
     static bool Send(INPUT[] events) {
-        uint sent = SendInput((uint)events.Length, events, Marshal.SizeOf(typeof(INPUT)));
-        // Read the clock before anything else can run, so only this tool's own input is counted as its own.
-        if (sent > 0) OwnTick = LastInput();
+        return SendGuarded(events, delegate(INPUT[] e) { return SendInput((uint)e.Length, e, Marshal.SizeOf(typeof(INPUT))); }, LastInput);
+    }
+
+    // Before every send the last-input tick must still be the one the tool expects. If it is not, the
+    // operator touched the machine since the tool's last event: nothing is sent, Intruded is set, and the
+    // expected and own ticks stay as they were, so the next command finds a tick that is not the tool's own
+    // and falls to the plain idle rule. After a send the clock is read at once and kept as the own tick.
+    // (The send and the clock are parameters so a test can run this with a scripted clock and no input.)
+    public static bool SendGuarded(INPUT[] events, SendFn send, ClockFn clock) {
+        if (Expected == -2) { Intruded = true; IntrudedTick = -1; return false; }
+        long before = clock();
+        if (before != Expected) { Intruded = true; IntrudedTick = before; return false; }
+        uint sent = send(events);
+        if (sent > 0) Accept(clock());
         return sent == (uint)events.Length;
     }
 
@@ -338,10 +370,22 @@ function Stop-Error([string]$Message) {
     Exit-Tool 1
 }
 
-function Stop-Active([int64]$IdleMs) {
+function Stop-Active([int64]$IdleMs, [string]$Note = 'nothing was sent') {
     $seconds = [int64][Math]::Floor($IdleMs / 1000)
-    [Console]::Error.WriteLine("error: the operator is active (last input $seconds s ago); nothing was sent; wait and retry")
+    [Console]::Error.WriteLine("error: the operator is active (last input $seconds s ago); $($Note.TrimEnd('.')); wait and retry")
     Exit-Tool 4
+}
+
+# He touched the machine after the tool's last event: stop at once. The state is left as it is, so the next
+# command sees a last input that is not the tool's own and waits for -IdleSeconds of quiet.
+function Stop-Intruded([int64]$Tick, [string]$Note) {
+    $age = if ($Tick -lt 0) { 0 } else { Get-TickAge ([AfDesktop]::TickNow()) $Tick }
+    if (-not $Note) { $Note = 'nothing was sent' }
+    Stop-Active $age $Note
+}
+
+function Stop-IfIntruded([string]$Note) {
+    if ([AfDesktop]::Intruded) { Stop-Intruded ([AfDesktop]::IntrudedTick) $Note }
 }
 
 # --- Away guard: pure functions (no Windows calls; the tests load these by name) ---
@@ -359,14 +403,14 @@ function Get-StateField($State, [string]$Name) {
     $property.Value
 }
 
-function New-RunState([int64]$OperatorTick, $OwnTick, [int64]$NowTick, [int64]$NowMs, $Foreground, $Pointer) {
+function New-RunState([int64]$OperatorTick, $OwnTick, [int64]$RunStartTick, [int64]$RunStartMs, $Foreground, $Pointer) {
     [ordered]@{
-        operator_tick = $OperatorTick
-        own_tick      = $OwnTick
-        tick_at_write = $NowTick
-        written_ms    = $NowMs
-        foreground    = $Foreground
-        pointer       = $Pointer
+        operator_tick  = $OperatorTick
+        own_tick       = $OwnTick
+        run_start_tick = $RunStartTick
+        run_start_ms   = $RunStartMs
+        foreground     = $Foreground
+        pointer        = $Pointer
     }
 }
 
@@ -375,7 +419,7 @@ function Read-RunState([string]$Path) {
     try {
         if (-not [System.IO.File]::Exists($Path)) { return $null }
         $state = [System.IO.File]::ReadAllText($Path) | ConvertFrom-Json
-        foreach ($field in @('operator_tick', 'tick_at_write', 'written_ms')) {
+        foreach ($field in @('operator_tick', 'run_start_tick', 'run_start_ms')) {
             $value = Get-StateField $state $field
             if ($null -eq $value) { return $null }
             [void][int64]$value
@@ -411,17 +455,19 @@ function Write-RunState([string]$Path, $State) {
     throw $last
 }
 
-# True while the state can describe this run: written no more than 30 minutes ago by the wall clock, and
-# the tick clock agrees with the wall clock about how long ago. A reboot restarts the ticks, so it breaks
-# that agreement; a wrap does not, because both sides are unsigned differences. (A plain "tick greater
-# than now" test would call a state written just before a wrap stale, and miss one from before a reboot.)
-function Test-RunStateFresh($State, [int64]$NowTick, [int64]$NowMs, [int64]$MaxAgeMs = 1800000, [int64]$SlackMs = 10000) {
+# True while the run can still be described by the state: it began no more than 5 minutes ago by the wall
+# clock and by the tick clock, and the two clocks agree about how long ago. Rewriting the state never moves
+# the start, so a run has a time limit. A reboot restarts the ticks, so it breaks the agreement; a wrap does
+# not, because both sides are unsigned differences. (A plain "tick greater than now" test would call a run
+# begun just before a wrap stale, and miss one from before a reboot.)
+function Test-RunStateFresh($State, [int64]$NowTick, [int64]$NowMs, [int64]$MaxAgeMs = 300000, [int64]$SlackMs = 10000) {
     if ($null -eq $State) { return $false }
-    $age = $NowMs - [int64](Get-StateField $State 'written_ms')
+    $age = $NowMs - [int64](Get-StateField $State 'run_start_ms')
     if ($age -lt 0 -or $age -gt $MaxAgeMs) { return $false }
-    $ticks = Get-TickAge $NowTick ([int64](Get-StateField $State 'tick_at_write'))
+    $ticks = Get-TickAge $NowTick ([int64](Get-StateField $State 'run_start_tick'))
+    if ($ticks -gt $MaxAgeMs) { return $false }
     if ([Math]::Abs($ticks - $age) -gt $SlackMs) { return $false }
-    # His last input came before the state was written, so it is at least as old as the state.
+    # His last input came before the run began, so it is at least as old as the run.
     $operatorAge = Get-TickAge $NowTick ([int64](Get-StateField $State 'operator_tick'))
     if ($operatorAge + $SlackMs -lt $ticks) { return $false }
     $true
@@ -441,7 +487,7 @@ function Get-OperatorIdleMs($State, [int64]$NowTick, [int64]$LastInputTick, [int
 }
 
 # The run goes on when the state is fresh and nothing has been input since the tool's own last input
-# (or, before it sent any, since his last one). Otherwise the state is replaced.
+# (or, before it sent any, since his last one). Otherwise the state is replaced and a new run begins.
 function Test-RunContinues($State, [int64]$NowTick, [int64]$LastInputTick, [int64]$NowMs) {
     if ($null -eq $State -or -not (Test-RunStateFresh $State $NowTick $NowMs)) { return $false }
     $own = Get-StateField $State 'own_tick'
@@ -460,14 +506,105 @@ function Get-ExposedDeniedCount($Rows) {
     @($Rows | Where-Object { $_.Denied -and -not $_.Minimized }).Count
 }
 
-# --- Away guard: state and locking ---
+# The roots that hold tracked files: this checkout, AF_ROOT, and the main repository of a worktree (the
+# parent of git's common directory, found by reading .git and commondir, never by running git).
+function Get-RepositoryRoots([string]$Checkout, [string]$AfRoot) {
+    $roots = New-Object System.Collections.ArrayList
+    foreach ($candidate in @($Checkout, $AfRoot)) {
+        if ($candidate) { [void]$roots.Add([System.IO.Path]::GetFullPath($candidate).TrimEnd('\')) }
+    }
+    try {
+        $dotGit = Join-Path $Checkout '.git'
+        if ([System.IO.File]::Exists($dotGit)) {
+            $line = ([System.IO.File]::ReadAllText($dotGit) -split "`n" | Where-Object { $_ -like 'gitdir:*' } | Select-Object -First 1)
+            $gitDir = [System.IO.Path]::GetFullPath(($line.Substring(7).Trim() -replace '/', '\'))
+            $commonFile = Join-Path $gitDir 'commondir'
+            $common = if ([System.IO.File]::Exists($commonFile)) {
+                [System.IO.Path]::GetFullPath((Join-Path $gitDir (([System.IO.File]::ReadAllText($commonFile)).Trim() -replace '/', '\')))
+            } else { $gitDir }
+            [void]$roots.Add([System.IO.Path]::GetDirectoryName($common.TrimEnd('\')))
+        }
+    } catch { }
+    @($roots | Select-Object -Unique)
+}
+
+# True when a screenshot may be written there: outside every root, or inside the ignored workspace/ or
+# system/sessions/ of one of them.
+function Test-OutAllowed([string]$Full, $Roots) {
+    $inside = $false
+    foreach ($root in $Roots) {
+        $prefix = ([string]$root).TrimEnd('\') + '\'
+        if (-not $Full.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) { continue }
+        $inside = $true
+        foreach ($ignored in @('workspace\', 'system\sessions\')) {
+            if ($Full.StartsWith($prefix + $ignored, [StringComparison]::OrdinalIgnoreCase)) { return $true }
+        }
+    }
+    -not $inside
+}
+
+# The cache file for the compiled native code is named by a hash of its source, so a file built from
+# other source is never the one loaded.
+function Get-NativeCacheName([string]$Source) {
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try { $bytes = $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($Source)) } finally { $sha.Dispose() }
+    'AfDesktop-' + (($bytes[0..7] | ForEach-Object { $_.ToString('x2') }) -join '') + '.dll'
+}
+
+# Loads the compiled native class from the cache when the file for exactly this source is there and loads;
+# otherwise compiles it, writes the cache through a temp name when it can, and loads that. Any trouble with
+# the cache falls back to compiling in memory. Returns where it came from: cache, built, or memory.
+function Import-Native([string]$Source, [string]$Folder) {
+    $name = Get-NativeCacheName $Source
+    $file = $null
+    $damaged = $false
+    try {
+        $file = Join-Path $Folder $name
+        if ([System.IO.File]::Exists($file)) {
+            Add-Type -Path $file
+            return 'cache'
+        }
+    } catch {
+        # A damaged or unloadable file: replace it below. A path that failed to load cannot be loaded again in
+        # this process, so this run uses an in-memory build and the next one uses the new file.
+        $damaged = $true
+        try { [System.IO.File]::Delete($file) } catch { }
+    }
+    try {
+        [void][System.IO.Directory]::CreateDirectory($Folder)
+        $temp = "$file.$PID.tmp"
+        Add-Type -TypeDefinition $Source -IgnoreWarnings -OutputAssembly $temp
+        try { [System.IO.File]::Move($temp, $file) }
+        catch { if (-not [System.IO.File]::Exists($file)) { throw } else { [System.IO.File]::Delete($temp) } }
+        if ($damaged) { Add-Type -TypeDefinition $Source -IgnoreWarnings } else { Add-Type -Path $file }
+        foreach ($old in [System.IO.Directory]::GetFiles($Folder, 'AfDesktop-*.dll')) {
+            if ([System.IO.Path]::GetFileName($old) -ne $name) { try { [System.IO.File]::Delete($old) } catch { } }
+        }
+        return 'built'
+    } catch {
+        try { [System.IO.File]::Delete($temp) } catch { }
+        if ('AfDesktop' -as [type]) { return 'memory' }
+        Add-Type -TypeDefinition $Source -IgnoreWarnings
+        return 'memory'
+    }
+}
+
+# --- Away guard: state, locking, and timed calls ---
+
+function Get-StateRoot {
+    if ($env:AF_ROOT) { $env:AF_ROOT } else { Join-Path $PSScriptRoot '..\..' }
+}
 
 function Get-StatePath {
-    $root = if ($env:AF_ROOT) { $env:AF_ROOT } else { Join-Path $PSScriptRoot '..\..' }
-    [System.IO.Path]::GetFullPath((Join-Path $root $StateRelative))
+    [System.IO.Path]::GetFullPath((Join-Path (Get-StateRoot) $StateRelative))
 }
 
 function Get-NowMs { [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() }
+
+# Every gated command takes the same -IdleSeconds check, before anything else is done.
+function Assert-Usage {
+    if ($GatedCommands -contains $Command -and $IdleSeconds -lt 0) { Stop-Failed '-IdleSeconds must be 0 or more' }
+}
 
 # One gated command at a time. Two at once would each pass the guard and then send into the same screen.
 function Lock-Run {
@@ -514,10 +651,37 @@ function Get-PointerRecord {
     [ordered]@{ x = [int]$at[0]; y = [int]$at[1] }
 }
 
+function Write-Trace([string]$Text) {
+    if ($script:Trace) { [Console]::Error.WriteLine("trace: $Text") }
+}
+
+# One API call that might bump the system's last-input clock (a raise, a restore, the Invoke pattern, the
+# pointer). The clock is read straight before and straight after that call alone. A change counts as the
+# tool's own only when the call returned within the limit; a slower call (an Invoke held up by a modal
+# dialog) or a clock that already differed before the call is his, so nothing is accepted and the next
+# command waits for quiet. With -Verbose or AF_DESKTOP_TRACE=1 each call prints whether the clock moved.
+function Invoke-Timed([string]$Label, [scriptblock]$Call) {
+    if ([AfDesktop]::Expected -eq -2) { return (& $Call) }
+    $before = [AfDesktop]::LastInput()
+    if ($before -ne [AfDesktop]::Expected) { Stop-Intruded $before 'nothing more was sent' }
+    $watch = [System.Diagnostics.Stopwatch]::StartNew()
+    $result = & $Call
+    $ms = $watch.ElapsedMilliseconds
+    $after = [AfDesktop]::LastInput()
+    $moved = $after -ne $before
+    $accepted = $false
+    if ($moved -and $after -ge 0 -and $ms -le $TimedCallLimitMs) {
+        [AfDesktop]::Accept($after)
+        $accepted = $true
+    }
+    Write-Trace "$Label clock_moved=$moved ms=$ms accepted=$accepted"
+    $result
+}
+
 # Runs once per gated command, before its first input: takes the lock, and refuses (exit 4) unless he has
-# been away for -IdleSeconds. A run's first command records the foreground window and the pointer.
+# been away for -IdleSeconds. A run's first command records the foreground window and the pointer and its
+# start time; a command inside the run keeps both.
 function Enter-AwayGuard {
-    if ($IdleSeconds -lt 0) { Stop-Failed '-IdleSeconds must be 0 or more' }
     Lock-Run
     $status = Get-AwayStatus
     if ($status.IdleMs -lt ([int64]$IdleSeconds * 1000)) { Stop-Active $status.IdleMs }
@@ -526,6 +690,8 @@ function Enter-AwayGuard {
         $guard = @{
             OperatorTick = [int64](Get-StateField $kept 'operator_tick')
             OwnTick      = Get-StateField $kept 'own_tick'
+            RunStartTick = [int64](Get-StateField $kept 'run_start_tick')
+            RunStartMs   = [int64](Get-StateField $kept 'run_start_ms')
             Foreground   = Get-StateField $kept 'foreground'
             Pointer      = Get-StateField $kept 'pointer'
         }
@@ -533,36 +699,34 @@ function Enter-AwayGuard {
         $guard = @{
             OperatorTick = $status.Last
             OwnTick      = $null
+            RunStartTick = $status.NowTick
+            RunStartMs   = $status.NowMs
             Foreground   = Get-ForegroundRecord
             Pointer      = Get-PointerRecord
         }
     }
-    $guard.TickBefore = $status.Last
     try { Save-Run $guard $guard.OwnTick }
     catch { Stop-Error "could not write the run state ($($_.Exception.Message)); nothing was sent" }
+    # From here every send and every timed call checks the clock against this tick.
+    [AfDesktop]::Arm($status.Last)
     $script:Guard = $guard
 }
 
 function Save-Run($Guard, $OwnTick) {
-    $state = New-RunState $Guard.OperatorTick $OwnTick ([AfDesktop]::TickNow()) (Get-NowMs) $Guard.Foreground $Guard.Pointer
+    $state = New-RunState $Guard.OperatorTick $OwnTick $Guard.RunStartTick $Guard.RunStartMs $Guard.Foreground $Guard.Pointer
     Write-RunState (Get-StatePath) $state
 }
 
-# Ends a gated command: records the last-input tick of the tool's own latest input, keeps his tick, and
-# lets the next command run. With no injected input (focus, a pattern invoke), a tick that moved during
-# the command is taken as the tool's own; the same is true of any input he made in that short time.
+# Ends a gated command: records the tool's own latest tick (set after its own sends and quick calls only),
+# keeps his tick and the run's start, and lets the next command run. A command that stopped because he came
+# back leaves the own tick where it was, so the next command finds a last input that is not the tool's.
 function Complete-Run {
     $guard = $script:Guard
     $script:Guard = $null
     try {
         if ($null -ne $guard) {
             $own = $guard.OwnTick
-            if ([AfDesktop]::OwnTick -ne -2) {
-                $own = [AfDesktop]::OwnTick
-            } else {
-                $after = [AfDesktop]::LastInput()
-                if ($after -ge 0 -and $after -ne $guard.TickBefore) { $own = $after }
-            }
+            if ([AfDesktop]::OwnTick -ne -2) { $own = [AfDesktop]::OwnTick }
             try { Save-Run $guard $own }
             catch { [Console]::Error.WriteLine("warning: could not write the run state ($($_.Exception.Message)); the next command will wait for the operator to be away") }
         }
@@ -726,8 +890,8 @@ function Assert-InputDesktop {
 function Invoke-BringToFront($Target) {
     Assert-InputDesktop
     $wasForeground = [AfDesktop]::GetForegroundWindow().ToInt64() -eq $Target.Handle.ToInt64()
-    if ([AfDesktop]::IsIconic($Target.Handle)) { [void][AfDesktop]::ShowWindow($Target.Handle, 9) }
-    [void][AfDesktop]::BringToFront($Target.Handle)
+    if ([AfDesktop]::IsIconic($Target.Handle)) { [void](Invoke-Timed 'ShowWindow' { [AfDesktop]::ShowWindow($Target.Handle, 9) }) }
+    [void](Invoke-Timed 'SetForegroundWindow' { [AfDesktop]::BringToFront($Target.Handle) })
     # A window that has just been raised can still lose the foreground; check after it settles.
     if (-not $wasForeground) { Start-Sleep -Milliseconds $SettleMs }
     Assert-ReadyForInput $Target ''
@@ -747,9 +911,12 @@ function Invoke-GuardedClick($Target, [int]$ScreenX, [int]$ScreenY) {
             Stop-Refused "$ScreenX,$ScreenY is over another window. Requested: $(Format-Window $Target). Found: $(Format-Window $over). No input was sent."
         }
     }
-    if (-not [AfDesktop]::SetCursorPos($ScreenX, $ScreenY)) { Stop-Error "could not move the cursor to $ScreenX,$ScreenY" }
+    if (-not (Invoke-Timed 'SetCursorPos' { [AfDesktop]::SetCursorPos($ScreenX, $ScreenY) })) { Stop-Error "could not move the cursor to $ScreenX,$ScreenY" }
     Assert-ReadyForInput $Target ''
-    if (-not [AfDesktop]::SendLeftClick()) { Stop-Error 'Windows rejected the click' }
+    if (-not [AfDesktop]::SendLeftClick()) {
+        Stop-IfIntruded 'no click was sent'
+        Stop-Error 'Windows rejected the click'
+    }
 }
 
 function Assert-NotPasswordField([string]$Progress) {
@@ -797,14 +964,13 @@ function Get-Chords([string]$Sequence) {
 }
 
 function Assert-IgnoredOut([string]$Path) {
-    # A screenshot holds whatever is on screen, and the repository is public.
-    $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..')).TrimEnd('\') + '\'
+    # A screenshot holds whatever is on screen, and the repository is public. This checkout, AF_ROOT and
+    # the main repository of a worktree each have tracked folders; only their workspace/ and system/sessions/
+    # are ignored.
     $full = [System.IO.Path]::GetFullPath($Path)
-    if (-not $full.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) { return }
-    foreach ($ignored in @('workspace\', 'system\sessions\')) {
-        if ($full.StartsWith($root + $ignored, [StringComparison]::OrdinalIgnoreCase)) { return }
-    }
-    Stop-Failed "-Out $full is inside the repository, which is public; write to the scratchpad or under workspace/"
+    $roots = Get-RepositoryRoots ([System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))) $env:AF_ROOT
+    if (Test-OutAllowed $full $roots) { return }
+    Stop-Failed "-Out $full is inside a repository, which is public; write to the scratchpad or under workspace/"
 }
 
 function Save-Scaled($Source, [int]$OriginX, [int]$OriginY) {
@@ -948,7 +1114,7 @@ function Invoke-Element {
     $pattern = $null
     if ($element.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$pattern)) {
         try {
-            $pattern.Invoke()
+            [void](Invoke-Timed 'InvokePattern' { $pattern.Invoke() })
             "invoked via=invoke $(Format-Element $element)"
             return
         } catch {
@@ -994,7 +1160,10 @@ function Invoke-Type {
             "`t" { $delay = $SettleMs; [AfDesktop]::SendChord([uint16[]]@(0x09)) }
             default { [AfDesktop]::SendChar($char) }
         }
-        if (-not $ok) { Stop-Error "Windows rejected the input. $progress" }
+        if (-not $ok) {
+            Stop-IfIntruded $progress
+            Stop-Error "Windows rejected the input. $progress"
+        }
         $sent++
         # Enter and Tab can retitle the window or move the focus; let that land before the next check.
         Start-Sleep -Milliseconds $delay
@@ -1015,7 +1184,10 @@ function Invoke-Key {
         Assert-ReadyForInput $target $progress
         # Single letters, a paste, or Enter into a password field enter a password as surely as type does.
         Assert-NotPasswordField $progress
-        if (-not [AfDesktop]::SendChord($chord.Codes)) { Stop-Error "Windows rejected '$($chord.Text)'. $progress" }
+        if (-not [AfDesktop]::SendChord($chord.Codes)) {
+            Stop-IfIntruded $progress
+            Stop-Error "Windows rejected '$($chord.Text)'. $progress"
+        }
         $sent++
         # A chord can switch tabs or retitle the window; let that land before the next check.
         Start-Sleep -Milliseconds $SettleMs
@@ -1038,16 +1210,17 @@ function Invoke-Restore {
     $state = $status.State
     if ($null -eq $state) {
         Remove-RunState
-        'nothing to restore: no run is recorded, or its record is more than 30 minutes old'
+        'nothing to restore: no run is recorded, or its record is more than 5 minutes old'
         return
     }
     if ($status.IdleMs -lt ([int64]$IdleSeconds * 1000)) { Stop-Active $status.IdleMs }
     Assert-InputDesktop
+    [AfDesktop]::Arm($status.Last)
     $rejected = $false
     $pointer = Get-StateField $state 'pointer'
     if ($null -eq $pointer) {
         'could not restore the pointer: its position was not recorded'
-    } elseif ([AfDesktop]::SetCursorPos([int]$pointer.x, [int]$pointer.y)) {
+    } elseif (Invoke-Timed 'SetCursorPos' { [AfDesktop]::SetCursorPos([int]$pointer.x, [int]$pointer.y) }) {
         "restored the pointer to $($pointer.x),$($pointer.y)"
     } else {
         $rejected = $true
@@ -1063,8 +1236,8 @@ function Invoke-Restore {
             "could not restore the foreground window ($name): it is gone"
         } else {
             # Bringing his own window back is not input to it, so a denied one is put back too, untitled.
-            if ([AfDesktop]::IsIconic($handle)) { [void][AfDesktop]::ShowWindow($handle, 9) }
-            [void][AfDesktop]::BringToFront($handle)
+            if ([AfDesktop]::IsIconic($handle)) { [void](Invoke-Timed 'ShowWindow' { [AfDesktop]::ShowWindow($handle, 9) }) }
+            [void](Invoke-Timed 'SetForegroundWindow' { [AfDesktop]::BringToFront($handle) })
             Start-Sleep -Milliseconds $SettleMs
             if ([AfDesktop]::GetForegroundWindow().ToInt64() -eq $handle.ToInt64()) {
                 "restored the foreground window ($name)"
@@ -1091,9 +1264,12 @@ $usage = 'usage: desktop.ps1 windows | focus | screenshot | tree | invoke | clic
 if (-not $Command) { Stop-Failed $usage }
 if ($Command -notin @('windows', 'focus', 'screenshot', 'tree', 'invoke', 'click', 'type', 'key', 'restore')) { Stop-Failed "unknown command '$Command'. $usage" }
 
+Assert-Usage
+
 try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false) } catch { }
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes, System.Windows.Forms, System.Drawing
-Add-Type -TypeDefinition $NativeSource -IgnoreWarnings
+# The compiled native class is cached next to the run state, named by a hash of its source (Import-Native).
+$null = Import-Native $NativeSource (Split-Path (Get-StatePath))
 [AfDesktop]::MakeDpiAware()
 $script:LocalDenyNames = @(Read-LocalDenyNames)
 

@@ -2,15 +2,23 @@
 
 The whole module skips unless AF_DESKTOP_TESTS=1, because the live tests open forms with bank and
 password-manager titles, take the foreground, move the pointer and send input. Set it only on the machine
-that runs the tool, and only while the operator is away: the tool's own away guard refuses to act while he is
-there, and the module skips unless he has been idle for 120 s when it starts. With it set, live tests still
-skip without an interactive, unlocked Windows desktop. Run with -rs.
+that runs the tool, and only while the operator is away. The module skips unless he has been idle for 120 s
+when it starts, and it keeps watching: it remembers the last-input tick straight after each tool call or
+action of its own, reads it again before every test and every tool call, and if it moved he is back. Then it
+closes every helper window, puts his pointer and foreground window back (the foreground only if it is one of
+these helpers' or none; the pointer only if he has not moved it), and skips the rest with "the operator came
+back". At the start it records his pointer and foreground window and puts both back at the end, on every path.
+With it set, live tests still skip without an interactive, unlocked Windows desktop. Run with -rs.
 No test captures the full screen or acts on a window it did not open; only `windows` lists the others.
 The checks that need no desktop are in test_desktop_static.py and run in the normal suite.
 
-The tests run in file order and are one run of the tool: they share a state file, so each command after the
-first is allowed by the tool's own-tick rule (its own input does not lock it out). The restore tests come last
-because they end that run, and they start theirs with -IdleSeconds 0, which exists for the tests.
+Every command runs with its own AF_ROOT, so the run state is a temp file and never the operator's. A run lasts
+at most 5 minutes, so before each test the harness plants a fresh run in that state file: his last input is the
+one it saw at the start, and the tool's own last tick is the one it read after its last action. The default
+-IdleSeconds then works as it does for a real job (the tool's own-tick rule). -IdleSeconds 0 is used only where a
+test must begin a run of its own, since the tests' own input has just reset the clock; the harness has already
+proved he is away. The restore tests come last because each ends a run, and the test of his input in the middle
+of a type is the very last, because it makes the clock his.
 """
 
 import os
@@ -30,9 +38,12 @@ import struct
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import uuid
 from pathlib import Path
+
+from desktop_fixtures import FIXTURE, NAMED_EXE
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "system" / "tools" / "desktop.ps1"
@@ -43,132 +54,14 @@ REFUSED = 3
 USAGE = 2
 ACTIVE = 4
 BUSY = 1
+GATED = {"focus", "invoke", "click", "type", "key", "restore"}
+WRAP = 2 ** 32
 
-# Every command runs with AF_ROOT here, so the run state is a temp file and never the operator's own.
 STATE_ROOT = Path(tempfile.mkdtemp(prefix="af-desktop-state-"))
 atexit.register(shutil.rmtree, STATE_ROOT, ignore_errors=True)
 STATE_FILE = STATE_ROOT / "system" / "logs" / "desktop" / "run.json"
-
-FIXTURE = r"""
-param([string]$Title, [string]$StateFile, [string]$CommandFile, [int]$Left = 200)
-Add-Type -AssemblyName System.Windows.Forms, System.Drawing
-
-$script:Pressed = 0
-$script:LabelClicks = 0
-$script:CommandsDone = 0
-$script:OnType = ''
-$script:Thief = $null
-
-function Write-State {
-    $json = @{
-        title = $form.Text; text = $editor.Text; secret_length = $secret.TextLength
-        pressed = $script:Pressed; label_clicks = $script:LabelClicks; commands_done = $script:CommandsDone
-    } | ConvertTo-Json -Compress
-    $temp = "$StateFile.tmp"
-    [IO.File]::WriteAllText($temp, $json)
-    for ($try = 0; $try -lt 10; $try++) {
-        try { Move-Item -LiteralPath $temp -Destination $StateFile -Force; return } catch { Start-Sleep -Milliseconds 20 }
-    }
-}
-
-function Start-Thief([string]$ThiefTitle) {
-    $script:Thief = New-Object Windows.Forms.Form
-    $script:Thief.Text = $ThiefTitle
-    $script:Thief.TopMost = $true
-    $script:Thief.StartPosition = 'Manual'
-    $script:Thief.Location = New-Object Drawing.Point(($Left + 60), 260)
-    $script:Thief.Show()
-    $script:Thief.Activate()
-    $holder = New-Object Windows.Forms.Timer
-    $holder.Interval = 40
-    $holder.Add_Tick({ if ($script:Thief) { $script:Thief.Activate() } })
-    $holder.Start()
-}
-
-$form = New-Object Windows.Forms.Form
-$form.Text = $Title
-$form.StartPosition = 'Manual'
-$form.Location = New-Object Drawing.Point($Left, 200)
-$form.ClientSize = New-Object Drawing.Size(480, 320)
-$form.BackColor = [Drawing.Color]::Magenta
-$form.TopMost = $true
-
-$editor = New-Object Windows.Forms.TextBox
-$editor.Name = 'editor'; $editor.AccessibleName = 'Editor'; $editor.Multiline = $true
-$editor.Location = New-Object Drawing.Point(10, 10); $editor.Size = New-Object Drawing.Size(300, 60)
-
-$secret = New-Object Windows.Forms.TextBox
-$secret.Name = 'secret'; $secret.AccessibleName = 'Secret'; $secret.UseSystemPasswordChar = $true
-$secret.Location = New-Object Drawing.Point(10, 80); $secret.Size = New-Object Drawing.Size(300, 24)
-
-$button = New-Object Windows.Forms.Button
-$button.Name = 'pressMe'; $button.Text = 'Press Me'
-$button.Location = New-Object Drawing.Point(10, 115); $button.Size = New-Object Drawing.Size(120, 30)
-
-$disabled = New-Object Windows.Forms.Button
-$disabled.Name = 'neverEnabled'; $disabled.Text = 'Never Enabled'; $disabled.Enabled = $false
-$disabled.Location = New-Object Drawing.Point(140, 115); $disabled.Size = New-Object Drawing.Size(120, 30)
-
-$label = New-Object Windows.Forms.Label
-$label.Name = 'fallbackLabel'; $label.Text = 'Fallback Target'; $label.BackColor = [Drawing.Color]::White
-$label.Location = New-Object Drawing.Point(10, 155); $label.Size = New-Object Drawing.Size(160, 30)
-
-$form.Controls.AddRange(@($editor, $secret, $button, $disabled, $label))
-
-$button.Add_Click({ $script:Pressed++; Write-State })
-$label.Add_Click({ $script:LabelClicks++; Write-State })
-$secret.Add_TextChanged({ Write-State })
-$editor.Add_TextChanged({
-    if ($script:OnType) {
-        $action = $script:OnType
-        $script:OnType = ''
-        if ($action.StartsWith('thief=')) { Start-Thief $action.Substring(6) }
-        elseif ($action.StartsWith('title=')) { $form.Text = $action.Substring(6) }
-        elseif ($action -eq 'focus=secret') { [void]$secret.Focus() }
-    }
-    Write-State
-})
-
-$commands = New-Object Windows.Forms.Timer
-$commands.Interval = 40
-$commands.Add_Tick({
-    if (-not (Test-Path -LiteralPath $CommandFile)) { return }
-    $line = [IO.File]::ReadAllText($CommandFile, [Text.Encoding]::UTF8)
-    Remove-Item -LiteralPath $CommandFile -Force
-    if ($line.StartsWith('title=')) { $form.Text = $line.Substring(6) }
-    elseif ($line -eq 'focus=secret') { [void]$secret.Focus() }
-    elseif ($line -eq 'focus=editor') { [void]$editor.Focus() }
-    elseif ($line.StartsWith('thief=')) { Start-Thief $line.Substring(6) }
-    elseif ($line.StartsWith('ontype=')) { $script:OnType = $line.Substring(7) }
-    $script:CommandsDone++
-    Write-State
-})
-$commands.Start()
-
-$failsafe = New-Object Windows.Forms.Timer
-$failsafe.Interval = 240000
-$failsafe.Add_Tick({ $form.Close() })
-$failsafe.Start()
-
-$form.Add_Shown({ [void]$editor.Focus(); Write-State })
-[Windows.Forms.Application]::Run($form)
-"""
-
-NAMED_EXE = r"""
-using System.Windows.Forms;
-public static class NamedExe {
-    [System.STAThread]
-    public static void Main(string[] args) {
-        Form form = new Form();
-        form.Text = args[0];
-        Timer failsafe = new Timer();
-        failsafe.Interval = 120000;
-        failsafe.Tick += delegate { form.Close(); };
-        failsafe.Start();
-        Application.Run(form);
-    }
-}
-"""
+HEARTBEAT = Path(tempfile.mkdtemp(prefix="af-desktop-beat-")) / "beat"
+atexit.register(shutil.rmtree, HEARTBEAT.parent, ignore_errors=True)
 
 DENIED_TITLES = [
     "KeePass Database", "1Password Vault", "Bitwarden Web Vault", "LastPass Sign In", "Acme Online Banking",
@@ -180,28 +73,11 @@ ALLOWED_LOOKALIKES = ["stdout td notes", "settings.json notes", "Bmore rbcx note
                       "Pending tasks"]
 
 
-def run_env(root: Path = STATE_ROOT) -> dict:
-    return {**os.environ, "AF_ROOT": str(root)}
+# --- The operator's side of the screen, read with the same Win32 calls an ordinary program uses. ---------
 
+class LASTINPUTINFO(ctypes.Structure):
+    _fields_ = [("cbSize", ctypes.c_uint), ("dwTime", ctypes.c_uint)]
 
-def desktop(*args, timeout=60, env=None):
-    return subprocess.run([*POWERSHELL, "-File", str(SCRIPT), *map(str, args)], capture_output=True, text=True,
-                          encoding="utf-8", errors="replace", timeout=timeout, creationflags=NO_WINDOW,
-                          env=run_env() if env is None else env)
-
-
-def read_run_state() -> dict:
-    return json.loads(STATE_FILE.read_text(encoding="utf-8-sig"))
-
-
-def assert_active(result):
-    assert result.returncode == ACTIVE, f"expected exit 4, got {result.returncode}: {result.stdout} {result.stderr}"
-    assert re.search(r"^error: the operator is active \(last input \d+ s ago\); nothing was sent; wait and retry$",
-                     result.stderr.strip()), result.stderr
-    assert result.stdout == ""
-
-
-# The operator's side of the screen, read with the same Win32 calls an ordinary program uses.
 
 def win32():
     user32 = ctypes.windll.user32
@@ -212,17 +88,55 @@ def win32():
     return user32
 
 
+def last_input_tick() -> int:
+    info = LASTINPUTINFO()
+    info.cbSize = ctypes.sizeof(info)
+    if not win32().GetLastInputInfo(ctypes.byref(info)):
+        return -1
+    return info.dwTime
+
+
+def tick_now() -> int:
+    return ctypes.windll.kernel32.GetTickCount() & 0xFFFFFFFF
+
+
 def pointer() -> tuple[int, int]:
     point = ctypes.wintypes.POINT()
     win32().GetCursorPos(ctypes.byref(point))
     return point.x, point.y
 
 
-def foreground_title() -> str:
-    user32 = win32()
+def window_title(hwnd) -> str:
     buffer = ctypes.create_unicode_buffer(512)
-    user32.GetWindowTextW(user32.GetForegroundWindow(), buffer, 512)
+    win32().GetWindowTextW(hwnd, buffer, 512)
     return buffer.value
+
+
+def foreground_title() -> str:
+    return window_title(win32().GetForegroundWindow())
+
+
+def window_pid(hwnd) -> int:
+    pid = ctypes.wintypes.DWORD()
+    win32().GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+    return pid.value
+
+
+def raise_window(hwnd) -> None:
+    """Bring a window forward without sending it input, the way the tool does (shared input with the front thread)."""
+    user32 = win32()
+    if user32.IsIconic(hwnd):
+        user32.ShowWindow(hwnd, 9)
+    front = user32.GetForegroundWindow()
+    front_thread = user32.GetWindowThreadProcessId(front, None) if front else 0
+    mine = ctypes.windll.kernel32.GetCurrentThreadId()
+    attached = bool(front_thread and front_thread != mine and user32.AttachThreadInput(mine, front_thread, True))
+    try:
+        user32.BringWindowToTop(hwnd)
+        user32.SetForegroundWindow(hwnd)
+    finally:
+        if attached:
+            user32.AttachThreadInput(mine, front_thread, False)
 
 
 def wait_until(condition, timeout=5.0):
@@ -232,6 +146,116 @@ def wait_until(condition, timeout=5.0):
             return True
         time.sleep(0.05)
     return condition()
+
+
+# --- Watching for him: one clock read per tool call, test and own action. ---------------------------------
+
+class Watch:
+    expected = None          # the last-input tick straight after the harness's latest tool call or action
+    operator_tick = None     # his last input before the module began (he was idle 120 s then)
+    pointer = None           # where the pointer was after the harness's latest action
+    pointer_at_start = None  # where he left it
+    foreground_at_start = 0  # the window he had in front
+    came_back = False
+    helpers = []             # everything that must be closed if he comes back
+    pids = set()             # the helper processes: a foreground window of theirs is not his choice
+
+
+def track(process):
+    """Register a helper process so it is closed if the operator comes back."""
+    Watch.helpers.append(process)
+    Watch.pids.add(process.pid)
+    return process
+
+
+def close_helpers():
+    for helper in list(Watch.helpers):
+        try:
+            helper.kill()
+            helper.wait(timeout=10)
+        except Exception:
+            pass
+
+
+def put_back():
+    """His pointer and foreground window as the module found them; see the module docstring for when it holds back."""
+    user32 = win32()
+    if Watch.pointer_at_start and (not Watch.came_back or pointer() == Watch.pointer):
+        user32.SetCursorPos(*Watch.pointer_at_start)
+    hwnd = Watch.foreground_at_start
+    if hwnd and user32.IsWindow(hwnd) and user32.IsWindowVisible(hwnd):
+        front = user32.GetForegroundWindow()
+        if front != hwnd and (not Watch.came_back or not front or window_pid(front) in Watch.pids):
+            raise_window(hwnd)
+
+
+def operator_returned():
+    Watch.came_back = True
+    close_helpers()
+    put_back()
+    pytest.skip("the operator came back")
+
+
+def check_away():
+    """Skip if he is back: the clock is not where the harness left it."""
+    if Watch.expected is None:
+        return
+    if Watch.came_back:
+        pytest.skip("the operator came back")
+    if last_input_tick() != Watch.expected:
+        operator_returned()
+
+
+def note_own_action():
+    Watch.expected = last_input_tick()
+    Watch.pointer = pointer()
+
+
+def move_pointer(x, y):
+    check_away()
+    win32().SetCursorPos(x, y)
+    note_own_action()
+
+
+# --- Tool calls and the run state ----------------------------------------------------------------------
+
+def run_env(root: Path = STATE_ROOT) -> dict:
+    return {**os.environ, "AF_ROOT": str(root)}
+
+
+def desktop(*args, timeout=60, env=None, watch=True):
+    if watch:
+        check_away()
+    result = subprocess.run([*POWERSHELL, "-File", str(SCRIPT), *map(str, args)], capture_output=True, text=True,
+                            encoding="utf-8", errors="replace", timeout=timeout, creationflags=NO_WINDOW,
+                            env=run_env() if env is None else env)
+    if watch:
+        after = last_input_tick()
+        if str(args[0]) in GATED and result.returncode != ACTIVE:
+            note_own_action()  # the tool may have sent input; the tool itself watches for him while it does
+        elif after != Watch.expected:
+            operator_returned()
+    return result
+
+
+def read_run_state() -> dict:
+    return json.loads(STATE_FILE.read_text(encoding="utf-8-sig"))
+
+
+def write_run_state(**fields):
+    data = {"operator_tick": Watch.operator_tick, "own_tick": Watch.expected, "run_start_tick": tick_now(),
+            "run_start_ms": int(time.time() * 1000), "foreground": None,
+            "pointer": dict(zip("xy", pointer())), **fields}
+    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    STATE_FILE.write_text(json.dumps(data), encoding="utf-8")
+    return data
+
+
+def assert_active(result):
+    assert result.returncode == ACTIVE, f"expected exit 4, got {result.returncode}: {result.stdout} {result.stderr}"
+    assert re.search(r"^error: the operator is active \(last input \d+ s ago\); nothing was sent; wait and retry$",
+                     result.stderr.strip()), result.stderr
+    assert result.stdout == ""
 
 
 def local_denylist(tmp_path: Path, *lines: str) -> dict:
@@ -267,8 +291,9 @@ class Fixture:
             script.write_text(FIXTURE, encoding="utf-8")
         self.process = subprocess.Popen(
             [*POWERSHELL, "-File", str(script), "-Title", title, "-StateFile", str(self.state_file),
-             "-CommandFile", str(self.command_file), "-Left", str(left)],
+             "-CommandFile", str(self.command_file), "-HeartbeatFile", str(HEARTBEAT), "-Left", str(left)],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=NO_WINDOW)
+        track(self.process)
         self.wait_for(lambda s: s["title"] == title, timeout=30)
 
     def state(self) -> dict | None:
@@ -338,10 +363,9 @@ if ($idle -lt 120000) { 'the operator is at the computer: idle ' + [int]($idle /
 """
 
 
-
 @pytest.fixture(scope="module")
 def live():
-    """Skip with the reason unless a real desktop can take input. Nothing here launches before this runs."""
+    """Skip with the reason unless a real desktop can take input and he is away. Nothing launches before this runs."""
     if sys.platform != "win32":
         pytest.skip("desktop.ps1 is Windows-only")
     if not shutil.which("powershell"):
@@ -354,13 +378,38 @@ def live():
     answer = probe.stdout.strip()
     if answer != "ok":
         pytest.skip(f"cannot run live: {answer or probe.stderr.strip()}")
+    # His desktop as he left it, and the clock as it is while he is away. From here the harness watches.
+    Watch.operator_tick = Watch.expected = last_input_tick()
+    Watch.pointer = Watch.pointer_at_start = pointer()
+    Watch.foreground_at_start = win32().GetForegroundWindow()
+    stop = threading.Event()
 
+    def beat():
+        while not stop.is_set():
+            try:
+                HEARTBEAT.write_text(str(time.time()), encoding="utf-8")
+            except OSError:
+                pass
+            stop.wait(3)
 
-@pytest.fixture(scope="module", autouse=True)
-def end_the_run():
+    HEARTBEAT.write_text("start", encoding="utf-8")
+    thread = threading.Thread(target=beat, daemon=True)
+    thread.start()
     yield
-    if STATE_FILE.exists() and sys.platform == "win32":
-        desktop("restore")  # the default guard: if he is back, nothing is touched
+    # The finalizer runs on every path, including after "the operator came back".
+    close_helpers()
+    stop.set()
+    thread.join(timeout=5)
+    if not Watch.came_back and STATE_FILE.exists():
+        desktop("restore", watch=False)  # the default guard: if he is back, nothing is touched
+    put_back()
+
+
+@pytest.fixture(autouse=True)
+def away_and_in_a_fresh_run(live):
+    """Before every test: he is still away, and the run state is a fresh run (a run lasts at most 5 minutes)."""
+    check_away()
+    write_run_state()
 
 
 @pytest.fixture
@@ -668,7 +717,7 @@ def test_a_denied_process_is_refused_under_a_neutral_title(named_exe, tmp_path, 
     exe = tmp_path / f"{process}.exe"
     shutil.copy(named_exe, exe)
     title = f"AF Neutral {uuid.uuid4().hex}"
-    running = subprocess.Popen([str(exe), title])
+    running = track(subprocess.Popen([str(exe), title]))
     try:
         deadline = time.monotonic() + 20
         while title not in desktop("windows").stdout:
@@ -699,21 +748,29 @@ def guarded_args(form, command):
 @pytest.mark.parametrize("command", ["focus", "invoke", "invoke-by-click", "click", "type", "key"])
 def test_a_gated_command_refuses_when_he_is_active_and_sends_nothing(form, command):
     args = guarded_args(form, command)
-    before = STATE_FILE.read_bytes() if STATE_FILE.exists() else None
+    before = STATE_FILE.read_bytes()
     result = desktop(args[0], "-Window", form.title, *args[1:], "-IdleSeconds", 999999)
     assert_active(result)
     time.sleep(0.3)
     state = form.state()
     assert (state["pressed"], state["label_clicks"], state["text"]) == (0, 0, "")
-    after = STATE_FILE.read_bytes() if STATE_FILE.exists() else None
-    assert after == before, "a refused command leaves the run state exactly as it was"
+    assert STATE_FILE.read_bytes() == before, "a refused command leaves the run state exactly as it was"
 
 
 def test_restore_refuses_when_he_is_active_and_leaves_the_run_alone(form):
-    assert_ok(desktop("focus", "-Window", form.title))
     before = STATE_FILE.read_bytes()
     assert_active(desktop("restore", "-IdleSeconds", 999999))
     assert STATE_FILE.read_bytes() == before
+
+
+@pytest.mark.parametrize("command", ["focus", "restore", "type"])
+def test_a_negative_idle_seconds_is_bad_usage(form, command):
+    before = STATE_FILE.read_bytes()
+    extra = ["-Window", form.title, "-Text", "x"] if command == "type" else (["-Window", form.title] if command == "focus" else [])
+    result = desktop(command, *extra, "-IdleSeconds", -1)
+    assert result.returncode == USAGE and "-IdleSeconds must be 0 or more" in result.stderr, result.stderr
+    assert STATE_FILE.read_bytes() == before
+    assert form.state()["text"] == ""
 
 
 def test_the_read_only_commands_ignore_the_guard(shared_form, tmp_path):
@@ -727,6 +784,7 @@ def test_the_read_only_commands_ignore_the_guard(shared_form, tmp_path):
 
 
 def test_a_second_input_straight_after_the_first_is_allowed_and_his_tick_is_kept(form):
+    planted = read_run_state()
     assert_ok(desktop("type", "-Window", form.title, "-Text", "one"))
     first = read_run_state()
     assert first["own_tick"] is not None, "a command that sent input recorded the tick of its own last input"
@@ -734,46 +792,71 @@ def test_a_second_input_straight_after_the_first_is_allowed_and_his_tick_is_kept
     x, y = element_bounds(form.title, "Press Me")
     assert_ok(desktop("click", "-Window", form.title, "-X", x, "-Y", y))
     last = read_run_state()
-    assert last["operator_tick"] == first["operator_tick"], "his last input is never replaced by the tool's"
+    assert last["operator_tick"] == first["operator_tick"] == planted["operator_tick"], \
+        "his last input is never replaced by the tool's"
     assert last["own_tick"] != first["own_tick"], "the tool's own tick follows its own input"
+    assert last["run_start_ms"] == planted["run_start_ms"], "rewriting the state does not extend the run"
     form.wait_for(lambda s: s["pressed"] == 1 and s["text"] == "")
 
 
-def test_the_run_state_holds_the_foreground_and_pointer_found_at_the_start(form):
-    assert_ok(desktop("focus", "-Window", form.title))
+def test_the_first_command_of_a_run_records_the_foreground_and_pointer_and_later_ones_keep_them(form):
+    # A run of its own: -IdleSeconds 0, because the harness has already proved he is away and the tests' own input
+    # has just reset the clock, which the plain rule would count against the first command.
+    assert_ok(desktop("restore", "-IdleSeconds", 0))
+    assert not STATE_FILE.exists()
+    assert_ok(desktop("focus", "-Window", form.title, "-IdleSeconds", 0))
     recorded = read_run_state()
-    assert set(recorded) == {"operator_tick", "own_tick", "tick_at_write", "written_ms", "foreground", "pointer"}
+    assert set(recorded) == {"operator_tick", "own_tick", "run_start_tick", "run_start_ms", "foreground", "pointer"}
     assert isinstance(recorded["pointer"]["x"], int) and isinstance(recorded["pointer"]["y"], int)
     assert isinstance(recorded["foreground"]["handle"], int) and recorded["foreground"]["process"]
-    again = desktop("focus", "-Window", form.title)
-    assert_ok(again)
+    assert_ok(desktop("focus", "-Window", form.title, "-IdleSeconds", 0))
     kept = read_run_state()
-    assert kept["foreground"] == recorded["foreground"] and kept["pointer"] == recorded["pointer"], \
-        "only the first command of a run records them"
+    assert kept["foreground"] == recorded["foreground"] and kept["pointer"] == recorded["pointer"]
+    assert kept["run_start_ms"] == recorded["run_start_ms"], "only the first command of a run records them"
 
 
 def test_invoke_by_pattern_is_gated_records_state_and_does_not_lock_out_the_next_command(form):
-    before = read_run_state()["written_ms"] if STATE_FILE.exists() else 0
+    before = STATE_FILE.stat().st_mtime_ns
     result = desktop("invoke", "-Window", form.title, "-Name", "Press Me")
     assert_ok(result)
     assert "via=invoke" in result.stdout
-    assert read_run_state()["written_ms"] > before
+    assert STATE_FILE.stat().st_mtime_ns > before
     assert_ok(desktop("type", "-Window", form.title, "-Text", "next"))
     form.wait_for(lambda s: s["pressed"] == 1 and s["text"] == "next")
 
 
-@pytest.mark.parametrize("damage", ["wrong own tick", "older than 30 minutes", "unreadable"])
+def test_the_trace_says_whether_each_call_moved_the_clock_and_is_silent_otherwise(form):
+    quiet = desktop("focus", "-Window", form.title)
+    assert_ok(quiet)
+    assert quiet.stderr == "", "nothing extra is printed without a trace"
+    traced = desktop("focus", "-Window", form.title, env={**run_env(), "AF_DESKTOP_TRACE": "1"})
+    assert_ok(traced)
+    assert re.search(r"^trace: SetForegroundWindow clock_moved=(True|False) ms=\d+ accepted=(True|False)$", traced.stderr, re.M), \
+        traced.stderr
+    verbose = desktop("focus", "-Window", form.title, "-Verbose")
+    assert_ok(verbose)
+    assert "trace: SetForegroundWindow clock_moved=" in verbose.stderr, verbose.stderr
+    # What the lines say (does SetForegroundWindow move the clock at all?) is what a person learns from this run.
+    print("TRACE focus:", traced.stderr.strip())
+
+
+@pytest.mark.parametrize("damage", ["wrong own tick", "clocks that disagree", "run older than 5 minutes", "unreadable"])
 def test_a_stale_run_state_falls_back_to_the_plain_rule(form, damage):
     assert_ok(desktop("type", "-Window", form.title, "-Text", "a"))
     saved = STATE_FILE.read_text(encoding="utf-8")
     data = json.loads(saved)
     assert data["own_tick"] is not None
     if damage == "wrong own tick":
-        STATE_FILE.write_text(json.dumps({**data, "own_tick": data["own_tick"] + 1}), encoding="utf-8")
-    elif damage == "older than 30 minutes":
-        STATE_FILE.write_text(json.dumps({**data, "written_ms": data["written_ms"] - 31 * 60 * 1000}), encoding="utf-8")
+        broken = {**data, "own_tick": data["own_tick"] + 1}
+    elif damage == "clocks that disagree":
+        broken = {**data, "run_start_tick": (data["run_start_tick"] - 60_000) % WRAP}
+    elif damage == "run older than 5 minutes":
+        six_minutes = 6 * 60_000
+        broken = {**data, "run_start_ms": data["run_start_ms"] - six_minutes,
+                  "run_start_tick": (data["run_start_tick"] - six_minutes) % WRAP}
     else:
-        STATE_FILE.write_text("{not json", encoding="utf-8")
+        broken = None
+    STATE_FILE.write_text("{not json" if broken is None else json.dumps(broken), encoding="utf-8")
     try:
         result = desktop("type", "-Window", form.title, "-Text", "b")
         assert_active(result)
@@ -786,18 +869,31 @@ def test_a_stale_run_state_falls_back_to_the_plain_rule(form, damage):
     form.wait_for(lambda s: s["text"] == "ac")
 
 
+def test_the_native_code_is_compiled_once_and_cached_by_a_hash_of_its_source(form):
+    assert_ok(desktop("focus", "-Window", form.title))
+    cached = sorted(p.name for p in STATE_FILE.parent.glob("AfDesktop-*.dll"))
+    assert len(cached) == 1 and re.fullmatch(r"AfDesktop-[0-9a-f]{16}\.dll", cached[0]), cached
+    started = time.monotonic()
+    assert_ok(desktop("focus", "-Window", form.title))
+    print("TIMING one focus with the cache:", round(time.monotonic() - started, 2), "s")
+    assert sorted(p.name for p in STATE_FILE.parent.glob("AfDesktop-*.dll")) == cached
+
+
 def test_a_second_screen_command_while_one_is_sending_is_refused_and_sends_nothing(form):
     text = "a" * 400
-    first = subprocess.Popen([*POWERSHELL, "-File", str(SCRIPT), "type", "-Window", form.title, "-Text", text],
-                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, creationflags=NO_WINDOW,
-                             env=run_env())
+    check_away()
+    first = track(subprocess.Popen([*POWERSHELL, "-File", str(SCRIPT), "type", "-Window", form.title, "-Text", text],
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                   creationflags=NO_WINDOW, env=run_env()))
     try:
         form.wait_for(lambda s: len(s["text"]) > 5, timeout=40)
-        second = desktop("key", "-Window", form.title, "-Keys", "b")
+        # watch=False: the first command's own typing moves the clock all the time.
+        second = desktop("key", "-Window", form.title, "-Keys", "b", watch=False)
         assert second.returncode == BUSY, f"{second.returncode}: {second.stderr}"
         assert "another command that acts on the screen is running; nothing was sent" in second.stderr
     finally:
         out, err = first.communicate(timeout=120)
+    note_own_action()
     assert first.returncode == 0, err
     form.wait_for(lambda s: s["text"] == text, timeout=10)
 
@@ -813,8 +909,9 @@ def test_a_full_screen_screenshot_is_refused_while_a_denied_window_is_visible(fo
     assert_refused(desktop("screenshot", "-Window", form.title, "-Out", out), "off limits")
 
 
-# Live: restore. These come last: each ends the run, and each starts a new one with -IdleSeconds 0 (a start the
-# plain rule would refuse, since the tests' own input has just reset the clock).
+# Live: restore. These come after the guard tests: each ends a run, and each starts a new one with -IdleSeconds 0
+# (the plain rule would refuse that start, since the tests' own input has just reset the clock; the harness has
+# already proved he is away).
 
 def start_new_run():
     assert_ok(desktop("restore", "-IdleSeconds", 0))
@@ -833,7 +930,7 @@ def test_restore_puts_the_pointer_and_the_foreground_back_and_removes_the_state(
     try:
         start_new_run()
         bring_to_front_in_a_scratch_run(prior.title, tmp_path)
-        win32().SetCursorPos(120, 140)
+        move_pointer(120, 140)
         assert pointer() == (120, 140)
         assert_ok(desktop("focus", "-Window", target.title, "-IdleSeconds", 0))
         assert STATE_FILE.exists() and read_run_state()["pointer"] == {"x": 120, "y": 140}
@@ -859,7 +956,7 @@ def test_restore_reports_a_foreground_window_that_is_gone_and_still_puts_the_poi
     try:
         start_new_run()
         bring_to_front_in_a_scratch_run(prior.title, tmp_path)
-        win32().SetCursorPos(150, 170)
+        move_pointer(150, 170)
         assert_ok(desktop("focus", "-Window", target.title, "-IdleSeconds", 0))
         prior.close()
         x, y = element_bounds(target.title, "Press Me")
@@ -894,3 +991,35 @@ def test_the_run_state_is_under_the_checkout_when_af_root_is_not_set(form):
     finally:
         desktop("restore", "-IdleSeconds", 0, env=without)
     assert not default_state.exists()
+
+
+# The last test: it makes a change of the clock that is "his" on purpose, so nothing may run after it that needs the
+# tool's default guard.
+
+MOUSEEVENTF_MOVE = 1
+
+
+def test_his_input_in_the_middle_of_a_type_stops_it_with_exit_4_and_the_count(form):
+    text = "a" * 400
+    check_away()
+    first = track(subprocess.Popen([*POWERSHELL, "-File", str(SCRIPT), "type", "-Window", form.title, "-Text", text],
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                   creationflags=NO_WINDOW, env=run_env()))
+    try:
+        form.wait_for(lambda s: len(s["text"]) > 5, timeout=40)
+        # A zero-distance mouse move is input like any other as far as the last-input clock is concerned.
+        win32().mouse_event(MOUSEEVENTF_MOVE, 0, 0, 0, 0)
+    finally:
+        out, err = first.communicate(timeout=120)
+    Watch.expected = last_input_tick()
+    Watch.operator_tick = Watch.expected  # from here the clock is "his"
+    assert first.returncode == ACTIVE, f"{first.returncode}: {out} {err}"
+    match = re.search(r"the operator is active \(last input \d+ s ago\); (\d+) of 400 characters were sent; wait and retry", err)
+    assert match, err
+    sent = int(match.group(1))
+    assert 0 < sent < 400
+    time.sleep(0.3)
+    assert len(form.state()["text"]) == sent, "nothing more was typed after he touched the machine"
+    # The state was left alone, so the next command finds a last input that is not the tool's own and waits.
+    again = desktop("focus", "-Window", form.title, watch=False)
+    assert_active(again)

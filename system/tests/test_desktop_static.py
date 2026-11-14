@@ -7,6 +7,7 @@ API, which a test below checks. The live tests, which open windows and send inpu
 """
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -16,6 +17,9 @@ import uuid
 from pathlib import Path
 
 import pytest
+
+from desktop_fixtures import (FIXTURE, HEARTBEAT_LIMIT_SECONDS, NAMED_EXE, NAMED_EXE_LIFETIME_SECONDS,
+                              THIEF_LIFETIME_SECONDS)
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "system" / "tools" / "desktop.ps1"
@@ -27,7 +31,8 @@ needs_powershell = pytest.mark.skipif(sys.platform != "win32" or not shutil.whic
 
 # The functions the harness may load. None calls Windows; test_the_loaded_functions_call_no_windows_api checks it.
 PURE = ["Get-TickAge", "Get-StateField", "New-RunState", "Read-RunState", "Write-RunState", "Test-RunStateFresh",
-        "Get-OperatorIdleMs", "Test-RunContinues", "Get-ShownTitle", "Get-ExposedDeniedCount"]
+        "Get-OperatorIdleMs", "Test-RunContinues", "Get-ShownTitle", "Get-ExposedDeniedCount", "Get-RepositoryRoots",
+        "Test-OutAllowed", "Get-NativeCacheName"]
 
 HARNESS = r"""
 param([string]$Script, [string]$Names, [string]$CasesFile)
@@ -83,52 +88,56 @@ def run_functions(folder: Path, cases: list[dict], names=PURE) -> dict:
     return {row["id"]: row for row in rows}
 
 
-def state(operator_tick=10_000, tick_at_write=50_000, written_ms=T0, own_tick=50_000, **extra):
-    return {"operator_tick": operator_tick, "own_tick": own_tick, "tick_at_write": tick_at_write,
-            "written_ms": written_ms, **extra}
+def state(operator_tick=10_000, run_start_tick=50_000, run_start_ms=T0, own_tick=50_000, **extra):
+    return {"operator_tick": operator_tick, "own_tick": own_tick, "run_start_tick": run_start_tick,
+            "run_start_ms": run_start_ms, **extra}
 
 
 def function_text(name: str) -> str:
     text = SCRIPT.read_text(encoding="utf-8")
     start = text.index(f"function {name}")
     nxt = re.search(r"^(function |# --- |\$script:Bound)", text[start + 10:], re.M)
-    return text[start:start + 10 + nxt.start()] if nxt else text[start:]
+    body = text[start:start + 10 + nxt.start()] if nxt else text[start:]
+    return re.sub(r"(\n#[^\n]*)+\n?$", "\n", body)  # the comment above the next function is not this one's
 
 
 # name -> (function, arguments, expected value)
+FIVE_MIN = 300_000
 GUARD_CASES = {
     # Unsigned tick arithmetic, across a wrap of the 32-bit clock.
     "age": ("Get-TickAge", [1000, 400], 600),
     "age zero": ("Get-TickAge", [5, 5], 0),
     "age across a wrap": ("Get-TickAge", [100, WRAP - 100], 200),
-    # A state written 60 s ago: ticks and wall clock agree.
+    # A run begun 60 s ago: ticks and wall clock agree.
     "fresh": ("Test-RunStateFresh", [state(), 110_000, T0 + 60_000], True),
-    "fresh at exactly 30 minutes": ("Test-RunStateFresh", [state(), 50_000 + 1_800_000, T0 + 1_800_000], True),
-    "older than 30 minutes": ("Test-RunStateFresh", [state(), 50_000 + 1_800_001, T0 + 1_800_001], False),
-    "written in the future": ("Test-RunStateFresh", [state(), 40_000, T0 - 10_000], False),
-    "from before a reboot, ticks restarted small": ("Test-RunStateFresh", [state(), 20_000, T0 + 600_000], False),
-    "from before a reboot, ticks restarted larger": ("Test-RunStateFresh", [state(), 80_000, T0 + 300_000], False),
-    "written just before a wrap (a tick greater than now is not stale)": (
+    "fresh at exactly 5 minutes": ("Test-RunStateFresh", [state(), 50_000 + FIVE_MIN, T0 + FIVE_MIN], True),
+    "a run 5 minutes and 1 second old is over": ("Test-RunStateFresh", [state(), 50_000 + FIVE_MIN + 1000, T0 + FIVE_MIN + 1000], False),
+    "10 minutes is over (the old 30 minute limit is gone)": ("Test-RunStateFresh", [state(), 50_000 + 600_000, T0 + 600_000], False),
+    "begun in the future": ("Test-RunStateFresh", [state(), 40_000, T0 - 10_000], False),
+    "wall clock inside the limit but the tick clock past it": ("Test-RunStateFresh", [state(), 50_000 + 400_000, T0 + 100_000], False),
+    "from before a reboot, ticks restarted small": ("Test-RunStateFresh", [state(), 20_000, T0 + 200_000], False),
+    "from before a reboot, ticks restarted larger": ("Test-RunStateFresh", [state(), 80_000, T0 + 200_000], False),
+    "begun just before a wrap (a tick greater than now is not stale)": (
         "Test-RunStateFresh",
-        [state(operator_tick=WRAP - 70_000, tick_at_write=WRAP - 300, own_tick=WRAP - 300), 304, T0 + 604], True),
-    "his tick after the write": ("Test-RunStateFresh", [state(operator_tick=80_000), 110_000, T0 + 60_000], False),
+        [state(operator_tick=WRAP - 70_000, run_start_tick=WRAP - 300, own_tick=WRAP - 300), 304, T0 + 604], True),
+    "his tick after the run began": ("Test-RunStateFresh", [state(operator_tick=80_000), 110_000, T0 + 60_000], False),
     # His idle time: the tool's own last input does not count against him.
     "own input is the last: idle since his own": ("Get-OperatorIdleMs", [state(), 110_000, 50_000, T0 + 60_000], 100_000),
     "he touched it after the tool: plain rule": ("Get-OperatorIdleMs", [state(), 110_000, 90_000, T0 + 60_000], 20_000),
-    "stale state: plain rule": (
-        "Get-OperatorIdleMs", [state(), 50_000 + 1_900_000, 50_000, T0 + 1_900_000], 1_900_000),
+    "run over its limit: plain rule": (
+        "Get-OperatorIdleMs", [state(), 50_000 + 400_000, 50_000, T0 + 400_000], 400_000),
     "no state: plain rule": ("Get-OperatorIdleMs", [None, 110_000, 100_000, T0], 10_000),
     "state with no own tick: plain rule": ("Get-OperatorIdleMs", [state(own_tick=None), 110_000, 50_000, T0 + 60_000], 60_000),
     "own input then a wrap": (
         "Get-OperatorIdleMs",
-        [state(operator_tick=WRAP - 70_000, tick_at_write=WRAP - 300, own_tick=WRAP - 300), 304, WRAP - 300, T0 + 604],
+        [state(operator_tick=WRAP - 70_000, run_start_tick=WRAP - 300, own_tick=WRAP - 300), 304, WRAP - 300, T0 + 604],
         70_304),
     # Whether the run goes on (its recorded foreground and pointer are kept) or is replaced.
     "continues after the tool's own input": ("Test-RunContinues", [state(), 110_000, 50_000, T0 + 60_000], True),
     "continues before the tool sent any input": (
         "Test-RunContinues", [state(own_tick=None, operator_tick=10_000), 110_000, 10_000, T0 + 60_000], True),
     "replaced after his input": ("Test-RunContinues", [state(), 110_000, 90_000, T0 + 60_000], False),
-    "replaced when stale": ("Test-RunContinues", [state(), 50_000 + 1_900_000, 50_000, T0 + 1_900_000], False),
+    "replaced when over its limit": ("Test-RunContinues", [state(), 50_000 + 400_000, 50_000, T0 + 400_000], False),
     "no state, no run": ("Test-RunContinues", [None, 110_000, 50_000, T0], False),
     # Titles, and what a full-screen capture would hold.
     "a denied title is hidden": ("Get-ShownTitle", [True, "Acme Bank - Jane Doe - Savings"], "(off limits)"),
@@ -176,16 +185,17 @@ def test_a_state_file_round_trips_and_leaves_no_temp_file(tmp_path):
     rows = run_functions(tmp_path, cases)
     assert all(row["ok"] for row in rows.values()), rows
     read = rows["read"]["value"]
-    assert read["operator_tick"] == 7 and read["own_tick"] == 11 and read["tick_at_write"] == 100
-    assert read["written_ms"] == 200 and read["foreground"] == foreground and read["pointer"] == {"x": 5, "y": 6}
+    assert read["operator_tick"] == 7 and read["own_tick"] == 11 and read["run_start_tick"] == 100
+    assert read["run_start_ms"] == 200 and read["foreground"] == foreground and read["pointer"] == {"x": 5, "y": 6}
     assert [p.name for p in path.parent.iterdir()] == ["run.json"], "the temp file is gone"
     assert json.loads(path.read_text(encoding="utf-8"))["own_tick"] == 11
 
 
 @needs_powershell
 @pytest.mark.parametrize("content", [
-    None, "", "not json", "[1, 2]", "null", '{"operator_tick": 1}', '{"operator_tick": "x", "tick_at_write": 1, "written_ms": 1}',
-    '{"operator_tick": 1, "tick_at_write": 1, "written_ms": 1, "own_tick": "soon"}',
+    None, "", "not json", "[1, 2]", "null", '{"operator_tick": 1}', '{"operator_tick": "x", "run_start_tick": 1, "run_start_ms": 1}',
+    '{"operator_tick": 1, "run_start_tick": 1, "run_start_ms": 1, "own_tick": "soon"}',
+    '{"operator_tick": 1, "tick_at_write": 1, "written_ms": 1}',
 ])
 def test_a_missing_or_bad_state_file_reads_as_no_state(tmp_path, content):
     path = tmp_path / "run.json"
@@ -215,7 +225,7 @@ def test_two_writers_never_leave_a_half_written_state_file(tmp_path):
         seen += 1
         try:
             data = json.loads(text)
-            assert {"operator_tick", "own_tick", "tick_at_write", "written_ms", "foreground", "pointer"} <= set(data)
+            assert {"operator_tick", "own_tick", "run_start_tick", "run_start_ms", "foreground", "pointer"} <= set(data)
             assert data["operator_tick"] in (1, 2) and len(data["foreground"]["process"]) == 200
         except (ValueError, AssertionError, KeyError) as exc:
             bad.append((text[:80], repr(exc)))
@@ -232,9 +242,9 @@ def test_two_writers_never_leave_a_half_written_state_file(tmp_path):
     assert [p.name for p in tmp_path.iterdir() if re.fullmatch(r"run\.json\.\d+\.tmp", p.name)] == []
 
 
-# The guard's whole flow (lock, state file, Enter-AwayGuard, Complete-Run, Invoke-Restore) run against a fake
-# [AfDesktop] class whose clocks, pointer and windows the test scripts. The fake calls no Windows API: the real
-# class is never compiled in this process, and no window, input or cursor is touched.
+# The guard's whole flow (lock, state file, Enter-AwayGuard, Invoke-Timed, Complete-Run, Invoke-Restore) run
+# against a fake [AfDesktop] class whose clocks, pointer and windows the test scripts. The fake calls no
+# Windows API: the real class is never compiled in this process, and no window, input or cursor is touched.
 
 FLOW_HARNESS = r"""
 param([string]$Script, [string]$StepsFile, [string]$Root, [string]$MutexName)
@@ -243,9 +253,12 @@ $ErrorActionPreference = 'Stop'
 Add-Type -TypeDefinition @'
 using System;
 public static class AfDesktop {
-    public static long Last, Now, Ms, Front = 777, Alive = 777, OwnTick = -2;
+    public static long Last, Now, Ms, Front = 777, Alive = 777, OwnTick = -2, Expected = -2, IntrudedTick = -1;
     public static int PX = 10, PY = 20, CursorX = -1, CursorY = -1;
-    public static bool CursorOk = true, FrontOk = true;
+    public static bool CursorOk = true, FrontOk = true, Intruded;
+    public static void Arm(long tick) { Expected = tick; Intruded = false; }
+    public static void Accept(long tick) { OwnTick = tick; Expected = tick; }
+    public static bool FakeCall(int ms, long bump) { System.Threading.Thread.Sleep(ms); if (bump >= 0) Last = bump; return true; }
     public static long LastInput() { return Last; }
     public static long TickNow() { return Now; }
     public static IntPtr GetForegroundWindow() { return new IntPtr(Front); }
@@ -259,9 +272,10 @@ public static class AfDesktop {
     public static bool InputDesktopAvailable() { return true; }
 }
 '@
-$names = @('Stop-Error', 'Stop-Active', 'Get-TickAge', 'Get-StateField', 'New-RunState', 'Read-RunState', 'Write-RunState',
-    'Test-RunStateFresh', 'Get-OperatorIdleMs', 'Test-RunContinues', 'Get-StatePath', 'Lock-Run', 'Get-AwayStatus',
-    'Get-ForegroundRecord', 'Get-PointerRecord', 'Enter-AwayGuard', 'Save-Run', 'Complete-Run', 'Remove-RunState',
+$names = @('Stop-Error', 'Stop-Failed', 'Stop-Active', 'Stop-Intruded', 'Stop-IfIntruded', 'Get-TickAge', 'Get-StateField',
+    'New-RunState', 'Read-RunState', 'Write-RunState', 'Test-RunStateFresh', 'Get-OperatorIdleMs', 'Test-RunContinues',
+    'Get-StateRoot', 'Get-StatePath', 'Assert-Usage', 'Lock-Run', 'Get-AwayStatus', 'Get-ForegroundRecord',
+    'Get-PointerRecord', 'Write-Trace', 'Invoke-Timed', 'Enter-AwayGuard', 'Save-Run', 'Complete-Run', 'Remove-RunState',
     'Assert-InputDesktop', 'Invoke-Restore')
 $ast = [System.Management.Automation.Language.Parser]::ParseFile($Script, [ref]$null, [ref]$null)
 foreach ($d in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $names -contains $n.Name }, $true)) {
@@ -273,9 +287,13 @@ function Exit-Tool([int]$Code) { Complete-Run; throw "EXIT:$Code" }
 $env:AF_ROOT = $Root
 $StateRelative = 'system\logs\desktop\run.json'
 $RunMutexName = $MutexName
+$TimedCallLimitMs = 250
+$GatedCommands = @('focus', 'invoke', 'click', 'type', 'key', 'restore')
+$Command = 'focus'
 $SettleMs = 0
 $script:Guard = $null
 $script:RunLock = $null
+$script:Trace = $false
 $IdleSeconds = 120
 
 $holder = $null
@@ -296,10 +314,14 @@ $statePath = Join-Path $Root 'system\logs\desktop\run.json'
 $steps = [System.IO.File]::ReadAllText($StepsFile) | ConvertFrom-Json
 $results = New-Object System.Collections.ArrayList
 foreach ($s in $steps) {
-    # Each step is a new process of the tool: it has sent nothing yet.
+    # Each step is a new process of the tool: it has sent nothing and armed nothing yet.
     [AfDesktop]::OwnTick = -2
+    [AfDesktop]::Expected = -2
+    [AfDesktop]::Intruded = $false
     Set-Fake $s.set
     $IdleSeconds = if ($null -ne (Get-StateField $s 'idle')) { [int]$s.idle } else { 120 }
+    $Command = if ($null -ne (Get-StateField $s 'command')) { [string]$s.command } else { 'focus' }
+    $script:Trace = (Get-StateField $s 'trace') -eq $true
     if ((Get-StateField $s 'hold_lock') -eq $false -and $null -ne $holder) {
         [void]$release.Set()
         $holder.EndInvoke($holderHandle)
@@ -323,8 +345,25 @@ foreach ($s in $steps) {
     $out = New-Object System.Collections.ArrayList
     try {
         switch ($s.run) {
+            'validate' { Assert-Usage }
             'guard' { Enter-AwayGuard }
             'restore' { Invoke-Restore | ForEach-Object { [void]$out.Add([string]$_) } }
+        }
+        $calls = Get-StateField $s 'calls'
+        if ($null -ne $calls) {
+            foreach ($c in @($calls)) {
+                if ($null -ne (Get-StateField $c 'pre_bump')) { [AfDesktop]::Last = [long]$c.pre_bump }
+                $callMs = [int]$c.ms
+                $callBump = if ($null -ne (Get-StateField $c 'bump')) { [long]$c.bump } else { -1 }
+                [void](Invoke-Timed ([string]$c.label) { [AfDesktop]::FakeCall($callMs, $callBump) })
+            }
+        }
+        $fail = Get-StateField $s 'send_fail'
+        if ($null -ne $fail) {
+            Set-Fake (Get-StateField $s 'before_fail')
+            [AfDesktop]::Intruded = $true
+            [AfDesktop]::IntrudedTick = [long]$fail.tick
+            Stop-IfIntruded ([string]$fail.note)
         }
         Set-Fake (Get-StateField $s 'after')
         $code = if ($null -ne (Get-StateField $s 'exit')) { [int]$s.exit } else { 0 }
@@ -347,6 +386,7 @@ ConvertTo-Json -InputObject @($results) -Depth 8 -Compress
 
 T = 10_000_000  # a tick
 M = 2_000_000_000_000  # a wall-clock time in ms
+MIN = 60_000
 
 
 def run_flow(folder: Path, steps: list[dict]) -> list[dict]:
@@ -362,26 +402,29 @@ def run_flow(folder: Path, steps: list[dict]) -> list[dict]:
     return json.loads(out.stdout)
 
 
-def guard_step(name, now, last, ms, *, idle=None, after=None, exit=None, **fake):
+def guard_step(name, now, last, ms, *, idle=None, after=None, exit=None, calls=None, send_fail=None, before_fail=None,
+               **fake):
     step = {"name": name, "run": "guard", "set": {"Now": now, "Last": last, "Ms": ms, **fake}}
-    if idle is not None:
-        step["idle"] = idle
-    if after is not None:
-        step["after"] = after
-    if exit is not None:
-        step["exit"] = exit
+    for key, value in (("idle", idle), ("after", after), ("exit", exit), ("calls", calls), ("send_fail", send_fail),
+                       ("before_fail", before_fail)):
+        if value is not None:
+            step[key] = value
     return step
+
+
+def own_after(tick, now=None, ms=None):
+    """The machine after the tool sent input: the last input is the tool's own tick."""
+    return {"OwnTick": tick, "Last": tick, "Now": tick + 10 if now is None else now, **({} if ms is None else {"Ms": ms})}
 
 
 @needs_powershell
 def test_a_run_keeps_his_tick_and_its_first_record_across_commands(tmp_path):
     first, second, his_input, long_away = run_flow(tmp_path, [
         # He has been away 10 minutes. The command sends input, so the last-input tick becomes the tool's own.
-        guard_step("first", T, T - 600_000, M, Front=777, PX=10, PY=20,
-                   after={"OwnTick": T + 50, "Last": T + 50, "Now": T + 60, "Ms": M + 60}),
+        guard_step("first", T, T - 600_000, M, Front=777, PX=10, PY=20, after=own_after(T + 50, T + 60, M + 60)),
         # Two seconds later the last input is still the tool's own: allowed, and the first record is kept.
         guard_step("second", T + 2000, T + 50, M + 2000, Front=999, PX=500, PY=600,
-                   after={"OwnTick": T + 2100, "Last": T + 2100, "Now": T + 2110, "Ms": M + 2110}),
+                   after=own_after(T + 2100, T + 2110, M + 2110)),
         # He moves the mouse a second ago.
         guard_step("he comes back", T + 5000, T + 4000, M + 5000),
         # Later he has been still for 130 s: the plain rule passes, and the run starts over.
@@ -389,13 +432,15 @@ def test_a_run_keeps_his_tick_and_its_first_record_across_commands(tmp_path):
     ])
     assert first["exit"] == 0 and first["files"] == ["run.json"]
     assert first["state"]["operator_tick"] == T - 600_000
-    assert first["state"]["own_tick"] == T + 50 and first["state"]["tick_at_write"] == T + 60
+    assert first["state"]["own_tick"] == T + 50
+    assert first["state"]["run_start_tick"] == T and first["state"]["run_start_ms"] == M
     assert first["state"]["foreground"] == {"handle": 777, "pid": 4242, "process": "fake"}
     assert first["state"]["pointer"] == {"x": 10, "y": 20}
 
     assert second["exit"] == 0
     assert second["state"]["operator_tick"] == T - 600_000, "his tick is kept"
     assert second["state"]["own_tick"] == T + 2100, "the tool's own tick follows its own input"
+    assert second["state"]["run_start_ms"] == M, "rewriting the state does not move the run's start"
     assert second["state"]["foreground"]["handle"] == 777 and second["state"]["pointer"] == {"x": 10, "y": 20}, \
         "the first command's record is kept"
 
@@ -406,6 +451,7 @@ def test_a_run_keeps_his_tick_and_its_first_record_across_commands(tmp_path):
     assert long_away["exit"] == 0
     assert long_away["state"]["operator_tick"] == T + 4000
     assert long_away["state"]["own_tick"] is None
+    assert long_away["state"]["run_start_ms"] == M + 134_000
     assert long_away["state"]["foreground"]["handle"] == 555 and long_away["state"]["pointer"] == {"x": 1, "y": 2}
 
 
@@ -425,24 +471,50 @@ def test_the_idle_threshold_is_inclusive_and_uses_the_given_seconds(tmp_path):
 @needs_powershell
 def test_a_command_that_stops_partway_still_records_its_own_input(tmp_path):
     refused, next_command = run_flow(tmp_path, [
-        guard_step("type, refused after 40 characters", T, T - 600_000, M, exit=3,
-                   after={"OwnTick": T + 300, "Last": T + 300, "Now": T + 310}),
+        guard_step("type, refused after 40 characters", T, T - 600_000, M, exit=3, after=own_after(T + 300, T + 310)),
         guard_step("the next command", T + 1000, T + 300, M + 1000),
     ])
     assert refused["exit"] == 3 and refused["state"]["own_tick"] == T + 300
     assert next_command["exit"] == 0, "the tool's partial input does not lock it out"
 
 
+# A call that sends no input is timed on its own (Invoke-Timed): the clock is read straight before and after it.
+
 @needs_powershell
-def test_a_command_with_no_injected_input_takes_a_tick_that_moved_as_its_own(tmp_path):
-    moved, unmoved, after_moved = run_flow(tmp_path, [
-        guard_step("invoke by pattern, the clock moved", T, T - 600_000, M, after={"Last": T + 80, "Now": T + 90}),
-        guard_step("focus, nothing moved", T + 500, T + 80, M + 500),
+def test_a_quick_call_that_moved_the_clock_is_the_tools_own(tmp_path):
+    raised, next_command, trace = run_flow(tmp_path, [
+        guard_step("raise moved the clock, 5 ms", T, T - 600_000, M, calls=[{"label": "SetForegroundWindow", "ms": 5, "bump": T + 80}]),
         guard_step("the next command", T + 800, T + 80, M + 800),
+        guard_step("traced", T + 1600, T + 80, M + 1600, calls=[{"label": "SetForegroundWindow", "ms": 0}]),
     ])
-    assert moved["state"]["own_tick"] == T + 80
-    assert unmoved["exit"] == 0 and unmoved["state"]["own_tick"] == T + 80
-    assert after_moved["exit"] == 0
+    assert raised["exit"] == 0 and raised["state"]["own_tick"] == T + 80
+    assert raised["stderr"] == "", "nothing extra is printed without -Verbose"
+    assert next_command["exit"] == 0
+    assert trace["stderr"] == ""
+
+
+@needs_powershell
+def test_a_slow_call_that_moved_the_clock_is_his_and_the_next_command_waits(tmp_path):
+    slow, next_command, quiet = run_flow(tmp_path, [
+        # An Invoke held up by a modal dialog for 400 ms while he clicked it away: the clock moved, but not as the tool's own.
+        guard_step("invoke held up", T, T - 600_000, M, calls=[{"label": "InvokePattern", "ms": 400, "bump": T + 5000}]),
+        guard_step("the next command, 1 s later", T + 6000, T + 5000, M + 6000),
+        guard_step("after 130 quiet seconds", T + 135_000, T + 5000, M + 135_000),
+    ])
+    assert slow["exit"] == 0 and slow["state"]["own_tick"] is None, "his change is not taken as the tool's own"
+    assert next_command["exit"] == 4 and "last input 1 s ago" in next_command["stderr"]
+    assert quiet["exit"] == 0 and quiet["state"]["operator_tick"] == T + 5000
+
+
+@needs_powershell
+def test_a_clock_that_moved_outside_any_timed_call_is_never_taken_as_the_tools_own(tmp_path):
+    moved, next_command = run_flow(tmp_path, [
+        # No injected input and no timed call, yet the clock moved during the command.
+        guard_step("focus, the clock moved somewhere else", T, T - 600_000, M, after={"Last": T + 80, "Now": T + 90}),
+        guard_step("the next command", T + 500, T + 80, M + 500),
+    ])
+    assert moved["exit"] == 0 and moved["state"]["own_tick"] is None
+    assert next_command["exit"] == 4 and "last input 0 s ago" in next_command["stderr"]
 
 
 @needs_powershell
@@ -450,6 +522,94 @@ def test_a_command_that_moved_no_tick_and_sent_nothing_records_no_own_tick(tmp_p
     only, = run_flow(tmp_path, [guard_step("focus", T, T - 600_000, M)])
     assert only["exit"] == 0 and only["state"]["own_tick"] is None
     assert only["state"]["operator_tick"] == T - 600_000
+
+
+@needs_powershell
+def test_his_input_before_a_timed_call_stops_the_command_and_the_next_one_waits(tmp_path):
+    stopped, next_command, later = run_flow(tmp_path, [
+        guard_step("two calls, he clicks between them", T + 1000, T - 600_000, M, calls=[
+            {"label": "ShowWindow", "ms": 0, "bump": T + 40}, {"label": "SetForegroundWindow", "ms": 0, "pre_bump": T + 900}]),
+        guard_step("the next command", T + 1500, T + 900, M + 1500),
+        guard_step("130 quiet seconds on", T + 131_000, T + 900, M + 131_000),
+    ])
+    assert stopped["exit"] == 4
+    assert "the operator is active (last input 0 s ago); nothing more was sent; wait and retry" in stopped["stderr"]
+    assert stopped["state"]["own_tick"] == T + 40, "what the tool did before he came is kept as its own"
+    assert next_command["exit"] == 4
+    assert later["exit"] == 0 and later["state"]["operator_tick"] == T + 900
+
+
+@needs_powershell
+def test_his_input_in_the_middle_of_a_send_stops_with_the_count_and_the_next_command_waits(tmp_path):
+    stopped, next_command, later = run_flow(tmp_path, [
+        guard_step("type: he touched the machine after character 12", T + 3000, T - 600_000, M,
+                   before_fail={"OwnTick": T + 1000},
+                   send_fail={"tick": T + 2000, "note": "12 of 40 characters were sent."}),
+        guard_step("the next command", T + 3000, T + 2000, M + 3000),
+        guard_step("a later one", T + 125_000, T + 2000, M + 125_000),
+    ])
+    assert stopped["exit"] == 4
+    assert "the operator is active (last input 1 s ago); 12 of 40 characters were sent; wait and retry" in stopped["stderr"]
+    assert stopped["state"]["own_tick"] == T + 1000, "the own tick is the tool's last send, not his input"
+    assert next_command["exit"] == 4, "his tick is newer than the tool's own, so the plain rule applies"
+    assert later["exit"] == 0
+
+
+@needs_powershell
+def test_the_reviewers_chain_no_command_passes_until_120_quiet_seconds_after_any_input(tmp_path):
+    r = run_flow(tmp_path, [
+        guard_step("1 invoke blocks on a modal; he closes it at +5 s", T, T - 600_000, M,
+                   calls=[{"label": "InvokePattern", "ms": 400, "bump": T + 5000}], after={"Now": T + 5100, "Ms": M + 5100}),
+        guard_step("2 next command 1 s after his click", T + 6000, T + 5000, M + 6000),
+        guard_step("3 119 s after his click", T + 5000 + 119_000, T + 5000, M + 5000 + 119_000),
+        guard_step("4 121 s after his click", T + 5000 + 121_000, T + 5000, M + 5000 + 121_000,
+                   after=own_after(T + 5000 + 121_100, T + 5000 + 121_200, M + 5000 + 121_200)),
+        guard_step("5 his key 1 s after the tool's last send", T + 5000 + 123_000, T + 5000 + 122_000, M + 5000 + 123_000),
+    ])
+    assert [x["exit"] for x in r] == [0, 4, 4, 0, 4]
+    assert r[3]["state"]["operator_tick"] == T + 5000, "the run began with his click as his last input"
+
+
+@needs_powershell
+def test_a_run_has_a_five_minute_limit_that_rewriting_the_state_does_not_extend(tmp_path):
+    r = run_flow(tmp_path, [
+        guard_step("run begins", T, T - 600_000, M, after=own_after(T + 100, T + 200, M + 200)),
+        guard_step("4 min 59 s in: still inside the run", T + 299_000, T + 100, M + 299_000,
+                   after=own_after(T + 299_100, T + 299_200, M + 299_200)),
+        guard_step("5 min 1 s in, rewritten 2 s ago: not fresh, so the tool's own input counts against it",
+                   T + 301_000, T + 299_100, M + 301_000),
+        guard_step("then 2 quiet minutes", T + 299_100 + 121_000, T + 299_100, M + 299_100 + 121_000),
+    ])
+    assert [x["exit"] for x in r] == [0, 0, 4, 0]
+    assert r[1]["state"]["run_start_ms"] == M, "the second command rewrote the state without moving the start"
+    assert "last input 1 s ago" in r[2]["stderr"]
+    assert r[3]["state"]["run_start_ms"] == M + 299_100 + 121_000, "a new run"
+
+
+@needs_powershell
+def test_a_trace_line_per_call_shows_whether_the_clock_moved_and_how_long_it_took(tmp_path):
+    traced, plain = run_flow(tmp_path, [
+        {**guard_step("traced", T, T - 600_000, M, calls=[{"label": "SetForegroundWindow", "ms": 20, "bump": T + 80},
+                                                          {"label": "InvokePattern", "ms": 0}]), "trace": True},
+        {**guard_step("untraced", T + 1000, T + 80, M + 1000, calls=[{"label": "InvokePattern", "ms": 0}]), "trace": False},
+    ])
+    lines = traced["stderr"].splitlines()
+    assert re.fullmatch(r"trace: SetForegroundWindow clock_moved=True ms=\d+ accepted=True", lines[0]), lines
+    assert re.fullmatch(r"trace: InvokePattern clock_moved=False ms=\d+ accepted=False", lines[1]), lines
+    assert plain["stderr"] == ""
+
+
+@needs_powershell
+@pytest.mark.parametrize("command", ["focus", "invoke", "click", "type", "key", "restore"])
+def test_a_negative_idle_seconds_is_bad_usage_for_every_gated_command(tmp_path, command):
+    bad, fine, other = run_flow(tmp_path, [
+        {"name": "negative", "run": "validate", "command": command, "idle": -1, "set": {"Last": T, "Now": T, "Ms": M}},
+        {"name": "zero", "run": "validate", "command": command, "idle": 0, "set": {}},
+        {"name": "an ungated command", "run": "validate", "command": "tree", "idle": -1, "set": {}},
+    ])
+    assert bad["exit"] == 2 and "error: -IdleSeconds must be 0 or more" in bad["stderr"]
+    assert bad["files"] == [] and bad["state"] is None
+    assert fine["exit"] == 0 and other["exit"] == 0
 
 
 @needs_powershell
@@ -480,8 +640,7 @@ def test_the_lock_is_released_when_a_command_ends_so_the_next_can_run(tmp_path):
 
 
 def restore_steps(**flags):
-    start = guard_step("start", T, T - 600_000, M, Front=777, PX=10, PY=20,
-                       after={"OwnTick": T + 50, "Last": T + 50, "Now": T + 60, "Ms": M + 60})
+    start = guard_step("start", T, T - 600_000, M, Front=777, PX=10, PY=20, after=own_after(T + 50, T + 60, M + 60))
     return [start, {"name": "restore", "run": "restore",
                     "set": {"Now": T + 3000, "Last": T + 50, "Ms": M + 3000, "Front": 999, **flags}}]
 
@@ -527,14 +686,284 @@ def test_restore_is_gated_and_leaves_the_state_and_the_screen_alone_while_he_is_
 def test_restore_with_no_run_or_an_old_one_has_nothing_to_restore_and_removes_the_file(tmp_path):
     results = run_flow(tmp_path, [
         {"name": "none", "run": "restore", "set": {"Now": T, "Last": T - 1000, "Ms": M}},
-        guard_step("start", T, T - 600_000, M, after={"OwnTick": T + 50, "Last": T + 50, "Now": T + 60, "Ms": M + 60}),
-        {"name": "31 minutes later", "run": "restore",
-         "set": {"Now": T + 60 + 31 * 60_000, "Last": T + 50, "Ms": M + 60 + 31 * 60_000}},
+        guard_step("start", T, T - 600_000, M, after=own_after(T + 50, T + 60, M + 60)),
+        {"name": "5 minutes and 1 second later", "run": "restore",
+         "set": {"Now": T + 301_000, "Last": T + 50, "Ms": M + 301_000}},
     ])
     none, old = results[0], results[2]
-    assert none["exit"] == 0 and none["stdout"] == ["nothing to restore: no run is recorded, or its record is more than 30 minutes old"]
+    assert none["exit"] == 0 and none["stdout"] == ["nothing to restore: no run is recorded, or its record is more than 5 minutes old"]
     assert old["exit"] == 0 and old["stdout"][0].startswith("nothing to restore") and old["state"] is None
     assert old["cursor"] == [-1, -1]
+
+
+# The real C# Send, run with a scripted clock and a fake sender: nothing is sent and no clock is read.
+
+SEND_HARNESS = r"""
+param([string]$Path, [string]$CasesFile)
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+$text = [System.IO.File]::ReadAllText($Path)
+$m = [regex]::Match($text, "(?s)\`$NativeSource = @'\r?\n(.*?)\r?\n'@")
+Add-Type -TypeDefinition $m.Groups[1].Value -IgnoreWarnings
+$script:calls = 0
+$script:ret = 0
+$script:clocks = @()
+$script:ci = 0
+$send = [AfDesktop+SendFn]{ param($events) $script:calls++; [uint32]$script:ret }
+$clock = [AfDesktop+ClockFn]{ $v = $script:clocks[$script:ci]; $script:ci++; [long]$v }
+$cases = [System.IO.File]::ReadAllText($CasesFile) | ConvertFrom-Json
+$results = foreach ($c in $cases) {
+    [AfDesktop]::OwnTick = -2
+    [AfDesktop]::Expected = [long]$c.expected
+    [AfDesktop]::Intruded = $false
+    [AfDesktop]::IntrudedTick = 0
+    $rows = foreach ($s in @($c.sends)) {
+        $script:calls = 0
+        $script:ret = [int]$s.returns
+        $script:clocks = @($s.clocks)
+        $script:ci = 0
+        $events = [Array]::CreateInstance([AfDesktop+INPUT], [int]$s.events)
+        $r = [AfDesktop]::SendGuarded($events, $send, $clock)
+        [pscustomobject]@{ result = $r; called = $script:calls; clock_reads = $script:ci }
+    }
+    [pscustomobject]@{ id = $c.id; sends = @($rows); own = [AfDesktop]::OwnTick; expected = [AfDesktop]::Expected
+        intruded = [AfDesktop]::Intruded; intruded_tick = [AfDesktop]::IntrudedTick }
+}
+ConvertTo-Json -InputObject @($results) -Depth 6 -Compress
+"""
+
+SEND_CASES = [
+    {"id": "unarmed: nothing is sent", "expected": -2, "sends": [{"events": 2, "returns": 2, "clocks": [100]}]},
+    {"id": "the clock is still the expected tick: sent, and the new tick is the own tick", "expected": 100,
+     "sends": [{"events": 2, "returns": 2, "clocks": [100, 108]}]},
+    {"id": "he touched the machine since: nothing is sent", "expected": 100,
+     "sends": [{"events": 2, "returns": 2, "clocks": [105]}]},
+    {"id": "his input between two sends of one command stops the second", "expected": 100, "sends": [
+        {"events": 2, "returns": 2, "clocks": [100, 110]}, {"events": 2, "returns": 2, "clocks": [110, 120]},
+        {"events": 2, "returns": 2, "clocks": [125]}]},
+    {"id": "a partial send is a failure, not an intrusion, and its tick is kept", "expected": 100,
+     "sends": [{"events": 2, "returns": 1, "clocks": [100, 112]}]},
+    {"id": "an unreadable clock before a send stops it", "expected": 100, "sends": [{"events": 1, "returns": 1, "clocks": [-1]}]},
+    {"id": "nothing accepted when the sender sent none", "expected": 100,
+     "sends": [{"events": 1, "returns": 0, "clocks": [100, 130]}]},
+]
+
+
+@pytest.fixture(scope="module")
+def send_results(tmp_path_factory):
+    if sys.platform != "win32" or not shutil.which("powershell"):
+        pytest.skip("Windows PowerShell is needed")
+    folder = tmp_path_factory.mktemp("send")
+    harness = folder / "send.ps1"
+    harness.write_text(SEND_HARNESS, encoding="utf-8")
+    cases = folder / "cases.json"
+    cases.write_text(json.dumps(SEND_CASES), encoding="utf-8")
+    out = powershell("-File", harness, "-Path", SCRIPT, "-CasesFile", cases)
+    assert out.returncode == 0, out.stderr + out.stdout
+    return {row["id"]: row for row in json.loads(out.stdout)}
+
+
+@needs_powershell
+def test_send_with_the_guard_unarmed_sends_nothing(send_results):
+    row = send_results["unarmed: nothing is sent"]
+    assert row["sends"][0]["result"] is False and row["sends"][0]["called"] == 0 and row["intruded"] is True
+
+
+@needs_powershell
+def test_send_reads_the_clock_before_and_after_and_keeps_the_new_tick_as_its_own(send_results):
+    row = send_results["the clock is still the expected tick: sent, and the new tick is the own tick"]
+    assert row["sends"][0] == {"result": True, "called": 1, "clock_reads": 2}
+    assert (row["own"], row["expected"], row["intruded"]) == (108, 108, False)
+
+
+@needs_powershell
+def test_send_stops_when_the_clock_is_not_the_expected_tick(send_results):
+    row = send_results["he touched the machine since: nothing is sent"]
+    assert row["sends"][0] == {"result": False, "called": 0, "clock_reads": 1}
+    assert row["intruded"] is True and row["intruded_tick"] == 105
+    assert (row["own"], row["expected"]) == (-2, 100), "the own and expected ticks stay as they were"
+
+
+@needs_powershell
+def test_send_stops_a_command_at_the_second_send_when_he_acts_between_two(send_results):
+    row = send_results["his input between two sends of one command stops the second"]
+    assert [s["result"] for s in row["sends"]] == [True, True, False]
+    assert [s["called"] for s in row["sends"]] == [1, 1, 0]
+    assert row["intruded"] is True and row["intruded_tick"] == 125
+    assert (row["own"], row["expected"]) == (120, 120), "the last tick the tool made itself is kept"
+
+
+@needs_powershell
+def test_send_treats_a_partial_send_as_a_failure_not_an_intrusion(send_results):
+    row = send_results["a partial send is a failure, not an intrusion, and its tick is kept"]
+    assert row["sends"][0]["result"] is False and row["intruded"] is False and row["own"] == 112
+
+
+@needs_powershell
+def test_send_fails_closed_on_an_unreadable_clock_and_accepts_nothing_when_nothing_was_sent(send_results):
+    unreadable = send_results["an unreadable clock before a send stops it"]
+    assert unreadable["sends"][0]["called"] == 0 and unreadable["intruded"] is True
+    none_sent = send_results["nothing accepted when the sender sent none"]
+    assert none_sent["own"] == -2 and none_sent["expected"] == 100 and none_sent["intruded"] is False
+
+
+# The screenshot path rule, with temp folders laid out as a main checkout and a worktree.
+
+def make_repositories(base: Path):
+    main = base / "main"
+    (main / ".git" / "worktrees" / "wt").mkdir(parents=True)
+    (main / ".git" / "worktrees" / "wt" / "commondir").write_text("../..\n", encoding="utf-8")
+    worktree = main / ".claude" / "worktrees" / "wt"
+    worktree.mkdir(parents=True)
+    (worktree / ".git").write_text(f"gitdir: {(main / '.git' / 'worktrees' / 'wt').as_posix()}\n", encoding="utf-8")
+    af_root = base / "vault"
+    af_root.mkdir()
+    return main, worktree, af_root
+
+
+@needs_powershell
+def test_a_screenshot_path_is_refused_inside_any_tracked_folder_of_the_checkout_af_root_or_main_repository(tmp_path):
+    main, worktree, af_root = make_repositories(tmp_path)
+    outside = tmp_path / "scratch" / "x.png"
+    allowed = [outside, worktree / "workspace" / "x.png", worktree / "system" / "sessions" / "a" / "x.png",
+               main / "workspace" / "x.png", main / "system" / "sessions" / "x.png", af_root / "workspace" / "x.png",
+               af_root / "system" / "sessions" / "x.png"]
+    refused = [worktree / "library" / "x.png", main / "library" / "process" / "x.png", main / "x.png",
+               worktree / "system" / "tools" / "x.png", af_root / "library" / "x.png", af_root / "system" / "logs" / "x.png",
+               main / ".claude" / "worktrees" / "other" / "x.png", main / "workspacex" / "x.png"]
+    cases = [{"id": "roots", "fn": "Get-RepositoryRoots", "args": [str(worktree), str(af_root)]}]
+    rows = run_functions(tmp_path, cases, PURE)
+    roots = [Path(r).resolve() for r in rows["roots"]["value"]]
+    assert sorted(roots) == sorted({worktree.resolve(), af_root.resolve(), main.resolve()}), roots
+    cases = [{"id": str(p), "fn": "Test-OutAllowed", "args": [str(p), [str(r) for r in roots]]} for p in allowed + refused]
+    rows = run_functions(tmp_path, cases, PURE)
+    for p in allowed:
+        assert rows[str(p)]["value"] is True, f"{p} should be allowed"
+    for p in refused:
+        assert rows[str(p)]["value"] is False, f"{p} should be refused"
+
+
+OUT_HARNESS = r"""
+param([string]$Script, [string]$ToolsDir, [string]$CasesFile)
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+$ast = [System.Management.Automation.Language.Parser]::ParseFile($Script, [ref]$null, [ref]$null)
+foreach ($d in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and @('Assert-IgnoredOut', 'Get-RepositoryRoots', 'Test-OutAllowed') -contains $n.Name }, $true)) {
+    # The script lives under system\tools of the checkout being tested, not of this repository.
+    . ([scriptblock]::Create($d.Extent.Text.Replace('$PSScriptRoot', "'$ToolsDir'")))
+}
+function Stop-Failed($Message) { throw 'REFUSED' }
+$results = foreach ($p in ([System.IO.File]::ReadAllText($CasesFile) | ConvertFrom-Json)) {
+    try { Assert-IgnoredOut $p; [pscustomobject]@{ path = $p; allowed = $true } } catch { [pscustomobject]@{ path = $p; allowed = $false } }
+}
+ConvertTo-Json -InputObject @($results) -Compress
+"""
+
+
+@needs_powershell
+def test_the_screenshot_path_rule_as_the_script_applies_it_from_a_worktree_with_af_root_set(tmp_path):
+    main, worktree, af_root = make_repositories(tmp_path)
+    allowed = [tmp_path / "scratch" / "x.png", worktree / "workspace" / "x.png", main / "workspace" / "x.png",
+               af_root / "system" / "sessions" / "x.png"]
+    refused = [worktree / "library" / "x.png", main / "library" / "process" / "x.png", af_root / "library" / "x.png"]
+    harness = tmp_path / "out.ps1"
+    harness.write_text(OUT_HARNESS, encoding="utf-8")
+    cases = tmp_path / "cases.json"
+    cases.write_text(json.dumps([str(p) for p in allowed + refused]), encoding="utf-8")
+    env = {**os.environ, "AF_ROOT": str(af_root)}
+    out = subprocess.run([*POWERSHELL, "-File", str(harness), "-Script", str(SCRIPT), "-ToolsDir", str(worktree / "system" / "tools"),
+                          "-CasesFile", str(cases)], capture_output=True, text=True, encoding="utf-8", env=env,
+                         creationflags=NO_WINDOW)
+    assert out.returncode == 0, out.stderr + out.stdout
+    answers = {Path(row["path"]): row["allowed"] for row in json.loads(out.stdout)}
+    assert [answers[p] for p in allowed] == [True] * len(allowed)
+    assert [answers[p] for p in refused] == [False] * len(refused), "a path in a tracked folder of the main checkout, a worktree or AF_ROOT is refused"
+
+
+@needs_powershell
+def test_the_repository_roots_of_a_plain_checkout_and_without_af_root(tmp_path):
+    (tmp_path / "plain" / ".git").mkdir(parents=True)
+    rows = run_functions(tmp_path, [{"id": "r", "fn": "Get-RepositoryRoots", "args": [str(tmp_path / "plain"), ""]}], PURE)
+    value = rows["r"]["value"]  # one root comes back as a bare string, as PowerShell unrolls a one-element array
+    assert [Path(r).resolve() for r in ([value] if isinstance(value, str) else value)] == [(tmp_path / "plain").resolve()]
+
+
+# The compiled-assembly cache: its name is a hash of the source, and any trouble falls back to compiling.
+
+IMPORT_HARNESS = r"""
+param([string]$Script, [string]$Folder)
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+$text = [System.IO.File]::ReadAllText($Script)
+$m = [regex]::Match($text, "(?s)\`$NativeSource = @'\r?\n(.*?)\r?\n'@")
+$NativeSource = $m.Groups[1].Value
+$ast = [System.Management.Automation.Language.Parser]::ParseFile($Script, [ref]$null, [ref]$null)
+foreach ($d in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and @('Get-NativeCacheName', 'Import-Native') -contains $n.Name }, $true)) {
+    . ([scriptblock]::Create($d.Extent.Text))
+}
+$from = Import-Native $NativeSource $Folder
+$current = ([AfDesktop].GetMethod('SendGuarded') -ne $null) -and ([AfDesktop]::TickNow() -gt 0)
+ConvertTo-Json -Compress @{ from = $from; usable = $current; name = (Get-NativeCacheName $NativeSource) }
+"""
+
+
+def run_import(folder: Path, cache_dir: Path) -> dict:
+    harness = folder / "import.ps1"
+    harness.write_text(IMPORT_HARNESS, encoding="utf-8")
+    out = powershell("-File", harness, "-Script", SCRIPT, "-Folder", cache_dir)
+    assert out.returncode == 0, out.stderr + out.stdout
+    return json.loads(out.stdout)
+
+
+@needs_powershell
+def test_the_native_cache_is_named_by_the_source_hash_and_used_on_the_next_run(tmp_path):
+    cache = tmp_path / "cache" / "desktop"
+    first = run_import(tmp_path, cache)
+    assert first["from"] == "built" and first["usable"] is True
+    files = [p.name for p in cache.iterdir()]
+    assert files == [first["name"]] and re.fullmatch(r"AfDesktop-[0-9a-f]{16}\.dll", first["name"])
+    second = run_import(tmp_path, cache)
+    assert second["from"] == "cache" and second["usable"] is True
+    assert [p.name for p in cache.iterdir()] == files
+
+
+@needs_powershell
+def test_a_cache_file_for_other_source_is_never_loaded_and_is_pruned(tmp_path):
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    decoy = cache / "AfDesktop-0000000000000000.dll"
+    decoy.write_bytes(b"not an assembly")
+    result = run_import(tmp_path, cache)
+    assert result["from"] == "built" and result["usable"] is True
+    assert not decoy.exists() and [p.name for p in cache.iterdir()] == [result["name"]]
+
+
+@needs_powershell
+def test_a_damaged_cache_file_with_the_right_name_falls_back_to_a_build_and_is_replaced(tmp_path):
+    cache = tmp_path / "cache"
+    name = run_import(tmp_path, cache)["name"]
+    (cache / name).write_bytes(b"MZ but not really")
+    result = run_import(tmp_path, cache)
+    assert result["from"] == "built" and result["usable"] is True
+    assert run_import(tmp_path, cache)["from"] == "cache"
+
+
+@needs_powershell
+def test_a_cache_folder_that_cannot_be_written_falls_back_to_compiling_in_memory(tmp_path):
+    blocker = tmp_path / "file-not-folder"
+    blocker.write_text("x", encoding="utf-8")
+    result = run_import(tmp_path, blocker / "desktop")
+    assert result["from"] == "memory" and result["usable"] is True
+
+
+@needs_powershell
+def test_the_cache_name_changes_with_the_source(tmp_path):
+    cases = [{"id": "a", "fn": "Get-NativeCacheName", "args": ["class A {}"]},
+             {"id": "b", "fn": "Get-NativeCacheName", "args": ["class B {}"]},
+             {"id": "a2", "fn": "Get-NativeCacheName", "args": ["class A {}"]}]
+    rows = run_functions(tmp_path, cases, PURE)
+    assert rows["a"]["value"] == rows["a2"]["value"] != rows["b"]["value"]
+    assert re.fullmatch(r"AfDesktop-[0-9a-f]{16}\.dll", rows["a"]["value"])
 
 
 # The script's text.
@@ -630,14 +1059,61 @@ def test_every_exit_goes_through_exit_tool_so_a_partial_run_still_records_its_in
     assert re.search(r"4\b", function_text("Stop-Active"))
 
 
-def test_the_own_tick_is_read_right_after_the_tools_own_send():
+def test_every_send_checks_the_clock_first_and_keeps_the_tick_it_reads_right_after():
     source = SCRIPT.read_text(encoding="utf-8")
-    send = source[source.index("static bool Send(INPUT[] events)"):]
-    send = send[:send.index("}") + 1]
-    assert send.index("SendInput(") < send.index("OwnTick = LastInput()") < send.index("return sent")
+    send = source[source.index("public static bool SendGuarded("):]
+    send = send[:send.index("\n    }") + 6]
+    assert send.index("before != Expected") < send.index("send(events)") < send.index("Accept(clock())")
     assert "if (!GetLastInputInfo(ref l)) return -1;" in source, "an unreadable clock fails closed"
+    plain = source[source.index("static bool Send(INPUT[] events)"):]
+    assert "SendGuarded(events," in plain[:plain.index("}")], "every SendInput goes through the guarded send"
+    assert source.count("SendInput((uint)") == 1
+
+
+def test_a_clock_change_is_the_tools_own_only_through_a_timed_call_or_its_own_send():
     complete = function_text("Complete-Run")
+    assert "LastInput" not in complete, "a change anywhere else in the command is never taken as the tool's own"
     assert "[AfDesktop]::OwnTick" in complete
+    timed = function_text("Invoke-Timed")
+    assert "$TimedCallLimitMs" in timed and "Accept(" in timed and "Stop-Intruded" in timed
+    assert timed.index("LastInput()") < timed.rindex("& $Call") < timed.rindex("LastInput()")
+    assert re.search(r"\$TimedCallLimitMs = 250\b", SCRIPT.read_text(encoding="utf-8"))
+
+
+def test_every_call_that_may_move_the_clock_is_timed_and_every_send_checks_for_his_input():
+    text = SCRIPT.read_text(encoding="utf-8")
+    code = text[text.index("function Exit-Tool"):]
+    for number, line in enumerate(code.splitlines(), 1):
+        if re.search(r"\[AfDesktop\]::(BringToFront|ShowWindow|SetCursorPos)\(|\$pattern\.Invoke\(\)", line):
+            assert "Invoke-Timed" in line, f"an untimed call that may move the clock: {line.strip()}"
+    for name in ("Invoke-GuardedClick", "Invoke-Type", "Invoke-Key"):
+        assert "Stop-IfIntruded" in function_text(name), name
+    assert "Arm(" in function_text("Invoke-Restore") and "Invoke-Timed" in function_text("Invoke-Restore")
+    assert "Arm(" in function_text("Enter-AwayGuard")
+    assert "-IdleSeconds must be 0 or more" not in function_text("Enter-AwayGuard"), "one shared check, Assert-Usage"
+
+
+def test_the_idle_seconds_check_is_shared_and_runs_before_anything_is_compiled_or_touched():
+    text = SCRIPT.read_text(encoding="utf-8")
+    main = text[text.index("$script:Bound = $PSBoundParameters"):]
+    assert main.index("Assert-Usage") < main.index("Add-Type") < main.index("Import-Native")
+    body = function_text("Assert-Usage")
+    assert "$GatedCommands -contains $Command" in body and "$IdleSeconds -lt 0" in body and "Stop-Failed" in body
+
+
+def test_the_stale_wording_is_gone_from_the_script_the_doc_and_the_changelog():
+    for path in (SCRIPT, DOC, ROOT / "CHANGELOG.md"):
+        assert "not detected until the next command" not in path.read_text(encoding="utf-8"), path
+
+
+def test_the_native_code_is_loaded_through_the_cache_and_named_by_a_hash():
+    text = SCRIPT.read_text(encoding="utf-8")
+    main = text[text.index("$script:Bound = $PSBoundParameters"):]
+    assert "Import-Native $NativeSource" in main
+    assert "Add-Type -TypeDefinition $NativeSource" not in main
+    body = function_text("Import-Native")
+    assert "Get-NativeCacheName" in body and "-OutputAssembly" in body and "Add-Type -Path" in body
+    assert body.index("Add-Type -Path") < body.index("-OutputAssembly"), "a file for this source is tried first"
 
 
 def test_a_full_screen_capture_is_refused_before_it_is_taken_and_no_longer_only_warns():
@@ -657,7 +1133,7 @@ def test_titles_of_off_limits_windows_are_hidden_in_the_list_and_in_messages():
 def test_the_loaded_functions_call_no_windows_api():
     for name in PURE:
         body = function_text(name)
-        for banned in ("AfDesktop", "Add-Type", "SendInput", "SetCursorPos", "Get-Process", "SetForeground"):
+        for banned in ("[AfDesktop]", "Add-Type", "SendInput", "SetCursorPos", "Get-Process", "SetForeground"):
             assert banned not in body, (name, banned)
 
 
@@ -681,7 +1157,7 @@ def test_the_script_parses():
 COMPILE = r"""
 param([string]$Path)
 $text = [System.IO.File]::ReadAllText($Path)
-$m = [regex]::Match($text, "(?s)\$NativeSource = @'\r?\n(.*?)\r?\n'@")
+$m = [regex]::Match($text, "(?s)\`$NativeSource = @'\r?\n(.*?)\r?\n'@")
 if (-not $m.Success) { 'native source not found'; exit 2 }
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 Add-Type -TypeDefinition $m.Groups[1].Value -IgnoreWarnings
@@ -720,7 +1196,8 @@ def test_doc_names_the_away_guard_restore_exit_4_and_the_decided_findings():
     assert "(off limits)" in text
     assert "A full-screen screenshot is refused" in text
     assert "A full-screen screenshot still captures" not in text
-    assert "not detected until the next command" in text
+    assert "5 minutes" in text and "250 ms" in text and "AF_DESKTOP_TRACE" in text and "Before every send" in text
+    assert "inside its run" in text
     assert "never lower `-idleseconds`" in text.lower()
     assert "away guard" in text.lower() and "away guard" in (ROOT / "library" / "process" / "README.md").read_text(encoding="utf-8")
     assert "`system/logs/desktop/run.json`" in text
@@ -732,7 +1209,31 @@ def test_doc_stays_inside_its_word_cap():
     assert len((ROOT / "AGENTS.operator.md").read_text(encoding="utf-8").split()) <= 1000
 
 
-def test_doc_has_no_em_dash_and_names_no_institution_of_his():
-    for rel in ("library/process/desktop-tool.md",):
-        text = (ROOT / rel).read_text(encoding="utf-8")
-        assert "—" not in text and "–" not in text
+def test_doc_has_no_em_dash_or_en_dash():
+    # It cannot check for his institutions: naming them in a tracked test would be the leak it guards against.
+    text = DOC.read_text(encoding="utf-8")
+    assert "\u2014" not in text and "\u2013" not in text
+
+
+# The live tests' helper windows (test_desktop_tool.py cannot be imported here: it skips without AF_DESKTOP_TESTS).
+
+@needs_powershell
+def test_the_live_fixture_script_parses(tmp_path):
+    fixture = tmp_path / "fixture.ps1"
+    fixture.write_text(FIXTURE, encoding="utf-8")
+    code = ("$e=$null; [void][System.Management.Automation.Language.Parser]::ParseFile("
+            f"'{fixture}', [ref]$null, [ref]$e); $e | ForEach-Object {{ $_.ToString() }}; 'errors: ' + @($e).Count")
+    out = powershell("-Command", code)
+    assert out.stdout.strip().endswith("errors: 0"), out.stdout + out.stderr
+
+
+def test_every_helper_window_closes_itself_soon_after_the_test_run_stops():
+    assert HEARTBEAT_LIMIT_SECONDS <= 30 and THIEF_LIFETIME_SECONDS <= 15 and NAMED_EXE_LIFETIME_SECONDS <= 30
+    assert f"-gt {HEARTBEAT_LIMIT_SECONDS} -or" in FIXTURE, "the form closes when the heartbeat file goes quiet"
+    assert "$failsafe.Interval = 240000" not in FIXTURE
+    assert f"$script:ThiefEnd.Interval = {THIEF_LIFETIME_SECONDS * 1000}" in FIXTURE
+    assert "$script:Thief.TopMost = $false" in FIXTURE, "the thief does not stay topmost"
+    assert "Stop-Thief" in FIXTURE[FIXTURE.index("$failsafe.Add_Tick"):], "closing the form also ends the thief"
+    assert f"failsafe.Interval = {NAMED_EXE_LIFETIME_SECONDS * 1000}" in NAMED_EXE
+    live = (ROOT / "system" / "tests" / "test_desktop_tool.py").read_text(encoding="utf-8")
+    assert '"-HeartbeatFile", str(HEARTBEAT)' in live and "HEARTBEAT.write_text" in live

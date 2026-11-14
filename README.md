@@ -80,23 +80,7 @@ Three packs sit on top of a neutral default. A project's `domain` picks one.
 
 ### Owned skills
 
-AgentFrame's own skills live in `.claude/skills/`, where Claude Code finds them. The catalog is [`.claude/skills/README.md`](.claude/skills/README.md).
-
-| Skill | What it does | Who starts it |
-|---|---|---|
-| `agent-reach` | Reads sources the default tools cannot reach: Reddit, LinkedIn, X, YouTube transcripts, RSS | The model or you |
-| `deep-research` | Multi-section research with source comparison and citations | The model or you |
-| `deliverable-harvest` | Turns your edits on finished work into proposed template changes | You, or a process file |
-| `voice-harvest` | Turns your edits on finished work into proposed voice pairs and corpus pieces | You, or a process file |
-| `doc-export` | Exports a resume or cover letter as ATS-safe PDF and DOCX | You, or the careers pack |
-| `d2-diagrams` | Renders auto-laid-out graphs with the D2 CLI | You, or a process file |
-| `extract-design` | Pulls colours, type, and tokens from a live website | You, or a template |
-| `gym` | Coaches a workout session from your private fitness log | You |
-| `catchup` | Your return after time away: the brief, the one thing that matters this week, and a decision on every due loop | You |
-| `file` | Files a path, the inbox, Gmail threads, or your last message into sources and knowledge pages, and raises loops | You |
-| `upgrade` | Hands backlog rows to a builder in its own worktree, shows you its report and diff, and merges on your yes | You |
-
-Skills marked "You" are hidden from the model's skill list, so their descriptions do not load into every chat. You run them as `/name`.
+AgentFrame's own skills live in `.claude/skills/`, where Claude Code finds them. The catalog, with what each skill owns, when to load it and who starts it, is [`.claude/skills/README.md`](.claude/skills/README.md); a skill it marks operator-only is hidden from the model's skill list and runs as `/name`.
 
 ### Vendored runtimes
 
@@ -146,7 +130,7 @@ One Windows Task Scheduler job, `AgentFrame consolidation`, runs every Sunday at
 | `system/tools/consolidate-weekly.ps1` | One consolidation run: the headless `claude -p` call, the log file, the Monday review loop |
 | `system/tools/register-weekly-consolidation.ps1` | Creates or replaces the Sunday 18:00 task and prints its next run |
 | `system/tools/push-due-loops.ps1` | One reminder push: `af open due --json` as headings and bullets, led by the loop sweep's overdue list, posted to Discord through `system/tools/notify.py`; loops that look sensitive show only as a count and amounts are masked (`off_discord.py`), and without the private terms file it sends only counts; `-DryRun` prints instead |
-| `system/tools/watch-batch.ps1` | One batch run: sweeps expired `af watch` items, checks each due one, raises a loop and sends a phone message for each that is met, and on the first run from 09:55 runs the bills watch, loop watch, loop sweep and the push above (`-SweepLive` lets the sweep close loops on proof; `-DryRun` prints and writes nothing) |
+| `system/tools/watch-batch.ps1` | One batch run: sweeps expired `af watch` items, checks each due one, raises a loop and sends a phone message for each that is met, and on the first run from 09:55 runs the bills watch, loop watch, loop sweep, harness review and the push above (`-SweepLive` lets the sweep close loops on proof; `-DryRun` prints and writes nothing) |
 | `system/tools/register-watch-batch.ps1` | Creates or replaces the `AgentFrame batch` task (10:00, 15:00, 19:00) and prints its next run |
 | `system/tools/timers.ps1` | Shows, registers or removes every job above; `-Register` and `-Unregister` also remove the four tasks the batch replaced |
 | `system/tools/backlog-pass.ps1` | One backlog pass: raises a loop naming the oldest rows `af backlog ready` lists, for main to dispatch to a reviewed builder. It starts no builder and runs no git. `-DryRun` prints the loop |
@@ -193,7 +177,7 @@ agentframe/
 ├── AGENTS.builder.md         # system construction and build hygiene
 ├── AGENTS.worker.md          # the overlay for unattended background runs
 ├── .claude/
-│   ├── settings.json         # hook wiring
+│   ├── settings.json         # hook wiring, the push confirmation rule, worktree setting
 │   ├── agents/               # subagent roles
 │   └── skills/               # AgentFrame-owned skills
 ├── library/

@@ -819,7 +819,7 @@ class ScheduleTests(unittest.TestCase):
     def test_the_batch_run_starts_the_sweep_after_the_loop_watch_and_before_the_push(self):
         import watch_batch as wb
         names = [name for name, _, _ in wb.MORNING]
-        self.assertEqual(names, ["bills", "loop-watch", "loop-sweep"])
+        self.assertEqual(names, ["bills", "loop-watch", "loop-sweep", "harness-review"])
         self.assertLess(names.index("loop-watch"), names.index("loop-sweep"), "the sweep reads the watch's report")
         self.assertNotIn(wb.PUSH[0], names, "the push runs after the queue, so it carries what the queue raised")
         self.assertEqual(wb.PUSH[1], "push_due_loops.py")

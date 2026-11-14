@@ -4,7 +4,8 @@ Task Scheduler runs watch-batch.ps1 at 10:00, 15:00 and 19:00 (register-watch-ba
 sweeps expired items, finishes any item a crashed run left firing, checks every due item in
 `af watch list --due --json`, raises a loop and sends a phone message for each one that is met, and
 writes system/logs/watch-batch/<date-time>.md. The first run from 09:55 each day also runs the
-morning jobs, once, in this order: the bills watch, the loop watch, the loop sweep, then the loop
+morning jobs, once, in this order: the bills watch, the loop watch, the loop sweep, the harness review
+(it decides itself whether its 14 days are up), then the loop
 push, which carries the queue's phone lines as its lead block, so the morning is one message. A run
 that started before 09:55 and ends after it does the morning jobs then, after the queue.
 Shapes: library/schema/watch.md (the queue), loop-watch.md, loop-sweep.md, bills.md.
@@ -82,7 +83,8 @@ LOCK_HELD = "is held by another af process"
 # (name, script, hard limit in minutes); the push is the last morning step and runs after the queue.
 # Each limit covers its old task's worst case. The loop watch stops itself at its deadline and still
 # writes its report; the kill at its limit is the backstop.
-MORNING = (("bills", "bills_watch.py", 130), ("loop-watch", "loop_watch.py", 105), ("loop-sweep", "loop_sweep.py", 30))
+MORNING = (("bills", "bills_watch.py", 130), ("loop-watch", "loop_watch.py", 105), ("loop-sweep", "loop_sweep.py", 30),
+           ("harness-review", "harness_review.py", 2))
 PUSH = ("push", "push_due_loops.py", 10)
 LOOP_WATCH_DEADLINE_MIN = 90
 EXIT_PARTIAL = lw.EXIT_PARTIAL   # a morning step's "some items failed, the rest were done": a step note, not a failure

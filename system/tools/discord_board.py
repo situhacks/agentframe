@@ -9,7 +9,8 @@ message), so a post or board that already existed and whose content changed
 gets one short "Updated YYYY-MM-DD" message at its end, the previous one
 deleted first; --no-bump skips it. A new post or first board gets none. The
 content hash is stored once the bump has landed, so a failed bump is retried
-by the next run (never duplicated: each bump deletes the previous one first).
+by the next run; each bump deletes the previous one first. A send that lands
+but whose answer is lost leaves a message no run deletes.
 
 Paths resolve from the vault root: AF_ROOT, else the repo holding this file.
 
@@ -193,11 +194,12 @@ def compose(text: str, today: dt.date) -> list[str]:
     return out
 
 
-def content_hash(title: str | None, parts: list[str]) -> str:
-    """SHA-256 over the title and parts, without the daily "_Updated_" stamp, so
-    only a real change in the content differs between days."""
-    stable = [re.sub(r"\n\n_Updated \d{4}-\d{2}-\d{2}_\Z", "", part) for part in parts]
-    return hashlib.sha256(json.dumps([title, stable], ensure_ascii=False).encode("utf-8")).hexdigest()
+def content_hash(title: str | None, text: str, tags: list[str] | None = None) -> str:
+    """SHA-256 over the title, the tag names (a post) and the source text as the
+    tool was given it, before it is composed and stamped: the daily "_Updated_"
+    line never enters it, and a line the user wrote that looks like it still does."""
+    body = [title, sorted(tags) if tags is not None else None, text.strip()]
+    return hashlib.sha256(json.dumps(body, ensure_ascii=False).encode("utf-8")).hexdigest()
 
 
 def load_state(path: Path) -> dict:
@@ -283,13 +285,15 @@ def resolve_tags(entry: dict, key: str, names: list[str]) -> list[tuple[str, str
     return out
 
 
-def sync_messages(api: Discord, channel: str, record: list[str], parts: list[str]) -> None:
+def sync_messages(api: Discord, channel: str, record: list[str], parts: list[str]) -> bool:
     """Make the messages in `record` carry `parts`, in order, editing in place.
 
     `record` changes only when a change is confirmed: an id leaves it when Discord
     says the message is gone (10008) or its delete succeeds, and joins it when a
     post lands. Any other failure stops the run with every stored id kept. A
-    message deleted by hand breaks the order, so every later one is reposted too."""
+    message deleted by hand breaks the order, so every later one is reposted too.
+    Returns whether any new message was sent (an edit does not count)."""
+    sent = False
     plan = list(record)
     for i, part in enumerate(parts):
         if i < len(plan):
@@ -303,22 +307,39 @@ def sync_messages(api: Discord, channel: str, record: list[str], parts: list[str
                     record.remove(mid)
                 del plan[i:]
         mid = api.send(channel, part)
+        sent = True
         record.append(mid)
         plan.append(mid)
     for mid in plan[len(parts):]:
         api.delete(channel, mid)
         record.remove(mid)
+    return sent
 
 
-def send_bump(api: Discord, channel: str, holder: dict, text: str) -> None:
-    """One bump at a time: delete the stored one (already gone is fine), then send.
-    The old id is dropped once its delete is confirmed, the new one stored once
-    the send has landed; any other failure keeps the stored id."""
+def drop_bump(api: Discord, channel: str, holder: dict) -> None:
+    """Delete the stored bump (already gone is fine) and forget its id once the
+    delete is confirmed; any other failure keeps the stored id."""
     old = holder.get("bump")
     if old:
         api.delete(channel, old)
         del holder["bump"]
-    holder["bump"] = api.send(channel, text)
+
+
+def settle_bump(api: Discord, channel: str, holder: dict, *, existed: bool, changed: bool,
+                sent: bool, no_bump: bool, text: str) -> str:
+    """Keep the one bump last. A changed item that already existed is bumped; so is
+    one that had a message sent after its bump was stored (the bump would sit
+    mid-content). With --no-bump that stale bump is deleted instead."""
+    stale = sent and bool(holder.get("bump"))
+    if no_bump:
+        if stale:
+            drop_bump(api, channel, holder)
+        return ""
+    if existed and (changed or stale):
+        drop_bump(api, channel, holder)
+        holder["bump"] = api.send(channel, text)
+        return ", bumped"
+    return ""
 
 
 # --- commands ---------------------------------------------------------------
@@ -339,8 +360,8 @@ def run_board(a, state: dict, env: dict, api: Discord | None, parts: list[str]) 
     boards = state.setdefault("boards", {})
     board = boards.get(a.key) or {}
     stored = list(board.get("messages") or [])
-    stored_before = bool(stored)
-    digest = content_hash(None, parts)
+    existed = bool(board.get("hash") or board.get("pinned"))  # a half-made first board is still first
+    digest = content_hash(None, a.source)
     changed = board.get("hash") != digest
     if a.dry_run:
         print(f"board {a.key}: {len(parts)} message(s); {len(stored)} stored")
@@ -349,22 +370,20 @@ def run_board(a, state: dict, env: dict, api: Discord | None, parts: list[str]) 
             print("would pin message 1")
         if len(stored) > len(parts):
             print(f"would delete {len(stored) - len(parts)} leftover message(s)")
-        if stored and changed and not a.no_bump:
+        if existed and changed and not a.no_bump:
             print("would bump")
         return "dry run: nothing sent, state unchanged."
     if not channel:
         raise no_channel(a.key)
     board = boards[a.key] = {**board, "messages": stored, "pinned": board.get("pinned")}
-    sync_messages(api, channel, stored, parts)
+    sent = sync_messages(api, channel, stored, parts)
     pinned = ""
     if board["pinned"] != stored[0]:
         api.pin(channel, stored[0])
         board["pinned"] = stored[0]  # only once the pin has landed
         pinned = ", pinned"
-    bumped = ""
-    if stored_before and changed and not a.no_bump:
-        send_bump(api, channel, board, f"Updated {a.today.isoformat()}")
-        bumped = ", bumped"
+    bumped = settle_bump(api, channel, board, existed=existed, changed=changed, sent=sent,
+                         no_bump=a.no_bump, text=f"Updated {a.today.isoformat()}")
     board["hash"] = digest  # only once the bump has landed, so a failed bump is retried
     return f"board {a.key}: {len(parts)} message(s) current{pinned}{bumped}."
 
@@ -389,7 +408,8 @@ def run_post(a, state: dict, env: dict, api: Discord | None, parts: list[str]) -
     item = posts.get(a.slug) or {}
     thread = item.get("thread")
     extra = list(item.get("messages") or [])
-    digest = content_hash(title, parts)
+    tag_names = [n for n, _ in tags] if a.tag else list(item.get("tags") or [])
+    digest = content_hash(title, a.source, tag_names)
     changed = item.get("hash") != digest
     if a.dry_run:
         if not thread:
@@ -423,6 +443,10 @@ def run_post(a, state: dict, env: dict, api: Discord | None, parts: list[str]) -
     try:
         api.edit(thread, thread, parts[0])  # a forum thread's starter message id is the thread id
     except UnknownMessage:  # the starter was deleted by hand: start the post over
+        try:
+            drop_bump(api, thread, item)  # best effort: the thread may be gone
+        except Exception:  # noqa: BLE001
+            pass
         if not a.tag:  # keep the tags it had
             known = entry.get("tags") or {}
             tags = [(n, str(known[n])) for n in item.get("tags") or [] if n in known]
@@ -439,11 +463,9 @@ def run_post(a, state: dict, env: dict, api: Discord | None, parts: list[str]) -
     item["title"] = title
     if a.tag:
         item["tags"] = [n for n, _ in tags]
-    sync_messages(api, thread, extra, parts[1:])
-    bumped = ""
-    if changed and not a.no_bump:
-        send_bump(api, thread, item, f"Updated {a.today.isoformat()}: {title}")
-        bumped = ", bumped"
+    sent = sync_messages(api, thread, extra, parts[1:])
+    bumped = settle_bump(api, thread, item, existed=True, changed=changed, sent=sent,
+                         no_bump=a.no_bump, text=f"Updated {a.today.isoformat()}: {title}")
     item["hash"] = digest  # only once the bump has landed, so a failed bump is retried
     return (f"post {a.key}/{a.slug}: {len(parts)} message(s) current"
             + (f", updated {' and '.join(change)}" if change else "") + bumped + ".")
@@ -488,7 +510,8 @@ def main(argv: list[str] | None = None, *, opener=None, sleep=time.sleep, today:
     env_path = a.env or root() / ENV_REL
     state_path = a.state or root() / STATE_REL
     try:
-        parts = compose(a.file.read_text(encoding="utf-8"), a.today)
+        a.source = a.file.read_text(encoding="utf-8")
+        parts = compose(a.source, a.today)
         if not parts:
             raise BoardError(f"{a.file} is empty; nothing to post.")
         env = {**os.environ, **load_env(env_path)}

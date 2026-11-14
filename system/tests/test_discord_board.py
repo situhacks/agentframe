@@ -584,7 +584,7 @@ class BumpTests(BoardToolCase):
         self.assertNotEqual(item["bump"], old)
         self.assertNotIn(old, self.fake.messages)
         self.assertEqual(item["messages"], extra, "the bump is apart from the messages list")
-        self.assertEqual(item["hash"], discord_board.content_hash("Ramen", discord_board.compose(self.note.read_text(encoding="utf-8"), TODAY)))
+        self.assertEqual(item["hash"], discord_board.content_hash("Ramen", self.note.read_text(encoding="utf-8"), []))
         self.assertEqual(self.fake.channel_contents(tid)[-1], f"{self.BUMP}: Ramen")
         self.assertEqual(self.fake.calls[-1][2], {"content": f"{self.BUMP}: Ramen", "allowed_mentions": NO_MENTIONS})
 
@@ -645,7 +645,7 @@ class BumpTests(BoardToolCase):
         code, _, err = self.post("c\n")
         self.assertEqual(code, 0, err)
         self.assertNotIn("bump", self.item())
-        self.assertEqual(self.item()["hash"], discord_board.content_hash("Ramen", discord_board.compose("c\n", TODAY)))
+        self.assertEqual(self.item()["hash"], discord_board.content_hash("Ramen", "c\n", []))
 
     def test_an_old_bump_deleted_by_hand_does_not_stop_the_run(self):
         self.post("a\n")
@@ -687,7 +687,7 @@ class BumpTests(BoardToolCase):
         bumps = [m for m, v in self.fake.messages.items() if v["content"].startswith("Updated ")]
         self.assertEqual(bumps, [self.item()["bump"]])
         self.assertNotEqual(self.item()["bump"], first)
-        self.assertEqual(self.item()["hash"], discord_board.content_hash("Ramen", discord_board.compose("c\n", TODAY)))
+        self.assertEqual(self.item()["hash"], discord_board.content_hash("Ramen", "c\n", []))
         self.fake.calls.clear()
         self.post("c\n")
         self.assertEqual(self.fake.count("POST"), 0, "then it settles")
@@ -702,14 +702,14 @@ class BumpTests(BoardToolCase):
         self.assertEqual(self.fake.count("PATCH"), 1)
         self.assertNotIn("bumped", out)
         self.assertNotIn("bump", self.item())
-        self.assertEqual(self.item()["hash"], discord_board.content_hash("Ramen", discord_board.compose("b\n", TODAY)))
+        self.assertEqual(self.item()["hash"], discord_board.content_hash("Ramen", "b\n", []))
         self.board("- one\n")
         self.fake.calls.clear()
         code, _, _ = self.run_tool("board", "open", str(self.note), "--no-bump", text="- one\n- two\n")
         self.assertEqual(code, 0)
         self.assertEqual(self.fake.count("POST"), 0)
         self.assertNotIn("bump", self.state()["boards"]["open"])
-        self.assertEqual(self.state()["boards"]["open"]["hash"], discord_board.content_hash(None, discord_board.compose("- one\n- two\n", TODAY)))
+        self.assertEqual(self.state()["boards"]["open"]["hash"], discord_board.content_hash(None, "- one\n- two\n"))
 
     def test_dry_run_says_would_bump_and_changes_nothing(self):
         self.post("a\n")
@@ -744,6 +744,111 @@ class BumpTests(BoardToolCase):
         self.assertEqual(self.fake.count("DELETE"), 1, "the previous bump")
         self.assertEqual([m for m, _, _ in self.fake.calls][-1], "POST")
         self.assertEqual(self.fake.calls[-1][2], {"content": self.BUMP, "allowed_mentions": NO_MENTIONS})
+
+    def updated_messages(self, chan):
+        return [m for m, v in sorted(self.fake.messages.items()) if v["channel"] == chan and v["content"].startswith("Updated ")]
+
+    def test_1_long_content_whose_stamp_is_its_own_part_does_not_bump_every_day(self):
+        text = "x " * 940  # the last part is too full for the stamp, which then stands alone
+        self.assertEqual(discord_board.compose(text, TODAY)[-1], STAMP)
+        self.post("a\n")
+        self.post(text)
+        self.fake.calls.clear()
+        code, out, err = self.post(text, today=dt.date(2026, 1, 3))
+        self.assertEqual(code, 0, err)
+        self.assertNotIn("bumped", out)
+        self.assertEqual(self.fake.count("POST"), 0)
+        self.assertEqual(self.fake.count("DELETE"), 0)
+
+    def test_1_a_last_line_that_looks_like_the_stamp_is_part_of_the_content(self):
+        self.post("a\n")
+        self.post("body\n\n_Updated 2026-01-02_\n")
+        self.fake.calls.clear()
+        code, out, err = self.post("body\n")
+        self.assertEqual(code, 0, err)
+        self.assertIn(", bumped.", out)
+
+    def test_2_a_content_message_deleted_by_hand_leaves_the_bump_last(self):
+        text = self.long_text(6)
+        self.post(text)
+        self.post(text + "\nx\n")
+        tid = self.thread()
+        del self.fake.messages[self.item()["messages"][0]]
+        code, out, err = self.post(text + "\nx\n")  # the same text
+        self.assertEqual(code, 0, err)
+        self.assertIn(", bumped.", out)
+        self.assertEqual(self.updated_messages(tid), [self.item()["bump"]])
+        self.assertEqual(max(m for m, v in self.fake.messages.items() if v["channel"] == tid), self.item()["bump"])
+
+    def test_2_a_post_that_grows_under_no_bump_loses_its_stale_bump(self):
+        self.post(self.long_text(2))
+        self.post(self.long_text(2) + "\nx\n")
+        tid = self.thread()
+        self.assertEqual(len(self.updated_messages(tid)), 1)
+        code, out, err = self.post(self.long_text(6), "--no-bump")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(self.updated_messages(tid), [], "no bump left in the middle of the content")
+        self.assertNotIn("bump", self.item())
+        self.assertNotIn("bumped", out)
+        self.fake.calls.clear()
+        self.post(self.long_text(6))
+        self.assertEqual(self.fake.count("POST"), 0, "same content, nothing grew")
+
+    def test_2_a_board_that_grows_under_no_bump_loses_its_stale_bump(self):
+        self.board("short\n")
+        self.board("short, more\n")
+        self.assertEqual(len(self.updated_messages(OPEN_ID)), 1)
+        code, _, err = self.board(self.long_text(6), "--no-bump")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(self.updated_messages(OPEN_ID), [])
+        self.assertNotIn("bump", self.state()["boards"]["open"])
+
+    def test_3_a_tag_change_alone_bumps_and_an_omitted_tag_does_not(self):
+        self.post("a\n", "--tag", "Plan")
+        code, out, err = self.post("a\n", "--tag", "Done")
+        self.assertEqual(code, 0, err)
+        self.assertIn(", bumped.", out)
+        self.fake.calls.clear()
+        code, out, _ = self.post("a\n")  # no --tag: the stored tags stand
+        self.assertNotIn("bumped", out)
+        self.assertEqual(self.fake.count("POST"), 0)
+        code, out, _ = self.post("a\n", "--tag", "done")  # same tag, other spelling
+        self.assertNotIn("bumped", out)
+
+    def test_4_a_first_board_whose_pin_failed_is_still_a_first_board_on_the_rerun(self):
+        self.fake.fail.append(("PUT", "/pins/", 500, {"message": "oops"}))
+        code, _, _ = self.board("- one\n")
+        self.assertEqual(code, 2)
+        code, out, err = self.board("- one\n")
+        self.assertEqual(code, 0, err)
+        self.assertNotIn("bumped", out)
+        self.assertEqual(self.fake.channel_contents(OPEN_ID), [f"- one\n\n{STAMP}"])
+        self.assertNotIn("bump", self.state()["boards"]["open"])
+        code, out, _ = self.board("- two\n")
+        self.assertIn(", bumped.", out, "now it exists")
+
+    def test_5_a_post_started_over_deletes_its_old_bump_best_effort(self):
+        self.post("a\n")
+        self.post("b\n")
+        old, old_thread = self.item()["bump"], self.thread()
+        del self.fake.messages[old_thread]
+        code, _, err = self.post("c\n")
+        self.assertEqual(code, 0, err)
+        self.assertIn(("DELETE", f"/channels/{old_thread}/messages/{old}", None), self.fake.calls)
+        self.assertNotIn(old, self.fake.messages)
+        self.assertNotIn("bump", self.item())
+
+    def test_5_a_failed_delete_of_that_old_bump_does_not_stop_the_run(self):
+        self.post("a\n")
+        self.post("b\n")
+        old = self.item()["bump"]
+        del self.fake.messages[self.thread()]
+        self.fake.fail.append(("DELETE", f"/messages/{old}$", 500, {"message": "oops"}))
+        code, _, err = self.post("c\n")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(self.fake.count("DELETE", f"/messages/{old}$"), 1, "it was tried")
+        self.assertNotIn("bump", self.item())
+        self.assertEqual(self.fake.channel_contents(self.thread()), [f"c\n\n{STAMP}"])
 
     def test_a_title_change_alone_counts_as_changed(self):
         self.post("a\n")

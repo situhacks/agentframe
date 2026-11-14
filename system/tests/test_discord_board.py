@@ -670,18 +670,27 @@ class BumpTests(BoardToolCase):
         self.assertEqual(self.item()["bump"], old)
         self.assertEqual(self.fake.count("POST"), 0)
 
-    def test_a_failed_bump_still_stores_the_hash_so_a_rerun_does_not_bump_twice(self):
+    def test_a_failed_bump_is_retried_by_the_next_run_and_leaves_one_bump(self):
         self.post("a\n")
+        self.post("b\n")
+        first = self.item()["bump"]
+        hash_before = self.item()["hash"]
         self.fake.fail.append(("POST", "/messages$", 500, {"message": "oops"}))
-        code, _, err = self.post("b\n")
+        code, _, err = self.post("c\n")
         self.assertEqual(code, 2)
         self.assertIn("500", err)
-        self.assertNotIn("bump", self.item())
-        self.assertEqual(self.item()["hash"], discord_board.content_hash("Ramen", discord_board.compose("b\n", TODAY)))
+        self.assertEqual(self.item()["hash"], hash_before, "the hash waits for the bump")
+        self.assertNotIn("bump", self.item(), "the earlier bump was deleted and no new one landed")
+        code, out, err = self.post("c\n")
+        self.assertEqual(code, 0, err)
+        self.assertIn(", bumped.", out)
+        bumps = [m for m, v in self.fake.messages.items() if v["content"].startswith("Updated ")]
+        self.assertEqual(bumps, [self.item()["bump"]])
+        self.assertNotEqual(self.item()["bump"], first)
+        self.assertEqual(self.item()["hash"], discord_board.content_hash("Ramen", discord_board.compose("c\n", TODAY)))
         self.fake.calls.clear()
-        code, _, _ = self.post("b\n")
-        self.assertEqual(code, 0)
-        self.assertEqual(self.fake.count("POST"), 0)
+        self.post("c\n")
+        self.assertEqual(self.fake.count("POST"), 0, "then it settles")
 
     def test_no_bump_sends_nothing_beyond_the_edits_and_stores_the_hash(self):
         self.post("a\n")

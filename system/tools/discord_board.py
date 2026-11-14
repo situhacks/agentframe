@@ -7,7 +7,9 @@ Nothing is date-bound: each run appends "_Updated YYYY-MM-DD_" (local date).
 An edit alone shows him nothing (Discord marks a thread unread only on a new
 message), so a post or board that already existed and whose content changed
 gets one short "Updated YYYY-MM-DD" message at its end, the previous one
-deleted first; --no-bump skips it. A new post or first board gets none.
+deleted first; --no-bump skips it. A new post or first board gets none. The
+content hash is stored once the bump has landed, so a failed bump is retried
+by the next run (never duplicated: each bump deletes the previous one first).
 
 Paths resolve from the vault root: AF_ROOT, else the repo holding this file.
 
@@ -359,11 +361,11 @@ def run_board(a, state: dict, env: dict, api: Discord | None, parts: list[str]) 
         api.pin(channel, stored[0])
         board["pinned"] = stored[0]  # only once the pin has landed
         pinned = ", pinned"
-    board["hash"] = digest  # stored before the bump, so a failed bump is not repeated
     bumped = ""
     if stored_before and changed and not a.no_bump:
         send_bump(api, channel, board, f"Updated {a.today.isoformat()}")
         bumped = ", bumped"
+    board["hash"] = digest  # only once the bump has landed, so a failed bump is retried
     return f"board {a.key}: {len(parts)} message(s) current{pinned}{bumped}."
 
 
@@ -438,11 +440,11 @@ def run_post(a, state: dict, env: dict, api: Discord | None, parts: list[str]) -
     if a.tag:
         item["tags"] = [n for n, _ in tags]
     sync_messages(api, thread, extra, parts[1:])
-    item["hash"] = digest  # stored before the bump, so a failed bump is not repeated
     bumped = ""
     if changed and not a.no_bump:
         send_bump(api, thread, item, f"Updated {a.today.isoformat()}: {title}")
         bumped = ", bumped"
+    item["hash"] = digest  # only once the bump has landed, so a failed bump is retried
     return (f"post {a.key}/{a.slug}: {len(parts)} message(s) current"
             + (f", updated {' and '.join(change)}" if change else "") + bumped + ".")
 

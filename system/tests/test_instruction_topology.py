@@ -13,7 +13,7 @@ OPERATOR_ONLY_SKILLS = ("deliverable-harvest", "voice-harvest", "doc-export",
                         "d2-diagrams", "extract-design", "gym", "catchup", "file", "upgrade",
                         "price-read", "cook")
 AGENT_ROLES = ("reader", "researcher", "filer", "writer", "reviewer", "auditor", "briefer",
-               "consolidator", "builder")
+               "consolidator", "builder", "desk")
 MODEL_INVOCABLE_SKILLS = ("agent-reach", "deep-research", "split-bill", "email-cleanup")
 
 

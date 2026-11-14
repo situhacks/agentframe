@@ -25,7 +25,7 @@ If the task class changes, stop and read the new router.
 
 - **Inline**: a one-file answer, state change, or short reply.
 - **Subagent**: `reader` for transcripts and long deliverables, `filer` for every ingest, `researcher` for more than one source or a current fact, `writer` for kept text a reader sees, `reviewer` before anything ships or merges, `auditor` for tests and lints, `briefer` for catch-up, `consolidator` weekly.
-- **Side chat**: a feature to flesh out; once stable, main does the work. Write `system/sessions/<name>/brief.md` (model, class, why), then give him one prompt for a new VS Code chat to register and read it.
+- **Side chat**: a feature to flesh out; once stable, main does the work. Write `system/sessions/<name>/brief.md` (model, class, why); `desk` starts, registers, names and groups it, and compacts or archives any chat.
 - **Background worker**: bounded unattended work with a done-when, [started this way](library/schema/sessions-registry.md#start-a-worker). Its exit wakes you; read `handoff.md` and `report.md`.
 - **Message a chat**: `af session reach <name>`, then do what it prints; never say a turn started until its `--confirm` says delivered.
 

@@ -649,12 +649,3 @@ fn claude_codes_best_alias_is_opus() {
     assert_eq!(afcore::model_card::alias_of("default"), None);
     assert_eq!(afcore::model_card::alias_of("opusplan"), None);
 }
-
-#[test]
-fn the_display_name_has_the_right_article() {
-    use afcore::model_card::display_with_article;
-    assert_eq!(display_with_article("opus"), "an Opus");
-    assert_eq!(display_with_article("fable"), "a Fable");
-    assert_eq!(display_with_article("sonnet"), "a Sonnet");
-    assert_eq!(display_with_article("haiku"), "a Haiku");
-}

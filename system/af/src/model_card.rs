@@ -19,16 +19,6 @@ pub fn alias_of(model: &str) -> Option<&'static str> {
     ALIASES.iter().copied().find(|a| m == *a || m.starts_with(&format!("claude-{a}-")))
 }
 
-/// The alias's name as it is written in a sentence, with its article: `an Opus`, `a Fable`.
-pub fn display_with_article(alias: &str) -> String {
-    let mut name = alias.to_string();
-    if let Some(first) = name.get_mut(0..1) {
-        first.make_ascii_uppercase();
-    }
-    let article = if name.starts_with(['A', 'E', 'I', 'O', 'U']) { "an" } else { "a" };
-    format!("{article} {name}")
-}
-
 /// The alias of the model the chat runs on: the first source that maps to one, in this order: the hook
 /// input's `model`, the model of the last assistant line in the transcript, the registry row's model. A
 /// value that maps to none (`default`, `opusplan`, an unknown id) passes the search on to the next source.

@@ -235,25 +235,42 @@ fn auto_compact_of(usage: Option<&reach::Usage>) -> AutoCompact {
     }
 }
 
+/// The ids `system/models.json` names as current (the file maps an alias to an id), or None when the file
+/// is missing or unreadable.
+fn current_model_ids(ctx: &Ctx) -> Option<Vec<String>> {
+    let text = std::fs::read_to_string(crate::life::vpath(ctx, "system/models.json")).ok()?;
+    let v = serde_json::from_str::<Value>(&text).ok()?;
+    Some(v.as_object()?.values().filter_map(|id| id.as_str().map(str::to_string)).collect())
+}
+
 /// `af doctor`: a `modelSettings.<id>.autoCompactWindow` in the user settings that is below the build
-/// class's hard limit, so Claude Code compacts such a chat by itself before the nudge. Reads the settings
-/// file only (`CLAUDE_CONFIG_DIR` or `~/.claude`); absent, unreadable or a model with no alias is silence.
-pub fn doctor_notes() -> Vec<String> {
+/// class's hard limit, so Claude Code compacts such a chat by itself before the nudge. The note names the
+/// id from the settings key (a `[1m]` suffix is dropped). Only a current id in `system/models.json` is
+/// noted; with no readable `models.json`, any id that maps to an alias is. Reads the settings file only
+/// (`CLAUDE_CONFIG_DIR` or `~/.claude`); absent or unreadable is silence.
+pub fn doctor_notes(ctx: &Ctx) -> Vec<String> {
     let Some(hard) = SessionClass::Build.limits().hard else { return Vec::new() };
     let Some(dir) = reach::config_dir() else { return Vec::new() };
     let Ok(text) = std::fs::read_to_string(pyos::join(&dir, "settings.json")) else { return Vec::new() };
     let Ok(v) = serde_json::from_str::<Value>(&text) else { return Vec::new() };
     let Some(models) = v.get("modelSettings").and_then(Value::as_object) else { return Vec::new() };
+    let current = current_model_ids(ctx);
     models
         .iter()
-        .filter_map(|(id, s)| {
+        .filter_map(|(key, s)| {
             let window = s.get("autoCompactWindow")?.as_u64().filter(|w| *w < hard)?;
-            let who = crate::model_card::display_with_article(crate::model_card::alias_of(id)?);
-            Some(format!(
-                "Claude Code compacts {who} chat by itself at {}, before a build chat's {} nudge: such a chat can be compacted in the middle of a task. Raising it is the operator's setting.",
-                kfmt(window),
-                kfmt(hard)
-            ))
+            let id = key.split('[').next().unwrap_or(key);
+            let known = match &current {
+                Some(ids) => ids.iter().any(|c| c == id),
+                None => crate::model_card::alias_of(id).is_some(),
+            };
+            known.then(|| {
+                format!(
+                    "Claude Code compacts a `{id}` chat by itself at {}, before a build chat's {} nudge: such a chat can be compacted in the middle of a task. Raising it is the operator's setting.",
+                    kfmt(window),
+                    kfmt(hard)
+                )
+            })
         })
         .collect()
 }

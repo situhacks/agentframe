@@ -590,7 +590,7 @@ fn doctor_notes_an_auto_compact_window_below_the_build_hard_limit() {
     fx.write("cfg/settings.json", r#"{"modelSettings": {"claude-opus-5-5": {"autoCompactWindow": 400000}}}"#);
     let out = doctor_out(&fx);
     assert!(
-        out.contains("af doctor: note — Claude Code compacts an Opus chat by itself at 400k, before a build chat's 600k nudge: such a chat can be compacted in the middle of a task. Raising it is the operator's setting."),
+        out.contains("af doctor: note — Claude Code compacts a `claude-opus-5-5` chat by itself at 400k, before a build chat's 600k nudge: such a chat can be compacted in the middle of a task. Raising it is the operator's setting."),
         "{out}"
     );
 }
@@ -612,20 +612,44 @@ fn doctor_never_writes_the_user_settings() {
     fx.write("cfg/settings.json", r#"{"modelSettings": {"claude-fable-5-2": {"autoCompactWindow": 300000}}}"#);
     let before = fx.read("cfg/settings.json");
     let out = doctor_out(&fx);
-    assert!(out.contains("compacts a Fable chat by itself at 300k"), "{out}");
+    assert!(out.contains("compacts a `claude-fable-5-2` chat by itself at 300k"), "{out}");
     assert_eq!(fx.read("cfg/settings.json"), before);
 }
 
 #[test]
-fn doctor_names_each_model_with_its_own_article() {
+fn doctor_names_each_model_by_its_id_with_the_article_a() {
     let fx = Fx::new();
     fx.write(
         "cfg/settings.json",
-        r#"{"modelSettings": {"claude-opus-5-5": {"autoCompactWindow": 300000}, "claude-fable-5-2": {"autoCompactWindow": 300000}, "claude-sonnet-5-5": {"autoCompactWindow": 300000}, "claude-haiku-5-5": {"autoCompactWindow": 300000}}}"#,
+        r#"{"modelSettings": {"claude-opus-5-5": {"autoCompactWindow": 300000}, "claude-fable-5-2": {"autoCompactWindow": 300000}, "claude-sonnet-5-5[1m]": {"autoCompactWindow": 300000}, "claude-haiku-5-5": {"autoCompactWindow": 300000}}}"#,
     );
     let out = doctor_out(&fx);
-    for who in ["an Opus chat", "a Fable chat", "a Sonnet chat", "a Haiku chat"] {
-        assert!(out.contains(&format!("Claude Code compacts {who} by itself at 300k")), "{who}: {out}");
+    for id in ["claude-opus-5-5", "claude-fable-5-2", "claude-sonnet-5-5", "claude-haiku-5-5"] {
+        assert!(out.contains(&format!("Claude Code compacts a `{id}` chat by itself at 300k")), "{id}: {out}");
     }
-    assert!(!out.contains("a opus") && !out.contains("an Fable"), "{out}");
+    assert!(!out.contains("an `") && !out.contains("[1m]"), "{out}");
+}
+
+#[test]
+fn doctor_says_nothing_for_an_id_that_models_json_does_not_name_as_current() {
+    let fx = Fx::new();
+    fx.write("system/models.json", r#"{"fable": "claude-fable-5-2"}"#);
+    fx.write("cfg/settings.json", r#"{"modelSettings": {"claude-fable-5-1": {"autoCompactWindow": 500000}}}"#);
+    let out = doctor_out(&fx);
+    assert!(!out.contains("compacts a"), "{out}");
+    fx.write("cfg/settings.json", r#"{"modelSettings": {"claude-fable-5-1": {"autoCompactWindow": 500000}, "claude-fable-5-2[1m]": {"autoCompactWindow": 500000}}}"#);
+    let out = doctor_out(&fx);
+    assert!(out.contains("compacts a `claude-fable-5-2` chat by itself at 500k"), "{out}");
+    assert!(!out.contains("claude-fable-5-1"), "{out}");
+}
+
+#[test]
+fn doctor_without_models_json_names_an_old_id_by_its_id() {
+    let fx = Fx::new();
+    assert!(!fx.exists("system/models.json"));
+    fx.write("cfg/settings.json", r#"{"modelSettings": {"claude-fable-5-1": {"autoCompactWindow": 500000}}}"#);
+    let out = doctor_out(&fx);
+    assert!(out.contains("compacts a `claude-fable-5-1` chat by itself at 500k"), "{out}");
+    fx.write("system/models.json", "not json");
+    assert!(doctor_out(&fx).contains("compacts a `claude-fable-5-1` chat by itself at 500k"));
 }

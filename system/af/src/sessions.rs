@@ -653,6 +653,11 @@ pub enum SessionCmd {
         #[arg(long)]
         dry_run: bool,
     },
+    /// The groups of the VS Code panel's sessions list: list, create, rename, delete, and put a chat in one or take it out
+    Group {
+        #[command(subcommand)]
+        cmd: GroupCmd,
+    },
     /// Open a new chat in the VS Code panel with a file as its first message; prints its session id
     Start {
         name: String,
@@ -662,7 +667,7 @@ pub enum SessionCmd {
         /// the model to pick in the new chat (as the panel's picker names it)
         #[arg(long)]
         model: Option<String>,
-        /// put the new chat in this existing session group of the panel (by name)
+        /// put the new chat in this existing session group of the panel (by name): the chat is started, then placed with group add
         #[arg(long)]
         group: Option<String>,
         /// minutes the panel driver waits for the operator (default 20)
@@ -693,6 +698,80 @@ pub enum SessionCmd {
         since: Option<String>,
         #[arg(long)]
         json: bool,
+    },
+}
+
+/// What `af session group` does. Every change takes his screen for a few seconds (VS Code comes to the front, the pointer
+/// and keyboard are used) while he is idle, and puts it back; `--dry-run` prints the driver call and what would show.
+#[derive(Subcommand, Debug)]
+pub enum GroupCmd {
+    /// The groups in the panel's list and how many chats each holds (reads the screen only)
+    List {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Add a group: presses New group and types the name
+    Create {
+        name: String,
+        /// minutes the panel driver waits for the operator to be idle (default 20)
+        #[arg(long)]
+        wait_minutes: Option<f64>,
+        /// print the driver call and what would show on his screen; run nothing
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Rename a group
+    Rename {
+        old: String,
+        new: String,
+        /// minutes the panel driver waits for the operator to be idle (default 20)
+        #[arg(long)]
+        wait_minutes: Option<f64>,
+        /// print the driver call and what would show on his screen; run nothing
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Delete a group; its chats move to Ungrouped, and the panel asks nothing, so a group with chats needs --force
+    Delete {
+        name: String,
+        /// delete a group that holds chats
+        #[arg(long)]
+        force: bool,
+        /// minutes the panel driver waits for the operator to be idle (default 20)
+        #[arg(long)]
+        wait_minutes: Option<f64>,
+        /// print the driver call and what would show on his screen; run nothing
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Put a chat in a group: `add <chat> <group>`, or `add --session-id <id> <group>` for a chat with no registry row
+    Add {
+        /// the chat's registry name and the group's name, or only the group's name with --session-id
+        #[arg(required = true, num_args = 1..=2)]
+        args: Vec<String>,
+        /// the chat's session id, for a chat with no registry row
+        #[arg(long)]
+        session_id: Option<String>,
+        /// minutes the panel driver waits for the operator to be idle (default 20)
+        #[arg(long)]
+        wait_minutes: Option<f64>,
+        /// print the driver call and what would show on his screen; run nothing
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Take a chat out of its group (it moves to Ungrouped)
+    Remove {
+        /// the chat's registry name; omit it with --session-id for a chat with no registry row
+        chat: Option<String>,
+        /// the chat's session id, for a chat with no registry row
+        #[arg(long)]
+        session_id: Option<String>,
+        /// minutes the panel driver waits for the operator to be idle (default 20)
+        #[arg(long)]
+        wait_minutes: Option<f64>,
+        /// print the driver call and what would show on his screen; run nothing
+        #[arg(long)]
+        dry_run: bool,
     },
 }
 
@@ -729,6 +808,14 @@ pub fn run(ctx: &Ctx, cmd: SessionCmd) -> R<i32> {
             crate::panel::cmd_archive(ctx, name.as_deref(), session_id.as_deref(), wait_minutes, dry_run)
         }
         SessionCmd::Rename { name, to, wait_minutes } => crate::panel::cmd_rename(ctx, &name, to.as_deref(), wait_minutes),
+        SessionCmd::Group { cmd } => match cmd {
+            GroupCmd::List { json } => crate::panel::cmd_group_list(ctx, json),
+            GroupCmd::Create { name, wait_minutes, dry_run } => crate::panel::cmd_group_create(ctx, &name, wait_minutes, dry_run),
+            GroupCmd::Rename { old, new, wait_minutes, dry_run } => crate::panel::cmd_group_rename(ctx, &old, &new, wait_minutes, dry_run),
+            GroupCmd::Delete { name, force, wait_minutes, dry_run } => crate::panel::cmd_group_delete(ctx, &name, force, wait_minutes, dry_run),
+            GroupCmd::Add { args, session_id, wait_minutes, dry_run } => crate::panel::cmd_group_add(ctx, &args, session_id.as_deref(), wait_minutes, dry_run),
+            GroupCmd::Remove { chat, session_id, wait_minutes, dry_run } => crate::panel::cmd_group_remove(ctx, chat.as_deref(), session_id.as_deref(), wait_minutes, dry_run),
+        },
         SessionCmd::Start { name, brief_prompt_file, model, group, wait_minutes } => {
             crate::panel::cmd_start(ctx, &name, &brief_prompt_file, model.as_deref(), group.as_deref(), wait_minutes)
         }

@@ -33,7 +33,9 @@ CLIENT = ROOT / "system" / "tools" / "panel_bridge.py"
 POWERSHELL = sys.platform == "win32" and shutil.which("powershell.exe")
 
 # The controls the driver may name, and nothing else.
-CONTROLS = {"Message input", "Send message", "Switch model", "New session"}
+CONTROLS = {"Message input", "Send message", "Switch model", "New session", "New group"}
+# The names the group actions read or press (menu items, found by their exact name, and the group button).
+GROUP_CONTROLS = {"New group", "Rename group", "Delete group", "Add to group", "Remove from group", "Sessions"}
 # The actions of the installed bridge 0.1.0, and of the source (0.2.0, which drops group-pick). The driver
 # may use only the ones both have.
 INSTALLED_ACTIONS = {"ping", "tabs", "open", "reveal", "close-tab", "group-pick"}
@@ -42,7 +44,8 @@ BRIDGE_ACTIONS = {"ping", "tabs", "open", "reveal", "close-tab"}
 # pointer's position (read, and set by 'archive' alone), the window under a point, which window has the foreground
 # (read only) and the shell's full-screen state. Nothing that sends input. SetForegroundWindow is imported once, in the
 # one method that gives the foreground back at the end of a run (test_the_foreground_is_set_in_one_place_only).
-# GetProcessTimes reads only this process's own start time, for the lock.
+# GetProcessTimes reads only this process's own start time, for the lock. These are the imports of PanelNative; the
+# separate class PanelInput (below) holds everything that sends input.
 ALLOWED_IMPORTS = {
     "GetLastInputInfo", "IsIconic", "IsWindow", "GetWindowTextW", "GetProcessTimes",
     "GetCursorPos", "SetCursorPos", "WindowFromPoint", "GetAncestor", "SetWindowPos", "ShowWindow",
@@ -51,8 +54,15 @@ ALLOWED_IMPORTS = {
     "IsWindowVisible", "DwmGetWindowAttribute",
     "SetForegroundWindow",
 }
-# Words that would mean synthetic input, clipboard use or taking the foreground. SetWindowVisualState is the
-# Window pattern's restore: it takes the foreground and resets the idle time (measured), so it is never used.
+# The one native class that may send synthetic input and take the foreground, for the group actions: its imports, its
+# public methods (no general "press any key"), and the PowerShell functions that may call it, each behind its own check.
+PANEL_INPUT_IMPORTS = {"SendInput", "SetForegroundWindow", "BringWindowToTop", "GetForegroundWindow", "GetWindowThreadProcessId", "AttachThreadInput", "GetCurrentThreadId"}
+PANEL_INPUT_METHODS = ["RightClick", "TypeText", "SelectAll", "Enter", "Escape", "BringToFront"]
+GROUP_INPUT_FUNCTIONS = ["Move-GroupFront", "Open-GroupMenu", "Send-GroupSelectAll", "Send-GroupText", "Send-GroupEnter", "Close-GroupMenus", "Restore-GroupForeground"]
+GROUP_FUNCTIONS = GROUP_INPUT_FUNCTIONS + ["Do-Group", "Step-GroupCreate", "Step-GroupRename", "Step-GroupDelete", "Step-GroupAdd", "Step-GroupRemove", "Invoke-MenuItem", "Set-OwnTick", "Assert-GroupPointer"]
+# Words that would mean synthetic input, clipboard use or taking the foreground; forbidden everywhere outside the body of
+# the PanelInput class. SetWindowVisualState is the Window pattern's restore: it takes the foreground and resets the idle
+# time (measured), so it is never used.
 FORBIDDEN = [
     "SendInput", "keybd_event", "mouse_event", "SendKeys", "clipboard",
     "AttachThreadInput", "BringWindowToTop", "MOUSEINPUT", "KEYBDINPUT", "GetGUIThreadInfo", "SetWindowVisualState",
@@ -85,6 +95,58 @@ def powershell_only(text: str) -> str:
 
 def csharp_block(text: str) -> str:
     return re.search(r"@'\n(.*?)\n'@", text, flags=re.DOTALL).group(1)
+
+
+def panel_input_body(text: str) -> str:
+    """The body of the PanelInput class (the last class in the Add-Type block)."""
+    return re.search(r"public static class PanelInput \{.*\n\}", csharp_block(text), flags=re.DOTALL).group(0)
+
+
+def without_panel_input(text: str) -> str:
+    """The whole driver text with the PanelInput class body cut out."""
+    return text.replace(panel_input_body(text), "")
+
+
+def without_panel_input_block() -> str:
+    """The C# of the Add-Type block without PanelInput."""
+    return csharp_block(source()).replace(panel_input_body(source()), "")
+
+
+def all_functions(text: str | None = None) -> dict:
+    """Every top-level PowerShell function: name -> its text (a one-line function ends on its own line)."""
+    lines = (text if text is not None else source()).splitlines()
+    out: dict = {}
+    i = 0
+    while i < len(lines):
+        m = re.match(r"function ([\w-]+)", lines[i])
+        if not m:
+            i += 1
+            continue
+        j = i
+        if lines[i].count("{") != lines[i].count("}"):
+            j = i + 1
+            while j < len(lines) and lines[j] != "}":
+                j += 1
+        out[m.group(1)] = "\n".join(lines[i:j + 1]) + "\n"
+        i = j + 1
+    return out
+
+
+def reachable(roots: list) -> set:
+    """The functions a set of functions can reach by name (the PowerShell call graph, from the text)."""
+    funcs = all_functions()
+    seen: set = set()
+    todo = list(roots)
+    while todo:
+        name = todo.pop()
+        if name in seen or name not in funcs:
+            continue
+        seen.add(name)
+        body = code_lines(funcs[name])
+        for other in funcs:
+            if other not in seen and re.search(rf"(?<![\w-]){re.escape(other)}(?![\w-])", body):
+                todo.append(other)
+    return seen
 
 
 def function_text(name: str) -> str:
@@ -150,31 +212,120 @@ class TextTests(unittest.TestCase):
         self.assertIn("function Find-Window", text)
         self.assertEqual([label for pat, label in PS7_ONLY if pat.search(text)], [])
 
-    def test_no_synthetic_input_no_clipboard_and_no_foreground_code_anywhere_in_the_file(self):
-        text = source().lower()
+    def test_no_synthetic_input_no_clipboard_and_no_foreground_code_anywhere_outside_the_panel_input_class(self):
+        text = without_panel_input(source()).lower()
         for word in FORBIDDEN:
-            self.assertNotIn(word.lower(), text, f"the driver must not mention {word!r}")
-        code = code_lines(source()).lower()
+            self.assertNotIn(word.lower(), text, f"the driver must not mention {word!r} outside PanelInput")
+        # The words that name input stay out of every code line outside PanelInput, except the calls into it.
+        code = re.sub(r"\[panelinput\]::\w+", "", code_lines(without_panel_input(source())).lower())
         for word in ["mouse", "click", "keystroke", "typebatch", "unicode key"]:
             self.assertNotIn(word, code, f"the driver code must not mention {word!r}")
-        # The pointer is read and set by the archive helpers only, through the two calls and nothing else.
+        # The pointer is read and set by the archive and group helpers only, through the two calls and nothing else.
         self.assertEqual(sorted(set(re.findall(r"\w*cursor\w*", code))), ["getcursorpos", "setcursorpos"])
 
-    def test_it_imports_only_the_idle_time_and_the_window_state_from_windows(self):
-        imports = set(re.findall(r"DllImport\(\"[^\"]+\"[^)]*\)\]\s*(?:public\s+)?static extern \w+ (\w+)\(", csharp_block(source())))
-        self.assertEqual(imports, ALLOWED_IMPORTS)
+    def test_it_imports_only_the_idle_time_and_the_window_state_from_windows_and_the_input_imports_live_in_panel_input(self):
+        pattern = r"DllImport\(\"[^\"]+\"[^)]*\)\]\s*(?:public\s+)?static extern \w+ (\w+)\("
+        self.assertEqual(set(re.findall(pattern, without_panel_input_block())), ALLOWED_IMPORTS)
+        self.assertEqual(set(re.findall(pattern, panel_input_body(source()))), PANEL_INPUT_IMPORTS)
+
+    def test_panel_input_has_exactly_the_six_methods_and_no_general_key_press(self):
+        body = panel_input_body(source())
+        public = re.findall(r"public static \w+ (\w+)\(([^)]*)\)", body)
+        self.assertEqual([name for name, _ in public], PANEL_INPUT_METHODS)
+        # No method takes a key code or a key name: the only arguments are the text to type and the window.
+        self.assertEqual({name: args for name, args in public}, {"RightClick": "", "TypeText": "string text", "SelectAll": "", "Enter": "", "Escape": "", "BringToFront": "IntPtr h"})
+        self.assertNotIn("public static INPUT", body)
+        self.assertEqual(len(re.findall(r"class \w+", csharp_block(source()))), 3, "PanelExit, PanelNative, PanelInput")
+        # PanelInput is the last class of the Add-Type block, so cutting it out leaves the others whole.
+        self.assertTrue(csharp_block(source()).rstrip().endswith("}"))
+        self.assertLess(csharp_block(source()).index("public static class PanelNative"), csharp_block(source()).index("public static class PanelInput"))
+
+    def test_panel_input_is_used_only_from_the_named_group_functions(self):
+        funcs = all_functions()
+        for name in GROUP_FUNCTIONS:
+            self.assertIn(name, funcs, name)
+        total = len(re.findall(r"\[PanelInput\]::", code_lines(without_panel_input(source()))))
+        in_allowed = sum(len(re.findall(r"\[PanelInput\]::", code_lines(funcs[name]))) for name in GROUP_INPUT_FUNCTIONS)
+        self.assertEqual(total, in_allowed, "every [PanelInput]:: use sits inside a function of the allow-list")
+        self.assertEqual(total, 7)
+        for name in GROUP_INPUT_FUNCTIONS:
+            self.assertIn("[PanelInput]::", funcs[name], f"{name} is on the allow-list but sends nothing")
+        for call in ["RightClick", "TypeText", "SelectAll", "Enter", "Escape"]:
+            self.assertEqual(code_lines(source()).count(f"[PanelInput]::{call}("), 1, call)
+        self.assertEqual(code_lines(source()).count("[PanelInput]::BringToFront("), 2, "VS Code to the front, and the recorded window at the end")
+
+    def test_send_new_model_archive_list_close_untitled_and_selftest_reach_no_group_function(self):
+        group_side = set(GROUP_FUNCTIONS) | {"Open-GroupMenu"}
+        for root in ["Do-Send", "Do-New", "Do-Model", "Do-Archive", "Do-List", "Do-CloseUntitled", "Do-SelfTest", "Invoke-Logged", "Restore-Screen", "Enter-Run"]:
+            got = reachable([root])
+            self.assertEqual(got & group_side, set(), f"{root} reaches a group function")
+            self.assertNotIn("PanelInput", code_lines(function_text(root)), root)
+        # And the other way: the group run reaches the shared helpers it is meant to reuse, and no second lock or wait.
+        group = reachable(["Do-Group"])
+        for shared in ["Enter-Run", "Ensure-Screen", "Wait-Idle", "Test-FullScreenFront", "Restore-Pointer", "Test-PointerAt", "Get-RowCenter", "Find-RowElement"]:
+            self.assertIn(shared, group, shared)
+        self.assertNotIn("Enter-Lock", code_lines(function_text("Do-Group")), "the lock is Enter-Run's")
+        self.assertNotIn("Wait-Guards", code_lines(function_text("Do-Group")))
+
+    def test_each_input_is_sent_only_behind_its_own_check(self):
+        funcs = all_functions()
+        # Typing: the focus check (the name field) comes before the input, in the same function, and so does the pointer check.
+        for name, call in [("Send-GroupSelectAll", "SelectAll"), ("Send-GroupText", "TypeText"), ("Send-GroupEnter", "Enter")]:
+            body = funcs[name]
+            self.assertLess(body.index("Assert-GroupPointer"), body.index("Get-NameField"), name)
+            self.assertLess(body.index("Get-NameField"), body.index(f"[PanelInput]::{call}("), name)
+            self.assertIn("Stop-Panel 1", body[:body.index(f"[PanelInput]::{call}(")], f"{name}: no focus, nothing is sent")
+        enter = funcs["Send-GroupEnter"]
+        self.assertLess(enter.index("Get-FieldText"), enter.index("[PanelInput]::Enter("), "Enter only after the field's text was read")
+        self.assertIn("-cne $Want", enter, "exactly the wanted name")
+        # Escape: only while a context menu is seen open and VS Code is in front.
+        close = funcs["Close-GroupMenus"]
+        loop = close[close.index("for ($i"):]
+        self.assertLess(loop.index("Get-OpenMenus"), loop.index("[PanelInput]::Escape("))
+        self.assertLess(loop.index("Foreground() -ne $script:Hwnd"), loop.index("[PanelInput]::Escape("))
+        self.assertLess(loop.index("return }"), loop.index("[PanelInput]::Escape("), "an empty menu list returns first")
+        self.assertLess(loop.index("Test-FocusInOpenMenu"), loop.index("[PanelInput]::Escape("), "and the focus must be inside a menu")
+        # The context menu is opened only after every check, with no wait between the last check and the input.
+        opener = funcs["Open-GroupMenu"]
+        checks = ["Foreground() -ne $script:Hwnd", "Get-OpenMenus", "ScrollIntoView", "Get-RowCenter", "Assert-GroupPointer", "MovePointer", "RootAt", "Test-PointerOnElement"]
+        for check in checks:
+            self.assertIn(check, opener, check)
+            self.assertLess(opener.index(check), opener.index("[PanelInput]::RightClick("), check)
+        last = opener.rindex("Test-PointerOnElement")
+        self.assertNotIn("Start-Sleep", opener[last:opener.index("[PanelInput]::RightClick(")], "the click follows its last check at once")
+        self.assertNotIn("Wait-", opener[last:])
+        # The foreground calls: VS Code only from Move-GroupFront, the recorded window only from Restore-GroupForeground.
+        self.assertIn("BringToFront($script:Hwnd)", funcs["Move-GroupFront"])
+        restore = funcs["Restore-GroupForeground"]
+        self.assertIn("BringToFront($Prev)", restore)
+        for guard in ["$Prev -eq $script:Hwnd", "IsWindow($Prev)", "InputTick() -ne $script:OwnTick", "Foreground() -ne $script:Hwnd"]:
+            self.assertLess(restore.index(guard), restore.index("[PanelInput]::BringToFront("), guard)
+
+    def test_the_group_run_records_then_brings_vs_code_forward_and_cleans_up_in_a_finally_in_order(self):
+        run = function_text("Do-Group")
+        for before, after in [("Enter-Run ''", "Ensure-Screen"), ("Ensure-Screen", "Test-FullScreenFront"), ("Test-FullScreenFront", "Get-GroupPlan"),
+                              ("Get-GroupPlan", "PointerPos()"), ("PointerPos()", "Move-GroupFront"), ("Foreground()", "Move-GroupFront"), ("Move-GroupFront", "Step-GroupCreate")]:
+            self.assertLess(run.index(before), run.index(after), f"{before} before {after}")
+        final = run[run.index("finally"):]
+        self.assertLess(final.index("Close-GroupMenus"), final.index("Restore-Pointer"))
+        self.assertLess(final.index("Restore-Pointer"), final.index("Restore-GroupForeground"), "the menu, then the pointer, then the foreground")
+        self.assertNotIn("Wait-Guards", run)
+        self.assertNotIn("Wait-RowIdle", run, "a running chat can be grouped: no chat has to be idle")
+        self.assertNotIn("Get-RecordState", run)
 
     def test_it_runs_nothing_else_and_never_sets_the_input_text_through_a_pattern(self):
         text = code_lines(source())
         for banned in ["Invoke-Expression", "iex ", "Start-Process", "Stop-Process", "Invoke-WebRequest", "SetValue(", "Set-Clipboard", "SendWait"]:
             self.assertNotIn(banned, text, f"{banned!r} is not for this driver")
 
-    def test_the_actions_are_the_seven_and_no_more(self):
+    def test_the_actions_are_the_thirteen_and_no_more(self):
         text = source()
         actions = re.findall(r"^    '([\w-]+)'\s*\{", text, re.MULTILINE)
-        self.assertEqual(actions, ["list", "send", "new", "model", "archive", "close-untitled", "selftest"])
+        self.assertEqual(actions, ["list", "send", "new", "model", "archive", "groups", "group-create", "group-rename", "group-delete", "group-add", "group-remove", "close-untitled", "selftest"])
         params = re.search(r"param\((.*?)\n\)", text, re.DOTALL).group(1)
-        self.assertEqual(re.findall(r"\$(\w+)", params), ["Action", "Session", "TextFile", "Model", "GroupId", "IdleSeconds", "WaitMinutes", "CancelFile"])
+        self.assertEqual(re.findall(r"\$(\w+)", params), ["Action", "Session", "TextFile", "Model", "Group", "NewName", "Force", "IdleSeconds", "WaitMinutes", "CancelFile"])
+        self.assertIn("[switch]$Force", params)
+        self.assertNotIn("GroupId", text, "a group id is never passed to the bridge (that route leaves the chat in Ungrouped)")
         self.assertIn("[int]$IdleSeconds = 120", text)
         self.assertIn("[double]$WaitMinutes = 20", text)
 
@@ -192,8 +343,16 @@ class ControlTests(unittest.TestCase):
         self.assertIn("'sessions-list-row-'", text)
         for part in ["*statusDot*", "*Running*", "*Idle*", "(^|\\s)active_", "*modelItem_*", "*activeModelItem_*"]:
             self.assertIn(part, text)
-        for other in ["New group", "Show command menu", "commandItem", "Permissions", "Effort", "Search sessions", "Message actions"]:
+        for other in ["Show command menu", "commandItem", "Permissions", "Effort", "Search sessions", "Message actions"]:
             self.assertNotIn(other, text, f"{other!r} is a control the driver must not touch")
+
+    def test_the_group_controls_are_the_ones_measured_on_the_screen(self):
+        text = code_lines(source())
+        for name in GROUP_CONTROLS:
+            self.assertIn(f"'{name}'", text, name)
+        # The other items of the two context menus are never named, so never pressed.
+        for never in ["Start new session in this group", "Mark as read", "Mark as unread", "Switch to session", "Resume session", "New group from session"]:
+            self.assertNotIn(never, text, f"{never!r} is a menu item the driver must not press")
 
     def test_only_the_allowed_ui_automation_patterns_are_used(self):
         text = code_lines(source())
@@ -460,7 +619,7 @@ class BridgeUseTests(unittest.TestCase):
         self.assertLess(new.index("Stop-Panel 1 '-Model is needed"), new.index("Test-Bridge"))
         self.assertLess(new.index("Select-Model $ModelName"), new.index("Send-Now"))
         self.assertLess(new.index("Get-Pill"), new.index("Send-Now"))
-        self.assertIn("groupId", new)
+        self.assertNotIn("groupId", new, "the bridge is never given a group id: the chat is grouped afterwards by group-add")
 
     def test_send_confirms_the_input_cleared_and_the_transcript_effect_before_exit_0(self):
         confirm = function_text("Confirm-Sent")
@@ -689,9 +848,10 @@ class PairingTests(unittest.TestCase):
         rust = (ROOT / "system" / "af" / "src" / "panel.rs").read_text(encoding="utf-8")
         self.assertIn('"claude_panel.ps1"', rust)
         self.assertIn('"AF_PANEL_DRIVER"', rust)
-        for flag in ["-Session", "-TextFile", "-Model", "-GroupId", "-WaitMinutes"]:
+        for flag in ["-Session", "-TextFile", "-Model", "-Group", "-NewName", "-Force", "-WaitMinutes"]:
             self.assertIn(f'"{flag}"', rust)
             self.assertIn(flag.lstrip("-"), source())
+        self.assertNotIn('"-GroupId"', rust)
 
     def test_the_hard_nudge_tells_a_build_chat_to_compact_itself_when_idle(self):
         rust = (ROOT / "system" / "af" / "src" / "context.rs").read_text(encoding="utf-8")
@@ -1045,14 +1205,15 @@ class LockTests(unittest.TestCase):
 
     def test_every_run_that_changes_anything_holds_the_lock(self):
         text = source()
-        for action in ["send", "new", "model", "archive", "close-untitled", "selftest"]:
+        for action in ["send", "new", "model", "archive", "close-untitled", "selftest", "group-create", "group-rename", "group-delete", "group-add", "group-remove"]:
             self.assertRegex(text, rf"Invoke-Logged '{action}' \S+ \$true", action)
         self.assertIn("Invoke-Logged 'list' '' $false", text)
-        self.assertIn("Enter-Lock 'list'", function_text("Do-List"), "a list that restores a minimized window waits its turn")
+        self.assertIn("Invoke-Logged 'groups' '' $false", text)
+        self.assertIn("Enter-Lock $What", function_text("Do-List"), "a list that restores a minimized window waits its turn")
         logged = function_text("Invoke-Logged")
         self.assertNotIn("Enter-Lock", logged, "the lock is taken by the action, after it has waited for him (Enter-Run)")
         self.assertLess(logged.index("Restore-Screen"), logged.index("Exit-Lock"), "the view is put back before the lock goes")
-        for fn in ["Do-Send", "Do-New", "Do-Model", "Do-Archive", "Do-CloseUntitled"]:
+        for fn in ["Do-Send", "Do-New", "Do-Model", "Do-Archive", "Do-CloseUntitled", "Do-Group"]:
             body = function_text(fn)
             self.assertIn("Enter-Run", body, fn)
             self.assertNotIn("Wait-Guards", body, fn)
@@ -1206,7 +1367,11 @@ class DeadlineTests(unittest.TestCase):
         list_ps = int(re.search(r"^\$ListWorkSeconds = (\d+)$", source(), re.MULTILINE).group(1))
         list_rs = int(re.search(r"pub const DRIVER_LIST_WORK_SECS: u64 = (\d+);", rust).group(1))
         self.assertEqual(list_ps, list_rs, "a list's work time is the same number on both sides")
-        self.assertIn("if ($ActionName -eq 'list') { $work = $ListWorkSeconds", function_text("Set-Deadlines"))
+        self.assertIn("if ($ActionName -eq 'list' -or $ActionName -eq 'groups') { $work = $ListWorkSeconds", function_text("Set-Deadlines"))
+        group_ps = int(re.search(r"^\$GroupWorkSeconds = (\d+)$", source(), re.MULTILINE).group(1))
+        group_rs = int(re.search(r"pub const DRIVER_GROUP_WORK_SECS: u64 = (\d+);", rust).group(1))
+        self.assertEqual(group_ps, group_rs, "a group action's work time is the same number on both sides")
+        self.assertIn("if ($ActionName -like 'group-*') { $work = $GroupWorkSeconds", function_text("Set-Deadlines"))
         self.assertIn("Set-Deadlines $ActionName", function_text("Invoke-Logged"))
 
     def test_every_step_wait_is_cut_to_the_deadline(self):
@@ -2522,7 +2687,10 @@ class ArchiveBehaviourTests(unittest.TestCase):
             self.assertNotIn(waiting, between, f"{waiting} between the last re-read and the Invoke")
         self.assertLess(stage.index("Restore-Pointer"), stage.index("Undo-Raise"), "the pointer goes back before the raise is undone")
         self.assertEqual(code_lines(text).count("RaiseNoActivate("), 2, "its definition and one raise, inside the archive stage")
-        self.assertEqual(code_lines(text).count("MovePointer("), 3, "its definition, and two calls: onto the row, and back")
+        self.assertEqual(code_lines(text).count("MovePointer("), 4, "its definition, and three calls: onto the row, back, and onto a group action's target")
+        self.assertEqual(code_lines(function_text("Invoke-ArchiveStage")).count("MovePointer("), 1)
+        self.assertEqual(code_lines(function_text("Restore-Pointer")).count("MovePointer("), 1)
+        self.assertEqual(code_lines(function_text("Open-GroupMenu")).count("MovePointer("), 1)
         self.assertIn("GetParent($btn)", function_text("Get-ArchiveButton"))
         self.assertIn("-ne ($RowPrefix + $Id)", function_text("Get-ArchiveButton"), "the button must belong to the target row")
         self.assertNotIn("Wait-NoFullScreen", code_lines(text))
@@ -2703,8 +2871,16 @@ class ForegroundAtEndTests(unittest.TestCase):
 
     def test_the_foreground_is_set_in_one_place_only_and_checked_once_at_the_end(self):
         text = source()
-        self.assertEqual(len(re.findall(r"SetForegroundWindow", text)), 2, "one import and one call")
-        csharp = csharp_block(text)
+        # Two places set the foreground: PanelNative.GiveForegroundBack (the end-of-run check) and PanelInput.BringToFront
+        # (the group actions), and nothing else.
+        native = without_panel_input_block()
+        self.assertEqual(len(re.findall(r"SetForegroundWindow", native)), 2, "one import and one call, in PanelNative")
+        body = re.sub(r"//[^\n]*", "", panel_input_body(text))
+        self.assertEqual(len(re.findall(r"SetForegroundWindow", body)), 3, "one import and the two calls inside BringToFront")
+        bring = re.search(r"public static bool BringToFront\(IntPtr h\) \{.*?\n    \}", body, re.DOTALL).group(0)
+        self.assertEqual(len(re.findall(r"SetForegroundWindow\(h\)", bring)), 2)
+        self.assertEqual(len(re.findall(r"(?<!extern bool )SetForegroundWindow\(", body.replace(bring, ""))), 0, "called only from BringToFront")
+        csharp = native
         self.assertEqual(len(re.findall(r"DllImport\([^)]*\)\]\s*static extern bool SetForegroundWindow", csharp)), 1)
         method = re.search(r"public static bool GiveForegroundBack\(IntPtr previous\) \{ return SetForegroundWindow\(previous\); \}", csharp)
         self.assertIsNotNone(method, "called from exactly one method, with the one argument it is handed")
@@ -2716,6 +2892,8 @@ class ForegroundAtEndTests(unittest.TestCase):
         self.assertLess(check.index("InputTick"), check.index("GiveForegroundBack"), "only when he has not acted")
         self.assertEqual(check.count("GiveForegroundBack"), 1, "once, no retry")
         for banned in ["AttachThreadInput", "keybd_event", "SendInput", "mouse_event", "SwitchToThisWindow", "BringWindowToTop", "MinimizeActivatingNext"]:
+            self.assertNotIn(banned, without_panel_input(text))
+        for banned in ["keybd_event", "mouse_event", "SwitchToThisWindow", "MinimizeActivatingNext"]:
             self.assertNotIn(banned, text)
         self.assertEqual(len(re.findall(r"Restore-ForegroundAtEnd", code)), 2, "defined once and called once")
         restore = function_text("Restore-Screen")
@@ -2937,3 +3115,851 @@ class LockOrderTests(unittest.TestCase):
         lst = function_text("Do-List")
         self.assertLess(lst.index("Wait-Idle"), lst.index("Enter-Lock"))
         self.assertLess(lst.index("Enter-Lock"), lst.index("IdleMs()"))
+
+
+# ---------------------------------------------------------------- group actions
+
+GROUP_PURE = [
+    "Test-GroupFixed", "Test-GroupName", "New-GroupPlan", "Get-GroupHeaders", "Get-HeaderRowIds", "Get-RowGroupName", "Get-GroupNoRowText",
+    "Get-EditingPlan", "Get-GroupCreatePlan", "Get-GroupRenamePlan", "Get-GroupDeletePlan", "Get-GroupAddPlan", "Get-GroupRemovePlan", "Get-GroupPlan",
+    "Test-GroupCreateDone", "Test-GroupRenameDone", "Test-GroupDeleteDone", "Test-GroupAddDone", "Test-GroupRemoveDone",
+]
+
+
+def H(name: str, count: int = 0, editing: bool = False) -> dict:
+    return {"Kind": "header", "Name": name, "Count": count, "Id": "", "Editing": editing}
+
+
+def R(rid: str) -> dict:
+    return {"Kind": "row", "Name": "chat " + rid, "Count": 0, "Id": rid, "Editing": False}
+
+
+def L(*items: dict) -> str:
+    """A list of items, as PowerShell that builds it from JSON."""
+    return "@(('" + json.dumps(list(items)).replace("'", "''") + "' | ConvertFrom-Json) | ForEach-Object { $_ })"
+
+
+# Main (a, b), Q3 2026 (c), Ungrouped (d, e), the archived section (f): the list in document order.
+LIST = L(H("Main", 2), R("a"), R("b"), H("Q3 2026", 1), R("c"), H("Ungrouped", 2), R("d"), R("e"), H("Archived sessions", 1), R("f"))
+
+
+def run_exprs(exprs: dict, fixtures: str = ""):
+    body = "$o = [ordered]@{}\n" + fixtures + "".join(f"$o['{k}'] = {v}\n" for k, v in exprs.items()) + "ConvertTo-Json -Compress -Depth 6 -InputObject $o\n"
+    return run_functions(GROUP_PURE, body)
+
+
+@unittest.skipUnless(POWERSHELL, "needs Windows PowerShell")
+class GroupDecisionTests(unittest.TestCase):
+    """The decisions of every group action, as pure functions on the list as plain data (no window)."""
+
+    def test_a_group_name_is_trimmed_1_to_60_characters_with_no_control_character_and_not_one_the_panel_keeps(self):
+        cases = [
+            ("Main", True), ("Q3 2026", True), ("a" * 60, True), ("Caf\u00e9 \u2615", True), ("Archived", True),
+            ("", False), (" x", False), ("x ", False), ("a" * 61, False), ("a\nb", False), ("a\tb", False), ("a\u0007b", False), ("a\u2028b", False),
+            ("Ungrouped", False), ("UNGROUPED", False), ("New group", False), ("new GROUP", False),
+            ("Archived sessions", False), ("archived sessions (3)", False),
+        ]
+        got = run_exprs({"ok": "@(foreach ($n in $names) { [bool]((Test-GroupName $n) -eq '') })"}, "$names = @(('" + json.dumps([c for c, _ in cases]).replace("'", "''") + "' | ConvertFrom-Json) | ForEach-Object { $_ })\n")
+        self.assertEqual(got["ok"], [ok for _, ok in cases])
+
+    def test_the_panels_own_headers_are_fixed(self):
+        got = run_exprs({"f": "@(foreach ($n in @('Ungrouped', 'Archived sessions', 'Archived sessions Unarchive all 26 sessions 26', 'archived sessions', 'Main', 'Ungrouped2')) { [bool](Test-GroupFixed $n) })"})
+        self.assertEqual(got["f"], [True, True, True, True, False, False])
+
+    def test_a_row_belongs_to_the_header_before_it_in_document_order_including_a_name_that_ends_in_digits(self):
+        got = run_exprs(
+            {"a": "Get-RowGroupName $L 'a'", "b": "Get-RowGroupName $L 'b'", "c": "Get-RowGroupName $L 'c'", "d": "Get-RowGroupName $L 'd'", "e": "Get-RowGroupName $L 'e'",
+             "f": "Get-RowGroupName $L 'f'", "missing": "Get-RowGroupName $L 'zz'", "orphan": "Get-RowGroupName $Orph 'x'",
+             "main_rows": "@(Get-HeaderRowIds $L 'Main')", "q3_rows": "@(Get-HeaderRowIds $L 'Q3 2026')", "none": "@(Get-HeaderRowIds $L 'Nope')"},
+            f"$L = {LIST}\n$Orph = {L(R('x'), H('Main', 0), R('y'))}\n",
+        )
+        self.assertEqual((got["a"], got["b"], got["c"], got["d"], got["e"], got["f"]), ("Main", "Main", "Q3 2026", "Ungrouped", "Ungrouped", "Archived sessions"))
+        self.assertIsNone(got["missing"])
+        self.assertEqual(got["orphan"], "", "a row before any header follows no header")
+        self.assertEqual((got["main_rows"], got["q3_rows"], got["none"]), (["a", "b"], ["c"], []))
+
+    def plans(self, exprs: dict, fixtures: str = ""):
+        wrapped = {k: f"(& {{ $p = {v}; [pscustomobject]@{{ act = $p.Act; code = $p.Code; text = $p.Text }} }})" for k, v in exprs.items()}
+        return run_exprs(wrapped, fixtures)
+
+    def test_create_refuses_a_taken_name_a_bad_name_and_a_leftover_new_group_and_otherwise_goes_ahead(self):
+        got = self.plans(
+            {
+                "ok": "Get-GroupCreatePlan $L 'Work'",
+                "taken": "Get-GroupCreatePlan $L 'Main'",
+                "digits": "Get-GroupCreatePlan $L 'Q3 2026'",
+                "fixed": "Get-GroupCreatePlan $L 'Ungrouped'",
+                "bad": "Get-GroupCreatePlan $L ' x'",
+                "new_group": "Get-GroupCreatePlan $L 'New group'",
+                "leftover": "Get-GroupCreatePlan $W 'Work'",
+                "case_differs": "Get-GroupCreatePlan $L 'main'",
+            },
+            f"$L = {LIST}\n$W = {L(H('Main', 0), H('New group', 0))}\n",
+        )
+        self.assertEqual((got["ok"]["act"], got["ok"]["code"]), ("do", 0))
+        for key in ("taken", "digits", "fixed", "bad", "new_group", "leftover"):
+            self.assertEqual((got[key]["act"], got[key]["code"]), ("refuse", 5), key)
+            self.assertIn("nothing was changed", got[key]["text"], key)
+        self.assertIn("already exists", got["taken"]["text"])
+        self.assertIn("could not be told apart", got["leftover"]["text"])
+        self.assertEqual(got["case_differs"]["act"], "do", "names are compared exactly")
+
+    def test_rename_needs_the_old_group_once_not_fixed_and_a_valid_free_new_name(self):
+        got = self.plans(
+            {
+                "ok": "Get-GroupRenamePlan $L 'Main' 'Plans'",
+                "missing": "Get-GroupRenamePlan $L 'Nope' 'Plans'",
+                "twice": "Get-GroupRenamePlan $D 'Dup' 'Plans'",
+                "fixed": "Get-GroupRenamePlan $L 'Ungrouped' 'Plans'",
+                "archived": "Get-GroupRenamePlan $L 'Archived sessions' 'Plans'",
+                "taken": "Get-GroupRenamePlan $L 'Main' 'Q3 2026'",
+                "same": "Get-GroupRenamePlan $L 'Main' 'Main'",
+                "bad_new": "Get-GroupRenamePlan $L 'Main' 'New group'",
+                "keep_name": "Get-GroupRenamePlan $L 'Main' 'Ungrouped'",
+                "case_only": "Get-GroupRenamePlan $L 'Main' 'main'",
+            },
+            f"$L = {LIST}\n$D = {L(H('Dup', 0), H('Dup', 1))}\n",
+        )
+        self.assertEqual((got["ok"]["act"], got["ok"]["code"]), ("do", 0))
+        for key in ("missing", "twice", "fixed", "archived", "taken", "bad_new", "keep_name"):
+            self.assertEqual((got[key]["act"], got[key]["code"]), ("refuse", 5), key)
+        self.assertIn("2 groups are named", got["twice"]["text"])
+        self.assertEqual((got["same"]["act"], got["same"]["code"]), ("nothing", 0))
+        self.assertIn("nothing to do", got["same"]["text"])
+        self.assertEqual(got["case_only"]["act"], "do")
+
+    def test_delete_of_a_group_with_chats_needs_force_and_says_how_many_move_to_ungrouped(self):
+        got = self.plans(
+            {
+                "full": "Get-GroupDeletePlan $L 'Main' $false",
+                "forced": "Get-GroupDeletePlan $L 'Main' $true",
+                "empty": "Get-GroupDeletePlan $L 'Empty' $false",
+                "hidden": "Get-GroupDeletePlan $L 'Hidden' $false",
+                "missing": "Get-GroupDeletePlan $L 'Nope' $true",
+                "fixed": "Get-GroupDeletePlan $L 'Ungrouped' $true",
+                "archived": "Get-GroupDeletePlan $L 'Archived sessions' $true",
+            },
+            f"$L = {L(H('Main', 2), R('a'), R('b'), H('Empty', 0), H('Hidden', 3), H('Ungrouped', 0), H('Archived sessions', 0))}\n",
+        )
+        self.assertEqual((got["full"]["act"], got["full"]["code"]), ("refuse", 5))
+        self.assertIn("holds 2 chat(s)", got["full"]["text"])
+        self.assertIn("moves them to Ungrouped", got["full"]["text"])
+        self.assertIn("-Force", got["full"]["text"])
+        self.assertEqual(got["forced"]["act"], "do")
+        self.assertEqual(got["empty"]["act"], "do")
+        self.assertEqual(got["hidden"]["act"], "refuse", "a collapsed group's count says it holds chats even when their rows are not listed")
+        self.assertIn("holds 3 chat(s)", got["hidden"]["text"])
+        for key in ("missing", "fixed", "archived"):
+            self.assertEqual((got[key]["act"], got[key]["code"]), ("refuse", 5), key)
+
+    def test_add_needs_the_row_exit_2_the_group_once_and_does_nothing_when_it_is_already_there(self):
+        got = self.plans(
+            {
+                "ok": "Get-GroupAddPlan $L 'a' 'Q3 2026'",
+                "from_ungrouped": "Get-GroupAddPlan $L 'd' 'Main'",
+                "no_row": "Get-GroupAddPlan $L 'zz' 'Main'",
+                "already": "Get-GroupAddPlan $L 'a' 'Main'",
+                "no_group": "Get-GroupAddPlan $L 'a' 'Nope'",
+                "twice": "Get-GroupAddPlan $D 'a' 'Dup'",
+                "fixed": "Get-GroupAddPlan $L 'a' 'Ungrouped'",
+                "archived_row": "Get-GroupAddPlan $L 'f' 'Main'",
+                "digits": "Get-GroupAddPlan $L 'c' 'Main'",
+            },
+            f"$L = {LIST}\n$D = {L(H('Dup', 0), R('a'), H('Dup', 0))}\n",
+        )
+        self.assertEqual((got["ok"]["act"], got["from_ungrouped"]["act"], got["digits"]["act"]), ("do", "do", "do"))
+        self.assertEqual((got["no_row"]["act"], got["no_row"]["code"]), ("refuse", 2))
+        self.assertIn("collapsed group or the archived section hides its rows", got["no_row"]["text"])
+        self.assertEqual((got["already"]["act"], got["already"]["code"]), ("nothing", 0))
+        for key in ("no_group", "twice", "fixed", "archived_row"):
+            self.assertEqual((got[key]["act"], got[key]["code"]), ("refuse", 5), key)
+
+    def test_remove_does_nothing_for_a_chat_under_ungrouped_or_no_header_and_needs_the_row(self):
+        got = self.plans(
+            {
+                "ok": "Get-GroupRemovePlan $L 'a'",
+                "ungrouped": "Get-GroupRemovePlan $L 'd'",
+                "no_header": "Get-GroupRemovePlan $Orph 'x'",
+                "no_row": "Get-GroupRemovePlan $L 'zz'",
+                "archived_row": "Get-GroupRemovePlan $L 'f'",
+            },
+            f"$L = {LIST}\n$Orph = {L(R('x'), H('Main', 0))}\n",
+        )
+        self.assertEqual(got["ok"]["act"], "do")
+        self.assertEqual((got["ungrouped"]["act"], got["ungrouped"]["code"]), ("nothing", 0))
+        self.assertEqual((got["no_header"]["act"], got["no_header"]["code"]), ("nothing", 0))
+        self.assertEqual((got["no_row"]["act"], got["no_row"]["code"]), ("refuse", 2))
+        self.assertEqual((got["archived_row"]["act"], got["archived_row"]["code"]), ("refuse", 5))
+
+    def test_the_plan_for_a_kind_is_the_plan_of_its_function(self):
+        got = self.plans(
+            {"c": "Get-GroupPlan 'create' $L '' 'Work' '' $false", "r": "Get-GroupPlan 'rename' $L '' 'Main' 'Plans' $false", "d": "Get-GroupPlan 'delete' $L '' 'Main' '' $false",
+             "a": "Get-GroupPlan 'add' $L 'a' 'Q3 2026' '' $false", "x": "Get-GroupPlan 'remove' $L 'd' '' '' $false", "bad": "Get-GroupPlan 'frobnicate' $L '' '' '' $false"},
+            f"$L = {LIST}\n",
+        )
+        self.assertEqual([got[k]["act"] for k in "crdax"], ["do", "do", "refuse", "do", "nothing"])
+        self.assertEqual(got["bad"]["act"], "refuse")
+
+    def test_a_fresh_read_shows_the_outcome_only_when_it_is_exactly_what_was_asked(self):
+        got = run_exprs(
+            {
+                "create_ok": "Test-GroupCreateDone $L 'Work'",
+                "create_missing": "Test-GroupCreateDone $L 'Nope'",
+                "create_twice": "Test-GroupCreateDone $D 'Dup'",
+                "create_still_editing": "Test-GroupCreateDone $E 'Work'",
+                "rename_ok": "Test-GroupRenameDone $R 'Main' 'Plans' @('a', 'b')",
+                "rename_old_left": "Test-GroupRenameDone $R2 'Main' 'Plans' @('a', 'b')",
+                "rename_rows_differ": "Test-GroupRenameDone $R 'Main' 'Plans' @('a', 'b', 'c')",
+                "rename_joined": "Test-GroupRenameDone $R 'Main' 'Plans' 'a|b'",
+                "rename_empty_group": "Test-GroupRenameDone $R3 'Main' 'Plans' @()",
+                "delete_ok": "Test-GroupDeleteDone $L 'Gone'",
+                "delete_left": "Test-GroupDeleteDone $L 'Main'",
+                "add_ok": "Test-GroupAddDone $L 'a' 'Main'",
+                "add_other_header": "Test-GroupAddDone $L 'a' 'Q3 2026'",
+                "add_no_row": "Test-GroupAddDone $L 'zz' 'Main'",
+                "remove_ok": "Test-GroupRemoveDone $L 'd'",
+                "remove_still_grouped": "Test-GroupRemoveDone $L 'a'",
+                "remove_no_row": "Test-GroupRemoveDone $L 'zz'",
+            },
+            f"$L = {LIST}\n$D = {L(H('Dup', 0), H('Dup', 0))}\n$E = {L(H('Work', 0, True))}\n"
+            f"$R = {L(H('Plans', 2), R('a'), R('b'), H('Ungrouped', 0))}\n$R2 = {L(H('Plans', 2), R('a'), R('b'), H('Main', 0))}\n$R3 = {L(H('Plans', 0), H('Ungrouped', 0))}\n",
+        )
+        self.assertEqual(
+            got,
+            {
+                "create_ok": False, "create_missing": False, "create_twice": False, "create_still_editing": False,
+                "rename_ok": True, "rename_old_left": False, "rename_rows_differ": False, "rename_joined": True, "rename_empty_group": True,
+                "delete_ok": True, "delete_left": False,
+                "add_ok": True, "add_other_header": False, "add_no_row": False,
+                "remove_ok": True, "remove_still_grouped": False, "remove_no_row": False,
+            },
+        )
+        created = run_exprs({"ok": "Test-GroupCreateDone $C 'Work'"}, f"$C = {L(H('Main', 0), H('Work', 0), H('Ungrouped', 0))}\n")
+        self.assertTrue(created["ok"])
+
+
+@unittest.skipUnless(POWERSHELL, "needs Windows PowerShell")
+class GroupReadTests(unittest.TestCase):
+    """`list` gains a group field, and `groups` prints the list's groups; both read the same document-order walk."""
+
+    NATIVE = (
+        "Add-Type -TypeDefinition @'\n"
+        "using System;\n"
+        "public class PanelExit : Exception { public int Code; public string Reason; public PanelExit(int c, string r) : base(r) { Code = c; Reason = r; } }\n"
+        "public static class PanelNative { public static bool IsIconic(IntPtr h) { return false; } }\n"
+        "'@\n"
+        "$script:Win = $null; $script:Hwnd = [IntPtr]::Zero\n"
+        "function Open-Window { }\nfunction Wait-Tree { }\n"
+    )
+
+    def test_list_carries_the_group_of_every_chat_and_groups_prints_name_count_and_fixed(self):
+        items = L(
+            H("Main", 2), {**R("a"), "Status": "idle", "Active": False, "Group": "Main"}, {**R("b"), "Status": "running", "Active": True, "Group": "Main"},
+            H("Q3 2026", 1), {**R("c"), "Status": "none", "Active": False, "Group": "Q3 2026"},
+            H("Ungrouped", 1), {**R("d"), "Status": "idle", "Active": False, "Group": "Ungrouped"},
+            H("Archived sessions", 1),
+        )
+        got = run_functions(
+            ["Do-List", "Get-Chats", "Test-GroupFixed"],
+            self.NATIVE + f"function Get-ListItems($w) {{ {items} }}\n"
+            "$o = [ordered]@{ list = (Do-List); groups = (Do-List 'groups') }\n"
+            "ConvertTo-Json -Compress -InputObject $o\n",
+        )
+        rows = json.loads(got["list"])
+        self.assertEqual([(r["session_id"], r["group"]) for r in rows], [("a", "Main"), ("b", "Main"), ("c", "Q3 2026"), ("d", "Ungrouped")])
+        self.assertEqual(set(rows[0]), {"session_id", "name", "status", "active", "group"})
+        self.assertEqual(
+            json.loads(got["groups"]),
+            [{"name": "Main", "count": 2, "fixed": False}, {"name": "Q3 2026", "count": 1, "fixed": False}, {"name": "Ungrouped", "count": 1, "fixed": True}, {"name": "Archived sessions", "count": 1, "fixed": True}],
+        )
+
+    def test_the_list_walk_reads_a_headers_name_and_count_from_its_text_children_not_from_the_buttons_name(self):
+        walk = function_text("Get-ListItems")
+        info = function_text("Get-HeaderInfo")
+        self.assertIn("groupHeader_", walk)
+        self.assertIn("Get-HeaderInfo $b $tw", walk)
+        self.assertIn("GetFirstChild", info)
+        self.assertIn("$CT::Text", info)
+        self.assertNotIn("$Button.Current.Name", info, "the group name is the first Text child; the button's own name ends in the count")
+        self.assertIn("Group = $group", walk)
+        self.assertIn("$group = $h.Name", walk)
+
+
+@unittest.skipUnless(POWERSHELL, "needs Windows PowerShell")
+class GroupInputBehaviourTests(unittest.TestCase):
+    """The steps that send input, run against a staged screen: a native stand-in that records every pointer move and every
+    input call (Calls), and mock reads of the menus and the focused field. Nothing touches the desktop; the point of each
+    test is what is NOT sent."""
+
+    NATIVE = (
+        "Add-Type -AssemblyName UIAutomationClient\n"
+        "Add-Type -TypeDefinition @'\n"
+        "using System;\n"
+        "using System.Collections.Generic;\n"
+        "public class PanelExit : Exception { public int Code; public string Reason; public PanelExit(int c, string r) : base(r) { Code = c; Reason = r; } }\n"
+        "public static class PanelNative {\n"
+        "  public static List<string> Calls = new List<string>();\n"
+        "  public static IntPtr Fg = new IntPtr(5); public static int[] Ptr = new int[] { 10, 20 }; public static long Root = 5; public static uint Tick = 7;\n"
+        "  public static bool Alive = true; public static bool Visible = true; public static double Idle = 999999; public static int Quns = 0;\n"
+        "  public static IntPtr Foreground() { return Fg; }\n"
+        "  public static int[] PointerPos() { return new int[] { Ptr[0], Ptr[1] }; }\n"
+        "  public static bool MovePointer(int x, int y) { Calls.Add(\"move \" + x + \",\" + y); Ptr = new int[] { x, y }; return true; }\n"
+        "  public static IntPtr RootAt(int x, int y) { return new IntPtr(Root); }\n"
+        "  public static uint InputTick() { return Tick; }\n"
+        "  public static bool IsWindow(IntPtr h) { return Alive; }\n"
+        "  public static bool IsVisible(IntPtr h) { return Visible; }\n"
+        "  public static double IdleMs() { return Idle; }\n"
+        "  public static int NotificationState() { return Quns; }\n"
+        "  public static void Reset() { Calls.Clear(); Fg = new IntPtr(5); Ptr = new int[] { 10, 20 }; Root = 5; Tick = 7; Alive = true; Visible = true; Idle = 999999; Quns = 0; }\n"
+        "}\n"
+        "public static class PanelInput {\n"
+        "  public static bool Accept = true; public static bool FrontWorks = true; public static Action OnEscape;\n"
+        "  static bool Do(string name) { PanelNative.Calls.Add(name); return Accept; }\n"
+        "  public static bool RightClick() { return Do(\"rightpress\"); }\n"
+        "  public static bool TypeText(string t) { return Do(\"type\"); }\n"
+        "  public static bool SelectAll() { return Do(\"selectall\"); }\n"
+        "  public static bool Enter() { return Do(\"enter\"); }\n"
+        "  public static bool Escape() { bool r = Do(\"escape\"); if (OnEscape != null) OnEscape(); return r; }\n"
+        "  public static bool BringToFront(IntPtr h) { PanelNative.Calls.Add(\"front\" + h.ToInt64()); if (FrontWorks) PanelNative.Fg = h; return FrontWorks; }\n"
+        "  public static void Reset() { Accept = true; FrontWorks = true; OnEscape = null; }\n"
+        "}\n"
+        "'@\n"
+        "$AE = [System.Windows.Automation.AutomationElement]; $CT = [System.Windows.Automation.ControlType]\n"
+        "$IdleSeconds = 120\n"
+        "$script:Hwnd = [IntPtr]5; $script:Notes = @(); $script:Seq = @(); $script:FgFailed = $false; $script:MenuInvoked = $false\n"
+        "$script:Placed = $null; $script:OwnTick = $null; $script:GroupLeft = ''; $script:Menus = @(); $script:Field = $null; $script:FieldText = ''\n"
+        "$script:OnTarget = $true; $script:Spot = [pscustomobject]@{ X = 100; Y = 200 }; $script:OnSleep = $null\n"
+        "function Add-Note([string]$Note) { $script:Notes += $Note }\n"
+        "function Stop-Panel([int]$Code, [string]$Reason) { throw (New-Object PanelExit($Code, $Reason)) }\n"
+        "function Start-Sleep { param([int]$Seconds = 0, [int]$Milliseconds = 0) if ($null -ne $script:OnSleep) { & $script:OnSleep } }\n"
+        "function Get-OpenMenus { @($script:Menus) }\n"
+        "function Get-NameField { $script:Field }\n"
+        "function Get-FieldText($f) { $script:FieldText }\n"
+        "function Test-FocusInOpenMenu { $script:FocusInMenu }\n"
+        "function Get-RowCenter($t) { $script:Spot }\n"
+        "function Test-PointerOnElement($t, $s) { $script:OnTarget }\n"
+        "function Fake-Target { $t = [pscustomobject]@{ }; $t | Add-Member -MemberType ScriptMethod -Name TryGetCurrentPattern -Value { param($p, $ref) $false }; $t }\n"
+        "function Scenario([scriptblock]$Setup, [scriptblock]$Run) {\n"
+        "  [PanelNative]::Reset(); [PanelInput]::Reset()\n"
+        "  $script:Notes = @(); $script:FgFailed = $false; $script:MenuInvoked = $false; $script:Placed = [pscustomobject]@{ X = 10; Y = 20 }; $script:OwnTick = 7\n"
+        "  $script:Menus = @(); $script:Field = $null; $script:FieldText = ''; $script:OnTarget = $true; $script:Spot = [pscustomobject]@{ X = 100; Y = 200 }; $script:OnSleep = $null; $script:FocusInMenu = $true; $script:Sl = 0\n"
+        "  & $Setup\n"
+        "  $code = 0; $reason = ''\n"
+        "  try { & $Run } catch { $e = $_.Exception; while ($null -ne $e -and -not ($e -is [PanelExit])) { $e = $e.InnerException }; if ($null -ne $e) { $code = $e.Code; $reason = $e.Reason } else { $code = 99; $reason = $_.Exception.Message } }\n"
+        "  [pscustomobject]@{ code = $code; reason = $reason; calls = ([PanelNative]::Calls -join ' '); notes = @($script:Notes); fg = [PanelNative]::Fg.ToInt64(); failed = $script:FgFailed; tick = $script:OwnTick }\n"
+        "}\n"
+    )
+    FUNCS = [
+        "Open-GroupMenu", "Move-GroupFront", "Send-GroupSelectAll", "Send-GroupText", "Send-GroupEnter", "Close-GroupMenus", "Restore-GroupForeground",
+        "Assert-GroupPointer", "Set-OwnTick", "Test-PointerAt", "Test-FullScreenFront",
+    ]
+
+    def run_scenarios(self, body: str):
+        return run_functions(self.FUNCS, self.NATIVE + "$o = [ordered]@{}\n" + body + "ConvertTo-Json -Compress -Depth 5 -InputObject $o\n")
+
+    def test_a_context_menu_is_opened_with_one_right_press_after_every_check_and_the_pointer_noted(self):
+        got = self.run_scenarios("$o.ok = Scenario { } { Open-GroupMenu (Fake-Target) }\n")["ok"]
+        self.assertEqual((got["code"], got["calls"]), (0, "move 100,200 rightpress"))
+        self.assertEqual(got["tick"], 7, "the driver's own last input tick is read again after the press")
+
+    def test_nothing_is_pressed_when_vs_code_is_not_in_front_a_menu_is_open_or_the_target_has_no_place(self):
+        got = self.run_scenarios(
+            "$o.not_front = Scenario { [PanelNative]::Fg = [IntPtr]9 } { Open-GroupMenu (Fake-Target) }\n"
+            "$o.menu_open = Scenario { $script:Menus = @('menu') } { Open-GroupMenu (Fake-Target) }\n"
+            "$o.no_place = Scenario { $script:Spot = $null } { Open-GroupMenu (Fake-Target) }\n"
+        )
+        self.assertEqual((got["not_front"]["code"], got["not_front"]["calls"]), (3, ""))
+        self.assertEqual((got["menu_open"]["code"], got["menu_open"]["calls"]), (5, ""))
+        self.assertEqual((got["no_place"]["code"], got["no_place"]["calls"]), (5, ""), "no pointer move either")
+
+    def test_if_he_moved_the_pointer_before_or_during_the_settle_nothing_is_pressed_and_it_is_exit_3(self):
+        got = self.run_scenarios(
+            "$o.before = Scenario { [PanelNative]::Ptr = [int[]]@(50, 60) } { Open-GroupMenu (Fake-Target) }\n"
+            "$o.during = Scenario { $script:OnSleep = { if ([PanelNative]::Calls -contains 'move 100,200') { [PanelNative]::Ptr = [int[]]@(1, 1) } } } { Open-GroupMenu (Fake-Target) }\n"
+            "$o.lost_front = Scenario { $script:OnSleep = { if ([PanelNative]::Calls -contains 'move 100,200') { [PanelNative]::Fg = [IntPtr]9 } } } { Open-GroupMenu (Fake-Target) }\n"
+            "$o.menu_appeared = Scenario { $script:OnSleep = { if ([PanelNative]::Calls -contains 'move 100,200') { $script:Menus = @('menu') } } } { Open-GroupMenu (Fake-Target) }\n"
+        )
+        self.assertEqual((got["before"]["code"], got["before"]["calls"]), (3, ""))
+        self.assertIn("came back", got["before"]["reason"])
+        self.assertEqual((got["during"]["code"], got["during"]["calls"]), (3, "move 100,200"))
+        self.assertEqual((got["lost_front"]["code"], got["lost_front"]["calls"]), (3, "move 100,200"))
+        self.assertEqual((got["menu_appeared"]["code"], got["menu_appeared"]["calls"]), (5, "move 100,200"))
+
+    def test_nothing_is_pressed_when_the_window_or_the_element_under_the_pointer_is_not_the_target(self):
+        got = self.run_scenarios(
+            "$o.other_window = Scenario { [PanelNative]::Root = 7 } { Open-GroupMenu (Fake-Target) }\n"
+            "$o.other_element = Scenario { $script:OnTarget = $false } { Open-GroupMenu (Fake-Target) }\n"
+            "$o.refused = Scenario { [PanelInput]::Accept = $false } { Open-GroupMenu (Fake-Target) }\n"
+        )
+        self.assertEqual((got["other_window"]["code"], got["other_window"]["calls"]), (5, "move 100,200"))
+        self.assertEqual((got["other_element"]["code"], got["other_element"]["calls"]), (5, "move 100,200"))
+        self.assertEqual((got["refused"]["code"], got["refused"]["calls"]), (1, "move 100,200 rightpress"))
+
+    def test_typing_happens_only_while_the_name_field_has_the_focus_and_he_has_not_moved_the_pointer(self):
+        got = self.run_scenarios(
+            "$o.select_ok = Scenario { $script:Field = 'field' } { Send-GroupSelectAll }\n"
+            "$o.select_no_focus = Scenario { } { Send-GroupSelectAll }\n"
+            "$o.select_moved = Scenario { $script:Field = 'field'; [PanelNative]::Ptr = [int[]]@(1, 2) } { Send-GroupSelectAll }\n"
+            "$o.text_ok = Scenario { $script:Field = 'field' } { Send-GroupText 'Main' }\n"
+            "$o.text_no_focus = Scenario { } { Send-GroupText 'Main' }\n"
+            "$o.text_moved = Scenario { $script:Field = 'field'; [PanelNative]::Ptr = [int[]]@(1, 2) } { Send-GroupText 'Main' }\n"
+            "$o.enter_ok = Scenario { $script:Field = 'field'; $script:FieldText = 'Main' } { Send-GroupEnter 'Main' }\n"
+            "$o.enter_no_focus = Scenario { $script:FieldText = 'Main' } { Send-GroupEnter 'Main' }\n"
+            "$o.enter_other_text = Scenario { $script:Field = 'field'; $script:FieldText = 'New group' } { Send-GroupEnter 'Main' }\n"
+            "$o.enter_case = Scenario { $script:Field = 'field'; $script:FieldText = 'main' } { Send-GroupEnter 'Main' }\n"
+            "$o.enter_moved = Scenario { $script:Field = 'field'; $script:FieldText = 'Main'; [PanelNative]::Ptr = [int[]]@(1, 2) } { Send-GroupEnter 'Main' }\n"
+        )
+        for key, call in [("select_ok", "selectall"), ("text_ok", "type"), ("enter_ok", "enter")]:
+            self.assertEqual((got[key]["code"], got[key]["calls"]), (0, call), key)
+        for key in ("select_no_focus", "text_no_focus", "enter_no_focus"):
+            self.assertEqual((got[key]["code"], got[key]["calls"]), (1, ""), key)
+        for key in ("select_moved", "text_moved", "enter_moved"):
+            self.assertEqual((got[key]["code"], got[key]["calls"]), (3, ""), key)
+        for key in ("enter_other_text", "enter_case"):
+            self.assertEqual((got[key]["code"], got[key]["calls"]), (1, ""), key)
+            self.assertIn("Enter was not sent", got[key]["reason"])
+        self.assertIn("'New group'", got["enter_other_text"]["reason"], "it says what the field shows")
+
+    def test_escape_is_sent_only_while_a_context_menu_is_seen_open_and_vs_code_is_in_front(self):
+        clear = "[PanelInput]::OnEscape = [System.Action]{ $script:Menus = @() }"
+        got = self.run_scenarios(
+            "$o.no_menu = Scenario { } { Close-GroupMenus }\n"
+            f"$o.open = Scenario {{ $script:Menus = @('menu'); {clear} }} {{ Close-GroupMenus }}\n"
+            f"$o.two_menus = Scenario {{ $script:Menus = @('menu', 'sub'); [PanelInput]::OnEscape = [System.Action]{{ $script:Menus = @($script:Menus | Select-Object -First ($script:Menus.Count - 1)) }} }} {{ Close-GroupMenus }}\n"
+            "$o.stuck = Scenario { $script:Menus = @('menu') } { Close-GroupMenus }\n"
+            "$o.not_front = Scenario { $script:Menus = @('menu'); [PanelNative]::Fg = [IntPtr]9 } { Close-GroupMenus }\n"
+            "$o.closes_itself = Scenario { $script:Menus = @('menu'); $script:MenuInvoked = $true; $script:OnSleep = { $script:Menus = @() } } { Close-GroupMenus }\n"
+        )
+        self.assertEqual(got["no_menu"]["calls"], "", "never an Escape with no menu in sight")
+        self.assertEqual(got["open"]["calls"], "escape")
+        self.assertEqual(got["two_menus"]["calls"], "escape escape", "the submenu, then the menu")
+        self.assertEqual(got["stuck"]["calls"], "escape escape escape escape", "bounded")
+        self.assertIn("a context menu is still open", got["stuck"]["notes"])
+        self.assertEqual(got["not_front"]["calls"], "", "Escape would reach another window")
+        self.assertTrue(got["not_front"]["notes"])
+        self.assertEqual(got["closes_itself"]["calls"], "", "a menu that is closing after its item was invoked gets no Escape (it could stop a running chat)")
+
+    def test_vs_code_is_brought_to_the_front_once_or_the_run_stops_with_exit_3_and_nothing_sent(self):
+        got = self.run_scenarios(
+            "$o.already = Scenario { } { Move-GroupFront }\n"
+            "$o.works = Scenario { [PanelNative]::Fg = [IntPtr]9 } { Move-GroupFront }\n"
+            "$o.refused = Scenario { [PanelNative]::Fg = [IntPtr]9; [PanelInput]::FrontWorks = $false } { Move-GroupFront }\n"
+        )
+        self.assertEqual((got["already"]["code"], got["already"]["calls"]), (0, ""))
+        self.assertEqual((got["works"]["code"], got["works"]["calls"], got["works"]["fg"]), (0, "front5", 5))
+        self.assertEqual((got["refused"]["code"], got["refused"]["calls"], got["refused"]["fg"]), (3, "front5", 9))
+        self.assertIn("did not come to the foreground", got["refused"]["reason"])
+
+    def test_the_foreground_goes_back_only_while_vs_code_has_it_the_window_exists_and_he_did_not_act(self):
+        got = self.run_scenarios(
+            "$o.back = Scenario { } { Restore-GroupForeground ([IntPtr]9) }\n"
+            "$o.he_acted = Scenario { [PanelNative]::Tick = 8 } { Restore-GroupForeground ([IntPtr]9) }\n"
+            "$o.was_vs_code = Scenario { } { Restore-GroupForeground ([IntPtr]5) }\n"
+            "$o.none = Scenario { } { Restore-GroupForeground ([IntPtr]::Zero) }\n"
+            "$o.he_moved_on = Scenario { [PanelNative]::Fg = [IntPtr]11 } { Restore-GroupForeground ([IntPtr]9) }\n"
+            "$o.gone = Scenario { [PanelNative]::Alive = $false } { Restore-GroupForeground ([IntPtr]9) }\n"
+            "$o.hidden = Scenario { [PanelNative]::Visible = $false } { Restore-GroupForeground ([IntPtr]9) }\n"
+            "$o.fails = Scenario { [PanelInput]::FrontWorks = $false } { Restore-GroupForeground ([IntPtr]9) }\n"
+        )
+        self.assertEqual((got["back"]["calls"], got["back"]["fg"], got["back"]["notes"]), ("front9", 9, []))
+        self.assertEqual((got["he_acted"]["calls"], got["he_acted"]["fg"]), ("", 5))
+        self.assertTrue(got["he_acted"]["notes"])
+        for key in ("was_vs_code", "none", "he_moved_on", "gone", "hidden"):
+            self.assertEqual(got[key]["calls"], "", key)
+        self.assertEqual((got["fails"]["calls"], got["fails"]["notes"], got["fails"]["failed"]), ("front9", ["VS Code was left in front"], True))
+
+
+@unittest.skipUnless(POWERSHELL, "needs Windows PowerShell")
+class GroupRunBehaviourTests(unittest.TestCase):
+    """Do-Group's order of work, with every step mocked: what is touched, and in what order, for a refusal, a nothing to do,
+    a success, a VS Code that does not come forward and a step that fails."""
+
+    STAGE = (
+        GroupInputBehaviourTests.NATIVE
+        + "$script:Items = @(); $script:Full = $false; $script:FullReads = 0; $script:StepFails = $false; $script:FrontFails = $false\n"
+        "$script:WaitUntil = (Get-Date).AddMinutes(5)\n"
+        "function Enter-Run([string]$Id) { $script:Seq += 'enter-run' }\n"
+        "function Ensure-Screen { $script:Seq += 'ensure-screen' }\n"
+        "function Wait-Idle([string]$What) { $script:Seq += 'wait-idle' }\n"
+        "function Stop-IfCancelled { }\nfunction Write-Waiting([string]$Reason) { $script:Seq += 'waiting' }\nfunction Clear-Waiting { }\n"
+        "function Test-FullScreenFront { $script:FullReads++; [bool]($script:Full -and $script:FullReads -le 2) }\n"
+        "$script:CameBack = $false\n"
+        "function Get-ListItems($w) { if ($script:CameBack) { [PanelNative]::Idle = 5 }; $script:Items }\n"
+        "function Move-GroupFront { $script:Seq += 'front'; if ($script:FrontFails) { Stop-Panel 3 'no front' } }\n"
+        "function Step-GroupCreate([string]$Name) { $script:Seq += 'step'; if ($script:StepFails) { Stop-Panel 1 'the step failed' }; 'created' }\n"
+        "function Step-GroupRename([string]$Old, [string]$New, $Rows) { $script:Seq += 'step'; 'renamed' }\n"
+        "function Step-GroupDelete([string]$Name) { $script:Seq += 'step'; 'deleted' }\n"
+        "function Step-GroupAdd([string]$Id, [string]$Name) { $script:Seq += 'step'; 'added' }\n"
+        "function Step-GroupRemove([string]$Id) { $script:Seq += 'step'; 'removed' }\n"
+        "function Get-GroupLeftText { 'LEFT: a half-done thing.' }\n"
+        "function Close-GroupMenus { $script:Seq += 'close-menus' }\n"
+        "function Restore-Pointer($Old, $Placed) { $script:Seq += 'restore-pointer' }\n"
+        "function Restore-GroupForeground($Prev) { $script:Seq += 'restore-foreground' }\n"
+        "function Run([scriptblock]$Setup, [scriptblock]$Body) {\n"
+        "  [PanelNative]::Reset(); $script:CameBack = $false; $script:Seq = @(); $script:Full = $false; $script:FullReads = 0; $script:StepFails = $false; $script:FrontFails = $false; $script:WaitUntil = (Get-Date).AddMinutes(5)\n"
+        "  & $Setup\n"
+        "  $code = 0; $reason = ''; $value = $null\n"
+        "  try { $value = & $Body } catch { $pe = Get-PanelExit $_; if ($null -ne $pe) { $code = $pe.Code; $reason = $pe.Reason } else { $code = 99; $reason = $_.Exception.Message } }\n"
+        "  [pscustomobject]@{ code = $code; reason = $reason; value = [string]$value; seq = ($script:Seq -join ' ') }\n"
+        "}\n"
+    )
+    FUNCS = ["Do-Group", "Get-PanelExit", "Test-PointerAt", "Set-OwnTick"] + GROUP_PURE
+
+    def run_stage(self, body: str):
+        return run_functions(self.FUNCS, self.STAGE + "$o = [ordered]@{}\n" + body + "ConvertTo-Json -Compress -Depth 5 -InputObject $o\n")
+
+    def items(self, *items: dict) -> str:
+        return f"$script:Items = {L(*items)}"
+
+    def test_a_refusal_and_a_nothing_to_do_touch_nothing_and_a_bad_name_is_refused_before_anything_waits(self):
+        got = self.run_stage(
+            f"$o.refused = Run {{ {self.items(H('Main', 0), H('Ungrouped', 0))} }} {{ Do-Group 'create' '' 'Main' '' $false }}\n"
+            f"$o.nothing = Run {{ {self.items(H('Main', 0), H('Ungrouped', 0))} }} {{ Do-Group 'rename' '' 'Main' 'Main' $false }}\n"
+            f"$o.no_row = Run {{ {self.items(H('Main', 0), H('Ungrouped', 0))} }} {{ Do-Group 'add' 'zz' 'Main' '' $false }}\n"
+            f"$o.bad_name = Run {{ {self.items(H('Main', 0))} }} {{ Do-Group 'create' '' 'Ungrouped' '' $false }}\n"
+            f"$o.non_empty = Run {{ {self.items(H('Main', 1), R('a'))} }} {{ Do-Group 'delete' '' 'Main' '' $false }}\n"
+        )
+        self.assertEqual((got["refused"]["code"], got["refused"]["seq"]), (5, "enter-run ensure-screen wait-idle"), "no front, no step, no clean-up: nothing was touched")
+        self.assertEqual((got["nothing"]["code"], got["nothing"]["seq"]), (0, "enter-run ensure-screen wait-idle"))
+        self.assertIn("nothing to do", got["nothing"]["value"])
+        self.assertEqual((got["no_row"]["code"], got["no_row"]["seq"]), (2, "enter-run ensure-screen wait-idle"))
+        self.assertEqual((got["bad_name"]["code"], got["bad_name"]["seq"]), (5, ""), "refused before the run waits for him")
+        self.assertEqual((got["non_empty"]["code"], got["non_empty"]["seq"]), (5, "enter-run ensure-screen wait-idle"))
+
+    def test_a_success_brings_vs_code_forward_runs_the_step_then_closes_the_menu_puts_the_pointer_back_and_hands_the_foreground_back(self):
+        got = self.run_stage(f"$o.ok = Run {{ {self.items(H('Main', 0), H('Ungrouped', 0))} }} {{ Do-Group 'create' '' 'Work' '' $false }}\n")["ok"]
+        self.assertEqual(got["code"], 0)
+        self.assertEqual(got["value"], "created")
+        self.assertEqual(got["seq"], "enter-run ensure-screen wait-idle front step close-menus restore-pointer restore-foreground")
+
+    def test_each_kind_runs_its_own_step(self):
+        items = f"{self.items(H('Main', 1), R('a'), H('Work', 0), H('Ungrouped', 1), R('d'))}"
+        got = self.run_stage(
+            f"$o.rename = Run {{ {items} }} {{ Do-Group 'rename' '' 'Main' 'Plans' $false }}\n"
+            f"$o.delete = Run {{ {items} }} {{ Do-Group 'delete' '' 'Work' '' $false }}\n"
+            f"$o.add = Run {{ {items} }} {{ Do-Group 'add' 'd' 'Main' '' $false }}\n"
+            f"$o.remove = Run {{ {items} }} {{ Do-Group 'remove' 'a' '' '' $false }}\n"
+        )
+        self.assertEqual([got[k]["value"] for k in ("rename", "delete", "add", "remove")], ["renamed", "deleted", "added", "removed"])
+
+    def test_vs_code_that_does_not_come_forward_is_exit_3_with_no_step_and_the_clean_up_still_runs(self):
+        got = self.run_stage(f"$o.no_front = Run {{ {self.items(H('Main', 0))}; $script:FrontFails = $true }} {{ Do-Group 'create' '' 'Work' '' $false }}\n")["no_front"]
+        self.assertEqual(got["code"], 3)
+        self.assertEqual(got["seq"], "enter-run ensure-screen wait-idle front close-menus restore-pointer restore-foreground")
+        self.assertTrue(got["reason"].startswith("no front. "))
+
+    def test_a_failing_step_is_still_cleaned_up_and_its_message_says_what_was_left(self):
+        got = self.run_stage(f"$o.failed = Run {{ {self.items(H('Main', 0))}; $script:StepFails = $true }} {{ Do-Group 'create' '' 'Work' '' $false }}\n")["failed"]
+        self.assertEqual(got["code"], 1)
+        self.assertEqual(got["reason"], "the step failed. LEFT: a half-done thing.")
+        self.assertEqual(got["seq"], "enter-run ensure-screen wait-idle front step close-menus restore-pointer restore-foreground")
+
+    def test_a_full_screen_window_is_waited_out_before_vs_code_is_brought_forward_and_then_it_is_exit_3_at_the_deadline(self):
+        got = self.run_stage(
+            f"$o.waited = Run {{ {self.items(H('Main', 0))}; $script:Full = $true }} {{ Do-Group 'create' '' 'Work' '' $false }}\n"
+            f"$o.deadline = Run {{ {self.items(H('Main', 0))}; $script:Full = $true; $script:FullReads = -100; $script:WaitUntil = (Get-Date).AddSeconds(-1) }} {{ Do-Group 'create' '' 'Work' '' $false }}\n"
+        )
+        self.assertEqual(got["waited"]["code"], 0)
+        self.assertEqual(got["waited"]["seq"].split()[:7], ["enter-run", "ensure-screen", "wait-idle", "waiting", "wait-idle", "wait-idle", "front"], "waited, logged once, then in front")
+        self.assertEqual(got["deadline"]["code"], 3)
+        self.assertNotIn("front", got["deadline"]["seq"].split())
+        self.assertIn("full-screen window", got["deadline"]["reason"])
+
+    def test_the_log_line_of_a_group_action_carries_no_group_name_and_no_reason_text(self):
+        with tempfile.TemporaryDirectory() as d:
+            body = (
+                "$Utf8 = New-Object System.Text.UTF8Encoding($false)\n"
+                f"$LogDir = '{d}'; $LogFile = Join-Path $LogDir 'claude-panel.log'\n"
+                "$script:Notes = @('a note'); $script:Clock = [Diagnostics.Stopwatch]::StartNew()\n"
+                "Write-PanelLog 'group-create' '' 5 \"a group named 'Secret Name' already exists\"\n"
+                "Write-PanelLog 'group-add' 'abc-123' 1 'the list does not show Secret Name'\n"
+                "Write-PanelLog 'send' 'abc-123' 5 'a reason'\n"
+                "ConvertTo-Json -Compress -InputObject @([System.IO.File]::ReadAllLines($LogFile))\n"
+            )
+            got = run_functions(["Write-PanelLog", "Add-LogLine"], body)
+        self.assertNotIn("Secret", " ".join(got))
+        self.assertRegex(got[0], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d group-create - exit=5 secs=\d+\.\d \[a note\]$")
+        self.assertRegex(got[1], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d group-add abc-123 exit=1 secs=\d+\.\d \[a note\]$")
+        self.assertIn("a reason", got[2], "other actions log their reason as before")
+
+
+class GroupSourceTests(unittest.TestCase):
+    def test_the_native_block_compiles_in_windows_powershell_and_the_input_struct_is_the_size_windows_expects(self):
+        if not POWERSHELL:
+            self.skipTest("needs Windows PowerShell")
+        script = (
+            "Add-Type -TypeDefinition @'\n" + csharp_block(source()) + "\n'@\n"
+            "$nt = [PanelInput].GetNestedType('INPUT', [System.Reflection.BindingFlags]'NonPublic')\n"
+            "$size = [System.Runtime.InteropServices.Marshal].GetMethod('SizeOf', [type[]]@([type])).Invoke($null, @(,$nt))\n"
+            "ConvertTo-Json -Compress -InputObject ([ordered]@{ size = $size; ptr = [IntPtr]::Size; methods = @([PanelInput].GetMethods() | Where-Object { $_.DeclaringType -eq [PanelInput] } | ForEach-Object { $_.Name }) })\n"
+        )
+        proc = run_powershell(script)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        got = json.loads(proc.stdout)
+        self.assertEqual(got["size"], 40 if got["ptr"] == 8 else 28, "the INPUT structure SendInput is given")
+        self.assertEqual(got["methods"], PANEL_INPUT_METHODS)
+
+    def test_the_header_names_the_group_actions_and_the_one_class_that_sends_input(self):
+        header = " ".join(source().split("param(")[0].replace("# ", "").split())
+        for part in ["groups reads only", "group-create", "group-rename", "group-delete", "group-add", "group-remove", "PanelInput", "right-click",
+                     "only while the keyboard focus is the group's name field", "Escape only while a context menu is seen open",
+                     "no group name and no typed text is ever logged", "hands the foreground back"]:
+            self.assertIn(part, header, part)
+        for action in ["groups", "group-create -Group", "group-rename -Group", "group-delete -Group", "group-add -Session", "group-remove -Session"]:
+            self.assertIn(action, source())
+
+    def test_a_group_step_never_waits_for_a_chat_and_names_no_text_variable_in_a_reason(self):
+        for name in GROUP_FUNCTIONS:
+            body = code_lines(function_text(name))
+            self.assertNotIn("Wait-RowIdle", body, name)
+            self.assertNotIn("Get-RecordState", body, name)
+            self.assertNotIn("Close-Checked", body, name)
+        # No group function reads the bridge: groups are not a bridge action.
+        self.assertNotIn("Invoke-Bridge", code_lines(function_text("Do-Group")))
+
+
+# ---------------------------------------------------------------- review fixes for the group actions
+
+
+@unittest.skipUnless(POWERSHELL, "needs Windows PowerShell")
+class GroupEscapeFocusTests(unittest.TestCase):
+    """Escape goes only to a context menu that has the keyboard focus, and a menu that is slow to leave the tree gets no second one."""
+
+    def run_scenarios(self, body: str):
+        return run_functions(GroupInputBehaviourTests.FUNCS, GroupInputBehaviourTests.NATIVE + "$o = [ordered]@{}\n" + body + "ConvertTo-Json -Compress -Depth 5 -InputObject $o\n")
+
+    def test_a_menu_seen_open_while_the_focus_is_not_inside_one_gets_no_escape_and_a_note(self):
+        got = self.run_scenarios("$o.chat_focus = Scenario { $script:Menus = @('menu'); $script:FocusInMenu = $false } { Close-GroupMenus }\n")["chat_focus"]
+        self.assertEqual(got["calls"], "", "the focus is on something else (a chat): Escape would reach it")
+        self.assertTrue(any("keyboard focus is not in it" in n for n in got["notes"]), got["notes"])
+        self.assertTrue(any("a context menu was left open" in n for n in got["notes"]), got["notes"])
+
+    def test_a_closed_menu_that_is_still_listed_for_a_while_gets_one_escape_only(self):
+        got = self.run_scenarios(
+            "$o.slow = Scenario { $script:Menus = @('menu'); $script:OnSleep = { $script:Sl++; if ($script:Sl -ge 8) { $script:Menus = @() } } } { Close-GroupMenus }\n"
+            "$o.fast = Scenario { $script:Menus = @('menu'); [PanelInput]::OnEscape = [System.Action]{ $script:Menus = @() } } { Close-GroupMenus }\n"
+        )
+        self.assertEqual(got["slow"]["calls"], "escape", "the open menus are counted again for up to a second before anything else is decided")
+        self.assertEqual(got["slow"]["notes"], [])
+        self.assertEqual(got["fast"]["calls"], "escape")
+
+    def test_when_the_focus_leaves_the_menu_after_an_escape_the_next_round_sends_nothing(self):
+        got = self.run_scenarios(
+            "$o.left = Scenario { $script:Menus = @('menu', 'sub'); [PanelInput]::OnEscape = [System.Action]{ $script:FocusInMenu = $false } } { Close-GroupMenus }\n"
+        )["left"]
+        self.assertEqual(got["calls"], "escape", "one Escape (the focus was in the menu); the next round sees the focus elsewhere")
+        self.assertTrue(any("keyboard focus is not in it" in n for n in got["notes"]), got["notes"])
+
+
+@unittest.skipUnless(POWERSHELL, "needs Windows PowerShell")
+class GroupNameFieldOwnerTests(unittest.TestCase):
+    """Typing goes only into the name field of the header the run is about: the right-clicked one for a rename, a header that was
+    not in the list before the button was pressed for a create. A staged element tree stands in for the screen."""
+
+    STAGE = (
+        "Add-Type -AssemblyName UIAutomationClient\n"
+        "$AE = [System.Windows.Automation.AutomationElement]; $CT = [System.Windows.Automation.ControlType]; $TS = [System.Windows.Automation.TreeScope]\n"
+        "$script:Parent = @{}; $script:Focus = $null; $script:FieldOwner = $null; $RowPrefix = 'sessions-list-row-'\n"
+        "function El([string]$Id, [string]$Class, $Type, [string]$Name, $Parent) {\n"
+        "  $e = [pscustomobject]@{ Id = $Id; Current = [pscustomobject]@{ ClassName = $Class; ControlType = $Type; Name = $Name; AutomationId = '' } }\n"
+        "  $e | Add-Member -MemberType ScriptMethod -Name GetRuntimeId -Value { @(1, ([int]$this.Id.GetHashCode() -band 0xffff)) }\n"
+        "  if ($null -ne $Parent) { $script:Parent[$Id] = $Parent }\n"
+        "  $e\n"
+        "}\n"
+        "function Get-ParentOf($El) { $script:Parent[$El.Id] }\n"
+        "function Test-SameElement($A, $B) { $A.Id -eq $B.Id }\n"
+        "function Get-FocusedElement { $script:Focus }\n"
+        "$sessions = El 'sessions' 'sessionList_x' $CT::Group 'Sessions' $null\n"
+        "$other = El 'other' 'panel_x' $CT::Group 'Other panel' $null\n"
+        "$headerA = El 'headerA' 'groupHeader_a' $CT::Button 'Main 1' $sessions\n"
+        "$headerB = El 'headerB' 'groupHeader_b' $CT::Button 'Q3 2026 2' $sessions\n"
+        "$fieldA = El 'fieldA' 'groupName_a groupNameEditing_a' $CT::Group '' $headerA\n"
+        "$fieldB = El 'fieldB' 'groupName_b groupNameEditing_b' $CT::Group '' $headerB\n"
+        "$plainA = El 'plainA' 'groupName_a' $CT::Group '' $headerA\n"
+        "$strayHeader = El 'strayHeader' 'groupHeader_c' $CT::Button 'Stray 0' $other\n"
+        "$strayField = El 'strayField' 'groupName_c groupNameEditing_c' $CT::Group '' $strayHeader\n"
+        "$noHeaderField = El 'noHeaderField' 'groupName_d groupNameEditing_d' $CT::Group '' $sessions\n"
+        "function Owner([string]$Mode, $Element, $Known) { $script:FieldOwner = [pscustomobject]@{ Mode = $Mode; Element = $Element; Known = $Known } }\n"
+        "function Field([scriptblock]$Setup) { $script:Focus = $null; $script:FieldOwner = $null; & $Setup; $f = Get-NameField; if ($null -eq $f) { 'none' } else { $f.Id } }\n"
+    )
+
+    def run_stage(self, body: str):
+        return run_functions(["Get-NameField", "Get-RuntimeKey", "Test-FocusInOpenMenu"], self.STAGE + "$o = [ordered]@{}\n" + body + "ConvertTo-Json -Compress -Depth 5 -InputObject $o\n")
+
+    def test_a_rename_types_only_into_the_field_of_the_header_that_was_right_clicked(self):
+        got = self.run_stage(
+            "$o.own = Field { Owner 'is' $headerA @(); $script:Focus = $fieldA }\n"
+            "$o.other_groups_field = Field { Owner 'is' $headerA @(); $script:Focus = $fieldB }\n"
+            "$o.no_owner = Field { $script:Focus = $fieldA }\n"
+        )
+        self.assertEqual((got["own"], got["other_groups_field"], got["no_owner"]), ("fieldA", "none", "none"))
+
+    def test_a_create_types_only_into_a_header_that_was_not_in_the_list_before_the_button_was_pressed(self):
+        got = self.run_stage(
+            "$known = @((Get-RuntimeKey $headerA))\n"
+            "$o.new_header = Field { Owner 'new' $null $known; $script:Focus = $fieldB }\n"
+            "$o.old_header = Field { Owner 'new' $null $known; $script:Focus = $fieldA }\n"
+            "$noKey = [pscustomobject]@{ Id = 'headerNK'; Current = [pscustomobject]@{ ClassName = 'groupHeader_n'; ControlType = $CT::Button; Name = 'x'; AutomationId = '' } }\n"
+            "$script:Parent['headerNK'] = $sessions\n"
+            "$fieldNK = El 'fieldNK' 'groupName_n groupNameEditing_n' $CT::Group '' $noKey\n"
+            "$o.no_key = Field { Owner 'new' $null @(); $script:Focus = $fieldNK }\n"
+        )
+        self.assertEqual((got["new_header"], got["old_header"], got["no_key"]), ("fieldB", "none", "none"), "a header whose identity cannot be read is never accepted")
+
+    def test_the_focus_must_be_a_name_field_inside_a_header_inside_the_sessions_group(self):
+        got = self.run_stage(
+            "$o.not_editing = Field { Owner 'is' $headerA @(); $script:Focus = $plainA }\n"
+            "$o.outside_sessions = Field { Owner 'is' $strayHeader @(); $script:Focus = $strayField }\n"
+            "$o.no_header = Field { Owner 'is' $headerA @(); $script:Focus = $noHeaderField }\n"
+            "$o.nothing_focused = Field { Owner 'is' $headerA @() }\n"
+        )
+        for key in ("not_editing", "outside_sessions", "no_header", "nothing_focused"):
+            self.assertEqual(got[key], "none", key)
+
+    def test_the_focus_is_in_an_open_menu_only_when_it_or_an_ancestor_is_a_context_menu(self):
+        got = self.run_stage(
+            "$menu = El 'menu' 'contextMenu_x' $CT::Menu '' $sessions\n"
+            "$item = El 'item' 'menuItem_x' $CT::MenuItem 'Rename group' $menu\n"
+            "$sub = El 'sub' 'contextMenu_y' $CT::Menu '' $sessions\n"
+            "$subItem = El 'subItem' 'menuItem_y' $CT::MenuItem 'Main' $sub\n"
+            "$plainMenu = El 'plainMenu' 'someOtherMenu' $CT::Menu '' $sessions\n"
+            "$plainItem = El 'plainItem' 'x' $CT::MenuItem 'x' $plainMenu\n"
+            "$chatInput = El 'chatInput' 'messageInput_x' $CT::Edit 'Message input' $other\n"
+            "$o.item = (& { $script:Focus = $item; Test-FocusInOpenMenu })\n"
+            "$o.sub_item = (& { $script:Focus = $subItem; Test-FocusInOpenMenu })\n"
+            "$o.not_a_context_menu = (& { $script:Focus = $plainItem; Test-FocusInOpenMenu })\n"
+            "$o.chat = (& { $script:Focus = $chatInput; Test-FocusInOpenMenu })\n"
+            "$o.nothing = (& { $script:Focus = $null; Test-FocusInOpenMenu })\n"
+        )
+        self.assertEqual((got["item"], got["sub_item"], got["not_a_context_menu"], got["chat"], got["nothing"]), (True, True, False, False, False))
+
+    def test_headers_outside_the_sessions_group_are_not_part_of_the_list(self):
+        stage = self.STAGE + (
+            "function Get-HeaderInfo($b, $tw) { [pscustomobject]@{ Name = $b.Id; Count = 1; Editing = $false } }\n"
+            "$win = [pscustomobject]@{ }\n"
+            "$win | Add-Member -MemberType ScriptMethod -Name FindAll -Value { param($scope, $cond) @($headerA, $strayHeader, $headerB) }\n"
+            "$o = [ordered]@{}\n"
+            "$o.names = @(Get-ListItems $win | ForEach-Object { $_.Name })\n"
+            "$o.under = @((Test-UnderSessions $headerA), (Test-UnderSessions $strayHeader), (Test-UnderSessions $fieldB), (Test-UnderSessions $sessions))\n"
+            "ConvertTo-Json -Compress -Depth 5 -InputObject $o\n"
+        )
+        got = run_functions(["Get-ListItems", "Test-UnderSessions"], stage)
+        self.assertEqual(got["names"], ["headerA", "headerB"], "the stray header (not under Sessions) is left out")
+        self.assertEqual(got["under"], [True, False, True, False])
+
+
+@unittest.skipUnless(POWERSHELL, "needs Windows PowerShell")
+class GroupReviewPlanTests(unittest.TestCase):
+    """Plans and done-checks tightened by review: an open name field refuses every plan, an unreadable count needs -Force, and a delete is
+    done only on a read that has the Ungrouped header."""
+
+    def plans(self, exprs: dict, fixtures: str = ""):
+        wrapped = {k: f"(& {{ $p = {v}; [pscustomobject]@{{ act = $p.Act; code = $p.Code; text = $p.Text }} }})" for k, v in exprs.items()}
+        return run_exprs(wrapped, fixtures)
+
+    def test_every_plan_refuses_with_exit_5_while_a_name_field_is_open_and_says_which(self):
+        got = self.plans(
+            {
+                "create": "Get-GroupCreatePlan $E 'Work'",
+                "rename": "Get-GroupRenamePlan $E 'Main' 'Plans'",
+                "delete": "Get-GroupDeletePlan $E 'Empty' $true",
+                "add": "Get-GroupAddPlan $E 'a' 'Main'",
+                "remove": "Get-GroupRemovePlan $E 'a'",
+                "via_kind": "Get-GroupPlan 'create' $E '' 'Work' '' $false",
+                "closed_create": "Get-GroupCreatePlan $C 'Work'",
+            },
+            f"$E = {L(H('Main', 1), R('a'), H('Empty', 0), H('Half typed', 0, True), H('Ungrouped', 0))}\n$C = {L(H('Main', 0), H('Ungrouped', 0))}\n",
+        )
+        for key in ("create", "rename", "delete", "add", "remove", "via_kind"):
+            self.assertEqual((got[key]["act"], got[key]["code"]), ("refuse", 5), key)
+            self.assertIn("name field is already open", got[key]["text"], key)
+            self.assertIn("'Half typed'", got[key]["text"], f"{key}: it names the header")
+            self.assertIn("nothing was changed", got[key]["text"], key)
+        self.assertEqual(got["closed_create"]["act"], "do")
+
+    def test_a_delete_whose_count_could_not_be_read_needs_force_and_says_so(self):
+        got = self.plans(
+            {
+                "unknown": "Get-GroupDeletePlan $L 'Mystery' $false",
+                "null_count": "Get-GroupDeletePlan $L 'NoCount' $false",
+                "forced": "Get-GroupDeletePlan $L 'Mystery' $true",
+                "empty": "Get-GroupDeletePlan $L 'Empty' $false",
+            },
+            f"$L = {L(H('Mystery', -1), H('NoCount', 0), H('Empty', 0), H('Ungrouped', 0))}\n$L[1].Count = $null\n",
+        )
+        for key in ("unknown", "null_count"):
+            self.assertEqual((got[key]["act"], got[key]["code"]), ("refuse", 5), key)
+            self.assertIn("could not be read", got[key]["text"], key)
+            self.assertIn("-Force", got[key]["text"], key)
+        self.assertEqual(got["forced"]["act"], "do")
+        self.assertEqual(got["empty"]["act"], "do", "a count that reads 0 is still a known empty group")
+
+    def test_a_delete_is_done_only_on_a_read_that_shows_the_ungrouped_header_and_no_such_group(self):
+        got = run_exprs(
+            {
+                "empty_read": "Test-GroupDeleteDone @() 'Gone'",
+                "half_drawn": "Test-GroupDeleteDone $H 'Gone'",
+                "real_read": "Test-GroupDeleteDone $L 'Gone'",
+                "still_there": "Test-GroupDeleteDone $L 'Main'",
+            },
+            f"$L = {L(H('Main', 0), H('Ungrouped', 0))}\n$H = {L(H('Main', 0))}\n",
+        )
+        self.assertEqual(got, {"empty_read": False, "half_drawn": False, "real_read": True, "still_there": False})
+
+    def test_no_other_done_check_is_true_on_an_empty_read(self):
+        got = run_exprs(
+            {
+                "create": "Test-GroupCreateDone @() 'Work'",
+                "rename": "Test-GroupRenameDone @() 'Main' 'Plans' @()",
+                "add": "Test-GroupAddDone @() 'a' 'Main'",
+                "remove": "Test-GroupRemoveDone @() 'a'",
+            }
+        )
+        self.assertEqual(got, {"create": False, "rename": False, "add": False, "remove": False})
+
+
+@unittest.skipUnless(POWERSHELL, "needs Windows PowerShell")
+class GroupRunReviewTests(unittest.TestCase):
+    def run_stage(self, body: str):
+        return run_functions(GroupRunBehaviourTests.FUNCS, GroupRunBehaviourTests.STAGE + "$o = [ordered]@{}\n" + body + "ConvertTo-Json -Compress -Depth 5 -InputObject $o\n")
+
+    def test_if_he_came_back_while_the_list_was_read_the_run_stops_with_exit_3_before_anything_is_touched(self):
+        items = GroupRunBehaviourTests().items(H("Main", 0), H("Ungrouped", 0))
+        got = self.run_stage(
+            f"$o.back = Run {{ {items}; $script:CameBack = $true }} {{ Do-Group 'create' '' 'Work' '' $false }}\n"
+            f"$o.calm = Run {{ {items} }} {{ Do-Group 'create' '' 'Work' '' $false }}\n"
+        )
+        self.assertEqual(got["back"]["code"], 3)
+        self.assertIn("he came back", got["back"]["reason"])
+        self.assertIn("nothing was changed", got["back"]["reason"])
+        self.assertEqual(got["back"]["seq"], "enter-run ensure-screen wait-idle", "no front, no step, no clean-up")
+        self.assertEqual(got["calm"]["code"], 0)
+        self.assertIn("front", got["calm"]["seq"].split())
+
+    def test_the_name_field_owner_is_cleared_at_the_start_of_every_group_run(self):
+        items = GroupRunBehaviourTests().items(H("Main", 0), H("Ungrouped", 0))
+        got = self.run_stage(f"$script:FieldOwner = 'left over'\n$o.run = Run {{ {items} }} {{ Do-Group 'create' '' 'Work' '' $false }}\n$o.owner = [string]$script:FieldOwner\n")
+        self.assertEqual(got["run"]["code"], 0)
+        self.assertEqual(got["owner"], "", "a stale owner from an earlier run cannot let a field through")
+
+
+class GroupMinimizeDecisionTests(unittest.TestCase):
+    def test_a_group_run_minimizes_again_by_no_input_since_its_own_last_input_not_by_idle_time(self):
+        if not POWERSHELL:
+            self.skipTest("needs Windows PowerShell")
+        got = ForegroundAtEndTests().run_e(
+            "function Fresh3 { Fresh; $script:WasMinimized = $true; $script:SavedPlacement = [int[]]@(2, 2, 0, 0, 0, 0, 1, 2, 3, 4); $script:GroupRun = $true; $script:OwnTick = 7; [PanelNative]::Tick = 7; [PanelNative]::Idle = 5; [PanelNative]::Fg = [IntPtr]9 }\n"
+            "Fresh3; Restore-Screen; $o.own_input_only = Out-State\n"
+            "Fresh3; [PanelNative]::Tick = 8; Restore-Screen; $o.he_acted = Out-State\n"
+            "Fresh3; $script:GroupRun = $false; Restore-Screen; $o.other_action = Out-State\n"
+            "Fresh3; $script:OwnTick = $null; [PanelNative]::Idle = 999999; Restore-Screen; $o.no_input_sent = Out-State\n"
+            "Fresh3; $script:OwnTick = $null; Restore-Screen; $o.no_input_sent_he_is_active = Out-State\n"
+        )
+        self.assertIn("minplace", got["own_input_only"]["calls"], "the idle time is low because of the driver's own input; nothing came after it, so it is minimized")
+        self.assertNotIn("he is at the computer", " ".join(got["own_input_only"]["notes"]))
+        self.assertNotIn("minplace", got["he_acted"]["calls"])
+        self.assertIn("VS Code was left open: it is visible on his screen and he is at the computer", got["he_acted"]["notes"])
+        self.assertNotIn("minplace", got["other_action"]["calls"], "every other action still decides by idle time")
+        self.assertIn("VS Code was left open: it is visible on his screen and he is at the computer", got["other_action"]["notes"])
+        self.assertIn("minplace", got["no_input_sent"]["calls"])
+        self.assertNotIn("minplace", got["no_input_sent_he_is_active"]["calls"], "a run that sent no input is judged by idle time as before")

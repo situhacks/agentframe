@@ -1,11 +1,25 @@
 # The Claude panel driver, version 2. It manages chats in the Claude Code panel of the one VS Code window
-# whose title holds the vault folder name, and nothing else. It sends no key events and no mouse events:
-# it reads and acts through Windows UI Automation patterns (read, Invoke, ExpandCollapse, SelectionItem,
-# ScrollItem) and through the AgentFrame bridge extension (system/vscode-bridge), which opens, reveals and
-# closes chat tabs and prefills a chat's input from a file inbox. The one exception is 'archive': the
-# row's Archive button exists only while the pointer rests on the row, so 'archive' moves the pointer onto
-# the row and back; nothing is clicked or typed. Text always arrives in a UTF-8 file, never as an argument,
-# and is never logged.
+# whose title holds the vault folder name, and nothing else. Except for the group actions below it sends no key
+# events and no mouse events: it reads and acts through Windows UI Automation patterns (read, Invoke,
+# ExpandCollapse, SelectionItem, ScrollItem) and through the AgentFrame bridge extension (system/vscode-bridge),
+# which opens, reveals and closes chat tabs and prefills a chat's input from a file inbox. Besides the group
+# actions the one exception is 'archive': the row's Archive button exists only while the pointer rests on the
+# row, so 'archive' moves the pointer onto the row and back; nothing is clicked or typed. Text always arrives in
+# a UTF-8 file, never as an argument, and is never logged (a group's name is the one short value passed as an
+# argument; no group name and no typed text is ever logged).
+#
+# Group actions (groups reads only; group-create, group-rename, group-delete, group-add, group-remove change the
+# list) are the one place that sends synthetic input, because the menus that hold them open only on a real
+# right-click and a group's name is typed. All of it lives in one native class, PanelInput: a right click at the
+# pointer, Unicode text, Ctrl+A, Enter, Escape, and the call that brings VS Code to the front. It is used only
+# from the group functions, each behind its own check: a right click only while VS Code is in front, no menu is
+# open, the target is on screen with the pointer on it and the pointer is where the driver last put it; typing
+# only while the keyboard focus is the group's name field (inside the Sessions group), and Enter only while that
+# field shows exactly the wanted name; Escape only while a context menu is seen open and VS Code is in front. A
+# group action takes the operator's pointer and keyboard focus for a few seconds (the operator allowed it while he
+# is idle), puts the pointer back, closes a menu it opened, and hands the foreground back to the window that had
+# it. It refuses (exit 5) before touching anything when the request cannot be done, and verifies its outcome from
+# a fresh read of the list.
 # VS Code takes the keyboard focus during a run: the Claude extension opens a chat's panel with focus (the bridge's
 # open and reveal), and an Invoke on a panel control (Send, the Archive button, a model item, a row) activates the
 # window. The driver does not try to prevent that. At the end of a run, after an archive's z-order undo and before
@@ -23,11 +37,16 @@
 # VS Code above it without keyboard focus (and puts it back exactly where it was in the window order), and it waits while a
 # full-screen window is in front (the shell's notification state 2, 3 or 4), then exits 3 at the deadline.
 #
-#   list                                       JSON array: session_id, name, status, active
+#   list                                       JSON array: session_id, name, status, active, group
 #   send  -Session <id> -TextFile <path>       send the file's text to that chat (a prompt or a slash command)
-#   new   -TextFile <path> -Model <name> [-GroupId <id>]
-#                                              start a chat on that model with the file as its first message;
+#   new   -TextFile <path> -Model <name>       start a chat on that model with the file as its first message;
 #                                              prints its session id on the last line
+#   groups                                     JSON array of the list's groups: name, count, fixed (read only)
+#   group-create -Group <name>                 add a group: press New group, type the name, Enter
+#   group-rename -Group <old> -NewName <new>   right click the group, Rename group, type the new name, Enter
+#   group-delete -Group <name> [-Force]        right click the group, Delete group (a group with chats needs -Force)
+#   group-add -Session <id> -Group <name>      right click the chat's row, Add to group, that group's item
+#   group-remove -Session <id>                 right click the chat's row, Remove from group
 #   model -Session <id> [-Model <name>]        switch an idle chat's model; without -Model, list the options
 #   archive -Session <id>                      archive an idle chat: close its tab if open, rest the pointer on its
 #                                              row, invoke the row's 'Archive session' button, confirm the row left
@@ -102,7 +121,9 @@ param(
     [string]$Session = '',
     [string]$TextFile = '',
     [string]$Model = '',
-    [string]$GroupId = '',
+    [string]$Group = '',
+    [string]$NewName = '',
+    [switch]$Force,
     [int]$IdleSeconds = 120,
     [double]$WaitMinutes = 20,
     [string]$CancelFile = ''
@@ -243,6 +264,96 @@ public static class PanelNative {
         return s;
     }
 }
+
+public static class PanelInput {
+    // The one place that sends synthetic input and takes the foreground, for the group actions only (see the
+    // header). Exactly these methods: a right click at the pointer, Unicode text, Ctrl+A, Enter, Escape and
+    // BringToFront. There is no general "press this key" method, and nothing else in the driver reaches the
+    // imports below. Every caller checks its own conditions first (the group functions, each named in the tests).
+    [StructLayout(LayoutKind.Sequential)]
+    struct MOUSEINPUT { public int dx; public int dy; public uint mouseData; public uint dwFlags; public uint time; public IntPtr dwExtraInfo; }
+    [StructLayout(LayoutKind.Sequential)]
+    struct KEYBDINPUT { public ushort wVk; public ushort wScan; public uint dwFlags; public uint time; public IntPtr dwExtraInfo; }
+    [StructLayout(LayoutKind.Explicit)]
+    struct INPUTUNION { [FieldOffset(0)] public MOUSEINPUT mi; [FieldOffset(0)] public KEYBDINPUT ki; }
+    [StructLayout(LayoutKind.Sequential)]
+    struct INPUT { public uint type; public INPUTUNION u; }
+    [DllImport("user32.dll", SetLastError = true)] static extern uint SendInput(uint count, INPUT[] inputs, int size);
+    [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
+    [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr h);
+    [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+    [DllImport("user32.dll")] static extern bool AttachThreadInput(uint self, uint other, bool attach);
+    [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
+    const uint TYPE_MOUSE = 0, TYPE_KEYBOARD = 1;
+    const uint RIGHT_DOWN = 0x8, RIGHT_UP = 0x10;
+    const uint KEY_UP = 0x2, KEY_UNICODE = 0x4;
+    const ushort VK_CONTROL = 0x11, VK_A = 0x41, VK_RETURN = 0x0D, VK_ESCAPE = 0x1B;
+    const int MaxChars = 200;
+
+    static INPUT Key(ushort vk, ushort scan, uint flags) {
+        INPUT i = new INPUT();
+        i.type = TYPE_KEYBOARD;
+        i.u.ki.wVk = vk; i.u.ki.wScan = scan; i.u.ki.dwFlags = flags;
+        return i;
+    }
+    static bool Send(INPUT[] a) { return SendInput((uint)a.Length, a, Marshal.SizeOf(typeof(INPUT))) == (uint)a.Length; }
+
+    // A right button press and release where the pointer is now.
+    public static bool RightClick() {
+        INPUT[] a = new INPUT[2];
+        a[0].type = TYPE_MOUSE; a[0].u.mi.dwFlags = RIGHT_DOWN;
+        a[1].type = TYPE_MOUSE; a[1].u.mi.dwFlags = RIGHT_UP;
+        return Send(a);
+    }
+    // The text as Unicode key events (no keyboard layout involved); at most MaxChars characters.
+    public static bool TypeText(string text) {
+        if (text == null || text.Length == 0 || text.Length > MaxChars) return false;
+        INPUT[] a = new INPUT[text.Length * 2];
+        for (int i = 0; i < text.Length; i++) {
+            a[2 * i] = Key(0, text[i], KEY_UNICODE);
+            a[2 * i + 1] = Key(0, text[i], KEY_UNICODE | KEY_UP);
+        }
+        return Send(a);
+    }
+    public static bool SelectAll() {
+        INPUT[] a = new INPUT[4];
+        a[0] = Key(VK_CONTROL, 0, 0);
+        a[1] = Key(VK_A, 0, 0);
+        a[2] = Key(VK_A, 0, KEY_UP);
+        a[3] = Key(VK_CONTROL, 0, KEY_UP);
+        return Send(a);
+    }
+    public static bool Enter() {
+        INPUT[] a = new INPUT[2];
+        a[0] = Key(VK_RETURN, 0, 0);
+        a[1] = Key(VK_RETURN, 0, KEY_UP);
+        return Send(a);
+    }
+    public static bool Escape() {
+        INPUT[] a = new INPUT[2];
+        a[0] = Key(VK_ESCAPE, 0, 0);
+        a[1] = Key(VK_ESCAPE, 0, KEY_UP);
+        return Send(a);
+    }
+    // The window to the foreground: SetForegroundWindow; when another window still has it, the input queues are
+    // attached for the one call (measured to work from a background process) and detached again. True when the
+    // window has the foreground afterwards.
+    public static bool BringToFront(IntPtr h) {
+        SetForegroundWindow(h);
+        if (GetForegroundWindow() == h) return true;
+        IntPtr front = GetForegroundWindow();
+        uint self = GetCurrentThreadId();
+        uint other = 0;
+        if (front != IntPtr.Zero) { uint pid; other = GetWindowThreadProcessId(front, out pid); }
+        bool attached = false;
+        if (other != 0 && other != self) attached = AttachThreadInput(self, other, true);
+        BringWindowToTop(h);
+        SetForegroundWindow(h);
+        if (attached) AttachThreadInput(self, other, false);
+        return GetForegroundWindow() == h;
+    }
+}
 '@
 
 $AE = [System.Windows.Automation.AutomationElement]
@@ -268,6 +379,8 @@ $RestoreSeconds = 120
 $SettleSeconds = 90
 # A list reads only: its work time (panel.rs DRIVER_LIST_WORK_SECS is the same number).
 $ListWorkSeconds = 45
+# A group action changes the list in a few seconds (2 to 4 measured): its work time (panel.rs DRIVER_GROUP_WORK_SECS is the same number).
+$GroupWorkSeconds = 60
 $Utf8 = New-Object System.Text.UTF8Encoding($false)
 
 $script:Win = $null
@@ -294,6 +407,16 @@ $script:Cancelled = $false
 $script:SavedPlacement = $null
 $script:FgStart = $null
 $script:FgFailed = $false
+# Group actions: where the driver last put the pointer, the last-input tick right after the driver's own last input,
+# what a failed run left half done (for its message), and whether a menu item was just invoked (its menu is closing).
+$script:Placed = $null
+$script:OwnTick = $null
+$script:GroupLeft = ''
+$script:MenuInvoked = $false
+# A group run: the field that may be typed into must belong to the header the run is about (see Get-NameField), and
+# Restore-Screen decides the re-minimize by the driver's own last input, not by idle time its input has reset.
+$script:FieldOwner = $null
+$script:GroupRun = $false
 
 function Stop-Panel([int]$Code, [string]$Reason) {
     throw (New-Object PanelExit($Code, $Reason))
@@ -360,7 +483,8 @@ function Set-Deadlines([string]$ActionName = '') {
     $work = $WorkSeconds
     $script:RestoreSecs = $RestoreSeconds
     $script:SettleSecs = $SettleSeconds
-    if ($ActionName -eq 'list') { $work = $ListWorkSeconds; $script:RestoreSecs = 15; $script:SettleSecs = 0 }
+    if ($ActionName -eq 'list' -or $ActionName -eq 'groups') { $work = $ListWorkSeconds; $script:RestoreSecs = 15; $script:SettleSecs = 0 }
+    if ($ActionName -like 'group-*') { $work = $GroupWorkSeconds; $script:RestoreSecs = 15; $script:SettleSecs = 0 }
     $now = Get-Date
     $script:WaitUntil = $now.AddMinutes($WaitMinutes)
     $script:HardUntil = $script:WaitUntil.AddSeconds($work)
@@ -827,7 +951,7 @@ function Start-ForegroundRecord {
 # recorded window, never VS Code and never a window chosen from the z-order.
 function Restore-ForegroundAtEnd {
     $g = $script:FgStart
-    if ($null -eq $g -or $script:Hwnd -eq [IntPtr]::Zero) { return }
+    if ($null -eq $g -or $script:Hwnd -eq [IntPtr]::Zero -or $script:FgFailed) { return }
     if ([PanelNative]::Foreground() -ne $script:Hwnd) { return }
     $prev = $g.Prev
     if ($prev -eq [IntPtr]::Zero -or $prev -eq $script:Hwnd) { return }
@@ -1003,6 +1127,9 @@ function Restore-Screen {
         if ($script:WasMinimized) {
             try {
                 $idle = ([PanelNative]::IdleMs() -ge ($IdleSeconds * 1000))
+                # A group run's own input has reset the idle time: there he counts as idle when nothing came after the driver's own
+                # last input (a run that sent none, OwnTick unset, is judged by the idle time as every other action is).
+                if ($script:GroupRun -and $null -ne $script:OwnTick) { $idle = ([PanelNative]::InputTick() -eq $script:OwnTick) }
                 if ([PanelNative]::Foreground() -eq $script:Hwnd) {
                     # Left open either way; he only "has it in front" when the driver's own hand-back was not tried and failed.
                     if (-not $script:FgFailed) { Add-Note 'VS Code was left open: he has it in front' }
@@ -1019,33 +1146,102 @@ function Restore-Screen {
 
 # ---------------------------------------------------------------- reading the panel
 
-function Get-Chats($win) {
+# The sessions list in document order, group headers and chat rows together (they are sibling buttons under the
+# Sessions group): a header is Kind 'header' with Name (the group's name, from its first Text child), Count and
+# Editing (its name field is open); a row is Kind 'row' with Id, Name (the chat title), Status, Active, Element and
+# Group (the name of the header it follows, '' when none). Count is -1 when the header's count cannot be read.
+function Get-ListItems($win) {
     $cond = New-Object System.Windows.Automation.PropertyCondition($AE::ControlTypeProperty, $CT::Button)
     $tw = [System.Windows.Automation.TreeWalker]::ControlViewWalker
     $out = @()
+    $group = ''
     foreach ($b in $win.FindAll($TS::Descendants, $cond)) {
         $id = ''
-        try { $id = [string]$b.Current.AutomationId } catch { continue }
-        if ($id -eq '' -or -not $id.StartsWith($RowPrefix, [StringComparison]::Ordinal)) { continue }
-        $status = 'none'
-        $ch = $tw.GetFirstChild($b)
-        while ($null -ne $ch) {
-            $cls = $ch.Current.ClassName
-            if ($cls -like '*statusDot*') {
-                if ($cls -like '*Running*') { $status = 'running' } elseif ($cls -like '*Idle*') { $status = 'idle' }
-                break
+        $cls = ''
+        try { $id = [string]$b.Current.AutomationId; $cls = [string]$b.Current.ClassName } catch { continue }
+        if ($id -ne '' -and $id.StartsWith($RowPrefix, [StringComparison]::Ordinal)) {
+            $status = 'none'
+            $ch = $tw.GetFirstChild($b)
+            while ($null -ne $ch) {
+                $c = $ch.Current.ClassName
+                if ($c -like '*statusDot*') {
+                    if ($c -like '*Running*') { $status = 'running' } elseif ($c -like '*Idle*') { $status = 'idle' }
+                    break
+                }
+                $ch = $tw.GetNextSibling($ch)
             }
-            $ch = $tw.GetNextSibling($ch)
-        }
-        # The row's name is the chat title and an age (now, 12h, 4d).
-        $name = [regex]::Replace($b.Current.Name, '\s+(now|\d+\s?[smhdwy])$', '')
-        $out += [pscustomobject]@{
-            Id = $id.Substring($RowPrefix.Length); Name = $name; Status = $status
-            Active = [bool]($b.Current.ClassName -match '(^|\s)active_'); Element = $b
+            # The row's name is the chat title and an age (now, 12h, 4d).
+            $name = [regex]::Replace($b.Current.Name, '\s+(now|\d+\s?[smhdwy])$', '')
+            $out += [pscustomobject]@{
+                Kind = 'row'; Id = $id.Substring($RowPrefix.Length); Name = $name; Status = $status; Count = 0
+                Active = [bool]($b.Current.ClassName -match '(^|\s)active_'); Group = $group; Editing = $false; Element = $b
+            }
+        } elseif ($cls -match '(^|\s)groupHeader_' -and (Test-UnderSessions $b)) {
+            $h = Get-HeaderInfo $b $tw
+            $group = $h.Name
+            $out += [pscustomobject]@{ Kind = 'header'; Id = ''; Name = $h.Name; Status = ''; Count = $h.Count; Active = $false; Group = ''; Editing = $h.Editing; Element = $b }
         }
     }
     $out
 }
+
+# An element's parent in the control view, or $null.
+function Get-ParentOf($El) { try { [System.Windows.Automation.TreeWalker]::ControlViewWalker.GetParent($El) } catch { $null } }
+
+# True when the element lies under the Group named Sessions (the sessions list). Only headers are asked, a handful per read,
+# so the rows that send and archive poll cost nothing more.
+function Test-UnderSessions($El) {
+    $p = Get-ParentOf $El
+    for ($i = 0; $i -lt 6 -and $null -ne $p; $i++) {
+        try { if ($p.Current.ControlType -eq $CT::Group -and [string]$p.Current.Name -ceq 'Sessions') { return $true } } catch { return $false }
+        $p = Get-ParentOf $p
+    }
+    $false
+}
+
+# A group header's name and count, from its children (never from the button's own name): the first Text child is the
+# name and the second the count. While its name field is open (a child of class groupName*) the name is the field's
+# text and the count is the last Text child.
+function Get-HeaderInfo($Button, $Walker) {
+    $texts = @()
+    $field = $null
+    $ch = $Walker.GetFirstChild($Button)
+    while ($null -ne $ch) {
+        try {
+            if ($ch.Current.ControlType -eq $CT::Text) { $texts += [string]$ch.Current.Name }
+            elseif ([string]$ch.Current.ClassName -match '(^|\s)groupName') { $field = $ch }
+        } catch { }
+        $ch = $Walker.GetNextSibling($ch)
+    }
+    $name = ''
+    $count = -1
+    $n = 0
+    if ($null -ne $field) {
+        $name = Get-FieldText $field
+        if ($texts.Count -ge 1 -and [int]::TryParse($texts[$texts.Count - 1], [ref]$n)) { $count = $n }
+    } else {
+        if ($texts.Count -ge 1) { $name = $texts[0] }
+        if ($texts.Count -ge 2 -and [int]::TryParse($texts[1], [ref]$n)) { $count = $n }
+    }
+    [pscustomobject]@{ Name = $name; Count = $count; Editing = [bool]($null -ne $field) }
+}
+
+# The text a name field shows: its Text children's names, joined.
+function Get-FieldText($Field) {
+    $tw = [System.Windows.Automation.TreeWalker]::ControlViewWalker
+    $s = ''
+    try {
+        $ch = $tw.GetFirstChild($Field)
+        while ($null -ne $ch) {
+            if ($ch.Current.ControlType -eq $CT::Text) { $s += [string]$ch.Current.Name }
+            $ch = $tw.GetNextSibling($ch)
+        }
+    } catch { return $null }
+    $s
+}
+
+# The chat rows (with the name of the group each follows).
+function Get-Chats($win) { @(Get-ListItems $win | Where-Object { $_.Kind -eq 'row' }) }
 
 function Get-Chat([string]$Id) {
     $rows = @(Get-Chats $script:Win | Where-Object { $_.Id -eq $Id })
@@ -1680,21 +1876,26 @@ function Wait-RowIdle([string]$Id) {
     $chat
 }
 
-function Do-List {
+# 'list' (the chats) and 'groups' (the list's groups): read only, the same way in.
+function Do-List([string]$What = 'list') {
     Open-Window
     if ([PanelNative]::IsIconic($script:Hwnd)) {
         # Restoring the window changes his screen, so this list waits its turn like any other run: for his idle time
         # without the lock, then the lock, then one more look at his idle time (back to waiting if he came back).
         while ($true) {
             Wait-Idle 'restore the minimized VS Code window'
-            Enter-Lock 'list' ''
+            Enter-Lock $What ''
             if ([PanelNative]::IdleMs() -ge ($IdleSeconds * 1000)) { break }
             Exit-Lock
             Write-Waiting 'the operator came back once the panel lock was taken'
         }
         Ensure-Screen
     } else { Wait-Tree }
-    $rows = @(Get-Chats $script:Win | ForEach-Object { [pscustomobject]@{ session_id = $_.Id; name = $_.Name; status = $_.Status; active = $_.Active } })
+    if ($What -eq 'groups') {
+        $groups = @(Get-ListItems $script:Win | Where-Object { $_.Kind -eq 'header' } | ForEach-Object { [pscustomobject]@{ name = $_.Name; count = $_.Count; fixed = (Test-GroupFixed $_.Name) } })
+        return (ConvertTo-Json -InputObject $groups -Compress)
+    }
+    $rows = @(Get-Chats $script:Win | ForEach-Object { [pscustomobject]@{ session_id = $_.Id; name = $_.Name; status = $_.Status; active = $_.Active; group = $_.Group } })
     ConvertTo-Json -InputObject $rows -Compress
 }
 
@@ -1746,7 +1947,7 @@ function Do-Send([string]$Id, [string]$Text) {
     $done
 }
 
-function Do-New([string]$Text, [string]$ModelName, [string]$Group) {
+function Do-New([string]$Text, [string]$ModelName) {
     if ($ModelName -eq '') { Stop-Panel 1 '-Model is needed: a new chat would inherit the default model, which is the expensive one' }
     New-RunState '' $Text
     $s = $script:St
@@ -1764,7 +1965,6 @@ function Do-New([string]$Text, [string]$ModelName, [string]$Group) {
         if ($blank.Count -ne 0) { Stop-Panel 5 "$($blank.Count) untitled '$UntitledLabel' tab(s) are already open, so the new chat's tab could not be told apart; run close-untitled or close them, then start the chat" }
         $recBefore = @(Get-Records | ForEach-Object { [string]$_.sessionId })
         $bargs = @{ prompt = $Text }
-        if ($Group -ne '') { $bargs.groupId = $Group }
         $s.OpenCalled = $true
         Set-Begun
         $r = Invoke-Bridge 'open' $bargs 25
@@ -2138,6 +2338,611 @@ function Do-Archive([string]$Id) {
     } 'Nothing was archived.' ''
 }
 
+# ---------------------------------------------------------------- group actions
+
+# The decisions come first, as pure functions on the list as plain data: an array of items { Kind = 'header' or 'row';
+# Name; Count; Id } in list order (a row belongs to the header before it). Each plan is { Act = 'do', 'nothing' or
+# 'refuse'; Code (the exit code of a refusal); Text }.
+
+# The panel's own headers, which are never one of his groups: Ungrouped and the archived section.
+function Test-GroupFixed([string]$Name) {
+    if ($Name -ceq 'Ungrouped') { return $true }
+    $Name.StartsWith('Archived sessions', [StringComparison]::OrdinalIgnoreCase)
+}
+
+# '' when the name can be given to a group, else why not: trimmed, 1 to 60 characters, no control character or line
+# break, and not a name the panel keeps for itself (compared without case).
+function Test-GroupName([string]$Name) {
+    if ($Name.Length -lt 1) { return 'it is empty' }
+    if ($Name -cne $Name.Trim()) { return 'it has spaces at its start or end' }
+    if ($Name.Length -gt 60) { return 'it is longer than 60 characters' }
+    if ($Name -match '[\p{Cc}\p{Zl}\p{Zp}]') { return 'it holds a control character or a line break' }
+    foreach ($kept in @('Ungrouped', 'New group')) {
+        if ([string]::Equals($Name, $kept, [StringComparison]::OrdinalIgnoreCase)) { return 'it is a name the panel keeps for itself' }
+    }
+    if ($Name.StartsWith('Archived sessions', [StringComparison]::OrdinalIgnoreCase)) { return 'it is a name the panel keeps for itself' }
+    ''
+}
+
+# A plan that refuses while any group's name field is open in the list (typing could go into the wrong one), else $null.
+function Get-EditingPlan($Items) {
+    $e = @(@($Items) | Where-Object { $_.Kind -eq 'header' -and $_.Editing })
+    if ($e.Count -gt 0) { return (New-GroupPlan 'refuse' 5 "a group's name field is already open in the list (it shows '$($e[0].Name)'); finish or cancel that first; nothing was changed") }
+    $null
+}
+
+function New-GroupPlan([string]$Act, [int]$Code, [string]$Text) { [pscustomobject]@{ Act = $Act; Code = $Code; Text = $Text } }
+
+# The headers with exactly this name (ordinal, case-sensitive).
+function Get-GroupHeaders($Items, [string]$Name) { @(@($Items) | Where-Object { $_.Kind -eq 'header' -and $_.Name -ceq $Name }) }
+
+# The ids of the rows under the header of this name, in order.
+function Get-HeaderRowIds($Items, [string]$Name) {
+    $ids = @()
+    $in = $false
+    foreach ($it in @($Items)) {
+        if ($it.Kind -eq 'header') { $in = ($it.Name -ceq $Name); continue }
+        if ($in) { $ids += [string]$it.Id }
+    }
+    $ids
+}
+
+# The name of the header a row follows ('' when it follows none), or $null when no row has this id.
+function Get-RowGroupName($Items, [string]$Id) {
+    $group = ''
+    foreach ($it in @($Items)) {
+        if ($it.Kind -eq 'header') { $group = [string]$it.Name; continue }
+        if ($it.Kind -eq 'row' -and $it.Id -ceq $Id) { return $group }
+    }
+    $null
+}
+
+function Get-GroupNoRowText { 'no row for this chat is in the list as shown (a collapsed group or the archived section hides its rows); nothing was changed' }
+
+function Get-GroupCreatePlan($Items, [string]$Name) {
+    $editing = Get-EditingPlan $Items
+    if ($null -ne $editing) { return $editing }
+    $why = Test-GroupName $Name
+    if ($why -ne '') { return (New-GroupPlan 'refuse' 5 "'$Name' cannot be a group name: $why; nothing was changed") }
+    if (@(Get-GroupHeaders $Items $Name).Count -gt 0) { return (New-GroupPlan 'refuse' 5 "a group named '$Name' already exists; nothing was changed") }
+    if (@(Get-GroupHeaders $Items 'New group').Count -gt 0) {
+        return (New-GroupPlan 'refuse' 5 "a group named 'New group' already exists, so the new group could not be told apart from it; rename or delete that one first; nothing was changed")
+    }
+    New-GroupPlan 'do' 0 ''
+}
+
+function Get-GroupRenamePlan($Items, [string]$Old, [string]$New) {
+    $editing = Get-EditingPlan $Items
+    if ($null -ne $editing) { return $editing }
+    $hs = @(Get-GroupHeaders $Items $Old)
+    if ($hs.Count -eq 0) { return (New-GroupPlan 'refuse' 5 "there is no group named '$Old'; nothing was changed") }
+    if ($hs.Count -gt 1) { return (New-GroupPlan 'refuse' 5 "$($hs.Count) groups are named '$Old', so the right one cannot be told apart; nothing was changed") }
+    if (Test-GroupFixed $Old) { return (New-GroupPlan 'refuse' 5 "'$Old' is the panel's own header, not one of his groups; nothing was changed") }
+    $why = Test-GroupName $New
+    if ($why -ne '') { return (New-GroupPlan 'refuse' 5 "'$New' cannot be a group name: $why; nothing was changed") }
+    if ($Old -ceq $New) { return (New-GroupPlan 'nothing' 0 "the group is already named '$New'; nothing to do") }
+    if (@(Get-GroupHeaders $Items $New).Count -gt 0) { return (New-GroupPlan 'refuse' 5 "a group named '$New' already exists; nothing was changed") }
+    New-GroupPlan 'do' 0 ''
+}
+
+function Get-GroupDeletePlan($Items, [string]$Name, [bool]$Force) {
+    $editing = Get-EditingPlan $Items
+    if ($null -ne $editing) { return $editing }
+    $hs = @(Get-GroupHeaders $Items $Name)
+    if ($hs.Count -eq 0) { return (New-GroupPlan 'refuse' 5 "there is no group named '$Name'; nothing was changed") }
+    if ($hs.Count -gt 1) { return (New-GroupPlan 'refuse' 5 "$($hs.Count) groups are named '$Name', so the right one cannot be told apart; nothing was changed") }
+    if (Test-GroupFixed $Name) { return (New-GroupPlan 'refuse' 5 "'$Name' is the panel's own header, not one of his groups; nothing was changed") }
+    $shown = -1
+    $prop = $hs[0].PSObject.Properties['Count']
+    if ($null -ne $prop -and $null -ne $prop.Value) { $shown = [int]$prop.Value }
+    $count = [Math]::Max($shown, @(Get-HeaderRowIds $Items $Name).Count)
+    if ($count -gt 0 -and -not $Force) {
+        return (New-GroupPlan 'refuse' 5 "the group '$Name' holds $count chat(s); deleting it moves them to Ungrouped, and the panel asks nothing before it deletes; nothing was changed. Give -Force to delete it anyway")
+    }
+    # A count that could not be read is unknown, not empty.
+    if ($shown -lt 0 -and -not $Force) {
+        return (New-GroupPlan 'refuse' 5 "the chat count of the group '$Name' could not be read, so it may hold chats; deleting it moves any to Ungrouped, and the panel asks nothing before it deletes; nothing was changed. Give -Force to delete it anyway")
+    }
+    New-GroupPlan 'do' 0 ''
+}
+
+function Get-GroupAddPlan($Items, [string]$Id, [string]$Name) {
+    $editing = Get-EditingPlan $Items
+    if ($null -ne $editing) { return $editing }
+    $cur = Get-RowGroupName $Items $Id
+    if ($null -eq $cur) { return (New-GroupPlan 'refuse' 2 (Get-GroupNoRowText)) }
+    $hs = @(Get-GroupHeaders $Items $Name)
+    if ($hs.Count -eq 0) { return (New-GroupPlan 'refuse' 5 "there is no group named '$Name'; nothing was changed") }
+    if ($hs.Count -gt 1) { return (New-GroupPlan 'refuse' 5 "$($hs.Count) groups are named '$Name', so the right one cannot be told apart; nothing was changed") }
+    if (Test-GroupFixed $Name) { return (New-GroupPlan 'refuse' 5 "'$Name' is the panel's own header, not one of his groups; nothing was changed") }
+    if ((Test-GroupFixed $cur) -and $cur -cne 'Ungrouped') { return (New-GroupPlan 'refuse' 5 'the chat is in the archived section, which has a menu of its own; nothing was changed') }
+    if ($cur -ceq $Name) { return (New-GroupPlan 'nothing' 0 "the chat is already in the group '$Name'; nothing to do") }
+    New-GroupPlan 'do' 0 ''
+}
+
+function Get-GroupRemovePlan($Items, [string]$Id) {
+    $editing = Get-EditingPlan $Items
+    if ($null -ne $editing) { return $editing }
+    $cur = Get-RowGroupName $Items $Id
+    if ($null -eq $cur) { return (New-GroupPlan 'refuse' 2 (Get-GroupNoRowText)) }
+    if ($cur -ceq '' -or $cur -ceq 'Ungrouped') { return (New-GroupPlan 'nothing' 0 'the chat is not in a group (it is under Ungrouped); nothing to do') }
+    if (Test-GroupFixed $cur) { return (New-GroupPlan 'refuse' 5 'the chat is in the archived section, which has a menu of its own; nothing was changed') }
+    New-GroupPlan 'do' 0 ''
+}
+
+function Get-GroupPlan([string]$Kind, $Items, [string]$Id, [string]$Name, [string]$NewName, [bool]$ForceDelete) {
+    switch ($Kind) {
+        'create' { return (Get-GroupCreatePlan $Items $Name) }
+        'rename' { return (Get-GroupRenamePlan $Items $Name $NewName) }
+        'delete' { return (Get-GroupDeletePlan $Items $Name $ForceDelete) }
+        'add' { return (Get-GroupAddPlan $Items $Id $Name) }
+        'remove' { return (Get-GroupRemovePlan $Items $Id) }
+    }
+    New-GroupPlan 'refuse' 5 "unknown group action '$Kind'"
+}
+
+# Whether a fresh read of the list shows the outcome.
+function Test-GroupCreateDone($Items, [string]$Name) {
+    if (@(Get-GroupHeaders $Items $Name).Count -ne 1) { return $false }
+    @(@($Items) | Where-Object { $_.Kind -eq 'header' -and $_.Editing }).Count -eq 0
+}
+function Test-GroupRenameDone($Items, [string]$Old, [string]$New, $RowsBefore) {
+    if (@(Get-GroupHeaders $Items $New).Count -ne 1) { return $false }
+    if (@(Get-GroupHeaders $Items $Old).Count -ne 0) { return $false }
+    ((@(Get-HeaderRowIds $Items $New)) -join '|') -ceq ((@($RowsBefore)) -join '|')
+}
+function Test-GroupDeleteDone($Items, [string]$Name) {
+    # An empty or half-drawn read has no header of that name either, so the Ungrouped header must be in the same read.
+    if (@(Get-GroupHeaders $Items 'Ungrouped').Count -eq 0) { return $false }
+    @(Get-GroupHeaders $Items $Name).Count -eq 0
+}
+function Test-GroupAddDone($Items, [string]$Id, [string]$Name) { [bool]((Get-RowGroupName $Items $Id) -ceq $Name) }
+function Test-GroupRemoveDone($Items, [string]$Id) { [bool]((Get-RowGroupName $Items $Id) -ceq 'Ungrouped') }
+
+# ---- reading the screen for a group action
+
+function Get-FocusedElement { try { $AE::FocusedElement } catch { $null } }
+
+# The element that has the keyboard focus when it is a group's name field: class groupNameEditing*, an ancestor that is the
+# Group named Sessions, and a header above it that is the one this run is about ($script:FieldOwner): for a rename the header
+# that was right-clicked, for a create a header that was not in the list before the button was pressed. $null in any other
+# state, so nothing is typed into another group's field.
+function Get-NameField {
+    $f = Get-FocusedElement
+    if ($null -eq $f) { return $null }
+    try { if ([string]$f.Current.ClassName -notlike '*groupNameEditing_*') { return $null } } catch { return $null }
+    $header = $null
+    $inSessions = $false
+    $p = Get-ParentOf $f
+    for ($i = 0; $i -lt 8 -and $null -ne $p; $i++) {
+        try {
+            if ($null -eq $header -and [string]$p.Current.ClassName -match '(^|\s)groupHeader_') { $header = $p }
+            if ($p.Current.ControlType -eq $CT::Group -and [string]$p.Current.Name -ceq 'Sessions') { $inSessions = $true; break }
+        } catch { return $null }
+        $p = Get-ParentOf $p
+    }
+    if (-not $inSessions -or $null -eq $header) { return $null }
+    $owner = $script:FieldOwner
+    if ($null -eq $owner) { return $null }
+    if ($owner.Mode -eq 'is') {
+        if (-not (Test-SameElement $header $owner.Element)) { return $null }
+    } else {
+        $key = Get-RuntimeKey $header
+        if ([string]::IsNullOrEmpty($key) -or @($owner.Known) -contains $key) { return $null }
+    }
+    $f
+}
+
+function Test-SameElement($A, $B) { try { [bool][System.Windows.Automation.Automation]::Compare($A, $B) } catch { $false } }
+
+# An element's runtime id as one string, or $null.
+function Get-RuntimeKey($El) { try { (@($El.GetRuntimeId()) -join '.') } catch { $null } }
+
+# True when the keyboard focus is inside an open context menu (on one of its items, or on a submenu's item).
+function Test-FocusInOpenMenu {
+    $p = Get-FocusedElement
+    for ($i = 0; $i -lt 8 -and $null -ne $p; $i++) {
+        try { if ($p.Current.ControlType -eq $CT::Menu -and [string]$p.Current.ClassName -like '*contextMenu_*') { return $true } } catch { return $false }
+        $p = Get-ParentOf $p
+    }
+    $false
+}
+
+# The context menus open now (a Menu of class contextMenu_*; the submenu of Add to group is a second one).
+function Get-OpenMenus {
+    $cond = New-Object System.Windows.Automation.PropertyCondition($AE::ControlTypeProperty, $CT::Menu)
+    $out = @()
+    foreach ($m in $script:Win.FindAll($TS::Descendants, $cond)) {
+        try { if ([string]$m.Current.ClassName -like '*contextMenu_*') { $out += $m } } catch { }
+    }
+    $out
+}
+
+# The one item of a menu with this name: exact, or the start of the name when $Prefix. $null unless there is exactly one.
+function Find-MenuItem($Menu, [string]$Wanted, [bool]$Prefix) {
+    $cond = New-Object System.Windows.Automation.PropertyCondition($AE::ControlTypeProperty, $CT::MenuItem)
+    $hit = @()
+    foreach ($i in $Menu.FindAll($TS::Descendants, $cond)) {
+        $n = ''
+        try { $n = [string]$i.Current.Name } catch { continue }
+        if ($Prefix) { if ($n.StartsWith($Wanted, [StringComparison]::Ordinal)) { $hit += $i } }
+        elseif ($n -ceq $Wanted) { $hit += $i }
+    }
+    if ($hit.Count -eq 1) { return $hit[0] }
+    $null
+}
+
+# Polls for an open menu (other than $Skip) that holds the item: { Menu; Item }, or $null after $Ms milliseconds.
+function Wait-MenuItem([string]$Wanted, [bool]$Prefix, $Skip, [int]$Ms = 2500) {
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    while ($true) {
+        foreach ($m in @(Get-OpenMenus)) {
+            if ($null -ne $Skip -and [System.Windows.Automation.Automation]::Compare($m, $Skip)) { continue }
+            $i = Find-MenuItem $m $Wanted $Prefix
+            if ($null -ne $i) { return [pscustomobject]@{ Menu = $m; Item = $i } }
+        }
+        if ($sw.ElapsedMilliseconds -ge $Ms) { return $null }
+        Start-Sleep -Milliseconds 100
+    }
+}
+
+# Polls the list until the named check (one of the Test-Group...Done functions, given the items and these arguments) is
+# true: { Ok; Items }, the last read when it never was.
+function Wait-GroupList([string]$Check, $CheckArgs, [int]$Ms) {
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    while ($true) {
+        $items = @(Get-ListItems $script:Win)
+        if (& $Check $items @CheckArgs) { return [pscustomobject]@{ Ok = $true; Items = $items } }
+        if ($sw.ElapsedMilliseconds -ge $Ms) { return [pscustomobject]@{ Ok = $false; Items = $items } }
+        Start-Sleep -Milliseconds 250
+    }
+}
+
+# The name field has the keyboard focus within $Ms milliseconds, or $null.
+function Wait-NameField([int]$Ms) {
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    while ($true) {
+        $f = Get-NameField
+        if ($null -ne $f) { return $f }
+        if ($sw.ElapsedMilliseconds -ge $Ms) { return $null }
+        Start-Sleep -Milliseconds 100
+    }
+}
+
+# The focused name field shows exactly this text within $Ms milliseconds.
+function Wait-FieldText([string]$Want, [int]$Ms) {
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    while ($true) {
+        $f = Get-NameField
+        if ($null -ne $f -and (Get-FieldText $f) -ceq $Want) { return $true }
+        if ($sw.ElapsedMilliseconds -ge $Ms) { return $false }
+        Start-Sleep -Milliseconds 100
+    }
+}
+
+# The group header with this exact name, found again right before it is used: exactly one, and not a fixed one.
+function Get-GroupHeaderElement([string]$Name) {
+    $hs = @(Get-GroupHeaders @(Get-ListItems $script:Win) $Name)
+    if ($hs.Count -ne 1) { Stop-Panel 5 "the list shows $($hs.Count) groups named '$Name', not one; no input was sent" }
+    if (Test-GroupFixed $Name) { Stop-Panel 5 "'$Name' is the panel's own header; no input was sent" }
+    $hs[0].Element
+}
+
+function Find-NewGroupButton {
+    $b = @(Find-Named $script:Win 'New group' $CT::Button | Where-Object { try { [string]$_.Current.ClassName -match '(^|\s)newGroupButton_' } catch { $false } })
+    if ($b.Count -ne 1) { Stop-Panel 2 "the New group button is showing $($b.Count) times, not once; nothing was changed" }
+    $b[0]
+}
+
+# True when the element at a screen point is the target or lies inside it.
+function Test-PointerOnElement($Target, $Spot) {
+    try {
+        $el = $AE::FromPoint((New-Object System.Windows.Point($Spot.X, $Spot.Y)))
+        $tw = [System.Windows.Automation.TreeWalker]::ControlViewWalker
+        for ($i = 0; $i -lt 8 -and $null -ne $el; $i++) {
+            if ([System.Windows.Automation.Automation]::Compare($el, $Target)) { return $true }
+            $el = $tw.GetParent($el)
+        }
+    } catch { }
+    $false
+}
+
+# What is left half done and how the list looks now, for the message of a run that stopped.
+function Get-GroupLeftText {
+    $list = ''
+    try {
+        $parts = @(Get-ListItems $script:Win | Where-Object { $_.Kind -eq 'header' } | ForEach-Object { '{0} ({1})' -f $_.Name, $_.Count })
+        $list = 'The list now shows these groups: ' + ($parts -join ', ') + '.'
+    } catch { $list = 'The list could not be read afterwards.' }
+    (@($script:GroupLeft, $list) | Where-Object { $_ -ne '' }) -join ' '
+}
+
+# ---- the steps that send input: each checks its own conditions first, and nothing else in the driver may use PanelInput
+
+# The last-input tick right after the driver's own input, so the end of the run can tell whether he did anything after it.
+function Set-OwnTick {
+    Start-Sleep -Milliseconds 40
+    $script:OwnTick = [PanelNative]::InputTick()
+}
+
+# He came back when the pointer is no longer where the driver last put it.
+function Assert-GroupPointer {
+    if (-not (Test-PointerAt $script:Placed)) { Stop-Panel 3 'the operator came back: the pointer is no longer where the driver put it' }
+}
+
+# VS Code to the foreground (measured method), or exit 3 with nothing sent.
+function Move-GroupFront {
+    if ([PanelNative]::Foreground() -eq $script:Hwnd) { return }
+    [void][PanelInput]::BringToFront($script:Hwnd)
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    while ($sw.ElapsedMilliseconds -lt 1500) {
+        if ([PanelNative]::Foreground() -eq $script:Hwnd) { return }
+        Start-Sleep -Milliseconds 50
+    }
+    Stop-Panel 3 'VS Code did not come to the foreground within 1.5 seconds (Windows kept another window in front); the list was not touched'
+}
+
+# Opens the context menu of a row or a header: the pointer goes onto it, and one right press is sent, only when VS Code
+# is in front, no context menu is open, the target is on screen with a real rectangle (scrolled into view first), the
+# pointer is where the driver put it, the window under it is VS Code and the element under it is the target.
+function Open-GroupMenu($Target) {
+    if ([PanelNative]::Foreground() -ne $script:Hwnd) { Stop-Panel 3 'VS Code is no longer the foreground window; no input was sent' }
+    if (@(Get-OpenMenus).Count -gt 0) { Stop-Panel 5 'a context menu is already open; no input was sent' }
+    $sp = $null
+    if ($Target.TryGetCurrentPattern([System.Windows.Automation.ScrollItemPattern]::Pattern, [ref]$sp)) { try { $sp.ScrollIntoView() } catch { } }
+    Start-Sleep -Milliseconds 300
+    $spot = Get-RowCenter $Target
+    if ($null -eq $spot) { Stop-Panel 5 'the target has no usable place on the screen (an empty rectangle, off screen, or outside the VS Code window); no input was sent' }
+    Assert-GroupPointer
+    if (-not [PanelNative]::MovePointer($spot.X, $spot.Y)) { Stop-Panel 5 'the pointer could not be moved onto the target; no input was sent' }
+    # Placed where the driver asked, whatever a read-back says, so it is put back whatever happens next.
+    $script:Placed = [pscustomobject]@{ X = $spot.X; Y = $spot.Y }
+    $at = [PanelNative]::PointerPos()
+    if ($null -ne $at) { $script:Placed = [pscustomobject]@{ X = $at[0]; Y = $at[1] } }
+    Start-Sleep -Milliseconds 150
+    # The last checks, then the one input call with nothing in between.
+    if ([PanelNative]::Foreground() -ne $script:Hwnd) { Stop-Panel 3 'VS Code is no longer the foreground window; no input was sent' }
+    if (@(Get-OpenMenus).Count -gt 0) { Stop-Panel 5 'a context menu is already open; no input was sent' }
+    Assert-GroupPointer
+    if ([PanelNative]::RootAt($script:Placed.X, $script:Placed.Y) -ne $script:Hwnd) { Stop-Panel 5 'the window under the pointer is not VS Code; no input was sent' }
+    if (-not (Test-PointerOnElement $Target $script:Placed)) { Stop-Panel 5 'the element under the pointer is not the target; no input was sent' }
+    if (-not [PanelInput]::RightClick()) { Stop-Panel 1 'Windows did not accept the right button press; the context menu was not opened' }
+    Set-OwnTick
+}
+
+# Typing: each step first checks that the keyboard focus is the name field, and that he has not moved the pointer.
+function Send-GroupSelectAll {
+    Assert-GroupPointer
+    if ($null -eq (Get-NameField)) { Stop-Panel 1 'the keyboard focus is not the group name field; nothing was typed' }
+    if (-not [PanelInput]::SelectAll()) { Stop-Panel 1 'Windows did not accept the select-all; nothing was typed' }
+    Set-OwnTick
+}
+
+function Send-GroupText([string]$Text) {
+    Assert-GroupPointer
+    if ($null -eq (Get-NameField)) { Stop-Panel 1 'the keyboard focus is not the group name field; nothing was typed' }
+    if (-not [PanelInput]::TypeText($Text)) { Stop-Panel 1 'Windows did not accept the typed text' }
+    Set-OwnTick
+}
+
+# Enter only while the focused field shows exactly the wanted name.
+function Send-GroupEnter([string]$Want) {
+    Assert-GroupPointer
+    $f = Get-NameField
+    if ($null -eq $f) { Stop-Panel 1 'the keyboard focus is not the group name field; Enter was not sent' }
+    $shown = Get-FieldText $f
+    if ($shown -cne $Want) { Stop-Panel 1 "the name field shows '$shown', not the wanted name; Enter was not sent and the field was left open" }
+    if (-not [PanelInput]::Enter()) { Stop-Panel 1 'Windows did not accept Enter' }
+    Set-OwnTick
+}
+
+# Invokes a menu item (an item of the menu just opened).
+function Invoke-MenuItem($Item) {
+    $script:MenuInvoked = $true
+    $Item.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+}
+
+# Closes a context menu that is still open: Escape only while a menu is seen open, VS Code is in front and the keyboard focus
+# is inside an open menu (measured: while a menu is open the focus is on one of its items), never in any other state (in a
+# chat Escape stops a running turn). After each Escape the open menus are counted again for up to a second before anything
+# else is decided, so a menu that is only slow to leave the tree gets no second Escape. After an item was invoked its menu is
+# closing by itself, so that is waited for first.
+function Close-GroupMenus {
+    if ($script:MenuInvoked) {
+        $sw = [Diagnostics.Stopwatch]::StartNew()
+        while ($sw.ElapsedMilliseconds -lt 1500 -and @(Get-OpenMenus).Count -gt 0) { Start-Sleep -Milliseconds 100 }
+    }
+    for ($i = 0; $i -lt 4; $i++) {
+        $open = @(Get-OpenMenus).Count
+        if ($open -eq 0) { return }
+        if ([PanelNative]::Foreground() -ne $script:Hwnd) { Add-Note 'a context menu was left open: VS Code is no longer in front'; return }
+        if (-not (Test-FocusInOpenMenu)) { Add-Note 'a context menu was left open: the keyboard focus is not in it, so Escape was not sent'; return }
+        [void][PanelInput]::Escape()
+        Set-OwnTick
+        $sw = [Diagnostics.Stopwatch]::StartNew()
+        while ($sw.ElapsedMilliseconds -lt 1000 -and @(Get-OpenMenus).Count -ge $open) { Start-Sleep -Milliseconds 50 }
+    }
+    if (@(Get-OpenMenus).Count -gt 0) { Add-Note 'a context menu is still open' }
+}
+
+# The foreground goes back to the window that had it before the run, only while VS Code still has it, that window
+# still exists and is visible, and he has not used the computer since the driver's own last input.
+function Restore-GroupForeground($Prev) {
+    if ($Prev -eq [IntPtr]::Zero -or $Prev -eq $script:Hwnd) { return }
+    if ([PanelNative]::Foreground() -ne $script:Hwnd) { return }
+    if (-not [PanelNative]::IsWindow($Prev) -or -not [PanelNative]::IsVisible($Prev)) { return }
+    if ($null -ne $script:OwnTick -and [PanelNative]::InputTick() -ne $script:OwnTick) {
+        Add-Note 'he used the computer after the driver, so the foreground was left as it is'
+        return
+    }
+    [void][PanelInput]::BringToFront($Prev)
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    while ($sw.ElapsedMilliseconds -lt 500) {
+        if ([PanelNative]::Foreground() -eq $Prev) { return }
+        Start-Sleep -Milliseconds 50
+    }
+    if ([PanelNative]::Foreground() -ne $Prev) {
+        $script:FgFailed = $true
+        Add-Note 'VS Code was left in front'
+    }
+}
+
+# ---- the five actions
+
+function Step-GroupCreate([string]$Name) {
+    $known = @(Get-ListItems $script:Win | Where-Object { $_.Kind -eq 'header' } | ForEach-Object { Get-RuntimeKey $_.Element } | Where-Object { $_ })
+    $script:FieldOwner = [pscustomobject]@{ Mode = 'new'; Element = $null; Known = $known }
+    $btn = Find-NewGroupButton
+    $btn.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+    $script:GroupLeft = "A group named 'New group' was added to the list and is not named: its name field was left open."
+    if ($null -eq (Wait-NameField 3000)) { Stop-Panel 1 'the New group button was pressed but the keyboard focus did not go to the name field' }
+    Send-GroupSelectAll
+    Send-GroupText $Name
+    [void](Wait-FieldText $Name 2500)
+    Send-GroupEnter $Name
+    $r = Wait-GroupList 'Test-GroupCreateDone' @($Name) 3000
+    if (-not $r.Ok) { Stop-Panel 1 "Enter was sent, but the list does not show exactly one group named '$Name' after 3 seconds" }
+    $script:GroupLeft = ''
+    "created the group '$Name'; the list shows it"
+}
+
+function Step-GroupRename([string]$Old, [string]$New, $RowsBefore) {
+    $header = Get-GroupHeaderElement $Old
+    $script:FieldOwner = [pscustomobject]@{ Mode = 'is'; Element = $header; Known = @() }
+    Open-GroupMenu $header
+    $found = Wait-MenuItem 'Rename group' $false $null
+    if ($null -eq $found) { Stop-Panel 1 'the context menu did not show Rename group; nothing was changed' }
+    Invoke-MenuItem $found.Item
+    $script:GroupLeft = "The group '$Old' was put in rename mode and is not renamed: its name field was left open."
+    if ($null -eq (Wait-NameField 3000)) { Stop-Panel 1 'Rename group was pressed but the keyboard focus did not go to the name field' }
+    Send-GroupSelectAll
+    Send-GroupText $New
+    [void](Wait-FieldText $New 2500)
+    Send-GroupEnter $New
+    $r = Wait-GroupList 'Test-GroupRenameDone' @($Old, $New, ($RowsBefore -join '|')) 3000
+    if (-not $r.Ok) { Stop-Panel 1 "Enter was sent, but the list does not show '$New' with the chats that were in '$Old' after 3 seconds" }
+    $script:GroupLeft = ''
+    "renamed the group '$Old' to '$New'; the list shows it with its chats"
+}
+
+function Step-GroupDelete([string]$Name) {
+    Open-GroupMenu (Get-GroupHeaderElement $Name)
+    $found = Wait-MenuItem 'Delete group' $false $null
+    if ($null -eq $found) { Stop-Panel 1 'the context menu did not show Delete group; nothing was changed' }
+    Invoke-MenuItem $found.Item
+    $script:GroupLeft = "Delete group was pressed for '$Name'; the list was not seen to change."
+    $r = Wait-GroupList 'Test-GroupDeleteDone' @($Name) 3000
+    if (-not $r.Ok) { Stop-Panel 1 "Delete group was pressed, but the list still shows a group named '$Name' after 3 seconds" }
+    $script:GroupLeft = ''
+    "deleted the group '$Name'; its chats are under Ungrouped"
+}
+
+function Step-GroupAdd([string]$Id, [string]$Name) {
+    $row = Find-RowElement $Id
+    if ($null -eq $row) { Stop-Panel 5 "the chat's row left the list while the driver was getting ready; nothing was changed" }
+    Open-GroupMenu $row
+    $found = Wait-MenuItem 'Add to group' $true $null
+    if ($null -eq $found) { Stop-Panel 1 'the context menu did not show Add to group; nothing was changed' }
+    $ec = $null
+    if (-not $found.Item.TryGetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern, [ref]$ec)) { Stop-Panel 5 'the Add to group item cannot be expanded; nothing was changed' }
+    $ec.Expand()
+    $sub = Wait-MenuItem $Name $false $found.Menu
+    if ($null -eq $sub) { Stop-Panel 5 "the Add to group submenu has no item named '$Name'; nothing was changed" }
+    Invoke-MenuItem $sub.Item
+    $script:GroupLeft = "The item '$Name' was pressed for the chat; its row was not seen to move."
+    $r = Wait-GroupList 'Test-GroupAddDone' @($Id, $Name) 3000
+    if (-not $r.Ok) { Stop-Panel 1 "the group item was pressed, but the chat's row does not sit under '$Name' after 3 seconds" }
+    $script:GroupLeft = ''
+    "added session $Id to the group '$Name'; its row sits under that header"
+}
+
+function Step-GroupRemove([string]$Id) {
+    $row = Find-RowElement $Id
+    if ($null -eq $row) { Stop-Panel 5 "the chat's row left the list while the driver was getting ready; nothing was changed" }
+    Open-GroupMenu $row
+    $found = Wait-MenuItem 'Remove from group' $false $null
+    if ($null -eq $found) { Stop-Panel 5 'the context menu does not show Remove from group; nothing was changed' }
+    Invoke-MenuItem $found.Item
+    $script:GroupLeft = 'Remove from group was pressed for the chat; its row was not seen to move.'
+    $r = Wait-GroupList 'Test-GroupRemoveDone' @($Id) 3000
+    if (-not $r.Ok) { Stop-Panel 1 "Remove from group was pressed, but the chat's row does not sit under Ungrouped after 3 seconds" }
+    $script:GroupLeft = ''
+    "removed session $Id from its group; its row sits under Ungrouped"
+}
+
+# One group action. Kind is create, rename, delete, add or remove. Names that can never be used are refused before the
+# run waits for anything. Then, in order: the operator's idle guard (Enter-Run; no chat has to be idle), the full-screen
+# guard, a fresh read and the decision (a refusal, or nothing to do, changes nothing), the pointer and the foreground
+# window recorded, VS Code to the front (exit 3 when it does not come), the steps, and in the end: an open context menu
+# closed, the pointer put back, the foreground handed back.
+function Do-Group([string]$Kind, [string]$Id, [string]$Name, [string]$NewName, [bool]$ForceDelete) {
+    $Name = $Name.Trim()
+    $NewName = $NewName.Trim()
+    $script:GroupLeft = ''
+    $script:MenuInvoked = $false
+    $script:Placed = $null
+    $script:OwnTick = $null
+    $script:FieldOwner = $null
+    $script:GroupRun = $true
+    if ($Kind -eq 'create' -or $Kind -eq 'rename') {
+        $wanted = $Name
+        if ($Kind -eq 'rename') { $wanted = $NewName }
+        $why = Test-GroupName $wanted
+        if ($why -ne '') { Stop-Panel 5 "'$wanted' cannot be a group name: $why; nothing was changed" }
+    }
+    Enter-Run ''
+    Ensure-Screen
+    $fsLogged = $false
+    while ($true) {
+        Wait-Idle 'bring VS Code to the front'
+        if (Test-FullScreenFront) {
+            Stop-IfCancelled
+            if ((Get-Date) -ge $script:WaitUntil) { Stop-Panel 3 'a full-screen window stayed in front until the deadline; VS Code was not brought forward and nothing was changed' }
+            if (-not $fsLogged) { Write-Waiting 'a full-screen window is in front'; $fsLogged = $true }
+            Start-Sleep -Seconds 2
+            continue
+        }
+        Clear-Waiting
+        if ([PanelNative]::IdleMs() -ge ($IdleSeconds * 1000)) { break }
+    }
+    $items = @(Get-ListItems $script:Win)
+    $plan = Get-GroupPlan $Kind $items $Id $Name $NewName $ForceDelete
+    if ($plan.Act -eq 'refuse') { Stop-Panel $plan.Code $plan.Text }
+    if ($plan.Act -eq 'nothing') { return $plan.Text }
+    # He may have come back while the list was read and the plan made: nothing has been touched yet, so just stop.
+    if ([PanelNative]::IdleMs() -lt ($IdleSeconds * 1000)) { Stop-Panel 3 'he came back (the idle time fell after the list was read); nothing was changed' }
+    $rowsBefore = @()
+    if ($Kind -eq 'rename') { $rowsBefore = @(Get-HeaderRowIds $items $Name) }
+    $old = [PanelNative]::PointerPos()
+    if ($null -eq $old) { Stop-Panel 5 'the pointer position could not be read; nothing was changed' }
+    $prev = [PanelNative]::Foreground()
+    $script:Placed = [pscustomobject]@{ X = $old[0]; Y = $old[1] }
+    $script:OwnTick = [PanelNative]::InputTick()
+    try {
+        Move-GroupFront
+        # Bringing a window forward is not his input, but the tick is read again so only what comes after it counts.
+        Set-OwnTick
+        switch ($Kind) {
+            'create' { return (Step-GroupCreate $Name) }
+            'rename' { return (Step-GroupRename $Name $NewName $rowsBefore) }
+            'delete' { return (Step-GroupDelete $Name) }
+            'add' { return (Step-GroupAdd $Id $Name) }
+            'remove' { return (Step-GroupRemove $Id) }
+        }
+    } catch {
+        $pe = Get-PanelExit $_
+        $code = 1
+        $reason = ''
+        if ($null -ne $pe) { $code = $pe.Code; $reason = $pe.Reason }
+        else { $reason = 'unexpected: ' + $_.Exception.Message + ' (line ' + $_.InvocationInfo.ScriptLineNumber + ')' }
+        Stop-Panel $code ($reason.TrimEnd('.') + '. ' + (Get-GroupLeftText))
+    } finally {
+        try { Close-GroupMenus } catch { Add-Note ('could not close a context menu: ' + $_.Exception.Message) }
+        try { Restore-Pointer $old $script:Placed } catch { Add-Note ('could not put the pointer back: ' + $_.Exception.Message) }
+        try { Restore-GroupForeground $prev } catch { Add-Note ('could not give the foreground back: ' + $_.Exception.Message) }
+    }
+}
+
 function Do-CloseUntitled {
     Test-Bridge
     $blank = @(Get-ClaudeTabs | Where-Object { $_.label -ceq $UntitledLabel })
@@ -2184,7 +2989,8 @@ function Do-CloseUntitled {
 function Write-PanelLog([string]$ActionName, [string]$Id, [int]$Code, [string]$Reason) {
     try {
         $why = ''
-        if ($Code -ne 0) { $why = ' ' + ($Reason -replace '[\r\n]+', ' ') }
+        # A group action's reason can hold a group name, so its line carries the exit code only (the reason is on stderr).
+        if ($Code -ne 0 -and $ActionName -notlike 'group*') { $why = ' ' + ($Reason -replace '[\r\n]+', ' ') }
         if ($script:Notes.Count -gt 0) { $why += ' [' + (($script:Notes -join '; ') -replace '[\r\n]+', ' ') + ']' }
         $line = '{0} {1} {2} exit={3} secs={4:N1}{5}' -f (Get-Date).ToString('yyyy-MM-ddTHH:mm:ss'), $ActionName, $(if ($Id -ne '') { $Id } else { '-' }), $Code, $script:Clock.Elapsed.TotalSeconds, $why
         Add-LogLine $line
@@ -2201,6 +3007,7 @@ function Invoke-Logged([string]$ActionName, [string]$LogId, [bool]$Locked, [scri
     $script:LastWait = ''
     $script:FgStart = $null
     $script:FgFailed = $false
+    $script:GroupRun = $false
     Set-Deadlines $ActionName
     $r = [pscustomobject]@{ Code = 0; Reason = 'ok'; Value = $null }
     try {
@@ -2286,7 +3093,7 @@ function Do-SelfTest {
     $name = 'zz-selftest-' + (Get-Date).ToString('HHmm')
     $first = "Reply with the single word OK.`nNothing else."
     $id = ''
-    $r = Step-Run 'new (Haiku 5.5, two-line first prompt)' { Do-New $first $SelfTestModel '' } ''
+    $r = Step-Run 'new (Haiku 5.5, two-line first prompt)' { Do-New $first $SelfTestModel } ''
     if ($null -eq $r) { return 1 }
     $script:Notes = @()   # the new chat's own notes (its tab is open) do not apply: this run closes it
     $id = [string]($r | Select-Object -First 1)
@@ -2312,10 +3119,6 @@ if ($Session -ne '' -and $Session -notmatch '^[0-9A-Fa-f-]{8,64}$') {
     [Console]::Error.WriteLine('-Session is a session id (hex digits and dashes)')
     exit 1
 }
-if ($GroupId -ne '' -and $GroupId -notmatch '^[0-9A-Za-z_-]{1,200}$') {
-    [Console]::Error.WriteLine('-GroupId is a group id (letters, digits, dashes)')
-    exit 1
-}
 $code = 1
 switch ($Action) {
     'list' { $code = Out-Result (Invoke-Logged 'list' '' $false { Do-List }) }
@@ -2324,7 +3127,7 @@ switch ($Action) {
             $code = Out-Result (Invoke-Logged 'send' $Session $true { Do-Send $Session (Read-Text $TextFile) })
         }
     }
-    'new' { $code = Out-Result (Invoke-Logged 'new' '' $true { Do-New (Read-Text $TextFile) $Model $GroupId }) }
+    'new' { $code = Out-Result (Invoke-Logged 'new' '' $true { Do-New (Read-Text $TextFile) $Model }) }
     'model' {
         if ($Session -eq '') { [Console]::Error.WriteLine('model needs -Session'); $code = 1 } else {
             $code = Out-Result (Invoke-Logged 'model' $Session $true { Do-Model $Session $Model })
@@ -2335,6 +3138,32 @@ switch ($Action) {
             $code = Out-Result (Invoke-Logged 'archive' $Session $true { Do-Archive $Session })
         }
     }
+    'groups' { $code = Out-Result (Invoke-Logged 'groups' '' $false { Do-List 'groups' }) }
+    'group-create' {
+        if ($Group -eq '') { [Console]::Error.WriteLine('group-create needs -Group'); $code = 1 } else {
+            $code = Out-Result (Invoke-Logged 'group-create' '' $true { Do-Group 'create' '' $Group '' $false })
+        }
+    }
+    'group-rename' {
+        if ($Group -eq '' -or $NewName -eq '') { [Console]::Error.WriteLine('group-rename needs -Group and -NewName'); $code = 1 } else {
+            $code = Out-Result (Invoke-Logged 'group-rename' '' $true { Do-Group 'rename' '' $Group $NewName $false })
+        }
+    }
+    'group-delete' {
+        if ($Group -eq '') { [Console]::Error.WriteLine('group-delete needs -Group'); $code = 1 } else {
+            $code = Out-Result (Invoke-Logged 'group-delete' '' $true { Do-Group 'delete' '' $Group '' ([bool]$Force) })
+        }
+    }
+    'group-add' {
+        if ($Session -eq '' -or $Group -eq '') { [Console]::Error.WriteLine('group-add needs -Session and -Group'); $code = 1 } else {
+            $code = Out-Result (Invoke-Logged 'group-add' $Session $true { Do-Group 'add' $Session $Group '' $false })
+        }
+    }
+    'group-remove' {
+        if ($Session -eq '') { [Console]::Error.WriteLine('group-remove needs -Session'); $code = 1 } else {
+            $code = Out-Result (Invoke-Logged 'group-remove' $Session $true { Do-Group 'remove' $Session '' '' $false })
+        }
+    }
     'close-untitled' { $code = Out-Result (Invoke-Logged 'close-untitled' '' $true { Do-CloseUntitled }) }
     'selftest' {
         $r = Invoke-Logged 'selftest' '' $true { Do-SelfTest }
@@ -2342,6 +3171,6 @@ switch ($Action) {
         if ($r.Code -ne 0) { [Console]::Error.WriteLine($r.Reason); $code = $r.Code }
         foreach ($n in $script:Notes) { [Console]::Error.WriteLine('note: ' + $n) }
     }
-    default { [Console]::Error.WriteLine('usage: claude_panel.ps1 list | send | new | model | archive | close-untitled | selftest'); $code = 1 }
+    default { [Console]::Error.WriteLine('usage: claude_panel.ps1 list | send | new | model | archive | groups | group-create | group-rename | group-delete | group-add | group-remove | close-untitled | selftest'); $code = 1 }
 }
 exit $code

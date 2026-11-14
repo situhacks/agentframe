@@ -10,7 +10,7 @@
 //! byte of the page: the page is read and written as bytes-in-a-string, so its line endings stay.
 
 use super::ledger::{Registry, LIFE_REL};
-use super::query::{self, QueryErr};
+use super::query::{self, Deadline, QueryErr};
 use crate::core::Ctx;
 use crate::life::{locked, vpath, TextFile};
 use regex::Regex;
@@ -73,7 +73,11 @@ pub fn find_blocks(text: &str) -> Result<Vec<Block>, (usize, String)> {
     let fenced = |at: usize| fences.iter().any(|r| r.contains(&at));
     let opens: Vec<_> = open.captures_iter(text).filter_map(|c| c.get(0).map(|m| (m.range(), c[1].to_string()))).filter(|(r, _)| !fenced(r.start)).collect();
     let closes: Vec<_> = close.find_iter(text).map(|m| m.range()).filter(|r| !fenced(r.start)).collect();
-    for (r, _) in &opens {
+    let inner = Regex::new(r"<!--\s*af-data:").expect("regex");
+    for (r, sql) in &opens {
+        if inner.is_match(sql) {
+            return Err((line_of(text, r.start), "this opening marker is not ended by `-->` before the next opening marker; check it for a typo".to_string()));
+        }
         if closes.iter().any(|c| c.start >= r.start && c.start < r.end) {
             return Err((line_of(text, r.start), "this opening marker is not ended by `-->` before a closing marker; check it for a typo".to_string()));
         }
@@ -116,7 +120,7 @@ pub const BLOCK_COUNT_CAP: usize = 100_000;
 /// The page with every block refilled from `con`, and the faults (`line N: what`) of the blocks that
 /// could not be: those keep their old content. A block keeps at most 500 rows and ends with one line
 /// saying how many of how many are shown.
-pub fn render_text(text: &str, blocks: &[Block], con: &Connection) -> (String, Vec<(usize, String)>) {
+pub fn render_text(text: &str, blocks: &[Block], con: &Connection, deadline: &Deadline) -> (String, Vec<(usize, String)>) {
     let eol = if text.contains("\r\n") { "\r\n" } else { "\n" };
     let mut out = String::with_capacity(text.len());
     let mut at = 0;
@@ -127,7 +131,7 @@ pub fn render_text(text: &str, blocks: &[Block], con: &Connection) -> (String, V
         let fill = if b.sql.is_empty() {
             Err("the statement is empty".to_string())
         } else {
-            match query::run(con, &b.sql, BLOCK_ROWS, Some(BLOCK_COUNT_CAP)) {
+            match query::run(con, &b.sql, BLOCK_ROWS, Some(BLOCK_COUNT_CAP), Some(deadline)) {
                 Ok((table, total)) => {
                     let mut md = query::to_markdown(&table);
                     if !total.exact || total.n > table.rows.len() {
@@ -167,7 +171,7 @@ pub fn label(rel: &str) -> String {
 /// Render one page (relative to `workspace/life/`) and write it when it changed, under a lock on the
 /// page, so two renders never leave the older answer last. Nothing is written when the page is
 /// missing, has a marker fault, or the ledgers fail their checks.
-pub fn render_page(ctx: &Ctx, reg: &Registry, rel: &str) -> Outcome {
+pub fn render_page(ctx: &Ctx, reg: &Registry, rel: &str, deadline: &Deadline) -> Outcome {
     let label = label(rel);
     let path = vpath(ctx, &label);
     let mut out = Outcome::default();
@@ -200,7 +204,7 @@ pub fn render_page(ctx: &Ctx, reg: &Registry, rel: &str) -> Outcome {
                 return Ok(());
             }
         };
-        let (new, faults) = render_text(&text, &blocks, &con);
+        let (new, faults) = render_text(&text, &blocks, &con, deadline);
         out.faults.extend(faults.into_iter().map(|(line, what)| format!("{label}:{line}: {what}")));
         if new != text {
             TextFile { text: new, crlf: false, bom: false }.save_atomic(&path)?;
@@ -221,7 +225,16 @@ pub fn render_registered(ctx: &Ctx) -> Vec<String> {
         Ok(None) => return Vec::new(),
         Err(e) => return vec![e.to_string()],
     };
-    reg.pages.iter().flat_map(|p| render_page(ctx, &reg, p).faults).collect()
+    // One time budget for every page: a registry full of slow blocks costs one limit, not one per block.
+    let deadline = Deadline::new();
+    let mut faults = skipped_entries(&reg);
+    faults.extend(reg.pages.iter().flat_map(|p| render_page(ctx, &reg, p, &deadline).faults));
+    faults
+}
+
+/// What to say about the `pages:` entries that cannot be pages: they are never opened.
+pub fn skipped_entries(reg: &Registry) -> Vec<String> {
+    reg.bad_pages.iter().map(|(raw, why)| format!("{}: pages entry {raw:?} {why}; skipped", super::ledger::REGISTRY_REL)).collect()
 }
 
 /// For the doctor: the notes about every registered page, and nothing written. A page that is
@@ -233,6 +246,7 @@ pub fn doctor_notes(ctx: &Ctx, reg: &Registry) -> Vec<String> {
         return notes;
     }
     let con = query::load_db(ctx, reg).ok();
+    let deadline = Deadline::new();
     for rel in &reg.pages {
         let label = label(rel);
         let path = vpath(ctx, &label);
@@ -257,7 +271,7 @@ pub fn doctor_notes(ctx: &Ctx, reg: &Registry) -> Vec<String> {
             }
         };
         let Some(con) = &con else { continue };
-        let (new, faults) = render_text(&text, &blocks, con);
+        let (new, faults) = render_text(&text, &blocks, con, &deadline);
         for (line, what) in &faults {
             notes.push(format!("{label}:{line}: the block fails: {what}"));
         }

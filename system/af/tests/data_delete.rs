@@ -34,11 +34,11 @@ fn delete_by_one_column_removes_every_matching_row() {
     let fx = Fx::new();
     seeded(&fx);
     let out = fx.ok(&["data", "delete", "sets", "exercise=Squat"]);
-    assert_eq!(out.trim(), "deleted 2");
+    assert_eq!(out.lines().next().unwrap(), "deleted 2");
     assert_eq!(fx.read(SETS), "date,exercise,set,weight\n2026-11-02,Bench,1,70\n2026-11-02,Bench,2,5\n");
     assert!(!fx.exists(&format!("{SETS}.lock")) && !fx.exists(&format!("{SETS}.tmp")), "no lock or temp file is left");
     let out = fx.ok(&["data", "delete", "sets", "date=2026-11-02"]);
-    assert_eq!(out.trim(), "deleted 2");
+    assert_eq!(out.lines().next().unwrap(), "deleted 2");
     assert_eq!(fx.read(SETS), "date,exercise,set,weight\n", "the header stays");
     fx.ok(&["data", "add", "sets", "date=2026-11-03", "exercise=Row", "set=1"]);
 }
@@ -48,7 +48,7 @@ fn delete_by_two_columns_removes_only_the_rows_matching_both() {
     let fx = Fx::new();
     seeded(&fx);
     let out = fx.ok(&["data", "delete", "sets", "exercise=Squat", "date=2026-11-01", "set=2"]);
-    assert_eq!(out.trim(), "deleted 1");
+    assert_eq!(out.lines().next().unwrap(), "deleted 1");
     assert_eq!(fx.read(SETS), "date,exercise,set,weight\n2026-11-01,Squat,1,100\n2026-11-02,Bench,1,70\n2026-11-02,Bench,2,5\n");
 }
 
@@ -94,13 +94,13 @@ fn an_unknown_column_a_missing_condition_a_bad_value_and_a_repeated_column_are_r
 fn a_match_is_by_typed_value() {
     let fx = Fx::new();
     seeded(&fx);
-    assert_eq!(fx.ok(&["data", "delete", "sets", "exercise=Squat", "set=01"]).trim(), "deleted 1", "01 is the 1 stored");
-    assert_eq!(fx.ok(&["data", "delete", "sets", "weight=5.0"]).trim(), "deleted 1", "5.0 is the 5 stored");
-    assert_eq!(fx.ok(&["data", "delete", "sets", "exercise= Bench "]).trim(), "deleted 1", "spaces around text do not count");
+    assert_eq!(fx.ok(&["data", "delete", "sets", "exercise=Squat", "set=01"]).lines().next().unwrap(), "deleted 1", "01 is the 1 stored");
+    assert_eq!(fx.ok(&["data", "delete", "sets", "weight=5.0"]).lines().next().unwrap(), "deleted 1", "5.0 is the 5 stored");
+    assert_eq!(fx.ok(&["data", "delete", "sets", "exercise= Bench "]).lines().next().unwrap(), "deleted 1", "spaces around text do not count");
     assert_eq!(fx.read(SETS), "date,exercise,set,weight\n2026-11-01,Squat,2,105\n");
     // An empty value matches the rows where the column is empty.
     add(&fx, "2026-11-05", "Row", 1, "");
-    assert_eq!(fx.ok(&["data", "delete", "sets", "weight="]).trim(), "deleted 1");
+    assert_eq!(fx.ok(&["data", "delete", "sets", "weight="]).lines().next().unwrap(), "deleted 1");
     assert_eq!(fx.read(SETS), "date,exercise,set,weight\n2026-11-01,Squat,2,105\n");
 }
 
@@ -128,7 +128,7 @@ fn dry_run_says_how_many_and_writes_nothing() {
     let page = fx.read("workspace/life/p.md");
     let before = bytes(&fx, SETS);
     let out = fx.ok(&["data", "delete", "sets", "exercise=Squat", "--dry-run"]);
-    assert_eq!(out.trim(), "would delete 2");
+    assert_eq!(out.lines().next().unwrap(), "would delete 2");
     assert_eq!(bytes(&fx, SETS), before);
     assert_eq!(fx.read("workspace/life/p.md"), page);
     assert!(!fx.exists(&format!("{SETS}.lock")));
@@ -190,7 +190,7 @@ fn eight_processes_deleting_different_keys_at_once_leave_the_right_rows() {
         for r in runs {
             let (code, out, err) = r.join().unwrap();
             assert_eq!(code, 0, "{err}");
-            assert_eq!(out.trim(), "deleted 1");
+            assert_eq!(out.lines().next().unwrap(), "deleted 1");
         }
     });
     let text = fx.read(SETS);

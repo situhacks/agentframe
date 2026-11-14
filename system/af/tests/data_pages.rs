@@ -345,7 +345,7 @@ fn no_text_makes_page_parsing_or_rendering_panic() {
                 assert!(text.is_char_boundary(b.start) && text.is_char_boundary(b.end), "{text:?}");
                 at = b.end;
             }
-            let _ = render_text(&text, &blocks, &con);
+            let _ = render_text(&text, &blocks, &con, &afcore::data::query::Deadline::new());
         }
     }
 }

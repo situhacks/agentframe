@@ -35,7 +35,7 @@ pub enum QueryErr {
     Sql(String),
 }
 
-/// A REAL value with up to ten significant digits (more only where the integer part itself is longer,
+/// A REAL value with up to twelve significant digits (more only where the integer part itself is longer,
 /// to 17), trailing zeros removed, so a sum of prices does not print binary noise and a small value
 /// does not print as 0.
 pub fn fmt_real(v: f64) -> String {
@@ -46,7 +46,7 @@ pub fn fmt_real(v: f64) -> String {
         return "0".to_string();
     }
     let exp10: i32 = format!("{:e}", v.abs()).split('e').nth(1).and_then(|e| e.parse().ok()).unwrap_or(0);
-    let sig = ((exp10 + 1).max(10) as usize).min(17);
+    let sig = ((exp10 + 1).max(12) as usize).min(17);
     let sci = format!("{:.*e}", sig - 1, v.abs());
     let (mantissa, exp) = sci.split_once('e').unwrap_or((&sci, "0"));
     let exp: i32 = exp.parse().unwrap_or(0);
@@ -174,7 +174,44 @@ fn first_word(sql: &str) -> Option<String> {
 
 /// How long a statement may run before it is stopped: `DEFAULT_TIMEOUT_MS`, or `AF_DATA_SQL_TIMEOUT_MS`.
 pub fn timeout_ms() -> u64 {
-    std::env::var("AF_DATA_SQL_TIMEOUT_MS").ok().and_then(|v| v.trim().parse().ok()).filter(|ms| *ms > 0).unwrap_or(DEFAULT_TIMEOUT_MS)
+    parse_timeout_ms(std::env::var("AF_DATA_SQL_TIMEOUT_MS").ok().as_deref())
+}
+
+/// The limit a value of `AF_DATA_SQL_TIMEOUT_MS` asks for.
+///
+/// Clamped to 1 to 60000 milliseconds, so the override can shorten the limit but never switch it off; a
+/// value that is not a whole number is the default. (A number too large for u64 is still a number.)
+pub fn parse_timeout_ms(raw: Option<&str>) -> u64 {
+    let Some(v) = raw.map(str::trim) else { return DEFAULT_TIMEOUT_MS };
+    if v.is_empty() || !v.bytes().all(|b| b.is_ascii_digit()) {
+        return DEFAULT_TIMEOUT_MS;
+    }
+    v.parse::<u64>().map(|ms| ms.clamp(1, MAX_TIMEOUT_MS)).unwrap_or(MAX_TIMEOUT_MS)
+}
+
+/// The longest limit the override may ask for.
+pub const MAX_TIMEOUT_MS: u64 = 60_000;
+
+/// One time budget for a whole command (a render, the re-render after a write, the doctor's page check),
+/// shared by every block of every page, so a page of slow blocks costs one limit, not one per block.
+pub struct Deadline {
+    end: std::time::Instant,
+}
+
+impl Deadline {
+    pub fn new() -> Deadline {
+        Deadline { end: std::time::Instant::now() + std::time::Duration::from_millis(timeout_ms()) }
+    }
+
+    pub fn remaining_ms(&self) -> u64 {
+        self.end.saturating_duration_since(std::time::Instant::now()).as_millis() as u64
+    }
+}
+
+impl Default for Deadline {
+    fn default() -> Self {
+        Deadline::new()
+    }
 }
 
 fn seconds_text(ms: u64) -> String {
@@ -244,7 +281,18 @@ impl Total {
 /// read-only by SQLite. At most `keep` rows are kept. Rows past that are only counted: up to
 /// `count_cap` of them when given, else until the time limit, when the count is "more than n". A
 /// statement still giving no row (or fewer than `keep`) when the time is up is stopped with an error.
-pub fn run(con: &Connection, sql: &str, keep: usize, count_cap: Option<usize>) -> Result<(Table, Total), QueryErr> {
+pub fn run(con: &Connection, sql: &str, keep: usize, count_cap: Option<usize>, deadline: Option<&Deadline>) -> Result<(Table, Total), QueryErr> {
+    // A statement may run for the single-statement limit, or for what is left of its command's budget.
+    let ms = match deadline {
+        Some(d) => {
+            let left = d.remaining_ms();
+            if left == 0 {
+                return Err(QueryErr::Stopped("not run: the time limit for this command was spent".to_string()));
+            }
+            left.min(timeout_ms())
+        }
+        None => timeout_ms(),
+    };
     match first_word(sql).as_deref() {
         Some("select") | Some("with") => {}
         _ => return Err(QueryErr::Refused("only a single select (or with ... select) statement is run; af data sql is read-only".to_string())),
@@ -260,7 +308,6 @@ pub fn run(con: &Connection, sql: &str, keep: usize, count_cap: Option<usize>) -
     if !stmt.readonly() {
         return Err(QueryErr::Refused("the statement is not read-only; af data sql only reads".to_string()));
     }
-    let ms = timeout_ms();
     let stopped = || QueryErr::Stopped(format!("the query was stopped after {}", seconds_text(ms)));
     let dog = Watchdog::start(con, ms);
     let headers: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();

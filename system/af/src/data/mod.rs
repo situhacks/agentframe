@@ -355,6 +355,13 @@ fn require_key(l: &Ledger, given: &[Option<String>]) -> R<()> {
 
 /// Writing the column's rows or the registry entry can be cut short, leaving the file and the registry one
 /// column apart. Running the same `af data column` again finishes whichever half is missing.
+/// How a `column` ended: all of it, or the half a crash had left.
+enum How {
+    Plain,
+    RegistryAhead,
+    FileAhead,
+}
+
 fn cmd_column(ctx: &Ctx, a: &ColumnArgs) -> R<i32> {
     let col = parse_col_spec(&a.spec)?;
     if col.required {
@@ -362,7 +369,7 @@ fn cmd_column(ctx: &Ctx, a: &ColumnArgs) -> R<i32> {
     }
     let (_, first) = find_ledger(ctx, &a.ledger)?;
     let path = first.path(ctx);
-    let rows = locked(&path, || {
+    let (rows, how) = locked(&path, || {
         locked(&Registry::path(ctx), || {
             let (mut reg, mut ledger) = find_ledger(ctx, &a.ledger)?;
             let label = ledger.label();
@@ -397,7 +404,7 @@ fn cmd_column(ctx: &Ctx, a: &ColumnArgs) -> R<i32> {
                 let mut records = vec![names.clone()];
                 records.extend(raw.rows.iter().map(|(_, r)| r.iter().cloned().chain(std::iter::once(String::new())).collect::<Vec<_>>()));
                 rewrite(&path, &raw, &records)?;
-                return Ok(raw.rows.len());
+                return Ok((raw.rows.len(), How::RegistryAhead));
             }
             // The file already has it and the registry lacks it.
             if header.len() == names.len() + 1 && header[..names.len()] == names[..] && header[names.len()] == col.name {
@@ -408,7 +415,7 @@ fn cmd_column(ctx: &Ctx, a: &ColumnArgs) -> R<i32> {
                     return Err(refuse_faults(&faults, &format!("the ledger file fails its checks ({} faults); no column was added", faults.len())));
                 }
                 save_ledger(&mut reg, extended)?;
-                return Ok(raw.rows.len());
+                return Ok((raw.rows.len(), How::FileAhead));
             }
             // The ordinary case.
             let raw = load_for_write(ctx, &ledger, "no column was added")?;
@@ -427,10 +434,14 @@ fn cmd_column(ctx: &Ctx, a: &ColumnArgs) -> R<i32> {
                 restore(&path, &original);
                 return Err(e);
             }
-            Ok(raw.rows.len())
+            Ok((raw.rows.len(), How::Plain))
         })
     })?;
-    outln!("added column {} to '{}' ({rows} rows get an empty value)", col.spec(), a.ledger);
+    match how {
+        How::Plain => outln!("added column {} to '{}' ({rows} rows get an empty value)", col.spec(), a.ledger),
+        How::RegistryAhead => outln!("the registry already had column {}; added it to the file ({rows} rows get an empty value)", col.spec()),
+        How::FileAhead => outln!("the file already had column {}; registered it ({rows} rows keep their values)", col.spec()),
+    }
     render_after_write(ctx);
     Ok(0)
 }
@@ -497,6 +508,9 @@ fn cmd_add(ctx: &Ctx, a: &AddArgs) -> R<i32> {
 /// Remove the matching rows by cutting their lines out of the file (every other byte stays), through a
 /// temporary file and a rename, under the ledger's lock. Where `add --replace` and `column` rewrite the
 /// file with the CSV writer (needless quotes and blank lines go; values stay exactly), this does not.
+/// Removed rows `delete` lists, as they stood, before it counts the rest.
+const DELETE_SHOWN: usize = 20;
+
 fn cmd_delete(ctx: &Ctx, a: &DeleteArgs) -> R<i32> {
     let (_, first) = find_ledger(ctx, &a.ledger)?;
     if a.conditions.is_empty() {
@@ -512,15 +526,23 @@ fn cmd_delete(ctx: &Ctx, a: &DeleteArgs) -> R<i32> {
         if hits.is_empty() {
             die!("no row matches");
         }
+        // What goes, as the lines stood, taken before anything is cut.
+        let gone = ledger::lines_text(&path, &hits);
         if !a.dry_run {
-            ledger::delete_lines(&path, &l, &hits, raw.rows.len() - hits.len())?;
+            let kept: Vec<Vec<String>> = raw.rows.iter().filter(|(line, _)| !hits.contains(line)).map(|(_, r)| r.clone()).collect();
+            ledger::delete_lines(&path, &l, &hits, &kept)?;
         }
-        Ok(hits.len())
+        Ok((hits.len(), gone))
     })?;
-    if a.dry_run {
-        outln!("would delete {n}");
-    } else {
-        outln!("deleted {n}");
+    let (n, gone) = n;
+    outln!("{} {n}", if a.dry_run { "would delete" } else { "deleted" });
+    for line in gone.iter().take(DELETE_SHOWN) {
+        outln!("{line}");
+    }
+    if gone.len() > DELETE_SHOWN {
+        outln!("... and {} more", gone.len() - DELETE_SHOWN);
+    }
+    if !a.dry_run {
         render_after_write(ctx);
     }
     Ok(0)
@@ -716,7 +738,7 @@ fn cmd_sql(ctx: &Ctx, a: &SqlArgs) -> R<i32> {
         }
     };
     let limit = a.limit.map(|l| l as usize).unwrap_or(DEFAULT_LIMIT);
-    let (table, total) = match query::run(&con, &a.statement, limit, None) {
+    let (table, total) = match query::run(&con, &a.statement, limit, None, None) {
         Ok(x) => x,
         Err(query::QueryErr::Refused(m)) | Err(query::QueryErr::Stopped(m)) => die!("{m}"),
         Err(query::QueryErr::Sql(m)) => {
@@ -757,8 +779,10 @@ fn cmd_sql(ctx: &Ctx, a: &SqlArgs) -> R<i32> {
 /// that could be rendered was.
 fn render_pages(ctx: &Ctx, reg: &Registry, pages: &[String]) -> R<i32> {
     let mut faults = 0;
+    // One time budget for the whole command, shared by every block of every page.
+    let deadline = query::Deadline::new();
     for rel in pages {
-        let o = pages::render_page(ctx, reg, rel);
+        let o = pages::render_page(ctx, reg, rel, &deadline);
         for f in &o.faults {
             out::err_line(f);
         }
@@ -778,6 +802,9 @@ fn render_pages(ctx: &Ctx, reg: &Registry, pages: &[String]) -> R<i32> {
 fn cmd_render(ctx: &Ctx, files: &[String]) -> R<i32> {
     let reg = Registry::load(ctx)?.unwrap_or_default();
     let pages: Vec<String> = if files.is_empty() {
+        for w in pages::skipped_entries(&reg) {
+            out::err_line(&format!("af: warning: {w}"));
+        }
         reg.pages.clone()
     } else {
         // Every argument is checked before any page is touched.
@@ -831,6 +858,9 @@ pub fn doctor_checks(ctx: &Ctx) -> R<(Vec<String>, Vec<String>)> {
         }
         Err(e) => return Err(e),
     };
+    for (raw, why) in &reg.bad_pages {
+        issues.push(format!("{}: pages entry {raw:?} {why}; remove it from ledgers.yaml", ledger::REGISTRY_REL));
+    }
     for l in &reg.ledgers {
         let faults = match load_checked(ctx, l) {
             Ok((_, f)) => f,

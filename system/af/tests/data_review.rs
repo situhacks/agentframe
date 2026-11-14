@@ -143,12 +143,12 @@ fn a_number_is_written_as_given_but_compared_by_value() {
 fn a_number_with_more_than_fifteen_significant_digits_is_refused() {
     let fx = Fx::new();
     new_tx(&fx);
-    for bad in ["12345678901234567890", "1.2345678901234567", "0.1234567890123456", "123456789.1234567"] {
+    for bad in ["12345678901234567890", "1.2345678901234567", "0.1234567890123456", "123456789.1234567", "1234567890123", "1.23456789012345", "123456789012345"] {
         let (code, _, err) = fx.run(&["data", "add", "tx", "id=x", &format!("amt={bad}")]);
         assert_eq!(code, 1, "{bad}");
         assert!(err.contains("significant digits"), "{bad}: {err}");
     }
-    for good in ["123456789012345", "1.23456789012345", "0.00001", "1000000000000000000", "1200.50000000000000000", "-0.000000000000001"] {
+    for good in ["123456789012", "1.23456789012", "0.00001", "1000000000000000000", "1200.50000000000000000", "-0.000000000001", "0.123456789012"] {
         let (code, _, err) = fx.run(&["data", "add", "tx", &format!("id=n{good}"), &format!("amt={good}")]);
         assert_eq!(code, 0, "{good}: {err}");
     }
@@ -329,19 +329,27 @@ fn a_page_argument_must_end_in_md_so_a_table_never_goes_into_a_ledger() {
 }
 
 #[test]
-fn reals_print_with_up_to_ten_significant_digits_and_no_trailing_zeros() {
+fn reals_print_with_twelve_significant_digits_no_trailing_zeros_and_never_in_exponent_form() {
     let fx = Fx::new();
     let one = |sql: &str| fx.ok(&["data", "sql", sql, "--csv"]).replace("\r\n", "\n").lines().nth(1).unwrap().to_string();
     assert_eq!(one("select 0.00001"), "0.00001");
     assert_eq!(one("select 0.1 + 0.2"), "0.3");
-    assert_eq!(one("select 1.0/3"), "0.3333333333");
-    assert_eq!(one("select 2.0/3"), "0.6666666667");
+    assert_eq!(one("select 1.0/3"), "0.333333333333");
+    assert_eq!(one("select 2.0/3"), "0.666666666667");
+    assert_eq!(one("select 19.99 * 3"), "59.97");
+    assert_eq!(one("select 123456789.01"), "123456789.01", "what is stored prints whole");
+    assert_eq!(one("select 1234567.8901"), "1234567.8901");
+    assert_eq!(one("select 0.123456789012"), "0.123456789012");
+    for huge in ["select 1e300", "select 1e-300", "select 2.5e-7", "select -1.5e25", "select 6.02e23"] {
+        let v = one(huge);
+        assert!(!v.contains('e') && !v.contains('E'), "{huge} printed {v}");
+    }
     assert_eq!(one("select 1e-7"), "0.0000001");
     assert_eq!(one("select -0.00001"), "-0.00001");
     assert_eq!(one("select 2.50"), "2.5");
     assert_eq!(one("select 1e20"), "100000000000000000000");
     assert_eq!(one("select 123456789012.0"), "123456789012", "the integer part is never rounded away");
-    assert_eq!(one("select 100.0 / 80.5"), "1.242236025");
+    assert_eq!(one("select 100.0 / 80.5"), "1.24223602484");
     assert_eq!(one("select 0.0"), "0");
     assert_eq!(one("select -0.0"), "0");
     assert!(fx.ok(&["data", "sql", "select 0.00001 as x", "--json"]).contains("\"x\": 0.00001"));

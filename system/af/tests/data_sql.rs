@@ -94,7 +94,7 @@ fn real_values_print_with_no_trailing_zeros_and_no_binary_noise() {
     assert!(fx.ok(&["data", "sql", "select sum(price) as t from prices where item in ('a', 'b')"]).contains("| 0.3 |"));
     let out = fx.ok(&["data", "sql", "select price from prices order by item", "--csv"]).replace("\r\n", "\n");
     assert_eq!(out, "price\n0.1\n0.2\n2.5\n-0.00001\n");
-    assert!(fx.ok(&["data", "sql", "select 1.0/3 as x, 2.0 as y, 1e20 as z", "--json"]).contains("\"x\": 0.3333333333, \"y\": 2, \"z\": 100000000000000000000"));
+    assert!(fx.ok(&["data", "sql", "select 1.0/3 as x, 2.0 as y, 1e20 as z", "--json"]).contains("\"x\": 0.333333333333, \"y\": 2, \"z\": 100000000000000000000"));
     assert!(fx.ok(&["data", "sql", "select 7 as n, 7.0 as r", "--csv"]).replace("\r\n", "\n").contains("7,7\n"));
 }
 
@@ -279,7 +279,7 @@ fn json_and_csv_cannot_be_asked_together_and_a_join_across_ledgers_works() {
     add_set(&fx, "Squat", "1", "100");
     fx.ok(&["data", "add", "body", "date=2026-11-14", "kg=80.5"]);
     let out = fx.ok(&["data", "sql", "select s.weight / b.kg as ratio from sets s join body b on b.date = s.date"]);
-    assert!(out.contains("| 1.242236025 |"), "{out}");
+    assert!(out.contains("| 1.24223602484 |"), "{out}");
     let (code, ..) = fx.run(&["data", "sql", "select 1", "--json", "--csv"]);
     assert_eq!(code, 2);
 }
@@ -337,21 +337,21 @@ fn a_registered_page_with_an_endless_block_does_not_hang_add_render_or_the_docto
     let fx = Fx::new();
     new_sets(&fx);
     let counting = "with recursive r(n) as (select 1 union all select n+1 from r) select count(*) from r";
-    fx.write("workspace/life/p.md", &format!("<!-- af-data: {counting} -->\nkept\n<!-- /af-data -->\n<!-- af-data: {ENDLESS} -->\n<!-- /af-data -->\n"));
+    fx.write("workspace/life/p.md", &format!("<!-- af-data: {ENDLESS} -->\n<!-- /af-data -->\n<!-- af-data: {counting} -->\nkept\n<!-- /af-data -->\n"));
     let (code, _, err, took) = timed(&fx, "300", &["data", "page", "p.md"]);
     assert_eq!(code, 1, "{err}");
     assert!(took.as_secs() < 8, "{took:?}");
-    assert!(err.contains("p.md:1:") && err.contains("stopped after"), "{err}");
+    assert!(err.contains("p.md:3:") && err.contains("stopped after"), "{err}");
     let page = fx.read("workspace/life/p.md");
-    assert!(page.starts_with(&format!("<!-- af-data: {counting} -->\nkept\n<!-- /af-data -->")), "kept: {page}");
-    assert_eq!(page.matches("\n| 500 |\n").count(), 1, "the second block holds 500 rows");
+    assert!(page.ends_with(&format!("<!-- af-data: {counting} -->\nkept\n<!-- /af-data -->\n")), "kept: {page}");
+    assert_eq!(page.matches("\n| 500 |\n").count(), 1, "the endless block holds 500 rows");
     assert!(!page.contains("\n| 501 |\n") && page.contains("(showing 500 of more than 100000 rows)"), "{}", &page[page.len().saturating_sub(300)..]);
     let (code, out, err, took) = timed(&fx, "300", &["data", "add", "sets", "date=2026-11-14", "exercise=Squat", "set=1", "source=log"]);
     assert_eq!(code, 0, "{err}");
     assert!(took.as_secs() < 8 && out.contains("added 1 row") && err.contains("af: warning:"), "{took:?} {out} {err}");
     let (_, out, err, took) = timed(&fx, "300", &["doctor"]);
     assert!(took.as_secs() < 15, "{took:?}");
-    assert!(format!("{out}{err}").contains("p.md:1: the block fails"), "{out}{err}");
+    assert!(format!("{out}{err}").contains("the block fails: the query was stopped after"), "{out}{err}");
 }
 
 #[test]

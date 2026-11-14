@@ -120,8 +120,11 @@ impl Ledger {
 #[derive(Clone, Debug, Default)]
 pub struct Registry {
     pub ledgers: Vec<Ledger>,
-    /// Relative to `workspace/life/`, forward slashes.
+    /// Relative to `workspace/life/`, forward slashes, ending in `.md`.
     pub pages: Vec<String>,
+    /// Entries of `pages:` that cannot be pages (not `.md`, or outside `workspace/life/`) with why. They are
+    /// kept as written, reported by the doctor, and skipped by every write, never opened.
+    pub bad_pages: Vec<(String, String)>,
 }
 
 // ------------------------------------------------------------------ names, paths, values
@@ -192,7 +195,7 @@ pub fn page_rel(ctx: &Ctx, arg: &str) -> R<String> {
 }
 
 /// The most significant digits a `number` may carry: more cannot be held exactly in a double.
-pub const MAX_DIGITS: usize = 15;
+pub const MAX_DIGITS: usize = 12;
 
 fn significant_digits(v: &str) -> usize {
     let body = v.strip_prefix('-').unwrap_or(v);
@@ -394,12 +397,13 @@ impl Registry {
             for p in items {
                 let raw = s_of(Some(p));
                 match clean_rel(&raw) {
-                    Some(r) => {
+                    Some(r) if r.to_ascii_lowercase().ends_with(".md") => {
                         if !reg.pages.contains(&r) {
                             reg.pages.push(r)
                         }
                     }
-                    None => die!("{REGISTRY_REL}: page {raw:?} must be a path inside workspace/life/"),
+                    Some(_) => reg.bad_pages.push((raw, "does not end in .md".to_string())),
+                    None => reg.bad_pages.push((raw, "is not a path inside workspace/life/".to_string())),
                 }
             }
         }
@@ -422,11 +426,11 @@ impl Registry {
                 s.push_str(&format!("      - {{name: {}, type: {}{req}}}\n", yq(&c.name), c.ty.name()));
             }
         }
-        if self.pages.is_empty() {
+        if self.pages.is_empty() && self.bad_pages.is_empty() {
             s.push_str("pages: []\n");
         } else {
             s.push_str("pages:\n");
-            for p in &self.pages {
+            for p in self.pages.iter().chain(self.bad_pages.iter().map(|(raw, _)| raw)) {
                 s.push_str(&format!("  - {}\n", yq(p)));
             }
         }
@@ -676,7 +680,7 @@ pub fn append_records(path: &str, raw: &Raw, records: &[Vec<String>]) -> R<()> {
 /// leave every other byte as it was: quoting, blank lines, line endings, a BOM, a missing final newline.
 /// A ledger row is exactly one line (text holds no line break). The result is read back and checked
 /// before it replaces the file, so a file this cannot cut cleanly is refused and left alone.
-pub fn delete_lines(path: &str, ledger: &Ledger, lines: &[u64], rows_after: usize) -> R<()> {
+pub fn delete_lines(path: &str, ledger: &Ledger, lines: &[u64], expected: &[Vec<String>]) -> R<()> {
     let bytes = std::fs::read(path).map_err(|e| pyos::os_error(&e, path))?;
     let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
     for (i, chunk) in bytes.split_inclusive(|b| *b == b'\n').enumerate() {
@@ -685,12 +689,24 @@ pub fn delete_lines(path: &str, ledger: &Ledger, lines: &[u64], rows_after: usiz
         }
     }
     let label = ledger.label();
-    let clean = raw_from_bytes(&out, &label).is_ok_and(|raw| raw.rows.len() == rows_after && check(ledger, &label, &raw).is_empty());
+    let clean = raw_from_bytes(&out, &label)
+        .is_ok_and(|raw| raw.rows.iter().map(|(_, r)| r).eq(expected.iter()) && check(ledger, &label, &raw).is_empty());
     if !clean {
         die!("{label}: the rows could not be cut out cleanly (the file's lines do not match its rows); nothing was deleted");
     }
     let text = String::from_utf8_lossy(&out).into_owned();
     TextFile { text, crlf: false, bom: false }.save_atomic(path)
+}
+
+/// The physical lines numbered `lines` as they stand in the file, without their line ending.
+pub fn lines_text(path: &str, lines: &[u64]) -> Vec<String> {
+    let bytes = std::fs::read(path).unwrap_or_default();
+    bytes
+        .split_inclusive(|b| *b == b'\n')
+        .enumerate()
+        .filter(|(i, _)| lines.contains(&(*i as u64 + 1)))
+        .map(|(_, chunk)| String::from_utf8_lossy(chunk).trim_end_matches(['\r', '\n']).to_string())
+        .collect()
 }
 
 /// Replace the whole file with these records (the header first), through a temp file and a rename,

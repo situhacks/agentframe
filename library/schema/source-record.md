@@ -20,4 +20,4 @@ verbatim: true
 - `INDEX.md` is one table, a row per source: ``| `src-2026-10-24-01` | [`orders/order-2026-10-24-01-groceries.md`](orders/order-2026-10-24-01-groceries.md) | 2026-10-24 | <one line> |`` under `| ID | File | Date | Description |`, the file relative to `sources/`; `af source add` writes it.
 - An order (the operator's instruction, in his words) lives in `sources/orders/`; every other type sits at `sources/` top level.
 - `sources/inbox/` is a staging folder: drops, fetched email, and dictations wait there, and the filer moves each one out. It is empty after every `/file` run.
-- A filed source is never edited or deleted; `INDEX.md` is the only file in `sources/` that changes.
+- A filed source's body is never edited or deleted. The one frontmatter field that may change is `tags` (one to three `topic` ids as `tags: [a, b]`, set when filing with `af source add --tag` or later with `af tag add`, never by hand; [`tags.md`](tags.md)). `INDEX.md` is the only other file in `sources/` that changes.

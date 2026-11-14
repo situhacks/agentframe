@@ -1,4 +1,4 @@
-//! `af tag`: the controlled vocabulary behind `tags:` on place and person pages.
+//! `af tag`: the controlled vocabulary behind `tags:` on place, person and knowledge pages and on sources.
 //!
 //! The registry `workspace/life/tags.yaml` is the truth (facets, then one entry per tag with
 //! its facet, lifecycle status, alt labels, scope note); `tags-log.md` is its append-only
@@ -6,14 +6,15 @@
 //! tag (exact id, alt label, singular/plural or hyphen variant; an embedding is only ever a
 //! suggestion), `propose` / `promote` / `deprecate` / `drop` move a tag through its life,
 //! `merge` and `rename` rewrite every page and keep the old form as an alt label, `add`
-//! writes validated tags on one page, `stats` and `lint` are the weekly pass's instruments,
+//! writes validated tags on one page or source, `facet add` declares a facet, `stats` and
+//! `lint` are the weekly pass's instruments,
 //! and `doctor_checks` is what `af doctor` adds: unknown or retired tags on pages, a stale
 //! rendered view, and a `[[slug]]` with no page under places/ or people/.
 
 use crate::core::{parse_iso_date, today, today_date, Ctx};
 use crate::die;
 use crate::error::R;
-use crate::fm::{fm_list_span, fm_list_values, get_scalar, rx, split_fm_optional};
+use crate::fm::{fm_list_span, fm_list_values, get_scalar, rx};
 use crate::index::embed::embed_texts;
 use crate::life::{vpath, TextFile};
 use crate::out;
@@ -26,11 +27,14 @@ pub const REGISTRY_REL: &str = "workspace/life/tags.yaml";
 pub const LOG_REL: &str = "workspace/life/tags-log.md";
 pub const VIEW_REL: &str = "workspace/life/tags.md";
 pub const PAGE_DIRS: [&str; 2] = ["workspace/life/places", "workspace/life/people"];
+pub const KNOWLEDGE_DIR: &str = "workspace/life/knowledge";
+pub const SOURCES_DIR: &str = "workspace/life/sources";
 /// Folders under workspace/life/ whose `[[slug]]`s are not checked: immutable inputs,
 /// archives, the voice corpus, and the append-only log.
 pub const LINK_SKIP_DIRS: [&str; 5] = ["sources", "voice", "_history", "_archive", "log"];
 pub const STATUSES: [&str; 4] = ["proposed", "active", "deprecated", "merged"];
-pub const APPLIES: [&str; 3] = ["places", "people", "both"];
+/// What a facet applies to. `both` is places and people; `context` is knowledge pages and sources.
+pub const APPLIES: [&str; 6] = ["places", "people", "both", "knowledge", "sources", "context"];
 /// A proposed tag becomes active at this many uses on this many pages.
 pub const PROMOTE_USES: usize = 3;
 pub const PROMOTE_PAGES: usize = 2;
@@ -39,6 +43,10 @@ pub const PROPOSED_STALE_DAYS: i64 = 60;
 /// An active tag with one use after this many days is listed for review, never auto-dropped.
 pub const SINGLETON_REVIEW_DAYS: i64 = 90;
 pub const PAGE_TAG_CAP: usize = 8;
+/// A knowledge page or a source carries at most this many tags.
+pub const DOC_TAG_CAP: usize = 3;
+/// The facet whose tags a knowledge page is expected to carry.
+pub const TOPIC_FACET: &str = "topic";
 /// A place page (not an area) with fewer tags than this is under-tagged.
 pub const PAGE_TAG_FLOOR: usize = 3;
 /// Cosine at or above which an embedding neighbour is worth suggesting.
@@ -46,7 +54,7 @@ pub const SUGGEST_COSINE: f64 = 0.55;
 pub const SUGGEST_N: usize = 3;
 
 /// The starter facets `af tag init` writes; names only, no instance vocabulary.
-pub const DEFAULT_FACETS: [(&str, &str, bool); 11] = [
+pub const DEFAULT_FACETS: [(&str, &str, bool); 12] = [
     ("cuisine", "places", false),
     ("music", "places", false),
     ("vibe", "places", false),
@@ -58,7 +66,27 @@ pub const DEFAULT_FACETS: [(&str, &str, bool); 11] = [
     ("interest", "people", false),
     ("context", "people", false),
     ("closeness", "people", true),
+    ("topic", "context", false),
 ];
+
+/// Does a facet whose `applies` is this value apply to a page on this side? The one place the
+/// two are compared.
+pub fn facet_applies(applies: &str, side: &str) -> bool {
+    match applies {
+        "both" => side == "places" || side == "people",
+        "context" => side == "knowledge" || side == "sources",
+        a => a == side,
+    }
+}
+
+/// The most tags a page on this side carries.
+pub fn tag_cap(side: &str) -> usize {
+    if side == "knowledge" || side == "sources" {
+        DOC_TAG_CAP
+    } else {
+        PAGE_TAG_CAP
+    }
+}
 
 #[derive(Subcommand, Debug)]
 pub enum TagCmd {
@@ -102,7 +130,12 @@ pub enum TagCmd {
     },
     /// Give a tag a new id; pages are rewritten and the old id stays as an alt label
     Rename { old: String, new: String },
-    /// Write validated tags on one page (alt labels resolve; unknown and retired tags refuse)
+    /// Declare a new facet in the registry
+    Facet {
+        #[command(subcommand)]
+        cmd: FacetCmd,
+    },
+    /// Write validated tags on one page or source (alt labels resolve; unknown and retired tags refuse)
     Add {
         page: String,
         #[arg(required = true)]
@@ -130,12 +163,26 @@ pub enum TagCmd {
     Render,
 }
 
+#[derive(Subcommand, Debug)]
+pub enum FacetCmd {
+    /// Add a facet to the registry
+    Add {
+        name: String,
+        /// places, people, both, knowledge, sources or context (knowledge pages and sources)
+        #[arg(long)]
+        applies: String,
+        /// One tag of this facet per page
+        #[arg(long)]
+        single: bool,
+    },
+}
+
 // ------------------------------------------------------------------ registry
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Facet {
     pub name: String,
-    /// places | people | both
+    /// places | people | both | knowledge | sources | context
     pub applies: String,
     pub single: bool,
 }
@@ -266,7 +313,7 @@ impl Registry {
                 }
                 let applies = opt_of(item.get("applies")).unwrap_or_else(|| "places".into());
                 if !APPLIES.contains(&applies.as_str()) {
-                    die!("{REGISTRY_REL}: facet '{name}' applies '{applies}' is not one of places, people, both");
+                    die!("{REGISTRY_REL}: facet '{name}' applies '{applies}' is not one of {}", APPLIES.join(", "));
                 }
                 let single = s_of(item.get("cardinality")) == "single";
                 reg.facets.push(Facet { name, applies, single });
@@ -366,9 +413,9 @@ impl Registry {
     /// Canonical YAML: a header, the facets, then the tags ordered by facet then id.
     pub fn render_yaml(&self) -> String {
         let mut s = String::new();
-        s.push_str("# The controlled vocabulary for `tags:` on place and person pages. Edit it through `af tag`\n");
+        s.push_str("# The controlled vocabulary for `tags:` on place, person and knowledge pages and on sources. Edit it through `af tag`\n");
         s.push_str("# (match, propose, promote, merge, rename, deprecate); tags.md is the rendered view.\n");
-        s.push_str("# facet: applies is places | people | both; cardinality single means one tag per page.\n");
+        s.push_str("# facet: applies is places | people | both | knowledge | sources | context; cardinality single means one tag per page.\n");
         s.push_str("# tag: status is proposed | active | deprecated | merged; alt labels resolve in af tag match.\n");
         s.push_str("facets:\n");
         for f in &self.facets {
@@ -441,7 +488,7 @@ pub struct Page {
     pub path: String,
     pub tags: Vec<String>,
     pub kind: Option<String>,
-    /// places | people, by folder.
+    /// places | people | knowledge | sources, by folder.
     pub side: &'static str,
     pub has_tags_field: bool,
 }
@@ -452,71 +499,396 @@ impl Page {
     }
 }
 
-/// Every .md under places/ and people/ (recursive), with its tags and kind.
+/// Where the frontmatter of a text sits. `start` is the first byte after the opening `---` line,
+/// `close` the first byte of the closing `---` line, `eol` the opening line's line ending.
+struct FmBounds {
+    eol: &'static str,
+    start: usize,
+    close: usize,
+}
+
+/// The frontmatter block of `raw`: an opening `---` line (after an optional BOM) and the first later
+/// line that is `---` alone. None when there is no block or it is never closed. Works on the bytes as
+/// they are, so a CRLF file's offsets are its own.
+fn fm_bounds(raw: &str) -> Option<FmBounds> {
+    let bom = if raw.starts_with('\u{feff}') { '\u{feff}'.len_utf8() } else { 0 };
+    let rest = &raw[bom..];
+    let eol = if rest.starts_with("---\r\n") {
+        "\r\n"
+    } else if rest.starts_with("---\n") {
+        "\n"
+    } else {
+        return None;
+    };
+    let start = bom + 3 + eol.len();
+    let mut pos = start;
+    while pos < raw.len() {
+        let end = raw[pos..].find('\n').map(|i| pos + i).unwrap_or(raw.len());
+        if raw[pos..end].trim_end_matches('\r').trim_end_matches([' ', '\t']) == "---" {
+            return Some(FmBounds { eol, start, close: pos });
+        }
+        pos = end + 1;
+    }
+    None
+}
+
+/// An optionally quoted key of letters, digits, `_` or `-`, then `:` and a space or the end of the line.
+fn is_key_line(line: &str) -> bool {
+    rx(r#"^(?:"[A-Za-z0-9_-]+"|'[A-Za-z0-9_-]+'|[A-Za-z0-9_-]+)[ \t]*:(?:[ \t]|$)"#).is_match(line.trim_end_matches('\r'))
+}
+
+/// Does a block between two `---` lines read as frontmatter? Every line is blank, a comment, indented,
+/// a list item, the closing bracket of a wrapped list, or a key line, and some line is a key (an
+/// empty block counts). Prose that happens to sit between two rules is not.
+fn looks_like_frontmatter(block: &str) -> bool {
+    let mut keys = 0;
+    for l in block.lines() {
+        let l = l.trim_end_matches('\r');
+        let t = l.trim();
+        if t.is_empty() || t.starts_with('#') || l.starts_with(' ') || l.starts_with('\t') || l.starts_with(']') || l.starts_with('}') {
+            continue;
+        }
+        if rx(r"\A-([ \t]|$)").is_match(l) {
+            continue;
+        }
+        if is_key_line(l) {
+            keys += 1;
+            continue;
+        }
+        return false;
+    }
+    keys > 0 || block.trim().is_empty()
+}
+
+/// The knowledge pages and sources are free text that may open with a rule, so their frontmatter
+/// must also look like frontmatter; a place or person page is a block between two rules, as ever.
+fn strict(side: &str) -> bool {
+    side == "knowledge" || side == "sources"
+}
+
+/// `fm_bounds` for a page on this side.
+fn fm_bounds_for(raw: &str, side: &str) -> Option<FmBounds> {
+    fm_bounds(raw).filter(|b| !strict(side) || looks_like_frontmatter(&raw[b.start..b.close]))
+}
+
+/// The folder each side reads, and whether a text there must carry frontmatter to count.
+fn side_dir(side: &str) -> &'static str {
+    match side {
+        "places" => PAGE_DIRS[0],
+        "people" => PAGE_DIRS[1],
+        "knowledge" => KNOWLEDGE_DIR,
+        _ => SOURCES_DIR,
+    }
+}
+
+/// Every .md under places/ and people/ (recursive), with its tags and kind. This is the set
+/// `af place` and `af person` work on; the knowledge pages and sources are `scan_tagged`.
 pub fn scan_pages(ctx: &Ctx) -> R<Vec<Page>> {
+    scan_sides(ctx, &["places", "people"])
+}
+
+/// Every page that can carry a tag: places, people, the live knowledge pages, and the sources
+/// that have frontmatter (not `INDEX.md`, not `inbox/`).
+pub fn scan_tagged(ctx: &Ctx) -> R<Vec<Page>> {
+    scan_sides(ctx, &["places", "people", "knowledge", "sources"])
+}
+
+fn scan_sides(ctx: &Ctx, sides: &[&'static str]) -> R<Vec<Page>> {
     let mut pages = Vec::new();
-    for (dir, side) in PAGE_DIRS.iter().zip(["places", "people"]) {
-        let top = vpath(ctx, dir);
+    for &side in sides {
+        let top = vpath(ctx, side_dir(side));
         if !pyos::isdir(&top) {
             continue;
         }
         let mut files: Vec<String> = Vec::new();
         pyos::walk(&top, &mut |dirpath: &str, dirnames: &mut Vec<String>, filenames: &[String]| {
-            dirnames.retain(|d| !d.starts_with('.') && d != "_archive" && d != "_history");
+            dirnames.retain(|d| {
+                !d.starts_with('.')
+                    && if side == "sources" { !(d == "inbox" && dirpath == top) } else { d != "_archive" && d != "_history" }
+            });
             for f in filenames {
-                if f.to_lowercase().ends_with(".md") {
-                    files.push(pyos::join(dirpath, f));
+                if !f.to_lowercase().ends_with(".md") {
+                    continue;
                 }
+                let index_like = f.eq_ignore_ascii_case("INDEX.md") || (side == "knowledge" && f.eq_ignore_ascii_case("README.md"));
+                if (side == "sources" || side == "knowledge") && index_like {
+                    continue;
+                }
+                files.push(pyos::join(dirpath, f));
             }
         });
         files.sort();
         for path in files {
             let rel = ctx.rel(&path)?;
-            let text = match TextFile::load(&path)? {
-                Some(f) => f.text,
-                None => continue,
-            };
-            let (fm, has_tags_field, tags, kind) = match split_fm_optional(&text) {
-                Some((fm, _)) => {
-                    let has = rx(r"(?m)^tags:").is_match(&fm);
-                    (fm.clone(), has, fm_list_values(&fm, "tags"), get_scalar(&fm, "kind").filter(|k| !k.is_empty()))
+            let text = if side == "places" || side == "people" {
+                match TextFile::load(&path)? {
+                    Some(f) => f.text,
+                    None => continue,
                 }
-                None => (String::new(), false, Vec::new(), None),
+            } else {
+                // Read as the bytes are; a source that is not UTF-8 has no frontmatter this reads.
+                match std::fs::read(&path) {
+                    Ok(b) => String::from_utf8_lossy(&b).into_owned(),
+                    Err(e) => die!("{rel} could not be read ({}); close whatever holds it, then rerun", io_reason(&e)),
+                }
             };
-            let _ = fm;
+            let bounds = fm_bounds_for(&text, side);
+            if side == "sources" && bounds.is_none() {
+                continue;
+            }
+            let (has_tags_field, tags, kind) = match bounds {
+                Some(b) => {
+                    let fm = text[b.start..b.close].replace("\r\n", "\n");
+                    (rx(r"(?m)^tags:").is_match(&fm), fm_list_values(&fm, "tags"), get_scalar(&fm, "kind").filter(|k| !k.is_empty()))
+                }
+                None => (false, Vec::new(), None),
+            };
             pages.push(Page { rel, path, tags, kind, side, has_tags_field });
         }
     }
     Ok(pages)
 }
 
-/// Rewrite the `tags:` field on one page as an inline list, leaving every other line as it is.
-/// The whole field goes: a block list (indented or flush) or a flow list wrapped over lines is
-/// replaced as one unit, so no item line is ever left behind. A field this parser cannot own
-/// (an indented line after it that is not part of it) is refused, not clobbered.
-pub fn write_page_tags(path: &str, tags: &[String]) -> R<()> {
-    let mut file = match TextFile::load(path)? {
-        Some(f) => f,
-        None => die!("{path}: no such page"),
+/// The comment after the value on a `tags:` line (`tags: [a] # why`, or `tags: # why` above a block
+/// list), with the space before it; empty when there is none.
+fn trailing_comment(first_line: &str) -> &str {
+    let value = first_line.strip_prefix("tags:").unwrap_or("");
+    if value.trim_start().starts_with('#') {
+        return value;
+    }
+    match value.find(']') {
+        Some(i) if value[i + 1..].trim_start().starts_with('#') => &value[i + 1..],
+        _ => "",
+    }
+}
+
+/// The mapping a frontmatter block reads as with the crate's YAML reader, if it reads as one.
+fn fm_mapping(fm: &str) -> Option<Vec<(PyVal, PyVal)>> {
+    match safe_load(&fm.replace("\r\n", "\n"), "frontmatter", false) {
+        Ok(PyVal::Dict(m)) => Some(m),
+        _ => None,
+    }
+}
+
+/// Is `new` the mapping `old` is, but for `tags`, which is the wanted list? An `old` that does not
+/// read as a mapping (an unquoted colon in a summary, say) cannot be checked and passes. A tag the
+/// reader turns into another type (`yes`, `42`) is not held against the list.
+fn same_but_tags(old: &str, new: &str, tags: &[String]) -> bool {
+    let Some(old) = fm_mapping(old) else { return true };
+    let Some(new) = fm_mapping(new) else { return false };
+    let rest = |m: &[(PyVal, PyVal)]| {
+        let mut v: Vec<(String, String)> =
+            m.iter().filter(|(k, _)| k.as_str() != Some("tags")).map(|(k, v)| (format!("{k:?}"), format!("{v:?}"))).collect();
+        v.sort();
+        v
     };
-    let (fm, body) = match split_fm_optional(&file.text) {
-        Some(p) => p,
-        None => die!("{path} has no frontmatter block"),
-    };
+    if rest(&old) != rest(&new) {
+        return false;
+    }
+    match new.iter().find(|(k, _)| k.as_str() == Some("tags")).map(|(_, v)| v) {
+        Some(PyVal::List(items)) => {
+            items.len() == tags.len() && items.iter().zip(tags).all(|(i, t)| if let PyVal::Str(s) = i { s == t } else { true })
+        }
+        _ => false,
+    }
+}
+
+/// A first line of `---` (after an optional BOM) whose next non-blank line is a key: a frontmatter
+/// block that was opened and never closed. Followed by anything else the `---` is a horizontal rule.
+fn unclosed_frontmatter(raw: &str) -> bool {
+    let rest = raw.strip_prefix('\u{feff}').unwrap_or(raw);
+    let mut lines = rest.lines();
+    lines.next().is_some_and(|l| l.trim_end() == "---") && lines.find(|l| !l.trim().is_empty()).is_some_and(is_key_line)
+}
+
+/// `raw` with its `tags:` field set to an inline list and not one other byte changed: the line
+/// endings, the BOM, the body (trailing blank lines, a `---` line of its own, a missing final
+/// newline) and every other frontmatter line stay as they are. A `tags:` field already there goes as
+/// one unit, a block list or a flow list wrapped over lines included, so no item line is left behind;
+/// a comment after the value on the first line stays (one on the last line of a wrapped list is lost).
+/// A field this cannot own is refused and the text left alone: an indented line or list item after
+/// it (blank and comment lines skipped) that is not part of it, two `tags` keys, or one spelled
+/// another way (`"tags":`, `tags :`). No field yet: the line is added at the end of the frontmatter.
+/// On a knowledge page or source the block must also look like frontmatter (`looks_like_frontmatter`)
+/// and, when the old block reads as a YAML mapping, the new one must read as the same mapping with
+/// the wanted tags; otherwise the text is refused untouched. No frontmatter: refused, except on a
+/// knowledge page, which gets a block of its own above the text; a block opened with `---` and
+/// never closed, whose next line is a key, is refused. `label` names the page in a refusal.
+pub fn rewrite_tags(raw: &str, tags: &[String], label: &str, side: &str) -> R<String> {
     let line = format!("tags: [{}]", tags.join(", "));
-    let new_fm = match fm_list_span(&fm, "tags") {
+    let b = match fm_bounds_for(raw, side) {
+        Some(b) => b,
+        None if side == "knowledge" => {
+            if fm_bounds(raw).is_none() && unclosed_frontmatter(raw) {
+                die!("{label}: the frontmatter is opened with --- and never closed; close it by hand, then rerun");
+            }
+            let bom = if raw.starts_with('\u{feff}') { '\u{feff}'.len_utf8() } else { 0 };
+            let eol = if raw[bom..].find('\n').is_some_and(|i| raw[bom..][..i].ends_with('\r')) { "\r\n" } else { "\n" };
+            return Ok(format!("{}---{eol}{line}{eol}---{eol}{}", &raw[..bom], &raw[bom..]));
+        }
+        None => die!("{label} has no frontmatter block"),
+    };
+    let fm = &raw[b.start..b.close];
+    let keys = rx(r#"(?m)^["']?tags["']?[ \t]*:"#).find_iter(fm).count();
+    let span = fm_list_span(fm, "tags");
+    if keys > 1 {
+        die!("{label}: the frontmatter has {keys} tags keys; fix the frontmatter by hand, then rerun");
+    }
+    if keys == 1 && span.is_none() {
+        die!("{label}: the frontmatter has a tags key that is not written `tags:`; fix the frontmatter by hand, then rerun");
+    }
+    let new_fm = match span {
         Some((s, e)) => {
             let after = &fm[e..];
-            let next = after.strip_prefix('\n').unwrap_or(after).lines().next().unwrap_or("");
+            let next = after
+                .strip_prefix('\n')
+                .unwrap_or(after)
+                .lines()
+                .find(|l| !l.trim().is_empty() && !l.trim_start().starts_with('#'))
+                .unwrap_or("");
             if next.starts_with(' ') || next.starts_with('\t') || rx(r"\A-([ \t]|$)").is_match(next) {
-                die!("{path}: the tags: field is followed by an indented line that is not part of it ({next:?}); fix the frontmatter by hand, then rerun");
+                die!("{label}: the tags: field is followed by an indented line that is not part of it ({next:?}); fix the frontmatter by hand, then rerun");
             }
-            format!("{}{line}{after}", &fm[..s])
+            let cr = if fm[s..e].ends_with('\r') { "\r" } else { "" };
+            let comment = trailing_comment(fm[s..e].split('\n').next().unwrap_or("").trim_end_matches('\r'));
+            format!("{}{line}{comment}{cr}{}", &fm[..s], &fm[e..])
         }
-        None => format!("{}\n{line}", fm.trim_end_matches('\n')),
+        None => format!("{fm}{line}{}", b.eol),
     };
-    file.text = format!("---\n{new_fm}\n---\n{body}");
-    file.save(path)
+    if strict(side) && !same_but_tags(fm, &new_fm, tags) {
+        die!("{label}: the result would not be the same frontmatter with new tags; fix the frontmatter by hand, then rerun");
+    }
+    Ok(format!("{}{new_fm}{}", &raw[..b.start], &raw[b.close..]))
+}
+
+/// Why a file operation failed: a permission or sharing error is "read-only or open in another
+/// program"; anything else is the system's own text.
+fn io_reason(e: &std::io::Error) -> String {
+    if e.kind() == std::io::ErrorKind::PermissionDenied || matches!(e.raw_os_error(), Some(5 | 32 | 33)) {
+        "it is read-only or open in another program".to_string()
+    } else {
+        e.to_string()
+    }
+}
+
+/// A page's text exactly as it lies on disk; a refusal, not a crash, when it cannot be read.
+fn read_raw(path: &str, label: &str) -> R<String> {
+    let bytes = match std::fs::read(path) {
+        Ok(b) => b,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => die!("{label}: no such page"),
+        Err(e) => die!("{label} could not be read ({}); nothing was written", io_reason(&e)),
+    };
+    match String::from_utf8(bytes) {
+        Ok(s) => Ok(s),
+        Err(_) => die!("{label} is not UTF-8 text; nothing was written"),
+    }
+}
+
+/// Rewrite the `tags:` field on one page; see `rewrite_tags`. The page is the only thing written
+/// (`af tag add` leaves the registry and the log alone), through a temp file and a rename, so a
+/// failure leaves the page as it was and ends in a refusal that names it (`label`, the vault path).
+pub fn write_page_tags(path: &str, label: &str, tags: &[String], side: &str) -> R<()> {
+    let raw = read_raw(path, label)?;
+    let new = rewrite_tags(&raw, tags, label, side)?;
+    if new != raw {
+        if std::fs::metadata(path).map(|m| m.permissions().readonly()).unwrap_or(false) {
+            die!("{label} is read-only; nothing was written");
+        }
+        if let Err(why) = try_write_raw(path, &new) {
+            die!("{label} could not be written ({why}); nothing was changed");
+        }
+    }
+    Ok(())
+}
+
+/// Write a text byte for byte through a temp file and a rename, so a reader sees the old file or the
+/// new one; the rename is retried briefly while another process has the target open. The reason on
+/// failure, for a caller that turns it into its own refusal.
+fn try_write_raw(path: &str, text: &str) -> Result<(), String> {
+    let tmp = format!("{path}.tmp{}", std::process::id());
+    if let Err(e) = std::fs::write(&tmp, text.as_bytes()) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(io_reason(&e));
+    }
+    let mut tries = 0;
+    loop {
+        match std::fs::rename(&tmp, path) {
+            Ok(()) => return Ok(()),
+            Err(_) if tries < crate::life::RENAME_TRIES => {
+                tries += 1;
+                std::thread::sleep(std::time::Duration::from_millis(crate::life::RENAME_PAUSE_MS));
+            }
+            Err(e) => {
+                let _ = std::fs::remove_file(&tmp);
+                return Err(io_reason(&e));
+            }
+        }
+    }
+}
+
+/// A change to the tag lists of several pages. `plan` makes every new text first, and refuses a page
+/// that cannot be rewritten (a tags field it cannot own, a text that is not UTF-8, a read-only
+/// file) before any file is written. `commit` then writes the pages in order, each through a temp
+/// file and a rename; each page's original text is kept, so a write that fails puts back every
+/// page already written and ends in a refusal that names the failing page. `rollback` does the
+/// same for a caller whose next step (the registry) failed after the pages were written.
+struct Rewrite {
+    /// (path, vault-relative path, original text, new text)
+    pages: Vec<(String, String, String, String)>,
+    written: Vec<usize>,
+}
+
+impl Rewrite {
+    fn plan(used: &[&Page], f: &dyn Fn(&[String]) -> Vec<String>) -> R<Rewrite> {
+        let mut pages = Vec::new();
+        for p in used {
+            let raw = read_raw(&p.path, &p.rel)?;
+            let new = rewrite_tags(&raw, &f(&p.tags), &p.rel, p.side)?;
+            if new != raw && std::fs::metadata(&p.path).map(|m| m.permissions().readonly()).unwrap_or(false) {
+                die!("{} is read-only; nothing was written", p.rel);
+            }
+            pages.push((p.path.clone(), p.rel.clone(), raw, new));
+        }
+        Ok(Rewrite { pages, written: Vec::new() })
+    }
+
+    fn rels(&self) -> Vec<String> {
+        self.pages.iter().map(|p| p.1.clone()).collect()
+    }
+
+    /// Put back every page written so far; the pages that could not be put back.
+    fn rollback(&mut self) -> Vec<String> {
+        let mut stuck = Vec::new();
+        for &i in self.written.iter().rev() {
+            let (path, rel, raw, _) = &self.pages[i];
+            if try_write_raw(path, raw).is_err() {
+                stuck.push(rel.clone());
+            }
+        }
+        self.written.clear();
+        stuck
+    }
+
+    fn commit(&mut self) -> R<()> {
+        for i in 0..self.pages.len() {
+            if self.pages[i].2 == self.pages[i].3 {
+                continue;
+            }
+            if let Err(why) = try_write_raw(&self.pages[i].0, &self.pages[i].3) {
+                let rel = self.pages[i].1.clone();
+                let stuck = self.rollback();
+                if stuck.is_empty() {
+                    die!("{rel} could not be written ({why}); every page already written was put back, and the registry did not change");
+                }
+                die!(
+                    "{rel} could not be written ({why}), and putting back failed for {}: they now hold the new tag while the registry does not; make them writable and rerun the same command",
+                    stuck.join(", ")
+                );
+            }
+            self.written.push(i);
+        }
+        Ok(())
+    }
 }
 
 /// Replace `from` with `to` in a tag list, keeping order and dropping the duplicate.
@@ -529,6 +901,11 @@ fn swap_tag(tags: &[String], from: &str, to: &str) -> Vec<String> {
         }
     }
     out
+}
+
+/// Does this page carry a tag of the `topic` facet?
+fn has_topic(reg: &Registry, p: &Page) -> bool {
+    p.tags.iter().any(|t| reg.get(t).is_some_and(|x| x.facet == TOPIC_FACET))
 }
 
 fn uses_of<'a>(pages: &'a [Page], tag: &str) -> Vec<&'a Page> {
@@ -723,7 +1100,7 @@ pub fn cmd_deprecate(ctx: &Ctx, slug: &str, reason: &str) -> R<i32> {
     reg.save(ctx)?;
     append_log(ctx, "deprecate", &format!("{slug}{}", if reason.is_empty() { String::new() } else { format!(" · {reason}") }))?;
     render_view(ctx, &reg)?;
-    let pages = scan_pages(ctx)?;
+    let pages = scan_tagged(ctx)?;
     let still: Vec<String> = uses_of(&pages, slug).iter().map(|p| p.rel.clone()).collect();
     out::line(&format!("af tag deprecate: {slug} · deprecated; no new uses"));
     if !still.is_empty() {
@@ -738,7 +1115,7 @@ pub fn cmd_drop(ctx: &Ctx, slug: &str) -> R<i32> {
     if t.status != "proposed" {
         die!("tag '{slug}' is {}; only a proposed tag is dropped (af tag deprecate or af tag merge for an active one)", t.status);
     }
-    let pages = scan_pages(ctx)?;
+    let pages = scan_tagged(ctx)?;
     let used = uses_of(&pages, slug);
     if !used.is_empty() {
         die!("tag '{slug}' is on {} page(s) ({}); af tag merge {slug} --into <id> or af tag promote {slug}", used.len(), used.iter().map(|p| p.rel.as_str()).collect::<Vec<_>>().join(", "));
@@ -749,6 +1126,39 @@ pub fn cmd_drop(ctx: &Ctx, slug: &str) -> R<i32> {
     render_view(ctx, &reg)?;
     out::line(&format!("af tag drop: {slug} removed (it was proposed and on no page)"));
     Ok(0)
+}
+
+/// Save the registry after the pages were written; if that fails, put the pages back and refuse.
+fn save_or_put_back(ctx: &Ctx, reg: &Registry, rewrite: &mut Rewrite) -> R<()> {
+    if let Err(e) = reg.save(ctx) {
+        let stuck = rewrite.rollback();
+        if !stuck.is_empty() {
+            die!("{REGISTRY_REL} could not be saved ({e}), and putting back failed for {}: they hold the new tag while the registry does not; make them writable and rerun the same command", stuck.join(", "));
+        }
+        die!("{REGISTRY_REL} could not be saved ({e}); every page was put back, nothing changed");
+    }
+    Ok(())
+}
+
+/// After the registry is saved the change has happened, whatever the log and the view report: the
+/// parts that could not be written, named for the refusal that ends the command.
+fn write_log_and_view(ctx: &Ctx, reg: &Registry, verb: &str, detail: &str) -> Vec<String> {
+    let mut missed = Vec::new();
+    if let Err(e) = append_log(ctx, verb, detail) {
+        missed.push(format!("{LOG_REL} ({e}); its line for this {verb} is missing"));
+    }
+    if let Err(e) = render_view(ctx, reg) {
+        missed.push(format!("{VIEW_REL} ({e}); af tag render writes it"));
+    }
+    missed
+}
+
+/// The refusal for a change that is saved but whose log or view could not be written.
+fn saved_but(verb: &str, missed: &[String]) -> R<i32> {
+    die!(
+        "the {verb} is saved: the pages and {REGISTRY_REL} agree. It could not write {}. Make the file writable, then run af tag render; do not rerun the {verb}",
+        missed.join(" and ")
+    )
 }
 
 /// `merge <from> --into <to>`: `from` is a tag (it becomes merged), an alt label of `to`, or
@@ -769,7 +1179,7 @@ pub fn cmd_merge(ctx: &Ctx, from: &str, into: &str) -> R<i32> {
     if to.status == "merged" || to.status == "deprecated" {
         die!("tag '{}' is {}; merge into a live tag", to.id, to.status);
     }
-    let pages = scan_pages(ctx)?;
+    let pages = scan_tagged(ctx)?;
     let used: Vec<&Page> = uses_of(&pages, &from);
     let kind = if let Some(f) = reg.get(&from) {
         if f.status == "merged" && f.merged_into.as_deref() != Some(to.id.as_str()) {
@@ -792,11 +1202,9 @@ pub fn cmd_merge(ctx: &Ctx, from: &str, into: &str) -> R<i32> {
     } else {
         "label"
     };
-    let mut rewritten: Vec<String> = Vec::new();
-    for p in &used {
-        write_page_tags(&p.path, &swap_tag(&p.tags, &from, &to.id))?;
-        rewritten.push(p.rel.clone());
-    }
+    let mut rewrite = Rewrite::plan(&used, &|tags| swap_tag(tags, &from, &to.id))?;
+    rewrite.commit()?;
+    let rewritten = rewrite.rels();
     let mut moved_alts: Vec<String> = vec![from.clone()];
     if let Some(f) = reg.get_mut(&from) {
         moved_alts.extend(f.alt.drain(..));
@@ -811,12 +1219,16 @@ pub fn cmd_merge(ctx: &Ctx, from: &str, into: &str) -> R<i32> {
             }
         }
     }
-    reg.save(ctx)?;
-    append_log(ctx, "merge", &format!("{from} -> {} · {} page(s) rewritten", to.id, rewritten.len()))?;
-    render_view(ctx, &reg)?;
+    // Order: the pages, then the registry, the log and the view. A registry that cannot be saved
+    // puts the pages back; once it is saved the pages and the registry agree.
+    save_or_put_back(ctx, &reg, &mut rewrite)?;
+    let missed = write_log_and_view(ctx, &reg, "merge", &format!("{from} -> {} · {} page(s) rewritten", to.id, rewritten.len()));
     out::line(&format!("af tag merge: {from} ({kind}) -> {} · {} page(s) rewritten", to.id, rewritten.len()));
     for r in &rewritten {
         out::line(&format!("  {r}"));
+    }
+    if !missed.is_empty() {
+        return saved_but("merge", &missed);
     }
     Ok(0)
 }
@@ -845,20 +1257,20 @@ pub fn cmd_rename(ctx: &Ctx, old: &str, new: &str) -> R<i32> {
         o.status = "merged".to_string();
         o.merged_into = Some(new.to_string());
     }
-    let pages = scan_pages(ctx)?;
-    let mut rewritten = 0usize;
-    for p in uses_of(&pages, old) {
-        write_page_tags(&p.path, &swap_tag(&p.tags, old, new))?;
-        rewritten += 1;
-    }
-    reg.save(ctx)?;
-    append_log(ctx, "rename", &format!("{old} -> {new} · {rewritten} page(s) rewritten"))?;
-    render_view(ctx, &reg)?;
+    let pages = scan_tagged(ctx)?;
+    let mut rewrite = Rewrite::plan(&uses_of(&pages, old), &|tags| swap_tag(tags, old, new))?;
+    rewrite.commit()?;
+    let rewritten = rewrite.rels().len();
+    save_or_put_back(ctx, &reg, &mut rewrite)?;
+    let missed = write_log_and_view(ctx, &reg, "rename", &format!("{old} -> {new} · {rewritten} page(s) rewritten"));
     out::line(&format!("af tag rename: {old} -> {new} · {} · {rewritten} page(s) rewritten; {old} stays an alt label", t.status));
+    if !missed.is_empty() {
+        return saved_but("rename", &missed);
+    }
     Ok(0)
 }
 
-/// Where a page path points, as a vault-relative page under places/ or people/.
+/// Where a page path points, as a vault-relative page that can carry tags.
 fn page_of<'a>(ctx: &Ctx, pages: &'a [Page], given: &str) -> R<&'a Page> {
     let abs = if pyos::isabs(given) { given.to_string() } else { vpath(ctx, &given.replace('\\', "/")) };
     let rel = match pyos::relpath(&abs, &ctx.root) {
@@ -868,15 +1280,27 @@ fn page_of<'a>(ctx: &Ctx, pages: &'a [Page], given: &str) -> R<&'a Page> {
     let rel = rel.trim_start_matches("./").to_string();
     match pages.iter().find(|p| p.rel == rel) {
         Some(p) => Ok(p),
-        None => die!("{given} is not a page under {} or {}", PAGE_DIRS[0], PAGE_DIRS[1]),
+        None => {
+            let sources = format!("{SOURCES_DIR}/");
+            if rel.starts_with(&sources) && rel.ends_with(".md") {
+                if rel.starts_with(&format!("{SOURCES_DIR}/inbox/")) {
+                    die!("{given} is in sources/inbox/, a staging folder; file it with af source add, then tag the filed source");
+                }
+                if pyos::isfile(&abs) && !rel.ends_with("/INDEX.md") {
+                    die!("{given} has no frontmatter block, so it carries no tags; af source add --tag gives a new source its tags");
+                }
+            }
+            die!("{given} is not a page under {}, {}, {} or {}", PAGE_DIRS[0], PAGE_DIRS[1], KNOWLEDGE_DIR, SOURCES_DIR)
+        }
     }
 }
 
-pub fn cmd_add(ctx: &Ctx, page: &str, wanted: &[String]) -> R<i32> {
-    let reg = Registry::require(ctx)?;
-    let pages = scan_pages(ctx)?;
-    let p = page_of(ctx, &pages, page)?;
-    let mut tags = p.tags.clone();
+/// The tags a page on `side` would carry after adding `wanted` to `current`: each phrase resolved
+/// through the registry, checked against the facets that apply to the side, the single-valued
+/// facets and the cap. Returns the new list and a note per phrase that was not an id. `what` names
+/// the page in a refusal. Nothing is written here.
+pub fn vet_tags(reg: &Registry, wanted: &[String], current: &[String], side: &str, what: &str) -> R<(Vec<String>, Vec<String>)> {
+    let mut tags = current.to_vec();
     let mut notes: Vec<String> = Vec::new();
     for w in wanted {
         let id = match reg.resolve(w, None) {
@@ -895,22 +1319,32 @@ pub fn cmd_add(ctx: &Ctx, page: &str, wanted: &[String]) -> R<i32> {
             continue;
         }
         if let Some(f) = reg.facet(&id.facet) {
-            if f.applies != "both" && f.applies != p.side {
-                die!("tag '{}' is in facet '{}', a {} facet; this is a {} page", id.id, f.name, f.applies, p.side);
+            if !facet_applies(&f.applies, side) {
+                die!("tag '{}' is in facet '{}', a {} facet; this is a {side} page", id.id, f.name, f.applies);
             }
             if f.single {
                 if let Some(other) = tags.iter().find(|t| reg.get(t).map(|x| x.facet == f.name).unwrap_or(false)) {
-                    die!("{} already carries '{other}' in the single-valued facet '{}'; af tag add after removing it, or keep {other}", p.rel, f.name);
+                    die!("{what} already carries '{other}' in the single-valued facet '{}'; af tag add after removing it, or keep {other}", f.name);
                 }
             }
         }
         tags.push(id.id.clone());
     }
-    if tags.len() > PAGE_TAG_CAP {
-        die!("{} would carry {} tags, over the cap of {PAGE_TAG_CAP}; keep the ones a search would use", p.rel, tags.len());
+    let cap = tag_cap(side);
+    if tags.len() > cap {
+        die!("{what} would carry {} tags, over the cap of {cap}; keep the ones a search would use", tags.len());
     }
+    Ok((tags, notes))
+}
+
+pub fn cmd_add(ctx: &Ctx, page: &str, wanted: &[String]) -> R<i32> {
+    let reg = Registry::require(ctx)?;
+    let pages = scan_tagged(ctx)?;
+    let p = page_of(ctx, &pages, page)?;
+    let (tags, notes) = vet_tags(&reg, wanted, &p.tags, p.side, &p.rel)?;
     let added = tags.len() - p.tags.len();
-    write_page_tags(&p.path, &tags)?;
+    // A knowledge page may start at its heading; the block of frontmatter is made for it.
+    write_page_tags(&p.path, &p.rel, &tags, p.side)?;
     out::line(&format!("af tag add: {} · +{added} · tags: [{}]", p.rel, tags.join(", ")));
     for n in notes {
         out::line(&format!("  {n}"));
@@ -918,9 +1352,28 @@ pub fn cmd_add(ctx: &Ctx, page: &str, wanted: &[String]) -> R<i32> {
     Ok(0)
 }
 
+pub fn cmd_facet_add(ctx: &Ctx, name: &str, applies: &str, single: bool) -> R<i32> {
+    let mut reg = Registry::require(ctx)?;
+    if !valid_slug(name) {
+        die!("'{name}' is not a facet name: lower case letters, digits, single hyphens, 40 characters at most");
+    }
+    if !APPLIES.contains(&applies) {
+        die!("--applies '{applies}' is not one of {}", APPLIES.join(", "));
+    }
+    if let Some(f) = reg.facet(name) {
+        die!("facet '{name}' already exists ({}, {})", f.applies, if f.single { "one per page" } else { "multi" });
+    }
+    reg.facets.push(Facet { name: name.to_string(), applies: applies.to_string(), single });
+    reg.save(ctx)?;
+    append_log(ctx, "facet", &format!("{name} · {applies} · {}", if single { "single" } else { "multi" }))?;
+    render_view(ctx, &reg)?;
+    out::line(&format!("af tag facet add: {name} · {applies} · {}", if single { "one per page" } else { "multi" }));
+    Ok(0)
+}
+
 pub fn cmd_list(ctx: &Ctx, facet: Option<&str>, status: Option<&str>) -> R<i32> {
     let reg = Registry::require(ctx)?;
-    let pages = scan_pages(ctx)?;
+    let pages = scan_tagged(ctx)?;
     let mut n = 0;
     for f in &reg.facets {
         if facet.map(|x| x != f.name).unwrap_or(false) {
@@ -958,10 +1411,16 @@ pub fn render_view(ctx: &Ctx, reg: &Registry) -> R<()> {
     let mut s = String::new();
     s.push_str("---\nprivate: true\ntype: registry\n---\n# Tags\n\n");
     s.push_str(&format!(
-        "A view of `tags.yaml`, rewritten by `af tag`; edit the vocabulary with `af tag`, never here. Before writing `tags:` on a place or person page: `af tag match \"<phrase>\"` per candidate, reuse the id it returns, `af tag propose` only for a genuinely new one; one tag per single-valued facet, {PAGE_TAG_FLOOR} to {PAGE_TAG_CAP} tags a page, and nothing that is already a field (kind, area, status, groups). Search: `af search --tag <id>`.\n\n"
+        "A view of `tags.yaml`, rewritten by `af tag`; edit the vocabulary with `af tag`, never here. Before writing `tags:` on a place, person or knowledge page or a source: `af tag match \"<phrase>\"` per candidate, reuse the id it returns, `af tag propose` only for a genuinely new one; one tag per single-valued facet, {PAGE_TAG_FLOOR} to {PAGE_TAG_CAP} tags on a place or person page, one to {DOC_TAG_CAP} on a knowledge page or source, and nothing that is already a field (kind, area, status, groups). Search: `af search --tag <id>`.\n\n"
     ));
-    for (side, title) in [("places", "Places"), ("people", "People"), ("both", "Places and people")] {
-        let facets: Vec<&Facet> = reg.facets.iter().filter(|f| f.applies == side).collect();
+    let sections: [(&[&str], &str); 4] = [
+        (&["places"], "Places"),
+        (&["people"], "People"),
+        (&["both"], "Places and people"),
+        (&["knowledge", "sources", "context"], "Knowledge and sources"),
+    ];
+    for (sides, title) in sections {
+        let facets: Vec<&Facet> = reg.facets.iter().filter(|f| sides.contains(&f.applies.as_str())).collect();
         if facets.is_empty() {
             continue;
         }
@@ -971,7 +1430,12 @@ pub fn render_view(ctx: &Ctx, reg: &Registry) -> R<()> {
             let mut proposed: Vec<&str> = reg.tags.iter().filter(|t| t.facet == f.name && t.status == "proposed").map(|t| t.id.as_str()).collect();
             active.sort();
             proposed.sort();
-            let mut line = format!("- **{}**{}: {}", f.name, if f.single { " (one per page)" } else { "" }, active.join(", "));
+            let only = match f.applies.as_str() {
+                "knowledge" => " (knowledge pages only)",
+                "sources" => " (sources only)",
+                _ => "",
+            };
+            let mut line = format!("- **{}**{only}{}: {}", f.name, if f.single { " (one per page)" } else { "" }, active.join(", "));
             if !proposed.is_empty() {
                 line.push_str(&format!(" · proposed: {}", proposed.join(", ")));
             }
@@ -1002,7 +1466,7 @@ pub fn render_view(ctx: &Ctx, reg: &Registry) -> R<()> {
 
 pub fn cmd_stats(ctx: &Ctx) -> R<i32> {
     let reg = Registry::require(ctx)?;
-    let pages = scan_pages(ctx)?;
+    let pages = scan_tagged(ctx)?;
     let count = |status: &str| reg.tags.iter().filter(|t| t.status == status).count();
     out::line(&format!(
         "af tag stats: {} tags · {} active · {} proposed · {} deprecated · {} merged · {} pages ({} places, {} people)",
@@ -1011,7 +1475,7 @@ pub fn cmd_stats(ctx: &Ctx) -> R<i32> {
         count("proposed"),
         count("deprecated"),
         count("merged"),
-        pages.len(),
+        pages.iter().filter(|p| p.side == "places" || p.side == "people").count(),
         pages.iter().filter(|p| p.side == "places").count(),
         pages.iter().filter(|p| p.side == "people").count()
     ));
@@ -1063,6 +1527,10 @@ pub fn cmd_stats(ctx: &Ctx) -> R<i32> {
         pages.iter().filter(|p| p.side == "people" && !p.tags.is_empty()).count(),
         pages.iter().filter(|p| p.side == "people").count()
     ));
+    for (side, label) in [("knowledge", "knowledge pages"), ("sources", "sources")] {
+        let of_side: Vec<&Page> = pages.iter().filter(|p| p.side == side).collect();
+        out::line(&format!("  {label} with a topic: {}/{}", of_side.iter().filter(|p| has_topic(&reg, p)).count(), of_side.len()));
+    }
     Ok(0)
 }
 
@@ -1099,7 +1567,7 @@ pub fn lint_findings(reg: &Registry, pages: &[Page]) -> Vec<Finding> {
                 }
                 Some(x) => {
                     if let Some(f) = reg.facet(&x.facet) {
-                        if f.applies != "both" && f.applies != p.side {
+                        if !facet_applies(&f.applies, p.side) {
                             push("note", format!("{}: tag '{t}' is in '{}', a {} facet, on a {} page", p.rel, f.name, f.applies, p.side));
                         }
                         if f.single {
@@ -1113,8 +1581,8 @@ pub fn lint_findings(reg: &Registry, pages: &[Page]) -> Vec<Finding> {
                 }
             }
         }
-        if p.tags.len() > PAGE_TAG_CAP {
-            push("issue", format!("{}: {} tags, over the cap of {PAGE_TAG_CAP}; keep the ones a search would use", p.rel, p.tags.len()));
+        if p.tags.len() > tag_cap(p.side) {
+            push("issue", format!("{}: {} tags, over the cap of {}; keep the ones a search would use", p.rel, p.tags.len(), tag_cap(p.side)));
         }
     }
 
@@ -1174,7 +1642,8 @@ pub fn lint_findings(reg: &Registry, pages: &[Page]) -> Vec<Finding> {
 
     // --- overload: one tag spread over kinds with no majority ---
     for t in &live {
-        let used = uses_of(pages, &t.id);
+        // Kinds are the place kinds and person types; a topic spread over knowledge pages and sources is not an overload.
+        let used: Vec<&Page> = uses_of(pages, &t.id).into_iter().filter(|p| p.side == "places" || p.side == "people").collect();
         if used.len() < 2 * PROMOTE_USES {
             continue;
         }
@@ -1198,12 +1667,29 @@ pub fn lint_findings(reg: &Registry, pages: &[Page]) -> Vec<Finding> {
             push("under-tagged", format!("{} has no tags; af tag add an interest or closeness if the page shows one", p.rel));
         }
     }
+    // A live knowledge page with no topic. A source with none is not a finding: old sources are tagged once, by a worker.
+    let knowledge: Vec<&Page> = pages.iter().filter(|p| p.side == "knowledge").collect();
+    if reg.facet(TOPIC_FACET).is_none() {
+        if !knowledge.is_empty() {
+            push(
+                "under-tagged",
+                format!("{} knowledge page(s) cannot carry a topic: {REGISTRY_REL} has no '{TOPIC_FACET}' facet; af tag facet add {TOPIC_FACET} --applies context", knowledge.len()),
+            );
+        }
+    } else {
+        for p in knowledge.iter().filter(|p| !has_topic(reg, p)) {
+            push(
+                "under-tagged",
+                format!("{} has no {TOPIC_FACET} tag; read it and af tag add one to {DOC_TAG_CAP} (af tag match \"<phrase>\" --facet {TOPIC_FACET})", p.rel),
+            );
+        }
+    }
     out
 }
 
 pub fn cmd_lint(ctx: &Ctx, fix: bool, embed: bool) -> R<i32> {
     let reg = Registry::require(ctx)?;
-    let pages = scan_pages(ctx)?;
+    let pages = scan_tagged(ctx)?;
     let mut findings = lint_findings(&reg, &pages);
     if embed {
         let live: Vec<&Tag> = reg.tags.iter().filter(|t| t.status == "active" || t.status == "proposed").collect();
@@ -1227,11 +1713,20 @@ pub fn cmd_lint(ctx: &Ctx, fix: bool, embed: bool) -> R<i32> {
             }
         }
     }
+    // What was read, by side: pages is places and people, as it always was.
+    let side = |s: &str| pages.iter().filter(|p| p.side == s).count();
+    let plural = |n: usize, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
+    let counted = format!(
+        "{} · {} · {}",
+        plural(side("places") + side("people"), "page", "pages"),
+        plural(side("knowledge"), "knowledge page", "knowledge pages"),
+        plural(side("sources"), "source", "sources")
+    );
     if findings.is_empty() {
-        out::line(&format!("af tag lint: clean · {} tags · {} pages", reg.tags.len(), pages.len()));
+        out::line(&format!("af tag lint: clean · {} tags · {counted}", reg.tags.len()));
         return Ok(0);
     }
-    out::line(&format!("af tag lint: {} finding(s) · {} tags · {} pages", findings.len(), reg.tags.len(), pages.len()));
+    out::line(&format!("af tag lint: {} finding(s) · {} tags · {counted}", findings.len(), reg.tags.len()));
     for f in &findings {
         out::line(&format!("  {} · {}", f.class, f.text));
     }
@@ -1320,7 +1815,7 @@ pub fn dangling_link_issues(ctx: &Ctx) -> R<Vec<String>> {
 /// What `af doctor` adds for tags: (issues, notes).
 pub fn doctor_checks(ctx: &Ctx) -> R<(Vec<String>, Vec<String>)> {
     let (mut issues, mut notes) = (Vec::new(), Vec::new());
-    let pages = scan_pages(ctx)?;
+    let pages = scan_tagged(ctx)?;
     let reg_path = Registry::path(ctx);
     match crate::error::soft(Registry::load(ctx))? {
         None => issues.push(format!("{REGISTRY_REL} does not parse; see the af tag error above")),
@@ -1362,6 +1857,7 @@ pub fn run(ctx: &Ctx, cmd: TagCmd) -> R<i32> {
         TagCmd::Drop { slug } => cmd_drop(ctx, &slug),
         TagCmd::Merge { from, into } => cmd_merge(ctx, &from, &into),
         TagCmd::Rename { old, new } => cmd_rename(ctx, &old, &new),
+        TagCmd::Facet { cmd: FacetCmd::Add { name, applies, single } } => cmd_facet_add(ctx, &name, &applies, single),
         TagCmd::Add { page, tags } => cmd_add(ctx, &page, &tags),
         TagCmd::List { facet, status } => cmd_list(ctx, facet.as_deref(), status.as_deref()),
         TagCmd::Stats => cmd_stats(ctx),
@@ -1438,6 +1934,43 @@ mod tests {
         assert!(e.contains("tag id 'Quiet' is not a slug"), "{e}");
         let e = Registry::parse("facets:\n  - name: vibe\ntags:\n  - id: quiet\n    facet: mood\n").err().unwrap().to_string();
         assert!(e.contains("names facet 'mood', which is not declared"), "{e}");
+    }
+
+    fn set(raw: &str, create: bool) -> R<String> {
+        rewrite_tags(raw, &["a".to_string(), "b".to_string()], "p.md", if create { "knowledge" } else { "places" })
+    }
+
+    #[test]
+    fn rewrite_tags_changes_the_field_and_nothing_else() {
+        assert_eq!(set("---\nid: x\n---\nbody\n", false).unwrap(), "---\nid: x\ntags: [a, b]\n---\nbody\n");
+        assert_eq!(set("---\r\nid: x\r\ntags: [z]\r\nk: v\r\n---\r\nbody\r\n", false).unwrap(), "---\r\nid: x\r\ntags: [a, b]\r\nk: v\r\n---\r\nbody\r\n");
+        assert_eq!(set("---\r\ntags:\r\n  - z\r\n---\r\n", false).unwrap(), "---\r\ntags: [a, b]\r\n---\r\n");
+        // a rule line in the body is the body's; a rule that only starts with dashes closes nothing
+        assert_eq!(set("---\nid: x\n----\nk: v\n---\n---\nt: 1\n", false).unwrap(), "---\nid: x\n----\nk: v\ntags: [a, b]\n---\n---\nt: 1\n");
+        assert!(set("---\nid: x\nnever closed\n", false).unwrap_err().to_string().contains("has no frontmatter block"));
+        assert!(set("# Heading\n", false).is_err());
+        assert_eq!(set("# Heading\n", true).unwrap(), "---\ntags: [a, b]\n---\n# Heading\n");
+        assert_eq!(set("# Heading\r\nx\r\n", true).unwrap(), "---\r\ntags: [a, b]\r\n---\r\n# Heading\r\nx\r\n");
+        assert_eq!(set("", true).unwrap(), "---\ntags: [a, b]\n---\n");
+    }
+
+    #[test]
+    fn io_reason_keeps_the_permission_wording_for_permission_and_sharing_errors_only() {
+        let denied = std::io::Error::from(std::io::ErrorKind::PermissionDenied);
+        assert_eq!(io_reason(&denied), "it is read-only or open in another program");
+        assert_eq!(io_reason(&std::io::Error::from_raw_os_error(32)), "it is read-only or open in another program");
+        let other = std::io::Error::new(std::io::ErrorKind::InvalidInput, "the name is not valid");
+        assert_eq!(io_reason(&other), "the name is not valid");
+    }
+
+    #[test]
+    fn a_block_is_frontmatter_only_if_every_line_is_blank_a_comment_indented_a_list_item_or_a_key() {
+        assert!(looks_like_frontmatter("id: a\n# c\ntags:\n  - x\n- y\n\nlist: [\n  a,\n]\n\"q\": 1\n"));
+        assert!(looks_like_frontmatter("") && looks_like_frontmatter("\n\n"));
+        assert!(!looks_like_frontmatter("From: a friend\nSubject: dinner\n\nsee you at 7\n"));
+        assert!(!looks_like_frontmatter("# only a comment\n"));
+        assert!(!looks_like_frontmatter("key:value\n"));
+        assert!(is_key_line("tags : [a]") && is_key_line("a-b_1:") && !is_key_line("two words: x") && !is_key_line("url:http"));
     }
 
     #[test]

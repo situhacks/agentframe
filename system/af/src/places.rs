@@ -185,7 +185,7 @@ fn resolve_tags(ctx: &Ctx, wanted: &[String], side: &str) -> R<Vec<String>> {
             }
         };
         if let Some(f) = reg.facet(&t.facet) {
-            if f.applies != "both" && f.applies != side {
+            if !tags::facet_applies(&f.applies, side) {
                 die!("tag '{}' is in facet '{}', a {} facet; this is a {side} page", t.id, f.name, f.applies);
             }
         }

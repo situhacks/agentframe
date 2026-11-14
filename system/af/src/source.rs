@@ -1,12 +1,14 @@
 //! `af source add`: files one source into a layer's `sources/` (the life layer, or a project's).
 //! The id, the file and its INDEX row are made under one lock on that layer's `INDEX.md`, so two
-//! callers never take one id. The shapes are `library/schema/source-record.md`.
+//! callers never take one id. `--tag` writes topic tags into the new file's frontmatter, checked
+//! against the registry before anything is taken. The shapes are `library/schema/source-record.md`.
 
 use crate::core::Ctx;
 use crate::error::R;
 use crate::fm::{self, rx};
 use crate::life::{locked, vpath, TextFile};
 use crate::pyos;
+use crate::tags;
 use crate::{die, outln};
 use clap::{Args, Subcommand};
 
@@ -51,6 +53,9 @@ pub struct AddArgs {
     /// File into this project's sources/ instead of the life layer's
     #[arg(long)]
     project: Option<String>,
+    /// A topic tag for the record's frontmatter (repeatable; three at most; text sources in the life layer)
+    #[arg(long = "tag")]
+    tags: Vec<String>,
 }
 
 pub fn run(ctx: &Ctx, cmd: SourceCmd) -> R<i32> {
@@ -102,7 +107,25 @@ fn check_args(a: &AddArgs) -> R<()> {
             die!("--project {p:?} is not a project slug");
         }
     }
+    if !a.tags.is_empty() {
+        if a.file.is_some() {
+            die!("--tag cannot go with --file: a binary carries no frontmatter, so it cannot carry tags");
+        }
+        if a.project.is_some() {
+            die!("--tag is for the life layer: its vocabulary is workspace/life/tags.yaml, and a project's sources are not tagged");
+        }
+    }
     Ok(())
+}
+
+/// The ids `--tag` resolves to, each as `af tag add` resolves it and in a facet that applies to
+/// sources. Any phrase that does not is a refusal, before an id is taken or a file made.
+fn vet_tags(ctx: &Ctx, wanted: &[String]) -> R<Vec<String>> {
+    if wanted.is_empty() {
+        return Ok(Vec::new());
+    }
+    let reg = tags::Registry::require(ctx)?;
+    Ok(tags::vet_tags(&reg, wanted, &[], "sources", "this source")?.0)
 }
 
 /// One more than the highest `src-<date>-NN` anywhere under the layer's `sources/`: INDEX.md, the
@@ -182,6 +205,7 @@ fn create_new(path: &str, data: &[u8]) -> R<()> {
 
 fn cmd_add(ctx: &Ctx, a: &AddArgs) -> R<i32> {
     check_args(a)?;
+    let tags = vet_tags(ctx, &a.tags)?;
     let sources = match &a.project {
         Some(p) => pyos::join_all(&[&ctx.projects, p, "sources"]),
         None => vpath(ctx, crate::life::SOURCES_REL),
@@ -202,7 +226,7 @@ fn cmd_add(ctx: &Ctx, a: &AddArgs) -> R<i32> {
         die!("{input} is not UTF-8 text; file it with --file");
     }
     let index = pyos::join(&sources, "INDEX.md");
-    let (id, rel) = locked(&index, || file_under_lock(a, &sources, &index, body, &data))?;
+    let (id, rel) = locked(&index, || file_under_lock(a, &sources, &index, body, &data, &tags))?;
     outln!("{id}");
     outln!("{}", ctx.rel(&pyos::join(&sources, &rel))?);
     if a.move_ {
@@ -216,7 +240,7 @@ fn cmd_add(ctx: &Ctx, a: &AddArgs) -> R<i32> {
 
 /// From choosing the id to the INDEX row, with the lock held. Returns the id and the file's path
 /// relative to `sources/`.
-fn file_under_lock(a: &AddArgs, sources: &str, index: &str, body: bool, data: &[u8]) -> R<(String, String)> {
+fn file_under_lock(a: &AddArgs, sources: &str, index: &str, body: bool, data: &[u8], tags: &[String]) -> R<(String, String)> {
     let n = next_number(sources, &a.date)?;
     let id = format!("src-{}-{n:02}", a.date);
     let rel = if body {
@@ -235,6 +259,9 @@ fn file_under_lock(a: &AddArgs, sources: &str, index: &str, body: bool, data: &[
         let mut out = format!("---\nid: {id}\ntype: {}\ndate: {}\norigin: {}\nverbatim: true\n", a.type_, a.date, scalar(a.origin.as_deref().unwrap_or(DEFAULT_ORIGIN).trim()));
         if a.private {
             out.push_str("private: true\n");
+        }
+        if !tags.is_empty() {
+            out.push_str(&format!("tags: [{}]\n", tags.join(", ")));
         }
         out.push_str("---\n");
         let mut bytes = out.into_bytes();

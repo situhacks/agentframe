@@ -22,4 +22,5 @@ Shapes `workspace/life/knowledge/<slug>.md` and a project's compiled entity page
 - Material too long for the page (a full analysis, a long table, a working draft) goes in `knowledge/_history/<slug>/<YYYY-MM-DD>-<name>.md`; the timeline entry links it and Current carries the conclusion.
 - Timeline entries older than six months move to `knowledge/_archive/<slug>-<YYYY-MM>.md` (the month of the consolidation pass), leaving one line in their place: `- archived: entries before YYYY-MM-DD → _archive/<slug>-<YYYY-MM>.md`. A Current fact whose evidence moved stays, citing its source id.
 - A place, person, or group is its own file under `places/` or `people/` ([`place.md`](place.md), [`person-profile.md`](person-profile.md)), linked `[[slug]]` from the topic page; a knowledge page carries taste, rules, and what he learned, never venue or person facts.
+- A page carries one to three `topic` tags, `tags: [lease, money]` in frontmatter above the heading, written with `af tag add` ([`tags.md`](tags.md)); `af tag lint` lists a page with none.
 - A page with `private: true` frontmatter stays private: nothing from it goes into a tracked file.

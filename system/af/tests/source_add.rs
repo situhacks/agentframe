@@ -366,3 +366,215 @@ fn an_id_at_the_top_of_the_number_range_is_refused_not_a_panic_or_a_repeat() {
     assert!(err.contains(&format!("for {DATE} ")), "the plain date, not the escaped one: {err}");
     assert_eq!(files_in_sources(&fx), ["huge.md".to_string()]);
 }
+
+// ------------------------------------------------------------------ --tag
+
+const REGISTRY: &str = "\
+facets:
+  - name: topic
+    applies: context
+    cardinality: multi
+  - name: depth
+    applies: knowledge
+    cardinality: single
+  - name: origin
+    applies: sources
+    cardinality: single
+  - name: cuisine
+    applies: places
+    cardinality: multi
+tags:
+  - id: leases
+    facet: topic
+    status: active
+    alt: [lease, rentals]
+    scope: \"Rentals and leases\"
+  - id: health
+    facet: topic
+    status: active
+    alt: []
+    scope: \"Health care\"
+  - id: money
+    facet: topic
+    status: proposed
+    alt: []
+    scope: \"Spending\"
+  - id: travel
+    facet: topic
+    status: active
+    alt: []
+    scope: \"Trips\"
+  - id: old
+    facet: topic
+    status: deprecated
+    alt: []
+    scope: \"\"
+  - id: overview
+    facet: depth
+    status: active
+    alt: []
+    scope: \"A first read\"
+  - id: detail
+    facet: depth
+    status: active
+    alt: []
+    scope: \"The long form\"
+  - id: scan
+    facet: origin
+    status: active
+    alt: []
+    scope: \"From a scan\"
+  - id: noodles
+    facet: cuisine
+    status: active
+    alt: []
+    scope: \"Noodle houses\"
+";
+
+fn tagged_layer(fx: &Fx) {
+    layer(fx);
+    fx.write("workspace/life/tags.yaml", REGISTRY);
+    fx.ok(&["tag", "render"]);
+}
+
+fn sources_snapshot(fx: &Fx) -> (Vec<String>, String) {
+    let index = if fx.exists("workspace/life/sources/INDEX.md") { fx.read("workspace/life/sources/INDEX.md") } else { String::new() };
+    (files_in_sources(fx), index)
+}
+
+#[test]
+fn tags_go_into_the_new_files_frontmatter_as_one_inline_list_and_the_scan_reads_them() {
+    let fx = Fx::new();
+    tagged_layer(&fx);
+    let (code, out, err) = add(&fx, "lease", &["--tag", "leases", "--tag", "Health"]);
+    assert_eq!(code, 0, "{err}");
+    let file = format!("workspace/life/sources/note-{DATE}-lease.md");
+    assert_eq!(out.replace("\r\n", "\n"), format!("src-{DATE}-01\n{file}\n"));
+    assert_eq!(
+        fx.read(&file).replace("\r\n", "\n"),
+        format!("---\nid: src-{DATE}-01\ntype: note\ndate: {DATE}\norigin: filed with af source add\nverbatim: true\ntags: [leases, health]\n---\nthe input\n")
+    );
+    // with --private the tags follow it; an alt label and a repeat resolve to one id; a proposed tag is usable
+    let (code, _, err) = add(&fx, "two", &["--private", "--tag", "rentals", "--tag", "lease", "--tag", "money"]);
+    assert_eq!(code, 0, "{err}");
+    let two = fx.read(&format!("workspace/life/sources/note-{DATE}-two.md")).replace("\r\n", "\n");
+    assert!(two.contains("verbatim: true\nprivate: true\ntags: [leases, money]\n---\nthe input\n"), "{two}");
+    // no --tag: the file is what it was before this option existed
+    add(&fx, "plain", &[]);
+    assert!(!fx.read(&format!("workspace/life/sources/note-{DATE}-plain.md")).contains("tags"));
+    // af tag reads them, af doctor is quiet
+    assert!(fx.ok(&["tag", "list", "--facet", "topic"]).contains("leases · active · 2 use(s)"));
+    assert_eq!(afcore::tags::doctor_checks(&fx.ctx()).unwrap(), (vec![], vec![]));
+    // and af tag add later changes only that line
+    fx.ok(&["tag", "add", &file, "travel"]);
+    assert!(fx.read(&file).replace("\r\n", "\n").contains("verbatim: true\ntags: [leases, health, travel]\n---\nthe input\n"));
+}
+
+#[test]
+fn a_tag_that_does_not_resolve_refuses_the_whole_command_before_anything_is_written() {
+    let fx = Fx::new();
+    tagged_layer(&fx);
+    add(&fx, "first", &["--tag", "leases"]);
+    let before = sources_snapshot(&fx);
+    let (code, _, err) = add(&fx, "second", &["--tag", "leases", "--tag", "Live Jazz"]);
+    assert_eq!(code, 1);
+    assert!(err.contains("no tag matches 'Live Jazz' in workspace/life/tags.yaml; af tag propose live-jazz --facet <f> --scope \"<one line>\" first"), "{err}");
+    assert_eq!(sources_snapshot(&fx), before, "no file, no INDEX row");
+    // the id was not taken: the next source is 02, not 03
+    let (code, out, err) = add(&fx, "third", &["--tag", "travel"]);
+    assert_eq!(code, 0, "{err}");
+    assert!(out.starts_with(&format!("src-{DATE}-02")), "{out}");
+}
+
+#[test]
+fn a_tag_the_registry_refuses_for_a_source_refuses_the_command_and_nothing_is_written() {
+    let fx = Fx::new();
+    tagged_layer(&fx);
+    for (tags, want) in [
+        (vec!["noodles"], "tag 'noodles' is in facet 'cuisine', a places facet; this is a sources page"),
+        (vec!["overview"], "a knowledge facet; this is a sources page"),
+        (vec!["old"], "tag 'old' is deprecated"),
+        (vec!["leases", "health", "travel", "money"], "this source would carry 4 tags, over the cap of 3"),
+        (vec!["scan", "leases"], ""),
+    ] {
+        let mut extra: Vec<&str> = Vec::new();
+        for t in &tags {
+            extra.extend(["--tag", t]);
+        }
+        let (code, _, err) = add(&fx, "x", &extra);
+        if want.is_empty() {
+            assert_eq!(code, 0, "a sources facet is accepted: {err}");
+            continue;
+        }
+        assert_eq!(code, 1, "{tags:?}: {err}");
+        assert!(err.contains(want), "{tags:?}: {err}");
+    }
+    // the one that passed is the only addition
+    assert_eq!(files_in_sources(&fx).len(), 2, "{:?}", files_in_sources(&fx));
+    // two tags of a single-valued facet
+    let (code, _, err) = add(&fx, "y", &["--tag", "scan", "--tag", "scan"]);
+    assert_eq!(code, 0, "one tag given twice is one tag: {err}");
+    fx.ok(&["tag", "facet", "add", "kind-of", "--applies", "sources", "--single"]);
+    fx.ok(&["tag", "propose", "a-kind", "--facet", "kind-of"]);
+    fx.ok(&["tag", "propose", "b-kind", "--facet", "kind-of"]);
+    let (code, _, err) = add(&fx, "z", &["--tag", "a-kind", "--tag", "b-kind"]);
+    assert_eq!(code, 1);
+    assert!(err.contains("this source already carries 'a-kind' in the single-valued facet 'kind-of'"), "{err}");
+}
+
+#[test]
+fn tag_is_refused_with_a_file_with_a_project_and_with_no_registry() {
+    let fx = Fx::new();
+    tagged_layer(&fx);
+    let before = sources_snapshot(&fx);
+    let pdf = fx.write_bytes("in/doc.pdf", b"%PDF-1.4 bytes");
+    let (code, _, err) = fx.run(&["source", "add", "--type", "document", "--date", DATE, "--slug", "d", "--summary", "s", "--file", &pdf, "--tag", "leases"]);
+    assert_eq!(code, 1);
+    assert!(err.contains("--tag cannot go with --file: a binary carries no frontmatter"), "{err}");
+    fx.mkdir("workspace/projects/acme/sources");
+    let (code, _, err) = add(&fx, "p", &["--project", "acme", "--tag", "leases"]);
+    assert_eq!(code, 1);
+    assert!(err.contains("--tag is for the life layer"), "{err}");
+    assert_eq!(sources_snapshot(&fx), before);
+    assert!(files_in_sources_of(&fx, "workspace/projects/acme/sources").is_empty());
+
+    let bare = Fx::new();
+    layer(&bare);
+    let (code, _, err) = add(&bare, "x", &["--tag", "leases"]);
+    assert_eq!(code, 1);
+    assert!(err.contains("workspace/life/tags.yaml does not exist; af tag init"), "{err}");
+    assert!(files_in_sources(&bare).is_empty());
+}
+
+fn files_in_sources_of(fx: &Fx, rel: &str) -> Vec<String> {
+    std::fs::read_dir(fx.path(rel)).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect()
+}
+
+#[test]
+fn eight_processes_filing_tagged_sources_at_once_each_keep_their_tags() {
+    let fx = Fx::new();
+    tagged_layer(&fx);
+    let input = body_file(&fx, "a.txt", b"same input\n");
+    let start = std::sync::Barrier::new(8);
+    std::thread::scope(|scope| {
+        let runs: Vec<_> = (0..8)
+            .map(|i| {
+                let (fx, input, start) = (&fx, &input, &start);
+                scope.spawn(move || {
+                    start.wait();
+                    let tag = ["leases", "health", "travel", "money"][i % 4];
+                    fx.run(&["source", "add", "--type", "note", "--date", DATE, "--slug", &format!("n{i}"), "--summary", "row", "--body-file", input, "--tag", tag])
+                })
+            })
+            .collect();
+        for r in runs {
+            let (code, _, err) = r.join().unwrap();
+            assert_eq!(code, 0, "{err}");
+        }
+    });
+    for i in 0..8 {
+        let text = fx.read(&format!("workspace/life/sources/note-{DATE}-n{i}.md"));
+        let tag = ["leases", "health", "travel", "money"][i % 4];
+        assert!(text.replace("\r\n", "\n").contains(&format!("verbatim: true\ntags: [{tag}]\n---\nsame input\n")), "{text}");
+    }
+}

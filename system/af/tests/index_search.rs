@@ -354,3 +354,31 @@ fn a_tag_filter_resolves_alt_labels_through_the_registry() {
     let out = out.replace("\r\n", "\n");
     assert!(out.starts_with("af search: tag 'noodle bar' resolved to 'noodles' through workspace/life/tags.yaml\naf search: 2 hits for tags [noodles]"), "{out}");
 }
+
+#[test]
+fn a_source_and_a_knowledge_page_tagged_x_both_come_back_from_a_tag_search() {
+    let fx = vault();
+    fx.write("workspace/life/knowledge/housing.md", "---\ntags: [x]\n---\n# Housing\n\n## Current\n\n- zebra launch lease renews in spring\n");
+    fx.write("workspace/life/sources/note-2026-11-01-lease.md", "---\nid: src-2026-11-01-01\ntype: note\ntags: [x]\n---\nzebra launch lease text\n");
+    fx.write("workspace/life/sources/note-2026-11-01-crlf.md", "---\r\nid: src-2026-11-01-02\r\ntype: note\r\ntags: [x, y]\r\n---\r\nzebra launch crlf lease\r\n");
+    fx.write("workspace/life/knowledge/other.md", "---\ntags: [y]\n---\n# Other\n\nzebra launch other\n");
+    dead(&fx, &["index", "update"]);
+    let (code, out, err) = dead(&fx, &["search", "zebra", "--tag", "x", "--json", "-n", "50"]);
+    assert_eq!(code, 0, "{err}");
+    let mut got = paths(&out);
+    got.sort();
+    assert_eq!(got, vec!["housing.md", "note-2026-11-01-crlf.md", "note-2026-11-01-lease.md"]);
+    // a tag written by af tag add is searchable after the next update, with no query as well
+    fx.write(
+        "workspace/life/tags.yaml",
+        "facets:\n  - name: topic\n    applies: context\n    cardinality: multi\ntags:\n  - id: leases\n    facet: topic\n    status: active\n    alt: [lease]\n    scope: \"Rentals\"\n",
+    );
+    fx.write("workspace/life/knowledge/plain.md", "# Plain\n\nzebra launch plain page\n");
+    fx.ok(&["tag", "add", "workspace/life/knowledge/plain.md", "leases"]);
+    fx.ok(&["tag", "add", "workspace/life/sources/note-2026-11-01-lease.md", "lease"]);
+    dead(&fx, &["index", "update"]);
+    let (_, out, _) = dead(&fx, &["search", "--tag", "leases", "--json"]);
+    let mut got = paths(&out);
+    got.sort();
+    assert_eq!(got, vec!["note-2026-11-01-lease.md", "plain.md"]);
+}

@@ -47,7 +47,7 @@ No skill is involved. The first real draft is the template's test; a template th
 
 ## Size Caps
 
-`af doctor` notes a file over its cap: 1,700 words for `AGENTS.builder.md` and `AGENTS.operator.md`, 1,500 for a process file, 900 for a template. Over the cap, cut before adding.
+`af doctor` notes a file over its cap: 1,000 words for `AGENTS.builder.md` and `AGENTS.operator.md`, 1,500 for a process file, 900 for a template. Over the cap, cut before adding.
 
 ## Every Runtime File
 

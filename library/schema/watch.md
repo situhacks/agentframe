@@ -3,7 +3,7 @@
 Shapes `workspace/life/watch.md`, the queue of timed and conditional checks. Owned by `af watch`; headings and prose around the rows are free. A chat queues a check with `af watch add` and never sets its own timer. The batch run, `system/tools/watch_batch.py`, works through the queue three times a day, raises a loop and sends a phone message when a condition is met, and removes the row.
 
 - If he must do something, it is a [loop](open-loops.md), "remind me" included; if a chat must check, it is a watch.
-- The queue is checked at 10:00, 15:00 and 19:00 and never oftener. At 10:00 the run also does the morning jobs (bills watch, loop watch, loop sweep, then the loop push); 15:00 and 19:00 check the queue only.
+- The queue is checked at 10:00, 15:00 and 19:00 and never oftener. At 10:00 the run also does the morning jobs (bills watch, loop watch, loop sweep, the harness review, then the loop push); 15:00 and 19:00 check the queue only.
 - The v1 actions are `notify` and `loop`; `notify+loop` does both.
 - A phone message goes to the `#reminders` channel through `system/tools/notify.py`, so `REMINDERS_DISCORD_CHANNEL_ID` must be in `system/tools/.env`. Without it the run still checks and raises loops, and the report says the phone is not configured.
 

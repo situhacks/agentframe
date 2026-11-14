@@ -2,6 +2,8 @@
 
 Catalog of reusable process files: what each owns and when to load it. Check here before writing a new procedure; if a row covers the job, load that file instead. New, reshaped, or retired process files follow [`authoring.md`](authoring.md), which requires updating this catalog in the same change.
 
+The harness review, `system/tools/harness_review.py`, runs every 14 days from the morning batch and writes `system/logs/harness-review-<date>.md`: the process files, skills and tools nothing names, and what else looks unused or stale. A builder chat acts on it.
+
 ## Process index
 
 | Process | Owns | Load when |

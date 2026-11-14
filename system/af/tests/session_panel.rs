@@ -1,5 +1,5 @@
 //! The session verbs that use the VS Code panel driver: compacting a running chat, `--when-idle`,
-//! `--then-file`, `rename`, `start` (with `--group`) and `panel`. The driver is a stub compiled for the test and named
+//! `--then-file`, `rename`, `start` (with `--group`), `panel` and `group`. The driver is a stub compiled for the test and named
 //! through `AF_PANEL_DRIVER` (see `common::panel_stub`); the real driver is never run, no window is
 //! touched and no key is sent. The same stub answers `agents` for `AF_CLAUDE_BIN`, so the roster says
 //! whether the chat is running. It records each call (arguments and the text file's content) in
@@ -527,80 +527,268 @@ fn the_exit_6_message_tells_him_to_fix_the_settings_file_before_anything_else() 
     assert!(err.contains("MODEL KEY MISMATCH") && err.contains("settings.json by hand") && err.contains("MODEL KEY NOT RESTORED"), "{err}");
 }
 
+// ------------------------------------------------------------------ group
+
+/// The groups the stub's `groups` action prints: his Main and Q3 2026, and the panel's own Ungrouped.
+const GROUPS: &str = r#"[{"name":"Main","count":2,"fixed":false},{"name":"Q3 2026","count":1,"fixed":false},{"name":"Ungrouped","count":3,"fixed":true},{"name":"Archived sessions","count":4,"fixed":true}]"#;
+
+fn group_calls(fx: &Fx) -> Vec<Vec<String>> {
+    calls(fx).into_iter().map(|(a, _)| a).filter(|a| a[0].starts_with("group")).collect()
+}
+
+fn argv(args: &[&str]) -> Vec<String> {
+    args.iter().map(|a| a.to_string()).collect()
+}
+
+#[test]
+fn group_list_prints_the_groups_and_their_counts_and_asks_the_driver_to_read_only() {
+    let fx = Fx::new();
+    let (code, out, err) = session(&fx, &[("STUB_PANEL_GROUPS", GROUPS)], &["group", "list"]);
+    assert_eq!(code, 0, "{out}{err}");
+    assert!(out.contains("| Main | 2 | his group |") && out.contains("| Q3 2026 | 1 | his group |") && out.contains("| Ungrouped | 3 | the panel's own |"), "{out}");
+    let (code, out, _) = session(&fx, &[("STUB_PANEL_GROUPS", GROUPS)], &["group", "list", "--json"]);
+    assert_eq!(code, 0);
+    let v: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!((v[0]["name"].as_str(), v[0]["count"].as_i64(), v[0]["fixed"].as_bool()), (Some("Main"), Some(2), Some(false)));
+    assert_eq!(v[2]["fixed"], true);
+    assert_eq!(calls(&fx)[0].0, ["groups", "-WaitMinutes", "0.5"], "a read waits half a minute at most, like a list");
+    let (code, _, err) = session(&fx, &[("STUB_PANEL_EXIT", "2"), ("STUB_PANEL_STDERR", "no VS Code window")], &["group", "list"]);
+    assert_eq!(code, 1);
+    assert!(err.contains("could not find") && err.contains("no VS Code window"), "{err}");
+}
+
+#[test]
+fn group_create_rename_and_delete_build_the_drivers_calls() {
+    let fx = Fx::new();
+    let (code, out, err) = session(&fx, &[("STUB_PANEL_OUT", "created the group 'Work'; the list shows it"), ("STUB_PANEL_NOTE", "pointer put back")], &["group", "create", "Work"]);
+    assert_eq!(code, 0, "{out}{err}");
+    assert!(out.contains("created the group 'Work'") && out.contains("Driver notes: pointer put back"), "{out}");
+    assert_eq!(session(&fx, &[], &["group", "create", "  Q3 2026  ", "--wait-minutes", "3"]).0, 0);
+    assert_eq!(session(&fx, &[], &["group", "rename", "Old name", "New name"]).0, 0);
+    assert_eq!(session(&fx, &[], &["group", "delete", "Work"]).0, 0);
+    assert_eq!(session(&fx, &[], &["group", "delete", "Main", "--force", "--wait-minutes", "1"]).0, 0);
+    assert_eq!(
+        group_calls(&fx),
+        vec![
+            argv(&["group-create", "-Group", "Work"]),
+            argv(&["group-create", "-Group", "Q3 2026", "-WaitMinutes", "3"]),
+            argv(&["group-rename", "-Group", "Old name", "-NewName", "New name"]),
+            argv(&["group-delete", "-Group", "Work"]),
+            argv(&["group-delete", "-Group", "Main", "-Force", "-WaitMinutes", "1"]),
+        ]
+    );
+    assert!(calls(&fx).iter().all(|(a, t)| t.is_none() && !a.contains(&"-TextFile".to_string())), "a group's name is an argument, never a file");
+}
+
+#[test]
+fn group_add_and_remove_take_a_registered_name_or_a_session_id_and_may_target_the_calling_chat() {
+    let fx = chat();
+    let id = "0a1b2c3d-1111-2222-3333-444455556666";
+    assert_eq!(session(&fx, &[], &["group", "add", "system/x", "Main"]).0, 0);
+    assert_eq!(session(&fx, &[], &["group", "add", "--session-id", id, "Q3 2026"]).0, 0);
+    assert_eq!(session(&fx, &[], &["group", "add", "system/x", "Main", "--session-id", "sid-1"]).0, 0, "the name and its own id may both be given");
+    assert_eq!(session(&fx, &[], &["group", "remove", "system/x"]).0, 0);
+    assert_eq!(session(&fx, &[], &["group", "remove", "--session-id", id, "--wait-minutes", "2"]).0, 0);
+    // Nothing here needs the chat idle, so the calling chat can be grouped too.
+    assert_eq!(session(&fx, &[("CLAUDE_CODE_SESSION_ID", "sid-1")], &["group", "add", "system/x", "Main"]).0, 0);
+    assert_eq!(session(&fx, &[("CLAUDE_CODE_SESSION_ID", "sid-1")], &["group", "remove", "system/x"]).0, 0);
+    assert_eq!(
+        group_calls(&fx),
+        vec![
+            argv(&["group-add", "-Session", "sid-1", "-Group", "Main"]),
+            argv(&["group-add", "-Session", id, "-Group", "Q3 2026"]),
+            argv(&["group-add", "-Session", "sid-1", "-Group", "Main"]),
+            argv(&["group-remove", "-Session", "sid-1"]),
+            argv(&["group-remove", "-Session", id, "-WaitMinutes", "2"]),
+            argv(&["group-add", "-Session", "sid-1", "-Group", "Main"]),
+            argv(&["group-remove", "-Session", "sid-1"]),
+        ]
+    );
+}
+
+#[test]
+fn group_verbs_refuse_bad_arguments_before_the_driver_runs() {
+    let fx = chat();
+    let (code, _, err) = session(&fx, &[], &["group", "add", "Main"]);
+    assert_eq!(code, 1);
+    assert!(err.contains("needs a chat name, or --session-id"), "{err}");
+    let (code, _, err) = session(&fx, &[], &["group", "add", "system/nope", "Main"]);
+    assert_eq!(code, 1);
+    assert!(err.contains("no registry row for system/nope"), "{err}");
+    let (code, _, err) = session(&fx, &[], &["group", "add", "--session-id", "not an id", "Main"]);
+    assert_eq!(code, 1);
+    assert!(err.contains("8 to 64 hex digits and dashes"), "{err}");
+    let (code, _, err) = session(&fx, &[], &["group", "add", "system/x", "Main", "--session-id", "0a1b2c3d-1111-2222-3333-444455556666"]);
+    assert_eq!(code, 1);
+    assert!(err.contains("not the session id of that registry row"), "{err}");
+    let (code, _, err) = session(&fx, &[], &["group", "remove"]);
+    assert_eq!(code, 1);
+    assert!(err.contains("needs a chat name, or --session-id"), "{err}");
+    let (code, _, err) = session(&fx, &[], &["group", "create", "   "]);
+    assert_eq!(code, 1);
+    assert!(err.contains("the group name is empty"), "{err}");
+    assert_eq!(session(&fx, &[], &["group", "add", "a", "b", "c"]).0, 2, "three words are a usage error");
+    assert!(calls(&fx).is_empty(), "nothing reached the driver");
+}
+
+#[test]
+fn group_dry_run_prints_the_call_and_what_will_show_on_his_screen_and_runs_nothing() {
+    let fx = chat();
+    let id = "0a1b2c3d-1111-2222-3333-444455556666";
+    let cases: Vec<(Vec<&str>, &str, &str)> = vec![
+        (vec!["group", "create", "Work", "--dry-run"], "group-create -Group Work", "the New group button is pressed"),
+        (vec!["group", "rename", "Old", "New", "--dry-run", "--wait-minutes", "2"], "group-rename -Group Old -NewName New -WaitMinutes 2", "Rename group is pressed"),
+        (vec!["group", "delete", "Main", "--force", "--dry-run"], "group-delete -Group Main -Force", "move to Ungrouped"),
+        (vec!["group", "add", "--session-id", id, "Q3 2026", "--dry-run"], "group-add -Session 0a1b2c3d-1111-2222-3333-444455556666 -Group \"Q3 2026\"", "does not have to be idle"),
+        (vec!["group", "remove", "system/x", "--dry-run"], "group-remove -Session sid-1", "Remove from group is pressed"),
+    ];
+    for (args, call, note) in cases {
+        let (code, out, err) = session(&fx, &[], &args);
+        assert_eq!(code, 0, "{args:?}: {out}{err}");
+        assert!(out.contains(call), "{args:?}: {out}");
+        assert!(out.contains("VS Code comes to the front") && out.contains("idle for 120 seconds") && out.contains("Nothing was run."), "{args:?}: {out}");
+        assert!(out.contains(note), "{args:?}: {out}");
+        assert!(out.contains("put back") || out.contains("goes back"), "{args:?}: the pointer and the foreground are put back: {out}");
+    }
+    assert!(calls(&fx).is_empty(), "a dry run starts no driver");
+}
+
+#[test]
+fn a_group_verb_exits_with_the_drivers_code_and_says_what_it_refused() {
+    let cases = [
+        ("5", 5, "refused (exit 5)", "nothing was changed"),
+        ("3", 3, "stopped (exit 3)", "operator was using the computer"),
+        ("2", 2, "could not find", "no row for this chat"),
+        ("1", 1, "failed (exit 1)", "the stub driver refused"),
+        ("7", 7, "cancelled (exit 7)", "cancelled"),
+        ("6", 6, "MODEL KEY MISMATCH", "MODEL"),
+    ];
+    for (driver_code, af_code, label, extra) in cases {
+        let fx = chat();
+        let stderr = match driver_code {
+            "5" => "a group named 'Main' already exists; nothing was changed",
+            "2" => "no row for this chat is in the list as shown",
+            _ => "the stub driver refused",
+        };
+        let (exit, out, err) = session(&fx, &[("STUB_PANEL_EXIT", driver_code), ("STUB_PANEL_STDERR", stderr), ("STUB_PANEL_NOTE", "a note")], &["group", "add", "system/x", "Main"]);
+        assert_eq!(exit, af_code, "{driver_code}: {out}{err}");
+        assert!(err.contains(label) && err.contains(extra), "{driver_code}: {err}");
+        assert!(err.contains("a note"), "{driver_code}: the driver's notes are printed too: {err}");
+        assert!(!err.contains("nothing was sent"), "{driver_code}: {err}");
+    }
+    // Nothing to do is a success.
+    let fx = chat();
+    let (code, out, _) = session(&fx, &[("STUB_PANEL_OUT", "the chat is already in the group 'Main'; nothing to do")], &["group", "add", "system/x", "Main"]);
+    assert_eq!(code, 0);
+    assert!(out.contains("nothing to do"), "{out}");
+}
+
+#[test]
+fn a_group_action_has_a_short_limit_of_its_own_and_a_groups_read_the_list_limit() {
+    use afcore::panel::{action_limit, DRIVER_GROUP_WORK_SECS, DRIVER_MARGIN_SECS, READ_LIMIT_SECS};
+    assert_eq!(DRIVER_GROUP_WORK_SECS, 60, "claude_panel.ps1 $GroupWorkSeconds is the same number (a Python test pairs them)");
+    assert_eq!(action_limit("group-add", Some(1.0)), Duration::from_secs(60 + DRIVER_GROUP_WORK_SECS + DRIVER_MARGIN_SECS));
+    assert_eq!(action_limit("group-create", None), Duration::from_secs(20 * 60 + DRIVER_GROUP_WORK_SECS + DRIVER_MARGIN_SECS));
+    assert_eq!(action_limit("groups", Some(0.5)), Duration::from_secs(READ_LIMIT_SECS));
+    assert_eq!(action_limit("list", Some(0.5)), Duration::from_secs(READ_LIMIT_SECS));
+}
+
 // ------------------------------------------------------------------ start --group
 
-/// A `state.vscdb` like VS Code's: table ItemTable, key `Anthropic.claude-code`, one JSON object whose
-/// `sessionGroups:<root>` entries hold the groups.
-fn state_db(fx: &Fx, root_key: &str, groups: &[(&str, &str)]) -> String {
-    let path = fx.path("state.vscdb");
-    let conn = rusqlite::Connection::open(&path).unwrap();
-    conn.execute("CREATE TABLE ItemTable (key TEXT UNIQUE ON CONFLICT REPLACE, value BLOB)", []).unwrap();
-    let list: Vec<Value> = groups.iter().map(|(id, name)| json!({"id": id, "name": name, "collapsed": false, "sessionIds": ["x"]})).collect();
-    let state = json!({
-        format!("sessionGroups:{root_key}"): list,
-        "sessionGroups:c:\\elsewhere": [{"id": "other-id", "name": "Elsewhere", "collapsed": false, "sessionIds": []}],
-        "hiddenSessionIds": ["a", "b"],
-    });
-    conn.execute("INSERT INTO ItemTable (key, value) VALUES ('Anthropic.claude-code', ?1)", [state.to_string()]).unwrap();
-    drop(conn);
-    path.to_string_lossy().into_owned()
-}
-
 #[test]
-fn start_group_is_resolved_to_its_id_from_the_stored_groups_and_sent_to_the_driver() {
+fn start_group_reads_the_groups_then_starts_the_chat_then_places_it_with_group_add_in_that_order() {
     let fx = Fx::new();
     fx.write("prompt.md", "hello");
-    // The extension keys groups by the vault path in its own spelling: lower-case drive, back slashes.
-    let key = fx.root().replace('/', "\\").to_lowercase();
-    let db = state_db(&fx, &key, &[("d00fc9eb-0001", "Main"), ("7880c530-0002", "AgentFrame Build")]);
-    let (code, out, err) = session(&fx, &[("AF_VSCODE_STATE_DB", &db)], &["start", "system/x", "--brief-prompt-file", &fx.p("prompt.md"), "--model", "Haiku 5.5", "--group", "AgentFrame Build"]);
+    let new_id = "abcdef12-3456-7890-abcd-ef1234567890";
+    let (code, out, err) = session(
+        &fx,
+        &[("STUB_PANEL_GROUPS", GROUPS), ("STUB_PANEL_NEW_ID", new_id)],
+        &["start", "system/x", "--brief-prompt-file", &fx.p("prompt.md"), "--model", "Haiku 5.5", "--group", "q3 2026"],
+    );
     assert_eq!(code, 0, "{out}{err}");
-    let (args, _) = &calls(&fx)[0];
-    assert_eq!(arg_after(args, "-GroupId").as_deref(), Some("7880c530-0002"));
-    assert_eq!(arg_after(args, "-Model").as_deref(), Some("Haiku 5.5"));
-    // A different case is accepted when it is not ambiguous.
-    let (code, _, err) = session(&fx, &[("AF_VSCODE_STATE_DB", &db)], &["start", "system/x", "--brief-prompt-file", &fx.p("prompt.md"), "--model", "Haiku 5.5", "--group", "main"]);
-    assert_eq!(code, 0, "{err}");
-    assert_eq!(arg_after(&calls(&fx)[1].0, "-GroupId").as_deref(), Some("d00fc9eb-0001"));
-    // No --group, no -GroupId.
-    let (code, _, _) = session(&fx, &[("AF_VSCODE_STATE_DB", &db)], &["start", "system/x", "--brief-prompt-file", &fx.p("prompt.md"), "--model", "Haiku 5.5"]);
+    let made = calls(&fx);
+    let actions: Vec<&str> = made.iter().map(|(a, _)| a[0].as_str()).collect();
+    assert_eq!(actions, ["groups", "new", "group-add"], "groups read first, then the new chat, then the group");
+    let (new_args, _) = &made[1];
+    assert_eq!(arg_after(new_args, "-Group"), None, "no group is passed with the new chat (that route leaves it in Ungrouped)");
+    assert_eq!(arg_after(new_args, "-GroupId"), None);
+    assert_eq!(arg_after(new_args, "-Model").as_deref(), Some("Haiku 5.5"));
+    let (add_args, _) = &made[2];
+    assert_eq!(arg_after(add_args, "-Session").as_deref(), Some(new_id));
+    assert_eq!(arg_after(add_args, "-Group").as_deref(), Some("Q3 2026"), "the group's own spelling, found without regard to case");
+    assert!(out.contains(new_id) && out.contains("af session register system/x --session abcdef12") && out.contains("placed in the group 'Q3 2026'"), "{out}");
+    // No --group: one call, no group read.
+    let fx = Fx::new();
+    fx.write("prompt.md", "hello");
+    let (code, _, _) = session(&fx, &[("STUB_PANEL_GROUPS", GROUPS)], &["start", "system/x", "--brief-prompt-file", &fx.p("prompt.md"), "--model", "Haiku 5.5"]);
     assert_eq!(code, 0);
-    assert_eq!(arg_after(&calls(&fx)[2].0, "-GroupId"), None);
+    assert_eq!(calls(&fx).len(), 1);
 }
 
 #[test]
-fn an_unknown_group_is_refused_with_the_names_there_are_and_nothing_reaches_the_driver() {
+fn an_unknown_group_is_refused_with_the_names_there_are_before_any_chat_is_started() {
     let fx = Fx::new();
     fx.write("prompt.md", "hello");
-    let key = fx.root();
-    let db = state_db(&fx, &key, &[("id-1", "Main"), ("id-2", "AgentFrame Build")]);
-    let (code, _, err) = session(&fx, &[("AF_VSCODE_STATE_DB", &db)], &["start", "system/x", "--brief-prompt-file", &fx.p("prompt.md"), "--model", "Haiku 5.5", "--group", "Nope"]);
+    let (code, _, err) = session(
+        &fx,
+        &[("STUB_PANEL_GROUPS", GROUPS)],
+        &["start", "system/x", "--brief-prompt-file", &fx.p("prompt.md"), "--model", "Haiku 5.5", "--group", "Nope"],
+    );
     assert_eq!(code, 1);
-    assert!(err.contains("no session group named 'Nope'") && err.contains("'Main'") && err.contains("'AgentFrame Build'"), "{err}");
-    assert!(!err.contains("Elsewhere"), "only this vault's groups are listed: {err}");
-    assert!(calls(&fx).is_empty());
-    // A vault with no groups says none; a missing state file is a refusal too.
-    let other = Fx::new();
-    let empty = state_db(&other, "c:\\nowhere", &[]);
-    let (code, _, err) = session(&fx, &[("AF_VSCODE_STATE_DB", &empty)], &["start", "system/x", "--brief-prompt-file", &fx.p("prompt.md"), "--model", "Haiku 5.5", "--group", "Main"]);
+    assert!(err.contains("no session group named 'Nope'") && err.contains("'Main'") && err.contains("'Q3 2026'"), "{err}");
+    assert!(!err.contains("Ungrouped") && !err.contains("Archived"), "only his groups are listed: {err}");
+    let actions: Vec<String> = calls(&fx).into_iter().map(|(a, _)| a[0].clone()).collect();
+    assert_eq!(actions, ["groups"], "the groups were read and no chat was started for nothing");
+    // The panel's own Ungrouped is not a group to start into; a vault with no groups says none.
+    let (code, _, err) = session(&fx, &[("STUB_PANEL_GROUPS", GROUPS)], &["start", "system/x", "--brief-prompt-file", &fx.p("prompt.md"), "--model", "Haiku 5.5", "--group", "Ungrouped"]);
+    assert_eq!(code, 1);
+    assert!(err.contains("no session group named 'Ungrouped'"), "{err}");
+    let (code, _, err) = session(&fx, &[], &["start", "system/x", "--brief-prompt-file", &fx.p("prompt.md"), "--model", "Haiku 5.5", "--group", "Main"]);
     assert_eq!(code, 1);
     assert!(err.contains("The groups are: none"), "{err}");
-    let (code, _, err) = session(&fx, &[("AF_VSCODE_STATE_DB", &fx.p("missing.vscdb"))], &["start", "system/x", "--brief-prompt-file", &fx.p("prompt.md"), "--model", "Haiku 5.5", "--group", "Main"]);
+    assert!(calls(&fx).iter().all(|(a, _)| a[0] == "groups"), "no chat was started in any case");
+    // A driver that cannot read the groups stops the start too.
+    let (code, _, err) = session(&fx, &[("STUB_PANEL_EXIT", "2"), ("STUB_PANEL_STDERR", "no VS Code window")], &["start", "system/x", "--brief-prompt-file", &fx.p("prompt.md"), "--model", "Haiku 5.5", "--group", "Main"]);
     assert_eq!(code, 1);
-    assert!(err.contains("cannot find VS Code's state file"), "{err}");
-    assert!(calls(&fx).is_empty());
+    assert!(err.contains("no VS Code window"), "{err}");
+    assert!(calls(&fx).iter().all(|(a, _)| a[0] == "groups"));
 }
 
 #[test]
-fn the_state_file_is_only_read_and_a_worktree_root_finds_the_vaults_groups() {
+fn when_the_group_add_fails_the_chat_is_reported_as_started_with_its_id_and_the_retry_command_and_af_exits_with_the_adds_code() {
     let fx = Fx::new();
-    let db = state_db(&fx, &fx.root(), &[("id-1", "Main")]);
-    let before = std::fs::read(&db).unwrap();
-    let groups = afcore::panel::session_groups_at(std::path::Path::new(&db), &fx.root()).unwrap();
-    assert_eq!(groups, vec![("id-1".to_string(), "Main".to_string())]);
-    assert_eq!(std::fs::read(&db).unwrap(), before, "the original file is untouched");
-    let wt = format!("{}/.claude/worktrees/one-machine", fx.root());
-    assert_eq!(afcore::panel::session_groups_at(std::path::Path::new(&db), &wt).unwrap().len(), 1, "a worktree path resolves to the vault root's groups");
+    fx.write("prompt.md", "hello");
+    let new_id = "abcdef12-3456-7890-abcd-ef1234567890";
+    let (code, out, err) = session(
+        &fx,
+        &[("STUB_PANEL_GROUPS", GROUPS), ("STUB_PANEL_NEW_ID", new_id), ("STUB_PANEL_EXITS", "0,0,5"), ("STUB_PANEL_STDERR", "the Add to group submenu has no item named 'Q3 2026'; nothing was changed")],
+        &["start", "system/x", "--brief-prompt-file", &fx.p("prompt.md"), "--model", "Haiku 5.5", "--group", "Q3 2026"],
+    );
+    assert_eq!(code, 5, "af exits with the add's code: {out}{err}");
+    assert!(out.contains(new_id) && out.contains("started in the panel as session"), "the started line is still printed: {out}");
+    assert!(err.contains("the chat WAS started") && err.contains(new_id) && err.contains("NOT placed in the group 'Q3 2026'"), "{err}");
+    assert!(err.contains("no item named") && err.contains("refused (exit 5)"), "why: {err}");
+    assert!(err.contains(&format!("af session group add --session-id {new_id} \"Q3 2026\"")), "the command to retry: {err}");
+    let actions: Vec<String> = calls(&fx).into_iter().map(|(a, _)| a[0].clone()).collect();
+    assert_eq!(actions, ["groups", "new", "group-add"]);
+    // A failed start is as before: no group-add, and the add's code is not involved.
+    let fx = Fx::new();
+    fx.write("prompt.md", "hello");
+    let (code, _, err) = session(&fx, &[("STUB_PANEL_GROUPS", GROUPS), ("STUB_PANEL_EXITS", "0,3")], &["start", "system/x", "--brief-prompt-file", &fx.p("prompt.md"), "--model", "Haiku 5.5", "--group", "Main"]);
+    assert_eq!(code, 1);
+    assert!(err.contains("exit 3") && !err.contains("WAS started"), "{err}");
+    let actions: Vec<String> = calls(&fx).into_iter().map(|(a, _)| a[0].clone()).collect();
+    assert_eq!(actions, ["groups", "new"]);
+}
+
+#[test]
+fn panel_json_carries_the_group_of_every_chat() {
+    let fx = chat();
+    let list = r#"[{"session_id":"sid-1","name":"system/x","status":"idle","active":true,"group":"Main"},{"session_id":"sid-9","name":"stray","status":"idle","active":false}]"#;
+    let (code, out, _) = session(&fx, &[("STUB_PANEL_LIST", list)], &["panel", "--json"]);
+    assert_eq!(code, 0);
+    let v: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!((v[0]["group"].as_str(), v[1]["group"].as_str()), (Some("Main"), Some("")));
 }
 
 // ------------------------------------------------------------------ the real driver is addressed, never run

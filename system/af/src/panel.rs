@@ -1,6 +1,7 @@
 //! The Claude panel from `af`: `system/tools/claude_panel.ps1` manages chats in the VS Code panel
 //! (sends text to a chat, starts a new one, lists the chats) through UI Automation and the AgentFrame
-//! bridge extension, with no key or mouse input, and these verbs build its calls. Text travels in a
+//! bridge extension, with no key or mouse input except in the group actions (`af session group ...`, which
+//! right-click and type while he is idle and put things back), and these verbs build its calls. Text travels in a
 //! UTF-8 file, never as an argument, and reaches the driver exactly as given: a text that starts with
 //! `/` is not changed. The driver's exit code says why it did not act: 3 the operator was at the
 //! machine, the chat was busy or another driver run held the panel for the whole wait, 4 the chat's
@@ -17,7 +18,6 @@ use crate::outln;
 use crate::proc::{run_command, Out};
 use crate::reach;
 use crate::sessions::{self, Registry};
-use rusqlite::Connection;
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -43,6 +43,9 @@ pub const DRIVER_LIST_WORK_SECS: u64 = 45;
 /// af's whole limit for a read-only run: its wait, its work and a margin. A list never holds af for
 /// the 22 minutes a send may take.
 pub const READ_LIMIT_SECS: u64 = 90;
+/// The driver's work time for a group action (`group-create` and the others): its `$GroupWorkSeconds`, the same number.
+/// It changes the list in 2 to 4 seconds, so a hung screen is not waited for 20 minutes.
+pub const DRIVER_GROUP_WORK_SECS: u64 = 60;
 /// Test hook: seconds that replace the computed limit, to prove what happens when af has to kill the driver.
 const LIMIT_ENV: &str = "AF_PANEL_LIMIT_SECS";
 const WAITER_LOG: &str = "system/logs/panel-waiters.log";
@@ -78,7 +81,12 @@ pub struct Call<'a> {
     pub session: Option<&'a str>,
     pub text_file: Option<&'a Path>,
     pub model: Option<&'a str>,
-    pub group_id: Option<&'a str>,
+    /// `-Group`: a group's name (the group actions).
+    pub group: Option<&'a str>,
+    /// `-NewName`: the new name of a renamed group.
+    pub new_name: Option<&'a str>,
+    /// `-Force`: delete a group that holds chats.
+    pub force: bool,
     pub wait_minutes: Option<f64>,
     /// `-CancelFile`: the run stops with exit 7 when this file exists while it has changed nothing yet.
     pub cancel_file: Option<&'a Path>,
@@ -97,8 +105,14 @@ impl Driver {
         if let Some(m) = c.model {
             a.extend(["-Model".to_string(), m.to_string()]);
         }
-        if let Some(g) = c.group_id {
-            a.extend(["-GroupId".to_string(), g.to_string()]);
+        if let Some(g) = c.group {
+            a.extend(["-Group".to_string(), g.to_string()]);
+        }
+        if let Some(n) = c.new_name {
+            a.extend(["-NewName".to_string(), n.to_string()]);
+        }
+        if c.force {
+            a.push("-Force".to_string());
         }
         if let Some(w) = c.wait_minutes {
             a.extend(["-WaitMinutes".to_string(), format!("{w}")]);
@@ -154,14 +168,19 @@ pub fn driver_limit(wait_minutes: Option<f64>) -> Duration {
     Duration::from_secs_f64(wait * 60.0) + Duration::from_secs(DRIVER_WORK_SECS + DRIVER_MARGIN_SECS)
 }
 
-/// af's limit for one run of this action: a read-only action (`list`) has its own short limit, every
-/// other action the driver's deadline plus a margin.
+/// af's limit for one run of this action: a read-only action (`list`, `groups`) has its own short limit, a
+/// group action its wait plus its short work time and a margin, every other action the driver's deadline
+/// plus a margin.
 pub fn action_limit(action: &str, wait_minutes: Option<f64>) -> Duration {
-    if action == "list" {
+    if action == "list" || action == "groups" {
         if let Some(s) = std::env::var(LIMIT_ENV).ok().and_then(|v| v.trim().parse::<f64>().ok()).filter(|s| *s > 0.0) {
             return Duration::from_secs_f64(s);
         }
         return Duration::from_secs(READ_LIMIT_SECS);
+    }
+    if action.starts_with("group-") && std::env::var(LIMIT_ENV).is_err() {
+        let wait = wait_minutes.unwrap_or(DRIVER_WAIT_MINUTES).max(0.0);
+        return Duration::from_secs_f64(wait * 60.0) + Duration::from_secs(DRIVER_GROUP_WORK_SECS + DRIVER_MARGIN_SECS);
     }
     driver_limit(wait_minutes)
 }
@@ -538,10 +557,10 @@ pub fn archive(ctx: &Ctx, session: &str, wait_minutes: Option<f64>) -> Result<An
 }
 
 /// A new chat with this first message; its session id and the driver's notes.
-pub fn new_chat(ctx: &Ctx, text: &str, model: Option<&str>, group_id: Option<&str>, wait_minutes: Option<f64>) -> Result<(String, Answer), String> {
+pub fn new_chat(ctx: &Ctx, text: &str, model: Option<&str>, wait_minutes: Option<f64>) -> Result<(String, Answer), String> {
     let d = driver(ctx).map_err(|e| e.to_string())?;
     let file = TextFile::new(ctx, text).map_err(|e| e.to_string())?;
-    let call = Call { action: "new", text_file: Some(file.path()), model, group_id, wait_minutes, ..Call::default() };
+    let call = Call { action: "new", text_file: Some(file.path()), model, wait_minutes, ..Call::default() };
     let a = answer(&d.run(ctx, &call))?;
     let id = a.value.lines().map(str::trim).rfind(|l| !l.is_empty()).unwrap_or("").to_string();
     if id.len() < 8 || !id.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
@@ -556,6 +575,8 @@ pub struct PanelChat {
     pub name: String,
     pub status: String,
     pub active: bool,
+    /// The name of the group header the chat's row follows ("" when none).
+    pub group: String,
 }
 
 /// The chats the panel lists.
@@ -572,114 +593,226 @@ pub fn list(ctx: &Ctx) -> Result<Vec<PanelChat>, String> {
             name: r.get("name").and_then(Value::as_str).unwrap_or("").to_string(),
             status: r.get("status").and_then(Value::as_str).unwrap_or("").to_string(),
             active: r.get("active").and_then(Value::as_bool).unwrap_or(false),
+            group: r.get("group").and_then(Value::as_str).unwrap_or("").to_string(),
         })
         .collect())
 }
 
-// ------------------------------------------------------------------ the extension's session groups
+// ------------------------------------------------------------------ the list's groups
 
-/// Test hook: the path of a `state.vscdb` that replaces VS Code's own.
-pub const STATE_DB_ENV: &str = "AF_VSCODE_STATE_DB";
-
-fn state_db_path() -> Option<PathBuf> {
-    if let Ok(p) = std::env::var(STATE_DB_ENV) {
-        if !p.trim().is_empty() {
-            return Some(PathBuf::from(p));
-        }
-    }
-    let appdata = std::env::var("APPDATA").ok().filter(|a| !a.trim().is_empty())?;
-    Some(PathBuf::from(appdata).join("Code").join("User").join("globalStorage").join("state.vscdb"))
+/// One group header of the panel's sessions list: its name, how many chats it holds, and whether it is one of the
+/// panel's own (Ungrouped, the archived section) rather than one of his groups.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PanelGroup {
+    pub name: String,
+    pub count: i64,
+    pub fixed: bool,
 }
 
-/// A folder path as the extension keys its groups: the worktree suffix is cut, slashes and case do not matter.
-fn norm_root(path: &str) -> String {
-    let mut p = path.replace('/', "\\");
-    if let Some(i) = p.to_lowercase().find("\\.claude\\worktrees\\") {
-        p.truncate(i);
-    }
-    p.trim_end_matches('\\').to_lowercase()
+/// The groups the panel's list shows, in list order (the driver's `groups` action: it reads only).
+pub fn groups(ctx: &Ctx) -> Result<Vec<PanelGroup>, String> {
+    let d = driver(ctx).map_err(|e| e.to_string())?;
+    let out = d.run(ctx, &Call { action: "groups", wait_minutes: Some(LIST_WAIT_MINUTES), ..Call::default() });
+    let text = answer(&out)?.value;
+    let v: Value = serde_json::from_str(text.trim_start_matches('\u{feff}')).map_err(|e| format!("the panel driver's groups are not JSON: {e}"))?;
+    let rows = v.as_array().ok_or("the panel driver's groups are not a JSON array")?;
+    Ok(rows
+        .iter()
+        .map(|r| PanelGroup {
+            name: r.get("name").and_then(Value::as_str).unwrap_or("").to_string(),
+            count: r.get("count").and_then(Value::as_i64).unwrap_or(-1),
+            fixed: r.get("fixed").and_then(Value::as_bool).unwrap_or(false),
+        })
+        .collect())
 }
 
-/// The groups the Claude extension stored for this vault: (id, name). Read only, from a copy of the
-/// file: table `ItemTable`, key `Anthropic.claude-code`, inner key `sessionGroups:<vault root>`.
-pub fn session_groups(ctx: &Ctx) -> Result<Vec<(String, String)>, String> {
-    let Some(src) = state_db_path() else { return Err("cannot find VS Code's state.vscdb (APPDATA is not set)".to_string()) };
-    session_groups_at(&src, &ctx.root)
-}
-
-/// The same, from a named `state.vscdb` and vault root.
-pub fn session_groups_at(src: &Path, vault_root: &str) -> Result<Vec<(String, String)>, String> {
-    if !src.is_file() {
-        return Err(format!("cannot find VS Code's state file {}", src.display()));
-    }
-    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
-    let dir = std::env::temp_dir().join(format!("af-state-{}-{nanos}", std::process::id()));
-    std::fs::create_dir_all(&dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
-    let copy = dir.join("state.vscdb");
-    let result = (|| -> Result<Vec<(String, String)>, String> {
-        std::fs::copy(src, &copy).map_err(|e| format!("cannot copy {}: {e}", src.display()))?;
-        let wal = PathBuf::from(format!("{}-wal", src.display()));
-        if wal.is_file() {
-            let _ = std::fs::copy(&wal, dir.join("state.vscdb-wal"));
-        }
-        let text: String = {
-            let conn = Connection::open(&copy).map_err(|e| format!("cannot open the copy of state.vscdb: {e}"))?;
-            let value: Option<rusqlite::types::Value> = conn
-                .query_row("SELECT value FROM ItemTable WHERE key = 'Anthropic.claude-code'", [], |r| r.get(0))
-                .map(Some)
-                .or_else(|e| if matches!(e, rusqlite::Error::QueryReturnedNoRows) { Ok(None) } else { Err(e) })
-                .map_err(|e| format!("cannot read ItemTable in state.vscdb: {e}"))?;
-            match value {
-                Some(rusqlite::types::Value::Text(t)) => t,
-                Some(rusqlite::types::Value::Blob(b)) => String::from_utf8_lossy(&b).into_owned(),
-                _ => return Err("the Claude extension has stored no state yet (no Anthropic.claude-code key)".to_string()),
-            }
-        };
-        let v: Value = serde_json::from_str(&text).map_err(|e| format!("the extension's stored state is not JSON: {e}"))?;
-        let obj = v.as_object().ok_or("the extension's stored state is not an object")?;
-        let want = norm_root(vault_root);
-        let mut out = Vec::new();
-        for (k, val) in obj {
-            let Some(root) = k.strip_prefix("sessionGroups:") else { continue };
-            if norm_root(root) != want {
-                continue;
-            }
-            let list = match val {
-                Value::String(s) => serde_json::from_str::<Value>(s).unwrap_or(Value::Null),
-                other => other.clone(),
-            };
-            for g in list.as_array().into_iter().flatten() {
-                let id = g.get("id").and_then(Value::as_str).unwrap_or("");
-                let name = g.get("name").and_then(Value::as_str).unwrap_or("");
-                if !id.is_empty() && !name.is_empty() {
-                    out.push((id.to_string(), name.to_string()));
-                }
-            }
-        }
-        Ok(out)
-    })();
-    let _ = std::fs::remove_dir_all(&dir);
-    result
-}
-
-/// A group name to its id. An unknown name is a refusal that lists the names there are.
+/// A group name as he gave it to the name the panel shows: exact, else the one group whose name differs only in
+/// case. An unknown name is a refusal that lists the groups there are (his own, not the panel's).
 pub fn resolve_group(ctx: &Ctx, name: &str) -> Result<String, String> {
-    let groups = session_groups(ctx)?;
+    let all = groups(ctx)?;
+    let mine: Vec<&PanelGroup> = all.iter().filter(|g| !g.fixed).collect();
     let want = name.trim();
-    if let Some((id, _)) = groups.iter().find(|(_, n)| n == want) {
-        return Ok(id.clone());
+    if mine.iter().any(|g| g.name == want) {
+        return Ok(want.to_string());
     }
-    let folded: Vec<&(String, String)> = groups.iter().filter(|(_, n)| n.eq_ignore_ascii_case(want)).collect();
+    let folded: Vec<&&PanelGroup> = mine.iter().filter(|g| g.name.to_lowercase() == want.to_lowercase()).collect();
     if folded.len() == 1 {
-        return Ok(folded[0].0.clone());
+        return Ok(folded[0].name.clone());
     }
-    let names: Vec<String> = groups.iter().map(|(_, n)| format!("'{n}'")).collect();
+    let names: Vec<String> = mine.iter().map(|g| format!("'{}'", g.name)).collect();
     Err(format!(
-        "no session group named '{want}' in the panel (a group is made by hand in the panel's list; nothing here creates one). The groups are: {}",
+        "no session group named '{want}' in the panel (af session group create makes one). The groups are: {}",
         if names.is_empty() { "none".to_string() } else { names.join(", ") }
     ))
 }
 
+/// What a group action asked: the driver's action and what it needs.
+pub enum GroupVerb<'a> {
+    Create { name: &'a str },
+    Rename { old: &'a str, new: &'a str },
+    Delete { name: &'a str, force: bool },
+    /// The chat's session id (the label is what he called it).
+    Add { id: &'a str, group: &'a str },
+    Remove { id: &'a str },
+}
+
+impl<'a> GroupVerb<'a> {
+    fn call(&self, wait_minutes: Option<f64>) -> Call<'a> {
+        let base = Call { wait_minutes, ..Call::default() };
+        match *self {
+            GroupVerb::Create { name } => Call { action: "group-create", group: Some(name), ..base },
+            GroupVerb::Rename { old, new } => Call { action: "group-rename", group: Some(old), new_name: Some(new), ..base },
+            GroupVerb::Delete { name, force } => Call { action: "group-delete", group: Some(name), force, ..base },
+            GroupVerb::Add { id, group } => Call { action: "group-add", session: Some(id), group: Some(group), ..base },
+            GroupVerb::Remove { id } => Call { action: "group-remove", session: Some(id), ..base },
+        }
+    }
+
+    /// What this will do to his screen, in one honest paragraph (for a dry run).
+    fn screen_note(&self) -> &'static str {
+        match self {
+            GroupVerb::Create { .. } => "The run waits until he has been idle for 120 seconds, then takes his screen for a few seconds: VS Code comes to the front, the New group button is pressed, and the name is typed into the new group's name field with the keyboard (Ctrl+A, the name, Enter). The pointer is not moved. Afterwards the foreground goes back to the window that had it. It refuses before touching anything when a group of that name exists, when a group is already called 'New group', or when the name cannot be used. Nothing was run.",
+            GroupVerb::Rename { .. } => "The run waits until he has been idle for 120 seconds, then takes his screen for a few seconds: VS Code comes to the front, the pointer moves onto the group's header and right-clicks it to open its menu, Rename group is pressed, and the new name is typed with the keyboard (Ctrl+A, the name, Enter). Afterwards the pointer is put back, an open menu is closed and the foreground goes back to the window that had it. It refuses before touching anything when the group does not exist exactly once, is one of the panel's own, or the new name is taken or cannot be used. Nothing was run.",
+            GroupVerb::Delete { .. } => "The run waits until he has been idle for 120 seconds, then takes his screen for a few seconds: VS Code comes to the front, the pointer moves onto the group's header and right-clicks it to open its menu, and Delete group is pressed (the panel asks nothing before it deletes; the group's chats move to Ungrouped). Afterwards the pointer is put back, an open menu is closed and the foreground goes back to the window that had it. It refuses before touching anything when the group holds chats and --force was not given. Nothing was run.",
+            GroupVerb::Add { .. } => "The run waits until he has been idle for 120 seconds, then takes his screen for a few seconds: VS Code comes to the front, the pointer moves onto the chat's row and right-clicks it to open its menu (the chat is not switched to), Add to group is opened and the group's item is pressed. Afterwards the pointer is put back, an open menu is closed and the foreground goes back to the window that had it. The chat does not have to be idle. It refuses before touching anything when the chat's row is not in the list as shown (a collapsed group or the archived section hides rows) or the group does not exist exactly once. Nothing was run.",
+            GroupVerb::Remove { .. } => "The run waits until he has been idle for 120 seconds, then takes his screen for a few seconds: VS Code comes to the front, the pointer moves onto the chat's row and right-clicks it to open its menu (the chat is not switched to), and Remove from group is pressed. Afterwards the pointer is put back, an open menu is closed and the foreground goes back to the window that had it. The chat does not have to be idle. It refuses before touching anything when the chat's row is not in the list as shown. Nothing was run.",
+        }
+    }
+}
+
+/// The driver's answer to a group action: its output and notes on exit 0, else the driver's exit code and the sentence that
+/// says what it refused and why.
+fn group_answer(out: &Out) -> Result<Answer, (i32, String)> {
+    let why = whole(out);
+    let code = out.code.filter(|c| *c != 0).unwrap_or(1);
+    match out.code {
+        Some(0) => Ok(Answer { value: out.stdout.trim().to_string(), notes: notes_of(&out.stderr) }),
+        Some(3) => Err((code, format!("stopped (exit 3). The operator was using the computer or came back, VS Code did not come to the front, a full-screen window stayed in front, or another driver run held the panel, for the whole wait. What the driver says: {why}"))),
+        Some(5) => Err((code, format!("refused (exit 5): {why}"))),
+        Some(2) => Err((code, format!("the panel driver could not find what it needs (the VS Code window, the sessions list or a control): {why}"))),
+        _ => answer_as(out, "changed").map_err(|m| (code, m)),
+    }
+}
+
+/// Run one group action through the driver.
+pub fn group_run(ctx: &Ctx, verb: &GroupVerb, wait_minutes: Option<f64>) -> Result<Answer, (i32, String)> {
+    let d = driver(ctx).map_err(|e| (1, e.to_string()))?;
+    group_answer(&d.run(ctx, &verb.call(wait_minutes)))
+}
+
+/// One group action from the command line: the driver's answer and notes are printed, and af exits with the driver's code.
+pub fn cmd_group(ctx: &Ctx, label: &str, verb: GroupVerb, wait_minutes: Option<f64>, dry_run: bool) -> R<i32> {
+    if dry_run {
+        let d = driver(ctx)?;
+        outln!("{label}: would run the panel driver:");
+        outln!("{}", d.shown(&verb.call(wait_minutes)));
+        outln!("{}", verb.screen_note());
+        return Ok(0);
+    }
+    match group_run(ctx, &verb, wait_minutes) {
+        Ok(a) => {
+            outln!("{label}: {}{}", a.value, a.notes_sentence());
+            Ok(0)
+        }
+        Err((code, m)) => {
+            // Printed as any refusal is, and recorded in the run log as one; af still exits with the driver's code.
+            let _ = crate::error::refuse(format!("{label}: {m}"));
+            Ok(code)
+        }
+    }
+}
+
+/// `af session group list [--json]`: the groups in the panel's list and how many chats each holds.
+pub fn cmd_group_list(ctx: &Ctx, as_json: bool) -> R<i32> {
+    let all = match groups(ctx) {
+        Ok(g) => g,
+        Err(m) => die!("af session group list: {m}"),
+    };
+    if as_json {
+        let arr: Vec<Value> = all.iter().map(|g| json!({"name": g.name, "count": g.count, "fixed": g.fixed})).collect();
+        outln!("{}", serde_json::to_string_pretty(&Value::Array(arr)).unwrap_or_default());
+        return Ok(0);
+    }
+    outln!("| group | chats | kind |");
+    outln!("|---|---|---|");
+    for g in &all {
+        outln!("| {} | {} | {} |", g.name, g.count, if g.fixed { "the panel's own" } else { "his group" });
+    }
+    Ok(0)
+}
+
+/// The chat a group verb is about, from a registry name and/or a session id: (label, session id). `verb` names the verb in
+/// the refusal, `nothing` what did not happen.
+fn resolve_chat(reg: &Registry, verb: &str, nothing: &str, name: Option<&str>, session_id: Option<&str>) -> R<(String, String, bool)> {
+    let session_id = session_id.map(str::trim).filter(|s| !s.is_empty());
+    Ok(match (name, session_id) {
+        (None, None) => die!("af session {verb} needs a chat name, or --session-id <id> for a chat with no registry row"),
+        (Some(n), sid) => {
+            let row = reach::row_or_refuse(reg, n)?;
+            if let Some(s) = sid {
+                if s != row.session_id {
+                    die!("{n}: --session-id {s} is not the session id of that registry row ({}); give the name or the id, not two different chats", row.session_id);
+                }
+            }
+            (n.to_string(), row.session_id, true)
+        }
+        (None, Some(s)) => {
+            if !valid_session_id(s) {
+                die!("--session-id is a session id (8 to 64 hex digits and dashes), got '{s}'; nothing was {nothing}");
+            }
+            let known = reg.find_session(s).map(|r| r.name);
+            (known.clone().unwrap_or_else(|| s.to_string()), s.to_string(), known.is_some())
+        }
+    })
+}
+
+/// A group name as a driver argument: trimmed and not empty.
+fn group_arg<'a>(verb: &str, what: &str, value: &'a str) -> R<&'a str> {
+    let v = value.trim();
+    if v.is_empty() {
+        die!("af session group {verb}: {what} is empty; nothing was changed");
+    }
+    Ok(v)
+}
+
+/// `af session group create <name>`.
+pub fn cmd_group_create(ctx: &Ctx, name: &str, wait_minutes: Option<f64>, dry_run: bool) -> R<i32> {
+    let name = group_arg("create", "the group name", name)?;
+    cmd_group(ctx, &format!("group create '{name}'"), GroupVerb::Create { name }, wait_minutes, dry_run)
+}
+
+/// `af session group rename <old> <new>`.
+pub fn cmd_group_rename(ctx: &Ctx, old: &str, new: &str, wait_minutes: Option<f64>, dry_run: bool) -> R<i32> {
+    let old = group_arg("rename", "the old group name", old)?;
+    let new = group_arg("rename", "the new group name", new)?;
+    cmd_group(ctx, &format!("group rename '{old}'"), GroupVerb::Rename { old, new }, wait_minutes, dry_run)
+}
+
+/// `af session group delete <name> [--force]`.
+pub fn cmd_group_delete(ctx: &Ctx, name: &str, force: bool, wait_minutes: Option<f64>, dry_run: bool) -> R<i32> {
+    let name = group_arg("delete", "the group name", name)?;
+    cmd_group(ctx, &format!("group delete '{name}'"), GroupVerb::Delete { name, force }, wait_minutes, dry_run)
+}
+
+/// `af session group add [<chat>] <group> [--session-id <id>]`: `args` is `[chat, group]`, or `[group]` with `--session-id`.
+pub fn cmd_group_add(ctx: &Ctx, args: &[String], session_id: Option<&str>, wait_minutes: Option<f64>, dry_run: bool) -> R<i32> {
+    let (chat, group) = match args {
+        [group] => (None, group.as_str()),
+        [chat, group] => (Some(chat.as_str()), group.as_str()),
+        _ => die!("af session group add takes <chat> <group>, or --session-id <id> <group>"),
+    };
+    let group = group_arg("add", "the group name", group)?;
+    let reg = Registry::load(ctx)?;
+    let (label, id, _) = resolve_chat(&reg, "group add", "changed", chat, session_id)?;
+    cmd_group(ctx, &format!("group add {label}"), GroupVerb::Add { id: &id, group }, wait_minutes, dry_run)
+}
+
+/// `af session group remove [<chat>] [--session-id <id>]`.
+pub fn cmd_group_remove(ctx: &Ctx, chat: Option<&str>, session_id: Option<&str>, wait_minutes: Option<f64>, dry_run: bool) -> R<i32> {
+    let reg = Registry::load(ctx)?;
+    let (label, id, _) = resolve_chat(&reg, "group remove", "changed", chat, session_id)?;
+    cmd_group(ctx, &format!("group remove {label}"), GroupVerb::Remove { id: &id }, wait_minutes, dry_run)
+}
 // ------------------------------------------------------------------ the verbs
 
 /// `af session panel [--json]`: the chats in the panel, with their registry names.
@@ -693,7 +826,7 @@ pub fn cmd_panel(ctx: &Ctx, as_json: bool) -> R<i32> {
     if as_json {
         let arr: Vec<Value> = chats
             .iter()
-            .map(|c| json!({"session_id": c.session_id, "panel_name": c.name, "registry_name": registry_name(&c.session_id), "status": c.status, "active": c.active}))
+            .map(|c| json!({"session_id": c.session_id, "panel_name": c.name, "registry_name": registry_name(&c.session_id), "status": c.status, "active": c.active, "group": c.group}))
             .collect();
         outln!("{}", serde_json::to_string_pretty(&Value::Array(arr)).unwrap_or_default());
         return Ok(0);
@@ -753,26 +886,7 @@ fn valid_session_id(id: &str) -> bool {
 /// the pointer on the row and invokes the row's Archive button. The registry row is not changed.
 pub fn cmd_archive(ctx: &Ctx, name: Option<&str>, session_id: Option<&str>, wait_minutes: Option<f64>, dry_run: bool) -> R<i32> {
     let reg = Registry::load(ctx)?;
-    let session_id = session_id.map(str::trim).filter(|s| !s.is_empty());
-    let (label, id, registered) = match (name, session_id) {
-        (None, None) => die!("af session archive needs a chat name, or --session-id <id> for a chat with no registry row"),
-        (Some(n), sid) => {
-            let row = reach::row_or_refuse(&reg, n)?;
-            if let Some(s) = sid {
-                if s != row.session_id {
-                    die!("{n}: --session-id {s} is not the session id of that registry row ({}); give the name or the id, not two different chats", row.session_id);
-                }
-            }
-            (n.to_string(), row.session_id, true)
-        }
-        (None, Some(s)) => {
-            if !valid_session_id(s) {
-                die!("--session-id is a session id (8 to 64 hex digits and dashes), got '{s}'; nothing was archived");
-            }
-            let known = reg.find_session(s).map(|r| r.name);
-            (known.clone().unwrap_or_else(|| s.to_string()), s.to_string(), known.is_some())
-        }
-    };
+    let (label, id, registered) = resolve_chat(&reg, "archive", "archived", name, session_id)?;
     if let Some(me) = crate::compact::caller_session() {
         if me == id {
             die!("{label}: this is the chat that is running this command; af session archive does not archive the calling chat. Ask him, or another chat, to archive it from outside; nothing was archived");
@@ -810,7 +924,8 @@ const MODEL_OPTIONS: [&str; 14] = [
 ];
 
 /// `af session start <name> --brief-prompt-file <path> --model <m> [--group <name>]`: a new chat whose first
-/// message is the file. The model is required: a new chat inherits the default model otherwise.
+/// message is the file. The model is required: a new chat inherits the default model otherwise. With --group the
+/// chat is placed in that group once it is started (the group must exist).
 pub fn cmd_start(ctx: &Ctx, name: &str, prompt_file: &str, model: Option<&str>, group: Option<&str>, wait_minutes: Option<f64>) -> R<i32> {
     if !sessions::valid_name(name) {
         die!("'{name}' is not a chat name: af-main, life/<topic>, project/<slug>, system/<topic> or worker/<slug>");
@@ -830,22 +945,36 @@ pub fn cmd_start(ctx: &Ctx, name: &str, prompt_file: &str, model: Option<&str>, 
             MODEL_OPTIONS.join(", ")
         )
     };
-    let group_id = match group.map(str::trim).filter(|g| !g.is_empty()) {
+    // The group is read first, so no chat is started for a group that does not exist; the chat is started as without
+    // --group (the bridge's group route leaves it under Ungrouped), then placed with group-add.
+    let group = match group.map(str::trim).filter(|g| !g.is_empty()) {
         Some(g) => match resolve_group(ctx, g) {
-            Ok(id) => Some(id),
+            Ok(exact) => Some(exact),
             Err(m) => die!("{name}: {m}"),
         },
         None => None,
     };
-    match new_chat(ctx, &text, Some(model), group_id.as_deref(), wait_minutes) {
-        Ok((id, a)) => {
-            for n in &a.notes {
-                outln!("note: {n}");
-            }
-            outln!("{name}: started in the panel as session {id}. Its first act is af session register {name} --session {id}.");
+    let (id, a) = match new_chat(ctx, &text, Some(model), wait_minutes) {
+        Ok(started) => started,
+        Err(m) => die!("{name}: {m}"),
+    };
+    for n in &a.notes {
+        outln!("note: {n}");
+    }
+    outln!("{name}: started in the panel as session {id}. Its first act is af session register {name} --session {id}.");
+    let Some(group) = group else { return Ok(0) };
+    match group_run(ctx, &GroupVerb::Add { id: &id, group: &group }, wait_minutes) {
+        Ok(added) => {
+            outln!("{name}: placed in the group '{group}': {}{}", added.value, added.notes_sentence());
             Ok(0)
         }
-        Err(m) => die!("{name}: {m}"),
+        Err((code, m)) => {
+            let quoted = if group.contains(char::is_whitespace) { format!("\"{group}\"") } else { group.clone() };
+            let _ = crate::error::refuse(format!(
+                "{name}: the chat WAS started (session {id}) but was NOT placed in the group '{group}': {m}. To place it: af session group add --session-id {id} {quoted}"
+            ));
+            Ok(code)
+        }
     }
 }
 

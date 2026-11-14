@@ -333,7 +333,7 @@ posted_at: {posted_at}\nurl: {url}\nmetrics_captured_at: null\n\n# LIFECYCLE\nla
 /// the program for `AF_CLAUDE_BIN` as well. It appends each call to `STUB_PANEL_CALLS` as a JSON line
 /// (its arguments, and the text of the file named by `-TextFile`, read while it still exists).
 /// `STUB_PANEL_EXITS` (comma list, one per call, the last repeats) or `STUB_PANEL_EXIT` set the exit
-/// code, `STUB_PANEL_STDERR` its message. `list` prints `STUB_PANEL_LIST`; `new` prints `STUB_PANEL_NEW_ID`;
+/// code, `STUB_PANEL_STDERR` its message. `list` prints `STUB_PANEL_LIST`; `groups` prints `STUB_PANEL_GROUPS`; `new` prints `STUB_PANEL_NEW_ID`;
 /// a `send` of text holding `/compact` appends a `compact_boundary` line to `STUB_PANEL_TRANSCRIPT`
 /// unless `STUB_PANEL_NO_BOUNDARY` is set. `STUB_PANEL_SLEEP_SECS` makes every call slow;
 /// `STUB_PANEL_NOTE` prints a `note: ...` line on stderr, as the driver does, on success and failure.
@@ -429,6 +429,7 @@ fn main() {
     }
     match action.as_str() {
         "list" => print!("{}", std::env::var("STUB_PANEL_LIST").unwrap_or_else(|_| "[]".into())),
+        "groups" => print!("{}", std::env::var("STUB_PANEL_GROUPS").unwrap_or_else(|_| "[]".into())),
         "new" => println!("{}", std::env::var("STUB_PANEL_NEW_ID").unwrap_or_else(|_| "11111111-2222-3333-4444-555555555555".into())),
         "send" => {
             if let Ok(t) = std::env::var("STUB_PANEL_TRANSCRIPT") {

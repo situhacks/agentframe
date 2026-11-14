@@ -19,7 +19,7 @@ use crate::{outln, pyos};
 use clap::{ArgAction, Args, Subcommand};
 use ledger::{
     append_records, bare_table_name_ok, check_value, encode, ledger_file_rel, load_checked, page_rel, parse_col_spec, parse_csv, refuse_faults, rewrite, shown,
-    valid_name, Col, Ledger, Raw, Registry, Ty,
+    valid_name, written, Col, Ledger, Raw, Registry, Ty,
 };
 use std::collections::HashMap;
 
@@ -223,7 +223,7 @@ fn cmd_new(ctx: &Ctx, a: &NewArgs) -> R<i32> {
             }
             let existed = pyos::isfile(&csv_path);
             let rows = if existed {
-                match load_checked(ctx, &new) {
+                match ledger::load_checked_unlocked(ctx, &new) {
                     Err(f) => return Err(refuse_faults(&f, "the existing file cannot be adopted; no ledger was registered")),
                     Ok((_, f)) if !f.is_empty() => {
                         return Err(refuse_faults(&f, &format!("the existing file fails its checks ({} faults); no ledger was registered", f.len())))
@@ -251,29 +251,156 @@ fn cmd_new(ctx: &Ctx, a: &NewArgs) -> R<i32> {
     Ok(0)
 }
 
+// ------------------------------------------------------------------ writes: shared
+
+/// The ledger file for a write, read and checked while the caller holds its lock. A refusal says what
+/// was not done, and when the file and the registry are one column apart, the command that finishes it.
+fn load_for_write(ctx: &Ctx, l: &Ledger, not_done: &str) -> R<Raw> {
+    let (raw, faults) = match ledger::load_checked_unlocked(ctx, l) {
+        Ok(x) => x,
+        Err(f) => return Err(refuse_faults(&f, &format!("the ledger file cannot be read; {not_done}"))),
+    };
+    if !faults.is_empty() {
+        let hint = ledger::half_state_hint(l, &raw).map(|h| format!(" {h}")).unwrap_or_default();
+        return Err(refuse_faults(&faults, &format!("the ledger file fails its checks ({} faults); {not_done}.{hint}", faults.len())));
+    }
+    Ok(raw)
+}
+
+/// Put a file's bytes back as they were (after a write that could not be finished).
+fn restore(path: &str, original: &[u8]) {
+    let text = String::from_utf8_lossy(original).into_owned();
+    let _ = crate::life::TextFile { text, crlf: false, bom: false }.save_atomic(path);
+}
+
+/// `col=value` arguments as the written form of each column given (None: not given). Every refusal names
+/// the column.
+fn parse_given(l: &Ledger, values: &[String]) -> R<Vec<Option<String>>> {
+    let mut given: Vec<Option<String>> = vec![None; l.columns.len()];
+    for v in values {
+        let Some((name, val)) = v.split_once('=') else { die!("{v:?} must be column=value") };
+        let Some(i) = l.col_index(name) else { die!("ledger '{}' has no column '{name}' (columns: {})", l.name, header_of(l).join(", ")) };
+        if given[i].is_some() {
+            die!("column '{name}' is given twice");
+        }
+        match written(l.columns[i].ty, val) {
+            Ok(w) => given[i] = Some(w),
+            Err(e) => die!("{name}: {e}"),
+        }
+    }
+    Ok(given)
+}
+
+/// A new row from the columns given: those not given are empty, and a required one may not be.
+fn new_row(l: &Ledger, given: &[Option<String>]) -> R<Vec<String>> {
+    let row: Vec<String> = given.iter().map(|g| g.clone().unwrap_or_default()).collect();
+    for (c, v) in l.columns.iter().zip(&row) {
+        if c.required && v.is_empty() {
+            die!("{} is required for ledger '{}'", c.name, l.name);
+        }
+    }
+    Ok(row)
+}
+
+/// The existing row with the given columns set; a required column may not end up empty.
+fn merged_row(l: &Ledger, existing: &[String], given: &[Option<String>]) -> R<Vec<String>> {
+    let mut row = existing.to_vec();
+    for (i, g) in given.iter().enumerate() {
+        if let Some(v) = g {
+            row[i] = v.clone();
+        }
+    }
+    for (c, v) in l.columns.iter().zip(&row) {
+        if c.required && v.is_empty() {
+            die!("{} is required for ledger '{}'", c.name, l.name);
+        }
+    }
+    Ok(row)
+}
+
+fn given_cols(given: &[Option<String>]) -> Vec<usize> {
+    given.iter().enumerate().filter(|(_, g)| g.is_some()).map(|(i, _)| i).collect()
+}
+
+/// The given columns as a row, for reading its key.
+fn given_row(given: &[Option<String>]) -> Vec<String> {
+    given.iter().map(|g| g.clone().unwrap_or_default()).collect()
+}
+
+fn require_key(l: &Ledger, given: &[Option<String>]) -> R<()> {
+    for k in &l.key {
+        if let Some(i) = l.col_index(k) {
+            if given[i].as_deref().is_none_or(str::is_empty) {
+                die!("{k} is required for ledger '{}'", l.name);
+            }
+        }
+    }
+    Ok(())
+}
+
 // ------------------------------------------------------------------ column
 
+/// Writing the column's rows or the registry entry can be cut short, leaving the file and the registry one
+/// column apart. Running the same `af data column` again finishes whichever half is missing.
 fn cmd_column(ctx: &Ctx, a: &ColumnArgs) -> R<i32> {
     let col = parse_col_spec(&a.spec)?;
     if col.required {
         die!("a column added to a ledger cannot be required: the rows already there have no value for it");
     }
-    let (_, ledger) = find_ledger(ctx, &a.ledger)?;
-    let path = ledger.path(ctx);
+    let (_, first) = find_ledger(ctx, &a.ledger)?;
+    let path = first.path(ctx);
     let rows = locked(&path, || {
         locked(&Registry::path(ctx), || {
             let (mut reg, mut ledger) = find_ledger(ctx, &a.ledger)?;
-            if ledger.col_index(&col.name).is_some() {
-                die!("ledger '{}' already has a column '{}'", ledger.name, col.name);
-            }
-            let (raw, faults) = match load_checked(ctx, &ledger) {
-                Ok(x) => x,
-                Err(f) => return Err(refuse_faults(&f, "the ledger file cannot be read; no column was added")),
+            let label = ledger.label();
+            let raw = match ledger::read_raw(&path, &label) {
+                Ok(r) => r,
+                Err(e) => return Err(refuse_faults(&[e], "the ledger file cannot be read; no column was added")),
             };
-            if !faults.is_empty() {
-                return Err(refuse_faults(&faults, &format!("the ledger file fails its checks ({} faults); no column was added", faults.len())));
+            let names = header_of(&ledger);
+            let header: Vec<String> = raw.header.as_ref().map(|h| h.1.clone()).unwrap_or_default();
+            let save_ledger = |reg: &mut Registry, ledger: Ledger| -> R<()> {
+                if let Some(slot) = reg.ledgers.iter_mut().find(|l| l.name == ledger.name) {
+                    *slot = ledger;
+                }
+                reg.save(ctx)
+            };
+            // The registry already has the column.
+            if let Some(i) = ledger.col_index(&col.name) {
+                let registered = ledger.columns[i].clone();
+                if i + 1 != names.len() || header != names[..i] {
+                    die!("ledger '{}' already has a column '{}'", ledger.name, col.name);
+                }
+                if registered.ty != col.ty {
+                    die!("the registry has column '{}' as {}; run af data column {} {}:{} to finish adding it", col.name, registered.ty.name(), ledger.name, col.name, registered.ty.name());
+                }
+                // The file lacks it: give every row an empty value.
+                let mut base = ledger.clone();
+                base.columns.truncate(i);
+                let faults = ledger::check(&base, &label, &raw);
+                if !faults.is_empty() {
+                    return Err(refuse_faults(&faults, &format!("the ledger file fails its checks ({} faults); no column was added", faults.len())));
+                }
+                let mut records = vec![names.clone()];
+                records.extend(raw.rows.iter().map(|(_, r)| r.iter().cloned().chain(std::iter::once(String::new())).collect::<Vec<_>>()));
+                rewrite(&path, &raw, &records)?;
+                return Ok(raw.rows.len());
             }
-            let mut records = vec![header_of(&ledger)];
+            // The file already has it and the registry lacks it.
+            if header.len() == names.len() + 1 && header[..names.len()] == names[..] && header[names.len()] == col.name {
+                let mut extended = ledger.clone();
+                extended.columns.push(col.clone());
+                let faults = ledger::check(&extended, &label, &raw);
+                if !faults.is_empty() {
+                    return Err(refuse_faults(&faults, &format!("the ledger file fails its checks ({} faults); no column was added", faults.len())));
+                }
+                save_ledger(&mut reg, extended)?;
+                return Ok(raw.rows.len());
+            }
+            // The ordinary case.
+            let raw = load_for_write(ctx, &ledger, "no column was added")?;
+            let original = std::fs::read(&path).map_err(|e| io_err(&e, &path))?;
+            let mut records = vec![names.clone()];
             records[0].push(col.name.clone());
             for (_, r) in &raw.rows {
                 let mut r = r.clone();
@@ -282,10 +409,11 @@ fn cmd_column(ctx: &Ctx, a: &ColumnArgs) -> R<i32> {
             }
             rewrite(&path, &raw, &records)?;
             ledger.columns.push(col.clone());
-            if let Some(slot) = reg.ledgers.iter_mut().find(|l| l.name == ledger.name) {
-                *slot = ledger;
+            if let Err(e) = save_ledger(&mut reg, ledger) {
+                // The registry could not be written: the file goes back as it was, so nothing is half done.
+                restore(&path, &original);
+                return Err(e);
             }
-            reg.save(ctx)?;
             Ok(raw.rows.len())
         })
     })?;
@@ -302,32 +430,6 @@ enum Done {
     Unchanged,
 }
 
-/// The row `col=value` arguments make, in column order; every refusal names the column.
-fn build_row(l: &Ledger, values: &[String]) -> R<Vec<String>> {
-    let mut row = vec![String::new(); l.columns.len()];
-    let mut given = vec![false; l.columns.len()];
-    for v in values {
-        let Some((name, val)) = v.split_once('=') else { die!("{v:?} must be column=value") };
-        let Some(i) = l.col_index(name) else { die!("ledger '{}' has no column '{name}' (columns: {})", l.name, header_of(l).join(", ")) };
-        if given[i] {
-            die!("column '{name}' is given twice");
-        }
-        given[i] = true;
-        if !val.is_empty() {
-            if let Err(e) = check_value(l.columns[i].ty, val) {
-                die!("{name}: {e}");
-            }
-        }
-        row[i] = val.to_string();
-    }
-    for (c, v) in l.columns.iter().zip(&row) {
-        if c.required && v.is_empty() {
-            die!("{} is required for ledger '{}'", c.name, l.name);
-        }
-    }
-    Ok(row)
-}
-
 fn cmd_add(ctx: &Ctx, a: &AddArgs) -> R<i32> {
     let (_, first) = find_ledger(ctx, &a.ledger)?;
     if a.values.is_empty() {
@@ -337,31 +439,33 @@ fn cmd_add(ctx: &Ctx, a: &AddArgs) -> R<i32> {
     let (done, name) = locked(&path, || {
         // The registry is read again under the lock: a column added meanwhile changes the row's shape.
         let (_, l) = find_ledger(ctx, &a.ledger)?;
-        let (raw, faults) = match load_checked(ctx, &l) {
-            Ok(x) => x,
-            Err(f) => return Err(refuse_faults(&f, "the ledger file cannot be read; no row was added")),
-        };
-        if !faults.is_empty() {
-            return Err(refuse_faults(&faults, &format!("the ledger file fails its checks ({} faults); no row was added", faults.len())));
-        }
-        let row = build_row(&l, &a.values)?;
-        let key = l.key_of(&row);
+        let raw = load_for_write(ctx, &l, "no row was added")?;
+        let given = parse_given(&l, &a.values)?;
+        require_key(&l, &given)?;
+        let key_row = given_row(&given);
+        let key = l.key_of(&key_row);
         let at = raw.rows.iter().position(|(_, r)| l.key_of(r) == key);
         let done = match at {
             None => {
+                let row = new_row(&l, &given)?;
                 append_records(&path, &raw, &[row])?;
                 Done::Added
             }
             Some(i) if !a.replace => {
-                die!("the key {} exists at line {}; --replace replaces that row", l.key_text(&row), raw.rows[i].0)
+                die!("the key {} exists at line {}; --replace replaces that row", l.key_text(&key_row), raw.rows[i].0)
             }
-            Some(i) if raw.rows[i].1 == row => Done::Unchanged,
             Some(i) => {
-                let mut records = vec![header_of(&l)];
-                records.extend(raw.rows.iter().map(|(_, r)| r.clone()));
-                records[i + 1] = row;
-                rewrite(&path, &raw, &records)?;
-                Done::Replaced
+                let existing = &raw.rows[i].1;
+                if l.same_in(existing, &key_row, &given_cols(&given)) {
+                    Done::Unchanged
+                } else {
+                    let row = merged_row(&l, existing, &given)?;
+                    let mut records = vec![header_of(&l)];
+                    records.extend(raw.rows.iter().map(|(_, r)| r.clone()));
+                    records[i + 1] = row;
+                    rewrite(&path, &raw, &records)?;
+                    Done::Replaced
+                }
             }
         };
         Ok((done, l.name.clone()))
@@ -404,61 +508,71 @@ fn cmd_import(ctx: &Ctx, a: &ImportArgs) -> R<i32> {
                 Some(i) => at.push(i),
             }
         }
-        if let Some(c) = l.columns.iter().enumerate().find(|(i, c)| c.required && !at.contains(i)).map(|(_, c)| c) {
-            die!("{} has no column '{}', which ledger '{}' requires", a.csv, c.name, l.name);
+        // The key says which row a line is about, so it must be there; another required column may be
+        // left out, as long as no line needs it for a new row (checked per line below).
+        if let Some(k) = l.key.iter().find(|k| l.col_index(k).is_some_and(|i| !at.contains(&i))) {
+            die!("{} has no column '{k}', which ledger '{}' requires: it is part of the key", a.csv, l.name);
         }
-        let (raw, faults) = match load_checked(ctx, &l) {
-            Ok(x) => x,
-            Err(f) => return Err(refuse_faults(&f, "the ledger file cannot be read; nothing was written")),
-        };
-        if !faults.is_empty() {
-            return Err(refuse_faults(&faults, &format!("the ledger file fails its checks ({} faults); nothing was written", faults.len())));
-        }
+        let raw = load_for_write(ctx, &l, "nothing was written")?;
         let mut rows: Vec<Vec<String>> = raw.rows.iter().map(|(_, r)| r.clone()).collect();
         let existing = rows.len();
-        let mut index: HashMap<Vec<String>, usize> = rows.iter().enumerate().map(|(i, r)| (l.key_of(r), i)).collect();
+        let index: HashMap<Vec<String>, usize> = rows.iter().enumerate().map(|(i, r)| (l.key_of(r), i)).collect();
         let (mut added, mut unchanged, mut replaced) = (0usize, 0usize, 0usize);
         let mut bad: Vec<String> = Vec::new();
+        let mut seen: HashMap<Vec<String>, u64> = HashMap::new();
         for (line, rec) in &records {
             if rec.len() != header.len() {
                 bad.push(format!("{}:{line}: has {} fields, the header has {}", a.csv, rec.len(), header.len()));
                 continue;
             }
-            let mut row = vec![String::new(); l.columns.len()];
-            for (v, &i) in rec.iter().zip(&at) {
-                row[i] = v.clone();
-            }
+            // The columns this input carries, in their written form.
+            let mut given: Vec<Option<String>> = vec![None; l.columns.len()];
             let mut ok = true;
-            for (c, v) in l.columns.iter().zip(&row) {
-                if v.is_empty() {
-                    if c.required {
-                        bad.push(format!("{}:{line}: {} is required and empty", a.csv, c.name));
+            for (v, &i) in rec.iter().zip(&at) {
+                match written(l.columns[i].ty, v) {
+                    Ok(w) if w.is_empty() && l.columns[i].required => {
+                        bad.push(format!("{}:{line}: {} is required and empty", a.csv, l.columns[i].name));
                         ok = false;
                     }
-                } else if let Err(e) = check_value(c.ty, v) {
-                    bad.push(format!("{}:{line}: {}: {e}", a.csv, c.name));
-                    ok = false;
+                    Ok(w) => given[i] = Some(w),
+                    Err(e) => {
+                        bad.push(format!("{}:{line}: {}: {e}", a.csv, l.columns[i].name));
+                        ok = false;
+                    }
                 }
             }
             if !ok {
                 continue;
             }
-            let key = l.key_of(&row);
+            let probe = given_row(&given);
+            let key = l.key_of(&probe);
+            if let Some(first_line) = seen.get(&key) {
+                bad.push(format!("{}:{line}: the key {} repeats line {first_line} of the input", a.csv, l.key_text(&probe)));
+                continue;
+            }
+            seen.insert(key.clone(), *line);
             match index.get(&key).copied() {
                 None => {
-                    index.insert(key, rows.len());
-                    rows.push(row);
-                    added += 1;
+                    match l.columns.iter().zip(&probe).find(|(c, v)| c.required && v.is_empty()) {
+                        Some((c, _)) => bad.push(format!("{}:{line}: {} is required for a new row, and this input has no column for it", a.csv, c.name)),
+                        None => {
+                            rows.push(probe);
+                            added += 1;
+                        }
+                    }
                 }
-                Some(i) if rows[i] == row => unchanged += 1,
+                Some(i) if l.same_in(&rows[i], &probe, &given_cols(&given)) => unchanged += 1,
                 Some(i) if a.replace => {
-                    rows[i] = row;
+                    let merged = merged_row(&l, &rows[i], &given)?;
+                    rows[i] = merged;
                     replaced += 1;
                 }
-                Some(i) => {
-                    let where_ = if i < existing { format!("is at line {} of the ledger", raw.rows[i].0) } else { "repeats an earlier row of the input".to_string() };
-                    bad.push(format!("{}:{line}: the key {} {where_} with different values; --replace replaces it", a.csv, l.key_text(&row)))
-                }
+                Some(i) => bad.push(format!(
+                    "{}:{line}: the key {} is at line {} of the ledger with different values; --replace replaces it",
+                    a.csv,
+                    l.key_text(&probe),
+                    raw.rows[i].0
+                )),
             }
         }
         if !bad.is_empty() {
@@ -661,13 +775,14 @@ fn cmd_page(ctx: &Ctx, file: &str) -> R<i32> {
 /// is missing, a block that fails, a page whose content differs from what the ledgers give now.
 pub fn doctor_checks(ctx: &Ctx) -> R<(Vec<String>, Vec<String>)> {
     let (mut issues, mut notes) = (Vec::new(), Vec::new());
-    let reg = match crate::error::soft(Registry::load(ctx))? {
-        None => {
-            issues.push(format!("{}: does not parse; see the af data error above", ledger::REGISTRY_REL));
+    let reg = match Registry::load(ctx) {
+        Ok(Some(r)) => r,
+        Ok(None) => return Ok((issues, notes)),
+        Err(crate::error::AfError::Refusal(why)) => {
+            issues.push(why);
             return Ok((issues, notes));
         }
-        Some(None) => return Ok((issues, notes)),
-        Some(Some(r)) => r,
+        Err(e) => return Err(e),
     };
     for l in &reg.ledgers {
         let faults = match load_checked(ctx, l) {

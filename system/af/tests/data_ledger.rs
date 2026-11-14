@@ -191,7 +191,6 @@ fn each_type_refuses_what_it_should_and_a_refusal_writes_nothing() {
         ("date", "2026-02-30"),
         ("date", "2026-2-3"),
         ("date", "14/11/2026"),
-        ("date", "2026-11-14 "),
         ("weight", "1,200"),
         ("weight", "1e3"),
         ("weight", "+5"),
@@ -403,7 +402,7 @@ fn one_bad_row_in_an_import_writes_no_row() {
     // A key repeated inside the input with other values is refused too.
     let f = csv_in(&fx, "b.csv", "date,exercise,set,weight,source\n2026-11-14,Squat,5,100,log\n2026-11-14,Squat,5,101,log\n");
     let err = fx.refused(&["data", "import", "sets", "--csv", &f]);
-    assert!(err.contains("repeats an earlier row of the input"), "{err}");
+    assert!(err.contains("b.csv:3: the key (source=log, exercise=Squat, set=5) repeats line 2 of the input"), "{err}");
     assert_eq!(bytes(&fx, SETS), before);
 }
 

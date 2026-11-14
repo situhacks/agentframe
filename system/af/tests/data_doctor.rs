@@ -130,5 +130,5 @@ fn a_registry_that_does_not_parse_is_one_issue() {
     fx.write("workspace/life/ledgers.yaml", "ledgers:\n  - name: Bad Name\n    file: a.csv\n");
     let (i, _) = check(&fx);
     assert_eq!(i.len(), 1, "{i:?}");
-    assert!(i[0].contains("ledgers.yaml") && i[0].contains("does not parse"), "{i:?}");
+    assert!(i[0].contains("ledgers.yaml") && i[0].contains("ledger name \"Bad Name\" must be lower-case letters"), "the reason is in the issue: {i:?}");
 }

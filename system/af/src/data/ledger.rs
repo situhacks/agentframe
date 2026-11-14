@@ -89,12 +89,30 @@ impl Ledger {
         self.columns.iter().position(|c| c.name == name)
     }
 
+    /// The key of a row as typed values: `01` and `1` are one integer, `5` and `5.0` one number, `abc ` and
+    /// `abc` one text. Two rows share a key when these are equal.
     pub fn key_of(&self, row: &[String]) -> Vec<String> {
-        self.key.iter().filter_map(|k| self.col_index(k)).map(|i| row.get(i).cloned().unwrap_or_default()).collect()
+        self.key
+            .iter()
+            .filter_map(|k| self.col_index(k))
+            .map(|i| canon(self.columns[i].ty, row.get(i).map(String::as_str).unwrap_or("")))
+            .collect()
+    }
+
+    /// Whether `a` and `b` hold the same values (typed, as in `key_of`) in each of these columns.
+    pub fn same_in(&self, a: &[String], b: &[String], cols: &[usize]) -> bool {
+        cols.iter().all(|&i| {
+            let ty = self.columns[i].ty;
+            canon(ty, a.get(i).map(String::as_str).unwrap_or("")) == canon(ty, b.get(i).map(String::as_str).unwrap_or(""))
+        })
     }
 
     pub fn key_text(&self, row: &[String]) -> String {
-        let parts: Vec<String> = self.key.iter().zip(self.key_of(row)).map(|(k, v)| format!("{k}={v}")).collect();
+        let parts: Vec<String> = self
+            .key
+            .iter()
+            .filter_map(|k| self.col_index(k).map(|i| format!("{k}={}", row.get(i).map(String::as_str).unwrap_or(""))))
+            .collect();
         format!("({})", parts.join(", "))
     }
 }
@@ -167,9 +185,44 @@ pub fn page_rel(ctx: &Ctx, arg: &str) -> R<String> {
         clean_rel(s.strip_prefix("workspace/life/").unwrap_or(s))
     };
     match rel.and_then(|r| clean_rel(&r)) {
-        Some(r) => Ok(r),
+        Some(r) if r.to_ascii_lowercase().ends_with(".md") => Ok(r),
+        Some(_) => die!("{arg:?} is not a markdown page: a page ends in .md"),
         None => die!("{arg:?} is not inside workspace/life/; pages live there"),
     }
+}
+
+/// The most significant digits a `number` may carry: more cannot be held exactly in a double.
+pub const MAX_DIGITS: usize = 15;
+
+fn significant_digits(v: &str) -> usize {
+    let body = v.strip_prefix('-').unwrap_or(v);
+    let digits: String = body.chars().filter(|c| *c != '.').collect();
+    digits.trim_start_matches('0').trim_end_matches('0').len()
+}
+
+/// A value as a comparison sees it: white space trimmed, an integer by its value (`01` is `1`, `-0` is `0`),
+/// a number by its value (`5` is `5.0`), a date or text as it is. Empty stays empty.
+pub fn canon(ty: Ty, v: &str) -> String {
+    let t = v.trim();
+    match ty {
+        Ty::Integer => t.parse::<i64>().map(|i| i.to_string()).unwrap_or_else(|_| t.to_string()),
+        Ty::Number => match t.parse::<f64>() {
+            Ok(f) if f.is_finite() => format!("{}", if f == 0.0 { 0.0 } else { f }),
+            _ => t.to_string(),
+        },
+        Ty::Date | Ty::Text => t.to_string(),
+    }
+}
+
+/// A value as it is written to a ledger: trimmed, an integer in canonical form (`01` becomes `1`, `-0`
+/// becomes `0`), a number as given. Err says why it does not fit the type.
+pub fn written(ty: Ty, v: &str) -> Result<String, String> {
+    let t = v.trim();
+    if t.is_empty() {
+        return Ok(String::new());
+    }
+    check_value(ty, t)?;
+    Ok(if ty == Ty::Integer { canon(ty, t) } else { t.to_string() })
 }
 
 /// Why a value does not fit its column type, or Ok.
@@ -202,7 +255,11 @@ pub fn check_value(ty: Ty, v: &str) -> Result<(), String> {
             };
             let digits = |s: &str| !s.is_empty() && s.bytes().all(|c| c.is_ascii_digit());
             if digits(whole) && frac.is_none_or(digits) && v.parse::<f64>().is_ok_and(f64::is_finite) {
-                Ok(())
+                if significant_digits(v) > MAX_DIGITS {
+                    Err(format!("{v:?} has more than {MAX_DIGITS} significant digits, which a number cannot hold exactly"))
+                } else {
+                    Ok(())
+                }
             } else {
                 Err(format!("{v:?} is not a number (a plain decimal, optional leading minus, no thousands separator)"))
             }
@@ -491,8 +548,21 @@ pub fn check(ledger: &Ledger, label: &str, raw: &Raw) -> Vec<String> {
     faults
 }
 
-/// A ledger file read and checked: its raw content and its faults (a missing or unreadable file is one fault).
+/// A ledger file read and checked under its lock, so a reader never sees half of an append. A missing
+/// file takes no lock (and makes no folder).
 pub fn load_checked(ctx: &Ctx, ledger: &Ledger) -> Result<(Raw, Vec<String>), Vec<String>> {
+    let path = ledger.path(ctx);
+    if !pyos::isfile(&path) {
+        return load_checked_unlocked(ctx, ledger);
+    }
+    match crate::life::locked(&path, || Ok(load_checked_unlocked(ctx, ledger))) {
+        Ok(r) => r,
+        Err(e) => Err(vec![format!("{}: cannot be read: {e}", ledger.label())]),
+    }
+}
+
+/// The same, for a writer that already holds the file's lock.
+pub fn load_checked_unlocked(ctx: &Ctx, ledger: &Ledger) -> Result<(Raw, Vec<String>), Vec<String>> {
     let label = ledger.label();
     match read_raw(&ledger.path(ctx), &label) {
         Ok(raw) => {
@@ -501,6 +571,22 @@ pub fn load_checked(ctx: &Ctx, ledger: &Ledger) -> Result<(Raw, Vec<String>), Ve
         }
         Err(e) => Err(vec![e]),
     }
+}
+
+/// When a file and its registry entry disagree by exactly one last column, the `af data column` that
+/// finishes the job (a crash between the two writes, or a hand edit, leaves this).
+pub fn half_state_hint(l: &Ledger, raw: &Raw) -> Option<String> {
+    let header: Vec<&str> = raw.header.as_ref()?.1.iter().map(String::as_str).collect();
+    let names: Vec<&str> = l.columns.iter().map(|c| c.name.as_str()).collect();
+    if header.len() == names.len() + 1 && header[..names.len()] == names[..] && !names.contains(&header[names.len()]) {
+        let extra = header[names.len()];
+        return Some(format!("The file has a column '{extra}' the registry lacks: run af data column {} {extra}:<type> to finish adding it.", l.name));
+    }
+    if header.len() + 1 == names.len() && header[..] == names[..header.len()] {
+        let c = &l.columns[names.len() - 1];
+        return Some(format!("The registry has a column '{}' the file lacks: run af data column {} {}:{} to finish adding it.", c.name, l.name, c.name, c.ty.name()));
+    }
+    None
 }
 
 /// The first faults, then a count of the rest.
@@ -537,17 +623,34 @@ pub fn encode(records: &[Vec<String>], crlf: bool) -> Vec<u8> {
     }
 }
 
+/// Append bytes to a file through `write`, which is `write_all` for every caller but a test.
+pub fn append_bytes(path: &str, data: &[u8], write: impl FnOnce(&mut std::fs::File, &[u8]) -> std::io::Result<()>) -> R<()> {
+    use std::io::Write;
+    let mut f = std::fs::OpenOptions::new().append(true).open(path).map_err(|e| pyos::os_error(&e, path))?;
+    let before = f.metadata().map_err(|e| pyos::os_error(&e, path))?.len();
+    match write(&mut f, data).and_then(|_| f.flush()) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            // A half-written row is worse than none: cut the file back to what it was. (An append-only
+            // handle may not truncate, so the file is opened again for writing.)
+            drop(f);
+            if let Ok(t) = std::fs::OpenOptions::new().write(true).open(path) {
+                let _ = t.set_len(before);
+            }
+            Err(pyos::os_error(&e, path))
+        }
+    }
+}
+
 /// Append records to the end of a file. The lines already there are not touched.
 pub fn append_records(path: &str, raw: &Raw, records: &[Vec<String>]) -> R<()> {
-    use std::io::Write;
     let eol = if raw.crlf { "\r\n" } else { "\n" };
     let mut data = Vec::new();
     if !raw.empty && !raw.ends_with_newline {
         data.extend_from_slice(eol.as_bytes());
     }
     data.extend(encode(records, raw.crlf));
-    let mut f = std::fs::OpenOptions::new().append(true).open(path).map_err(|e| pyos::os_error(&e, path))?;
-    f.write_all(&data).and_then(|_| f.flush()).map_err(|e| pyos::os_error(&e, path))
+    append_bytes(path, &data, |f, d| std::io::Write::write_all(f, d))
 }
 
 /// Replace the whole file with these records (the header first), through a temp file and a rename,

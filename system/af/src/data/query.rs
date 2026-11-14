@@ -35,18 +35,36 @@ pub enum QueryErr {
     Sql(String),
 }
 
-/// A REAL value to four decimal places with the trailing zeros removed, so a sum of prices does not
-/// print binary noise.
+/// A REAL value with up to ten significant digits (more only where the integer part itself is longer,
+/// to 17), trailing zeros removed, so a sum of prices does not print binary noise and a small value
+/// does not print as 0.
 pub fn fmt_real(v: f64) -> String {
     if !v.is_finite() {
         return format!("{v}");
     }
-    let s = format!("{v:.4}");
-    let s = s.trim_end_matches('0').trim_end_matches('.');
-    if s == "-0" || s.is_empty() {
-        "0".to_string()
+    if v == 0.0 {
+        return "0".to_string();
+    }
+    let exp10: i32 = format!("{:e}", v.abs()).split('e').nth(1).and_then(|e| e.parse().ok()).unwrap_or(0);
+    let sig = ((exp10 + 1).max(10) as usize).min(17);
+    let sci = format!("{:.*e}", sig - 1, v.abs());
+    let (mantissa, exp) = sci.split_once('e').unwrap_or((&sci, "0"));
+    let exp: i32 = exp.parse().unwrap_or(0);
+    let digits: String = mantissa.chars().filter(|c| c.is_ascii_digit()).collect();
+    // The value is 0.<digits> times 10^(exp + 1).
+    let point = exp + 1;
+    let plain = if point <= 0 {
+        format!("0.{}{}", "0".repeat((-point) as usize), digits)
+    } else if (point as usize) >= digits.len() {
+        format!("{digits}{}", "0".repeat(point as usize - digits.len()))
     } else {
-        s.to_string()
+        format!("{}.{}", &digits[..point as usize], &digits[point as usize..])
+    };
+    let plain = if plain.contains('.') { plain.trim_end_matches('0').trim_end_matches('.').to_string() } else { plain };
+    if v < 0.0 {
+        format!("-{plain}")
+    } else {
+        plain
     }
 }
 

@@ -84,7 +84,7 @@ fn null_is_empty_in_a_table_and_in_csv_and_null_in_json() {
 }
 
 #[test]
-fn real_values_print_to_four_places_with_no_trailing_zeros_and_no_binary_noise() {
+fn real_values_print_with_no_trailing_zeros_and_no_binary_noise() {
     let fx = Fx::new();
     fx.ok(&["data", "new", "prices", "--file", "p.csv", "--column", "item:text!", "--column", "price:number", "--key", "item"]);
     fx.ok(&["data", "add", "prices", "item=a", "price=0.1"]);
@@ -93,8 +93,8 @@ fn real_values_print_to_four_places_with_no_trailing_zeros_and_no_binary_noise()
     fx.ok(&["data", "add", "prices", "item=d", "price=-0.00001"]);
     assert!(fx.ok(&["data", "sql", "select sum(price) as t from prices where item in ('a', 'b')"]).contains("| 0.3 |"));
     let out = fx.ok(&["data", "sql", "select price from prices order by item", "--csv"]).replace("\r\n", "\n");
-    assert_eq!(out, "price\n0.1\n0.2\n2.5\n0\n");
-    assert!(fx.ok(&["data", "sql", "select 1.0/3 as x, 2.0 as y, 1e20 as z", "--json"]).contains("\"x\": 0.3333, \"y\": 2, \"z\": 100000000000000000000"));
+    assert_eq!(out, "price\n0.1\n0.2\n2.5\n-0.00001\n");
+    assert!(fx.ok(&["data", "sql", "select 1.0/3 as x, 2.0 as y, 1e20 as z", "--json"]).contains("\"x\": 0.3333333333, \"y\": 2, \"z\": 100000000000000000000"));
     assert!(fx.ok(&["data", "sql", "select 7 as n, 7.0 as r", "--csv"]).replace("\r\n", "\n").contains("7,7\n"));
 }
 
@@ -279,7 +279,7 @@ fn json_and_csv_cannot_be_asked_together_and_a_join_across_ledgers_works() {
     add_set(&fx, "Squat", "1", "100");
     fx.ok(&["data", "add", "body", "date=2026-11-14", "kg=80.5"]);
     let out = fx.ok(&["data", "sql", "select s.weight / b.kg as ratio from sets s join body b on b.date = s.date"]);
-    assert!(out.contains("| 1.2422 |"), "{out}");
+    assert!(out.contains("| 1.242236025 |"), "{out}");
     let (code, ..) = fx.run(&["data", "sql", "select 1", "--json", "--csv"]);
     assert_eq!(code, 2);
 }

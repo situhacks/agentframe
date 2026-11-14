@@ -1083,3 +1083,251 @@ fn the_lint_line_says_what_it_counts_by_side() {
     clean.write("workspace/life/tags.yaml", "facets: []\ntags: []\n");
     assert_eq!(ok(&clean, &["tag", "lint"]), "af tag lint: clean · 0 tags · 0 pages · 0 knowledge pages · 0 sources\n");
 }
+
+// ------------------------------------------------------------------ second review
+
+/// The registry and the log, for "nothing moved" and "only this moved" checks.
+fn files_state(fx: &Fx, pages: &[&str]) -> Vec<Vec<u8>> {
+    let mut v: Vec<Vec<u8>> = pages.iter().map(|p| bytes(fx, p)).collect();
+    for f in ["workspace/life/tags.yaml", "workspace/life/tags-log.md", "workspace/life/tags.md"] {
+        v.push(bytes(fx, f));
+    }
+    v
+}
+
+fn set_readonly(fx: &Fx, rel: &str, ro: bool) {
+    let mut perm = std::fs::metadata(fx.path(rel)).unwrap().permissions();
+    perm.set_readonly(ro);
+    std::fs::set_permissions(fx.path(rel), perm).unwrap();
+}
+
+/// Two pages carry `leases`; the verb runs against them.
+fn two_pages(fx: &Fx) -> [&'static str; 2] {
+    fx.ok(&["tag", "propose", "rentals", "--facet", "topic"]);
+    let (a, z) = ("workspace/life/knowledge/a-first.md", "workspace/life/sources/note-2026-11-01-z.md");
+    fx.write_bytes(a, b"---\r\ntags: [leases]\r\n---\r\n# A\r\n");
+    fx.write_bytes(z, b"---\nid: z\ntags: [leases]\n---\nbody\n");
+    [a, z]
+}
+
+const VERBS: [&[&str]; 2] = [&["tag", "rename", "leases", "lettings"], &["tag", "merge", "leases", "--into", "rentals"]];
+
+#[test]
+fn a_registry_that_cannot_be_saved_puts_every_page_back_and_refuses_plainly() {
+    for args in VERBS {
+        let fx = topic_vault();
+        let pages = two_pages(&fx);
+        let before = files_state(&fx, &pages);
+        set_readonly(&fx, "workspace/life/tags.yaml", true);
+        let (code, _, err) = fx.run(args);
+        set_readonly(&fx, "workspace/life/tags.yaml", false);
+        assert_eq!(code, 1, "{args:?}: {err}");
+        assert!(
+            err.contains("workspace/life/tags.yaml could not be saved (") && err.contains("every page was put back, nothing changed") && !err.contains("CRASH"),
+            "{args:?}: {err}"
+        );
+        assert!(files_state(&fx, &pages) == before, "{args:?}: pages, registry, log and view are byte-identical");
+    }
+}
+
+#[test]
+fn a_log_or_view_that_cannot_be_written_after_the_change_says_it_is_saved_and_what_is_missing() {
+    for (file, args, named, fix) in [
+        ("workspace/life/tags-log.md", VERBS[0], "workspace/life/tags-log.md", "its line for this rename is missing"),
+        ("workspace/life/tags-log.md", VERBS[1], "workspace/life/tags-log.md", "its line for this merge is missing"),
+        ("workspace/life/tags.md", VERBS[0], "workspace/life/tags.md", "af tag render writes it"),
+        ("workspace/life/tags.md", VERBS[1], "workspace/life/tags.md", "af tag render writes it"),
+    ] {
+        let fx = topic_vault();
+        let pages = two_pages(&fx);
+        let held = bytes(&fx, file);
+        set_readonly(&fx, file, true);
+        let (code, out, err) = fx.run(args);
+        set_readonly(&fx, file, false);
+        let verb = args[1];
+        assert_eq!(code, 1, "{args:?}: {err}");
+        assert!(err.contains(&format!("the {verb} is saved: the pages and workspace/life/tags.yaml agree")), "{err}");
+        assert!(err.contains(named) && err.contains(fix) && err.contains("run af tag render") && !err.contains("CRASH"), "{err}");
+        assert!(out.contains(&format!("af tag {verb}:")), "the result is still reported: {out}");
+        assert_eq!(bytes(&fx, file), held, "the file that could not be written is as it was");
+        // the change happened: pages and registry agree
+        let want = if verb == "rename" { "lettings" } else { "rentals" };
+        for p in pages {
+            assert_eq!(tags_of(&fx, p), vec![want], "{p}");
+        }
+        assert_eq!(registry(&fx).get("leases").unwrap().status, "merged");
+        // render writes the view; the doctor finds no fault
+        fx.ok(&["tag", "render"]);
+        assert!(doctor(&fx).0.is_empty(), "{:?}", doctor(&fx));
+    }
+}
+
+/// A page held with no sharing at all cannot be read: a refusal, nothing written.
+#[cfg(windows)]
+#[test]
+fn a_page_held_open_with_no_sharing_is_a_plain_refusal_and_nothing_is_written() {
+    use std::os::windows::fs::OpenOptionsExt;
+    for args in VERBS {
+        let fx = topic_vault();
+        let pages = two_pages(&fx);
+        let before = files_state(&fx, &pages);
+        let held = std::fs::OpenOptions::new().read(true).share_mode(0).open(fx.path(pages[1])).unwrap();
+        let (code, _, err) = fx.run(args);
+        let (code_add, _, err_add) = fx.run(&["tag", "add", pages[1], "money"]);
+        let (code_lint, _, err_lint) = fx.run(&["tag", "lint"]);
+        drop(held);
+        for (c, e) in [(code, err), (code_add, err_add), (code_lint, err_lint)] {
+            assert_eq!(c, 1, "{e}");
+            assert!(
+                e.contains("workspace/life/sources/note-2026-11-01-z.md could not be read (it is read-only or open in another program)") && !e.contains("CRASH"),
+                "{e}"
+            );
+        }
+        assert!(files_state(&fx, &pages) == before);
+    }
+}
+
+#[test]
+fn text_that_only_looks_like_frontmatter_gets_no_tags_line() {
+    let fx = topic_vault();
+    // a pasted message between two rules is a source with no frontmatter: not scanned, not tagged
+    let msg = b"---\nFrom: a friend\nSubject: dinner\n\nsee you at 7\n---\nsent from phone\n";
+    let rel = "workspace/life/sources/orders/2026-11-14-pasted.md";
+    fx.write_bytes(rel, msg);
+    let err = fx.refused(&["tag", "add", rel, "leases"]);
+    assert!(err.contains("has no frontmatter block, so it carries no tags"), "{err}");
+    assert_eq!(bytes(&fx, rel), msg.to_vec());
+    assert!(ok(&fx, &["tag", "stats"]).ends_with("  sources with a topic: 0/0\n"), "lint and stats agree with add");
+    // a knowledge page that opens with a rule and has a later one is a page with no frontmatter
+    let page = "workspace/life/knowledge/ruled.md";
+    let before = b"---\n# Heading\n\nsome prose, not a key\n\n---\n\nmore\n".to_vec();
+    fx.write_bytes(page, &before);
+    assert!(ok(&fx, &["tag", "stats"]).contains("  knowledge pages with a topic: 0/1\n"));
+    ok(&fx, &["tag", "add", page, "money"]);
+    assert_eq!(bytes(&fx, page), [b"---\ntags: [money]\n---\n".as_slice(), &before].concat());
+    // a comment-only block is not frontmatter either
+    let rel = "workspace/life/sources/note-2026-11-01-comment.md";
+    fx.write_bytes(rel, b"---\n# just a comment\n---\nbody\n");
+    assert!(fx.refused(&["tag", "add", rel, "leases"]).contains("has no frontmatter block"));
+    // a double-quoted string that runs onto a line that starts `tags:`: the result would not be the same YAML
+    for (side, dir) in [("source", "sources"), ("knowledge", "knowledge")] {
+        let rel = format!("workspace/life/{dir}/note-2026-11-01-quoted-{side}.md");
+        let before = b"---\nid: a\nsummary: \"two line\ntags: looks like a key\"\n---\nbody\n".to_vec();
+        fx.write_bytes(&rel, &before);
+        let err = fx.refused(&["tag", "add", &rel, "leases"]);
+        assert!(err.contains("the result would not be the same frontmatter with new tags; fix the frontmatter by hand"), "{side}: {err}");
+        assert_eq!(bytes(&fx, &rel), before, "{side}");
+    }
+    // places and people keep the lenient reading: a stray line in their frontmatter does not stop a tag
+    let place = "workspace/life/places/second-bowl.md";
+    fx.write_bytes(place, b"---\nprivate: true\nkind: restaurant\narea: harbour\nnot a key line\ntags: [noodles]\nstatus: want\n---\n# second-bowl\n");
+    ok(&fx, &["tag", "add", place, "quiet"]);
+    assert_eq!(bytes(&fx, place), b"---\nprivate: true\nkind: restaurant\narea: harbour\nnot a key line\ntags: [noodles, quiet]\nstatus: want\n---\n# second-bowl\n".to_vec());
+}
+
+#[test]
+fn a_source_whose_old_frontmatter_is_not_valid_yaml_is_still_tagged_and_only_its_tags_line_changes() {
+    let fx = topic_vault();
+    for (name, before, want) in [
+        (
+            "unquoted-colon",
+            b"---\nid: a\nsummary: dinner: at 7 with sam\ntype: note\n---\nbody\n".as_slice(),
+            b"---\nid: a\nsummary: dinner: at 7 with sam\ntype: note\ntags: [leases]\n---\nbody\n".as_slice(),
+        ),
+        (
+            "unquoted-colon-with-tags",
+            b"---\nid: a\nsummary: lunch: noon\ntags: [health]\n---\nbody\n",
+            b"---\nid: a\nsummary: lunch: noon\ntags: [health, leases]\n---\nbody\n",
+        ),
+        ("closing-bracket-line", b"---\nid: a\ntags: [\n  health,\n]\n---\nbody\n", b"---\nid: a\ntags: [health, leases]\n---\nbody\n"),
+        ("date-and-numbers", b"---\nid: a\ndate: 2026-11-01\nn: 007\nok: yes\n---\nbody\n", b"---\nid: a\ndate: 2026-11-01\nn: 007\nok: yes\ntags: [leases]\n---\nbody\n"),
+    ] {
+        let rel = format!("workspace/life/sources/note-2026-11-01-{name}.md");
+        fx.write_bytes(&rel, before);
+        let (code, _, err) = fx.run(&["tag", "add", &rel, "leases"]);
+        assert_eq!(code, 0, "{name}: {err}");
+        assert_eq!(String::from_utf8_lossy(&bytes(&fx, &rel)), String::from_utf8_lossy(want), "{name}");
+    }
+}
+
+#[test]
+fn a_knowledge_page_that_opens_with_a_rule_and_never_closes_it_is_decided_by_its_next_line() {
+    let fx = topic_vault();
+    // a key next: a frontmatter that was never closed
+    for (name, before) in [("key", b"---\nprivate: true\n# K\n".as_slice()), ("blank-then-key", b"---\n\n\nprivate: true\n# K\n")] {
+        let rel = format!("workspace/life/knowledge/{name}.md");
+        fx.write_bytes(&rel, before);
+        let err = fx.refused(&["tag", "add", &rel, "money"]);
+        assert!(err.contains("opened with --- and never closed"), "{name}: {err}");
+        assert_eq!(bytes(&fx, &rel), before, "{name}");
+    }
+    // anything else next: the rule is a horizontal rule and the page has no frontmatter
+    for (name, before) in [
+        ("heading", b"---\n# Heading\n\nbody text\n".as_slice()),
+        ("prose", b"---\nsome words here\nmore words\n"),
+        ("crlf-heading", b"---\r\n# H\r\nbody\r\n"),
+        ("only-the-rule", b"---"),
+    ] {
+        let rel = format!("workspace/life/knowledge/{name}.md");
+        fx.write_bytes(&rel, before);
+        ok(&fx, &["tag", "add", &rel, "money"]);
+        let eol: &[u8] = if before.windows(2).any(|w| w == b"\r\n") { b"\r\n" } else { b"\n" };
+        let head = [b"---".as_slice(), eol, b"tags: [money]", eol, b"---", eol].concat();
+        assert_eq!(bytes(&fx, &rel), [head.as_slice(), before].concat(), "{name}");
+    }
+}
+
+#[test]
+fn the_refusals_say_which_problem_they_found_and_name_the_page_by_its_vault_path() {
+    let fx = topic_vault();
+    let two = "workspace/life/sources/note-2026-11-01-two.md";
+    fx.write_bytes(two, b"---\nid: a\ntags: [bb]\ntags: [cc]\n---\nbody\n");
+    let err = fx.refused(&["tag", "add", two, "leases"]);
+    assert!(err.contains(&format!("{two}: the frontmatter has 2 tags keys;")), "{err}");
+    let quoted = "workspace/life/sources/note-2026-11-01-quoted.md";
+    fx.write_bytes(quoted, b"---\nid: a\n\"tags\": [bb]\n---\nbody\n");
+    let err = fx.refused(&["tag", "add", quoted, "leases"]);
+    assert!(err.contains(&format!("{quoted}: the frontmatter has a tags key that is not written `tags:`;")), "{err}");
+    // read-only and not-UTF-8 refusals use the vault path as well, not the temp directory
+    let ro = "workspace/life/sources/note-2026-11-01-ro.md";
+    fx.write_bytes(ro, b"---\nid: a\n---\nbody\n");
+    set_readonly(&fx, ro, true);
+    let err = fx.refused(&["tag", "add", ro, "leases"]);
+    set_readonly(&fx, ro, false);
+    assert!(err.contains(&format!("{ro} is read-only; nothing was written")), "{err}");
+    let latin = "workspace/life/sources/note-2026-11-01-latin.md";
+    fx.write_bytes(latin, b"---\nid: a\n---\ncaf\xe9\n");
+    let err = fx.refused(&["tag", "add", latin, "leases"]);
+    assert!(err.contains(&format!("{latin} is not UTF-8 text")), "{err}");
+    for e in [&err] {
+        assert!(!e.contains(&fx.root()), "{e}");
+    }
+}
+
+#[test]
+fn the_lint_line_uses_the_singular_for_one() {
+    let fx = topic_vault();
+    fx.rmtree("workspace/life/places");
+    fx.rmtree("workspace/life/people");
+    place(&fx, "solo", "restaurant", "harbour", "quiet", "x");
+    knowledge_page(&fx, "only", Some("leases"));
+    source_file(&fx, "note-2026-11-01-only", Some("leases"));
+    let out = ok(&fx, &["tag", "lint"]);
+    assert!(out.lines().next().unwrap().ends_with(" · 1 page · 1 knowledge page · 1 source"), "{out}");
+}
+
+#[test]
+fn a_comment_on_the_tags_line_stays() {
+    let fx = topic_vault();
+    for (name, before, want) in [
+        ("inline", b"---\nid: a\ntags: [health] # topics\nother: b\n---\nbody\n".as_slice(), b"---\nid: a\ntags: [health, leases] # topics\nother: b\n---\nbody\n".as_slice()),
+        ("empty-with-comment", b"---\nid: a\ntags: # topics\nother: b\n---\nbody\n", b"---\nid: a\ntags: [leases] # topics\nother: b\n---\nbody\n"),
+        ("crlf", b"---\r\nid: a\r\ntags: [health]   # why\r\n---\r\nbody\r\n", b"---\r\nid: a\r\ntags: [health, leases]   # why\r\n---\r\nbody\r\n"),
+    ] {
+        let rel = format!("workspace/life/sources/note-2026-11-01-c-{name}.md");
+        fx.write_bytes(&rel, before);
+        ok(&fx, &["tag", "add", &rel, "leases"]);
+        assert_eq!(String::from_utf8_lossy(&bytes(&fx, &rel)), String::from_utf8_lossy(want), "{name}");
+        assert!(tags_of(&fx, &rel).contains(&"leases".to_string()), "{name}");
+    }
+}

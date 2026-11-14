@@ -129,8 +129,8 @@ impl TextFile {
 
 // ------------------------------------------------------------------ one writer at a time
 
-const RENAME_TRIES: u32 = 100;
-const RENAME_PAUSE_MS: u64 = 20;
+pub(crate) const RENAME_TRIES: u32 = 100;
+pub(crate) const RENAME_PAUSE_MS: u64 = 20;
 const LOCK_WAIT_MS: u64 = 5000;
 const LOCK_PAUSE_MS: u64 = 25;
 const LOCK_STALE_SECS: u64 = 120;

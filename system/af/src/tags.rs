@@ -532,6 +532,45 @@ fn fm_bounds(raw: &str) -> Option<FmBounds> {
     None
 }
 
+/// An optionally quoted key of letters, digits, `_` or `-`, then `:` and a space or the end of the line.
+fn is_key_line(line: &str) -> bool {
+    rx(r#"^(?:"[A-Za-z0-9_-]+"|'[A-Za-z0-9_-]+'|[A-Za-z0-9_-]+)[ \t]*:(?:[ \t]|$)"#).is_match(line.trim_end_matches('\r'))
+}
+
+/// Does a block between two `---` lines read as frontmatter? Every line is blank, a comment, indented,
+/// a list item, the closing bracket of a wrapped list, or a key line, and some line is a key (an
+/// empty block counts). Prose that happens to sit between two rules is not.
+fn looks_like_frontmatter(block: &str) -> bool {
+    let mut keys = 0;
+    for l in block.lines() {
+        let l = l.trim_end_matches('\r');
+        let t = l.trim();
+        if t.is_empty() || t.starts_with('#') || l.starts_with(' ') || l.starts_with('\t') || l.starts_with(']') || l.starts_with('}') {
+            continue;
+        }
+        if rx(r"\A-([ \t]|$)").is_match(l) {
+            continue;
+        }
+        if is_key_line(l) {
+            keys += 1;
+            continue;
+        }
+        return false;
+    }
+    keys > 0 || block.trim().is_empty()
+}
+
+/// The knowledge pages and sources are free text that may open with a rule, so their frontmatter
+/// must also look like frontmatter; a place or person page is a block between two rules, as ever.
+fn strict(side: &str) -> bool {
+    side == "knowledge" || side == "sources"
+}
+
+/// `fm_bounds` for a page on this side.
+fn fm_bounds_for(raw: &str, side: &str) -> Option<FmBounds> {
+    fm_bounds(raw).filter(|b| !strict(side) || looks_like_frontmatter(&raw[b.start..b.close]))
+}
+
 /// The folder each side reads, and whether a text there must carry frontmatter to count.
 fn side_dir(side: &str) -> &'static str {
     match side {
@@ -590,10 +629,10 @@ fn scan_sides(ctx: &Ctx, sides: &[&'static str]) -> R<Vec<Page>> {
                 // Read as the bytes are; a source that is not UTF-8 has no frontmatter this reads.
                 match std::fs::read(&path) {
                     Ok(b) => String::from_utf8_lossy(&b).into_owned(),
-                    Err(e) => return Err(pyos::os_error(&e, &path)),
+                    Err(e) => die!("{rel} could not be read ({}); close whatever holds it, then rerun", io_reason(&e)),
                 }
             };
-            let bounds = fm_bounds(&text);
+            let bounds = fm_bounds_for(&text, side);
             if side == "sources" && bounds.is_none() {
                 continue;
             }
@@ -610,34 +649,93 @@ fn scan_sides(ctx: &Ctx, sides: &[&'static str]) -> R<Vec<Page>> {
     Ok(pages)
 }
 
+/// The comment after the value on a `tags:` line (`tags: [a] # why`, or `tags: # why` above a block
+/// list), with the space before it; empty when there is none.
+fn trailing_comment(first_line: &str) -> &str {
+    let value = first_line.strip_prefix("tags:").unwrap_or("");
+    if value.trim_start().starts_with('#') {
+        return value;
+    }
+    match value.find(']') {
+        Some(i) if value[i + 1..].trim_start().starts_with('#') => &value[i + 1..],
+        _ => "",
+    }
+}
+
+/// The mapping a frontmatter block reads as with the crate's YAML reader, if it reads as one.
+fn fm_mapping(fm: &str) -> Option<Vec<(PyVal, PyVal)>> {
+    match safe_load(&fm.replace("\r\n", "\n"), "frontmatter", false) {
+        Ok(PyVal::Dict(m)) => Some(m),
+        _ => None,
+    }
+}
+
+/// Is `new` the mapping `old` is, but for `tags`, which is the wanted list? An `old` that does not
+/// read as a mapping (an unquoted colon in a summary, say) cannot be checked and passes. A tag the
+/// reader turns into another type (`yes`, `42`) is not held against the list.
+fn same_but_tags(old: &str, new: &str, tags: &[String]) -> bool {
+    let Some(old) = fm_mapping(old) else { return true };
+    let Some(new) = fm_mapping(new) else { return false };
+    let rest = |m: &[(PyVal, PyVal)]| {
+        let mut v: Vec<(String, String)> =
+            m.iter().filter(|(k, _)| k.as_str() != Some("tags")).map(|(k, v)| (format!("{k:?}"), format!("{v:?}"))).collect();
+        v.sort();
+        v
+    };
+    if rest(&old) != rest(&new) {
+        return false;
+    }
+    match new.iter().find(|(k, _)| k.as_str() == Some("tags")).map(|(_, v)| v) {
+        Some(PyVal::List(items)) => {
+            items.len() == tags.len() && items.iter().zip(tags).all(|(i, t)| if let PyVal::Str(s) = i { s == t } else { true })
+        }
+        _ => false,
+    }
+}
+
+/// A first line of `---` (after an optional BOM) whose next non-blank line is a key: a frontmatter
+/// block that was opened and never closed. Followed by anything else the `---` is a horizontal rule.
+fn unclosed_frontmatter(raw: &str) -> bool {
+    let rest = raw.strip_prefix('\u{feff}').unwrap_or(raw);
+    let mut lines = rest.lines();
+    lines.next().is_some_and(|l| l.trim_end() == "---") && lines.find(|l| !l.trim().is_empty()).is_some_and(is_key_line)
+}
+
 /// `raw` with its `tags:` field set to an inline list and not one other byte changed: the line
 /// endings, the BOM, the body (trailing blank lines, a `---` line of its own, a missing final
 /// newline) and every other frontmatter line stay as they are. A `tags:` field already there goes as
-/// one unit, a block list or a flow list wrapped over lines included, so no item line is left behind.
+/// one unit, a block list or a flow list wrapped over lines included, so no item line is left behind;
+/// a comment after the value on the first line stays (one on the last line of a wrapped list is lost).
 /// A field this cannot own is refused and the text left alone: an indented line or list item after
 /// it (blank and comment lines skipped) that is not part of it, two `tags` keys, or one spelled
 /// another way (`"tags":`, `tags :`). No field yet: the line is added at the end of the frontmatter.
-/// No frontmatter: refused, unless `create_fm` (a knowledge page may start with its heading), which
-/// puts a block of its own above the text; a block opened with `---` and never closed is refused.
-pub fn rewrite_tags(raw: &str, tags: &[String], path: &str, create_fm: bool) -> R<String> {
+/// On a knowledge page or source the block must also look like frontmatter (`looks_like_frontmatter`)
+/// and, when the old block reads as a YAML mapping, the new one must read as the same mapping with
+/// the wanted tags; otherwise the text is refused untouched. No frontmatter: refused, except on a
+/// knowledge page, which gets a block of its own above the text; a block opened with `---` and
+/// never closed, whose next line is a key, is refused. `label` names the page in a refusal.
+pub fn rewrite_tags(raw: &str, tags: &[String], label: &str, side: &str) -> R<String> {
     let line = format!("tags: [{}]", tags.join(", "));
-    let b = match fm_bounds(raw) {
+    let b = match fm_bounds_for(raw, side) {
         Some(b) => b,
-        None if create_fm && opens_a_block(raw) => {
-            die!("{path}: the frontmatter is opened with --- and never closed; close it by hand, then rerun");
-        }
-        None if create_fm => {
+        None if side == "knowledge" => {
+            if fm_bounds(raw).is_none() && unclosed_frontmatter(raw) {
+                die!("{label}: the frontmatter is opened with --- and never closed; close it by hand, then rerun");
+            }
             let bom = if raw.starts_with('\u{feff}') { '\u{feff}'.len_utf8() } else { 0 };
             let eol = if raw[bom..].find('\n').is_some_and(|i| raw[bom..][..i].ends_with('\r')) { "\r\n" } else { "\n" };
             return Ok(format!("{}---{eol}{line}{eol}---{eol}{}", &raw[..bom], &raw[bom..]));
         }
-        None => die!("{path} has no frontmatter block"),
+        None => die!("{label} has no frontmatter block"),
     };
     let fm = &raw[b.start..b.close];
     let keys = rx(r#"(?m)^["']?tags["']?[ \t]*:"#).find_iter(fm).count();
     let span = fm_list_span(fm, "tags");
-    if keys > 1 || (keys == 1 && span.is_none()) {
-        die!("{path}: the frontmatter has {keys} tags keys or one that is not written `tags:`; fix the frontmatter by hand, then rerun");
+    if keys > 1 {
+        die!("{label}: the frontmatter has {keys} tags keys; fix the frontmatter by hand, then rerun");
+    }
+    if keys == 1 && span.is_none() {
+        die!("{label}: the frontmatter has a tags key that is not written `tags:`; fix the frontmatter by hand, then rerun");
     }
     let new_fm = match span {
         Some((s, e)) => {
@@ -649,57 +747,83 @@ pub fn rewrite_tags(raw: &str, tags: &[String], path: &str, create_fm: bool) -> 
                 .find(|l| !l.trim().is_empty() && !l.trim_start().starts_with('#'))
                 .unwrap_or("");
             if next.starts_with(' ') || next.starts_with('\t') || rx(r"\A-([ \t]|$)").is_match(next) {
-                die!("{path}: the tags: field is followed by an indented line that is not part of it ({next:?}); fix the frontmatter by hand, then rerun");
+                die!("{label}: the tags: field is followed by an indented line that is not part of it ({next:?}); fix the frontmatter by hand, then rerun");
             }
             let cr = if fm[s..e].ends_with('\r') { "\r" } else { "" };
-            format!("{}{line}{cr}{}", &fm[..s], &fm[e..])
+            let comment = trailing_comment(fm[s..e].split('\n').next().unwrap_or("").trim_end_matches('\r'));
+            format!("{}{line}{comment}{cr}{}", &fm[..s], &fm[e..])
         }
         None => format!("{fm}{line}{}", b.eol),
     };
+    if strict(side) && !same_but_tags(fm, &new_fm, tags) {
+        die!("{label}: the result would not be the same frontmatter with new tags; fix the frontmatter by hand, then rerun");
+    }
     Ok(format!("{}{new_fm}{}", &raw[..b.start], &raw[b.close..]))
 }
 
-/// Does the text open a frontmatter block (a first line of `---`, after an optional BOM)?
-fn opens_a_block(raw: &str) -> bool {
-    let rest = raw.strip_prefix('\u{feff}').unwrap_or(raw);
-    rest.lines().next().is_some_and(|l| l.trim_end() == "---")
+/// Why a file operation failed: a permission or sharing error is "read-only or open in another
+/// program"; anything else is the system's own text.
+fn io_reason(e: &std::io::Error) -> String {
+    if e.kind() == std::io::ErrorKind::PermissionDenied || matches!(e.raw_os_error(), Some(5 | 32 | 33)) {
+        "it is read-only or open in another program".to_string()
+    } else {
+        e.to_string()
+    }
 }
 
-/// A page's text exactly as it lies on disk.
-fn read_raw(path: &str) -> R<String> {
+/// A page's text exactly as it lies on disk; a refusal, not a crash, when it cannot be read.
+fn read_raw(path: &str, label: &str) -> R<String> {
     let bytes = match std::fs::read(path) {
         Ok(b) => b,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => die!("{path}: no such page"),
-        Err(e) => return Err(pyos::os_error(&e, path)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => die!("{label}: no such page"),
+        Err(e) => die!("{label} could not be read ({}); nothing was written", io_reason(&e)),
     };
     match String::from_utf8(bytes) {
         Ok(s) => Ok(s),
-        Err(_) => die!("{path} is not UTF-8 text; nothing was written"),
+        Err(_) => die!("{label} is not UTF-8 text; nothing was written"),
     }
 }
 
 /// Rewrite the `tags:` field on one page; see `rewrite_tags`. The page is the only thing written
 /// (`af tag add` leaves the registry and the log alone), through a temp file and a rename, so a
-/// failure leaves the page as it was and ends in a refusal that names it.
-pub fn write_page_tags(path: &str, tags: &[String], create_fm: bool) -> R<()> {
-    let raw = read_raw(path)?;
-    let new = rewrite_tags(&raw, tags, path, create_fm)?;
+/// failure leaves the page as it was and ends in a refusal that names it (`label`, the vault path).
+pub fn write_page_tags(path: &str, label: &str, tags: &[String], side: &str) -> R<()> {
+    let raw = read_raw(path, label)?;
+    let new = rewrite_tags(&raw, tags, label, side)?;
     if new != raw {
         if std::fs::metadata(path).map(|m| m.permissions().readonly()).unwrap_or(false) {
-            die!("{path} is read-only; nothing was written");
+            die!("{label} is read-only; nothing was written");
         }
         if let Err(why) = try_write_raw(path, &new) {
-            die!("{path} could not be written ({why}); nothing was changed");
+            die!("{label} could not be written ({why}); nothing was changed");
         }
     }
     Ok(())
 }
 
-/// `write_raw` for a caller that must turn a failure into its own refusal: the reason, not a crash.
+/// Write a text byte for byte through a temp file and a rename, so a reader sees the old file or the
+/// new one; the rename is retried briefly while another process has the target open. The reason on
+/// failure, for a caller that turns it into its own refusal.
 fn try_write_raw(path: &str, text: &str) -> Result<(), String> {
-    TextFile { text: text.to_string(), crlf: false, bom: false }
-        .save_atomic(path)
-        .map_err(|_| "it is read-only or open in another program".to_string())
+    let tmp = format!("{path}.tmp{}", std::process::id());
+    if let Err(e) = std::fs::write(&tmp, text.as_bytes()) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(io_reason(&e));
+    }
+    let mut tries = 0;
+    loop {
+        match std::fs::rename(&tmp, path) {
+            Ok(()) => return Ok(()),
+            Err(_) if tries < crate::life::RENAME_TRIES => {
+                tries += 1;
+                std::thread::sleep(std::time::Duration::from_millis(crate::life::RENAME_PAUSE_MS));
+            }
+            Err(e) => {
+                let _ = std::fs::remove_file(&tmp);
+                return Err(io_reason(&e));
+            }
+        }
+    }
 }
 
 /// A change to the tag lists of several pages. `plan` makes every new text first, and refuses a page
@@ -718,8 +842,8 @@ impl Rewrite {
     fn plan(used: &[&Page], f: &dyn Fn(&[String]) -> Vec<String>) -> R<Rewrite> {
         let mut pages = Vec::new();
         for p in used {
-            let raw = read_raw(&p.path)?;
-            let new = rewrite_tags(&raw, &f(&p.tags), &p.path, false)?;
+            let raw = read_raw(&p.path, &p.rel)?;
+            let new = rewrite_tags(&raw, &f(&p.tags), &p.rel, p.side)?;
             if new != raw && std::fs::metadata(&p.path).map(|m| m.permissions().readonly()).unwrap_or(false) {
                 die!("{} is read-only; nothing was written", p.rel);
             }
@@ -1004,20 +1128,41 @@ pub fn cmd_drop(ctx: &Ctx, slug: &str) -> R<i32> {
     Ok(0)
 }
 
-/// `merge <from> --into <to>`: `from` is a tag (it becomes merged), an alt label of `to`, or
-/// a label on pages that no tag owns; every page is rewritten and `to` gains the alt label.
-/// Save the registry after the pages were written; if that fails, put the pages back.
+/// Save the registry after the pages were written; if that fails, put the pages back and refuse.
 fn save_or_put_back(ctx: &Ctx, reg: &Registry, rewrite: &mut Rewrite) -> R<()> {
     if let Err(e) = reg.save(ctx) {
         let stuck = rewrite.rollback();
         if !stuck.is_empty() {
-            die!("{REGISTRY_REL} could not be saved, and putting back failed for {}: they hold the new tag while the registry does not; rerun the same command", stuck.join(", "));
+            die!("{REGISTRY_REL} could not be saved ({e}), and putting back failed for {}: they hold the new tag while the registry does not; make them writable and rerun the same command", stuck.join(", "));
         }
-        return Err(e);
+        die!("{REGISTRY_REL} could not be saved ({e}); every page was put back, nothing changed");
     }
     Ok(())
 }
 
+/// After the registry is saved the change has happened, whatever the log and the view report: the
+/// parts that could not be written, named for the refusal that ends the command.
+fn write_log_and_view(ctx: &Ctx, reg: &Registry, verb: &str, detail: &str) -> Vec<String> {
+    let mut missed = Vec::new();
+    if let Err(e) = append_log(ctx, verb, detail) {
+        missed.push(format!("{LOG_REL} ({e}); its line for this {verb} is missing"));
+    }
+    if let Err(e) = render_view(ctx, reg) {
+        missed.push(format!("{VIEW_REL} ({e}); af tag render writes it"));
+    }
+    missed
+}
+
+/// The refusal for a change that is saved but whose log or view could not be written.
+fn saved_but(verb: &str, missed: &[String]) -> R<i32> {
+    die!(
+        "the {verb} is saved: the pages and {REGISTRY_REL} agree. It could not write {}. Make the file writable, then run af tag render; do not rerun the {verb}",
+        missed.join(" and ")
+    )
+}
+
+/// `merge <from> --into <to>`: `from` is a tag (it becomes merged), an alt label of `to`, or
+/// a label on pages that no tag owns; every page is rewritten and `to` gains the alt label.
 pub fn cmd_merge(ctx: &Ctx, from: &str, into: &str) -> R<i32> {
     let mut reg = Registry::require(ctx)?;
     let from = normalize(from);
@@ -1077,11 +1222,13 @@ pub fn cmd_merge(ctx: &Ctx, from: &str, into: &str) -> R<i32> {
     // Order: the pages, then the registry, the log and the view. A registry that cannot be saved
     // puts the pages back; once it is saved the pages and the registry agree.
     save_or_put_back(ctx, &reg, &mut rewrite)?;
-    append_log(ctx, "merge", &format!("{from} -> {} · {} page(s) rewritten", to.id, rewritten.len()))?;
-    render_view(ctx, &reg)?;
+    let missed = write_log_and_view(ctx, &reg, "merge", &format!("{from} -> {} · {} page(s) rewritten", to.id, rewritten.len()));
     out::line(&format!("af tag merge: {from} ({kind}) -> {} · {} page(s) rewritten", to.id, rewritten.len()));
     for r in &rewritten {
         out::line(&format!("  {r}"));
+    }
+    if !missed.is_empty() {
+        return saved_but("merge", &missed);
     }
     Ok(0)
 }
@@ -1115,9 +1262,11 @@ pub fn cmd_rename(ctx: &Ctx, old: &str, new: &str) -> R<i32> {
     rewrite.commit()?;
     let rewritten = rewrite.rels().len();
     save_or_put_back(ctx, &reg, &mut rewrite)?;
-    append_log(ctx, "rename", &format!("{old} -> {new} · {rewritten} page(s) rewritten"))?;
-    render_view(ctx, &reg)?;
+    let missed = write_log_and_view(ctx, &reg, "rename", &format!("{old} -> {new} · {rewritten} page(s) rewritten"));
     out::line(&format!("af tag rename: {old} -> {new} · {} · {rewritten} page(s) rewritten; {old} stays an alt label", t.status));
+    if !missed.is_empty() {
+        return saved_but("rename", &missed);
+    }
     Ok(0)
 }
 
@@ -1195,7 +1344,7 @@ pub fn cmd_add(ctx: &Ctx, page: &str, wanted: &[String]) -> R<i32> {
     let (tags, notes) = vet_tags(&reg, wanted, &p.tags, p.side, &p.rel)?;
     let added = tags.len() - p.tags.len();
     // A knowledge page may start at its heading; the block of frontmatter is made for it.
-    write_page_tags(&p.path, &tags, p.side == "knowledge")?;
+    write_page_tags(&p.path, &p.rel, &tags, p.side)?;
     out::line(&format!("af tag add: {} · +{added} · tags: [{}]", p.rel, tags.join(", ")));
     for n in notes {
         out::line(&format!("  {n}"));
@@ -1566,7 +1715,13 @@ pub fn cmd_lint(ctx: &Ctx, fix: bool, embed: bool) -> R<i32> {
     }
     // What was read, by side: pages is places and people, as it always was.
     let side = |s: &str| pages.iter().filter(|p| p.side == s).count();
-    let counted = format!("{} pages · {} knowledge pages · {} sources", side("places") + side("people"), side("knowledge"), side("sources"));
+    let plural = |n: usize, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
+    let counted = format!(
+        "{} · {} · {}",
+        plural(side("places") + side("people"), "page", "pages"),
+        plural(side("knowledge"), "knowledge page", "knowledge pages"),
+        plural(side("sources"), "source", "sources")
+    );
     if findings.is_empty() {
         out::line(&format!("af tag lint: clean · {} tags · {counted}", reg.tags.len()));
         return Ok(0);
@@ -1782,7 +1937,7 @@ mod tests {
     }
 
     fn set(raw: &str, create: bool) -> R<String> {
-        rewrite_tags(raw, &["a".to_string(), "b".to_string()], "p.md", create)
+        rewrite_tags(raw, &["a".to_string(), "b".to_string()], "p.md", if create { "knowledge" } else { "places" })
     }
 
     #[test]
@@ -1797,6 +1952,25 @@ mod tests {
         assert_eq!(set("# Heading\n", true).unwrap(), "---\ntags: [a, b]\n---\n# Heading\n");
         assert_eq!(set("# Heading\r\nx\r\n", true).unwrap(), "---\r\ntags: [a, b]\r\n---\r\n# Heading\r\nx\r\n");
         assert_eq!(set("", true).unwrap(), "---\ntags: [a, b]\n---\n");
+    }
+
+    #[test]
+    fn io_reason_keeps_the_permission_wording_for_permission_and_sharing_errors_only() {
+        let denied = std::io::Error::from(std::io::ErrorKind::PermissionDenied);
+        assert_eq!(io_reason(&denied), "it is read-only or open in another program");
+        assert_eq!(io_reason(&std::io::Error::from_raw_os_error(32)), "it is read-only or open in another program");
+        let other = std::io::Error::new(std::io::ErrorKind::InvalidInput, "the name is not valid");
+        assert_eq!(io_reason(&other), "the name is not valid");
+    }
+
+    #[test]
+    fn a_block_is_frontmatter_only_if_every_line_is_blank_a_comment_indented_a_list_item_or_a_key() {
+        assert!(looks_like_frontmatter("id: a\n# c\ntags:\n  - x\n- y\n\nlist: [\n  a,\n]\n\"q\": 1\n"));
+        assert!(looks_like_frontmatter("") && looks_like_frontmatter("\n\n"));
+        assert!(!looks_like_frontmatter("From: a friend\nSubject: dinner\n\nsee you at 7\n"));
+        assert!(!looks_like_frontmatter("# only a comment\n"));
+        assert!(!looks_like_frontmatter("key:value\n"));
+        assert!(is_key_line("tags : [a]") && is_key_line("a-b_1:") && !is_key_line("two words: x") && !is_key_line("url:http"));
     }
 
     #[test]

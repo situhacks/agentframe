@@ -122,6 +122,11 @@ enum Cmd {
         #[command(subcommand)]
         cmd: crate::watch::WatchCmd,
     },
+    /// Filed sources: add one with its id, file and INDEX row under one lock
+    Source {
+        #[command(subcommand)]
+        cmd: crate::source::SourceCmd,
+    },
     /// The needs list: what needs the operator's decision, now or later
     Needs {
         #[command(subcommand)]
@@ -285,6 +290,7 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> R<i32> {
         Cmd::Session { cmd } => crate::sessions::run(ctx, cmd),
         Cmd::Open { cmd } => crate::open::run(ctx, cmd),
         Cmd::Watch { cmd } => crate::watch::run(ctx, cmd),
+        Cmd::Source { cmd } => crate::source::run(ctx, cmd),
         Cmd::Needs { cmd } => crate::needs::run(ctx, cmd),
         Cmd::Brief { json, write } => crate::brief::cmd_brief(ctx, json, write),
         Cmd::Close { slug, force } => crate::close::cmd_close(ctx, &slug, force),

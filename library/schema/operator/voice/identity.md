@@ -12,10 +12,12 @@ Audience is task-scoped. [Describe what generally earns attention, while leaving
 
 ## Registers
 
-Registers are reusable voice temperatures, never platform names. Start with the smallest durable set; for this schema the canonical set is:
+Registers are reusable voice temperatures, never platform names. A voice has one or more registers, each a file in `registers/`; start with the smallest durable set. The usual two are:
 
-- **`formal`** (`registers/formal.md` + `corpus/formal/`) — [the professional, decision-oriented, or higher-stakes expression of your voice].
-- **`informal`** (`registers/informal.md` + `corpus/informal/`) — [the warmer, more conversational, or exploratory expression of your voice].
+- **`informal`** (`registers/informal.md` + `corpus/informal/`) — [the warmer, more conversational, or exploratory expression of your voice]. The default register.
+- **`chat`** (`registers/chat.md`, no corpus needed) — [how you text a friend].
+
+A `formal` register (`registers/formal.md` + `corpus/formal/`, [the professional, decision-oriented, or higher-stakes expression of your voice]) is optional: add it only when you write that way often enough to have pieces for it.
 
 Do not create `linkedin-*`, `substack-*`, `email-*`, or deliverable-named registers. Platform rules live in channel profiles; slide, cover, email, and long-form shape rules live in templates or pair `context` tags.
 
@@ -23,8 +25,8 @@ Do not create `linkedin-*`, `substack-*`, `email-*`, or deliverable-named regist
 
 ```yaml
 voice:
-  base_register: formal        # formal | informal | chat
-  borrow_from: []              # optional: the other register
+  base_register: informal      # the name of a file in registers/
+  borrow_from: []              # optional: another register that has a file
   direction: ""               # required for a blend
 ```
 

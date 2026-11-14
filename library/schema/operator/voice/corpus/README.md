@@ -16,6 +16,5 @@ Full-length finished pieces in the operator's voice, stored verbatim and grouped
 
 | Folder | Contents |
 |---|---|
-| `formal/` | Finished formal pieces from any channel, verbatim |
-| `informal/` | Finished informal pieces from any channel, verbatim |
+| `<register>/` | One folder per register that has pieces (`informal/`, for example): finished pieces in that register from any channel, verbatim |
 | `aspiration/` | Pointers to admired writing — the direction of travel, NOT the operator's voice. Each file holds URL + craft breakdown; live-fetch the full text at use time. Never load into a style pass by default — used for structure reference in the content pass and for the corpus-vs-aspiration A/B comparison. |

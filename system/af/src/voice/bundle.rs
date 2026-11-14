@@ -7,7 +7,6 @@ use crate::pyos::{self, join, join_all, py_strip};
 use crate::voice::sha1_hex;
 
 pub const READ_LIMIT: usize = 2000;
-pub const REGISTERS: [&str; 3] = ["formal", "informal", "chat"];
 /// `core` is still accepted and means `standard`.
 pub const TIERS: [&str; 3] = ["quick", "standard", "full"];
 pub const CORE_EXEMPLAR_CAP: u64 = 20_000;
@@ -83,7 +82,65 @@ fn scalar(fm: &str, key: &str) -> Option<String> {
     }
 }
 
-/// (base register, borrow registers, deliverable type) from a head's frontmatter.
+/// The `.md` files (any case of the extension) in a voice folder's `registers/` directory
+/// as (register name, file name), sorted by name. A `README.md` there is documentation,
+/// not a register.
+fn register_files(voice_dir: &str) -> R<Vec<(String, String)>> {
+    let dir = join(voice_dir, "registers");
+    if !pyos::isdir(&dir) {
+        return Ok(Vec::new());
+    }
+    let mut out: Vec<(String, String)> = pyos::listdir(&dir)?
+        .into_iter()
+        .filter(|n| n.to_lowercase().ends_with(".md") && n.to_lowercase() != "readme.md" && pyos::isfile(&join(&dir, n)))
+        .map(|n| (n[..n.len() - 3].to_string(), n))
+        .collect();
+    out.sort();
+    out.dedup_by(|a, b| a.0 == b.0);
+    Ok(out)
+}
+
+/// The registers a voice folder has: the `.md` files in its `registers/` directory, by file
+/// name without the extension, sorted.
+pub fn registers(voice_dir: &str) -> R<Vec<String>> {
+    Ok(register_files(voice_dir)?.into_iter().map(|(name, _)| name).collect())
+}
+
+/// The path of a register's file, with the file's own spelling of its extension.
+fn register_path(voice_dir: &str, name: &str) -> String {
+    let file = register_files(voice_dir)
+        .ok()
+        .and_then(|fs| fs.into_iter().find(|(n, _)| n == name).map(|(_, f)| f))
+        .unwrap_or_else(|| format!("{name}.md"));
+    join_all(&[voice_dir, "registers", &file])
+}
+
+/// The register a name asks for, in the file's own spelling: an exact match, else one that
+/// differs only in case.
+pub fn match_register(regs: &[String], asked: &str) -> Option<String> {
+    regs.iter()
+        .find(|r| r.as_str() == asked)
+        .or_else(|| regs.iter().find(|r| r.to_lowercase() == asked.to_lowercase()))
+        .cloned()
+}
+
+/// The register used when none is named, or the one named has no file: `informal` when it
+/// exists, else the first register by name.
+pub fn default_register(regs: &[String]) -> Option<String> {
+    regs.iter().find(|r| r.to_lowercase() == "informal").or_else(|| regs.first()).cloned()
+}
+
+/// What to say when a register is asked for that has no file.
+pub fn no_such_register(name: &str, regs: &[String]) -> String {
+    if regs.is_empty() {
+        format!("af voice bundle: the voice folder has no registers (no .md files in registers/); cannot use '{name}'")
+    } else {
+        format!("af voice bundle: no register '{name}'; the registers that exist: {}", regs.join(", "))
+    }
+}
+
+/// A head's raw (base register, borrow registers, deliverable type) from its frontmatter,
+/// as written; `resolve_base` and `resolve_borrow` check them against the voice folder.
 pub fn recipe_from_head(path: &str) -> R<(Option<String>, Vec<String>, Option<String>)> {
     let text = pyos::read(path)?;
     let text = text.trim_start_matches('\u{feff}');
@@ -91,13 +148,7 @@ pub fn recipe_from_head(path: &str) -> R<(Option<String>, Vec<String>, Option<St
         .captures(text)
         .map(|c| c[1].to_string())
         .unwrap_or_default();
-    let mut base = scalar(&fm, "base_register").or_else(|| scalar(&fm, "register"));
-    if let Some(b) = &base {
-        if !REGISTERS.contains(&b.as_str()) {
-            // the first register named inside the value, in REGISTERS order
-            base = REGISTERS.iter().find(|r| b.contains(*r)).map(|r| r.to_string());
-        }
-    }
+    let base = scalar(&fm, "base_register").or_else(|| scalar(&fm, "register"));
     let mut borrow = Vec::new();
     if let Some(c) = rx(r"(?m)^\s*borrow_from:\s*\[([^\]]*)\]").captures(&fm) {
         for b in c[1].split(',') {
@@ -106,8 +157,41 @@ pub fn recipe_from_head(path: &str) -> R<(Option<String>, Vec<String>, Option<St
             }
         }
     }
-    borrow.retain(|b| REGISTERS.contains(&b.as_str()));
     Ok((base, borrow, scalar(&fm, "type")))
+}
+
+/// A head's base register made to fit the voice folder: one with a file stays (in the
+/// file's spelling); a value like `substack-informal` names the first register among its
+/// words; any other falls back to the default register, with the line to print. With no
+/// registers it stays as written, and the caller refuses it.
+pub fn resolve_base(regs: &[String], base: String) -> (String, Option<String>) {
+    if let Some(r) = match_register(regs, &base) {
+        return (r, None);
+    }
+    if let Some(r) = base.split(|c: char| !c.is_alphanumeric()).find_map(|w| match_register(regs, w)) {
+        return (r, None);
+    }
+    match default_register(regs) {
+        Some(d) => {
+            let note = format!("register {base} has no file; using {d}");
+            (d, Some(note))
+        }
+        None => (base, None),
+    }
+}
+
+/// A head's borrow registers in the files' spelling, with the ones that have no file
+/// dropped, and a line to print for each.
+pub fn resolve_borrow(regs: &[String], borrow: Vec<String>) -> (Vec<String>, Vec<String>) {
+    let mut keep = Vec::new();
+    let mut notes = Vec::new();
+    for b in borrow {
+        match match_register(regs, &b) {
+            Some(r) => keep.push(r),
+            None => notes.push(format!("register {b} has no file; dropped from borrow")),
+        }
+    }
+    (keep, notes)
 }
 
 // ---------------------------------------------------------------- the bundle
@@ -231,6 +315,8 @@ pub struct Recipe {
     pub contexts: Vec<String>,
     pub borrow: Vec<String>,
     pub template: Option<String>,
+    /// what the head named when its register was replaced, for the bundle's header
+    pub head_named: Option<String>,
 }
 
 impl Recipe {
@@ -240,6 +326,7 @@ impl Recipe {
             contexts: contexts.iter().map(|s| s.to_string()).collect(),
             borrow: borrow.iter().map(|s| s.to_string()).collect(),
             template: template.map(|s| s.to_string()),
+            head_named: None,
         }
     }
 }
@@ -250,7 +337,7 @@ pub fn plan(r: &Recipe, voice_dir: &str, tier: &str) -> R<Vec<(String, String)>>
     let tier = normalize_tier(tier);
     let contexts = effective_contexts(r, tier);
     let register = &r.register;
-    let reg_path = |b: &str| join_all(&[voice_dir, "registers", &format!("{b}.md")]);
+    let reg_path = |b: &str| register_path(voice_dir, b);
     let corpus_dir = join_all(&[voice_dir, "corpus", register]);
     let mut parts = Vec::new();
     if tier == "quick" {
@@ -424,11 +511,12 @@ pub fn build(place: &Place, r: &Recipe, head: Option<&str>, tier: Option<&str>) 
         None => "none".into(),
     };
     let header = format!(
-        "<!-- VOICE BUNDLE id {bundle_id}, generated {stamp}. tier {tier}; register {}; context {ctx_join}; \
+        "<!-- VOICE BUNDLE id {bundle_id}, generated {stamp}. tier {tier}; register {}{}; context {ctx_join}; \
 borrow {}; head {head_rel}. {} files, about {approx_lines} lines. Read this file whole{}. It stays loaded for the session: \
 read it again only after a compaction, when the register changes, or before the back half of a draft over about 2,500 words. \
 Derived cache under system/index/: never edit it; edit the files it names. -->\n<!-- {DENSITY_LINE} -->\n\n",
         r.register,
+        r.head_named.as_ref().map(|n| format!(" (head named {n})")).unwrap_or_default(),
         if r.borrow.is_empty() { "none".to_string() } else { r.borrow.join(", ") },
         present.len(),
         if approx_lines > READ_LIMIT {

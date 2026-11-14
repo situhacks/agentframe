@@ -4,7 +4,7 @@ The steering layer. Each pair shows the distance from generic prose to the opera
 
 Register and task context are separate axes:
 
-- `register`: `formal`, `informal`, or `both`;
+- `register`: the name of a file in `registers/`, or `both`;
 - `context`: the posture or output situation, such as `builder-pov`, `market-signal`, `slide`, `cover`, `email`, or `long-form`.
 
 Files may be grouped by register (`informal.md`) or context (`slide-and-cover.md`). Load only files matching the selected recipe and task context, plus any cross-cutting file marked always-load.
@@ -16,7 +16,7 @@ Format:
 BASE: <generic version>
 YOU: <same payload, in your voice>
 MOVE: <what changed and why; cite the source delta>
-register: formal | informal | both
+register: <the name of a file in registers/> | both
 context: <task context>
 ```
 

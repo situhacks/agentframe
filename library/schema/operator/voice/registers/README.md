@@ -1,6 +1,6 @@
 # Register overlays — one file per reusable voice register
 
-A register overlay scopes the shared voice core to a reusable level of formality, warmth, candour, or conversational distance. It is channel-independent: the same formal register may serve a LinkedIn post, executive deck, email, or memo.
+A register overlay scopes the shared voice core to a reusable level of formality, warmth, candour, or conversational distance. It is channel-independent: the same register may serve a LinkedIn post, executive deck, email, or memo.
 
 `identity.md` names the registers. Each gets one overlay here and one corpus folder in `../corpus/`. Channel formatting, audience defaults, link placement, title structures, and platform mechanics belong in `workspace/life/channels/{channel}/profile.md` or a deliverable template.
 

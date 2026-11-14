@@ -6,7 +6,7 @@ These illustrate the FORMAT. Replace with pairs mined from your own corpus and a
 BASE: In today's rapidly evolving landscape, organizations are increasingly converging on a unified strategy.
 YOU: [Your flat, concrete version of the same idea — how you'd actually open.]
 MOVE: Cut the throat-clearing and abstraction. State the thing in one sentence, trust the reader. [Adapt the move to your voice.]
-register: formal
+register: informal
 context: long-form
 
 ### closer-claim — land on a fact, not a sentiment

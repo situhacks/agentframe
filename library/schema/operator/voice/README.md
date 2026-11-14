@@ -17,12 +17,14 @@ Canonical recipe:
 
 ```yaml
 voice:
-  base_register: formal        # formal | informal | chat (chat is optional)
-  borrow_from: []              # optional: [informal] or [formal]
+  base_register: informal      # the name of a file in registers/, e.g. informal | chat
+  borrow_from: []              # optional: [chat], or any other register that has a file
   direction: ""               # required when borrowing; name the traits or sections
 ```
 
 Use an explicit operator instruction or file recipe first. Otherwise infer the base from audience, risk, purpose, and desired relationship to the reader, then state the choice. Do not infer it from LinkedIn, Substack, email, slides, or any other channel.
+
+A voice has one or more registers, each a file in `registers/` (`informal` and `chat` are the usual two; a `formal` register is optional); `af voice bundle` accepts exactly the registers that have a file. A head that names a register with no file loads the default register (`informal` when it exists, else the first by name) and says so.
 
 A blend always has one base. Load the base as the imitation anchor, then borrow only named traits from the other register. Do not use percentages. This keeps the result coherent and avoids loading two full corpora by default.
 
@@ -31,7 +33,7 @@ A blend always has one base. Load the base as the imitation anchor, then borrow 
 After resolving the recipe, `af voice bundle <project> <deliverable>` (or `--register {base} --context {task}`) writes the load below to one file under `system/index/voice/`; read it whole. Three tiers: `--tier quick` for a text, a comment or a one-paragraph reply; `--tier standard` for an email, a short write or a copyedit; `--tier full` for a first draft or anything over a page. With no `--tier`, the context decides. `quick` holds the anti-patterns, identity, the register and a short excerpt of one corpus piece (about 400 words); `standard` holds the procedure, identity, profile, anti-patterns, the register and one whole exemplar, no pairs; `full` is the whole list. The default tiers: message or chat alone gives `quick`; email, short-form or a mix of those gives `standard`; any long-form, builder-pov, market-signal, slide or cover context gives `full`; with no context, `chat` gives `quick` and every other register `standard`. `--tier core` is the old name of `standard`. `anti-patterns.md` is in every tier. The bundle stays loaded for the session: read it again only after a compaction, when the register changes, or before the back half of a long draft. By hand, load:
 
 - `identity.md`, `voice-profile.md`, and `anti-patterns.md`;
-- `registers/{base_register}.md`; `registers/chat.md` is an optional register for how the operator texts friends, with no corpus or pair file needed;
+- `registers/{base_register}.md`; `registers/chat.md` is a register for how the operator texts friends, with no corpus or pair file needed;
 - every full piece in `corpus/{base_register}/`;
 - pair files matching the register and the task context, plus any cross-cutting file marked always-load;
 - for a blend, the secondary register overlay plus the smallest secondary evidence set that demonstrates the named borrow: relevant pairs and usually one or two corpus pieces, not the whole secondary corpus;

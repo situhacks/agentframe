@@ -47,7 +47,7 @@ ALLOWED_IMPORTS = {
     "GetCursorPos", "SetCursorPos", "WindowFromPoint", "GetAncestor", "SetWindowPos", "ShowWindow",
     "GetForegroundWindow", "SHQueryUserNotificationState",
     "GetWindowLongW", "GetWindowPlacement", "SetWindowPlacement", "GetWindow",
-    "IsWindowVisible", "GetWindowThreadProcessId", "DwmGetWindowAttribute",
+    "IsWindowVisible", "DwmGetWindowAttribute",
 }
 # Words that would mean synthetic input, clipboard use or taking the foreground. SetWindowVisualState is the
 # Window pattern's restore: it takes the foreground and resets the idle time (measured), so it is never used.
@@ -1725,12 +1725,13 @@ class ArchiveBehaviourTests(unittest.TestCase):
         "  }\n"
         "  public static double IdleMs() { return Idle; }\n"
         "  public static bool IsWindow(IntPtr h) { return Find(h.ToInt64()) != null || ExtraAlive.Contains(h.ToInt64()); }\n"
-        "  public static bool IsTopmost(IntPtr h) { Win w = Find(h.ToInt64()); if (w != null) return w.Topmost; return TopWins.Contains(h.ToInt64()); }\n"
+        "  public static bool IsTopmost(IntPtr h) { if (FlipId != 0 && h.ToInt64() == FlipId) { flipCalls++; if (flipCalls > FlipAfter) return true; } Win w = Find(h.ToInt64()); if (w != null) return w.Topmost; return TopWins.Contains(h.ToInt64()); }\n"
         "  public static IntPtr Prev(IntPtr h) { if (Seq.Count == 0 || Seq[Seq.Count - 1] != \"above\") Ev(\"above\"); Win w = Find(h.ToInt64()); if (w == null) return IntPtr.Zero; int i = Z.IndexOf(w); if (i <= 0) return IntPtr.Zero; return new IntPtr(Z[i - 1].Id); }\n"
         "  public static IntPtr Owner(IntPtr h) { Win w = Find(h.ToInt64()); if (w == null) return IntPtr.Zero; return new IntPtr(w.Owner); }\n"
         "  public static bool IsVisible(IntPtr h) { Win w = Find(h.ToInt64()); return w != null && w.Visible; }\n"
         "  public static bool IsCloaked(IntPtr h) { Win w = Find(h.ToInt64()); return w != null && w.Cloaked; }\n"
-        "  public static uint ProcessOf(IntPtr h) { Win w = Find(h.ToInt64()); if (w == null) return 0; return w.Pid; }\n"
+        "  public static void SetCovers(long id, bool c) { Win w = Find(id); if (w != null) w.Covers = c; }\n"
+        "  public static long FlipId = 0; public static int FlipAfter = 0; static int flipCalls = 0;\n"
         "  public static IntPtr Foreground() { return Fg; }\n"
         "  public static int[] PointerPos() { if (ThrowPointer) throw new Exception(\"the pointer could not be read\"); if (FailReads > 0) { FailReads--; return null; } return new int[] { Ptr[0], Ptr[1] }; }\n"
         "  public static bool MovePointer(int x, int y) { Calls.Add(\"move \" + x + \",\" + y); Ptr = new int[] { x, y }; Ev(\"move\"); return true; }\n"
@@ -1757,7 +1758,7 @@ class ArchiveBehaviourTests(unittest.TestCase):
         "  public static void Reset() {\n"
         "    Idle = 999999; Calls.Clear(); Seq.Clear(); OnStep = null; Ptr = new int[] { 10, 20 }; Fg = new IntPtr(9); Quns = 5;\n"
         "    BehindTopmost = false; Stubborn = false; RaiseFails = false; PlaceFails = false; FailReads = 0; ThrowPointer = false;\n"
-        "    Z.Clear(); Put(0, 5, true, false, false, 0, 100, true); TopWins.Clear(); ExtraAlive.Clear(); ExtraAlive.Add(9);\n"
+        "    FlipId = 0; FlipAfter = 0; flipCalls = 0; Z.Clear(); Put(0, 5, true, false, false, 0, 100, true); TopWins.Clear(); ExtraAlive.Clear(); ExtraAlive.Add(9);\n"
         "  }\n"
         "}\n"
         "'@\n"
@@ -1896,7 +1897,7 @@ class ArchiveBehaviourTests(unittest.TestCase):
         got = self.run_scenarios(
             "function Walk { $r = Find-RealWindowAbove; '{0}|{1}|{2}' -f $r.Hwnd.ToInt64(), $r.Top, $r.Known }\n"
             "[PanelNative]::Reset(); [PanelNative]::Put(0, 7, $true, $false, $false, 0, 300, $true); [PanelNative]::Put(1, 16, $true, $false, $false, 32, 300, $false)\n"
-            "[PanelNative]::Put(2, 17, $true, $false, $false, 0, 100, $false); [PanelNative]::Put(3, 15, $true, $false, $true, 0, 300, $false); [PanelNative]::Put(4, 32, $false, $false, $false, 5, 100, $false)\n"
+            "[PanelNative]::Put(3, 15, $true, $false, $true, 0, 300, $false); [PanelNative]::Put(4, 32, $false, $false, $false, 5, 100, $false)\n"
             "$o.mixed = Walk\n"
             "[PanelNative]::Reset(); [PanelNative]::Put(0, 7, $true, $true, $false, 0, 300, $true); [PanelNative]::Put(1, 21, $false, $true, $false, 0, 300, $false)\n"
             "$o.topmost_first = Walk\n"
@@ -1907,7 +1908,7 @@ class ArchiveBehaviourTests(unittest.TestCase):
             "[PanelNative]::Reset(); for ($i = 0; $i -lt 398; $i++) { [PanelNative]::Put($i, 1000 + $i, $false, $false, $false, 0, 300, $false) }; [PanelNative]::Put(0, 7, $true, $false, $false, 0, 300, $true)\n"
             "$o.just_in_reach = Walk\n"
         )
-        self.assertEqual(got["mixed"], "7|False|True", "16 is owned (by 32, owned by VS Code), 17 is VS Code's process, 15 is cloaked, 32 is hidden")
+        self.assertEqual(got["mixed"], "7|False|True", "16 is owned (by 32, owned by VS Code), 15 is cloaked, 32 is hidden")
         self.assertEqual(got["topmost_first"], "7|True|True", "a real visible always-on-top window is recorded as such")
         self.assertEqual(got["none"], "0|False|True", "nothing real above: VS Code is the top real window")
         self.assertEqual(got["too_far"], "0|False|False", "the walk is bounded and says it does not know")
@@ -1927,6 +1928,22 @@ class ArchiveBehaviourTests(unittest.TestCase):
         got = self.run_scenarios("$o.cloaked = Scenario { Cover; [PanelNative]::Put(1, 15, $true, $false, $true, 0, 300, $false) }\n")["cloaked"]
         self.assertEqual(got["calls"], "raise move 250,220 move 10,20 notopmost behind7", "behind 7, not behind the cloaked window 15 that is directly above VS Code")
         self.assertEqual(got["root"], 7)
+
+    def test_his_other_vs_code_window_directly_above_is_the_record_and_vs_code_goes_back_behind_it(self):
+        """Fourth review: all windows of one VS Code instance share a process, so skipping the process also skipped his
+        second project window, and VS Code went back above it."""
+        got = self.run_scenarios(
+            self.LAYOUT
+            + "$o.other_project = Scenario { Cover; [PanelNative]::Put(1, 17, $true, $false, $false, 0, 100, $true) }\n"
+            "$o.live_layout_still_skipped = Scenario { Real }\n"
+            "$o.walk = Scenario { Cover; [PanelNative]::Put(1, 17, $true, $false, $false, 0, 100, $true); $r = Find-RealWindowAbove; $script:Seen = $r.Hwnd.ToInt64() }\n"
+        )
+        other = got["other_project"]
+        self.assertEqual(other["calls"], "raise move 250,220 move 10,20 notopmost behind17", "behind his other VS Code window, a visible unowned window of VS Code's own process")
+        words = other["zorder"].split()
+        self.assertEqual(words, ["7", "17", "5"])
+        # The hidden windows of the live layout (the text-services window is of the Code process, but invisible) are still skipped.
+        self.assertEqual(got["live_layout_still_skipped"]["calls"], "raise move 250,220 move 10,20 notopmost behind7")
 
     def test_when_the_recorded_window_is_gone_vs_code_goes_behind_a_normal_foreground_window_else_to_the_back(self):
         got = self.run_scenarios(
@@ -1965,12 +1982,42 @@ class ArchiveBehaviourTests(unittest.TestCase):
         self.assertEqual(refused["calls"], "raise move 250,220 move 10,20 notopmost behind7 behind7", "the placement did nothing, so it is tried once more behind the covering window")
         self.assertEqual(refused["root"], 5)
         self.assertEqual([n for n in refused["notes"] if "still in front" in n], ["VS Code is still in front of the window that covered the row"])
-        # An always-on-top cover is never a place to go behind: the fallback goes to the foreground window, then the back.
+        # An always-on-top cover is never a place to go behind, and the check is skipped for it (VS Code cannot be above it).
         top = got["topmost_cover_fg_topmost"]
-        self.assertEqual(top["calls"], "raise move 250,220 move 10,20 notopmost notopmost bottom")
-        self.assertEqual(top["root"], 7)
+        self.assertEqual(top["calls"], "raise move 250,220 move 10,20 notopmost notopmost", "an always-on-top cover is never checked against and VS Code is never sent to the back")
+        self.assertTrue(any("always-on-top band" in n for n in top["notes"]), top["notes"])
         # The covering window is gone: nothing to check against.
         self.assertEqual(got["cover_gone"]["calls"], "raise move 250,220 move 10,20 notopmost behind9")
+
+    def test_the_check_after_the_undo_never_makes_things_worse(self):
+        """Fourth review: an always-on-top toast covers the row while he is away with VS Code in front; the toast slides
+        away but is still visible, the check found VS Code at the row's centre, could place it behind neither the toast
+        (topmost) nor his foreground window (VS Code itself), and sent VS Code to the bottom."""
+        got = self.run_scenarios(
+            "function Stops7 { Hook { param($n) if ($n -eq 'raise') { [PanelNative]::SetCovers(7, $false) } } }\n"
+            # (a) and (c): the toast, his foreground window is VS Code
+            "$o.toast = Scenario { [PanelNative]::Put(0, 7, $true, $true, $false, 0, 300, $true); [PanelNative]::Fg = [IntPtr]5; Stops7 }\n"
+            # (a) alone: the toast, another foreground window
+            "$o.toast_other_fg = Scenario { [PanelNative]::Put(0, 7, $true, $true, $false, 0, 300, $true); Stops7 }\n"
+            # (c) alone: a normal cover that stopped covering, VS Code is the foreground window
+            "$o.vscode_fg = Scenario { Cover; [PanelNative]::Fg = [IntPtr]5; Stops7 }\n"
+            # the check still runs for a normal cover and another foreground window, and fixes the order
+            "$o.normal = Scenario { Cover; Stops7 }\n"
+            # (b): neither the cover nor his foreground window can be placed behind: a note, never the bottom
+            "$o.neither = Scenario { Cover; [PanelNative]::FlipId = 7; [PanelNative]::FlipAfter = 3; [void][PanelNative]::TopWins.Add(9); Hook { param($n) if ($n -eq 'behind') { [PanelNative]::SetCovers(7, $false) } } }\n"
+        )
+        for case in ("toast", "toast_other_fg"):
+            c = got[case]
+            self.assertEqual(c["calls"], "raise move 250,220 move 10,20 notopmost", f"{case}: nothing more after the undo, and above all no bottom")
+            self.assertEqual(c["notes"], [], case)
+            self.assertNotIn("bottom", c["calls"])
+        self.assertEqual(got["toast"]["zorder"], "7 5", "VS Code stays where clearing topmost put it, not at the back")
+        self.assertEqual(got["vscode_fg"]["calls"], "raise move 250,220 move 10,20 notopmost behind7", "VS Code is his foreground window: the check does nothing at all")
+        self.assertEqual(got["vscode_fg"]["notes"], [])
+        self.assertEqual(got["normal"]["calls"], "raise move 250,220 move 10,20 notopmost behind7 behind7", "a normal cover that no longer shows at the point: the check still runs and places VS Code behind it once more")
+        neither = got["neither"]
+        self.assertEqual(neither["calls"], "raise move 250,220 move 10,20 notopmost behind7", "no bottom placement")
+        self.assertEqual([n for n in neither["notes"] if "still in front" in n], ["VS Code is still in front of the window that covered the row"])
 
     def test_each_step_of_the_finally_is_tried_even_when_the_one_before_throws(self):
         """Third review: one throw in the pointer step skipped the undo of the raise."""
@@ -2328,10 +2375,11 @@ class ArchiveBehaviourTests(unittest.TestCase):
         self.assertEqual(len(got["notes"]), 1, got["notes"])
         self.assertTrue(got["notes"][0].startswith("could not put his previous chat back: "), got["notes"])
 
-    def test_the_walk_for_the_window_above_has_the_four_skip_rules_and_a_bound(self):
+    def test_the_walk_for_the_window_above_has_the_three_skip_rules_and_a_bound(self):
         walk = function_text("Find-RealWindowAbove")
-        for part in ["IsVisible", "IsCloaked", "ProcessOf($script:Hwnd)", "Test-OwnedBy $w $script:Hwnd", "$i -lt 400", "Prev($w)"]:
+        for part in ["IsVisible", "IsCloaked", "Test-OwnedBy $w $script:Hwnd", "$i -lt 400", "Prev($w)"]:
             self.assertIn(part, walk)
+        self.assertNotIn("ProcessOf", walk, "a window of VS Code's own process is not skipped: it can be his other project window")
         self.assertIn("$i -lt 20", function_text("Test-OwnedBy"), "the owner chain is bounded too")
         csharp = csharp_block(source())
         self.assertIn("GetWindow(h, 3)", csharp, "GW_HWNDPREV")

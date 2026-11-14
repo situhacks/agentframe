@@ -182,12 +182,10 @@ public static class PanelNative {
     // The window directly above another one in the z-order (0 when it is at the very top): GW_HWNDPREV.
     [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr h, uint cmd);
     [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
-    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
     [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr h, int attr, out int value, int size);
     public static IntPtr Prev(IntPtr h) { return GetWindow(h, 3); }   // GW_HWNDPREV: the window directly above
     public static IntPtr Owner(IntPtr h) { return GetWindow(h, 4); }  // GW_OWNER
     public static bool IsVisible(IntPtr h) { return IsWindowVisible(h); }
-    public static uint ProcessOf(IntPtr h) { uint p = 0; GetWindowThreadProcessId(h, out p); return p; }
     // DWMWA_CLOAKED = 14: non-zero when the shell hides the window (another virtual desktop, a suspended app).
     // A failed call counts as not cloaked.
     public static bool IsCloaked(IntPtr h) { int v = 0; if (DwmGetWindowAttribute(h, 14, out v, 4) != 0) return false; return v != 0; }
@@ -1821,19 +1819,18 @@ function Test-OwnedBy($Window, $Owner) {
 }
 
 # The first REAL window above VS Code in the z-order: walk upward with GW_HWNDPREV (at most 400 steps) and skip a window
-# that is not visible, that is cloaked, that belongs to VS Code's own process, or whose owner chain reaches the VS Code
-# window. (Windows keeps a window's owned windows directly above it, so a bare 'window above' is usually VS Code's own
-# hidden window, which rises and drops with it.) Known is false when the walk ran out of steps; Hwnd is zero when
-# nothing real is above (VS Code is the top real window); Top says whether that window is always-on-top.
+# that is not visible, that is cloaked, or whose owner chain reaches the VS Code window. (Windows keeps a window's owned
+# windows directly above it, so a bare 'window above' is usually VS Code's own hidden window, which rises and drops with
+# it. A visible window of VS Code's own process is not skipped: it can be his other project window, and VS Code goes back
+# behind it.) Known is false when the walk ran out of steps; Hwnd is zero when nothing real is above (VS Code is the top
+# real window); Top says whether that window is always-on-top.
 function Find-RealWindowAbove {
-    $mine = [PanelNative]::ProcessOf($script:Hwnd)
     $w = $script:Hwnd
     for ($i = 0; $i -lt 400; $i++) {
         $w = [PanelNative]::Prev($w)
         if ($w -eq [IntPtr]::Zero) { return [pscustomobject]@{ Hwnd = [IntPtr]::Zero; Top = $false; Known = $true } }
         if (-not [PanelNative]::IsVisible($w)) { continue }
         if ([PanelNative]::IsCloaked($w)) { continue }
-        if ($mine -ne 0 -and [PanelNative]::ProcessOf($w) -eq $mine) { continue }
         if (Test-OwnedBy $w $script:Hwnd) { continue }
         return [pscustomobject]@{ Hwnd = $w; Top = [PanelNative]::IsTopmost($w); Known = $true }
     }
@@ -1845,10 +1842,11 @@ function Find-RealWindowAbove {
 # exists and is not always-on-top, directly behind it (where VS Code was). When it was always-on-top, or there was none,
 # VS Code was the top real window and the first step has just put it there. When it is gone, or was not found: directly
 # behind his foreground window if that is not VS Code and not always-on-top, else at the back, with a note. Never behind an
-# always-on-top window. Then the model is checked against the screen: when the window that covered the row still exists and
-# is visible, the row's centre must no longer belong to VS Code; if it does, VS Code is placed once more (behind that
-# window, else behind his foreground window, else at the back) and, if it is still in front, a note says so. At the end
-# the always-on-top bit is read and cleared once more if it is set.
+# always-on-top window. Then the model is checked against the screen: when the window that covered the row still exists, is
+# visible and is not always-on-top (VS Code cannot be above one: it simply moved), and VS Code is not his foreground window,
+# the row's centre must no longer belong to VS Code; if it does, VS Code is placed once more behind that window, else behind
+# his foreground window (never at the back: the foreground window would end up behind everything), and if it is still in
+# front a note says so. At the end the always-on-top bit is read and cleared once more if it is set.
 function Undo-Raise($Front) {
     if (-not $Front.Raised) { return }
     [void][PanelNative]::ClearTopmost($script:Hwnd)
@@ -1864,9 +1862,9 @@ function Undo-Raise($Front) {
     Confirm-VsCodeNotTopmost
     $cover = $Front.Cover
     $spot = $Front.Spot
-    if ($null -ne $spot -and $cover -ne [IntPtr]::Zero -and $cover -ne $script:Hwnd -and [PanelNative]::IsWindow($cover) -and [PanelNative]::IsVisible($cover)) {
+    if ($null -ne $spot -and $cover -ne [IntPtr]::Zero -and $cover -ne $script:Hwnd -and [PanelNative]::IsWindow($cover) -and [PanelNative]::IsVisible($cover) -and -not [PanelNative]::IsTopmost($cover) -and [PanelNative]::Foreground() -ne $script:Hwnd) {
         if ([PanelNative]::RootAt($spot.X, $spot.Y) -eq $script:Hwnd) {
-            if (-not (Set-VsCodeBehind $cover) -and -not (Set-VsCodeBehind ([PanelNative]::Foreground()))) { [void][PanelNative]::PlaceBottom($script:Hwnd) }
+            [void]((Set-VsCodeBehind $cover) -or (Set-VsCodeBehind ([PanelNative]::Foreground())))
             Confirm-VsCodeNotTopmost
             if ([PanelNative]::RootAt($spot.X, $spot.Y) -eq $script:Hwnd) { Add-Note 'VS Code is still in front of the window that covered the row' }
         }

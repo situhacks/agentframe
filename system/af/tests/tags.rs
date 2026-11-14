@@ -150,7 +150,7 @@ fn without_a_registry_the_verbs_name_init() {
     let err = fx.refused(&["tag", "match", "x"]);
     assert!(err.contains("workspace/life/tags.yaml does not exist; af tag init"), "{err}");
     let out = fx.ok(&["tag", "init"]);
-    assert!(out.contains("with 11 facets and no tags"), "{out}");
+    assert!(out.contains("with 12 facets and no tags"), "{out}");
     assert!(fx.isfile("workspace/life/tags.yaml") && fx.isfile("workspace/life/tags.md") && fx.isfile("workspace/life/tags-log.md"));
     assert!(fx.refused(&["tag", "init"]).contains("already exists"));
     assert!(fx.ok(&["tag", "match", "x"]).contains("none for 'x'"));
@@ -458,4 +458,477 @@ fn merge_stays_inside_one_facet() {
     assert!(err.contains("'noodles' is in facet 'cuisine' and 'quiet' in facet 'vibe'; a merge stays inside one facet"), "{err}");
     assert_eq!(registry(&fx).get("noodles").unwrap().status, "active");
     assert_eq!(tags_of(&fx, "workspace/life/places/noodle-house.md"), vec!["noodles", "quiet", "price-low"]);
+}
+
+// ------------------------------------------------------------------ topic tags: knowledge pages and sources
+
+/// The vault plus the `topic` facet (through the verb under test) and four active topics.
+fn topic_vault() -> Fx {
+    let fx = vault();
+    fx.ok(&["tag", "facet", "add", "topic", "--applies", "context"]);
+    for (slug, scope) in [("leases", "Rentals and leases"), ("health", "Health care and records"), ("travel", "Trips and bookings"), ("money", "Spending and bills")] {
+        fx.ok(&["tag", "propose", slug, "--facet", "topic", "--scope", scope]);
+        fx.ok(&["tag", "promote", slug]);
+    }
+    fx
+}
+
+const FM: &str = "id: src-2026-11-01-01\ntype: note\ndate: 2026-11-01\nverbatim: true\n";
+
+fn knowledge_page(fx: &Fx, slug: &str, tags: Option<&str>) -> String {
+    let rel = format!("workspace/life/knowledge/{slug}.md");
+    let head = tags.map(|t| format!("---\nprivate: true\ntags: [{t}]\n---\n")).unwrap_or_default();
+    fx.write(&rel, &format!("{head}# {slug}\n\n## Current\n\n- A fact (as of 2026-11-01) [src-2026-11-01-01]\n\n## Timeline\n\n- 2026-11-01 · filed [src-2026-11-01-01]\n"));
+    rel
+}
+
+fn source_file(fx: &Fx, name: &str, tags: Option<&str>) -> String {
+    let rel = format!("workspace/life/sources/{name}.md");
+    let line = tags.map(|t| format!("tags: [{t}]\n")).unwrap_or_default();
+    fx.write(&rel, &format!("---\n{FM}{line}---\nthe body, kept as it came\n"));
+    rel
+}
+
+fn bytes(fx: &Fx, rel: &str) -> Vec<u8> {
+    std::fs::read(fx.path(rel)).unwrap()
+}
+
+#[test]
+fn the_starter_registry_has_a_topic_facet_for_knowledge_pages_and_sources() {
+    let fx = Fx::new();
+    fx.ok(&["tag", "init"]);
+    let f = registry(&fx).facet("topic").cloned().unwrap();
+    assert_eq!((f.applies.as_str(), f.single), ("context", false));
+    assert!(fx.read("workspace/life/tags.md").replace("\r\n", "\n").contains("## Knowledge and sources\n\n- **topic**: \n"));
+}
+
+#[test]
+fn facet_add_declares_a_facet_logs_it_and_renders_it_and_refuses_bad_input() {
+    let fx = vault();
+    let out = ok(&fx, &["tag", "facet", "add", "topic", "--applies", "context"]);
+    assert_eq!(out, "af tag facet add: topic · context · multi\n");
+    ok(&fx, &["tag", "facet", "add", "depth", "--applies", "knowledge", "--single"]);
+    ok(&fx, &["tag", "facet", "add", "origin", "--applies", "sources"]);
+    let reg = registry(&fx);
+    let got: Vec<(String, String, bool)> = reg.facets.iter().skip(4).map(|f| (f.name.clone(), f.applies.clone(), f.single)).collect();
+    assert_eq!(
+        got,
+        vec![("topic".into(), "context".into(), false), ("depth".into(), "knowledge".into(), true), ("origin".into(), "sources".into(), false)]
+    );
+    // the facets that were there are untouched
+    assert_eq!(reg.tags.len(), 9);
+    let log = fx.read("workspace/life/tags-log.md");
+    assert!(log.contains(&format!("- {} · facet · topic · context · multi", today())), "{log}");
+    assert!(log.contains(&format!("- {} · facet · depth · knowledge · single", today())), "{log}");
+    let view = fx.read("workspace/life/tags.md").replace("\r\n", "\n");
+    assert!(view.contains("## Knowledge and sources\n\n- **topic**: \n- **depth** (knowledge pages only) (one per page): \n- **origin** (sources only): \n"), "{view}");
+    assert!(view.contains("## Places\n") && view.contains("## People\n"), "{view}");
+    assert!(view.contains("one to 3 on a knowledge page or source"), "{view}");
+    // a registry with no such facet has no such section
+    let plain = vault();
+    assert!(!plain.read("workspace/life/tags.md").contains("Knowledge and sources"));
+    plain.ok(&["tag", "render"]);
+    assert!(!plain.read("workspace/life/tags.md").contains("Knowledge and sources"));
+
+    assert!(fx.refused(&["tag", "facet", "add", "topic", "--applies", "context"]).contains("facet 'topic' already exists (context, multi)"));
+    assert!(fx.refused(&["tag", "facet", "add", "vibe", "--applies", "sources"]).contains("facet 'vibe' already exists (places, multi)"));
+    assert!(fx.refused(&["tag", "facet", "add", "x", "--applies", "pages"]).contains("--applies 'pages' is not one of places, people, both, knowledge, sources, context"));
+    assert!(fx.refused(&["tag", "facet", "add", "Bad_Name", "--applies", "context"]).contains("not a facet name"));
+    assert_eq!(registry(&fx).facets.len(), 7, "a refusal adds nothing");
+    let none = Fx::new();
+    assert!(none.refused(&["tag", "facet", "add", "topic", "--applies", "context"]).contains("af tag init"));
+}
+
+#[test]
+fn a_registry_naming_a_value_applies_does_not_know_is_a_refusal() {
+    let fx = vault();
+    fx.write("workspace/life/tags.yaml", &REGISTRY.replace("applies: people", "applies: everyone"));
+    let err = fx.refused(&["tag", "match", "x"]);
+    assert!(err.contains("applies 'everyone' is not one of places, people, both, knowledge, sources, context"), "{err}");
+}
+
+#[test]
+fn which_facets_apply_to_which_side() {
+    for (applies, sides) in [
+        ("places", ["places"].as_slice()),
+        ("people", &["people"]),
+        ("both", &["places", "people"]),
+        ("knowledge", &["knowledge"]),
+        ("sources", &["sources"]),
+        ("context", &["knowledge", "sources"]),
+    ] {
+        for side in ["places", "people", "knowledge", "sources"] {
+            assert_eq!(afcore::tags::facet_applies(applies, side), sides.contains(&side), "{applies} on {side}");
+        }
+    }
+}
+
+#[test]
+fn add_tags_a_knowledge_page_and_a_source_under_the_facet_sides_and_a_cap_of_three() {
+    let fx = topic_vault();
+    let page = knowledge_page(&fx, "housing", None);
+    let before = fx.read(&page);
+    assert!(!before.starts_with("---"));
+    let out = ok(&fx, &["tag", "add", &page, "leases", "Money"]);
+    assert!(out.starts_with(&format!("af tag add: {page} · +2 · tags: [leases, money]\n")), "{out}");
+    // a page that began at its heading gets a block of its own and keeps every byte below it
+    assert_eq!(fx.read(&page), format!("---\ntags: [leases, money]\n---\n{before}"));
+    assert_eq!(tags_of(&fx, &page), vec!["leases", "money"]);
+
+    let src = source_file(&fx, "note-2026-11-01-lease", None);
+    ok(&fx, &["tag", "add", &src, "leases"]);
+    assert_eq!(tags_of(&fx, &src), vec!["leases"]);
+    assert_eq!(fx.read(&src), format!("---\n{FM}tags: [leases]\n---\nthe body, kept as it came\n"));
+
+    ok(&fx, &["tag", "add", &page, "health"]);
+    assert_eq!(tags_of(&fx, &page), vec!["leases", "money", "health"]);
+}
+
+#[test]
+fn a_place_facet_never_lands_on_a_knowledge_page_or_source_nor_a_topic_on_a_place() {
+    let fx = topic_vault();
+    let page = knowledge_page(&fx, "housing", None);
+    let src = source_file(&fx, "note-2026-11-01-lease", None);
+    for rel in [&page, &src] {
+        let err = fx.refused(&["tag", "add", rel, "noodles"]);
+        assert!(err.contains("tag 'noodles' is in facet 'cuisine', a places facet; this is a "), "{err}");
+        let err = fx.refused(&["tag", "add", rel, "boardgames"]);
+        assert!(err.contains("a people facet"), "{err}");
+    }
+    let place_err = fx.refused(&["tag", "add", "workspace/life/places/second-bowl.md", "leases"]);
+    assert!(place_err.contains("tag 'leases' is in facet 'topic', a context facet; this is a places page"), "{place_err}");
+    let person_err = fx.refused(&["tag", "add", "workspace/life/people/sam-example.md", "leases"]);
+    assert!(person_err.contains("a context facet; this is a people page"), "{person_err}");
+    // a knowledge-only facet reaches the page and not the source, a sources-only facet the reverse
+    fx.ok(&["tag", "facet", "add", "depth", "--applies", "knowledge", "--single"]);
+    fx.ok(&["tag", "facet", "add", "origin", "--applies", "sources"]);
+    fx.ok(&["tag", "propose", "overview", "--facet", "depth"]);
+    fx.ok(&["tag", "propose", "email", "--facet", "origin"]);
+    fx.ok(&["tag", "add", &page, "overview"]);
+    assert!(fx.refused(&["tag", "add", &src, "overview"]).contains("a knowledge facet; this is a sources page"));
+    fx.ok(&["tag", "add", &src, "email"]);
+    assert!(fx.refused(&["tag", "add", &page, "email"]).contains("a sources facet; this is a knowledge page"));
+    // a refusal wrote nothing
+    assert_eq!(tags_of(&fx, &page), vec!["overview"]);
+    assert_eq!(tags_of(&fx, &src), vec!["email"]);
+}
+
+#[test]
+fn the_cap_on_a_knowledge_page_or_source_is_three_and_a_places_page_keeps_eight() {
+    let fx = topic_vault();
+    fx.ok(&["tag", "propose", "extra", "--facet", "topic"]);
+    let page = knowledge_page(&fx, "housing", Some("leases, health"));
+    let src = source_file(&fx, "note-2026-11-01-lease", Some("leases, health, travel"));
+    let err = fx.refused(&["tag", "add", &page, "travel", "money"]);
+    assert!(err.contains(&format!("{page} would carry 4 tags, over the cap of 3")), "{err}");
+    assert_eq!(tags_of(&fx, &page), vec!["leases", "health"], "a refusal writes nothing");
+    let err = fx.refused(&["tag", "add", &src, "money"]);
+    assert!(err.contains("would carry 4 tags, over the cap of 3"), "{err}");
+    ok(&fx, &["tag", "add", &page, "travel"]);
+    assert_eq!(tags_of(&fx, &page), vec!["leases", "health", "travel"]);
+    // adding what is already there is no change and no refusal
+    ok(&fx, &["tag", "add", &src, "leases"]);
+    // the place cap is still eight
+    for i in 0..4 {
+        fx.ok(&["tag", "propose", &format!("t{i}"), "--facet", "vibe"]);
+    }
+    ok(&fx, &["tag", "add", "workspace/life/places/second-bowl.md", "t0", "t1", "t2", "t3", "quiet", "pastry"]);
+    assert_eq!(tags_of(&fx, "workspace/life/places/second-bowl.md").len(), 8);
+}
+
+#[test]
+fn a_source_outside_the_scan_is_refused_with_the_reason() {
+    let fx = topic_vault();
+    fx.write("workspace/life/sources/INDEX.md", "# Source Index\n");
+    fx.write("workspace/life/sources/inbox/drop.md", &format!("---\n{FM}---\nx\n"));
+    fx.write("workspace/life/sources/research/plain.md", "no frontmatter\n");
+    assert!(fx.refused(&["tag", "add", "workspace/life/sources/INDEX.md", "leases"]).contains("is not a page under"));
+    assert!(fx.refused(&["tag", "add", "workspace/life/sources/inbox/drop.md", "leases"]).contains("sources/inbox/, a staging folder"));
+    let err = fx.refused(&["tag", "add", "workspace/life/sources/research/plain.md", "leases"]);
+    assert!(err.contains("has no frontmatter block, so it carries no tags"), "{err}");
+    assert_eq!(fx.read("workspace/life/sources/research/plain.md"), "no frontmatter\n");
+    // the scan counts neither: stats sees no source at all
+    assert!(ok(&fx, &["tag", "stats"]).contains("  sources with a topic: 0/0\n"));
+}
+
+/// The rule for a filed source: one field of the frontmatter may change and every other byte stays.
+#[test]
+fn a_source_keeps_every_byte_but_its_tags_field_whatever_its_endings_body_or_list_style() {
+    let fx = topic_vault();
+    let cases: Vec<(&str, Vec<u8>, Vec<u8>)> = vec![
+        ("lf", b"---\nid: a\ntype: note\n---\nbody\n".to_vec(), b"---\nid: a\ntype: note\ntags: [leases]\n---\nbody\n".to_vec()),
+        ("crlf", b"---\r\nid: a\r\ntype: note\r\n---\r\nline one\r\n\r\nline two\r\n".to_vec(), b"---\r\nid: a\r\ntype: note\r\ntags: [leases]\r\n---\r\nline one\r\n\r\nline two\r\n".to_vec()),
+        ("trailing-blank-lines", b"---\nid: a\n---\nbody\n\n\n\n".to_vec(), b"---\nid: a\ntags: [leases]\n---\nbody\n\n\n\n".to_vec()),
+        (
+            "body-has-its-own-rule-lines",
+            b"---\nid: a\n---\nintro\n---\ntags: [not, mine]\n---\n\ntail\n".to_vec(),
+            b"---\nid: a\ntags: [leases]\n---\nintro\n---\ntags: [not, mine]\n---\n\ntail\n".to_vec(),
+        ),
+        ("no-final-newline", b"---\nid: a\n---\nbody with no end".to_vec(), b"---\nid: a\ntags: [leases]\n---\nbody with no end".to_vec()),
+        ("closing-rule-ends-the-file", b"---\nid: a\n---".to_vec(), b"---\nid: a\ntags: [leases]\n---".to_vec()),
+        ("empty-frontmatter", b"---\n---\nbody\n".to_vec(), b"---\ntags: [leases]\n---\nbody\n".to_vec()),
+        ("inline-list-in-the-middle", b"---\nid: a\ntags: [health]\ntype: note\n---\nbody\n".to_vec(), b"---\nid: a\ntags: [health, leases]\ntype: note\n---\nbody\n".to_vec()),
+        ("inline-list-double-quoted", b"---\nid: a\ntags: [\"health\"]\ntype: note\n---\nb\n".to_vec(), b"---\nid: a\ntags: [health, leases]\ntype: note\n---\nb\n".to_vec()),
+        ("block-list-indented", b"---\nid: a\ntags:\n  - health\n  - travel\ntype: note\n---\nbody\n".to_vec(), b"---\nid: a\ntags: [health, travel, leases]\ntype: note\n---\nbody\n".to_vec()),
+        ("block-list-flush", b"---\nid: a\ntags:\n- health\ntype: note\n---\nbody\n".to_vec(), b"---\nid: a\ntags: [health, leases]\ntype: note\n---\nbody\n".to_vec()),
+        ("block-list-last-in-crlf", b"---\r\nid: a\r\ntags:\r\n  - health\r\n---\r\nbody\r\n".to_vec(), b"---\r\nid: a\r\ntags: [health, leases]\r\n---\r\nbody\r\n".to_vec()),
+        ("flow-list-wrapped", b"---\nid: a\ntags: [health,\n  travel]\ntype: note\n---\nbody\n".to_vec(), b"---\nid: a\ntags: [health, travel, leases]\ntype: note\n---\nbody\n".to_vec()),
+        ("empty-tags-field", b"---\nid: a\ntags:\ntype: note\n---\nbody\n".to_vec(), b"---\nid: a\ntags: [leases]\ntype: note\n---\nbody\n".to_vec()),
+        ("bom", b"\xEF\xBB\xBF---\nid: a\n---\nbody\n".to_vec(), b"\xEF\xBB\xBF---\nid: a\ntags: [leases]\n---\nbody\n".to_vec()),
+        ("mixed-endings", b"---\nid: a\n---\r\nbody\r\nmore\n".to_vec(), b"---\nid: a\ntags: [leases]\n---\r\nbody\r\nmore\n".to_vec()),
+        ("closing-rule-with-trailing-space", b"---\nid: a\n--- \nbody\n".to_vec(), b"---\nid: a\ntags: [leases]\n--- \nbody\n".to_vec()),
+        ("non-ascii-body", "---\nid: a\n---\ncafé · 日本語 · \u{1F600}\n".as_bytes().to_vec(), "---\nid: a\ntags: [leases]\n---\ncafé · 日本語 · \u{1F600}\n".as_bytes().to_vec()),
+        ("a-tags-key-below-the-rule-is-body", b"---\nid: a\n---\ntags:\n  - body-list\n".to_vec(), b"---\nid: a\ntags: [leases]\n---\ntags:\n  - body-list\n".to_vec()),
+    ];
+    for (name, before, want) in cases {
+        let rel = format!("workspace/life/sources/note-2026-11-01-{name}.md");
+        fx.write_bytes(&rel, &before);
+        let out = fx.run(&["tag", "add", &rel, "leases"]);
+        assert_eq!(out.0, 0, "{name}: {}{}", out.1, out.2);
+        let got = bytes(&fx, &rel);
+        assert_eq!(String::from_utf8_lossy(&got), String::from_utf8_lossy(&want), "{name}");
+        assert_eq!(got, want, "{name}");
+        assert!(tags_of_raw(&got).contains(&"leases".to_string()), "{name}: the scan reads what was written");
+    }
+}
+
+fn tags_of_raw(raw: &[u8]) -> Vec<String> {
+    let text = String::from_utf8_lossy(raw).replace("\r\n", "\n");
+    let fm = afcore::fm::split_fm(text.trim_start_matches('\u{feff}'), "x").unwrap().0;
+    afcore::fm::fm_list_values(&fm, "tags")
+}
+
+#[test]
+fn a_tags_field_that_cannot_be_owned_and_a_file_that_is_not_text_are_refused_and_left_alone() {
+    let fx = topic_vault();
+    let stray = b"---\nid: a\ntags: [health]\n  - travel\n---\nbody\n".to_vec();
+    let rel = "workspace/life/sources/note-2026-11-01-stray.md";
+    fx.write_bytes(rel, &stray);
+    let err = fx.refused(&["tag", "add", rel, "leases"]);
+    assert!(err.contains("the tags: field is followed by an indented line that is not part of it"), "{err}");
+    assert_eq!(bytes(&fx, rel), stray);
+    assert!(!err.contains("body"), "no refusal prints a source's body: {err}");
+
+    let mut binary = b"---\nid: a\n---\nbody ".to_vec();
+    binary.extend_from_slice(&[0xFF, 0xFE, 0x80, b'\n']);
+    let rel = "workspace/life/sources/note-2026-11-01-binary.md";
+    fx.write_bytes(rel, &binary);
+    let err = fx.refused(&["tag", "add", rel, "leases"]);
+    assert!(err.contains("is not UTF-8 text; nothing was written"), "{err}");
+    assert_eq!(bytes(&fx, rel), binary);
+    // reading such a source never stops the weekly pass or the doctor
+    fx.ok(&["tag", "stats"]);
+    fx.ok(&["tag", "lint"]);
+}
+
+#[test]
+fn a_file_without_the_closing_rule_is_not_a_source_with_frontmatter() {
+    let fx = topic_vault();
+    let rel = "workspace/life/sources/note-2026-11-01-open.md";
+    fx.write(rel, "---\nid: a\nnever closed\nbody\n");
+    assert!(fx.refused(&["tag", "add", rel, "leases"]).contains("has no frontmatter block, so it carries no tags"));
+    assert_eq!(fx.read(rel), "---\nid: a\nnever closed\nbody\n");
+}
+
+#[test]
+fn a_knowledge_page_written_with_crlf_and_no_frontmatter_gets_a_crlf_block_and_keeps_the_rest() {
+    let fx = topic_vault();
+    let rel = "workspace/life/knowledge/crlf.md";
+    fx.write_bytes(rel, b"# Crlf\r\n\r\n## Current\r\n\r\n- fact\r\n");
+    ok(&fx, &["tag", "add", rel, "money"]);
+    assert_eq!(bytes(&fx, rel), b"---\r\ntags: [money]\r\n---\r\n# Crlf\r\n\r\n## Current\r\n\r\n- fact\r\n".to_vec());
+    let rel = "workspace/life/knowledge/bom.md";
+    fx.write_bytes(rel, b"\xEF\xBB\xBF# Bom\n");
+    ok(&fx, &["tag", "add", rel, "money"]);
+    assert_eq!(bytes(&fx, rel), b"\xEF\xBB\xBF---\ntags: [money]\n---\n# Bom\n".to_vec());
+    // a page that has frontmatter keeps its other fields, and a body line that looks like a rule
+    let rel = "workspace/life/knowledge/fm.md";
+    fx.write_bytes(rel, b"---\nprivate: true\n---\n# Fm\n---\nnot frontmatter\n");
+    ok(&fx, &["tag", "add", rel, "money"]);
+    assert_eq!(bytes(&fx, rel), b"---\nprivate: true\ntags: [money]\n---\n# Fm\n---\nnot frontmatter\n".to_vec());
+}
+
+#[test]
+fn merge_and_rename_rewrite_knowledge_pages_and_sources_under_the_same_byte_rule() {
+    let fx = topic_vault();
+    fx.ok(&["tag", "propose", "rentals", "--facet", "topic"]);
+    let page = "workspace/life/knowledge/housing.md";
+    fx.write_bytes(page, b"---\r\nprivate: true\r\ntags: [leases, health]\r\n---\r\n# Housing\r\n\r\n- fact\r\n");
+    let crlf_src = "workspace/life/sources/note-2026-11-01-crlf.md";
+    fx.write_bytes(crlf_src, b"---\r\nid: a\r\ntags:\r\n  - leases\r\n  - money\r\n---\r\nbody\r\n\r\n\r\n");
+    let lf_src = "workspace/life/sources/note-2026-11-01-lf.md";
+    fx.write_bytes(lf_src, b"---\nid: b\ntags: [travel]\n---\nbody\n---\nend");
+    let other = "workspace/life/sources/note-2026-11-01-other.md";
+    fx.write_bytes(other, b"---\nid: c\ntags: [money]\n---\nuntouched\n");
+    let untouched = bytes(&fx, other);
+
+    let out = ok(&fx, &["tag", "merge", "leases", "--into", "rentals"]);
+    assert!(out.starts_with("af tag merge: leases (tag) -> rentals · 2 page(s) rewritten\n"), "{out}");
+    assert_eq!(bytes(&fx, page), b"---\r\nprivate: true\r\ntags: [rentals, health]\r\n---\r\n# Housing\r\n\r\n- fact\r\n".to_vec());
+    assert_eq!(bytes(&fx, crlf_src), b"---\r\nid: a\r\ntags: [rentals, money]\r\n---\r\nbody\r\n\r\n\r\n".to_vec());
+    assert_eq!(bytes(&fx, other), untouched);
+
+    let out = ok(&fx, &["tag", "rename", "travel", "trips"]);
+    assert!(out.contains("1 page(s) rewritten"), "{out}");
+    assert_eq!(bytes(&fx, lf_src), b"---\nid: b\ntags: [trips]\n---\nbody\n---\nend".to_vec());
+    assert_eq!(bytes(&fx, other), untouched);
+    // the search side agrees
+    assert!(ok(&fx, &["tag", "list", "--facet", "topic"]).contains("rentals · proposed · 2 use(s)"));
+}
+
+#[test]
+fn a_merge_that_cannot_rewrite_one_page_writes_none() {
+    let fx = topic_vault();
+    fx.ok(&["tag", "propose", "rentals", "--facet", "topic"]);
+    let good = "workspace/life/knowledge/a-good.md";
+    let bad = "workspace/life/sources/note-2026-11-01-zbad.md";
+    fx.write_bytes(good, b"---\ntags: [leases]\n---\n# Good\n");
+    fx.write_bytes(bad, b"---\nid: a\ntags: [leases]\n  - odd\n---\nbody\n");
+    let (good_before, bad_before) = (bytes(&fx, good), bytes(&fx, bad));
+    let reg_before = fx.read("workspace/life/tags.yaml");
+    let err = fx.refused(&["tag", "merge", "leases", "--into", "rentals"]);
+    assert!(err.contains("the tags: field is followed by an indented line"), "{err}");
+    assert_eq!((bytes(&fx, good), bytes(&fx, bad)), (good_before, bad_before), "no page was written");
+    assert_eq!(fx.read("workspace/life/tags.yaml"), reg_before, "the registry did not move");
+}
+
+#[test]
+fn lint_asks_a_knowledge_page_for_a_topic_and_never_a_source() {
+    let fx = topic_vault();
+    knowledge_page(&fx, "bare", None);
+    knowledge_page(&fx, "no-topic-tag", Some(""));
+    knowledge_page(&fx, "topical", Some("leases"));
+    source_file(&fx, "note-2026-11-01-untagged", None);
+    source_file(&fx, "note-2026-11-01-tagged", Some("leases"));
+    let out = ok(&fx, &["tag", "lint"]);
+    assert!(out.contains("  under-tagged · workspace/life/knowledge/bare.md has no topic tag; read it and af tag add one to 3 (af tag match \"<phrase>\" --facet topic)\n"), "{out}");
+    assert!(out.contains("  under-tagged · workspace/life/knowledge/no-topic-tag.md has no topic tag"), "{out}");
+    assert!(!out.contains("knowledge/topical.md"), "{out}");
+    assert!(!out.contains("sources/"), "a source with no tag is not a finding: {out}");
+    // a knowledge page whose only tag is not a topic still wants one
+    fx.ok(&["tag", "facet", "add", "depth", "--applies", "knowledge"]);
+    fx.ok(&["tag", "propose", "overview", "--facet", "depth"]);
+    fx.ok(&["tag", "add", "workspace/life/knowledge/bare.md", "overview"]);
+    assert!(ok(&fx, &["tag", "lint"]).contains("knowledge/bare.md has no topic tag"));
+    fx.ok(&["tag", "add", "workspace/life/knowledge/bare.md", "money"]);
+    assert!(!ok(&fx, &["tag", "lint"]).contains("knowledge/bare.md"));
+    // the doctor does not carry the finding: an untagged page is a lint item, not a fault
+    let (issues, notes) = doctor(&fx);
+    assert!(!any_contains(&issues, "no topic tag") && !any_contains(&notes, "no topic tag"), "{issues:?} {notes:?}");
+}
+
+#[test]
+fn without_a_topic_facet_lint_says_so_once_instead_of_naming_every_page() {
+    let fx = vault();
+    knowledge_page(&fx, "one", None);
+    knowledge_page(&fx, "two", None);
+    let out = ok(&fx, &["tag", "lint"]);
+    assert_eq!(out.matches("knowledge page(s)").count(), 1, "{out}");
+    assert!(!out.contains("knowledge/"), "no page is named: {out}");
+    assert!(out.contains("2 knowledge page(s) cannot carry a topic: workspace/life/tags.yaml has no 'topic' facet; af tag facet add topic --applies context"), "{out}");
+    let none = vault();
+    assert!(!ok(&none, &["tag", "lint"]).contains("knowledge"), "no knowledge page, no finding");
+}
+
+/// The places rules stay on places: the floor of three, the venue lines, the overload kinds, the cap of eight.
+#[test]
+fn the_place_rules_do_not_fire_on_knowledge_pages_or_sources() {
+    let fx = topic_vault();
+    knowledge_page(&fx, "one-tag", Some("leases"));
+    source_file(&fx, "note-2026-11-01-one", Some("leases"));
+    // one topic spread over many knowledge pages and sources, kinds that would be an overload on places
+    for i in 0..8 {
+        knowledge_page(&fx, &format!("k{i}"), Some("money"));
+        source_file(&fx, &format!("note-2026-11-01-s{i}"), Some("money"));
+    }
+    let out = ok(&fx, &["tag", "lint"]);
+    assert!(!out.contains("knowledge/") && !out.contains("sources/"), "the floor of three is a place rule: {out}");
+    assert!(out.contains("second-bowl.md (restaurant) has 2 tag(s), floor 3"), "and it still fires on places: {out}");
+    assert!(!out.contains("overload"), "{out}");
+    // the lint line for people with no tags is still only people
+    assert!(!out.contains("has no tags; af tag add an interest"), "{out}");
+    // the venue coverage line counts places only
+    let stats = ok(&fx, &["tag", "stats"]);
+    assert!(stats.starts_with("af tag stats: 13 tags · 10 active · 1 proposed · 1 deprecated · 1 merged · 5 pages (4 places, 1 people)\n"), "{stats}");
+    assert!(stats.contains("  venue pages with a tag in: cuisine 3/3 · vibe 2/3 · price 3/3\n"), "{stats}");
+    assert!(stats.contains("  people pages tagged: 1/1\n"), "{stats}");
+    assert!(stats.contains("  topic (context): health 0 · leases 2 · money 16 · travel 0\n"), "{stats}");
+    assert!(stats.contains("  knowledge pages with a topic: 9/9\n  sources with a topic: 9/9\n"), "{stats}");
+}
+
+#[test]
+fn stats_counts_knowledge_pages_and_sources_with_a_topic() {
+    let fx = topic_vault();
+    knowledge_page(&fx, "with", Some("leases"));
+    knowledge_page(&fx, "without", None);
+    knowledge_page(&fx, "empty", Some(""));
+    source_file(&fx, "note-2026-11-01-a", Some("health"));
+    source_file(&fx, "note-2026-11-01-b", None);
+    source_file(&fx, "note-2026-11-01-c", None);
+    fx.write("workspace/life/knowledge/_archive/old.md", "# Old\n");
+    fx.write("workspace/life/knowledge/_history/x/2026-01-01-draft.md", "# Draft\n");
+    fx.write("workspace/life/sources/INDEX.md", "# Source Index\n");
+    fx.write("workspace/life/sources/inbox/waiting.md", &format!("---\n{FM}---\nx\n"));
+    let out = ok(&fx, &["tag", "stats"]);
+    assert!(out.ends_with("  knowledge pages with a topic: 1/3\n  sources with a topic: 1/3\n"), "{out}");
+    // a facet used on pages that carry no topic is not a topic
+    fx.ok(&["tag", "facet", "add", "depth", "--applies", "knowledge"]);
+    fx.ok(&["tag", "propose", "overview", "--facet", "depth"]);
+    fx.ok(&["tag", "add", "workspace/life/knowledge/without.md", "overview"]);
+    assert!(ok(&fx, &["tag", "stats"]).contains("  knowledge pages with a topic: 1/3\n"));
+}
+
+#[test]
+fn the_doctor_checks_knowledge_pages_and_sources_like_places() {
+    let fx = topic_vault();
+    fx.ok(&["tag", "facet", "add", "depth", "--applies", "knowledge", "--single"]);
+    fx.ok(&["tag", "propose", "overview", "--facet", "depth"]);
+    fx.ok(&["tag", "propose", "detail", "--facet", "depth"]);
+    fx.ok(&["tag", "merge", "travel", "--into", "money"]);
+    fx.ok(&["tag", "deprecate", "health"]);
+    // clean to begin with, whatever the pages' frontmatter looks like
+    knowledge_page(&fx, "clean", Some("leases"));
+    knowledge_page(&fx, "no-frontmatter", None);
+    source_file(&fx, "note-2026-11-01-clean", Some("leases"));
+    assert_eq!(doctor(&fx), (vec![], vec![]));
+    let (code, out, _) = fx.run(&["doctor"]);
+    assert_eq!(code, 0, "{out}");
+
+    let page = "workspace/life/knowledge/broken.md";
+    fx.write(page, "---\ntags: [ghost, travel, overview, detail]\n---\n# Broken\n");
+    let src = "workspace/life/sources/note-2026-11-01-broken.md";
+    fx.write(src, &format!("---\n{FM}tags: [noodles, health, money, leases, mystery]\n---\nbody\n"));
+    let (issues, notes) = doctor(&fx);
+    for want in [
+        format!("{page}: tag 'ghost' is not in workspace/life/tags.yaml; af tag match ghost"),
+        format!("{page}: tag 'travel' was merged into 'money'; rerun af tag merge travel --into money"),
+        format!("{page}: two 'depth' tags (overview, detail); the facet takes one per page"),
+        format!("{page}: 4 tags, over the cap of 3"),
+        format!("{src}: tag 'mystery' is not in workspace/life/tags.yaml"),
+        format!("{src}: 5 tags, over the cap of 3"),
+    ] {
+        assert!(any_contains(&issues, &want), "missing {want:?} in {issues:?}");
+    }
+    assert!(any_contains(&notes, &format!("{src}: tag 'noodles' is in 'cuisine', a places facet, on a sources page")), "{notes:?}");
+    assert!(any_contains(&notes, &format!("{src}: tag 'health' is deprecated")), "{notes:?}");
+    fx.write(page, "---\ntags: [overview]\n---\n# Broken\n");
+    fx.write("workspace/life/places/second-bowl.md", "---\nprivate: true\nkind: restaurant\narea: harbour\naddress: 1 Example St\ntags: [noodles, price-high, leases]\nstatus: want\nchecked: 2026-01-01\n---\n# second-bowl\nAnother noodle house · [[harbour]]\n");
+    let (_, notes) = doctor(&fx);
+    assert!(any_contains(&notes, "second-bowl.md: tag 'leases' is in 'topic', a context facet, on a places page"), "{notes:?}");
+    // the registry that is missing: sources and knowledge pages with tags count among the pages that carry them
+    fx.remove("workspace/life/tags.yaml");
+    let (_, notes) = doctor(&fx);
+    assert!(any_contains(&notes, "tags.yaml missing while"), "{notes:?}");
+}
+
+#[test]
+fn the_places_doctor_ignores_knowledge_pages_and_sources() {
+    let fx = topic_vault();
+    // none of these has the private flag, a kind or a type; places and people pages need them, these do not
+    knowledge_page(&fx, "plain", Some("leases"));
+    fx.write("workspace/life/knowledge/housing.md", "# Housing\n\n[[harbour]]\n");
+    source_file(&fx, "note-2026-11-01-plain", Some("leases"));
+    assert_eq!(doctor(&fx), (vec![], vec![]));
+    let (code, out, _) = fx.run(&["doctor"]);
+    assert_eq!(code, 0, "{out}");
 }

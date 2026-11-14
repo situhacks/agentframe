@@ -17,7 +17,7 @@ If the task class changes, stop and read the new router.
 
 ## Where Things Live
 
-- `workspace/life/`: `life.md` (injected, capped), `open.md` (loops), `knowledge/<topic>.md` (each fact once, dated), `places/` and `people/` (one file each, linked `[[slug]]`), `sources/` (immutable inputs). Shapes: [`library/schema/`](library/schema/README.md).
+- `workspace/life/`: `life.md` (injected, capped), `open.md` (loops), `knowledge/<topic>.md` (each fact once, dated), `places/` and `people/` (one file each, linked `[[slug]]`), `sources/` (immutable inputs). Row data (workouts, spending, prices): `af data list`/`af data sql`, [`ledger.md`](library/schema/ledger.md). Shapes: [`library/schema/`](library/schema/README.md).
 - `workspace/projects/<slug>/`: bounded work: `af new-project`, then `af draft`; every change or hand copy is an `af version` ([`project.md`](library/schema/project.md)). `workspace/pipeline/`, `workspace/studio/`: careers and creator boards.
 - `system/sessions/`: chat registry, briefs, handoffs. `system/backlog.md`: friction and build work. `af search "<q>"` before grepping.
 

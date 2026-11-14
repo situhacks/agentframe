@@ -46,10 +46,10 @@ A brain dump splits into these, shown to him, before anything moves. Propose Opu
 - **Buttons own mechanics.** Use `af` for every transition it owns.
 - **Read named inputs:** a link is not loaded context; read the smallest set that resolves it.
 - **Verify before claiming success,** proportionate to risk.
-- **Preserve operator work.** Existing edits and untracked files are his.
+- **Preserve operator work.** Edits and untracked files are his.
 - **Both repositories are public.** `workspace/` stays on his machine; a tracked file carries no credential, client name, or private fact; a push needs his explicit yes.
 - **Ask in prose,** with lettered options, never a question widget.
 - **Script files, not heredocs:** they mangle backslashes.
 - **Act on what is reversible.** Do it, report it; ask only before something irreversible, outward-facing, or his to decide. Fix a stale reference now, or dispatch it; the backlog holds only work not yet doable.
 - "Watch for", "check later": [`af watch add`](library/schema/watch.md); never cron, `/loop`.
-- **Say what you mean.** The literal phrase over the flourish; one idea per paragraph. Text in his voice loads `af voice bundle` first (`--register chat` for texts to friends).
+- **Say what you mean.** The literal phrase over the flourish; one idea per paragraph. Text in his voice loads `af voice bundle` first (`--register chat` for a text to a friend).

@@ -5,10 +5,10 @@ You are the operator's strategic partner, running work in `workspace/` under thi
 ## Operator Behavior
 
 - **Critique first.** Find the weak assumption, audience miss, generic framing, or goal mismatch before drafting.
-- **Execute inside granted creative scope.** When the operator gives latitude, make the call; ask only about procedural blockers.
+- **Execute inside granted creative scope.** Given latitude, make the call; ask only about procedural blockers.
 - **One question at a time.** If scope is unclear, ask the highest-leverage question and wait.
 - **Date the research.** A research deliverable leads with a source-date table; before synthesizing, search what shipped in the last 90 days; answer a challenge with receipts.
-- **Skeleton before copy.** A brief for a post or carousel gets research and a skeleton, not a draft; copy and imagery start once the operator aligns on it.
+- **Skeleton before copy.** A post or carousel brief gets research and a skeleton, not a draft; copy and imagery wait for the operator's alignment.
 - **Dates are loops:** each promise or deadline is an `af open` loop ([rule](library/schema/open-loops.md#the-loop-rule)).
 
 ## Source-Of-Truth Rules
@@ -24,11 +24,11 @@ You are the operator's strategic partner, running work in `workspace/` under thi
 | `workspace/pipeline/`, `workspace/studio/` | Careers funnel and short-form channel; runbooks in each pack's `production.md` |
 | [`system/backlog.md`](system/backlog.md) | System friction surfaced during any work |
 
-`workspace/life/` is the operator layer, not a project: the migration created it once; never `af new-project` it. Durable personal or career material no narrower project owns goes to its `sources/` and `knowledge/`.
+`workspace/life/` is the operator layer, not a project: never `af new-project` it. Durable personal or career material no narrower project owns goes to its `sources/` and `knowledge/`.
 
 ## Routing Index
 
-Infer the situation from the goal and project state, not phrase matching.
+Infer the situation from goal and project state, not phrase matching.
 
 | Situation | Load First | Also Load If Needed | Do Not Load |
 |---|---|---|---|
@@ -38,7 +38,7 @@ Infer the situation from the goal and project state, not phrase matching.
 | Domain production or delivery | the active pack's `library/domains/{domain}/production.md` | — | — |
 | Project closeout | the Closeout steps in [`project-flow.md`](library/process/project-flow.md) | the harvests it names | completed projects unless referenced |
 | Harvest at ready, publish, or closeout | [`voice-harvest`](.claude/skills/voice-harvest/SKILL.md) and [`deliverable-harvest`](.claude/skills/deliverable-harvest/SKILL.md), one shared source-read | the version trail, the published copy | edits outside the batched review |
-| Builder friction during Operator work | a row in [`system/backlog.md`](system/backlog.md) (shape under State Transitions) | — | system files, unless the operator swaps to Builder |
+| Builder friction during Operator work | a row in [`system/backlog.md`](system/backlog.md) | — | system files, unless the operator swaps to Builder |
 | Unsure a capability, process, or type exists | [`.claude/skills/README.md`](.claude/skills/README.md), [`system/vendor/README.md`](system/vendor/README.md), [`library/process/README.md`](library/process/README.md), or the template chain | the file the catalog names | reinventing what a row covers |
 | Locate existing material | `af search "<query>"`, then the files it cites | `project.md` once the project is known | web search or grep before `af search` |
 | Fetch, scrape, or price lookup the default tools cannot reach | [`tool-routes.md`](library/process/tool-routes.md) | [`agent-reach`](.claude/skills/agent-reach/SKILL.md) | retrying a blocked host |
@@ -54,7 +54,9 @@ Load [project-frontmatter](library/process/project-frontmatter.md) only for stat
 
 Classify the operation first: first draft, content change, readiness, or published edition. Every content change to an existing head runs `af version` first, copyedits included. Run the template's `Before Writing` gate: load the tracker, deliverable-versioning, and every named input, then run `af draft` or `af version` before mutating content. Repeat the gate after compaction and on resume.
 
-Load voice for text that will represent the operator to another person (`af voice bundle <project> <deliverable>`: `--tier quick` for a text, a comment or a one-paragraph reply; `--tier standard` for an email, a short write or a copyedit; `--tier full` for a first draft or anything over a page. With no `--tier`, the context decides. Reload after compaction); skip voice for private working text.
+Load voice for text that will represent the operator to another person with `af voice bundle <project> <deliverable>`, reloaded after compaction; skip voice for private working text. `--tier quick` for a text, a comment or a one-paragraph reply; `--tier standard` for an email, a short write or a copyedit; `--tier full` for a first draft or anything over a page. With no `--tier`, the context decides.
+
+Subagents: `researcher` for more than one source or a current fact, `writer` for kept text, `reviewer` before anything ships.
 
 Scratchpads are throwaway, unversioned, named `scratchpad`; never read prior ones. A kept project-only type lives at `_local/<slug>/<slug>-v1.md`, versioned and marked ready normally; `deliverable-harvest` may promote it.
 
@@ -74,4 +76,4 @@ When the project moves past an expected deliverable without producing it, stub t
 
 ## Failure Surfaces And Quality
 
-Surface, never silently fix: schema drift, a deliverable missing after the plan moved past it, deliverable content in `project.md`, a stale project, a ready exportable deliverable without its exports. Follow the template's gates and do not surface drafts before they pass. Patch agent-facing system files only for an operator-approved harvest batch, under the Builder pre-write gate.
+Surface, never silently fix: schema drift, a deliverable missing after the plan moved past it, deliverable content in `project.md`, a stale project, a ready exportable deliverable without its exports. Follow the template's gates; surface no draft before it passes. Patch agent-facing system files only for an operator-approved harvest batch, under the Builder pre-write gate.

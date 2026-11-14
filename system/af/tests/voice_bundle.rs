@@ -226,6 +226,26 @@ fn test_excerpt_in_a_built_bundle_and_no_corpus_no_excerpt() {
 }
 
 #[test]
+fn test_excerpt_of_frontmatter_only_or_empty_body() {
+    // frontmatter with nothing between its fences is still frontmatter
+    assert_eq!(excerpt_text("---\n---\nBody here.\n"), ("Body here.".to_string(), 2));
+    assert_eq!(excerpt_text("---\r\n---\r\nBody here.\r\n"), ("Body here.".to_string(), 2));
+    // a rule later in the body is not taken for the closing fence
+    assert_eq!(excerpt_text("---\n---\nOne.\n\n---\n\nTwo.\n").1, 3);
+    // an empty body gives nothing
+    assert_eq!(excerpt_text("---\ntitle: x\n---\n"), (String::new(), 0));
+    assert_eq!(excerpt_text("---\n---\n"), (String::new(), 0));
+    // and the built bundle has no excerpt part and no MISSING line for such a piece
+    let d = dirs();
+    d.fx.write("voice/corpus/formal/2026-03-03-empty.md", "---\ntitle: x\n---\n");
+    let r = build(&d.place(), &Recipe::new("formal", &[], &[], None), None, Some("quick")).unwrap();
+    assert_eq!(r.labels(), s(&["anti-patterns", "identity", "register formal"]));
+    assert!(r.missing.is_empty());
+    let text = std::fs::read_to_string(&r.path).unwrap();
+    assert!(!text.contains("an excerpt of 0 words") && !text.contains("excerpt 2026"));
+}
+
+#[test]
 fn test_bundle_id_follows_the_excerpt_text() {
     let d = dirs();
     let recipe = Recipe::new("informal", &["message"], &[], None);
@@ -248,6 +268,10 @@ fn test_anti_patterns_is_in_every_tier() {
     let d = dirs();
     for tier in ["quick", "standard", "core", "full"] {
         let r = build(&d.place(), &Recipe::new("informal", &["email"], &[], None), None, Some(tier)).unwrap();
+        assert_eq!(r.tier, if tier == "core" { "standard" } else { tier }, "{tier}");
+        if tier == "quick" {
+            assert_eq!(r.labels()[0], "anti-patterns");
+        }
         assert!(r.labels().contains(&"anti-patterns".to_string()), "{tier}");
         assert!(std::fs::read_to_string(&r.path).unwrap().contains("# anti"), "{tier}");
     }
@@ -330,6 +354,9 @@ fn test_chat_register_builds_in_every_tier() {
     let head = d.fx.write("t-v1.md", "---\nvoice:\n  base_register: chat\n  borrow_from: [chat, formal]\n---\nx\n");
     let (base, borrow, _) = recipe_from_head(&head).unwrap();
     assert_eq!((base.as_deref(), borrow), (Some("chat"), s(&["chat", "formal"])));
+    // the plain `register:` key resolves to chat too
+    let head = d.fx.write("u-v1.md", "---\nregister: chat\n---\nx\n");
+    assert_eq!(recipe_from_head(&head).unwrap(), (Some("chat".to_string()), vec![], None));
 }
 
 #[test]
@@ -469,6 +496,22 @@ fn test_verb_chat_register_and_default_tiers() {
     assert_eq!(code, 2);
     let (code, _, _) = fx.run(&["voice", "bundle", "--register", "chat", "--tier", "huge"]);
     assert_eq!(code, 2);
+}
+
+#[test]
+fn test_verb_refuses_a_mistyped_context() {
+    let fx = verb_fixture();
+    let (code, out, err) = fx.run(&["voice", "bundle", "--register", "informal", "--context", "mesage"]);
+    assert_ne!(code, 0, "{out}{err}");
+    for legal in ["long-form", "short-form", "email", "builder-pov", "market-signal", "slide", "cover", "message", "chat"] {
+        assert!(err.contains(legal), "{legal} not listed: {err}");
+    }
+    // every legal context is accepted, and a head's own type still supplies one
+    for c in ["long-form", "short-form", "email", "builder-pov", "market-signal", "slide", "cover", "message", "chat"] {
+        let (code, out, err) = fx.run(&["voice", "bundle", "--register", "informal", "--context", c]);
+        assert_eq!(code, 0, "{c}: {out}{err}");
+    }
+    assert!(fx.ok(&["voice", "bundle", "p", "essay"]).contains("from context long-form"));
 }
 
 #[test]

@@ -194,7 +194,7 @@ class InstructionTopologyCharacterizationTests(unittest.TestCase):
         operator = text("AGENTS.operator.md")
         self.assertIn("| `workspace/life/` | The operator layer: ", operator)
         self.assertIn("`workspace/life/` is the operator layer, not a project: "
-                      "the migration created it once", operator)
+                      "never `af new-project` it", operator)
         self.assertNotIn("new-project life", operator)
 
         ignore = text(".gitignore")

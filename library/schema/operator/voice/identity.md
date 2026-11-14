@@ -23,7 +23,7 @@ Do not create `linkedin-*`, `substack-*`, `email-*`, or deliverable-named regist
 
 ```yaml
 voice:
-  base_register: formal        # formal | informal
+  base_register: formal        # formal | informal | chat
   borrow_from: []              # optional: the other register
   direction: ""               # required for a blend
 ```

@@ -148,7 +148,7 @@ pub fn effective_contexts(r: &Recipe, tier: &str) -> Vec<String> {
 /// the first paragraph, which is cut at the limit and ends ` …` when it alone is over.
 pub fn excerpt_text(raw: &str) -> (String, usize) {
     let text = raw.trim_start_matches('\u{feff}');
-    let body = match rx(r"\A---[ \t]*\r?\n(?s:.*?)\r?\n---[ \t]*(?:\r?\n|\z)").find(text) {
+    let body = match rx(r"\A---[ \t]*\r?\n(?:(?s:.*?)\r?\n)??---[ \t]*(?:\r?\n|\z)").find(text) {
         Some(m) => &text[m.end()..],
         None => text,
     };
@@ -261,7 +261,10 @@ pub fn plan(r: &Recipe, voice_dir: &str, tier: &str) -> R<Vec<(String, String)>>
             parts.push((format!("borrow register {b}"), reg_path(b)));
         }
         if let Some(piece) = exemplar(&corpus_dir, CORE_EXEMPLAR_CAP)? {
-            parts.push((format!("excerpt {}", pyos::basename(&piece)), piece));
+            // a piece with nothing after its frontmatter gives no excerpt part
+            if !excerpt_text(&pyos::read(&piece)?).0.is_empty() {
+                parts.push((format!("excerpt {}", pyos::basename(&piece)), piece));
+            }
         }
         return Ok(parts);
     }

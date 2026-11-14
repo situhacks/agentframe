@@ -22,7 +22,7 @@ pub enum VoiceCmd {
         #[arg(long, value_parser = ["formal", "informal", "chat"])]
         register: Option<String>,
         /// task context, repeatable: message (or chat), email, short-form, long-form, builder-pov, market-signal, slide, cover
-        #[arg(long, action = clap::ArgAction::Append)]
+        #[arg(long, action = clap::ArgAction::Append, value_parser = ["long-form", "short-form", "email", "builder-pov", "market-signal", "slide", "cover", "message", "chat"])]
         context: Vec<String>,
         #[arg(long, action = clap::ArgAction::Append, value_parser = ["formal", "informal", "chat"])]
         borrow: Vec<String>,

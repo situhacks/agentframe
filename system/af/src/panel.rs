@@ -783,7 +783,7 @@ pub fn cmd_archive(ctx: &Ctx, name: Option<&str>, session_id: Option<&str>, wait
     if dry_run {
         outln!("{label}: would archive session {id} through the panel driver:");
         outln!("{}", d.shown(&call));
-        outln!("The driver closes the chat's open tab first (a draft in it refuses, exit 4), rests the pointer on its row in the panel's list, invokes the row's Archive button and puts the pointer back. It never takes the foreground. The registry row is not changed. Nothing was run.");
+        outln!("The driver closes the chat's open tab first (a draft in it refuses, exit 4), rests the pointer on its row in the panel's list, invokes the row's Archive button and puts the pointer back. Revealing the chat's tab and pressing the row's Archive button make VS Code take the keyboard focus for the few seconds of the run; at the end the driver hands the foreground back to the window that had it when he has not touched the computer. The registry row is not changed. Nothing was run.");
         return Ok(0);
     }
     match archive(ctx, &id, wait_minutes) {

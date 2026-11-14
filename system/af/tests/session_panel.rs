@@ -1114,7 +1114,7 @@ fn archive_passes_the_wait_and_dry_run_prints_the_call_and_runs_nothing() {
     let (code, out, err) = session(&fx, &[], &["archive", "system/x", "--dry-run", "--wait-minutes", "3"]);
     assert_eq!(code, 0, "{out}{err}");
     assert!(out.contains("would archive session sid-1") && out.contains("archive -Session sid-1 -WaitMinutes 3"), "{out}");
-    assert!(out.contains("registry row is not changed") && out.contains("never takes the foreground"), "{out}");
+    assert!(out.contains("registry row is not changed") && out.contains("take the keyboard focus for the few seconds") && out.contains("hands the foreground back"), "{out}");
     assert!(calls(&fx).is_empty(), "a dry run starts no driver");
 }
 

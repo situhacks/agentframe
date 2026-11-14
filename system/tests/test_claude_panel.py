@@ -40,7 +40,8 @@ INSTALLED_ACTIONS = {"ping", "tabs", "open", "reveal", "close-tab", "group-pick"
 BRIDGE_ACTIONS = {"ping", "tabs", "open", "reveal", "close-tab"}
 # What the driver may import from Windows: the idle time, the window's state, title and place in the stack, the
 # pointer's position (read, and set by 'archive' alone), the window under a point, which window has the foreground
-# (read only) and the shell's full-screen state. Nothing that sends input or takes the foreground.
+# (read only) and the shell's full-screen state. Nothing that sends input. SetForegroundWindow is imported once, in the
+# one method that gives the foreground back at the end of a run (test_the_foreground_is_set_in_one_place_only).
 # GetProcessTimes reads only this process's own start time, for the lock.
 ALLOWED_IMPORTS = {
     "GetLastInputInfo", "IsIconic", "IsWindow", "GetWindowTextW", "GetProcessTimes",
@@ -48,11 +49,12 @@ ALLOWED_IMPORTS = {
     "GetForegroundWindow", "SHQueryUserNotificationState",
     "GetWindowLongW", "GetWindowPlacement", "SetWindowPlacement", "GetWindow",
     "IsWindowVisible", "DwmGetWindowAttribute",
+    "SetForegroundWindow",
 }
 # Words that would mean synthetic input, clipboard use or taking the foreground. SetWindowVisualState is the
 # Window pattern's restore: it takes the foreground and resets the idle time (measured), so it is never used.
 FORBIDDEN = [
-    "SendInput", "keybd_event", "mouse_event", "SendKeys", "clipboard", "SetForegroundWindow",
+    "SendInput", "keybd_event", "mouse_event", "SendKeys", "clipboard",
     "AttachThreadInput", "BringWindowToTop", "MOUSEINPUT", "KEYBDINPUT", "GetGUIThreadInfo", "SetWindowVisualState",
     "WindowPattern", "SwitchToThisWindow", "AllowSetForegroundWindow", "LockSetForegroundWindow",
 ]
@@ -993,9 +995,10 @@ class RecordRuleTests(unittest.TestCase):
         self.assertEqual(got["s5"], [0, "", False])
 
     def test_the_guards_and_the_waits_use_these_rules(self):
-        guards = function_text("Wait-Guards")
+        guards = function_text("Get-GuardWhy")
         self.assertIn("Get-RecordState", guards)
         self.assertIn("Stop-Panel 5 $rs.Terminal", guards)
+        self.assertIn("Get-GuardWhy", function_text("Wait-Guards"))
         idle = function_text("Wait-ChatIdle")
         self.assertIn("$rs.Busy -eq ''", idle)
         self.assertIn("Status -eq 'idle'", idle)
@@ -1047,8 +1050,13 @@ class LockTests(unittest.TestCase):
         self.assertIn("Invoke-Logged 'list' '' $false", text)
         self.assertIn("Enter-Lock 'list'", function_text("Do-List"), "a list that restores a minimized window waits its turn")
         logged = function_text("Invoke-Logged")
-        self.assertLess(logged.index("Enter-Lock"), logged.index("& $Body"))
+        self.assertNotIn("Enter-Lock", logged, "the lock is taken by the action, after it has waited for him (Enter-Run)")
         self.assertLess(logged.index("Restore-Screen"), logged.index("Exit-Lock"), "the view is put back before the lock goes")
+        for fn in ["Do-Send", "Do-New", "Do-Model", "Do-Archive", "Do-CloseUntitled"]:
+            body = function_text(fn)
+            self.assertIn("Enter-Run", body, fn)
+            self.assertNotIn("Wait-Guards", body, fn)
+            self.assertLess(body.index("Enter-Run"), body.index("Ensure-Screen"), fn)
         self.assertIn("finally", logged)
         self.assertIn("system\\logs\\panel-bridge", text)
         self.assertIn("$LockFile = Join-Path $BridgeBase 'driver.lock'", text)
@@ -1502,7 +1510,7 @@ class WaitingLogAndCancelTests(unittest.TestCase):
             "function Read-Log { if (Test-Path $LogFile) { @([System.IO.File]::ReadAllLines($LogFile)) } else { @() } }\n"
         )
 
-    FUNCS = ["Add-LogLine", "Write-Waiting", "Clear-Waiting", "Test-CancelRequested", "Stop-IfCancelled", "Test-Touched", "Get-WaitUntil", "Wait-Idle", "Wait-Guards", "Wait-RowIdle", "Set-Begun"]
+    FUNCS = ["Add-LogLine", "Write-Waiting", "Clear-Waiting", "Test-CancelRequested", "Stop-IfCancelled", "Test-Touched", "Get-WaitUntil", "Wait-Idle", "Wait-Guards", "Get-GuardWhy", "Wait-RowIdle", "Set-Begun"]
 
     def test_a_reason_is_logged_once_until_it_changes_and_never_carries_text(self):
         with tempfile.TemporaryDirectory() as d:
@@ -1754,11 +1762,14 @@ class ArchiveBehaviourTests(unittest.TestCase):
         "  public static int[] GetPlacement(IntPtr h) { Calls.Add(\"getplacement\"); return Placement; }\n"
         "  public static bool MinimizeWithPlacement(IntPtr h, int[] q) { Calls.Add(\"minplace flags=\" + q[0] + \" rect=\" + q[6] + \",\" + q[7]); return true; }\n"
         "  public static int NotificationState() { Ev(\"fs?\" + Quns); return Quns; }\n"
+        "  public static uint Tick = 0; public static bool GiveRefused = false;\n"
+        "  public static uint InputTick() { return Tick; }\n"
+        "  public static bool GiveForegroundBack(IntPtr p) { Calls.Add(\"giveback\" + p.ToInt64()); Ev(\"giveback\"); if (GiveRefused) return false; Fg = p; return true; }\n"
         "  static PanelNative() { Reset(); }\n"
         "  public static void Reset() {\n"
         "    Idle = 999999; Calls.Clear(); Seq.Clear(); OnStep = null; Ptr = new int[] { 10, 20 }; Fg = new IntPtr(9); Quns = 5;\n"
         "    BehindTopmost = false; Stubborn = false; RaiseFails = false; PlaceFails = false; FailReads = 0; ThrowPointer = false;\n"
-        "    FlipId = 0; FlipAfter = 0; flipCalls = 0; Z.Clear(); Put(0, 5, true, false, false, 0, 100, true); TopWins.Clear(); ExtraAlive.Clear(); ExtraAlive.Add(9);\n"
+        "    FlipId = 0; FlipAfter = 0; flipCalls = 0; Tick = 0; GiveRefused = false; Z.Clear(); Put(0, 5, true, false, false, 0, 100, true); TopWins.Clear(); ExtraAlive.Clear(); ExtraAlive.Add(9);\n"
         "  }\n"
         "}\n"
         "'@\n"
@@ -2164,7 +2175,7 @@ class ArchiveBehaviourTests(unittest.TestCase):
 
     DO = (
         "$script:Log = @(); $script:Rows = @('id-a'); $script:Rs = [pscustomobject]@{ Count = 0; Busy = ''; Terminal = '' }; $script:RowStatus = 'idle'; $script:ListReadable = $true\n"
-        "function Wait-Guards([string]$Id) { $script:Log += 'guards' }\n"
+        "function Enter-Run([string]$Id) { $script:Log += 'guards' }\n"
         "function Ensure-Screen { $script:Log += 'screen' }\n"
         "function Find-Named($win, [string]$Name, $Type) { if ($script:ListReadable) { @('button') } else { @() } }\n"
         "function Find-RowElement([string]$Id) { if ($script:Rows -contains $Id) { 'row' } else { $null } }\n"
@@ -2293,7 +2304,7 @@ class ArchiveBehaviourTests(unittest.TestCase):
 
     def run_screen(self, body: str, names=None):
         script = self.NATIVE + self.SCREEN + "$o = [ordered]@{}\n" + body + "ConvertTo-Json -Compress -Depth 5 -InputObject $o\n"
-        return run_functions(["Restore-Screen", "Restore-Minimized", "Set-VsCodeBehind", "Confirm-VsCodeNotTopmost", "Test-VsCodeCovered"] + (names or []), script)
+        return run_functions(["Restore-Screen", "Restore-Minimized", "Set-VsCodeBehind", "Confirm-VsCodeNotTopmost", "Test-VsCodeCovered", "Restore-ForegroundAtEnd"] + (names or []), script)
 
     def test_a_cancelled_run_or_one_with_nothing_to_put_back_does_not_wait_for_him_at_the_end(self):
         """Review item 6: Restore-Screen waited up to 60 seconds for idle even with nothing visible to restore, so a
@@ -2484,7 +2495,7 @@ class ArchiveBehaviourTests(unittest.TestCase):
         text = source()
         self.assertRegex(text, r"Invoke-Logged 'archive' \$Session \$true \{ Do-Archive \$Session \}")
         header = " ".join(text.split("param(")[0].replace("# ", "").split())
-        for part in ["'archive' moves the pointer onto", "nothing is clicked or typed", "never takes the foreground", "behind the window he has in front",
+        for part in ["'archive' moves the pointer onto", "nothing is clicked or typed", "VS Code takes the keyboard focus during a run", "ONE check", "GiveForegroundBack", "behind the window he has in front",
                      "waits while a", "full-screen window is in front", "exit 7", "A chat he has in front is never archived",
                      "after VS Code is raised nothing waits except the 3 second button poll and the 5 second row-gone confirm",
                      "3 the operator is active or came back", "5 a safety check failed (a record from outside the panel, the row covered by another window or with no usable place, no Archive button)",
@@ -2493,7 +2504,7 @@ class ArchiveBehaviourTests(unittest.TestCase):
         self.assertNotIn("no Archive button, the operator came back", header, "the operator coming back is exit 3, not 5")
         self.assertEqual(code_lines(text).count("Archive session"), 1, "the one control archive names")
         archive = function_text("Do-Archive")
-        self.assertLess(archive.index("Wait-Guards"), archive.index("Ensure-Screen"))
+        self.assertLess(archive.index("Enter-Run"), archive.index("Ensure-Screen"))
         self.assertLess(archive.index("Test-Bridge"), archive.index("Close-Checked"))
         self.assertLess(archive.index("Wait-NotInFront"), archive.index("Wait-RowIdle"))
         self.assertLess(archive.index("Close-Checked"), archive.index("Wait-RowNotActive"))
@@ -2607,3 +2618,264 @@ class SecondReviewPairingTests(unittest.TestCase):
         tail = send[send.index("# The text is sent and confirmed"):]
         self.assertIn("if (-not $s.HadTab -and $s.Opened)", tail)
         self.assertIn("Close-Checked $Id $Id 'empty' '' $Id $false $s.OwnPid", tail)
+
+
+# ---------------------------------------------------------------- the foreground at the end of a run
+
+
+@unittest.skipUnless(POWERSHELL, "needs Windows PowerShell")
+class ForegroundAtEndTests(unittest.TestCase):
+    """VS Code takes the keyboard focus during a run. One check at the end (Restore-Screen, before the minimize decision)
+    hands it back to the window that had it when the screen work began, once, when he has not touched the computer."""
+
+    NAMES = ["Restore-Screen", "Restore-ForegroundAtEnd", "Start-ForegroundRecord", "Test-VsCodeCovered"]
+
+    def run_e(self, body: str):
+        script = (
+            ArchiveBehaviourTests.NATIVE
+            + ArchiveBehaviourTests.SCREEN.replace("$script:Invoked++;", "$script:Invoked++; if ($script:TakesFg) { [PanelNative]::Fg = [IntPtr]5 };")
+            + "$script:TakesFg = $false\n"
+            "function Win($id) { [PanelNative]::Put(0, $id, $true, $false, $false, 0, 300, $true) }\n"
+            "function Fresh { [PanelNative]::Reset(); $script:Notes = @(); $script:FgStart = $null; $script:ScreenBegun = $true; $script:WasMinimized = $false; $script:SavedPlacement = $null\n"
+            "  $script:PrevActive = @('id-b'); $script:ActiveNow = @('id-b'); $script:Invoked = 0; $script:TakesFg = $false }\n"
+            "function Out-State { [pscustomobject]@{ calls = [PanelNative]::Log; notes = @($script:Notes); fg = [PanelNative]::Fg.ToInt64() } }\n"
+            "$o = [ordered]@{}\n"
+            + body
+            + "ConvertTo-Json -Compress -Depth 5 -InputObject $o\n"
+        )
+        return run_functions(self.NAMES, script)
+
+    def test_the_foreground_is_given_back_at_the_end_to_the_window_that_had_it(self):
+        got = self.run_e("Fresh; Win 11; [PanelNative]::Fg = [IntPtr]11; Start-ForegroundRecord; [PanelNative]::Fg = [IntPtr]5; Restore-Screen; $o.s = Out-State\n")["s"]
+        self.assertEqual(got["calls"], "giveback11", "one call, with the recorded window")
+        self.assertEqual((got["fg"], got["notes"]), (11, []))
+
+    def test_the_call_is_made_once_and_when_it_does_not_work_the_note_says_vs_code_was_left_in_front(self):
+        got = self.run_e("Fresh; Win 11; [PanelNative]::Fg = [IntPtr]11; Start-ForegroundRecord; [PanelNative]::Fg = [IntPtr]5; [PanelNative]::GiveRefused = $true; Restore-Screen; $o.s = Out-State\n")["s"]
+        self.assertEqual(got["calls"], "giveback11", "one try, no fallback")
+        self.assertEqual(got["notes"], ["VS Code was left in front"])
+        self.assertEqual(got["fg"], 5)
+
+    def test_if_he_acted_nothing_is_moved(self):
+        got = self.run_e("Fresh; Win 11; [PanelNative]::Fg = [IntPtr]11; Start-ForegroundRecord; [PanelNative]::Tick = 5; [PanelNative]::Fg = [IntPtr]5; Restore-Screen; $o.s = Out-State\n")["s"]
+        self.assertEqual((got["calls"], got["notes"], got["fg"]), ("", [], 5))
+
+    def test_nothing_is_done_when_vs_code_had_the_foreground_at_the_start_or_does_not_have_it_now(self):
+        got = self.run_e(
+            "Fresh; [PanelNative]::Fg = [IntPtr]5; Start-ForegroundRecord; Restore-Screen; $o.at_start = Out-State\n"
+            "Fresh; Win 11; [PanelNative]::Fg = [IntPtr]11; Start-ForegroundRecord; Restore-Screen; $o.not_in_front = Out-State\n"
+            "Fresh; Win 11; [PanelNative]::Fg = [IntPtr]5; Restore-Screen; $o.no_record = Out-State\n"
+        )
+        for case in ("at_start", "not_in_front", "no_record"):
+            self.assertEqual((got[case]["calls"], got[case]["notes"]), ("", []), case)
+
+    def test_a_recorded_window_that_is_gone_or_hidden_is_not_a_target(self):
+        got = self.run_e(
+            "Fresh; Win 11; [PanelNative]::Fg = [IntPtr]11; Start-ForegroundRecord; [PanelNative]::Remove(11); [PanelNative]::Fg = [IntPtr]5; Restore-Screen; $o.gone = Out-State\n"
+            "Fresh; [PanelNative]::Put(0, 11, $false, $false, $false, 0, 300, $true); [PanelNative]::Fg = [IntPtr]11; Start-ForegroundRecord; [PanelNative]::Fg = [IntPtr]5; Restore-Screen; $o.hidden = Out-State\n"
+        )
+        for case in ("gone", "hidden"):
+            self.assertEqual((got[case]["calls"], got[case]["notes"], got[case]["fg"]), ("", [], 5), case)
+
+    def test_the_minimize_decision_runs_after_the_check_and_a_row_invoke_that_took_the_focus_is_covered_by_it(self):
+        got = self.run_e(
+            "function Fresh2 { Fresh; $script:WasMinimized = $true; $script:SavedPlacement = [int[]]@(2, 2, 0, 0, 0, 0, 1, 2, 3, 4) }\n"
+            # VS Code took the focus during the run: given back first, so the window then counts as not his choice and is minimized again.
+            "Fresh2; Win 7; [PanelNative]::Fg = [IntPtr]7; Start-ForegroundRecord; [PanelNative]::Fg = [IntPtr]5; Restore-Screen; $o.after_check = Out-State\n"
+            # The re-activation of his previous chat is an Invoke that takes the focus too: the same one check covers it.
+            "Fresh2; Win 7; $script:ActiveNow = @('id-a'); [PanelNative]::Fg = [IntPtr]7; Start-ForegroundRecord; $script:TakesFg = $true; Restore-Screen; $o.row_invoke = Out-State; $o.invoked = $script:Invoked\n"
+            # VS Code was in front from the start (his choice): left open.
+            "Fresh2; Win 7; [PanelNative]::Fg = [IntPtr]5; Start-ForegroundRecord; Restore-Screen; $o.his_choice = Out-State\n"
+            # He acted: nothing is moved, and VS Code in front is left open.
+            "Fresh2; Win 7; [PanelNative]::Fg = [IntPtr]7; Start-ForegroundRecord; [PanelNative]::Tick = 4; [PanelNative]::Fg = [IntPtr]5; Restore-Screen; $o.he_acted = Out-State\n"
+        )
+        self.assertEqual(got["after_check"]["calls"], "giveback7 minplace flags=2 rect=1,2")
+        self.assertEqual(got["after_check"]["notes"], [])
+        self.assertEqual(got["invoked"], 1)
+        self.assertEqual(got["row_invoke"]["calls"], "giveback7 minplace flags=2 rect=1,2")
+        self.assertEqual(got["his_choice"]["calls"], "")
+        self.assertIn("VS Code was left open: he has it in front", got["his_choice"]["notes"])
+        self.assertEqual(got["he_acted"]["calls"], "")
+        self.assertIn("VS Code was left open: he has it in front", got["he_acted"]["notes"])
+
+    def test_the_foreground_is_set_in_one_place_only_and_checked_once_at_the_end(self):
+        text = source()
+        self.assertEqual(len(re.findall(r"SetForegroundWindow", text)), 2, "one import and one call")
+        csharp = csharp_block(text)
+        self.assertEqual(len(re.findall(r"DllImport\([^)]*\)\]\s*static extern bool SetForegroundWindow", csharp)), 1)
+        method = re.search(r"public static bool GiveForegroundBack\(IntPtr previous\) \{ return SetForegroundWindow\(previous\); \}", csharp)
+        self.assertIsNotNone(method, "called from exactly one method, with the one argument it is handed")
+        code = code_lines(text)
+        self.assertEqual(re.findall(r"GiveForegroundBack\(([^)]*)\)", code.replace(method.group(0), "")), ["$prev"], "the PowerShell call passes only the recorded window")
+        check = function_text("Restore-ForegroundAtEnd")
+        self.assertLess(check.index("$prev -eq $script:Hwnd"), check.index("GiveForegroundBack"), "never with VS Code as the argument")
+        self.assertIn("$prev = $g.Prev", check)
+        self.assertLess(check.index("InputTick"), check.index("GiveForegroundBack"), "only when he has not acted")
+        self.assertEqual(check.count("GiveForegroundBack"), 1, "once, no retry")
+        for banned in ["AttachThreadInput", "keybd_event", "SendInput", "mouse_event", "SwitchToThisWindow", "BringWindowToTop", "MinimizeActivatingNext"]:
+            self.assertNotIn(banned, text)
+        self.assertEqual(len(re.findall(r"Restore-ForegroundAtEnd", code)), 2, "defined once and called once")
+        restore = function_text("Restore-Screen")
+        self.assertLess(restore.index("Restore-ForegroundAtEnd"), restore.index("$idle = "), "before the minimize decision")
+        self.assertIn("Start-ForegroundRecord", function_text("Ensure-Screen"))
+        self.assertNotIn("FrontIdleSeconds", text, "no longer idle rule when VS Code is in front")
+
+
+# ---------------------------------------------------------------- the lock after the wait
+
+
+@unittest.skipUnless(POWERSHELL, "needs Windows PowerShell")
+class LockOrderTests(unittest.TestCase):
+    """A run waits for him and the chat WITHOUT the panel lock, takes the lock, checks the guards once more with no waiting
+    and goes back to waiting (lock released) when one fails."""
+
+    STAGE = (
+        MOCK_NATIVE
+        + "$Utf8 = New-Object System.Text.UTF8Encoding($false)\n"
+        "$script:Waits = @(); $script:LastWait = ''; $script:Restoring = $false; $script:Notes = @(); $script:St = $null; $script:Lock = $null; $script:Sleeps = 0\n"
+        "$script:RunAction = 'send'; $script:RunId = 'abc-123'; $script:Cancelled = $false\n"
+        "$script:WaitUntil = (Get-Date).AddMinutes(5); $script:StepUntil = $script:WaitUntil\n"
+        "$script:Rec = [pscustomobject]@{ Count = 0; Busy = ''; Terminal = '' }\n"
+        "function Add-Note([string]$Note) { $script:Notes += $Note }\n"
+        "function Stop-Panel([int]$Code, [string]$Reason) { throw (New-Object PanelExit($Code, $Reason)) }\n"
+        "function Get-RecordState([string]$Id) { $script:Rec }\n"
+        "function Read-LockHolder { 'pid 1, send, session s, since t' }\n"
+        "function Try-Take { try { $f = [System.IO.File]::Open($LockFile, 'OpenOrCreate', 'ReadWrite', 'Read'); $f.Dispose(); $true } catch { $false } }\n"
+        "function Take-ByAnother { [System.IO.File]::Open($LockFile, 'OpenOrCreate', 'ReadWrite', 'Read') }\n"
+    )
+    FUNCS = ["Enter-Run", "Wait-Guards", "Get-GuardWhy", "Enter-Lock", "Exit-Lock", "Stop-IfCancelled", "Test-CancelRequested", "Test-Touched",
+             "Write-Waiting", "Clear-Waiting", "Add-LogLine", "Get-WaitUntil", "Wait-Idle", "Get-PanelExit", "Do-List"]
+
+    def run_h(self, d: str, body: str):
+        script = (
+            self.STAGE
+            + f"$BridgeBase = '{d}'; $LockFile = Join-Path $BridgeBase 'driver.lock'; $LogDir = '{d}'; $LogFile = Join-Path $LogDir 'claude-panel.log'\n"
+            "$o = [ordered]@{}\n"
+            + body
+            + "ConvertTo-Json -Compress -Depth 5 -InputObject $o\n"
+        )
+        return run_functions(self.FUNCS, script)
+
+    def test_a_run_that_waits_for_him_holds_no_lock_so_another_run_completes_meanwhile(self):
+        with tempfile.TemporaryDirectory() as d:
+            got = self.run_h(d,
+                "[PanelNative]::Idle = 0\n"
+                "$script:Free = @()\n"
+                "function Start-Sleep { param([int]$Seconds = 0, [int]$Milliseconds = 0) $script:Sleeps++; $script:Free += (Try-Take); if ($script:Sleeps -ge 3) { [PanelNative]::Idle = 999999 } }\n"
+                "Enter-Run 'abc-123'\n"
+                "$o.free_while_waiting = @($script:Free); $o.held_after = ($null -ne $script:Lock); $o.another_can_take_now = (Try-Take)\n"
+            )
+        self.assertEqual(got["free_while_waiting"], [True, True, True], "no lock while the run waits for him")
+        self.assertTrue(got["held_after"])
+        self.assertFalse(got["another_can_take_now"], "and the lock is held once the guards opened")
+
+    def test_the_recheck_after_the_lock_sends_the_run_back_to_waiting_with_the_lock_free(self):
+        with tempfile.TemporaryDirectory() as d:
+            got = self.run_h(d,
+                "$script:Calls = 0; $script:FreeOnSecond = $null\n"
+                "function Wait-Guards([string]$Id) { $script:Calls++; if ($script:Calls -eq 1) { [PanelNative]::Idle = 0 } else { $script:FreeOnSecond = (Try-Take); [PanelNative]::Idle = 999999 } }\n"
+                "[PanelNative]::Idle = 999999\n"
+                "Enter-Run 'abc-123'\n"
+                "$o.calls = $script:Calls; $o.free_while_waiting_again = $script:FreeOnSecond; $o.held_after = ($null -ne $script:Lock); $o.waits = @([System.IO.File]::ReadAllLines($LogFile) | ForEach-Object { ($_ -split ' waiting: ', 2)[1] })\n"
+            )
+        self.assertEqual(got["calls"], 2, "he came back between the wait and the lock: back to waiting")
+        self.assertTrue(got["free_while_waiting_again"], "the lock file was free again while it waited")
+        self.assertTrue(got["held_after"])
+        self.assertEqual(len(got["waits"]), 1)
+        self.assertTrue(got["waits"][0].startswith("a guard failed once the panel lock was taken: the operator is using the computer"), got["waits"])
+
+    def test_a_chat_that_became_busy_between_the_wait_and_the_lock_does_the_same(self):
+        with tempfile.TemporaryDirectory() as d:
+            got = self.run_h(d,
+                "$script:Calls = 0\n"
+                "function Wait-Guards([string]$Id) { $script:Calls++; if ($script:Calls -eq 1) { $script:Rec = [pscustomobject]@{ Count = 1; Busy = 'its session record (pid 7) says busy'; Terminal = '' } } else { $script:Rec = [pscustomobject]@{ Count = 0; Busy = ''; Terminal = '' } } }\n"
+                "$script:Rec = [pscustomobject]@{ Count = 0; Busy = ''; Terminal = '' }\n"
+                "Enter-Run 'abc-123'\n"
+                "$o.calls = $script:Calls; $o.waits = @([System.IO.File]::ReadAllLines($LogFile) | ForEach-Object { ($_ -split ' waiting: ', 2)[1] })\n"
+            )
+        self.assertEqual(got["calls"], 2)
+        self.assertIn("its session record (pid 7) says busy", got["waits"][0])
+
+    def test_a_run_that_already_holds_the_lock_keeps_it_when_a_guard_fails_again(self):
+        with tempfile.TemporaryDirectory() as d:
+            got = self.run_h(d,
+                "[PanelNative]::Idle = 999999\n"
+                "Enter-Run 'abc-123'\n"
+                "$script:Calls = 0\n"
+                "function Wait-Guards([string]$Id) { $script:Calls++; if ($script:Calls -eq 1) { [PanelNative]::Idle = 0 } else { $script:Held = ($null -ne $script:Lock); [PanelNative]::Idle = 999999 } }\n"
+                "Enter-Run 'abc-123'\n"
+                "$o.calls = $script:Calls; $o.held_while_waiting = $script:Held; $o.held_after = ($null -ne $script:Lock)\n"
+            )
+        self.assertEqual(got["calls"], 2)
+        self.assertTrue(got["held_while_waiting"], "a later step of a run that has the lock keeps it")
+        self.assertTrue(got["held_after"])
+
+    def test_two_runs_whose_guards_open_together_do_not_both_act(self):
+        with tempfile.TemporaryDirectory() as d:
+            got = self.run_h(d,
+                "[PanelNative]::Idle = 999999\n"
+                "Enter-Run 'abc-123'\n"
+                "$o.a_holds = ($null -ne $script:Lock)\n"
+                "$o.b_can_take = (Try-Take)\n"
+                "$second = 'took it'; try { $other = Take-ByAnother; $other.Dispose() } catch { $second = 'refused' }\n"
+                "$o.second = $second\n"
+            )
+        self.assertTrue(got["a_holds"])
+        self.assertFalse(got["b_can_take"])
+        self.assertEqual(got["second"], "refused")
+
+    def test_a_cancel_during_the_lock_wait_stops_the_run_before_any_change(self):
+        with tempfile.TemporaryDirectory() as d:
+            cancel = str(Path(d) / "waiter-x.cancel")
+            Path(cancel).write_text("{}")
+            got = self.run_h(d,
+                f"$CancelFile = '{cancel}'\n"
+                "[PanelNative]::Idle = 999999\n"
+                "function Start-Sleep { param([int]$Seconds = 0, [int]$Milliseconds = 0) $script:Sleeps++; throw 'it slept instead of stopping' }\n"
+                "$held = Take-ByAnother\n"
+                "$msg = ''; try { Enter-Run 'abc-123' } catch { $msg = $_.Exception.Message }\n"
+                "$held.Dispose()\n"
+                "$o.msg = $msg; $o.sleeps = $script:Sleeps; $o.lock = ($null -ne $script:Lock)\n"
+            )
+        self.assertEqual(got["msg"], "cancelled; nothing was changed")
+        self.assertEqual((got["sleeps"], got["lock"]), (0, False))
+
+    def test_the_waiting_reasons_are_still_logged_once_per_change(self):
+        with tempfile.TemporaryDirectory() as d:
+            got = self.run_h(d,
+                "[PanelNative]::Idle = 0; $script:Held = $null\n"
+                "function Start-Sleep { param([int]$Seconds = 0, [int]$Milliseconds = 0) $script:Sleeps++\n"
+                "  if ($script:Sleeps -eq 3) { [PanelNative]::Idle = 999999; $script:Held = Take-ByAnother }\n"
+                "  if ($script:Sleeps -eq 6 -and $null -ne $script:Held) { $script:Held.Dispose(); $script:Held = $null } }\n"
+                "Enter-Run 'abc-123'\n"
+                "$o.log = @([System.IO.File]::ReadAllLines($LogFile))\n"
+            )
+        reasons = [line.split(" waiting: ", 1)[1] for line in got["log"]]
+        self.assertEqual(reasons, ["the operator is using the computer", "another driver run holds the panel (pid 1, send, session s, since t)"], "one line per reason, not one per 2 seconds")
+
+    def test_a_list_that_must_restore_a_minimized_window_waits_for_him_without_the_lock(self):
+        with tempfile.TemporaryDirectory() as d:
+            got = self.run_h(d,
+                "[PanelNative]::Iconic = $true; [PanelNative]::Idle = 0; $script:Free = @(); $script:Log = @()\n"
+                "function Open-Window { $script:Hwnd = [IntPtr]5 }\n"
+                "function Ensure-Screen { $script:Log += 'screen' }\n"
+                "function Wait-Tree { }\n"
+                "function Get-Chats($w) { @() }\n"
+                "function Start-Sleep { param([int]$Seconds = 0, [int]$Milliseconds = 0) $script:Sleeps++; $script:Free += (Try-Take); if ($script:Sleeps -ge 2) { [PanelNative]::Idle = 999999 } }\n"
+                "$script:Hwnd = [IntPtr]::Zero\n"
+                "$out = Do-List\n"
+                "$o.free = @($script:Free); $o.log = @($script:Log); $o.out = $out; $o.held = ($null -ne $script:Lock)\n"
+            )
+        self.assertEqual(got["free"], [True, True], "no lock during the idle wait")
+        self.assertEqual(got["log"], ["screen"])
+        self.assertTrue(got["held"], "the lock is taken once he is idle, for the restore")
+        self.assertEqual(got["out"], "[]")
+
+    def test_the_body_takes_the_lock_after_the_wait_in_every_action(self):
+        enter = function_text("Enter-Run")
+        self.assertLess(enter.index("Wait-Guards"), enter.index("Enter-Lock"))
+        self.assertLess(enter.index("Enter-Lock"), enter.index("Get-GuardWhy"))
+        self.assertIn("if (-not $held) { Exit-Lock }", enter)
+        lst = function_text("Do-List")
+        self.assertLess(lst.index("Wait-Idle"), lst.index("Enter-Lock"))
+        self.assertLess(lst.index("Enter-Lock"), lst.index("IdleMs()"))

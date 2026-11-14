@@ -6,7 +6,15 @@
 # row's Archive button exists only while the pointer rests on the row, so 'archive' moves the pointer onto
 # the row and back; nothing is clicked or typed. Text always arrives in a UTF-8 file, never as an argument,
 # and is never logged.
-# The driver never takes the foreground and never activates VS Code. A minimized VS Code window is
+# VS Code takes the keyboard focus during a run: the Claude extension opens a chat's panel with focus (the bridge's
+# open and reveal), and an Invoke on a panel control (Send, the Archive button, a model item, a row) activates the
+# window. The driver does not try to prevent that. At the end of a run, after an archive's z-order undo and before
+# the window is minimized again, it makes ONE check: when VS Code has the foreground, a different window had it when
+# the screen work began, that window still exists and is visible, and the last-input tick is unchanged (he did
+# nothing), the foreground is given back to that recorded window with one native call (GiveForegroundBack, the only
+# place the foreground is set, never with VS Code as its argument) and checked within 500 ms; if it did not work the
+# note 'VS Code was left in front' is added and nothing else is tried. If he acted, nothing is moved. A minimized
+# VS Code window is
 # restored behind the window he has in front (to the bottom of the stack, shown without activation, then
 # placed directly behind his foreground window unless that window is always-on-top; a window that was maximized
 # comes back maximized), which does not reset the system's last-input time, and is minimized again at the end
@@ -46,7 +54,11 @@
 #      the very elements checked are read again and that same Send button is invoked, with no search in
 #      between; otherwise nothing is sent (exit 5)
 #   5. one run at a time: every run that changes anything holds system/logs/panel-bridge/driver.lock
-#      (pid, session id, action, start); a second run waits within its budget, then exits 3
+#      (pid, session id, action, start); a second run waits within its budget, then exits 3. The lock is
+#      taken AFTER the wait for him and the chat: a run waits for guards 1 and 2 without it (a waiting run
+#      must not make every other chat's panel command wait), takes it, checks guards 1 and 2 once more with
+#      no waiting, and if one fails lets the lock go and waits again; a run that already holds the lock
+#      keeps it. Only when the lock and the guards hold together does it change anything
 # The run tracks what it changed (tab closed, tab opened, text prefilled, Send pressed; a bridge step that
 # timed out counts as attempted) and every exit says it, then states the tab's final state from a fresh
 # read (the bridge's tab list, the chat's process, and its input when that tab is in front). On a failure
@@ -133,6 +145,13 @@ public static class PanelNative {
         GetLastInputInfo(ref l);
         return unchecked((uint)Environment.TickCount - l.dwTime);
     }
+    // The last input's tick: compared for equality, it changes when he does anything at all.
+    public static uint InputTick() {
+        LII l = new LII();
+        l.cbSize = (uint)Marshal.SizeOf(typeof(LII));
+        GetLastInputInfo(ref l);
+        return l.dwTime;
+    }
     public static string Title(IntPtr h) { StringBuilder sb = new StringBuilder(512); GetWindowTextW(h, sb, 512); return sb.ToString(); }
 
     // Only for 'archive': the pointer is moved onto a row and back, and VS Code is raised above a covering
@@ -176,6 +195,10 @@ public static class PanelNative {
     public static bool PlaceBottom(IntPtr h) { return SetWindowPos(h, new IntPtr(1), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE); }
     public static bool ShowNoActivate(IntPtr h) { return ShowWindow(h, 4); }
     public static bool MinimizeNoActivate(IntPtr h) { return ShowWindow(h, 7); }
+    // The one place the driver sets the foreground window: at the end of a run it goes back to the window that had it
+    // when the screen work began. The argument is that earlier window, never the VS Code window (the caller refuses).
+    [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
+    public static bool GiveForegroundBack(IntPtr previous) { return SetForegroundWindow(previous); }
     // Whether the window is in the always-on-top band (WS_EX_TOPMOST in its extended style).
     [DllImport("user32.dll")] static extern int GetWindowLongW(IntPtr h, int index);
     public static bool IsTopmost(IntPtr h) { return (GetWindowLongW(h, -20) & 0x8) != 0; }
@@ -269,6 +292,7 @@ $script:RunId = ''
 $script:LastWait = ''
 $script:Cancelled = $false
 $script:SavedPlacement = $null
+$script:FgStart = $null
 
 function Stop-Panel([int]$Code, [string]$Reason) {
     throw (New-Object PanelExit($Code, $Reason))
@@ -743,22 +767,74 @@ function Get-RecordAgeSeconds($Rec) {
     try { return ((Get-Date).ToUniversalTime() - (Get-Item -LiteralPath $Rec._file).CreationTimeUtc).TotalSeconds } catch { return 0.0 }
 }
 
-# Guards 1 and 2 before the screen is touched: operator idle and the chat's records idle, up to -WaitMinutes.
+# Guards 1 and 2 read once, with no waiting: '' when he is idle and the chat's records are idle, else why not (a record
+# from outside the VS Code panel is exit 5).
+function Get-GuardWhy([string]$Id) {
+    if ([PanelNative]::IdleMs() -lt ($IdleSeconds * 1000)) { return 'the operator is using the computer' }
+    if ($Id -ne '') {
+        $rs = Get-RecordState $Id
+        if ($rs.Terminal -ne '') { Stop-Panel 5 $rs.Terminal }
+        return $rs.Busy
+    }
+    ''
+}
+
+# Waits for the guards before the screen is touched, up to -WaitMinutes. It holds no lock while it waits.
 function Wait-Guards([string]$Id) {
     while ($true) {
         Stop-IfCancelled
-        $why = ''
-        if ([PanelNative]::IdleMs() -lt ($IdleSeconds * 1000)) { $why = 'the operator is using the computer' }
-        elseif ($Id -ne '') {
-            $rs = Get-RecordState $Id
-            if ($rs.Terminal -ne '') { Stop-Panel 5 $rs.Terminal }
-            $why = $rs.Busy
-        }
+        $why = Get-GuardWhy $Id
         if ($why -eq '') { Clear-Waiting; return }
         if ((Get-Date) -ge $script:WaitUntil) { Stop-Panel 3 "gave up after $WaitMinutes minutes: $why" }
         Write-Waiting $why
         Start-Sleep -Seconds 2
     }
+}
+
+# Every action's way in: wait for the guards WITHOUT the panel lock (a run that waits for him must not make every other
+# chat's panel command wait), then take the lock (waiting for it within the same budget, honouring a cancel), then check the
+# same guards once more with no waiting. If one fails (he came back, the chat became busy) the lock is let go and the run
+# goes back to waiting. Only when the lock and the guards hold together does the run change anything. A run that already
+# holds the lock when it comes in (the selftest's later steps) keeps it.
+function Enter-Run([string]$Id) {
+    $held = ($null -ne $script:Lock)
+    while ($true) {
+        Wait-Guards $Id
+        Enter-Lock $script:RunAction $script:RunId
+        $why = Get-GuardWhy $Id
+        if ($why -eq '') { return }
+        if (-not $held) { Exit-Lock }
+        Write-Waiting ('a guard failed once the panel lock was taken: ' + $why)
+    }
+}
+
+# ---------------------------------------------------------------- the foreground at the end
+
+# His foreground window and the last-input tick, recorded once, when the screen work begins.
+function Start-ForegroundRecord {
+    $script:FgStart = [pscustomobject]@{ Prev = [PanelNative]::Foreground(); Tick = [PanelNative]::InputTick() }
+}
+
+# The one check at the end of a run (Restore-Screen, before the minimize decision). When VS Code has the foreground, a
+# different window had it when the screen work began, that window still exists and is visible, and the last-input tick is
+# the record's (he did nothing), the foreground goes back to that recorded window with one call, checked within 500 ms;
+# if it did not work a note says VS Code was left in front. If the tick changed, nothing is moved. The target is only the
+# recorded window, never VS Code and never a window chosen from the z-order.
+function Restore-ForegroundAtEnd {
+    $g = $script:FgStart
+    if ($null -eq $g -or $script:Hwnd -eq [IntPtr]::Zero) { return }
+    if ([PanelNative]::Foreground() -ne $script:Hwnd) { return }
+    $prev = $g.Prev
+    if ($prev -eq [IntPtr]::Zero -or $prev -eq $script:Hwnd) { return }
+    if (-not [PanelNative]::IsWindow($prev) -or -not [PanelNative]::IsVisible($prev)) { return }
+    if ([PanelNative]::InputTick() -ne $g.Tick) { return }
+    [void][PanelNative]::GiveForegroundBack($prev)
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    while ($sw.ElapsedMilliseconds -lt 500) {
+        if ([PanelNative]::Foreground() -eq $prev) { return }
+        Start-Sleep -Milliseconds 50
+    }
+    if ([PanelNative]::Foreground() -ne $prev) { Add-Note 'VS Code was left in front' }
 }
 
 # ---------------------------------------------------------------- the window
@@ -827,7 +903,7 @@ function Confirm-VsCodeNotTopmost {
 }
 
 # A minimized window's tree is stale, so it is restored, and the run remembers to minimize it again at
-# the end. It never takes the foreground and never resets the idle time (measured): the window goes to
+# the end. It does not take the foreground and does not reset the idle time (measured): the window goes to
 # the bottom of the stack while still minimized, is shown without activation (a window minimized from maximized
 # comes back maximized), and is then put directly behind the window that has the foreground when that window
 # is not always-on-top (else it stays at the bottom), so VS Code does not appear over his work. Used by
@@ -852,6 +928,7 @@ function Restore-Minimized {
 function Ensure-Screen {
     if ($script:ScreenBegun) { return }
     Open-Window
+    Start-ForegroundRecord
     if ([PanelNative]::IsIconic($script:Hwnd)) { Restore-Minimized } else { Wait-Tree }
     $script:ScreenBegun = $true
     $script:PrevActive = @(Get-Chats $script:Win | Where-Object { $_.Active } | ForEach-Object { $_.Id })
@@ -911,6 +988,9 @@ function Restore-Screen {
     } catch {
         Add-Note ('could not put his previous chat back: ' + $_.Exception.Message)
     } finally {
+        # The one foreground check of the run comes first, so a foreground the driver's own steps caused is not mistaken
+        # for his choice in the decision below.
+        try { Restore-ForegroundAtEnd } catch { Add-Note ('could not give the foreground back: ' + $_.Exception.Message) }
         if ($script:WasMinimized) {
             try {
                 $idle = ([PanelNative]::IdleMs() -ge ($IdleSeconds * 1000))
@@ -1593,8 +1673,15 @@ function Wait-RowIdle([string]$Id) {
 function Do-List {
     Open-Window
     if ([PanelNative]::IsIconic($script:Hwnd)) {
-        # Restoring the window changes his screen, so this list waits its turn like any other run.
-        Enter-Lock 'list' ''
+        # Restoring the window changes his screen, so this list waits its turn like any other run: for his idle time
+        # without the lock, then the lock, then one more look at his idle time (back to waiting if he came back).
+        while ($true) {
+            Wait-Idle 'restore the minimized VS Code window'
+            Enter-Lock 'list' ''
+            if ([PanelNative]::IdleMs() -ge ($IdleSeconds * 1000)) { break }
+            Exit-Lock
+            Write-Waiting 'the operator came back once the panel lock was taken'
+        }
         Ensure-Screen
     } else { Wait-Tree }
     $rows = @(Get-Chats $script:Win | ForEach-Object { [pscustomobject]@{ session_id = $_.Id; name = $_.Name; status = $_.Status; active = $_.Active } })
@@ -1606,7 +1693,7 @@ function Do-Send([string]$Id, [string]$Text) {
     $s = $script:St
     $done = Invoke-Guarded {
         Test-Bridge
-        Wait-Guards $Id
+        Enter-Run $Id
         Ensure-Screen
         $chat = Wait-RowIdle $Id
         $rs = Get-RecordState $Id
@@ -1658,7 +1745,7 @@ function Do-New([string]$Text, [string]$ModelName, [string]$Group) {
     $s.Label = $UntitledLabel
     $newId = Invoke-Guarded {
         Test-Bridge
-        Wait-Guards ''
+        Enter-Run ''
         Ensure-Screen
         Wait-Idle 'open a new chat'
         # Nothing waits from here to the open: the new tab must be the only untitled one.
@@ -1733,7 +1820,7 @@ function Do-Model([string]$Id, [string]$ModelName) {
     $s = $script:St
     $out = Invoke-Guarded {
         Test-Bridge
-        Wait-Guards $Id
+        Enter-Run $Id
         Ensure-Screen
         $chat = Wait-RowIdle $Id
         $rs = Get-RecordState $Id
@@ -2026,7 +2113,7 @@ function Do-Archive([string]$Id) {
     $s = $script:St
     $s.Archive = $true
     Invoke-Guarded {
-        Wait-Guards $Id
+        Enter-Run $Id
         Ensure-Screen
         if (@(Find-Named $script:Win 'New session' $CT::Button).Count -lt 1) { Stop-Panel 2 'the sessions list is not readable in the VS Code window (no New session button); nothing was changed' }
         if ($null -eq (Find-RowElement $Id)) {
@@ -2057,7 +2144,7 @@ function Do-CloseUntitled {
     $blank = @(Get-ClaudeTabs | Where-Object { $_.label -ceq $UntitledLabel })
     if ($blank.Count -eq 0) { return 'closed 0: no untitled Claude Code tab is open' }
     New-RunState '' ''
-    Wait-Guards ''
+    Enter-Run ''
     Ensure-Screen
     $closed = 0
     $skipped = ''
@@ -2117,7 +2204,7 @@ function Invoke-Logged([string]$ActionName, [string]$LogId, [bool]$Locked, [scri
     $r = [pscustomobject]@{ Code = 0; Reason = 'ok'; Value = $null }
     try {
         try {
-            if ($Locked) { Enter-Lock $ActionName $LogId }
+            # The body takes the panel lock itself, after it has waited for him (Enter-Run).
             $r.Value = & $Body
         } catch {
             $pe = Get-PanelExit $_

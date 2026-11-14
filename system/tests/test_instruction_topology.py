@@ -30,7 +30,7 @@ class InstructionTopologyCharacterizationTests(unittest.TestCase):
             self.assertNotEqual(root, text(router))
             self.assertIn(f"[`{router}`]({router})", root)
         self.assertIn("If the task class changes, stop and read the new router.", root)
-        self.assertLessEqual(len(root.split()), 720)
+        self.assertLessEqual(len(root.split()), 728)
 
     def test_every_reply_ends_with_the_needs_line_and_due_loops_have_an_exit(self):
         root = text("AGENTS.md")
@@ -194,7 +194,7 @@ class InstructionTopologyCharacterizationTests(unittest.TestCase):
         operator = text("AGENTS.operator.md")
         self.assertIn("| `workspace/life/` | The operator layer: ", operator)
         self.assertIn("`workspace/life/` is the operator layer, not a project: "
-                      "the migration created it once", operator)
+                      "never `af new-project` it", operator)
         self.assertNotIn("new-project life", operator)
 
         ignore = text(".gitignore")

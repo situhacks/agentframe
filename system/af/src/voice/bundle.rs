@@ -7,9 +7,12 @@ use crate::pyos::{self, join, join_all, py_strip};
 use crate::voice::sha1_hex;
 
 pub const READ_LIMIT: usize = 2000;
-pub const REGISTERS: [&str; 2] = ["formal", "informal"];
-pub const TIERS: [&str; 2] = ["core", "full"];
+pub const REGISTERS: [&str; 3] = ["formal", "informal", "chat"];
+/// `core` is still accepted and means `standard`.
+pub const TIERS: [&str; 3] = ["quick", "standard", "full"];
 pub const CORE_EXEMPLAR_CAP: u64 = 20_000;
+/// The quick tier's excerpt: whole paragraphs up to this many words.
+pub const EXCERPT_WORDS: usize = 400;
 pub const DENSITY_LINE: &str = "Please remove all mannered prose: when a literal phrase is available, use it. \
 Delete the clause that props up a claim already made. One idea per paragraph.";
 
@@ -21,11 +24,22 @@ pub fn out_dir(root: &str) -> String {
     join_all(&[root, "system", "index", "voice"])
 }
 
-/// TIER_BY_CONTEXT; every other context defaults to full.
+/// The tier a context asks for; every context not named here (long-form, builder-pov,
+/// market-signal, slide, cover, and any unknown one) asks for full.
 fn tier_by_context(c: &str) -> &'static str {
     match c {
-        "email" | "short-form" => "core",
+        "message" | "chat" => "quick",
+        "email" | "short-form" => "standard",
         _ => "full",
+    }
+}
+
+/// `core` is the old name of `standard`.
+pub fn normalize_tier(t: &str) -> &str {
+    if t == "core" {
+        "standard"
+    } else {
+        t
     }
 }
 
@@ -98,15 +112,79 @@ pub fn recipe_from_head(path: &str) -> R<(Option<String>, Vec<String>, Option<St
 
 // ---------------------------------------------------------------- the bundle
 
-/// core only when every task context asks for it; a long-form context anywhere means full.
-pub fn default_tier(contexts: &[String]) -> &'static str {
-    let long = ["long-form".to_string()];
-    let cs: &[String] = if contexts.is_empty() { &long } else { contexts };
-    if cs.iter().all(|c| tier_by_context(c) == "core") {
-        "core"
-    } else {
-        "full"
+/// The tier when `--tier` is not given, and how it was chosen. A context that asks for
+/// full anywhere means full; message and chat contexts alone mean quick; any other mix
+/// of email, short-form, message and chat means standard. With no context at all, the
+/// chat register is quick and every other register is standard.
+pub fn default_tier(contexts: &[String], register: &str) -> (&'static str, String) {
+    if contexts.is_empty() {
+        let tier = if register == "chat" { "quick" } else { "standard" };
+        return (tier, "default, no context".to_string());
     }
+    let tier = if contexts.iter().any(|c| tier_by_context(c) == "full") {
+        "full"
+    } else if contexts.iter().all(|c| tier_by_context(c) == "quick") {
+        "quick"
+    } else {
+        "standard"
+    };
+    (tier, format!("from context {}", contexts.join("+")))
+}
+
+/// The contexts a bundle is built with. A recipe with none is long-form when the tier is
+/// full (its pairs and file name), and `general` with no context pair otherwise.
+pub fn effective_contexts(r: &Recipe, tier: &str) -> Vec<String> {
+    if !r.contexts.is_empty() {
+        r.contexts.clone()
+    } else if tier == "full" {
+        vec!["long-form".into()]
+    } else {
+        vec!["general".into()]
+    }
+}
+
+/// The opening of a corpus piece for the quick tier, and its word count: frontmatter
+/// dropped, whole paragraphs while the total stays at or under `EXCERPT_WORDS`, at least
+/// the first paragraph, which is cut at the limit and ends ` …` when it alone is over.
+pub fn excerpt_text(raw: &str) -> (String, usize) {
+    let text = raw.trim_start_matches('\u{feff}');
+    let body = match rx(r"\A---[ \t]*\r?\n(?:(?s:.*?)\r?\n)??---[ \t]*(?:\r?\n|\z)").find(text) {
+        Some(m) => &text[m.end()..],
+        None => text,
+    };
+    let paras: Vec<&str> =
+        rx(r"\r?\n[ \t]*\r?\n").split(body.trim()).map(str::trim).filter(|p| !p.is_empty()).collect();
+    let Some(first) = paras.first() else { return (String::new(), 0) };
+    let first_words = first.split_whitespace().count();
+    if first_words > EXCERPT_WORDS {
+        let mut seen = 0;
+        let mut in_word = false;
+        let mut end = first.len();
+        for (i, ch) in first.char_indices() {
+            if ch.is_whitespace() {
+                if in_word && seen == EXCERPT_WORDS {
+                    end = i;
+                    break;
+                }
+                in_word = false;
+            } else if !in_word {
+                in_word = true;
+                seen += 1;
+            }
+        }
+        return (format!("{} …", &first[..end]), EXCERPT_WORDS);
+    }
+    let mut total = first_words;
+    let mut taken = vec![*first];
+    for p in &paras[1..] {
+        let n = p.split_whitespace().count();
+        if total + n > EXCERPT_WORDS {
+            break;
+        }
+        total += n;
+        taken.push(p);
+    }
+    (taken.join("\n\n"), total)
 }
 
 fn corpus_pieces(corpus_dir: &str) -> R<Vec<String>> {
@@ -164,52 +242,66 @@ impl Recipe {
             template: template.map(|s| s.to_string()),
         }
     }
-
-    fn contexts_or_default(&self) -> Vec<String> {
-        if self.contexts.is_empty() {
-            vec!["long-form".into()]
-        } else {
-            self.contexts.clone()
-        }
-    }
 }
 
-/// The ordered (label, path) list the README prescribes. Existence is checked in build().
+/// The ordered (label, path) list the README prescribes. Existence is checked in build(),
+/// except a register's own pair file, which is listed only when it exists.
 pub fn plan(r: &Recipe, voice_dir: &str, tier: &str) -> R<Vec<(String, String)>> {
-    let contexts = r.contexts_or_default();
+    let tier = normalize_tier(tier);
+    let contexts = effective_contexts(r, tier);
     let register = &r.register;
-    let mut parts = vec![
-        ("procedure".to_string(), join(voice_dir, "README.md")),
-        ("identity".to_string(), join(voice_dir, "identity.md")),
-        ("profile".to_string(), join(voice_dir, "voice-profile.md")),
-        ("anti-patterns".to_string(), join(voice_dir, "anti-patterns.md")),
-        (format!("register {register}"), join_all(&[voice_dir, "registers", &format!("{register}.md")])),
-    ];
+    let reg_path = |b: &str| join_all(&[voice_dir, "registers", &format!("{b}.md")]);
+    let corpus_dir = join_all(&[voice_dir, "corpus", register]);
+    let mut parts = Vec::new();
+    if tier == "quick" {
+        parts.push(("anti-patterns".to_string(), join(voice_dir, "anti-patterns.md")));
+        parts.push(("identity".to_string(), join(voice_dir, "identity.md")));
+        parts.push((format!("register {register}"), reg_path(register)));
+        for b in &r.borrow {
+            parts.push((format!("borrow register {b}"), reg_path(b)));
+        }
+        if let Some(piece) = exemplar(&corpus_dir, CORE_EXEMPLAR_CAP)? {
+            // a piece with nothing after its frontmatter gives no excerpt part
+            if !excerpt_text(&pyos::read(&piece)?).0.is_empty() {
+                parts.push((format!("excerpt {}", pyos::basename(&piece)), piece));
+            }
+        }
+        return Ok(parts);
+    }
+    parts.push(("procedure".to_string(), join(voice_dir, "README.md")));
+    parts.push(("identity".to_string(), join(voice_dir, "identity.md")));
+    parts.push(("profile".to_string(), join(voice_dir, "voice-profile.md")));
+    parts.push(("anti-patterns".to_string(), join(voice_dir, "anti-patterns.md")));
+    parts.push((format!("register {register}"), reg_path(register)));
     for b in &r.borrow {
-        parts.push((format!("borrow register {b}"), join_all(&[voice_dir, "registers", &format!("{b}.md")])));
+        parts.push((format!("borrow register {b}"), reg_path(b)));
     }
     if let Some(t) = r.template.as_deref().filter(|t| !t.is_empty()) {
         parts.push((format!("template {t}"), join_all(&[voice_dir, "templates", t])));
     }
-    let corpus_dir = join_all(&[voice_dir, "corpus", register]);
-    if tier == "core" {
+    if tier == "standard" {
         if let Some(piece) = exemplar(&corpus_dir, CORE_EXEMPLAR_CAP)? {
             parts.push((format!("exemplar {}", pyos::basename(&piece)), piece));
         }
         return Ok(parts);
     }
-    let mut pair_files: Vec<String> = vec![format!("{register}.md")];
-    pair_files.extend(r.borrow.iter().map(|b| format!("{b}.md")));
+    let mut own: Vec<String> = vec![format!("{register}.md")];
+    own.extend(r.borrow.iter().map(|b| format!("{b}.md")));
+    let mut pair_files: Vec<(String, bool)> = own.into_iter().map(|n| (n, true)).collect();
     for c in &contexts {
-        pair_files.extend(context_pairs(c).iter().map(|s| s.to_string()));
+        pair_files.extend(context_pairs(c).iter().map(|s| (s.to_string(), false)));
     }
     let mut seen: Vec<String> = Vec::new();
-    for name in pair_files {
+    for (name, optional) in pair_files {
         if seen.contains(&name) {
             continue;
         }
-        parts.push((format!("pairs {name}"), join_all(&[voice_dir, "pairs", &name])));
-        seen.push(name);
+        let path = join_all(&[voice_dir, "pairs", &name]);
+        seen.push(name.clone());
+        if optional && !pyos::isfile(&path) {
+            continue;
+        }
+        parts.push((format!("pairs {name}"), path));
     }
     for piece in corpus_pieces(&corpus_dir)? {
         parts.push((format!("corpus {}", pyos::basename(&piece)), piece));
@@ -225,12 +317,21 @@ fn read_part(path: &str) -> R<String> {
     Ok(pyos::read(path)?.trim_end_matches('\n').to_string())
 }
 
+/// What a part contributes: its file, or for an excerpt the opening of it and its word count.
+fn part_body(label: &str, path: &str) -> R<(String, Option<usize>)> {
+    if label.starts_with("excerpt ") {
+        let (text, words) = excerpt_text(&pyos::read(path)?);
+        return Ok((text, Some(words)));
+    }
+    Ok((read_part(path)?, None))
+}
+
 /// (files, bytes, lines) a tier would bundle, without writing it.
 pub fn estimate(r: &Recipe, voice_dir: &str, tier: &str) -> R<(usize, usize, usize)> {
     let mut texts = Vec::new();
-    for (_, p) in plan(r, voice_dir, tier)? {
+    for (l, p) in plan(r, voice_dir, tier)? {
         if pyos::isfile(&p) {
-            texts.push(read_part(&p)?);
+            texts.push(part_body(&l, &p)?.0);
         }
     }
     Ok((
@@ -252,7 +353,10 @@ pub struct Bundle {
     pub missing: Vec<(String, String)>,
     pub bytes: usize,
     pub lines: usize,
-    pub other_tier: (String, usize, usize, usize),
+    /// how the tier was chosen: `asked`, `default, no context` or `from context ...`
+    pub tier_why: String,
+    /// (tier, files, bytes, lines) for each of the other two tiers
+    pub other_tiers: Vec<(String, usize, usize, usize)>,
 }
 
 impl Bundle {
@@ -271,27 +375,42 @@ pub struct Place<'a> {
 }
 
 pub fn build(place: &Place, r: &Recipe, head: Option<&str>, tier: Option<&str>) -> R<Bundle> {
-    let contexts = r.contexts_or_default();
-    let r = Recipe { contexts: contexts.clone(), ..r.clone() };
-    let tier = tier.unwrap_or_else(|| default_tier(&contexts)).to_string();
-    let parts = plan(&r, place.voice_dir, &tier)?;
+    let (tier, tier_why) = match tier {
+        Some(t) => (normalize_tier(t).to_string(), "asked".to_string()),
+        None => {
+            let (t, why) = default_tier(&r.contexts, &r.register);
+            (t.to_string(), why)
+        }
+    };
+    let contexts = effective_contexts(r, &tier);
+    let parts = plan(r, place.voice_dir, &tier)?;
     let present: Vec<(String, String)> = parts.iter().filter(|(_, p)| pyos::isfile(p)).cloned().collect();
     let missing: Vec<(String, String)> = parts.iter().filter(|(_, p)| !pyos::isfile(p)).cloned().collect();
     pyos::makedirs(place.out_dir)?;
     let ctx_join = contexts.join("+");
     let out = join(
         place.out_dir,
-        &format!("{}-{}{}.md", r.register, ctx_join, if tier == "core" { "-core" } else { "" }),
+        &format!(
+            "{}-{}{}.md",
+            r.register,
+            ctx_join,
+            match tier.as_str() {
+                "quick" => "-quick",
+                "standard" => "-standard",
+                _ => "",
+            }
+        ),
     );
 
     let mut digest_input = format!("{}|{}|{}|{}", tier, r.register, ctx_join, r.borrow.join(",")).into_bytes();
     let mut chunks = Vec::new();
     for (i, (label, path)) in present.iter().enumerate() {
-        let body = read_part(path)?;
+        let (body, excerpt_words) = part_body(label, path)?;
         let rp = rel(place.root, path)?;
         digest_input.extend_from_slice(format!("\n{rp}\n{body}").as_bytes());
+        let note = excerpt_words.map(|n| format!(", an excerpt of {n} words")).unwrap_or_default();
         chunks.push(format!(
-            "<!-- ===== voice bundle part {}/{}: {label} ({rp}) ===== -->\n\n{body}\n",
+            "<!-- ===== voice bundle part {}/{}: {label} ({rp}){note} ===== -->\n\n{body}\n",
             i + 1,
             present.len()
         ));
@@ -323,8 +442,11 @@ Derived cache under system/index/: never edit it; edit the files it names. -->\n
     );
     let text = header + &body_text;
     pyos::write(&out, &text)?;
-    let other = if tier == "core" { "full" } else { "core" };
-    let (files, nbytes, nlines) = estimate(&r, place.voice_dir, other)?;
+    let mut other_tiers = Vec::new();
+    for other in TIERS.iter().filter(|t| **t != tier) {
+        let (files, nbytes, nlines) = estimate(r, place.voice_dir, other)?;
+        other_tiers.push((other.to_string(), files, nbytes, nlines));
+    }
     let mut parts_rel = Vec::new();
     for (l, p) in &present {
         parts_rel.push((l.clone(), rel(place.root, p)?));
@@ -344,7 +466,8 @@ Derived cache under system/index/: never edit it; edit the files it names. -->\n
         missing: missing_rel,
         bytes: text.len(),
         lines: text.matches('\n').count() + 1,
-        other_tier: (other.to_string(), files, nbytes, nlines),
+        tier_why,
+        other_tiers,
     })
 }
 
@@ -363,12 +486,13 @@ fn thousands(n: usize) -> String {
 
 pub fn format_report(root: &str, b: &Bundle) -> R<String> {
     let mut lines = vec![format!(
-        "af voice bundle: {} — {} files, {} bytes, {} lines (tier {}, register {}, context {}{}; id {})",
+        "af voice bundle: {} — {} files, {} bytes, {} lines (tier {} ({}), register {}, context {}{}; id {})",
         rel(root, &b.path)?,
         b.parts.len(),
         thousands(b.bytes),
         b.lines,
         b.tier,
+        b.tier_why,
         b.register,
         b.contexts.join("+"),
         if b.borrow.is_empty() { String::new() } else { format!(", borrow {}", b.borrow.join(", ")) },
@@ -394,16 +518,13 @@ pub fn format_report(root: &str, b: &Bundle) -> R<String> {
 Read again after a compaction, when the register changes, or before the back half of a draft over about 2,500 words.",
         b.id
     ));
-    let (other, files, _nbytes, nlines) = &b.other_tier;
-    if other == "core" {
-        lines.push(format!(
-            "For a short write (an email, a message, a paragraph, a note under a page) or a copyedit pass over his text, \
---tier core is {files} files, about {nlines} lines: the rules and one exemplar, no pairs."
-        ));
-    } else {
-        lines.push(format!(
-            "For a first draft or anything over a page, --tier full adds the pairs and the whole corpus: {files} files, about {nlines} lines."
-        ));
+    for (other, files, _nbytes, nlines) in &b.other_tiers {
+        let use_for = match other.as_str() {
+            "quick" => "for a text, a direct message, a comment or a one-paragraph reply: the anti-patterns, the register and a short excerpt.",
+            "standard" => "for an email, a short write under a page, or a copyedit of his text: the rules and one whole exemplar.",
+            _ => "for a first draft, or anything over a page: adds the pairs and the whole corpus.",
+        };
+        lines.push(format!("--tier {other} is {files} files, about {nlines} lines, {use_for}"));
     }
     lines.push(DENSITY_LINE.into());
     Ok(lines.join("\n"))

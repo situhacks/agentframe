@@ -29,7 +29,7 @@ If the task class changes, stop and read the new router.
 - **Background worker**: bounded unattended work with a done-when, [started this way](library/schema/sessions-registry.md#start-a-worker). Its exit wakes you; read `handoff.md` and `report.md`.
 - **Message a chat**: `af session reach <name>`, then do what it prints; never say a turn started until its `--confirm` says delivered.
 
-A brain dump splits into these, shown to him, before anything moves. Propose Opus for deep writing, builds, client work; Sonnet for mechanical or read-heavy work; Fable when he asks.
+A brain dump splits into these, shown to him, before anything moves. Propose a model by [the model rule](library/schema/models.md).
 
 ## Main: Keep Life True
 

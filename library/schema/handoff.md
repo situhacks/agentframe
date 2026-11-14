@@ -2,7 +2,7 @@
 
 Shapes the files in `system/sessions/<name>/` (runtime state, gitignored). The chat writes them by hand; `af hook session-start` prints the brief and the page, and `af hook stop` checks the page.
 
-**`brief.md`**, written by the chat or the operator that starts it, before it starts: frontmatter `goal` (one line), `done_when` (the check that ends the job), `write_surface` (a list of vault-relative paths), `model` (`opus` or `sonnet`), and optionally `class` (`main`, `side`, or `build`; [`sessions-registry.md`](sessions-registry.md#session-classes) says what each means); the body is free.
+**`brief.md`**, written by the chat or the operator that starts it, before it starts: frontmatter `goal` (one line), `done_when` (the check that ends the job), `write_surface` (a list of vault-relative paths), `model` (an alias from [`models.md`](models.md)), and optionally `class` (`main`, `side`, or `build`; [`sessions-registry.md`](sessions-registry.md#session-classes) says what each means); the body is free.
 
 **`handoff.md`** is the chat's page: what is current, and only that. The name stays `handoff.md`. Finished items go to `archive.md` beside it, which is never printed at session start.
 

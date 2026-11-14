@@ -11,7 +11,7 @@ Turn one research question into a cited, multi-section report using a four-phase
 
 Required capabilities: web search, page fetch, file read/write. Then check two optionals and pick the mode:
 
-- **Mode A — parallel wave.** The harness can dispatch subagents (Claude Code: `Task`/`Agent` tool; other harnesses: their subagent/background-agent mechanism). Specialists run as parallel isolated subagents. If the dispatch mechanism supports per-subagent model selection, pin specialists to a fast/cheap model class (Claude harnesses: sonnet; haiku for `quick` tier) instead of the driving model.
+- **Mode A — parallel wave.** The harness can dispatch subagents (Claude Code: `Task`/`Agent` tool; other harnesses: their subagent/background-agent mechanism). Specialists run as parallel isolated subagents. If the dispatch mechanism supports per-subagent model selection, pin specialists to a fast/cheap model class (Claude harnesses: by [the model rule](../../../library/schema/models.md)) instead of the driving model.
 - **Mode B — sequential passes.** No subagent dispatch (single-context harnesses). Run each specialist as a sequential role pass in the main context. After each pass: write the role's finding atoms to the scratchpad, then drop all raw search/fetch payloads before starting the next role. This compaction is mandatory — skipping it exhausts context and degrades every later phase.
 
 The role prompts, atom schema, gates, and writer rules are identical in both modes; only dispatch mechanics differ.

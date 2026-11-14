@@ -209,13 +209,13 @@ fn the_nudge_sequence_on_a_build_chat() {
     let soft = tool_call(&fx, "s-build", "Read", 400_000).expect("soft at 400k");
     assert_eq!(
         soft,
-        "Context: about 400k tokens; this build chat's soft limit is 400k. At the next stable point, bring handoff.md and the plan up to date so a fresh context could continue, then consider compacting. Not urgent: finish work that benefits from what is loaded."
+        "Context: about 400k tokens; this build chat's soft limit is 400k. Do not compact in the middle of a task: finish the task in hand first. When it is done, and before you start the next large task, bring handoff.md and the plan up to date and run `af session compact system/cut --when-idle` (it compacts this chat once its turn ends). Compacting mid-task costs more than it saves, because the files must be read again."
     );
     assert_eq!(tool_call(&fx, "s-build", "Read", 420_000), None);
     let hard = tool_call(&fx, "s-build", "Read", 600_000).expect("hard at 600k");
     assert_eq!(
         hard,
-        "Context: about 600k tokens, past this build chat's 600k limit. At the next natural stopping point: write the current state, decisions and next step into handoff.md and the plan, file anything that exists only in this conversation. With the handoff up to date, run `af session compact system/cut --when-idle` before starting new large work: it compacts this chat once its turn ends."
+        "Context: about 600k tokens, past this build chat's 600k limit. Finish the task in hand if it is close to done; start no new large task in this context. Then write the current state, decisions and next step into handoff.md and the plan, file anything that exists only in this conversation, and run `af session compact system/cut --when-idle`."
     );
     assert_eq!(tool_call(&fx, "s-build", "Read", 620_000), None);
     assert!(tool_call(&fx, "s-build", "Read", 650_000).expect("hard again").contains("about 650k tokens"));
@@ -559,4 +559,59 @@ fn session_context_with_no_name_tables_the_chats_that_have_a_transcript() {
         context_out(&fx, &["session", "context"]),
         "| name | class | context | soft | hard | auto-compact |\n|---|---|---|---|---|---|\n| system/cut | build | 412k | 400k | 600k | 400k |\n| life/money | side | 120k | none | none | default |\n"
     );
+}
+
+// ------------------------------------------------------------------ finish the task, then compact
+
+#[test]
+fn the_nudges_say_finish_the_task_in_hand_before_compacting() {
+    let fx = Fx::new();
+    register(&fx, "system/cut", "s-build");
+    let soft = tool_call(&fx, "s-build", "Read", 400_000).expect("soft");
+    assert!(soft.contains("finish the task in hand first"), "{soft}");
+    assert!(soft.contains("Do not compact in the middle of a task"), "{soft}");
+    assert!(soft.contains("`af session compact system/cut --when-idle`"), "{soft}");
+    let hard = tool_call(&fx, "s-build", "Read", 600_000).expect("hard");
+    assert!(hard.contains("start no new large task"), "{hard}");
+    assert!(hard.contains("Finish the task in hand if it is close to done"), "{hard}");
+    assert!(hard.contains("`af session compact system/cut --when-idle`"), "{hard}");
+}
+
+// ------------------------------------------------------------------ af doctor: the auto-compact window
+
+fn doctor_out(fx: &Fx) -> String {
+    let o = fx.af().env("CLAUDE_CONFIG_DIR", fx.path("cfg")).arg("doctor").output().unwrap();
+    String::from_utf8_lossy(&o.stdout).replace("\r\n", "\n")
+}
+
+#[test]
+fn doctor_notes_an_auto_compact_window_below_the_build_hard_limit() {
+    let fx = Fx::new();
+    fx.write("cfg/settings.json", r#"{"modelSettings": {"claude-opus-5-5": {"autoCompactWindow": 400000}}}"#);
+    let out = doctor_out(&fx);
+    assert!(
+        out.contains("af doctor: note — Claude Code compacts a opus chat by itself at 400k, before a build chat's 600k nudge: such a chat can be compacted in the middle of a task. Raising it is the operator's setting."),
+        "{out}"
+    );
+}
+
+#[test]
+fn doctor_says_nothing_for_a_window_at_or_over_the_limit_or_for_no_settings() {
+    let fx = Fx::new();
+    fx.write("cfg/settings.json", r#"{"modelSettings": {"claude-opus-5-5": {"autoCompactWindow": 700000}, "claude-sonnet-5-5": {"autoCompactWindow": 600000}, "other-vendor": {"autoCompactWindow": 100000}}}"#);
+    assert!(!doctor_out(&fx).contains("compacts a"), "{}", doctor_out(&fx));
+    fx.write("cfg/settings.json", "not json");
+    assert!(!doctor_out(&fx).contains("compacts a"));
+    fx.remove("cfg/settings.json");
+    assert!(!doctor_out(&fx).contains("compacts a"));
+}
+
+#[test]
+fn doctor_never_writes_the_user_settings() {
+    let fx = Fx::new();
+    fx.write("cfg/settings.json", r#"{"modelSettings": {"claude-fable-5-2": {"autoCompactWindow": 300000}}}"#);
+    let before = fx.read("cfg/settings.json");
+    let out = doctor_out(&fx);
+    assert!(out.contains("compacts a fable chat by itself at 300k"), "{out}");
+    assert_eq!(fx.read("cfg/settings.json"), before);
 }

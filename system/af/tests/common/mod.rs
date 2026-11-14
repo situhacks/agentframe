@@ -123,6 +123,8 @@ impl Fx {
         c.env("AF_ROOT", self.root()).env("AF_PANEL_DRIVER", self.path("no-such-panel-driver")).current_dir(self.dir.path());
         // The chat running the tests is not the caller of a test's af.
         c.env_remove("CLAUDE_CODE_SESSION_ID");
+        // Nor does it read the real Claude settings or transcripts: a test that needs a config folder names one.
+        c.env("CLAUDE_CONFIG_DIR", self.path("no-claude-config"));
         c
     }
 

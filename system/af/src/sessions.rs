@@ -9,6 +9,7 @@ use crate::fm::{self, rx};
 use crate::life::{self, fmt_min, parse_ts, vpath, TextFile};
 use crate::open;
 use crate::out;
+use crate::page;
 use crate::outln;
 use crate::pyos;
 use chrono::NaiveDateTime;
@@ -403,6 +404,8 @@ pub enum HandoffNeed {
     NoWritten,
     /// A listed path (or write-surface path) changed after `written:`.
     Stale { path: String, at: NaiveDateTime, written: NaiveDateTime },
+    /// The page has shape issues (`page::Page::issues`, kind Shape); age issues never land here.
+    Shape(Vec<String>),
 }
 
 impl HandoffNeed {
@@ -411,7 +414,7 @@ impl HandoffNeed {
         let now = life::now_min();
         match self {
             HandoffNeed::Missing => format!(
-                "Write {rel} before stopping: the file does not exist. It needs the sections State, Open questions, Next step and Files touched (one path per line) and `written: {now}` (YYYY-MM-DDTHH:MM, local time) in its frontmatter."
+                "Write {rel} before stopping: the file does not exist. It needs the sections State, Next step and Files touched (one path per line) and `written: {now}` (YYYY-MM-DDTHH:MM, local time) in its frontmatter. Doing, To do, Gated, Done, Rules and Open questions are optional; library/schema/handoff.md has the rest."
             ),
             HandoffNeed::NoWritten => format!(
                 "Fix {rel} before stopping: it has no `written:` line that parses. Add `written: {now}` (YYYY-MM-DDTHH:MM, local time) to its frontmatter."
@@ -420,6 +423,14 @@ impl HandoffNeed {
                 "Refresh {rel} before stopping: {path} changed at {}, after its `written: {}`. Update the handoff to match, then set `written:` to the current time ({now}).",
                 fmt_min(*at),
                 fmt_min(*written)
+            ),
+            HandoffNeed::Shape(issues) => format!(
+                "Fix {rel} before stopping: the page has {} shape issue(s):
+{}
+Run `af session tidy`, fix the rest, then set `written:` to the current time ({now}).",
+                issues.len(),
+                issues.iter().map(|i| format!("- {i}")).collect::<Vec<_>>().join("
+")
             ),
         }
     }
@@ -434,6 +445,11 @@ impl HandoffNeed {
                 "stale: {path} changed at {}, after written: {}; refresh the handoff and its written:",
                 fmt_min(*at),
                 fmt_min(*written)
+            ),
+            HandoffNeed::Shape(issues) => format!(
+                "the page has {} shape issue(s), the first: {}; run af session tidy --check for the list",
+                issues.len(),
+                issues[0]
             ),
         }
     }
@@ -474,10 +490,15 @@ pub fn handoff_need(ctx: &Ctx, row: &Row) -> R<Option<HandoffNeed>> {
             }
         }
     }
-    Ok(match newest {
-        Some((path, at)) if at > written => Some(HandoffNeed::Stale { path, at, written }),
-        _ => None,
-    })
+    if let Some((path, at)) = newest.filter(|(_, at)| *at > written) {
+        return Ok(Some(HandoffNeed::Stale { path, at, written }));
+    }
+    let shape: Vec<String> = page::issues_of(&tf.text, crate::core::today_date())
+        .into_iter()
+        .filter(|i| i.kind == page::Kind::Shape)
+        .map(|i| i.text)
+        .collect();
+    Ok(if shape.is_empty() { None } else { Some(HandoffNeed::Shape(shape)) })
 }
 
 /// True when the chat must write (or refresh) its handoff before it stops.
@@ -511,7 +532,7 @@ pub fn stale_handoff_notes(ctx: &Ctx) -> R<Vec<String>> {
             .ok()
             .into_iter()
             .flat_map(|rd| rd.flatten())
-            .filter(|e| e.file_type().map(|t| t.is_file()).unwrap_or(false) && e.file_name() != "handoff.md")
+            .filter(|e| e.file_type().map(|t| t.is_file()).unwrap_or(false) && e.file_name() != "handoff.md" && e.file_name() != "archive.md")
             .filter_map(|e| life::mtime_min(&e.path().to_string_lossy()))
             .max();
         match (written, newest) {
@@ -587,6 +608,18 @@ pub enum SessionCmd {
         name: Option<String>,
         #[arg(long)]
         session: Option<String>,
+    },
+    /// Check a chat's page (its handoff.md) and move its finished Done items to archive.md; exit 1 when an issue remains
+    Tidy {
+        /// the chat's registry name, whatever its status; default: the calling chat
+        #[arg(conflicts_with = "all")]
+        name: Option<String>,
+        /// change nothing; print the issues
+        #[arg(long)]
+        check: bool,
+        /// every chat whose registry row has not ended
+        #[arg(long)]
+        all: bool,
     },
     /// Mark a row ended
     End {
@@ -783,6 +816,7 @@ pub fn run(ctx: &Ctx, cmd: SessionCmd) -> R<i32> {
         SessionCmd::Context { name } => crate::context::cmd_context(ctx, name.as_deref()),
         SessionCmd::List { json } => cmd_list(ctx, json),
         SessionCmd::Stop { name, session } => cmd_stop(ctx, name.as_deref(), session.as_deref()),
+        SessionCmd::Tidy { name, check, all } => page::cmd_tidy(ctx, name.as_deref(), check, all),
         SessionCmd::End { name, session, reason } => cmd_end(ctx, name.as_deref(), session.as_deref(), &reason),
         SessionCmd::Reach { name, from, confirm, since, json } => {
             crate::reach::cmd_reach(ctx, &name, from.as_deref(), confirm.as_deref(), since.as_deref(), json)
@@ -1026,6 +1060,35 @@ fn file_block(ctx: &Ctx, label: &str, rel: &str) -> R<Option<String>> {
         .map(|t| format!("{label} ({rel}):\n{t}")))
 }
 
+/// The "last handoff" block, cut at the page's word cap with a line saying so, and, when the page has any
+/// issue, the block that asks the chat to tidy it first.
+fn handoff_blocks(ctx: &Ctx, rel: &str) -> R<Vec<String>> {
+    let Some(tf) = TextFile::load(&vpath(ctx, rel))? else { return Ok(Vec::new()) };
+    let text = tf.text.trim_end();
+    if text.is_empty() {
+        return Ok(Vec::new());
+    }
+    let pg = page::Page::parse(text);
+    let words = pg.words();
+    let shown = if words > page::PAGE_WORD_CAP {
+        format!(
+            "{}
+af: this page was cut after {} words; it has {words}. Read {rel} for the rest, and shorten it.",
+            pg.cut(page::PAGE_WORD_CAP),
+            page::PAGE_WORD_CAP
+        )
+    } else {
+        text.to_string()
+    };
+    let mut out = vec![format!("last handoff ({rel}):
+{shown}")];
+    let issues = pg.issues(crate::core::today_date());
+    if !issues.is_empty() {
+        out.push(page::tidy_block(&issues));
+    }
+    Ok(out)
+}
+
 /// The SessionStart injection for a session id, and its registry row.
 pub fn bundle(ctx: &Ctx, session_id: &str) -> R<(String, Option<Row>)> {
     bundle_with(ctx, session_id, None)
@@ -1123,9 +1186,7 @@ pub fn bundle_with_source(ctx: &Ctx, session_id: &str, refresh: Option<&str>, so
         if let Some(b) = file_block(ctx, "brief", &brief_rel(&r.name))? {
             parts.push(b);
         }
-        if let Some(h) = file_block(ctx, "last handoff", &handoff_rel(&r.name))? {
-            parts.push(h);
-        }
+        parts.extend(handoff_blocks(ctx, &handoff_rel(&r.name))?);
     }
     if is_main {
         let now = life::now();

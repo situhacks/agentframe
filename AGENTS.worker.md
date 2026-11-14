@@ -21,6 +21,6 @@
 
 ## Finish
 
-1. Write `system/sessions/<your name>/handoff.md`: `## State` (five lines or fewer), `## Open questions`, `## Next step`, `## Files touched` (one path per line). For a `system/*` run also write `report.md` for a non-technical reader: what changed, why, how it was verified, what to watch.
+1. Write [`system/sessions/<your name>/handoff.md`](library/schema/handoff.md): `## State` (150 words or fewer), `## Open questions`, `## Next step`, `## Files touched` (one path per line). For a `system/*` run also write `report.md` for a non-technical reader: what changed, why, how it was verified, what to watch.
 2. Run the verification the brief names and record the result in the handoff; `done` only when it passed.
 3. Stop. The Stop hook confirms the handoff exists and stamps the registry, and your exit wakes the chat that started you. Do not count on `SendMessage` to report back: in a different permission mode from `af-main` it is held and expires unread.

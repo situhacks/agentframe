@@ -2179,7 +2179,7 @@ class ArchiveBehaviourTests(unittest.TestCase):
         "function Ensure-Screen { $script:Log += 'screen' }\n"
         "function Find-Named($win, [string]$Name, $Type) { if ($script:ListReadable) { @('button') } else { @() } }\n"
         "function Find-RowElement([string]$Id) { if ($script:Rows -contains $Id) { 'row' } else { $null } }\n"
-        "function Wait-NotInFront([string]$Id) { $script:Log += 'front' }\n"
+        "$script:Active = @(); function Get-ActiveIds { @($script:Active) }\n"
         "function Wait-RowNotActive([string]$Id) { $script:Log += 'notactive' }\n"
         "function Wait-RowIdle([string]$Id) { $script:Log += 'rowidle'; if ($script:RowStatus -eq 'running') { Stop-Panel 3 'the chat is running (its row says so)' }; [pscustomobject]@{ Name = 'a chat title'; Status = $script:RowStatus } }\n"
         "function Get-RecordState([string]$Id) { $script:Rs }\n"
@@ -2204,17 +2204,24 @@ class ArchiveBehaviourTests(unittest.TestCase):
             "$o.no_tab = Run-Do\n"
             "$script:Rs = [pscustomobject]@{ Count = 1; Busy = ''; Terminal = '' }; $o.tab = Run-Do\n"
         )
-        self.assertEqual(got["no_tab"]["log"], "guards screen front rowidle stage")
+        self.assertEqual(got["no_tab"]["log"], "guards screen rowidle stage")
         self.assertEqual(got["no_tab"]["value"], "archived session id-a; its row left the list")
-        self.assertEqual(got["tab"]["log"], "guards screen front rowidle bridge label close empty id-a lbl id-a notactive stage")
+        self.assertEqual(got["tab"]["log"], "guards screen rowidle bridge label close empty id-a lbl id-a notactive stage")
         self.assertIn("its open tab was closed first", got["tab"]["value"])
 
-    def test_the_chat_he_has_in_front_is_waited_for_before_any_tab_or_row_work(self):
-        got = self.run_do("$script:Rs = [pscustomobject]@{ Count = 1; Busy = ''; Terminal = '' }; $o.r = Run-Do\n")["r"]
-        words = got["log"].split()
-        self.assertLess(words.index("front"), words.index("rowidle"))
-        self.assertLess(words.index("front"), words.index("bridge"))
-        self.assertLess(words.index("front"), words.index("close"))
+    def test_the_chat_he_has_in_front_is_refused_at_once_with_no_waiting_and_before_any_tab_or_row_work(self):
+        got = self.run_do(
+            "$script:Rs = [pscustomobject]@{ Count = 1; Busy = ''; Terminal = '' }; $script:Active = @('id-a')\n"
+            "$script:Sleeps = 0; function Start-Sleep { param([int]$Seconds = 0, [int]$Milliseconds = 0) $script:Sleeps++ }\n"
+            "$o.r = Run-Do; $o.sleeps = $script:Sleeps\n"
+            "$script:Active = @('id-b'); $o.other_chat_in_front = Run-Do\n"
+        )
+        r = got["r"]
+        self.assertEqual(r["code"], 3)
+        self.assertTrue(r["reason"].startswith("it is the chat he has in front; nothing was changed"), r["reason"])
+        self.assertEqual(r["log"], "guards screen restore-chat", "nothing between the screen read and the exit: no row idle wait, no bridge, no close")
+        self.assertEqual(got["sleeps"], 0, "no wait step at all")
+        self.assertEqual(got["other_chat_in_front"]["code"], 0, "another chat in front does not stop it")
 
     def test_no_row_is_exit_0_worded_as_what_is_known_and_the_tab_is_not_touched(self):
         got = self.run_do("$script:Rows = @(); $script:Rs = [pscustomobject]@{ Count = 1; Busy = ''; Terminal = '' }; $o.r = Run-Do\n")["r"]
@@ -2259,23 +2266,7 @@ class ArchiveBehaviourTests(unittest.TestCase):
 
     def run_loops(self, body: str):
         script = self.NATIVE + self.LOOPS + "$o = [ordered]@{}\n" + body + "ConvertTo-Json -Compress -Depth 5 -InputObject $o\n"
-        return run_functions(["Wait-NotInFront", "Wait-RowNotActive", "Get-PanelExit"], script)
-
-    def test_a_chat_he_has_in_front_is_waited_for_then_refused_at_the_deadline(self):
-        got = self.run_loops(
-            "$script:OnSleep = { if ($script:Sleeps -ge 2) { $script:Active = @('id-b') } }\n"
-            "$o.leaves = Try-Run { Wait-NotInFront 'id-a' }\n"
-            "$o.prev = @($script:PrevActive); $o.waits = @($script:Waits)\n"
-            "$script:Active = @('id-a'); $script:OnSleep = $null; $script:WaitUntil = (Get-Date).AddSeconds(-1); $script:Waits = @()\n"
-            "$o.stays = Try-Run { Wait-NotInFront 'id-a' }\n"
-            "$o.stays_sleeps = $script:Sleeps\n"
-        )
-        self.assertEqual(got["leaves"]["code"], 0)
-        self.assertEqual(got["prev"], ["id-b"], "what he has in front when the wait ends is what his view is put back to")
-        self.assertEqual(got["waits"], ["the chat is the one he has in front"] * 2)
-        self.assertEqual(got["stays"]["code"], 3)
-        self.assertEqual(got["stays"]["reason"], "it is the chat he has in front; nothing was changed")
-        self.assertEqual(got["stays_sleeps"], 2, "it did not sleep again once the deadline had passed")
+        return run_functions(["Wait-RowNotActive", "Get-PanelExit"], script)
 
     def test_the_row_must_stop_being_the_active_row_within_a_few_seconds_of_its_tab_closing(self):
         got = self.run_loops(
@@ -2506,7 +2497,8 @@ class ArchiveBehaviourTests(unittest.TestCase):
         archive = function_text("Do-Archive")
         self.assertLess(archive.index("Enter-Run"), archive.index("Ensure-Screen"))
         self.assertLess(archive.index("Test-Bridge"), archive.index("Close-Checked"))
-        self.assertLess(archive.index("Wait-NotInFront"), archive.index("Wait-RowIdle"))
+        self.assertLess(archive.index("Get-ActiveIds"), archive.index("Wait-RowIdle"))
+        self.assertNotIn("Wait-NotInFront", source(), "no waiting for him to switch away")
         self.assertLess(archive.index("Close-Checked"), archive.index("Wait-RowNotActive"))
         self.assertLess(archive.index("Wait-RowNotActive"), archive.index("Invoke-ArchiveStage"))
         stage = function_text("Invoke-ArchiveStage")
@@ -2636,7 +2628,7 @@ class ForegroundAtEndTests(unittest.TestCase):
             + ArchiveBehaviourTests.SCREEN.replace("$script:Invoked++;", "$script:Invoked++; if ($script:TakesFg) { [PanelNative]::Fg = [IntPtr]5 };")
             + "$script:TakesFg = $false\n"
             "function Win($id) { [PanelNative]::Put(0, $id, $true, $false, $false, 0, 300, $true) }\n"
-            "function Fresh { [PanelNative]::Reset(); $script:Notes = @(); $script:FgStart = $null; $script:ScreenBegun = $true; $script:WasMinimized = $false; $script:SavedPlacement = $null\n"
+            "function Fresh { [PanelNative]::Reset(); $script:Notes = @(); $script:FgStart = $null; $script:FgFailed = $false; $script:ScreenBegun = $true; $script:WasMinimized = $false; $script:SavedPlacement = $null\n"
             "  $script:PrevActive = @('id-b'); $script:ActiveNow = @('id-b'); $script:Invoked = 0; $script:TakesFg = $false }\n"
             "function Out-State { [pscustomobject]@{ calls = [PanelNative]::Log; notes = @($script:Notes); fg = [PanelNative]::Fg.ToInt64() } }\n"
             "$o = [ordered]@{}\n"
@@ -2697,6 +2689,17 @@ class ForegroundAtEndTests(unittest.TestCase):
         self.assertIn("VS Code was left open: he has it in front", got["his_choice"]["notes"])
         self.assertEqual(got["he_acted"]["calls"], "")
         self.assertIn("VS Code was left open: he has it in front", got["he_acted"]["notes"])
+
+    def test_a_failed_hand_back_leaves_vs_code_open_with_only_the_left_in_front_note(self):
+        """Review: the re-minimize step called a foreground the driver itself had put there 'his choice'."""
+        got = self.run_e(
+            "function Fresh2 { Fresh; $script:FgFailed = $false; $script:WasMinimized = $true; $script:SavedPlacement = [int[]]@(2, 2, 0, 0, 0, 0, 1, 2, 3, 4) }\n"
+            "Fresh2; Win 7; [PanelNative]::Fg = [IntPtr]7; Start-ForegroundRecord; [PanelNative]::Fg = [IntPtr]5; [PanelNative]::GiveRefused = $true; Restore-Screen; $o.failed = Out-State\n"
+            "Fresh2; Win 7; [PanelNative]::Fg = [IntPtr]7; Start-ForegroundRecord; [PanelNative]::Tick = 3; [PanelNative]::Fg = [IntPtr]5; Restore-Screen; $o.he_acted = Out-State\n"
+        )
+        self.assertEqual(got["failed"]["notes"], ["VS Code was left in front"], "the only note: the driver put it there, not him")
+        self.assertEqual(got["failed"]["calls"], "giveback7", "and the window is left open")
+        self.assertEqual(got["he_acted"]["notes"], ["VS Code was left open: he has it in front"], "when the hand-back was not tried he did choose it")
 
     def test_the_foreground_is_set_in_one_place_only_and_checked_once_at_the_end(self):
         text = source()
@@ -2870,6 +2873,61 @@ class LockOrderTests(unittest.TestCase):
         self.assertEqual(got["log"], ["screen"])
         self.assertTrue(got["held"], "the lock is taken once he is idle, for the restore")
         self.assertEqual(got["out"], "[]")
+
+    def test_an_archive_of_the_chat_he_has_in_front_refuses_at_once_and_the_lock_is_free_afterwards(self):
+        with tempfile.TemporaryDirectory() as d:
+            script = (
+                self.STAGE
+                + f"$BridgeBase = '{d}'; $LockFile = Join-Path $BridgeBase 'driver.lock'; $LogDir = '{d}'; $LogFile = Join-Path $LogDir 'claude-panel.log'\n"
+                "$CT = $null; $RowPrefix = 'sessions-list-row-'\n"
+                "$script:Steps = @()\n"
+                "function Set-Deadlines([string]$a) { }\nfunction Start-Restoring { }\nfunction Restore-Screen { $script:Steps += 'restore-screen' }\nfunction Write-PanelLog([string]$a, [string]$b, [int]$c, [string]$d) { }\n"
+                "function Ensure-Screen { $script:Steps += 'screen' }\n"
+                "function Find-Named($w, [string]$n, $t) { @('button') }\n"
+                "function Find-RowElement([string]$Id) { 'row' }\n"
+                "function Get-ActiveIds { @('abc-123') }\n"
+                "function Wait-RowIdle([string]$Id) { $script:Steps += 'rowidle' }\n"
+                "function Restore-Chat { }\nfunction Get-StateText { 'STATE' }\n"
+                "function Start-Sleep { param([int]$Seconds = 0, [int]$Milliseconds = 0) $script:Steps += 'sleep' }\n"
+                "[PanelNative]::Idle = 999999\n"
+                "$o = [ordered]@{}\n"
+                "$r = Invoke-Logged 'archive' 'abc-123' $true { Do-Archive 'abc-123' }\n"
+                "$o.code = $r.Code; $o.reason = $r.Reason; $o.steps = @($script:Steps); $o.second_run_can_take = (Try-Take); $o.lock_var = ($null -ne $script:Lock)\n"
+                "ConvertTo-Json -Compress -Depth 5 -InputObject $o\n"
+            )
+            got = run_functions(self.FUNCS + ["Invoke-Logged", "Do-Archive", "New-RunState", "Invoke-Guarded", "Restore-ForegroundAtEnd"], script)
+        self.assertEqual(got["code"], 3)
+        self.assertTrue(got["reason"].startswith("it is the chat he has in front; nothing was changed"), got["reason"])
+        self.assertEqual(got["steps"], ["screen", "restore-screen"], "no wait step: it stopped right after the screen was read")
+        self.assertTrue(got["second_run_can_take"], "the lock was let go by the normal exit, so a second run can take it")
+        self.assertFalse(got["lock_var"])
+
+    def test_a_guard_that_flips_on_every_read_cannot_spin_the_loop_it_sleeps_and_it_stops_at_the_deadline(self):
+        with tempfile.TemporaryDirectory() as d:
+            got = self.run_h(d,
+                "$WaitMinutes = 20; $script:Reads = 0; $script:Open = $false\n"
+                # Odd reads pass (the wait), even reads fail (the check under the lock): the pattern that used to spin.
+                "function Get-GuardWhy([string]$Id) { $script:Reads++; if ($script:Reads -gt 60) { throw 'the loop spun' }; if ($script:Open) { return '' }; if ($script:Reads % 2 -eq 1) { '' } else { 'he came back' } }\n"
+                "function Start-Sleep { param([int]$Seconds = 0, [int]$Milliseconds = 0) $script:Sleeps++; if ($script:Sleeps -ge 3) { $script:Open = $true } }\n"
+                "Enter-Run 'abc-123'\n"
+                "$o.sleeps = $script:Sleeps; $o.reads = $script:Reads; $o.held = ($null -ne $script:Lock)\n"
+                "Exit-Lock; $script:Lock = $null; $script:Sleeps = 0; $script:Reads = 0; $script:Open = $false\n"
+                "$script:WaitUntil = (Get-Date).AddSeconds(-1)\n"
+                "$msg = ''; try { Enter-Run 'abc-123' } catch { $msg = $_.Exception.Message }\n"
+                "$o.deadline_msg = $msg; $o.deadline_sleeps = $script:Sleeps; $o.deadline_lock = ($null -ne $script:Lock)\n"
+            )
+        self.assertGreaterEqual(got["sleeps"], 3, "a sleep before every new round")
+        self.assertLess(got["reads"], 12)
+        self.assertTrue(got["held"])
+        self.assertEqual(got["deadline_msg"], "gave up after 20 minutes: he came back")
+        self.assertEqual((got["deadline_sleeps"], got["deadline_lock"]), (0, False), "at the deadline: exit 3, no sleep, no lock held")
+
+    def test_the_loop_after_a_failed_recheck_sleeps_and_checks_cancel_and_the_deadline_before_going_round(self):
+        enter = function_text("Enter-Run")
+        after = enter[enter.index("a guard failed once the panel lock was taken"):]
+        for part in ["Stop-IfCancelled", "$script:WaitUntil", "Start-Sleep -Seconds 2"]:
+            self.assertIn(part, after)
+        self.assertLess(after.index("Stop-IfCancelled"), after.index("Start-Sleep"))
 
     def test_the_body_takes_the_lock_after_the_wait_in_every_action(self):
         enter = function_text("Enter-Run")

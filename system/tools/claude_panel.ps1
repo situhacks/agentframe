@@ -293,6 +293,7 @@ $script:LastWait = ''
 $script:Cancelled = $false
 $script:SavedPlacement = $null
 $script:FgStart = $null
+$script:FgFailed = $false
 
 function Stop-Panel([int]$Code, [string]$Reason) {
     throw (New-Object PanelExit($Code, $Reason))
@@ -805,6 +806,10 @@ function Enter-Run([string]$Id) {
         if ($why -eq '') { return }
         if (-not $held) { Exit-Lock }
         Write-Waiting ('a guard failed once the panel lock was taken: ' + $why)
+        # Never round again at once: a guard that flips on every read must not spin the loop.
+        Stop-IfCancelled
+        if ((Get-Date) -ge $script:WaitUntil) { Stop-Panel 3 "gave up after $WaitMinutes minutes: $why" }
+        Start-Sleep -Seconds 2
     }
 }
 
@@ -834,7 +839,11 @@ function Restore-ForegroundAtEnd {
         if ([PanelNative]::Foreground() -eq $prev) { return }
         Start-Sleep -Milliseconds 50
     }
-    if ([PanelNative]::Foreground() -ne $prev) { Add-Note 'VS Code was left in front' }
+    if ([PanelNative]::Foreground() -ne $prev) {
+        # The driver put VS Code there, not him: the re-minimize decision must not call it his choice.
+        $script:FgFailed = $true
+        Add-Note 'VS Code was left in front'
+    }
 }
 
 # ---------------------------------------------------------------- the window
@@ -995,7 +1004,8 @@ function Restore-Screen {
             try {
                 $idle = ([PanelNative]::IdleMs() -ge ($IdleSeconds * 1000))
                 if ([PanelNative]::Foreground() -eq $script:Hwnd) {
-                    Add-Note 'VS Code was left open: he has it in front'
+                    # Left open either way; he only "has it in front" when the driver's own hand-back was not tried and failed.
+                    if (-not $script:FgFailed) { Add-Note 'VS Code was left open: he has it in front' }
                 } elseif ($idle -or (Test-VsCodeCovered)) {
                     if ($null -ne $script:SavedPlacement) { [void][PanelNative]::MinimizeWithPlacement($script:Hwnd, $script:SavedPlacement) }
                     else { [void][PanelNative]::MinimizeNoActivate($script:Hwnd) }
@@ -1986,19 +1996,6 @@ function Get-ArchiveBlock([string]$Id) {
     ''
 }
 
-# A chat he has in front is never archived: wait within the wait budget for that to change, then exit 3.
-# What he has in front when it ends is what his view is put back to.
-function Wait-NotInFront([string]$Id) {
-    while (@(Get-ActiveIds) -contains $Id) {
-        Stop-IfCancelled
-        if ((Get-Date) -ge (Get-WaitUntil)) { Stop-Panel 3 'it is the chat he has in front; nothing was changed' }
-        Write-Waiting 'the chat is the one he has in front'
-        Start-Sleep -Seconds 2
-    }
-    Clear-Waiting
-    $script:PrevActive = @(Get-ActiveIds)
-}
-
 # After the driver closed the chat's tab: its row stops being the active row, within a few seconds.
 function Wait-RowNotActive([string]$Id) {
     $until = (Get-Date).AddSeconds(5)
@@ -2119,7 +2116,9 @@ function Do-Archive([string]$Id) {
         if ($null -eq (Find-RowElement $Id)) {
             return 'no row for this chat is in the list as shown (already archived, never listed, or inside a collapsed group); nothing was changed'
         }
-        Wait-NotInFront $Id
+        # A chat he has in front is never archived, and there is no waiting for him to switch away: the run stops at once
+        # (the lock is let go by the normal exit) and the caller can try again later.
+        if (@(Get-ActiveIds) -contains $Id) { Stop-Panel 3 'it is the chat he has in front; nothing was changed' }
         $chat = Wait-RowIdle $Id
         $rs = Get-RecordState $Id
         if ($rs.Terminal -ne '') { Stop-Panel 5 $rs.Terminal }
@@ -2200,6 +2199,8 @@ function Invoke-Logged([string]$ActionName, [string]$LogId, [bool]$Locked, [scri
     $script:RunAction = $ActionName
     $script:RunId = $LogId
     $script:LastWait = ''
+    $script:FgStart = $null
+    $script:FgFailed = $false
     Set-Deadlines $ActionName
     $r = [pscustomobject]@{ Code = 0; Reason = 'ok'; Value = $null }
     try {

@@ -284,6 +284,7 @@ class TextTests(unittest.TestCase):
         self.assertLess(loop.index("Get-OpenMenus"), loop.index("[PanelInput]::Escape("))
         self.assertLess(loop.index("Foreground() -ne $script:Hwnd"), loop.index("[PanelInput]::Escape("))
         self.assertLess(loop.index("return }"), loop.index("[PanelInput]::Escape("), "an empty menu list returns first")
+        self.assertLess(loop.index("Test-FocusInOpenMenu"), loop.index("[PanelInput]::Escape("), "and the focus must be inside a menu")
         # The context menu is opened only after every check, with no wait between the last check and the input.
         opener = funcs["Open-GroupMenu"]
         checks = ["Foreground() -ne $script:Hwnd", "Get-OpenMenus", "ScrollIntoView", "Get-RowCenter", "Assert-GroupPointer", "MovePointer", "RootAt", "Test-PointerOnElement"]
@@ -3120,7 +3121,7 @@ class LockOrderTests(unittest.TestCase):
 
 GROUP_PURE = [
     "Test-GroupFixed", "Test-GroupName", "New-GroupPlan", "Get-GroupHeaders", "Get-HeaderRowIds", "Get-RowGroupName", "Get-GroupNoRowText",
-    "Get-GroupCreatePlan", "Get-GroupRenamePlan", "Get-GroupDeletePlan", "Get-GroupAddPlan", "Get-GroupRemovePlan", "Get-GroupPlan",
+    "Get-EditingPlan", "Get-GroupCreatePlan", "Get-GroupRenamePlan", "Get-GroupDeletePlan", "Get-GroupAddPlan", "Get-GroupRemovePlan", "Get-GroupPlan",
     "Test-GroupCreateDone", "Test-GroupRenameDone", "Test-GroupDeleteDone", "Test-GroupAddDone", "Test-GroupRemoveDone",
 ]
 
@@ -3434,13 +3435,14 @@ class GroupInputBehaviourTests(unittest.TestCase):
         "function Get-OpenMenus { @($script:Menus) }\n"
         "function Get-NameField { $script:Field }\n"
         "function Get-FieldText($f) { $script:FieldText }\n"
+        "function Test-FocusInOpenMenu { $script:FocusInMenu }\n"
         "function Get-RowCenter($t) { $script:Spot }\n"
         "function Test-PointerOnElement($t, $s) { $script:OnTarget }\n"
         "function Fake-Target { $t = [pscustomobject]@{ }; $t | Add-Member -MemberType ScriptMethod -Name TryGetCurrentPattern -Value { param($p, $ref) $false }; $t }\n"
         "function Scenario([scriptblock]$Setup, [scriptblock]$Run) {\n"
         "  [PanelNative]::Reset(); [PanelInput]::Reset()\n"
         "  $script:Notes = @(); $script:FgFailed = $false; $script:MenuInvoked = $false; $script:Placed = [pscustomobject]@{ X = 10; Y = 20 }; $script:OwnTick = 7\n"
-        "  $script:Menus = @(); $script:Field = $null; $script:FieldText = ''; $script:OnTarget = $true; $script:Spot = [pscustomobject]@{ X = 100; Y = 200 }; $script:OnSleep = $null\n"
+        "  $script:Menus = @(); $script:Field = $null; $script:FieldText = ''; $script:OnTarget = $true; $script:Spot = [pscustomobject]@{ X = 100; Y = 200 }; $script:OnSleep = $null; $script:FocusInMenu = $true; $script:Sl = 0\n"
         "  & $Setup\n"
         "  $code = 0; $reason = ''\n"
         "  try { & $Run } catch { $e = $_.Exception; while ($null -ne $e -and -not ($e -is [PanelExit])) { $e = $e.InnerException }; if ($null -ne $e) { $code = $e.Code; $reason = $e.Reason } else { $code = 99; $reason = $_.Exception.Message } }\n"
@@ -3581,7 +3583,8 @@ class GroupRunBehaviourTests(unittest.TestCase):
         "function Wait-Idle([string]$What) { $script:Seq += 'wait-idle' }\n"
         "function Stop-IfCancelled { }\nfunction Write-Waiting([string]$Reason) { $script:Seq += 'waiting' }\nfunction Clear-Waiting { }\n"
         "function Test-FullScreenFront { $script:FullReads++; [bool]($script:Full -and $script:FullReads -le 2) }\n"
-        "function Get-ListItems($w) { $script:Items }\n"
+        "$script:CameBack = $false\n"
+        "function Get-ListItems($w) { if ($script:CameBack) { [PanelNative]::Idle = 5 }; $script:Items }\n"
         "function Move-GroupFront { $script:Seq += 'front'; if ($script:FrontFails) { Stop-Panel 3 'no front' } }\n"
         "function Step-GroupCreate([string]$Name) { $script:Seq += 'step'; if ($script:StepFails) { Stop-Panel 1 'the step failed' }; 'created' }\n"
         "function Step-GroupRename([string]$Old, [string]$New, $Rows) { $script:Seq += 'step'; 'renamed' }\n"
@@ -3593,7 +3596,7 @@ class GroupRunBehaviourTests(unittest.TestCase):
         "function Restore-Pointer($Old, $Placed) { $script:Seq += 'restore-pointer' }\n"
         "function Restore-GroupForeground($Prev) { $script:Seq += 'restore-foreground' }\n"
         "function Run([scriptblock]$Setup, [scriptblock]$Body) {\n"
-        "  [PanelNative]::Reset(); $script:Seq = @(); $script:Full = $false; $script:FullReads = 0; $script:StepFails = $false; $script:FrontFails = $false; $script:WaitUntil = (Get-Date).AddMinutes(5)\n"
+        "  [PanelNative]::Reset(); $script:CameBack = $false; $script:Seq = @(); $script:Full = $false; $script:FullReads = 0; $script:StepFails = $false; $script:FrontFails = $false; $script:WaitUntil = (Get-Date).AddMinutes(5)\n"
         "  & $Setup\n"
         "  $code = 0; $reason = ''; $value = $null\n"
         "  try { $value = & $Body } catch { $pe = Get-PanelExit $_; if ($null -ne $pe) { $code = $pe.Code; $reason = $pe.Reason } else { $code = 99; $reason = $_.Exception.Message } }\n"
@@ -3713,3 +3716,250 @@ class GroupSourceTests(unittest.TestCase):
             self.assertNotIn("Close-Checked", body, name)
         # No group function reads the bridge: groups are not a bridge action.
         self.assertNotIn("Invoke-Bridge", code_lines(function_text("Do-Group")))
+
+
+# ---------------------------------------------------------------- review fixes for the group actions
+
+
+@unittest.skipUnless(POWERSHELL, "needs Windows PowerShell")
+class GroupEscapeFocusTests(unittest.TestCase):
+    """Escape goes only to a context menu that has the keyboard focus, and a menu that is slow to leave the tree gets no second one."""
+
+    def run_scenarios(self, body: str):
+        return run_functions(GroupInputBehaviourTests.FUNCS, GroupInputBehaviourTests.NATIVE + "$o = [ordered]@{}\n" + body + "ConvertTo-Json -Compress -Depth 5 -InputObject $o\n")
+
+    def test_a_menu_seen_open_while_the_focus_is_not_inside_one_gets_no_escape_and_a_note(self):
+        got = self.run_scenarios("$o.chat_focus = Scenario { $script:Menus = @('menu'); $script:FocusInMenu = $false } { Close-GroupMenus }\n")["chat_focus"]
+        self.assertEqual(got["calls"], "", "the focus is on something else (a chat): Escape would reach it")
+        self.assertTrue(any("keyboard focus is not in it" in n for n in got["notes"]), got["notes"])
+        self.assertTrue(any("a context menu was left open" in n for n in got["notes"]), got["notes"])
+
+    def test_a_closed_menu_that_is_still_listed_for_a_while_gets_one_escape_only(self):
+        got = self.run_scenarios(
+            "$o.slow = Scenario { $script:Menus = @('menu'); $script:OnSleep = { $script:Sl++; if ($script:Sl -ge 8) { $script:Menus = @() } } } { Close-GroupMenus }\n"
+            "$o.fast = Scenario { $script:Menus = @('menu'); [PanelInput]::OnEscape = [System.Action]{ $script:Menus = @() } } { Close-GroupMenus }\n"
+        )
+        self.assertEqual(got["slow"]["calls"], "escape", "the open menus are counted again for up to a second before anything else is decided")
+        self.assertEqual(got["slow"]["notes"], [])
+        self.assertEqual(got["fast"]["calls"], "escape")
+
+    def test_when_the_focus_leaves_the_menu_after_an_escape_the_next_round_sends_nothing(self):
+        got = self.run_scenarios(
+            "$o.left = Scenario { $script:Menus = @('menu', 'sub'); [PanelInput]::OnEscape = [System.Action]{ $script:FocusInMenu = $false } } { Close-GroupMenus }\n"
+        )["left"]
+        self.assertEqual(got["calls"], "escape", "one Escape (the focus was in the menu); the next round sees the focus elsewhere")
+        self.assertTrue(any("keyboard focus is not in it" in n for n in got["notes"]), got["notes"])
+
+
+@unittest.skipUnless(POWERSHELL, "needs Windows PowerShell")
+class GroupNameFieldOwnerTests(unittest.TestCase):
+    """Typing goes only into the name field of the header the run is about: the right-clicked one for a rename, a header that was
+    not in the list before the button was pressed for a create. A staged element tree stands in for the screen."""
+
+    STAGE = (
+        "Add-Type -AssemblyName UIAutomationClient\n"
+        "$AE = [System.Windows.Automation.AutomationElement]; $CT = [System.Windows.Automation.ControlType]; $TS = [System.Windows.Automation.TreeScope]\n"
+        "$script:Parent = @{}; $script:Focus = $null; $script:FieldOwner = $null; $RowPrefix = 'sessions-list-row-'\n"
+        "function El([string]$Id, [string]$Class, $Type, [string]$Name, $Parent) {\n"
+        "  $e = [pscustomobject]@{ Id = $Id; Current = [pscustomobject]@{ ClassName = $Class; ControlType = $Type; Name = $Name; AutomationId = '' } }\n"
+        "  $e | Add-Member -MemberType ScriptMethod -Name GetRuntimeId -Value { @(1, ([int]$this.Id.GetHashCode() -band 0xffff)) }\n"
+        "  if ($null -ne $Parent) { $script:Parent[$Id] = $Parent }\n"
+        "  $e\n"
+        "}\n"
+        "function Get-ParentOf($El) { $script:Parent[$El.Id] }\n"
+        "function Test-SameElement($A, $B) { $A.Id -eq $B.Id }\n"
+        "function Get-FocusedElement { $script:Focus }\n"
+        "$sessions = El 'sessions' 'sessionList_x' $CT::Group 'Sessions' $null\n"
+        "$other = El 'other' 'panel_x' $CT::Group 'Other panel' $null\n"
+        "$headerA = El 'headerA' 'groupHeader_a' $CT::Button 'Main 1' $sessions\n"
+        "$headerB = El 'headerB' 'groupHeader_b' $CT::Button 'Q3 2026 2' $sessions\n"
+        "$fieldA = El 'fieldA' 'groupName_a groupNameEditing_a' $CT::Group '' $headerA\n"
+        "$fieldB = El 'fieldB' 'groupName_b groupNameEditing_b' $CT::Group '' $headerB\n"
+        "$plainA = El 'plainA' 'groupName_a' $CT::Group '' $headerA\n"
+        "$strayHeader = El 'strayHeader' 'groupHeader_c' $CT::Button 'Stray 0' $other\n"
+        "$strayField = El 'strayField' 'groupName_c groupNameEditing_c' $CT::Group '' $strayHeader\n"
+        "$noHeaderField = El 'noHeaderField' 'groupName_d groupNameEditing_d' $CT::Group '' $sessions\n"
+        "function Owner([string]$Mode, $Element, $Known) { $script:FieldOwner = [pscustomobject]@{ Mode = $Mode; Element = $Element; Known = $Known } }\n"
+        "function Field([scriptblock]$Setup) { $script:Focus = $null; $script:FieldOwner = $null; & $Setup; $f = Get-NameField; if ($null -eq $f) { 'none' } else { $f.Id } }\n"
+    )
+
+    def run_stage(self, body: str):
+        return run_functions(["Get-NameField", "Get-RuntimeKey", "Test-FocusInOpenMenu"], self.STAGE + "$o = [ordered]@{}\n" + body + "ConvertTo-Json -Compress -Depth 5 -InputObject $o\n")
+
+    def test_a_rename_types_only_into_the_field_of_the_header_that_was_right_clicked(self):
+        got = self.run_stage(
+            "$o.own = Field { Owner 'is' $headerA @(); $script:Focus = $fieldA }\n"
+            "$o.other_groups_field = Field { Owner 'is' $headerA @(); $script:Focus = $fieldB }\n"
+            "$o.no_owner = Field { $script:Focus = $fieldA }\n"
+        )
+        self.assertEqual((got["own"], got["other_groups_field"], got["no_owner"]), ("fieldA", "none", "none"))
+
+    def test_a_create_types_only_into_a_header_that_was_not_in_the_list_before_the_button_was_pressed(self):
+        got = self.run_stage(
+            "$known = @((Get-RuntimeKey $headerA))\n"
+            "$o.new_header = Field { Owner 'new' $null $known; $script:Focus = $fieldB }\n"
+            "$o.old_header = Field { Owner 'new' $null $known; $script:Focus = $fieldA }\n"
+            "$noKey = [pscustomobject]@{ Id = 'headerNK'; Current = [pscustomobject]@{ ClassName = 'groupHeader_n'; ControlType = $CT::Button; Name = 'x'; AutomationId = '' } }\n"
+            "$script:Parent['headerNK'] = $sessions\n"
+            "$fieldNK = El 'fieldNK' 'groupName_n groupNameEditing_n' $CT::Group '' $noKey\n"
+            "$o.no_key = Field { Owner 'new' $null @(); $script:Focus = $fieldNK }\n"
+        )
+        self.assertEqual((got["new_header"], got["old_header"], got["no_key"]), ("fieldB", "none", "none"), "a header whose identity cannot be read is never accepted")
+
+    def test_the_focus_must_be_a_name_field_inside_a_header_inside_the_sessions_group(self):
+        got = self.run_stage(
+            "$o.not_editing = Field { Owner 'is' $headerA @(); $script:Focus = $plainA }\n"
+            "$o.outside_sessions = Field { Owner 'is' $strayHeader @(); $script:Focus = $strayField }\n"
+            "$o.no_header = Field { Owner 'is' $headerA @(); $script:Focus = $noHeaderField }\n"
+            "$o.nothing_focused = Field { Owner 'is' $headerA @() }\n"
+        )
+        for key in ("not_editing", "outside_sessions", "no_header", "nothing_focused"):
+            self.assertEqual(got[key], "none", key)
+
+    def test_the_focus_is_in_an_open_menu_only_when_it_or_an_ancestor_is_a_context_menu(self):
+        got = self.run_stage(
+            "$menu = El 'menu' 'contextMenu_x' $CT::Menu '' $sessions\n"
+            "$item = El 'item' 'menuItem_x' $CT::MenuItem 'Rename group' $menu\n"
+            "$sub = El 'sub' 'contextMenu_y' $CT::Menu '' $sessions\n"
+            "$subItem = El 'subItem' 'menuItem_y' $CT::MenuItem 'Main' $sub\n"
+            "$plainMenu = El 'plainMenu' 'someOtherMenu' $CT::Menu '' $sessions\n"
+            "$plainItem = El 'plainItem' 'x' $CT::MenuItem 'x' $plainMenu\n"
+            "$chatInput = El 'chatInput' 'messageInput_x' $CT::Edit 'Message input' $other\n"
+            "$o.item = (& { $script:Focus = $item; Test-FocusInOpenMenu })\n"
+            "$o.sub_item = (& { $script:Focus = $subItem; Test-FocusInOpenMenu })\n"
+            "$o.not_a_context_menu = (& { $script:Focus = $plainItem; Test-FocusInOpenMenu })\n"
+            "$o.chat = (& { $script:Focus = $chatInput; Test-FocusInOpenMenu })\n"
+            "$o.nothing = (& { $script:Focus = $null; Test-FocusInOpenMenu })\n"
+        )
+        self.assertEqual((got["item"], got["sub_item"], got["not_a_context_menu"], got["chat"], got["nothing"]), (True, True, False, False, False))
+
+    def test_headers_outside_the_sessions_group_are_not_part_of_the_list(self):
+        stage = self.STAGE + (
+            "function Get-HeaderInfo($b, $tw) { [pscustomobject]@{ Name = $b.Id; Count = 1; Editing = $false } }\n"
+            "$win = [pscustomobject]@{ }\n"
+            "$win | Add-Member -MemberType ScriptMethod -Name FindAll -Value { param($scope, $cond) @($headerA, $strayHeader, $headerB) }\n"
+            "$o = [ordered]@{}\n"
+            "$o.names = @(Get-ListItems $win | ForEach-Object { $_.Name })\n"
+            "$o.under = @((Test-UnderSessions $headerA), (Test-UnderSessions $strayHeader), (Test-UnderSessions $fieldB), (Test-UnderSessions $sessions))\n"
+            "ConvertTo-Json -Compress -Depth 5 -InputObject $o\n"
+        )
+        got = run_functions(["Get-ListItems", "Test-UnderSessions"], stage)
+        self.assertEqual(got["names"], ["headerA", "headerB"], "the stray header (not under Sessions) is left out")
+        self.assertEqual(got["under"], [True, False, True, False])
+
+
+@unittest.skipUnless(POWERSHELL, "needs Windows PowerShell")
+class GroupReviewPlanTests(unittest.TestCase):
+    """Plans and done-checks tightened by review: an open name field refuses every plan, an unreadable count needs -Force, and a delete is
+    done only on a read that has the Ungrouped header."""
+
+    def plans(self, exprs: dict, fixtures: str = ""):
+        wrapped = {k: f"(& {{ $p = {v}; [pscustomobject]@{{ act = $p.Act; code = $p.Code; text = $p.Text }} }})" for k, v in exprs.items()}
+        return run_exprs(wrapped, fixtures)
+
+    def test_every_plan_refuses_with_exit_5_while_a_name_field_is_open_and_says_which(self):
+        got = self.plans(
+            {
+                "create": "Get-GroupCreatePlan $E 'Work'",
+                "rename": "Get-GroupRenamePlan $E 'Main' 'Plans'",
+                "delete": "Get-GroupDeletePlan $E 'Empty' $true",
+                "add": "Get-GroupAddPlan $E 'a' 'Main'",
+                "remove": "Get-GroupRemovePlan $E 'a'",
+                "via_kind": "Get-GroupPlan 'create' $E '' 'Work' '' $false",
+                "closed_create": "Get-GroupCreatePlan $C 'Work'",
+            },
+            f"$E = {L(H('Main', 1), R('a'), H('Empty', 0), H('Half typed', 0, True), H('Ungrouped', 0))}\n$C = {L(H('Main', 0), H('Ungrouped', 0))}\n",
+        )
+        for key in ("create", "rename", "delete", "add", "remove", "via_kind"):
+            self.assertEqual((got[key]["act"], got[key]["code"]), ("refuse", 5), key)
+            self.assertIn("name field is already open", got[key]["text"], key)
+            self.assertIn("'Half typed'", got[key]["text"], f"{key}: it names the header")
+            self.assertIn("nothing was changed", got[key]["text"], key)
+        self.assertEqual(got["closed_create"]["act"], "do")
+
+    def test_a_delete_whose_count_could_not_be_read_needs_force_and_says_so(self):
+        got = self.plans(
+            {
+                "unknown": "Get-GroupDeletePlan $L 'Mystery' $false",
+                "null_count": "Get-GroupDeletePlan $L 'NoCount' $false",
+                "forced": "Get-GroupDeletePlan $L 'Mystery' $true",
+                "empty": "Get-GroupDeletePlan $L 'Empty' $false",
+            },
+            f"$L = {L(H('Mystery', -1), H('NoCount', 0), H('Empty', 0), H('Ungrouped', 0))}\n$L[1].Count = $null\n",
+        )
+        for key in ("unknown", "null_count"):
+            self.assertEqual((got[key]["act"], got[key]["code"]), ("refuse", 5), key)
+            self.assertIn("could not be read", got[key]["text"], key)
+            self.assertIn("-Force", got[key]["text"], key)
+        self.assertEqual(got["forced"]["act"], "do")
+        self.assertEqual(got["empty"]["act"], "do", "a count that reads 0 is still a known empty group")
+
+    def test_a_delete_is_done_only_on_a_read_that_shows_the_ungrouped_header_and_no_such_group(self):
+        got = run_exprs(
+            {
+                "empty_read": "Test-GroupDeleteDone @() 'Gone'",
+                "half_drawn": "Test-GroupDeleteDone $H 'Gone'",
+                "real_read": "Test-GroupDeleteDone $L 'Gone'",
+                "still_there": "Test-GroupDeleteDone $L 'Main'",
+            },
+            f"$L = {L(H('Main', 0), H('Ungrouped', 0))}\n$H = {L(H('Main', 0))}\n",
+        )
+        self.assertEqual(got, {"empty_read": False, "half_drawn": False, "real_read": True, "still_there": False})
+
+    def test_no_other_done_check_is_true_on_an_empty_read(self):
+        got = run_exprs(
+            {
+                "create": "Test-GroupCreateDone @() 'Work'",
+                "rename": "Test-GroupRenameDone @() 'Main' 'Plans' @()",
+                "add": "Test-GroupAddDone @() 'a' 'Main'",
+                "remove": "Test-GroupRemoveDone @() 'a'",
+            }
+        )
+        self.assertEqual(got, {"create": False, "rename": False, "add": False, "remove": False})
+
+
+@unittest.skipUnless(POWERSHELL, "needs Windows PowerShell")
+class GroupRunReviewTests(unittest.TestCase):
+    def run_stage(self, body: str):
+        return run_functions(GroupRunBehaviourTests.FUNCS, GroupRunBehaviourTests.STAGE + "$o = [ordered]@{}\n" + body + "ConvertTo-Json -Compress -Depth 5 -InputObject $o\n")
+
+    def test_if_he_came_back_while_the_list_was_read_the_run_stops_with_exit_3_before_anything_is_touched(self):
+        items = GroupRunBehaviourTests().items(H("Main", 0), H("Ungrouped", 0))
+        got = self.run_stage(
+            f"$o.back = Run {{ {items}; $script:CameBack = $true }} {{ Do-Group 'create' '' 'Work' '' $false }}\n"
+            f"$o.calm = Run {{ {items} }} {{ Do-Group 'create' '' 'Work' '' $false }}\n"
+        )
+        self.assertEqual(got["back"]["code"], 3)
+        self.assertIn("he came back", got["back"]["reason"])
+        self.assertIn("nothing was changed", got["back"]["reason"])
+        self.assertEqual(got["back"]["seq"], "enter-run ensure-screen wait-idle", "no front, no step, no clean-up")
+        self.assertEqual(got["calm"]["code"], 0)
+        self.assertIn("front", got["calm"]["seq"].split())
+
+    def test_the_name_field_owner_is_cleared_at_the_start_of_every_group_run(self):
+        items = GroupRunBehaviourTests().items(H("Main", 0), H("Ungrouped", 0))
+        got = self.run_stage(f"$script:FieldOwner = 'left over'\n$o.run = Run {{ {items} }} {{ Do-Group 'create' '' 'Work' '' $false }}\n$o.owner = [string]$script:FieldOwner\n")
+        self.assertEqual(got["run"]["code"], 0)
+        self.assertEqual(got["owner"], "", "a stale owner from an earlier run cannot let a field through")
+
+
+class GroupMinimizeDecisionTests(unittest.TestCase):
+    def test_a_group_run_minimizes_again_by_no_input_since_its_own_last_input_not_by_idle_time(self):
+        if not POWERSHELL:
+            self.skipTest("needs Windows PowerShell")
+        got = ForegroundAtEndTests().run_e(
+            "function Fresh3 { Fresh; $script:WasMinimized = $true; $script:SavedPlacement = [int[]]@(2, 2, 0, 0, 0, 0, 1, 2, 3, 4); $script:GroupRun = $true; $script:OwnTick = 7; [PanelNative]::Tick = 7; [PanelNative]::Idle = 5; [PanelNative]::Fg = [IntPtr]9 }\n"
+            "Fresh3; Restore-Screen; $o.own_input_only = Out-State\n"
+            "Fresh3; [PanelNative]::Tick = 8; Restore-Screen; $o.he_acted = Out-State\n"
+            "Fresh3; $script:GroupRun = $false; Restore-Screen; $o.other_action = Out-State\n"
+            "Fresh3; $script:OwnTick = $null; [PanelNative]::Idle = 999999; Restore-Screen; $o.no_input_sent = Out-State\n"
+            "Fresh3; $script:OwnTick = $null; Restore-Screen; $o.no_input_sent_he_is_active = Out-State\n"
+        )
+        self.assertIn("minplace", got["own_input_only"]["calls"], "the idle time is low because of the driver's own input; nothing came after it, so it is minimized")
+        self.assertNotIn("he is at the computer", " ".join(got["own_input_only"]["notes"]))
+        self.assertNotIn("minplace", got["he_acted"]["calls"])
+        self.assertIn("VS Code was left open: it is visible on his screen and he is at the computer", got["he_acted"]["notes"])
+        self.assertNotIn("minplace", got["other_action"]["calls"], "every other action still decides by idle time")
+        self.assertIn("VS Code was left open: it is visible on his screen and he is at the computer", got["other_action"]["notes"])
+        self.assertIn("minplace", got["no_input_sent"]["calls"])
+        self.assertNotIn("minplace", got["no_input_sent_he_is_active"]["calls"], "a run that sent no input is judged by idle time as before")

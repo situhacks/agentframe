@@ -471,9 +471,7 @@ fn cmd_import(ctx: &Ctx, a: &ImportArgs) -> R<i32> {
         Ok((added, unchanged, replaced))
     })?;
     outln!("added {added}, unchanged {unchanged}, replaced {replaced}");
-    if added + replaced > 0 {
-        render_after_write(ctx);
-    }
+    render_after_write(ctx);
     Ok(0)
 }
 

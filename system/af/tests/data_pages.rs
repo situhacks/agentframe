@@ -255,3 +255,27 @@ fn eight_adds_at_once_with_a_registered_page_leave_the_page_showing_eight_rows()
     });
     assert!(fx.read(PAGE).contains("| n |\n|---|\n| 8 |\n"), "{}", fx.read(PAGE));
 }
+
+#[test]
+fn an_import_that_adds_nothing_still_re_renders_the_registered_pages() {
+    let fx = Fx::new();
+    new_sets(&fx);
+    fx.write(PAGE, "<!-- af-data: select count(*) as n from sets -->
+<!-- /af-data -->
+");
+    fx.ok(&["data", "page", "systems/fitness/log.md"]);
+    let input = fx.write("in/one.csv", "date,exercise,set,source
+2026-11-14,Squat,1,log
+");
+    fx.ok(&["data", "import", "sets", "--csv", &input]);
+    fx.write(PAGE, "<!-- af-data: select count(*) as n from sets -->
+edited by hand
+<!-- /af-data -->
+");
+    let out = fx.ok(&["data", "import", "sets", "--csv", &input]);
+    assert_eq!(out.trim(), "added 0, unchanged 1, replaced 0");
+    assert!(fx.read(PAGE).contains("| n |
+|---|
+| 1 |
+") && !fx.read(PAGE).contains("edited by hand"), "{}", fx.read(PAGE));
+}

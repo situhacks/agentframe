@@ -409,6 +409,42 @@ class CheckTests(unittest.TestCase):
         self.assertEqual(e.verdict, "update")
         self.assertIn("newer message", e.capped)
 
+    def test_a_search_copy_of_a_thread_does_not_pass_a_message_the_fetched_thread_has_a_later_one_to(self):
+        retracts = {**MESSAGE, "id": "m-2", "threadId": "t-1", "date": "2026-03-09T16:00:00Z",
+                    "subject": "Re: Your licence is renewed", "htmlBody": "<p>Sorry, that was a mistake.</p>"}
+        lines = stream(*searched({"id": "t-1", "messages": [MESSAGE]}), *fetched(MESSAGE, retracts),
+                       reply=json.dumps(GOOD))
+        e = self.check(lines)
+        self.assertEqual(e.verdict, "update")
+        self.assertIn("a newer message in the thread may change it", e.capped)
+
+    def test_two_copies_that_share_only_a_message_id_are_one_thread(self):
+        retracts = {**MESSAGE, "id": "m-2", "date": "2026-03-09T16:00:00Z", "subject": "Re: Your licence is renewed",
+                    "htmlBody": "<p>Sorry, that was a mistake.</p>"}
+        bare = call("g", GET, json.dumps({"messages": [MESSAGE, retracts]}))
+        lines = stream(*searched({"id": "t-1", "messages": [MESSAGE]}), *bare, reply=json.dumps(GOOD))
+        e = self.check(lines)
+        self.assertEqual(e.verdict, "update")
+        self.assertIn("a newer message in the thread may change it", e.capped)
+
+    def test_the_fetched_copy_of_a_message_wins_over_the_search_copy(self):
+        snippet = {"id": "m-1", "threadId": "t-1", "date": MESSAGE["date"], "snippet": "Good news: your licence"}
+        payloads = [(SEARCH, {"threads": [{"id": "t-1", "messages": [snippet]}]}), (GET, {"id": "t-1", "messages": [MESSAGE]})]
+        threads = lw._threads(payloads)
+        self.assertEqual(threads, [[MESSAGE]])
+        self.assertEqual(lw.merge_thread_copies([[snippet], [MESSAGE]]), [snippet], "the first copy given wins")
+        self.assertEqual(lw.merge_thread_copies([[MESSAGE], [snippet, {"id": "m-2"}]]), [MESSAGE, {"id": "m-2"}])
+
+    def test_unrelated_threads_stay_apart_and_a_later_message_in_one_does_not_cap_a_hit_in_the_other(self):
+        elsewhere = {"id": "m-9", "threadId": "t-2", "date": "2026-03-09T16:00:00Z", "sender": "Bank <bank@bank.example>",
+                     "subject": "Your statement", "htmlBody": "<p>Your statement is ready to view online.</p>"}
+        lines = stream(*searched({"id": "t-1", "messages": [MESSAGE]}, {"id": "t-2", "messages": [elsewhere]}),
+                       *fetched(MESSAGE), reply=json.dumps(GOOD))
+        e = self.check(lines)
+        self.assertEqual((e.verdict, e.capped), ("done", None))
+        payloads = [(SEARCH, {"threads": [{"id": "t-1", "messages": [MESSAGE]}, {"id": "t-2", "messages": [elsewhere]}]})]
+        self.assertEqual(lw._threads(payloads), [[MESSAGE], [elsewhere]])
+
     def test_an_email_dated_later_than_now_is_a_failure(self):
         now = dt.datetime(2026, 3, 8, 9, 0)
         later_today = {**MESSAGE, "date": "2026-03-08T23:30:00+00:00"}

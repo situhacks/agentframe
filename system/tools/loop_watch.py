@@ -193,14 +193,52 @@ def _alpha_words(text: str) -> int:
     return sum(bool(_ALPHA_TOKEN.fullmatch(t)) for t in tokens)
 
 
+def merge_thread_copies(copies: list[list[dict]]) -> list[dict]:
+    """One thread's messages from its copies, in the order given: a message once by its `id`, from
+    the first copy that holds it. Pass the fetched copy first, since it is whole."""
+    seen: set[str] = set()
+    out: list[dict] = []
+    for m in (m for copy in copies for m in copy if isinstance(m, dict)):
+        if isinstance(m.get("id"), str) and m["id"]:
+            if m["id"] in seen:
+                continue
+            seen.add(m["id"])
+        out.append(m)
+    return out
+
+
+def _copy_keys(thread_id: object, messages: list[dict]) -> tuple[set[str], set[str]]:
+    """What ties a copy of a thread to another: its thread ids and its message ids."""
+    tids = {x for x in [thread_id, *(m.get("threadId") for m in messages)] if isinstance(x, str) and x}
+    return tids, {m["id"] for m in messages if isinstance(m.get("id"), str) and m["id"]}
+
+
 def _threads(payloads: list[tuple[str, dict]]) -> list[list[dict]]:
-    """Each thread's messages in a run's Gmail results: get_thread's and search_threads'."""
-    lists: list = []
+    """Each thread's messages in a run's Gmail results, get_thread's and search_threads', with the
+    copies of one thread merged. Two copies are one thread when their thread ids match, their
+    messages share a `threadId`, or they share a message `id`."""
+    copies: list[tuple[bool, object, list]] = []   # (fetched, the payload's thread id, its messages)
     for _, p in payloads:
-        lists.append(p.get("messages"))
+        copies.append((True, p.get("id"), p.get("messages")))
         threads = p.get("threads")
-        lists += [t.get("messages") for t in threads if isinstance(t, dict)] if isinstance(threads, list) else []
-    return [[m for m in found if isinstance(m, dict)] for found in lists if isinstance(found, list)]
+        copies += [(False, t.get("id"), t.get("messages")) for t in threads if isinstance(t, dict)]             if isinstance(threads, list) else []
+    groups: list[tuple[set[str], set[str], list[tuple[bool, list[dict]]]]] = []
+    for fetched, tid, found in copies:
+        if not isinstance(found, list):
+            continue
+        messages = [m for m in found if isinstance(m, dict)]
+        tids, mids = _copy_keys(tid, messages)
+        joined = [g for g in groups if g[0] & tids or g[1] & mids]
+        if joined:
+            into = joined[0]
+            for g in joined[1:]:
+                into[0].update(g[0]), into[1].update(g[1]), into[2].extend(g[2])
+                groups[:] = [x for x in groups if x is not g]
+            into[0].update(tids), into[1].update(mids), into[2].append((fetched, messages))
+        else:
+            groups.append((tids, mids, [(fetched, messages)]))
+    return [merge_thread_copies([c for f in (True, False) for fetched, c in members if fetched is f])
+            for _, _, members in groups]
 
 
 def _find_words(text: str, words: list[str]) -> str | None:

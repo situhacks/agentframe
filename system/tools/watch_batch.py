@@ -400,14 +400,7 @@ def _thread_messages(thread: str, search: dict, gets: list[Call]) -> list[dict]:
     whole, then any the search result alone holds."""
     pools = [c.payload.get("messages") for c in gets if c.payload and c.input.get("threadId") == thread]
     pools += [t.get("messages") for t in search.get("threads") or [] if isinstance(t, dict) and t.get("id") == thread]
-    seen, out = set(), []
-    for m in (m for pool in pools if isinstance(pool, list) for m in pool if isinstance(m, dict)):
-        if isinstance(m.get("id"), str) and m["id"]:
-            if m["id"] in seen:
-                continue
-            seen.add(m["id"])
-        out.append(m)
-    return out
+    return lw.merge_thread_copies([pool for pool in pools if isinstance(pool, list)])
 
 
 def _in_thread(message: dict, thread: str, search: dict, gets: list[Call]) -> bool:
@@ -513,10 +506,6 @@ def judge_met(it: dict, v: dict, search: Call, bound: list[Call], ids: list[str]
         hit = lw.find_email(payloads, verdict, it["start"], now)
         if not _in_thread(hit.message, v["thread"], search.payload, bound):
             return Failed("the email the quote came from is not in the thread the model named")
-        # Judged again against the whole thread as fetched, so a message the search result left
-        # out still counts toward newest and toward quoted history.
-        whole = _thread_messages(v["thread"], search.payload, bound)
-        hit = lw.find_email([(GET, {"messages": whole})], verdict, it["start"], now)
     except lw.LoopFailure as e:
         return Failed(str(e))
     address = lw.address_of(hit.message.get("sender") or "") or ""

@@ -27,15 +27,16 @@ fn k(tokens: u64) -> u64 {
     (tokens + 500) / 1000
 }
 
-pub fn nudge_text(class: SessionClass, name: &str, limits: &ClassLimits, tokens: u64, tier: Tier) -> String {
+pub fn nudge_text(class: SessionClass, name: &str, limits: &ClassLimits, tokens: u64, tier: Tier, plan: bool) -> String {
     let (n, c) = (k(tokens), class.name());
+    let and_plan = if plan { " and the plan" } else { "" };
     match tier {
         Tier::Soft => format!(
-            "Context: about {n}k tokens; this {c} chat's soft limit is {}k. Do not compact in the middle of a task: finish the task in hand first. When it is done, and before you start the next large task, bring handoff.md and the plan up to date and run `af session compact {name} --when-idle` (it compacts this chat once its turn ends). Compacting mid-task costs more than it saves, because the files must be read again.",
+            "Context: about {n}k tokens; this {c} chat's soft limit is {}k. Do not compact in the middle of a task: finish the task in hand first. When it is done, and before you start the next large task, bring handoff.md{and_plan} up to date and run `af session compact {name} --when-idle` (it compacts this chat once its turn ends). Compacting mid-task costs more than it saves, because the files must be read again.",
             k(limits.soft.unwrap_or(0))
         ),
         Tier::Hard => format!(
-            "Context: about {n}k tokens, past this {c} chat's {}k limit. Finish the task in hand if it is close to done; start no new large task in this context. Then write the current state, decisions and next step into handoff.md and the plan, file anything that exists only in this conversation, and run `af session compact {name} --when-idle`.",
+            "Context: about {n}k tokens, past this {c} chat's {}k limit. Finish the task in hand if it is close to done; start no new large task in this context. Then write the current state, decisions and next step into handoff.md{and_plan}, file anything that exists only in this conversation, and run `af session compact {name} --when-idle`.",
             k(limits.hard.unwrap_or(0))
         ),
     }
@@ -117,11 +118,16 @@ pub fn nudge(ctx: &Ctx, payload: &Value) -> Option<String> {
         return None;
     }
     let row = Registry::load(ctx).ok()?.find_session(id)?;
+    // A worker is a bounded headless job: it cannot compact itself through the panel, so it is never nudged.
+    if sessions::role_of(&row.name) == "worker" {
+        return None;
+    }
     let class = sessions::class_of(ctx, &row.name);
     let limits = sessions::limits_of(ctx, &row.name, class);
     let tokens = reach::context_tokens(&transcript_for(payload, id)?)?;
     let tier = settle(&limits, tokens, &marker_dir(ctx, id))?;
-    Some(nudge_text(class, &row.name, &limits, tokens, tier))
+    let plan = pyos::isfile(&vpath(ctx, &format!("{}/plan.md", sessions::session_rel(&row.name))));
+    Some(nudge_text(class, &row.name, &limits, tokens, tier, plan))
 }
 
 // ------------------------------------------------------------------ a failed --when-idle waiter
@@ -204,6 +210,16 @@ fn kfmt(tokens: u64) -> String {
     format!("{}k", k(tokens))
 }
 
+/// The limits `af session context` shows: a worker is never nudged, so it shows none.
+fn shown_limits(ctx: &Ctx, name: &str, class: SessionClass) -> ClassLimits {
+    let lim = sessions::limits_of(ctx, name, class);
+    if sessions::role_of(name) == "worker" {
+        ClassLimits { soft: None, hard: None, ..lim }
+    } else {
+        lim
+    }
+}
+
 fn opt_k(v: Option<u64>) -> String {
     v.map(kfmt).unwrap_or_else(|| "none".to_string())
 }
@@ -216,7 +232,7 @@ fn size_of(row: &Row) -> Option<reach::ContextSize> {
 enum AutoCompact {
     Unknown,
     Default(String),
-    Set(u64, String),
+    Set(u64, String, bool),
 }
 
 fn auto_compact_of(usage: Option<&reach::Usage>) -> AutoCompact {
@@ -224,8 +240,8 @@ fn auto_compact_of(usage: Option<&reach::Usage>) -> AutoCompact {
         None => AutoCompact::Unknown,
         Some(m) => {
             let id = m.split('[').next().unwrap_or(m).to_string();
-            match reach::auto_compact_window(m) {
-                Some(w) => AutoCompact::Set(w, id),
+            match reach::auto_compact_setting(m) {
+                Some((w, top)) => AutoCompact::Set(w, id, top),
                 None => AutoCompact::Default(id),
             }
         }
@@ -281,7 +297,7 @@ pub fn cmd_context(ctx: &Ctx, name: Option<&str>) -> R<i32> {
                 None => die!("no registry row for {n}"),
             };
             let class = sessions::class_of(ctx, &row.name);
-            let lim = sessions::limits_of(ctx, &row.name, class);
+            let lim = shown_limits(ctx, &row.name, class);
             let size = size_of(&row);
             let usage = match &size {
                 Some(reach::ContextSize::Known(u)) => Some(u.clone()),
@@ -296,19 +312,22 @@ pub fn cmd_context(ctx: &Ctx, name: Option<&str>) -> R<i32> {
                 }
                 (None, _) => outln!("context: unknown (no transcript with usage)"),
             }
-            outln!("window: {}", kfmt(lim.window));
             outln!("soft: {}", opt_k(lim.soft));
             outln!("hard: {}", opt_k(lim.hard));
             match auto_compact_of(usage.as_ref()) {
                 AutoCompact::Unknown => outln!("auto-compact: unknown"),
                 AutoCompact::Default(m) => outln!("auto-compact: default (not set for {m})"),
-                AutoCompact::Set(w, m) => {
-                    outln!("auto-compact: {} (user settings, modelSettings.{m})", kfmt(w));
-                    outln!(
-                        "that window is a blanket setting for every chat and subagent on {m}; AgentFrame nudges this chat at {} and {} instead, so the operator removes it",
-                        opt_k(lim.soft),
-                        opt_k(lim.hard)
-                    );
+                AutoCompact::Set(w, m, top) => {
+                    let (label, on) = if top { ("autoCompactWindow".to_string(), String::new()) } else { (format!("modelSettings.{m}"), format!(" on {m}")) };
+                    outln!("auto-compact: {} (user settings, {label})", kfmt(w));
+                    match lim.soft.zip(lim.hard) {
+                        Some((soft, hard)) => outln!(
+                            "that window is a blanket setting for every chat and subagent{on}; AgentFrame nudges this chat at {} and {} instead, so the operator removes it",
+                            kfmt(soft),
+                            kfmt(hard)
+                        ),
+                        None => outln!("that window is a blanket setting for every chat and subagent{on}, and this worker is never nudged, so the operator removes it"),
+                    }
                 }
             }
         }
@@ -320,7 +339,7 @@ pub fn cmd_context(ctx: &Ctx, name: Option<&str>) -> R<i32> {
                         let auto = match auto_compact_of(Some(&u)) {
                             AutoCompact::Unknown => "unknown".to_string(),
                             AutoCompact::Default(_) => "default".to_string(),
-                            AutoCompact::Set(w, _) => kfmt(w),
+                            AutoCompact::Set(w, _, _) => kfmt(w),
                         };
                         (kfmt(u.tokens), auto)
                     }
@@ -328,7 +347,7 @@ pub fn cmd_context(ctx: &Ctx, name: Option<&str>) -> R<i32> {
                     _ => continue,
                 };
                 let class = sessions::class_of(ctx, &row.name);
-                let lim = sessions::limits_of(ctx, &row.name, class);
+                let lim = shown_limits(ctx, &row.name, class);
                 lines.push(format!(
                     "| {} | {} | {context} | {} | {} | {auto} |",
                     row.name,

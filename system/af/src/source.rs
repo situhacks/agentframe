@@ -36,7 +36,7 @@ pub struct AddArgs {
     /// Where it came from, in a few words
     #[arg(long)]
     origin: Option<String>,
-    /// Mark the record private (frontmatter only: a file copied with --file has none, so this does nothing to it)
+    /// Mark the record private (text sources only: a file copied with --file has no frontmatter)
     #[arg(long)]
     private: bool,
     /// A text file: its content becomes the body, byte for byte, under the record's frontmatter
@@ -88,6 +88,9 @@ fn check_args(a: &AddArgs) -> R<()> {
     if a.file.is_some() && a.type_ == "order" {
         die!("an order is text: file it with --body-file");
     }
+    if a.file.is_some() && a.private {
+        die!("--private cannot go with --file: a binary carries no frontmatter, so it cannot be marked private");
+    }
     if let Some(f) = &a.file {
         match file_extension(f) {
             Some(_) => {}
@@ -105,10 +108,10 @@ fn check_args(a: &AddArgs) -> R<()> {
 /// One more than the highest `src-<date>-NN` anywhere under the layer's `sources/`: INDEX.md, the
 /// frontmatter `id` of every `.md` file, and the `order-<date>-NN-` in an order's file name.
 fn next_number(sources: &str, date: &str) -> R<u64> {
-    let date = regex::escape(date);
-    let id = rx(&format!(r"src-{date}-(\d+)"));
-    let order_name = rx(&format!(r"\Aorder-{date}-(\d+)-"));
-    let fm_id = rx(&format!(r"\Asrc-{date}-(\d+)\z"));
+    let esc = regex::escape(date);
+    let id = rx(&format!(r"src-{esc}-(\d+)"));
+    let order_name = rx(&format!(r"\Aorder-{esc}-(\d+)-"));
+    let fm_id = rx(&format!(r"\Asrc-{esc}-(\d+)\z"));
     let mut highest = 0u64;
     let mut note = |digits: &str| {
         if let Ok(n) = digits.parse::<u64>() {

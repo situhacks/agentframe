@@ -6,7 +6,7 @@ use crate::life::{vpath, TextFile};
 use crate::reach;
 use crate::sessions::{self, Row, SessionClass};
 
-/// The Claude Code aliases, one card each.
+/// The Claude Code aliases. Only `fable` and `opus` have a card file; a chat on another alias gets none.
 pub const ALIASES: [&str; 4] = ["fable", "opus", "sonnet", "haiku"];
 
 /// The alias for a model id (`claude-fable-5-2`, with or without a `[1m]` suffix), for an alias, or for

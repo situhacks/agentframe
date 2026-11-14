@@ -89,16 +89,15 @@ pub enum SessionClass {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ClassLimits {
     pub class: SessionClass,
-    pub window: u64,
     pub soft: Option<u64>,
     pub hard: Option<u64>,
 }
 
 /// The one table of session classes.
 pub const CLASS_LIMITS: [ClassLimits; 3] = [
-    ClassLimits { class: SessionClass::Main, window: 350_000, soft: Some(350_000), hard: Some(450_000) },
-    ClassLimits { class: SessionClass::Side, window: 300_000, soft: Some(300_000), hard: Some(400_000) },
-    ClassLimits { class: SessionClass::Build, window: 1_000_000, soft: Some(400_000), hard: Some(600_000) },
+    ClassLimits { class: SessionClass::Main, soft: Some(350_000), hard: Some(450_000) },
+    ClassLimits { class: SessionClass::Side, soft: Some(300_000), hard: Some(400_000) },
+    ClassLimits { class: SessionClass::Build, soft: Some(400_000), hard: Some(600_000) },
 ];
 
 pub const CLASS_NAMES: [&str; 3] = ["main", "side", "build"];

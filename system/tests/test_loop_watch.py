@@ -472,6 +472,31 @@ class CheckTests(unittest.TestCase):
                     (GET, {"id": 5, "messages": [n1]}), (GET, {"id": 5, "messages": [n2]})]
         self.assertEqual(lw._threads(payloads), [[a], [b], [n1], [n2]], "no list is merged on an empty or odd id")
 
+    def test_a_later_messages_date_from_the_search_copy_still_counts_when_the_fetched_copy_has_none(self):
+        later = {**MESSAGE, "id": "m-2", "date": "2026-03-09T16:00:00Z", "subject": "Re: Your licence is renewed",
+                 "htmlBody": "<p>Actually it was cancelled.</p>"}
+        undated = {k: v for k, v in later.items() if k != "date"}
+        lines = stream(*searched({"id": "t-1", "messages": [MESSAGE, later]}), *fetched(undated), reply=json.dumps(GOOD))
+        e = self.check(lines)
+        self.assertEqual(e.verdict, "update")
+        self.assertIn("a newer message in the thread may change it", e.capped)
+
+    def test_an_earlier_messages_date_from_the_search_copy_still_counts_when_the_fetched_copy_has_none(self):
+        earlier = {**MESSAGE, "id": "m-0", "date": "2026-03-07T08:00:00Z", "subject": "Your licence", "htmlBody": "<p>Hello.</p>"}
+        undated = {k: v for k, v in earlier.items() if k != "date"}
+        lines = stream(*searched({"id": "t-1", "messages": [earlier, MESSAGE]}), *fetched(undated, MESSAGE),
+                       reply=json.dumps(GOOD))
+        e = self.check(lines)
+        self.assertEqual(e.verdict, "update")
+        self.assertIn("could not separate its own text from quoted history", e.capped)
+
+    def test_a_message_no_copy_dates_makes_no_hit_look_newer_or_surer(self):
+        undated = {k: v for k, v in {**MESSAGE, "id": "m-2", "htmlBody": "<p>Hello.</p>"}.items() if k != "date"}
+        lines = stream(*searched({"id": "t-1", "messages": [MESSAGE, undated]}), *fetched(MESSAGE, undated),
+                       reply=json.dumps(GOOD))
+        e = self.check(lines)
+        self.assertEqual((e.verdict, e.capped), ("done", None), "an undated message is no evidence either way")
+
     def test_an_email_dated_later_than_now_is_a_failure(self):
         now = dt.datetime(2026, 3, 8, 9, 0)
         later_today = {**MESSAGE, "date": "2026-03-08T23:30:00+00:00"}

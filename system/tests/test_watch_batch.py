@@ -835,6 +835,13 @@ class JudgeMetThreadTests(unittest.TestCase):
         r = self.judge(self.search_with_m1(), [("th-1", self.retracted_copy("X1", "X2"))])
         self.assertNotMet(r, "a newer message in the thread may change it")
 
+    def test_a_later_messages_date_from_the_search_copy_counts_when_the_fetched_copy_lacks_it(self):
+        later = self.msg("x", "th-1", "2026-11-15T18:00:00Z", self.RETRACT, "Re: Your refund was issued")
+        search = {"threads": [{"id": "th-1", "messages": [self.msg("m-1", "th-1", "2026-11-15T12:00:00Z", self.GOOD), later]}]}
+        undated = {k: v for k, v in later.items() if k != "date"}
+        r = self.judge(search, [("th-1", {"id": "th-1", "messages": [undated]})])
+        self.assertNotMet(r, "a newer message in the thread may change it")
+
     def test_a_message_id_shared_with_another_thread_does_not_lend_it_the_quote(self):
         search = {"threads": [
             {"id": "th-9", "messages": [self.msg("m-1", "th-9", "2026-11-15T12:00:00Z", self.GOOD)]},

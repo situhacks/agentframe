@@ -321,12 +321,14 @@ fn a_file_extension_is_one_to_ten_letters_or_digits_and_lower_cased() {
 }
 
 #[test]
-fn private_with_a_file_does_nothing_to_the_file() {
+fn private_with_a_file_is_refused_and_nothing_is_written() {
     let fx = Fx::new();
     layer(&fx);
     let f = fx.write_bytes("in/p.png", &[0, 1, 2, 255]);
-    fx.ok(&["source", "add", "--type", "receipt", "--date", DATE, "--slug", "p", "--summary", "s", "--file", &f, "--private"]);
-    assert_eq!(std::fs::read(fx.path(&format!("workspace/life/sources/receipt-{DATE}-p.png"))).unwrap(), [0, 1, 2, 255]);
+    let err = fx.refused(&["source", "add", "--type", "receipt", "--date", DATE, "--slug", "p", "--summary", "s", "--file", &f, "--private"]);
+    assert!(err.contains("no frontmatter") && err.contains("private"), "{err}");
+    assert_eq!(files_in_sources(&fx), Vec::<String>::new());
+    assert!(fx.isfile("in/p.png"));
 }
 
 #[test]
@@ -361,5 +363,6 @@ fn an_id_at_the_top_of_the_number_range_is_refused_not_a_panic_or_a_repeat() {
     let (code, _, err) = add(&fx, "x", &[]);
     assert_eq!(code, 1, "{err}");
     assert!(err.contains("largest"), "{err}");
+    assert!(err.contains(&format!("for {DATE} ")), "the plain date, not the escaped one: {err}");
     assert_eq!(files_in_sources(&fx), ["huge.md".to_string()]);
 }

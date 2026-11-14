@@ -73,13 +73,13 @@ fn class_defaults_follow_the_name() {
 
 #[test]
 fn the_class_table_holds_each_window_and_threshold() {
-    let rows: Vec<_> = CLASS_LIMITS.iter().map(|l| (l.class.name(), l.window, l.soft, l.hard)).collect();
+    let rows: Vec<_> = CLASS_LIMITS.iter().map(|l| (l.class.name(), l.soft, l.hard)).collect();
     assert_eq!(
         rows,
         [
-            ("main", 350_000, Some(350_000), Some(450_000)),
-            ("side", 300_000, Some(300_000), Some(400_000)),
-            ("build", 1_000_000, Some(400_000), Some(600_000)),
+            ("main", Some(350_000), Some(450_000)),
+            ("side", Some(300_000), Some(400_000)),
+            ("build", Some(400_000), Some(600_000)),
         ]
     );
 }
@@ -209,13 +209,13 @@ fn the_nudge_sequence_on_a_build_chat() {
     let soft = tool_call(&fx, "s-build", "Read", 400_000).expect("soft at 400k");
     assert_eq!(
         soft,
-        "Context: about 400k tokens; this build chat's soft limit is 400k. Do not compact in the middle of a task: finish the task in hand first. When it is done, and before you start the next large task, bring handoff.md and the plan up to date and run `af session compact system/cut --when-idle` (it compacts this chat once its turn ends). Compacting mid-task costs more than it saves, because the files must be read again."
+        "Context: about 400k tokens; this build chat's soft limit is 400k. Do not compact in the middle of a task: finish the task in hand first. When it is done, and before you start the next large task, bring handoff.md up to date and run `af session compact system/cut --when-idle` (it compacts this chat once its turn ends). Compacting mid-task costs more than it saves, because the files must be read again."
     );
     assert_eq!(tool_call(&fx, "s-build", "Read", 420_000), None);
     let hard = tool_call(&fx, "s-build", "Read", 600_000).expect("hard at 600k");
     assert_eq!(
         hard,
-        "Context: about 600k tokens, past this build chat's 600k limit. Finish the task in hand if it is close to done; start no new large task in this context. Then write the current state, decisions and next step into handoff.md and the plan, file anything that exists only in this conversation, and run `af session compact system/cut --when-idle`."
+        "Context: about 600k tokens, past this build chat's 600k limit. Finish the task in hand if it is close to done; start no new large task in this context. Then write the current state, decisions and next step into handoff.md, file anything that exists only in this conversation, and run `af session compact system/cut --when-idle`."
     );
     assert_eq!(tool_call(&fx, "s-build", "Read", 620_000), None);
     assert!(tool_call(&fx, "s-build", "Read", 650_000).expect("hard again").contains("about 650k tokens"));
@@ -412,7 +412,61 @@ fn a_side_chat_gets_the_soft_nudge_once_at_300k_and_the_hard_one_at_400k() {
     assert_eq!(tool_call(&fx, "s-life", "Read", 350_000), None, "said once");
     let hard = tool_call(&fx, "s-life", "Read", 400_000).expect("hard at 400k");
     assert!(hard.starts_with("Context: about 400k tokens, past this side chat's 400k limit."), "{hard}");
-    assert!(tool_call(&fx, "s-work", "Read", 300_000).is_some(), "a worker is a side chat");
+}
+
+#[test]
+fn a_worker_is_never_nudged_and_leaves_no_markers() {
+    let fx = Fx::new();
+    register(&fx, "worker/w", "s-work");
+    for total in [300_000, 400_000, 450_000, 900_000] {
+        assert_eq!(tool_call(&fx, "s-work", "Read", total), None, "{total}");
+    }
+    assert!(!fx.exists("system/logs/context-nudge/s-work"), "no markers for a worker");
+    fx.write("drafts/b.md", "---\ngoal: x\n---\n");
+    fx.ok(&["session", "register", "worker/b", "--session", "s-wb", "--brief", "drafts/b.md", "--class", "build"]);
+    assert_eq!(tool_call(&fx, "s-wb", "Read", 700_000), None, "even with a build class override");
+}
+
+#[test]
+fn the_nudges_name_the_plan_only_when_the_chat_has_a_plan_file() {
+    let fx = Fx::new();
+    register(&fx, "system/cut", "s-build");
+    register(&fx, "system/with-plan", "s-plan");
+    fx.write("system/sessions/system/with-plan/plan.md", "the plan\n");
+    let soft = tool_call(&fx, "s-build", "Read", 400_000).unwrap();
+    assert!(soft.contains("bring handoff.md up to date and run") && !soft.contains("the plan"), "{soft}");
+    let hard = tool_call(&fx, "s-build", "Read", 600_000).unwrap();
+    assert!(hard.contains("into handoff.md, file anything") && !hard.contains("the plan"), "{hard}");
+    let soft = tool_call(&fx, "s-plan", "Read", 400_000).unwrap();
+    assert!(soft.contains("bring handoff.md and the plan up to date and run"), "{soft}");
+    let hard = tool_call(&fx, "s-plan", "Read", 600_000).unwrap();
+    assert!(hard.contains("into handoff.md and the plan, file anything"), "{hard}");
+}
+
+#[test]
+fn session_context_shows_a_worker_with_no_limits_and_no_window_line() {
+    let fx = context_fixture();
+    register(&fx, "worker/w", "s-work");
+    write_transcript(&fx, "cfg/projects/p1/s-work.jsonl", &[assistant_model("claude-sonnet-5-5", 350_000)]);
+    let out = context_out(&fx, &["session", "context", "worker/w"]);
+    assert!(out.contains("class: side\ncontext: 350k tokens (350000)\nsoft: none\nhard: none\n"), "{out}");
+    assert!(!out.contains("window:"), "{out}");
+    let table = context_out(&fx, &["session", "context"]);
+    assert!(table.contains("| worker/w | side | 350k | none | none | default |"), "{table}");
+    assert!(!context_out(&fx, &["session", "context", "system/cut"]).contains("\nwindow:"));
+}
+
+#[test]
+fn session_context_falls_back_to_a_top_level_auto_compact_window() {
+    let fx = context_fixture();
+    fx.write("cfg/settings.json", r#"{"autoCompactWindow": 500000}"#);
+    let out = context_out(&fx, &["session", "context", "system/cut"]);
+    assert!(out.contains("auto-compact: 500k (user settings, autoCompactWindow)\n"), "{out}");
+    assert!(out.ends_with("that window is a blanket setting for every chat and subagent; AgentFrame nudges this chat at 400k and 600k instead, so the operator removes it\n"), "{out}");
+    fx.write("cfg/settings.json", r#"{"autoCompactWindow": 500000, "modelSettings": {"claude-opus-5-5": {"autoCompactWindow": 300000}}}"#);
+    let out = context_out(&fx, &["session", "context", "system/cut"]);
+    assert!(out.contains("auto-compact: 300k (user settings, modelSettings.claude-opus-5-5)\n"), "the model's own window wins: {out}");
+    assert_eq!(afcore::reach::auto_compact_window("claude-sonnet-5-5[1m]"), None, "no CLAUDE_CONFIG_DIR here: no settings read");
 }
 
 #[test]
@@ -465,7 +519,7 @@ fn session_context_prints_the_limits_in_force_for_a_brief_override() {
     let fx = context_fixture();
     fx.write("system/sessions/life/money/brief.md", "---\nsoft: 250k\nhard: 350k\n---\n");
     let out = context_out(&fx, &["session", "context", "life/money"]);
-    assert!(out.contains("window: 300k\nsoft: 250k\nhard: 350k\n"), "{out}");
+    assert!(out.contains("soft: 250k\nhard: 350k\n"), "{out}");
     let table = context_out(&fx, &["session", "context"]);
     assert!(table.contains("| life/money | side | 120k | 250k | 350k | default |"), "{table}");
     assert!(table.contains("| system/cut | build | 412k | 400k | 600k | 400k |"), "{table}");
@@ -582,13 +636,13 @@ fn session_context_for_one_chat_prints_class_tokens_window_thresholds_and_auto_c
     let fx = context_fixture();
     assert_eq!(
         context_out(&fx, &["session", "context", "system/cut"]),
-        "name: system/cut\nclass: build\ncontext: 412k tokens (412345)\nwindow: 1000k\nsoft: 400k\nhard: 600k\n\
+        "name: system/cut\nclass: build\ncontext: 412k tokens (412345)\nsoft: 400k\nhard: 600k\n\
 auto-compact: 400k (user settings, modelSettings.claude-opus-5-5)\n\
 that window is a blanket setting for every chat and subagent on claude-opus-5-5; AgentFrame nudges this chat at 400k and 600k instead, so the operator removes it\n"
     );
     assert_eq!(
         context_out(&fx, &["session", "context", "life/money"]),
-        "name: life/money\nclass: side\ncontext: 120k tokens (120001)\nwindow: 300k\nsoft: 300k\nhard: 400k\nauto-compact: default (not set for claude-sonnet-5-5)\n"
+        "name: life/money\nclass: side\ncontext: 120k tokens (120001)\nsoft: 300k\nhard: 400k\nauto-compact: default (not set for claude-sonnet-5-5)\n"
     );
     let out = context_out(&fx, &["session", "context", "project/none"]);
     assert!(out.contains("context: unknown") && out.ends_with("auto-compact: unknown\n"), "{out}");

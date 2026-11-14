@@ -22,6 +22,7 @@ Types: `date` (`YYYY-MM-DD`), `integer`, `number` (plain decimal, at most 15 sig
 - `af data column <ledger> name:type`: an optional column; run again to finish a half-added one.
 - `af data add <ledger> col=value...`; `--replace` merges into the row with that key: columns given are set (`col=` empties), the rest keep their values.
 - `af data import <ledger> --csv <file>`: any column order; a same row is skipped, a changed row refused unless `--replace`, which merges per row. A key repeated in the file, or one bad row, writes nothing.
+- `af data delete <ledger> col=value... [--dry-run]`: removes rows matching every condition (by value); other lines keep their bytes.
 - `af data list [<ledger>]`; `af data sql "<select>" [--json|--csv] [--limit N]`: read-only, 200 rows, stopped after 10 seconds.
 
 `af doctor` flags a missing file, changed header, bad row, repeated key.

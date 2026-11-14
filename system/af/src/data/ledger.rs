@@ -460,10 +460,24 @@ pub struct Raw {
 pub fn parse_csv(bytes: &[u8]) -> Result<Vec<(u64, Vec<String>)>, (u64, String)> {
     let mut rdr = csv::ReaderBuilder::new().has_headers(false).flexible(true).from_reader(bytes);
     let mut out = Vec::new();
+    // The csv crate's own line count drifts after a blank line in a CRLF file, and a record's byte position
+    // can point into the blank lines before it. So a record's line is the number of `\n` before its first
+    // real byte (past any line breaks), plus one.
+    let newlines: Vec<usize> = bytes.iter().enumerate().filter(|(_, b)| **b == b'\n').map(|(i, _)| i).collect();
+    let line_at = |pos: Option<&csv::Position>| {
+        pos.map(|p| {
+            let mut at = p.byte() as usize;
+            while at < bytes.len() && (bytes[at] == b'\r' || bytes[at] == b'\n') {
+                at += 1;
+            }
+            newlines.partition_point(|&n| n < at) as u64 + 1
+        })
+        .unwrap_or(0)
+    };
     for rec in rdr.byte_records() {
         match rec {
             Ok(r) => {
-                let line = r.position().map(|p| p.line()).unwrap_or(0);
+                let line = line_at(r.position());
                 let mut fields = Vec::with_capacity(r.len());
                 for f in r.iter() {
                     match std::str::from_utf8(f) {
@@ -474,7 +488,7 @@ pub fn parse_csv(bytes: &[u8]) -> Result<Vec<(u64, Vec<String>)>, (u64, String)>
                 out.push((line, fields));
             }
             Err(e) => {
-                let line = e.position().map(|p| p.line()).unwrap_or(0);
+                let line = line_at(e.position());
                 return Err((line, format!("is not readable CSV: {e}")));
             }
         }
@@ -489,6 +503,11 @@ pub fn read_raw(path: &str, label: &str) -> Result<Raw, String> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Err(format!("{label}: the file is missing")),
         Err(e) => return Err(format!("{label}: cannot be read: {e}")),
     };
+    raw_from_bytes(&bytes, label)
+}
+
+/// A CSV file's content as `read_raw` reads it.
+pub fn raw_from_bytes(bytes: &[u8], label: &str) -> Result<Raw, String> {
     let bom = bytes.starts_with(&[0xEF, 0xBB, 0xBF]);
     let body = if bom { &bytes[3..] } else { &bytes[..] };
     let mut records = parse_csv(body).map_err(|(line, what)| format!("{label}:{line}: {what}"))?;
@@ -651,6 +670,27 @@ pub fn append_records(path: &str, raw: &Raw, records: &[Vec<String>]) -> R<()> {
     }
     data.extend(encode(records, raw.crlf));
     append_bytes(path, &data, |f, d| std::io::Write::write_all(f, d))
+}
+
+/// Take the physical lines numbered `lines` (1-based, as the faults number them) out of a ledger file and
+/// leave every other byte as it was: quoting, blank lines, line endings, a BOM, a missing final newline.
+/// A ledger row is exactly one line (text holds no line break). The result is read back and checked
+/// before it replaces the file, so a file this cannot cut cleanly is refused and left alone.
+pub fn delete_lines(path: &str, ledger: &Ledger, lines: &[u64], rows_after: usize) -> R<()> {
+    let bytes = std::fs::read(path).map_err(|e| pyos::os_error(&e, path))?;
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    for (i, chunk) in bytes.split_inclusive(|b| *b == b'\n').enumerate() {
+        if !lines.contains(&(i as u64 + 1)) {
+            out.extend_from_slice(chunk);
+        }
+    }
+    let label = ledger.label();
+    let clean = raw_from_bytes(&out, &label).is_ok_and(|raw| raw.rows.len() == rows_after && check(ledger, &label, &raw).is_empty());
+    if !clean {
+        die!("{label}: the rows could not be cut out cleanly (the file's lines do not match its rows); nothing was deleted");
+    }
+    let text = String::from_utf8_lossy(&out).into_owned();
+    TextFile { text, crlf: false, bom: false }.save_atomic(path)
 }
 
 /// Replace the whole file with these records (the header first), through a temp file and a rename,

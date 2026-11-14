@@ -37,6 +37,8 @@ pub enum DataCmd {
     List {
         ledger: Option<String>,
     },
+    /// Remove every row matching all the given col=value (compared by value); other lines stay as they are
+    Delete(DeleteArgs),
     /// Run one read-only SELECT over every ledger (a table named after each)
     Sql(SqlArgs),
     /// Refill the af-data blocks of these pages (none given: every registered page) from their queries
@@ -49,6 +51,16 @@ pub enum DataCmd {
         /// A page inside workspace/life/
         file: String,
     },
+}
+
+#[derive(Args, Debug)]
+pub struct DeleteArgs {
+    ledger: String,
+    /// col=value, one per condition; a row goes only when it matches every one
+    conditions: Vec<String>,
+    /// Say how many rows would go and write nothing
+    #[arg(long)]
+    dry_run: bool,
 }
 
 #[derive(Args, Debug)]
@@ -120,6 +132,7 @@ pub fn run(ctx: &Ctx, cmd: DataCmd) -> R<i32> {
         DataCmd::Add(a) => cmd_add(ctx, &a),
         DataCmd::Import(a) => cmd_import(ctx, &a),
         DataCmd::List { ledger } => cmd_list(ctx, ledger.as_deref()),
+        DataCmd::Delete(a) => cmd_delete(ctx, &a),
         DataCmd::Sql(a) => cmd_sql(ctx, &a),
         DataCmd::Render { files } => cmd_render(ctx, &files),
         DataCmd::Page { file } => cmd_page(ctx, &file),
@@ -476,6 +489,40 @@ fn cmd_add(ctx: &Ctx, a: &AddArgs) -> R<i32> {
         Done::Unchanged => outln!("the row in '{name}' already has these values; nothing changed"),
     }
     render_after_write(ctx);
+    Ok(0)
+}
+
+// ------------------------------------------------------------------ delete
+
+/// Remove the matching rows by cutting their lines out of the file (every other byte stays), through a
+/// temporary file and a rename, under the ledger's lock. Where `add --replace` and `column` rewrite the
+/// file with the CSV writer (needless quotes and blank lines go; values stay exactly), this does not.
+fn cmd_delete(ctx: &Ctx, a: &DeleteArgs) -> R<i32> {
+    let (_, first) = find_ledger(ctx, &a.ledger)?;
+    if a.conditions.is_empty() {
+        die!("give at least one column=value to match (columns: {})", header_of(&first).join(", "));
+    }
+    let path = first.path(ctx);
+    let n = locked(&path, || {
+        let (_, l) = find_ledger(ctx, &a.ledger)?;
+        let raw = load_for_write(ctx, &l, "no row was deleted")?;
+        let given = parse_given(&l, &a.conditions)?;
+        let (cols, probe) = (given_cols(&given), given_row(&given));
+        let hits: Vec<u64> = raw.rows.iter().filter(|(_, r)| l.same_in(r, &probe, &cols)).map(|(line, _)| *line).collect();
+        if hits.is_empty() {
+            die!("no row matches");
+        }
+        if !a.dry_run {
+            ledger::delete_lines(&path, &l, &hits, raw.rows.len() - hits.len())?;
+        }
+        Ok(hits.len())
+    })?;
+    if a.dry_run {
+        outln!("would delete {n}");
+    } else {
+        outln!("deleted {n}");
+        render_after_write(ctx);
+    }
     Ok(0)
 }
 

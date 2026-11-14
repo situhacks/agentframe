@@ -46,7 +46,7 @@ ALLOWED_IMPORTS = {
     "GetLastInputInfo", "IsIconic", "IsWindow", "GetWindowTextW", "GetProcessTimes",
     "GetCursorPos", "SetCursorPos", "WindowFromPoint", "GetAncestor", "SetWindowPos", "ShowWindow",
     "GetForegroundWindow", "SHQueryUserNotificationState",
-    "GetWindowLongW", "GetWindowPlacement", "SetWindowPlacement",
+    "GetWindowLongW", "GetWindowPlacement", "SetWindowPlacement", "GetWindow",
 }
 # Words that would mean synthetic input, clipboard use or taking the foreground. SetWindowVisualState is the
 # Window pattern's restore: it takes the foreground and resets the idle time (measured), so it is never used.
@@ -233,8 +233,14 @@ class WindowRuleTests(unittest.TestCase):
         self.assertLess(restore_fn.index("ShowNoActivate"), restore_fn.index("Set-VsCodeBehind"))
         self.assertLess(restore_fn.index("Set-VsCodeBehind"), restore_fn.index("Wait-Tree"))
         behind = function_text("Set-VsCodeBehind")
-        for part in ["PlaceBehind", "PlaceBottom", "IsTopmost", "ClearTopmost", "Add-Note"]:
+        for part in ["PlaceBehind", "IsWindow", "IsTopmost"]:
             self.assertIn(part, behind)
+        self.assertLess(behind.index("IsTopmost"), behind.index("PlaceBehind"), "never behind an always-on-top window")
+        final = function_text("Confirm-VsCodeNotTopmost")
+        for part in ["IsTopmost", "ClearTopmost", "Add-Note"]:
+            self.assertIn(part, final)
+        self.assertIn("Confirm-VsCodeNotTopmost", restore_fn)
+        self.assertIn("Confirm-VsCodeNotTopmost", function_text("Undo-Raise"))
         restore = function_text("Restore-Screen")
         self.assertIn("MinimizeWithPlacement", restore)
         self.assertIn("MinimizeNoActivate", restore)
@@ -242,6 +248,13 @@ class WindowRuleTests(unittest.TestCase):
         code = code_lines(source())
         self.assertNotIn("Set-WindowState", code)
         csharp = csharp_block(source())
+        # Measured: a placement with showCmd 2 (SW_SHOWMINIMIZED) led to a foreground change; showCmd is always 7.
+        self.assertIn("p.showCmd = 7", csharp)
+        self.assertNotRegex(csharp, r"showCmd\s*=\s*2")
+        self.assertNotRegex(csharp, r"ShowWindow\(h, 2\)")
+        self.assertEqual(csharp.count("showCmd ="), 1, "the one place a placement is built")
+        for stale in ["restores to the normal size", "goes to the normal size", "back to the normal size"]:
+            self.assertNotIn(stale, source(), "SW_SHOWNOACTIVATE restores a window that was maximized to maximized (measured)")
         self.assertIn("ShowWindow(h, 4)", csharp, "SW_SHOWNOACTIVATE")
         self.assertIn("ShowWindow(h, 7)", csharp, "SW_SHOWMINNOACTIVE")
         self.assertIn("new IntPtr(1)", csharp, "HWND_BOTTOM")
@@ -1462,7 +1475,7 @@ class CloseLoopBehaviourTests(unittest.TestCase):
             "$out.moved_notes = @($script:Notes)\n"
             "ConvertTo-Json -Compress -InputObject $out\n"
         )
-        got = run_functions(["Restore-Minimized", "Set-VsCodeBehind"], body)
+        got = run_functions(["Restore-Minimized", "Set-VsCodeBehind", "Confirm-VsCodeNotTopmost"], body)
         self.assertEqual(got["native"], "bottom show4 behind9", "bottom while minimized, shown without activation, directly behind his foreground window")
         self.assertEqual(got["steps"], "wait sleep2500 tree")
         self.assertTrue(got["min"])
@@ -1682,12 +1695,14 @@ class ArchiveBehaviourTests(unittest.TestCase):
         "  public static int[] Ptr = new int[] { 10, 20 }; public static IntPtr RootUnder = new IntPtr(5); public static IntPtr RootAfterRaise = new IntPtr(5); public static IntPtr Fg = new IntPtr(9);\n"
         "  public static int Quns = 5; public static bool Alive = true; public static bool Topmost = false; public static bool BehindTopmost = false; public static bool Stubborn = false; public static int FailReads = 0;\n"
         "  public static int[] Placement = new int[] { 2, 2, 0, 0, 0, 0, 100, 100, 900, 700 };\n"
+        "  public static IntPtr AboveWin = IntPtr.Zero; public static HashSet<long> TopWins = new HashSet<long>();\n"
         "  public static string Log { get { return string.Join(\" \", Calls.ToArray()); } }\n"
         "  public static string Order { get { return string.Join(\" \", Seq.ToArray()); } }\n"
         "  public static void Ev(string n) { Seq.Add(n); if (OnStep != null) OnStep(n); }\n"
         "  public static double IdleMs() { return Idle; }\n"
         "  public static bool IsWindow(IntPtr h) { return Alive || h.ToInt64() != 7; }\n"
-        "  public static bool IsTopmost(IntPtr h) { return Topmost; }\n"
+        "  public static bool IsTopmost(IntPtr h) { if (h.ToInt64() == 5) return Topmost; return TopWins.Contains(h.ToInt64()); }\n"
+        "  public static IntPtr Above(IntPtr h) { Ev(\"above\"); return AboveWin; }\n"
         "  public static IntPtr Foreground() { return Fg; }\n"
         "  public static int[] PointerPos() { if (FailReads > 0) { FailReads--; return null; } return new int[] { Ptr[0], Ptr[1] }; }\n"
         "  public static bool MovePointer(int x, int y) { Calls.Add(\"move \" + x + \",\" + y); Ptr = new int[] { x, y }; Ev(\"move\"); return true; }\n"
@@ -1701,7 +1716,7 @@ class ArchiveBehaviourTests(unittest.TestCase):
         "  public static int[] GetPlacement(IntPtr h) { Calls.Add(\"getplacement\"); return Placement; }\n"
         "  public static bool MinimizeWithPlacement(IntPtr h, int[] q) { Calls.Add(\"minplace flags=\" + q[0] + \" rect=\" + q[6] + \",\" + q[7]); return true; }\n"
         "  public static int NotificationState() { Ev(\"fs?\" + Quns); return Quns; }\n"
-        "  public static void Reset() { Idle = 999999; Calls.Clear(); Seq.Clear(); OnStep = null; Ptr = new int[] { 10, 20 }; RootUnder = new IntPtr(5); RootAfterRaise = new IntPtr(5); Fg = new IntPtr(9); Quns = 5; Alive = true; Topmost = false; BehindTopmost = false; Stubborn = false; FailReads = 0; }\n"
+        "  public static void Reset() { Idle = 999999; Calls.Clear(); Seq.Clear(); OnStep = null; Ptr = new int[] { 10, 20 }; RootUnder = new IntPtr(5); RootAfterRaise = new IntPtr(5); Fg = new IntPtr(9); Quns = 5; Alive = true; Topmost = false; BehindTopmost = false; Stubborn = false; FailReads = 0; AboveWin = IntPtr.Zero; TopWins.Clear(); }\n"
         "}\n"
         "'@\n"
         "$CT = [System.Windows.Automation.ControlType]\n"
@@ -1713,10 +1728,11 @@ class ArchiveBehaviourTests(unittest.TestCase):
         "$script:St = [pscustomobject]@{ Sent = $false }\n"
         "function Add-Note([string]$Note) { $script:Notes += $Note }\n"
         "function Stop-Panel([int]$Code, [string]$Reason) { throw (New-Object PanelExit($Code, $Reason)) }\n"
-        "function Wait-Idle([string]$What) { [PanelNative]::Ev('wait-idle'); if ([PanelNative]::IdleMs() -lt 120000) { Stop-Panel 3 'the operator kept using the computer until the deadline' }; [PanelNative]::Ev('idle-ok') }\n"
+        "$script:LastWait = ''\n"
+        "function Clear-Waiting { $script:LastWait = '' }\n"
+        "function Wait-Idle([string]$What) { [PanelNative]::Ev('wait-idle'); if ([PanelNative]::IdleMs() -lt 120000) { Stop-Panel 3 'the operator kept using the computer until the deadline' }; Clear-Waiting; [PanelNative]::Ev('idle-ok') }\n"
         "function Stop-IfCancelled { }\n"
-        "function Write-Waiting([string]$Reason) { $script:Waits += $Reason }\n"
-        "function Clear-Waiting { }\n"
+        "function Write-Waiting([string]$Reason) { if ($Reason -ne $script:LastWait) { $script:LastWait = $Reason; $script:Waits += $Reason } }\n"
         "function Start-Sleep { param([int]$Seconds = 0, [int]$Milliseconds = 0) $script:Sleeps++; if ($Seconds -gt 0) { [PanelNative]::Ev('sleep' + $Seconds + 's') } else { [PanelNative]::Ev('sleep' + $Milliseconds) } }\n"
         "function Hook([scriptblock]$Block) { [PanelNative]::OnStep = [System.Action[string]]$Block }\n"
         "function Fake-Row { $r = [pscustomobject]@{ Current = [pscustomobject]@{ IsOffscreen = $false; BoundingRectangle = [pscustomobject]@{ X = 100; Y = 200; Width = 300; Height = 40 } } }\n"
@@ -1733,7 +1749,7 @@ class ArchiveBehaviourTests(unittest.TestCase):
         "  $b\n"
         "}\n"
         "function Scenario([scriptblock]$Setup) {\n"
-        "  [PanelNative]::Reset(); $script:Notes = @(); $script:Waits = @(); $script:Sleeps = 0; $script:RowGone = $false; $script:ButtonAfter = 1; $script:Polls = 0\n"
+        "  [PanelNative]::Reset(); $script:Notes = @(); $script:Waits = @(); $script:LastWait = ''; $script:Sleeps = 0; $script:RowGone = $false; $script:ButtonAfter = 1; $script:Polls = 0\n"
         "  $script:KeepRow = $false; $script:St.Sent = $false; $script:WaitUntil = (Get-Date).AddMinutes(5); $script:RowStatus = 'idle'; $script:RowActive = $false\n"
         "  $script:Rs = [pscustomobject]@{ Count = 0; Busy = ''; Terminal = '' }\n"
         "  & $Setup\n"
@@ -1744,7 +1760,7 @@ class ArchiveBehaviourTests(unittest.TestCase):
     )
     FUNCS = [
         "Invoke-ArchiveStage", "Get-RowCenter", "Test-PointerAt", "Restore-Pointer", "Undo-Raise", "Set-VsCodeBehind",
-        "Test-FullScreenFront", "Get-OperatorBack", "Get-ArchiveBlock",
+        "Test-FullScreenFront", "Get-OperatorBack", "Get-ArchiveBlock", "Confirm-VsCodeNotTopmost",
     ]
 
     def run_scenarios(self, body: str):
@@ -1769,9 +1785,9 @@ class ArchiveBehaviourTests(unittest.TestCase):
         got = self.run_scenarios("$o.c = Scenario { [PanelNative]::RootUnder = [IntPtr]7; [PanelNative]::RootAfterRaise = [IntPtr]5 }\n")["c"]
         self.assertEqual(got["code"], 0, got)
         # raise, then the pointer, then (pointer first) the pointer back, the topmost flag off, VS Code directly behind the cover.
-        self.assertEqual(got["calls"], "raise move 250,220 move 10,20 notopmost behind7")
+        self.assertEqual(got["calls"], "raise move 250,220 move 10,20 notopmost")
         # Order before the raise: wait for idle, check full screen, then the raise with nothing between.
-        self.assertEqual(got["order"].split()[1:5], ["wait-idle", "idle-ok", "fs?5", "raise"], "after the scroll settle (sleep300)")
+        self.assertEqual(got["order"].split()[1:6], ["wait-idle", "idle-ok", "fs?5", "above", "raise"], "after the scroll settle (sleep300); the window above VS Code is read just before the raise")
 
     def test_nothing_waits_after_the_raise_and_he_touching_the_pointer_then_undoes_it_at_once(self):
         """Found in review: the driver raised VS Code and then waited for idle again, so a touch right after the raise
@@ -1783,7 +1799,7 @@ class ArchiveBehaviourTests(unittest.TestCase):
         touch = got["touch"]
         self.assertEqual(touch["code"], 3, touch)
         self.assertIn("operator came back", touch["reason"])
-        self.assertEqual(touch["calls"], "raise notopmost behind7", "no pointer move; the raise is undone")
+        self.assertEqual(touch["calls"], "raise notopmost", "no pointer move; the raise is undone")
         steps = self.after(touch["order"], "raise")
         self.assertNotIn("wait-idle", steps, "no wait for idle after the raise")
         self.assertFalse([s for s in steps if s.startswith("sleep")], f"nothing sleeps between the raise and its undo: {steps}")
@@ -1803,24 +1819,55 @@ class ArchiveBehaviourTests(unittest.TestCase):
     def test_a_row_that_stays_covered_after_the_raise_stops_with_exit_5_and_the_raise_undone(self):
         got = self.run_scenarios("$o.c = Scenario { [PanelNative]::RootUnder = [IntPtr]7; [PanelNative]::RootAfterRaise = [IntPtr]7 }\n")["c"]
         self.assertEqual(got["code"], 5)
-        self.assertEqual(got["calls"], "raise notopmost behind7", "no pointer move; the raise is undone")
+        self.assertEqual(got["calls"], "raise notopmost", "no pointer move; the raise is undone")
         self.assertIn("nothing was archived", got["reason"])
         self.assertFalse(got["sent"])
 
-    def test_the_raise_is_undone_to_a_place_that_is_never_the_always_on_top_band(self):
-        """Review item 4: with the cover gone VS Code went only 'not topmost' (above every normal window), and behind an
-        always-on-top window it stayed topmost."""
+    def test_the_raise_is_undone_to_exactly_where_vs_code_was_and_never_behind_an_always_on_top_window(self):
+        """Second review item 1: behind an always-on-top window VS Code became always-on-top, and clearing that put it
+        above every normal window, his foreground app included. The window that was directly above VS Code is recorded
+        before the raise."""
         got = self.run_scenarios(
-            "$o.gone_fg = Scenario { [PanelNative]::RootUnder = [IntPtr]7; [PanelNative]::Alive = $false }\n"
-            "$o.gone_fg_is_vscode = Scenario { [PanelNative]::RootUnder = [IntPtr]7; [PanelNative]::Alive = $false; [PanelNative]::Fg = [IntPtr]5 }\n"
-            "$o.cover_topmost = Scenario { [PanelNative]::RootUnder = [IntPtr]7; [PanelNative]::BehindTopmost = $true }\n"
-            "$o.stubborn = Scenario { [PanelNative]::RootUnder = [IntPtr]7; [PanelNative]::BehindTopmost = $true; [PanelNative]::Stubborn = $true }\n"
+            "function Cover { [PanelNative]::RootUnder = [IntPtr]7 }\n"
+            "$o.above_normal = Scenario { Cover; [PanelNative]::AboveWin = [IntPtr]11 }\n"
+            "$o.above_topmost = Scenario { Cover; [PanelNative]::AboveWin = [IntPtr]11; [void][PanelNative]::TopWins.Add(11) }\n"
+            "$o.above_none = Scenario { Cover }\n"
+            "$o.gone_fg_normal = Scenario { Cover; [PanelNative]::AboveWin = [IntPtr]7; [PanelNative]::Alive = $false }\n"
+            "$o.gone_fg_topmost = Scenario { Cover; [PanelNative]::AboveWin = [IntPtr]7; [PanelNative]::Alive = $false; [void][PanelNative]::TopWins.Add(9) }\n"
+            "$o.gone_fg_is_vscode = Scenario { Cover; [PanelNative]::AboveWin = [IntPtr]7; [PanelNative]::Alive = $false; [PanelNative]::Fg = [IntPtr]5 }\n"
+            "$o.gone_topmost_above = Scenario { Cover; [PanelNative]::AboveWin = [IntPtr]7; [PanelNative]::Alive = $false; [void][PanelNative]::TopWins.Add(7) }\n"
+            "$o.last_check = Scenario { Cover; [PanelNative]::AboveWin = [IntPtr]11; [PanelNative]::BehindTopmost = $true }\n"
+            "$o.stubborn = Scenario { Cover; [PanelNative]::AboveWin = [IntPtr]11; [PanelNative]::BehindTopmost = $true; [PanelNative]::Stubborn = $true }\n"
         )
-        self.assertEqual(got["gone_fg"]["calls"], "raise move 250,220 move 10,20 notopmost behind9", "the cover is gone: directly behind his foreground window")
-        self.assertEqual(got["gone_fg_is_vscode"]["calls"], "raise move 250,220 move 10,20 notopmost bottom", "his foreground is VS Code itself: the bottom")
-        self.assertEqual(got["cover_topmost"]["calls"], "raise move 250,220 move 10,20 notopmost behind7 notopmost", "behind an always-on-top cover it is topmost again, so the flag is cleared again")
-        self.assertEqual(got["cover_topmost"]["notes"], [])
+        done = "raise move 250,220 move 10,20 notopmost"
+        self.assertEqual(got["above_normal"]["calls"], done + " behind11", "the window that was above it still exists and is normal: directly behind it, where it was")
+        self.assertEqual(got["above_topmost"]["calls"], done, "it was the top normal window: not topmost has just put it back there")
+        self.assertEqual(got["above_none"]["calls"], done, "it was at the very top: nothing more")
+        self.assertEqual(got["gone_fg_normal"]["calls"], done + " behind9", "the recorded window is gone: behind his foreground window")
+        self.assertEqual(got["gone_fg_topmost"]["calls"], done + " bottom", "his foreground window is always-on-top: never behind it, so the back")
+        self.assertTrue(any("put at the back" in n for n in got["gone_fg_topmost"]["notes"]), got["gone_fg_topmost"]["notes"])
+        self.assertEqual(got["gone_fg_is_vscode"]["calls"], done + " bottom")
+        self.assertTrue(any("put at the back" in n for n in got["gone_fg_is_vscode"]["notes"]))
+        self.assertEqual(got["gone_topmost_above"]["calls"], done, "it was recorded as always-on-top, so gone or not it was the top normal window")
+        for case in ("above_normal", "above_topmost", "above_none", "gone_fg_normal", "gone_topmost_above"):
+            self.assertEqual(got[case]["notes"], [], case)
+        # The window above VS Code is read before the raise, never after.
+        order = got["above_normal"]["order"].split()
+        self.assertLess(order.index("above"), order.index("raise"))
+        # And a last read of the extended style clears the bit if something left it set; a note says when it stays.
+        self.assertEqual(got["last_check"]["calls"], done + " behind11 notopmost")
+        self.assertEqual(got["last_check"]["notes"], [])
         self.assertTrue(any("still in the always-on-top band" in n for n in got["stubborn"]["notes"]), got["stubborn"]["notes"])
+
+    def test_the_full_screen_wait_is_logged_once_not_every_two_seconds(self):
+        """Second review item 3: Wait-Idle clears the last waiting reason on every loop, so the full-screen reason was
+        logged on each round."""
+        got = self.run_scenarios(
+            "$o.long = Scenario { [PanelNative]::RootUnder = [IntPtr]7; [PanelNative]::Quns = 2; $script:N = 0; Hook { param($n) if ($n -eq 'sleep2s') { $script:N++; if ($script:N -ge 4) { [PanelNative]::Quns = 5 } } } }\n"
+        )
+        self.assertEqual(got["long"]["code"], 0, got["long"])
+        self.assertGreaterEqual(got["long"]["order"].split().count("sleep2s"), 4, "it went round the loop four times")
+        self.assertEqual(got["long"]["waits"], ["a full-screen window is in front"], "one line for one reason")
 
     def test_a_full_screen_window_blocks_the_raise_and_a_video_that_starts_during_the_idle_wait_is_seen(self):
         got = self.run_scenarios(
@@ -1831,14 +1878,15 @@ class ArchiveBehaviourTests(unittest.TestCase):
         )
         self.assertEqual(got["wait"]["code"], 0, got["wait"])
         self.assertEqual(got["wait"]["waits"], ["a full-screen window is in front"], "one wait, then it raised")
-        self.assertEqual(got["wait"]["calls"], "raise move 250,220 move 10,20 notopmost behind7")
+        self.assertEqual(got["wait"]["calls"], "raise move 250,220 move 10,20 notopmost")
         # Review item 3: the check comes after the last idle wait, so a video that started during it blocks the raise.
         order = got["video_after_idle"]["order"].split()
         self.assertEqual(got["video_after_idle"]["code"], 0, got["video_after_idle"])
         self.assertLess(order.index("fs?2"), order.index("sleep2s"))
         self.assertLess(order.index("sleep2s"), order.index("raise"))
-        self.assertEqual(order[order.index("raise") - 1], "fs?5", "the full-screen check is the step right before the raise")
-        self.assertEqual(order[order.index("raise") - 2], "idle-ok", "and the idle wait came just before that")
+        self.assertEqual(order[order.index("raise") - 1], "above", "a read of the z-order, not a wait")
+        self.assertEqual(order[order.index("raise") - 2], "fs?5", "the full-screen check is the step right before it")
+        self.assertEqual(order[order.index("raise") - 3], "idle-ok", "and the idle wait came just before that")
         self.assertEqual(got["video_after_idle"]["waits"], ["a full-screen window is in front"])
         self.assertEqual(got["not_covered"]["code"], 0, "an uncovered row needs no raise, so the guard does not apply")
         self.assertEqual(got["not_covered"]["calls"], "move 250,220 move 10,20")
@@ -1862,7 +1910,7 @@ class ArchiveBehaviourTests(unittest.TestCase):
             "$o.own = Scenario { [PanelNative]::RootUnder = [IntPtr]7; [PanelNative]::Quns = 2; $script:WaitUntil = (Get-Date).AddSeconds(-30); Hook { param($n) if ($n -eq 'sleep2s') { [PanelNative]::Quns = 5 } } }\n"
         )["own"]
         self.assertEqual(got["code"], 0, got)
-        self.assertEqual(got["calls"], "raise move 250,220 move 10,20 notopmost behind7")
+        self.assertEqual(got["calls"], "raise move 250,220 move 10,20 notopmost")
 
     def test_a_chat_that_started_running_while_the_driver_waited_is_not_archived(self):
         """Review item 2: busy and running were read once, before the tab close and waits that can last minutes."""
@@ -2076,14 +2124,14 @@ class ArchiveBehaviourTests(unittest.TestCase):
 
     def run_screen(self, body: str, names=None):
         script = self.NATIVE + self.SCREEN + "$o = [ordered]@{}\n" + body + "ConvertTo-Json -Compress -Depth 5 -InputObject $o\n"
-        return run_functions(["Restore-Screen", "Restore-Minimized", "Set-VsCodeBehind"] + (names or []), script)
+        return run_functions(["Restore-Screen", "Restore-Minimized", "Set-VsCodeBehind", "Confirm-VsCodeNotTopmost", "Test-VsCodeCovered"] + (names or []), script)
 
     def test_a_cancelled_run_or_one_with_nothing_to_put_back_does_not_wait_for_him_at_the_end(self):
         """Review item 6: Restore-Screen waited up to 60 seconds for idle even with nothing visible to restore, so a
         cancelled run outlived the cancel verb's 20 seconds."""
         got = self.run_screen(
             "function Reset-Screen { [PanelNative]::Reset(); $script:Sleeps = 0; $script:Notes = @(); $script:ScreenBegun = $true; $script:WasMinimized = $true; $script:SavedPlacement = $null; $script:Cancelled = $false; $script:Invoked = 0 }\n"
-            "Reset-Screen; [PanelNative]::Idle = 0; $script:ActiveNow = @('id-b'); Restore-Screen\n"
+            "Reset-Screen; [PanelNative]::Idle = 0; [PanelNative]::RootUnder = [IntPtr]7; $script:ActiveNow = @('id-b'); Restore-Screen\n"
             "$o.nothing_to_restore = [pscustomobject]@{ sleeps = $script:Sleeps; notes = @($script:Notes); calls = [PanelNative]::Log; invoked = $script:Invoked }\n"
             "Reset-Screen; [PanelNative]::Idle = 0; $script:ActiveNow = @('id-a'); $script:Cancelled = $true; Restore-Screen\n"
             "$o.cancelled = [pscustomobject]@{ sleeps = $script:Sleeps; notes = @($script:Notes); calls = [PanelNative]::Log; invoked = $script:Invoked }\n"
@@ -2093,7 +2141,7 @@ class ArchiveBehaviourTests(unittest.TestCase):
         self.assertEqual(got["nothing_to_restore"]["sleeps"], 0)
         self.assertEqual(got["nothing_to_restore"]["notes"], [])
         self.assertEqual(got["nothing_to_restore"]["invoked"], 0)
-        self.assertIn("min7", got["nothing_to_restore"]["calls"], "the window is still minimized again, with no idle wait")
+        self.assertIn("min7", got["nothing_to_restore"]["calls"], "the window is covered at its centre, so it is minimized again with no idle wait")
         self.assertEqual(got["cancelled"]["sleeps"], 0, "a cancelled run does not wait")
         self.assertTrue(any("not restored" in n for n in got["cancelled"]["notes"]), got["cancelled"]["notes"])
         self.assertEqual(got["cancelled"]["invoked"], 0)
@@ -2111,15 +2159,39 @@ class ArchiveBehaviourTests(unittest.TestCase):
             "$o.after_end = [PanelNative]::Log; $o.saved_cleared = ($null -eq $script:SavedPlacement)\n"
             "[PanelNative]::Calls.Clear(); $script:ScreenBegun = $true; $script:WasMinimized = $true; $script:SavedPlacement = $null; Restore-Screen\n"
             "$o.no_saved_placement = [PanelNative]::Log\n"
-            "[PanelNative]::Calls.Clear(); $script:ScreenBegun = $true; $script:WasMinimized = $true; $script:SavedPlacement = [int[]]@(2, 2, 0, 0, 0, 0, 1, 2, 3, 4); [PanelNative]::Fg = [IntPtr]5; $script:Notes = @(); Restore-Screen\n"
-            "$o.vscode_is_foreground = [PanelNative]::Log; $o.fg_notes = @($script:Notes)\n"
         )
         self.assertEqual(got["after_restore"], "getplacement bottom show4 behind9", "the placement as found is saved before the restore")
         self.assertEqual(got["after_end"], "minplace flags=2 rect=100,100", "WPF_RESTORETOMAXIMIZED and the normal rectangle are kept")
         self.assertTrue(got["saved_cleared"])
         self.assertEqual(got["no_saved_placement"], "min7")
-        self.assertEqual(got["vscode_is_foreground"], "", "with VS Code in front he is using it: it is left as it is")
-        self.assertTrue(any("foreground window now" in n for n in got["fg_notes"]), got["fg_notes"])
+
+    def test_the_window_is_minimized_again_only_when_he_is_away_or_it_is_covered_and_not_his_foreground(self):
+        """Second review item 2: the only guard was 'not the foreground window', so a VS Code he brought up himself and left
+        visible behind another app was minimized under him."""
+        got = self.run_screen(
+            "function Case([double]$Idle, [int]$Fg, [int]$Root, [bool]$Was = $true) {\n"
+            "  [PanelNative]::Reset(); $script:Notes = @(); $script:ScreenBegun = $true; $script:WasMinimized = $Was; $script:ActiveNow = @('id-b'); $script:Sleeps = 0\n"
+            "  $script:SavedPlacement = [int[]]@(2, 2, 0, 0, 0, 0, 1, 2, 3, 4); [PanelNative]::Idle = $Idle; [PanelNative]::Fg = [IntPtr]$Fg; [PanelNative]::RootUnder = [IntPtr]$Root\n"
+            "  Restore-Screen\n"
+            "  [pscustomobject]@{ calls = [PanelNative]::Log; notes = @($script:Notes) } }\n"
+            "$o.idle_vscode_foreground = Case 999999 5 5\n"
+            "$o.idle_other_foreground = Case 999999 9 5\n"
+            "$o.busy_covered_other_foreground = Case 0 9 7\n"
+            "$o.busy_visible_other_foreground = Case 0 9 5\n"
+            "$o.busy_vscode_foreground = Case 0 5 7\n"
+            "$o.not_restored_in_this_run = Case 999999 9 7 $false\n"
+        )
+        mini = "minplace flags=2 rect=1,2"
+        left = "VS Code was left open: it is visible on his screen and he is at the computer"
+        self.assertEqual(got["idle_vscode_foreground"]["calls"], mini, "he is away: minimized whatever is in front")
+        self.assertEqual(got["idle_other_foreground"]["calls"], mini)
+        self.assertEqual(got["busy_covered_other_foreground"]["calls"], mini, "he is at the computer but VS Code is behind another window and not his foreground")
+        for case in ("idle_vscode_foreground", "idle_other_foreground", "busy_covered_other_foreground"):
+            self.assertEqual(got[case]["notes"], [], case)
+        for case in ("busy_visible_other_foreground", "busy_vscode_foreground"):
+            self.assertEqual(got[case]["calls"], "", f"{case}: he can see it and is using the computer, so it is left restored")
+            self.assertEqual(got[case]["notes"], [left], case)
+        self.assertEqual(got["not_restored_in_this_run"], {"calls": "", "notes": []}, "a window the driver did not restore is never minimized")
 
     def test_the_placement_is_saved_once_and_the_first_one_wins(self):
         got = self.run_screen(
@@ -2130,19 +2202,25 @@ class ArchiveBehaviourTests(unittest.TestCase):
         )
         self.assertEqual((got["flags"], got["left"]), (2, 100))
 
-    def test_the_restore_never_leaves_vs_code_in_the_always_on_top_band(self):
+    def test_the_restore_never_places_vs_code_behind_an_always_on_top_window(self):
+        """Second review item 1c: behind his always-on-top foreground window VS Code would be always-on-top; it stays at the bottom."""
         got = self.run_screen(
-            "[PanelNative]::Reset(); $script:Notes = @(); [PanelNative]::BehindTopmost = $true; Restore-Minimized\n"
-            "$o.topmost_front = [pscustomobject]@{ calls = [PanelNative]::Log; notes = @($script:Notes) }\n"
-            "[PanelNative]::Reset(); $script:Notes = @(); [PanelNative]::BehindTopmost = $true; [PanelNative]::Stubborn = $true; Restore-Minimized\n"
-            "$o.stubborn = @($script:Notes)\n"
-            "[PanelNative]::Reset(); $script:Notes = @(); [PanelNative]::Fg = [IntPtr]5; Restore-Minimized\n"
-            "$o.fg_is_vscode = [PanelNative]::Log\n"
+            "function Fresh { [PanelNative]::Reset(); $script:Notes = @(); $script:SavedPlacement = $null }\n"
+            "Fresh; Restore-Minimized; $o.normal_fg = [pscustomobject]@{ calls = [PanelNative]::Log; notes = @($script:Notes) }\n"
+            "Fresh; [void][PanelNative]::TopWins.Add(9); Restore-Minimized; $o.topmost_fg = [pscustomobject]@{ calls = [PanelNative]::Log; notes = @($script:Notes) }\n"
+            "Fresh; [PanelNative]::Fg = [IntPtr]::Zero; Restore-Minimized; $o.no_fg = [PanelNative]::Log\n"
+            "Fresh; [PanelNative]::Fg = [IntPtr]5; Restore-Minimized; $o.fg_is_vscode = [PanelNative]::Log\n"
+            "Fresh; [PanelNative]::Alive = $true; [PanelNative]::BehindTopmost = $true; Restore-Minimized; $o.last_check = [pscustomobject]@{ calls = [PanelNative]::Log; notes = @($script:Notes) }\n"
+            "Fresh; [PanelNative]::BehindTopmost = $true; [PanelNative]::Stubborn = $true; Restore-Minimized; $o.stubborn = @($script:Notes)\n"
         )
-        self.assertEqual(got["topmost_front"]["calls"], "getplacement bottom show4 behind9 notopmost")
-        self.assertEqual(got["topmost_front"]["notes"], [])
+        self.assertEqual(got["normal_fg"]["calls"], "getplacement bottom show4 behind9")
+        self.assertEqual(got["topmost_fg"]["calls"], "getplacement bottom show4", "his foreground window is always-on-top: VS Code stays at the bottom, where HWND_BOTTOM put it")
+        self.assertEqual(got["topmost_fg"]["notes"], [])
+        self.assertEqual(got["no_fg"], "getplacement bottom show4")
+        self.assertEqual(got["fg_is_vscode"], "getplacement bottom show4")
+        self.assertEqual(got["last_check"]["calls"], "getplacement bottom show4 behind9 notopmost", "the topmost bit is read at the end and cleared")
+        self.assertEqual(got["last_check"]["notes"], [])
         self.assertTrue(any("always-on-top band" in n for n in got["stubborn"]), got["stubborn"])
-        self.assertIn("bottom show4 bottom", got["fg_is_vscode"], "no window to go behind: the bottom")
 
     # What a failed archive says, in its own words, and the tab it puts back.
 

@@ -8,9 +8,11 @@
 # and is never logged.
 # The driver never takes the foreground and never activates VS Code. A minimized VS Code window is
 # restored behind the window he has in front (to the bottom of the stack, shown without activation, then
-# placed directly behind his foreground window), which does not reset the system's last-input time, and is
-# minimized again at the end without activation. 'archive' alone changes what he sees: when another window
-# covers the row it raises VS Code above it without keyboard focus (and puts it back), and it waits while a
+# placed directly behind his foreground window unless that window is always-on-top; a window that was maximized
+# comes back maximized), which does not reset the system's last-input time, and is minimized again at the end
+# without activation, but only when he is idle or VS Code is covered and not his foreground window (else it is
+# left open, with a note). 'archive' alone changes what he sees: when another window covers the row it raises
+# VS Code above it without keyboard focus (and puts it back exactly where it was in the window order), and it waits while a
 # full-screen window is in front (the shell's notification state 2, 3 or 4), then exits 3 at the deadline.
 #
 #   list                                       JSON array: session_id, name, status, active
@@ -177,8 +179,13 @@ public static class PanelNative {
     // Whether the window is in the always-on-top band (WS_EX_TOPMOST in its extended style).
     [DllImport("user32.dll")] static extern int GetWindowLongW(IntPtr h, int index);
     public static bool IsTopmost(IntPtr h) { return (GetWindowLongW(h, -20) & 0x8) != 0; }
-    // A window's placement, saved before the no-focus restore (which restores to the normal size) and put back
-    // when it is minimized again, with the flag that says it restores to maximized.
+    // The window directly above another one in the z-order (0 when it is at the very top): GW_HWNDPREV.
+    [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr h, uint cmd);
+    public static IntPtr Above(IntPtr h) { return GetWindow(h, 3); }
+    // A window's placement, saved before the no-focus restore and put back when it is minimized again, with the
+    // flag that says it restores to maximized. (Measured: SW_SHOWNOACTIVATE restores a window that was minimized
+    // from maximized to maximized, and SW_SHOWMINNOACTIVE or a placement with showCmd 7 keeps that flag; a
+    // placement with showCmd 2, SW_SHOWMINIMIZED, led to a foreground change, so showCmd is always 7.)
     [StructLayout(LayoutKind.Sequential)]
     struct WP { public int length, flags, showCmd, minX, minY, maxX, maxY, left, top, right, bottom; }
     [DllImport("user32.dll")] static extern bool GetWindowPlacement(IntPtr h, ref WP p);
@@ -189,7 +196,7 @@ public static class PanelNative {
         if (!GetWindowPlacement(h, ref p)) return null;
         return new int[] { p.flags, p.showCmd, p.minX, p.minY, p.maxX, p.maxY, p.left, p.top, p.right, p.bottom };
     }
-    // Minimized without activation (SW_SHOWMINNOACTIVE), with the saved flags and normal rectangle.
+    // Minimized without activation (SW_SHOWMINNOACTIVE, showCmd 7 and never 2), with the saved flags and rectangle.
     public static bool MinimizeWithPlacement(IntPtr h, int[] q) {
         WP p = new WP();
         p.length = Marshal.SizeOf(typeof(WP));
@@ -793,12 +800,19 @@ function Open-Window {
     $script:Hwnd = [IntPtr][int64]$script:Win.Current.NativeWindowHandle
 }
 
-# VS Code goes directly behind a window (when it is a window other than VS Code and still exists), else to
-# the bottom of the stack. Placing it behind an always-on-top window would make it always-on-top too, so its
-# extended style is read afterwards, the flag is cleared when it is set, and a note says when it stays set.
+# VS Code goes directly behind a window, but only a window that is not VS Code, still exists and is not itself
+# always-on-top (behind an always-on-top window VS Code would become always-on-top too). True when it was placed.
 function Set-VsCodeBehind($Behind) {
-    if ($Behind -ne [IntPtr]::Zero -and $Behind -ne $script:Hwnd -and [PanelNative]::IsWindow($Behind)) { [void][PanelNative]::PlaceBehind($script:Hwnd, $Behind) }
-    else { [void][PanelNative]::PlaceBottom($script:Hwnd) }
+    if ($Behind -eq [IntPtr]::Zero -or $Behind -eq $script:Hwnd) { return $false }
+    if (-not [PanelNative]::IsWindow($Behind)) { return $false }
+    if ([PanelNative]::IsTopmost($Behind)) { return $false }
+    [void][PanelNative]::PlaceBehind($script:Hwnd, $Behind)
+    $true
+}
+
+# The last check of any z-order change: VS Code's extended style must not carry the always-on-top bit. When it
+# does, it is cleared once more, and a note says when it stays set.
+function Confirm-VsCodeNotTopmost {
     if ([PanelNative]::IsTopmost($script:Hwnd)) {
         [void][PanelNative]::ClearTopmost($script:Hwnd)
         if ([PanelNative]::IsTopmost($script:Hwnd)) { Add-Note 'VS Code is still in the always-on-top band; the driver could not clear it' }
@@ -807,17 +821,19 @@ function Set-VsCodeBehind($Behind) {
 
 # A minimized window's tree is stale, so it is restored, and the run remembers to minimize it again at
 # the end. It never takes the foreground and never resets the idle time (measured): the window goes to
-# the bottom of the stack while still minimized, is shown without activation, and is then put directly
-# behind the window that has the foreground, so VS Code does not appear over his work. Used by
+# the bottom of the stack while still minimized, is shown without activation (a window minimized from maximized
+# comes back maximized), and is then put directly behind the window that has the foreground when that window
+# is not always-on-top (else it stays at the bottom), so VS Code does not appear over his work. Used by
 # Ensure-Screen and by the close retry (the window may be minimized again after Ensure-Screen ran).
 function Restore-Minimized {
     Wait-Idle 'restore the minimized VS Code window'
     $front = [PanelNative]::Foreground()
-    # The restore goes to the normal size: the placement as found is kept to minimize it again the same way.
+    # The placement as found is kept to minimize it again the same way (showCmd 7, with the maximize flag).
     if ($null -eq $script:SavedPlacement) { $script:SavedPlacement = [PanelNative]::GetPlacement($script:Hwnd) }
     [void][PanelNative]::PlaceBottom($script:Hwnd)
     [void][PanelNative]::ShowNoActivate($script:Hwnd)
-    Set-VsCodeBehind $front
+    [void](Set-VsCodeBehind $front)
+    Confirm-VsCodeNotTopmost
     $script:WasMinimized = $true
     Start-Sleep -Milliseconds 2500
     if ([PanelNative]::Foreground() -ne $front) { Add-Note 'the foreground window changed while the minimized VS Code window was restored' }
@@ -834,11 +850,24 @@ function Ensure-Screen {
     $script:PrevActive = @(Get-Chats $script:Win | Where-Object { $_.Active } | ForEach-Object { $_.Id })
 }
 
+# True when another window covers the centre of VS Code's own rectangle (so VS Code is not what he sees there).
+# An unreadable or empty rectangle counts as not covered.
+function Test-VsCodeCovered {
+    try {
+        $r = $script:Win.Current.BoundingRectangle
+        foreach ($v in @($r.X, $r.Y, $r.Width, $r.Height)) { if ([double]::IsNaN($v) -or [double]::IsInfinity($v)) { return $false } }
+        if ($r.Width -le 0 -or $r.Height -le 0) { return $false }
+        $root = [PanelNative]::RootAt([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2))
+        return [bool]($root -ne $script:Hwnd)
+    } catch { return $false }
+}
+
 # Puts his active chat back, and the window as it was. Never fights him: what he can see is only his
 # previously active chat, so the idle wait is needed only when that chat has to be activated again (and a
 # cancelled run does not wait at all); if he is at the machine it waits a little (within the run's deadline)
-# and then says it did not restore. Minimizing the window again changes nothing he sees, so it waits for no one,
-# unless VS Code is his foreground window now: then it is left as it is.
+# and then says it did not restore. The window is minimized again only when this run restored it and either he is
+# idle (at or above the threshold) or VS Code is not his foreground window and is covered at its centre; else it
+# is visible on his screen and he is at the computer, so it is left open, with a note.
 function Restore-Screen {
     if (-not $script:ScreenBegun) { return }
     $script:ScreenBegun = $false
@@ -876,9 +905,11 @@ function Restore-Screen {
     } finally {
         if ($script:WasMinimized) {
             try {
-                if ([PanelNative]::Foreground() -eq $script:Hwnd) { Add-Note 'VS Code is the foreground window now, so it was left as it is' }
-                elseif ($null -ne $script:SavedPlacement) { [void][PanelNative]::MinimizeWithPlacement($script:Hwnd, $script:SavedPlacement) }
-                else { [void][PanelNative]::MinimizeNoActivate($script:Hwnd) }
+                $idle = ([PanelNative]::IdleMs() -ge ($IdleSeconds * 1000))
+                if ($idle -or (([PanelNative]::Foreground() -ne $script:Hwnd) -and (Test-VsCodeCovered))) {
+                    if ($null -ne $script:SavedPlacement) { [void][PanelNative]::MinimizeWithPlacement($script:Hwnd, $script:SavedPlacement) }
+                    else { [void][PanelNative]::MinimizeNoActivate($script:Hwnd) }
+                } else { Add-Note 'VS Code was left open: it is visible on his screen and he is at the computer' }
             } catch { Add-Note 'could not minimize the window again' }
             $script:WasMinimized = $false
             $script:SavedPlacement = $null
@@ -1767,19 +1798,24 @@ function Restore-Pointer($Old, $Placed) {
     else { Add-Note 'the pointer was moved by him after the driver put it on the row, so the driver left it where he put it' }
 }
 
-# Undoes the raise: not topmost, then directly behind the window that had covered the row if it still exists,
-# else directly behind the window he has in front now (when that is not VS Code), else at the bottom; and
-# VS Code must not stay in the always-on-top band (Set-VsCodeBehind reads that and clears it).
+# Undoes the raise and puts VS Code exactly where it was in the z-order. Before the raise the window directly above
+# VS Code was recorded (Above, and whether it is always-on-top, AboveTop). Not topmost first. Then: when that window
+# still exists and is not always-on-top, directly behind it (where VS Code was). When it was always-on-top, or there
+# was none, VS Code was the top normal window and the first step has just put it there. When it is gone: directly
+# behind his foreground window if that is not VS Code and not always-on-top, else at the back, with a note. Never
+# behind an always-on-top window. At the end the always-on-top bit is read and cleared once more if it is set.
 function Undo-Raise($Front) {
     if (-not $Front.Raised) { return }
     [void][PanelNative]::ClearTopmost($script:Hwnd)
-    $behind = [IntPtr]::Zero
-    if ($Front.Cover -ne [IntPtr]::Zero -and $Front.Cover -ne $script:Hwnd -and [PanelNative]::IsWindow($Front.Cover)) { $behind = $Front.Cover }
-    else {
-        $fg = [PanelNative]::Foreground()
-        if ($fg -ne [IntPtr]::Zero -and $fg -ne $script:Hwnd -and [PanelNative]::IsWindow($fg)) { $behind = $fg }
+    if ($Front.Above -eq [IntPtr]::Zero -or $Front.AboveTop) {
+        # Already the top normal window.
+    } elseif ([PanelNative]::IsWindow($Front.Above)) {
+        [void](Set-VsCodeBehind $Front.Above)
+    } elseif (-not (Set-VsCodeBehind ([PanelNative]::Foreground()))) {
+        [void][PanelNative]::PlaceBottom($script:Hwnd)
+        Add-Note 'the window that was above VS Code is gone, so VS Code was put at the back'
     }
-    Set-VsCodeBehind $behind
+    Confirm-VsCodeNotTopmost
     $Front.Raised = $false
 }
 
@@ -1846,12 +1882,13 @@ function Invoke-ArchiveStage([string]$Id) {
     $sp = $null
     if ($row.TryGetCurrentPattern([System.Windows.Automation.ScrollItemPattern]::Pattern, [ref]$sp)) { try { $sp.ScrollIntoView() } catch { } }
     Start-Sleep -Milliseconds 300
-    $front = [pscustomobject]@{ Raised = $false; Cover = [IntPtr]::Zero }
+    $front = [pscustomobject]@{ Raised = $false; Cover = [IntPtr]::Zero; Above = [IntPtr]::Zero; AboveTop = $false }
     $old = $null
     $placed = $null
     $spot = $null
     try {
         $fsUntil = $null
+        $fsLogged = $false
         while ($true) {
             Wait-Idle 'put the pointer on the chat row'
             $row = Find-RowElement $Id
@@ -1870,15 +1907,19 @@ function Invoke-ArchiveStage([string]$Id) {
                 }
                 Stop-IfCancelled
                 if ((Get-Date) -ge $fsUntil) { Stop-Panel 3 'a full-screen window stayed in front of the row until the deadline; VS Code was not raised and the pointer was not moved' }
-                Write-Waiting 'a full-screen window is in front'
+                # The idle wait clears the last waiting reason each time round, so this one is logged once here.
+                if (-not $fsLogged) { Write-Waiting 'a full-screen window is in front'; $fsLogged = $true }
                 Start-Sleep -Seconds 2
                 continue
             }
+            $fsLogged = $false
             Clear-Waiting
             # He may have come back since the idle wait: wait for him again rather than raise over his work.
             if ([PanelNative]::IdleMs() -lt ($IdleSeconds * 1000)) { continue }
             # Nothing waits from here to the raise, or after it.
             $front.Cover = $cover
+            $front.Above = [PanelNative]::Above($script:Hwnd)
+            if ($front.Above -ne [IntPtr]::Zero) { $front.AboveTop = [PanelNative]::IsTopmost($front.Above) }
             [void][PanelNative]::RaiseNoActivate($script:Hwnd)
             $front.Raised = $true
             break

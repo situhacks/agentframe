@@ -667,3 +667,38 @@ fn a_missing_body_file_or_file_is_a_plain_refusal_that_takes_no_id_and_leaves_th
     assert_eq!(code, 0, "{err}");
     assert!(out.starts_with(&format!("src-{DATE}-02")), "{out}");
 }
+
+#[test]
+fn nothing_on_standard_input_is_refused_with_no_id_taken_and_an_empty_file_by_path_is_as_before() {
+    let fx = Fx::new();
+    layer(&fx);
+    fx.ok(&["source", "add", "--type", "note", "--date", DATE, "--slug", "first", "--summary", "s", "--body-file", &body_file(&fx, "a.txt", b"one\n")]);
+    let index_before = std::fs::read(fx.path("workspace/life/sources/INDEX.md")).unwrap();
+    // An empty pipe.
+    let (code, out, err) = add_stdin(&fx, "empty", b"");
+    assert_eq!(code, 1, "{out}{err}");
+    assert!(err.contains("nothing arrived on standard input"), "{err}");
+    // A closed standard input (the null device).
+    let run = std::process::Command::new(assert_cmd::cargo::cargo_bin("af"))
+        .args(["source", "add", "--type", "note", "--date", DATE, "--slug", "closed", "--summary", "s", "--body-file", "-"])
+        .env("AF_ROOT", fx.root())
+        .env("CLAUDE_CONFIG_DIR", fx.path("no-claude-config"))
+        .env_remove("CLAUDE_CODE_SESSION_ID")
+        .current_dir(fx.dir.path())
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap();
+    assert_eq!(run.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&run.stderr).contains("nothing arrived on standard input"));
+    assert_eq!(std::fs::read(fx.path("workspace/life/sources/INDEX.md")).unwrap(), index_before);
+    assert_eq!(files_in_sources(&fx).len(), 2, "no file was made");
+    // The id was not taken.
+    let (code, out, err) = add_stdin(&fx, "second", b"two\n");
+    assert_eq!(code, 0, "{err}");
+    assert!(out.starts_with(&format!("src-{DATE}-02")), "{out}");
+    // An empty file given by path is filed, as before.
+    let (code, out, err) = fx.run(&["source", "add", "--type", "note", "--date", DATE, "--slug", "blank", "--summary", "s", "--body-file", &body_file(&fx, "z.txt", b"")]);
+    assert_eq!(code, 0, "{out}{err}");
+    // A terminal on standard input is refused with "pipe the body in"; a test cannot give the binary a terminal
+    // through a pipe, so that branch (std::io::IsTerminal) is not exercised here.
+}

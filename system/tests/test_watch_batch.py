@@ -1475,6 +1475,21 @@ class IndexUpdateScriptTests(unittest.TestCase):
         failed = subprocess.CompletedProcess([], 4, stdout="", stderr="trouble\n")
         self.assertEqual(self.run_script(failed)[:2], (4, "trouble\n"))
 
+    def test_a_warning_on_stderr_does_not_replace_the_counts(self):
+        import subprocess
+        counts = "af index: scanned 412 files (400 md, 12 txt) · +3 new · ~1 updated · =408 unchanged · -0 gone"
+        warn = "af index: WARNING — embeddings unavailable (connect: refused); indexed keyword-only. Start Ollama and re-run."
+        done = subprocess.CompletedProcess([], 0, stdout=counts + "\n", stderr=warn + "\n")
+        code, out, _ = self.run_script(done)
+        self.assertEqual(code, 0)
+        self.assertEqual(out, f"{counts} · warning: {warn.removeprefix('af index:').strip()[:80]}\n")
+        self.assertLessEqual(len(out.split(" · warning: ")[1].strip()), 80)
+        # No warning: the counts alone. No counts line: the last line, as before.
+        clean = subprocess.CompletedProcess([], 0, stdout=counts + "\n", stderr="")
+        self.assertEqual(self.run_script(clean)[1], counts + "\n")
+        failed = subprocess.CompletedProcess([], 1, stdout="", stderr="af index: ERROR: no cache\n")
+        self.assertEqual(self.run_script(failed)[:2], (1, "af index: ERROR: no cache\n"))
+
     def test_af_missing_is_exit_127_with_the_reason(self):
         code, out, _ = self.run_script(error=FileNotFoundError("af"))
         self.assertEqual(code, 127)

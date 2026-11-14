@@ -571,6 +571,15 @@ fn cmd_import(ctx: &Ctx, a: &ImportArgs) -> R<i32> {
         die!("--whole replaces every row, so no row is merged; --replace does not go with it");
     }
     let replacing = a.whole || !a.scope.is_empty();
+    // A scope needs a value: an empty one would match every row with an empty column, and a script whose id
+    // came out empty would wipe them. Rows with an empty value go with `delete`, on purpose.
+    for pair in &a.scope {
+        if let Some((col, val)) = pair.split_once('=') {
+            if val.trim().is_empty() {
+                die!("--scope {col}= has no value: a scope needs one. Rows with an empty {col} are removed with af data delete {} {col}=", a.ledger);
+            }
+        }
+    }
     let (_, first) = find_ledger(ctx, &a.ledger)?;
     let bytes = match std::fs::read(&a.csv) {
         Ok(b) => b,
@@ -671,6 +680,14 @@ fn cmd_import(ctx: &Ctx, a: &ImportArgs) -> R<i32> {
                         }
                     }
                 }
+                // Under --scope or --whole every row left in the index is outside the scope, so a clash is refused
+                // even when the rows are the same: the file may not take a key another part of the ledger holds.
+                Some(i) if replacing && !a.replace => bad.push(format!(
+                    "{}:{line}: the key {} is held by line {} of the ledger outside the scope; --replace replaces it",
+                    a.csv,
+                    l.key_text(&probe),
+                    kept_lines[i]
+                )),
                 Some(i) if l.same_in(&rows[i], &probe, &given_cols(&given)) => unchanged += 1,
                 Some(i) if a.replace => {
                     let merged = merged_row(&l, &rows[i], &given)?;
@@ -703,7 +720,8 @@ fn cmd_import(ctx: &Ctx, a: &ImportArgs) -> R<i32> {
     })?;
     if replacing {
         let merged = if replaced > 0 { format!(", replaced {replaced}") } else { String::new() };
-        outln!("removed {removed}, added {added}{merged}");
+        let same = if unchanged > 0 { format!(", unchanged {unchanged}") } else { String::new() };
+        outln!("removed {removed}, added {added}{merged}{same}");
     } else {
         outln!("added {added}, unchanged {unchanged}, replaced {replaced}");
     }

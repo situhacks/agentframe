@@ -203,3 +203,49 @@ fn without_scope_or_whole_import_still_only_adds() {
     assert_eq!(out.trim_end(), "added 1, unchanged 0, replaced 0");
     assert_eq!(bytes(&fx), b"workout,set_no,exercise,weight\nw1,1,Squat,100\nw1,2,Squat,105\n\"w2\",1,Bench,70\nw2,2,\"Bench\",75\nw3,1,Row,50\n");
 }
+
+#[test]
+fn an_empty_scope_value_is_refused_before_anything_is_read_and_delete_keeps_matching_empty() {
+    let fx = Fx::new();
+    seeded(&fx);
+    // Two rows with an empty weight, and a file that would replace them.
+    fx.write_bytes(SETS, b"workout,set_no,exercise,weight\nw1,1,Squat,\nw1,2,Squat,\nw2,1,Bench,70\n");
+    let before = bytes(&fx);
+    let f = csv(&fx, "workout,set_no,exercise,weight\nw3,1,Row,50\n");
+    for value in ["weight=", "weight= "] {
+        let (code, out, err) = fx.run(&["data", "import", "sets", "--csv", &f, "--scope", value]);
+        assert_eq!(code, 1, "{value:?}: {out}{err}");
+        assert!(err.contains("a scope needs one") && err.contains("af data delete sets weight="), "{err}");
+        assert_eq!(bytes(&fx), before, "{value:?}");
+    }
+    // It is refused before the file is read: a file that is not there gives the scope message, not a read error.
+    let err = fx.refused(&["data", "import", "sets", "--csv", &fx.p("in/none.csv"), "--scope", "weight="]);
+    assert!(err.contains("a scope needs one"), "{err}");
+    // A good pair next to an empty one is refused too.
+    fx.refused(&["data", "import", "sets", "--csv", &f, "--scope", "workout=w1", "weight="]);
+    assert_eq!(bytes(&fx), before);
+    // delete still matches the empty values, on purpose.
+    let out = fx.ok(&["data", "delete", "sets", "weight="]);
+    assert_eq!(out.lines().next().unwrap(), "deleted 2");
+}
+
+#[test]
+fn the_counts_printed_account_for_every_row_of_the_file() {
+    let fx = Fx::new();
+    fx.ok(&[
+        "data", "new", "sets", "--file", "systems/fitness/sets.csv", "--column", "workout:text!", "--column", "set_no:integer!", "--column", "exercise:text!",
+        "--column", "weight:number", "--key", "exercise,set_no",
+    ]);
+    fx.write_bytes(SETS, b"workout,set_no,exercise,weight\nw1,1,Squat,100\nw2,1,Bench,70\nw2,2,Bench,75\n");
+    let file_rows = 3;
+    // One new row, one row that takes a key a w2 row holds (merged with --replace), one more new row.
+    let f = csv(&fx, "workout,set_no,exercise,weight\nw1,1,Squat,100\nw1,1,Bench,72\nw1,2,Squat,105\n");
+    let out = fx.ok(&["data", "import", "sets", "--csv", &f, "--scope", "workout=w1", "--replace"]);
+    let n = |word: &str| -> usize {
+        out.split(", ").find_map(|p| p.trim().strip_prefix(word).and_then(|v| v.trim().parse().ok())).unwrap_or(0)
+    };
+    assert_eq!(n("added") + n("replaced") + n("unchanged"), file_rows, "{out}");
+    // With --whole every row of the file is added.
+    let out = fx.ok(&["data", "import", "sets", "--csv", &f, "--whole"]);
+    assert_eq!(out.trim_end(), format!("removed 4, added {file_rows}"));
+}

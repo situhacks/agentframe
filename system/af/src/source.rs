@@ -219,10 +219,16 @@ fn cmd_add(ctx: &Ctx, a: &AddArgs) -> R<i32> {
     // Read what the file holds before anything is taken, so a bad input costs no id.
     let (input, data) = match (&a.body_file, &a.file) {
         (Some(p), _) if p == "-" => {
-            use std::io::Read;
+            use std::io::{IsTerminal, Read};
+            if std::io::stdin().is_terminal() {
+                die!("--body-file - reads standard input, and standard input is a terminal: pipe the body in, or give --body-file a file");
+            }
             let mut bytes = Vec::new();
             if let Err(e) = std::io::stdin().lock().read_to_end(&mut bytes) {
                 die!("cannot read standard input for --body-file -: {e}");
+            }
+            if bytes.is_empty() {
+                die!("nothing arrived on standard input for --body-file -; nothing was filed");
             }
             ("standard input".to_string(), bytes)
         }

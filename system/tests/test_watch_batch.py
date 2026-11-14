@@ -1319,6 +1319,11 @@ class IndexRefreshTests(Base):
     def lines_with(self, text, what):
         return [x for x in text.splitlines() if x.startswith(what)]
 
+    STEP = "- index-refresh: "
+
+    def without_step(self, text):
+        return "".join(x for x in text.splitlines(keepends=True) if not x.startswith(self.STEP))
+
     def test_it_runs_once_on_a_normal_run_after_every_other_step_with_a_240_second_limit(self):
         steps = StubSteps(self.root)
         code = self.run_main([], now=MORNING, steps=steps, slot="auto")
@@ -1326,12 +1331,47 @@ class IndexRefreshTests(Base):
         self.assertEqual(steps.order, ["bills", "loop-watch", "loop-sweep", "harness-review", "push", "index-refresh"])
         self.assertEqual(steps.index_calls, [{"args": ["index_update.py"], "timeout": 240}])
         self.assertEqual(wb.INDEX, ("index-refresh", "index_update.py", 240))
-        self.assertNotIn("search index", self.report(), "a good refresh adds nothing to the report")
+        self.assertNotIn("search index", self.report(), "a good refresh adds no failure note")
         # An afternoon run has no morning steps and still refreshes the index.
         steps = StubSteps(self.root)
         self.run_main([mkrow(code_met=False)], now=AFTERNOON, steps=steps, slot="afternoon")
         self.assertEqual(steps.order, ["index-refresh"])
         self.assertEqual(steps.calls, [])
+
+    def steps_section(self, text):
+        head = text.split("## Steps\n\n", 1)[1]
+        return head.split("\n\n", 1)[0].splitlines()
+
+    def test_a_good_refresh_is_listed_under_steps_after_the_morning_steps_with_its_summary(self):
+        summary = "scanned 412, new 3, updated 1, gone 0"
+        steps = StubSteps(self.root, foots={"index-refresh": summary})
+        code = self.run_main([], now=MORNING, steps=steps, slot="auto")
+        self.assertEqual(code, 0)
+        lines = self.steps_section(self.report())
+        names = [x.split(":", 1)[0] for x in lines]
+        self.assertEqual(names, ["- bills", "- loop-watch", "- loop-sweep", "- harness-review", "- push", "- index-refresh"])
+        self.assertEqual(lines[-1], f"- index-refresh: ok · {summary}")
+        self.assertEqual(self.lines_with(self.report(), self.LINE), [], "a good refresh has no failure note")
+        # An afternoon run has no morning steps; the index is the only step listed.
+        steps = StubSteps(self.root, foots={"index-refresh": summary})
+        self.run_main([mkrow(code_met=False)], now=AFTERNOON, steps=steps, slot="afternoon")
+        self.assertEqual(self.steps_section(self.report()), [f"- index-refresh: ok · {summary}"])
+
+    def test_the_summary_is_cut_to_160_characters(self):
+        steps = StubSteps(self.root, foots={"index-refresh": "scanned " + "9" * 300})
+        self.run_main([], now=AFTERNOON, steps=steps, slot="afternoon")
+        (line,) = self.steps_section(self.report())
+        summary = line.split(" · ", 1)[1]
+        self.assertEqual(len(summary), 160)
+        self.assertTrue(summary.endswith("..."))
+
+    def test_the_run_result_is_the_same_with_the_step_listed(self):
+        rows = [mkrow(do="notify", code_met=True, say="Return the library books")]
+        code = self.run_main(rows, now=AFTERNOON, steps=StubSteps(self.root), slot="afternoon")
+        self.assertEqual(code, 0)
+        self.assertEqual(len(self.sent()), 1)
+        self.assertNotIn("## Problems", self.report())
+        self.assertIn("failed 0", self.log())
 
     def test_it_comes_after_the_queue_and_the_phone(self):
         row = mkrow(do="notify", code_met=True, say="Return the library books")
@@ -1364,7 +1404,11 @@ class IndexRefreshTests(Base):
                 added = self.lines_with(report, self.LINE)
                 self.assertEqual(len(added), 1, report)
                 self.assertTrue(added[0].endswith(tail), added)
-                self.assertEqual(report.replace(added[0] + "\n\n", "", 1), base_report, "nothing else in the report changed")
+                step = self.lines_with(report, self.STEP)
+                self.assertEqual(len(step), 1, report)
+                self.assertTrue(step[0].startswith(f"{self.STEP}exit {codes.get('index-refresh', 1)} · ") and step[0].endswith(tail.split(": ", 1)[-1]), step)
+                self.assertEqual(self.without_step(report.replace(added[0] + "\n\n", "", 1)), self.without_step(base_report),
+                                 "nothing else in the report changed")
                 self.assertEqual(self.log().split(" · ", 1)[1:], base_log.split(" · ", 1)[1:])
                 self.assertNotIn("## Problems", report)
 
@@ -1389,10 +1433,12 @@ class IndexRefreshTests(Base):
         self.assertEqual(code, 1)
         self.assertEqual(steps.order, ["index-refresh"])
 
-    def test_a_dry_run_starts_nothing(self):
+    def test_a_dry_run_starts_nothing_and_lists_no_index_step(self):
         steps = StubSteps(self.root)
         self.run_main([], "--dry-run", now=MORNING, steps=steps, slot="morning")
         self.assertEqual((steps.order, steps.index_calls), ([], []))
+        self.assertIn("## Steps", self.out, "the morning steps are listed as would run")
+        self.assertNotIn("index-refresh", self.out)
 
     def test_a_run_that_skips_because_another_holds_the_lock_refreshes_nothing(self):
         (self.root / wb.LOCK).parent.mkdir(parents=True, exist_ok=True)
@@ -1428,6 +1474,21 @@ class IndexUpdateScriptTests(unittest.TestCase):
         self.assertEqual(Path(kwargs["cwd"]), Path("C:/somewhere"))
         failed = subprocess.CompletedProcess([], 4, stdout="", stderr="trouble\n")
         self.assertEqual(self.run_script(failed)[:2], (4, "trouble\n"))
+
+    def test_a_warning_on_stderr_does_not_replace_the_counts(self):
+        import subprocess
+        counts = "af index: scanned 412 files (400 md, 12 txt) · +3 new · ~1 updated · =408 unchanged · -0 gone"
+        warn = "af index: WARNING — embeddings unavailable (connect: refused); indexed keyword-only. Start Ollama and re-run."
+        done = subprocess.CompletedProcess([], 0, stdout=counts + "\n", stderr=warn + "\n")
+        code, out, _ = self.run_script(done)
+        self.assertEqual(code, 0)
+        self.assertEqual(out, f"{counts} · warning: {warn.removeprefix('af index:').strip()[:80]}\n")
+        self.assertLessEqual(len(out.split(" · warning: ")[1].strip()), 80)
+        # No warning: the counts alone. No counts line: the last line, as before.
+        clean = subprocess.CompletedProcess([], 0, stdout=counts + "\n", stderr="")
+        self.assertEqual(self.run_script(clean)[1], counts + "\n")
+        failed = subprocess.CompletedProcess([], 1, stdout="", stderr="af index: ERROR: no cache\n")
+        self.assertEqual(self.run_script(failed)[:2], (1, "af index: ERROR: no cache\n"))
 
     def test_af_missing_is_exit_127_with_the_reason(self):
         code, out, _ = self.run_script(error=FileNotFoundError("af"))

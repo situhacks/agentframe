@@ -41,7 +41,7 @@ pub struct AddArgs {
     /// Mark the record private (text sources only: a file copied with --file has no frontmatter)
     #[arg(long)]
     private: bool,
-    /// A text file: its content becomes the body, byte for byte, under the record's frontmatter
+    /// A text file, or - for standard input: its content becomes the body, byte for byte, under the record's frontmatter
     #[arg(long)]
     body_file: Option<String>,
     /// Any file, copied unchanged with no frontmatter (not for an order)
@@ -86,6 +86,9 @@ fn check_args(a: &AddArgs) -> R<()> {
         (Some(_), Some(_)) => die!("give --body-file or --file, not both"),
         (None, None) => die!("give --body-file (a text input) or --file (any file, copied as it is)"),
         _ => {}
+    }
+    if a.file.as_deref() == Some("-") {
+        die!("--file - is refused: a binary needs a file name and an extension; standard input goes with --body-file -");
     }
     if a.move_ && a.file.is_none() {
         die!("--move goes with --file");
@@ -215,9 +218,26 @@ fn cmd_add(ctx: &Ctx, a: &AddArgs) -> R<i32> {
     }
     // Read what the file holds before anything is taken, so a bad input costs no id.
     let (input, data) = match (&a.body_file, &a.file) {
+        (Some(p), _) if p == "-" => {
+            use std::io::{IsTerminal, Read};
+            if std::io::stdin().is_terminal() {
+                die!("--body-file - reads standard input, and standard input is a terminal: pipe the body in, or give --body-file a file");
+            }
+            let mut bytes = Vec::new();
+            if let Err(e) = std::io::stdin().lock().read_to_end(&mut bytes) {
+                die!("cannot read standard input for --body-file -: {e}");
+            }
+            if bytes.is_empty() {
+                die!("nothing arrived on standard input for --body-file -; nothing was filed");
+            }
+            ("standard input".to_string(), bytes)
+        }
         (Some(p), _) | (_, Some(p)) => {
-            let bytes = std::fs::read(p).map_err(|e| io_err(&e, p))?;
-            (p.clone(), bytes)
+            let flag = if a.body_file.is_some() { "--body-file" } else { "--file" };
+            match std::fs::read(p) {
+                Ok(bytes) => (p.clone(), bytes),
+                Err(e) => die!("cannot read {flag} {p}: {e}; nothing was filed"),
+            }
         }
         _ => unreachable!("check_args needs one of the two"),
     };

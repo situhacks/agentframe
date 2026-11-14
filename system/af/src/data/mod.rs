@@ -31,13 +31,15 @@ pub enum DataCmd {
     Column(ColumnArgs),
     /// Append one row (--replace replaces the row with the same key)
     Add(AddArgs),
-    /// Add the rows of a CSV file: new keys appended, same rows skipped, changed rows need --replace
+    /// Add the rows of a CSV file: new keys appended, same rows skipped, changed rows need --replace;
+    /// --scope col=value... replaces the matching rows with the file's, --whole replaces every row
     Import(ImportArgs),
     /// Each ledger: file, rows, date range, columns; with a name, its last five rows too
     List {
         ledger: Option<String>,
     },
     /// Remove every row matching all the given col=value (compared by value); other lines stay as they are
+    /// (no match is not an error)
     Delete(DeleteArgs),
     /// Run one read-only SELECT over every ledger (a table named after each)
     Sql(SqlArgs),
@@ -123,6 +125,13 @@ pub struct ImportArgs {
     /// Replace rows whose key exists with different values instead of refusing
     #[arg(long)]
     replace: bool,
+    /// col=value, one per condition: the ledger's rows matching every one are replaced by the file's rows
+    /// (every row of the file must match them too)
+    #[arg(long, num_args = 1.., action = ArgAction::Append)]
+    scope: Vec<String>,
+    /// The file's rows become the whole ledger (not with --scope or --replace; the file needs a row)
+    #[arg(long)]
+    whole: bool,
 }
 
 pub fn run(ctx: &Ctx, cmd: DataCmd) -> R<i32> {
@@ -524,7 +533,7 @@ fn cmd_delete(ctx: &Ctx, a: &DeleteArgs) -> R<i32> {
         let (cols, probe) = (given_cols(&given), given_row(&given));
         let hits: Vec<u64> = raw.rows.iter().filter(|(_, r)| l.same_in(r, &probe, &cols)).map(|(line, _)| *line).collect();
         if hits.is_empty() {
-            die!("no row matches");
+            return Ok((0, Vec::new()));
         }
         // What goes, as the lines stood, taken before anything is cut.
         let gone = ledger::lines_text(&path, &hits);
@@ -535,6 +544,10 @@ fn cmd_delete(ctx: &Ctx, a: &DeleteArgs) -> R<i32> {
         Ok((hits.len(), gone))
     })?;
     let (n, gone) = n;
+    if n == 0 {
+        outln!("0 rows match; nothing removed");
+        return Ok(0);
+    }
     outln!("{} {n}", if a.dry_run { "would delete" } else { "deleted" });
     for line in gone.iter().take(DELETE_SHOWN) {
         outln!("{line}");
@@ -551,6 +564,22 @@ fn cmd_delete(ctx: &Ctx, a: &DeleteArgs) -> R<i32> {
 // ------------------------------------------------------------------ import
 
 fn cmd_import(ctx: &Ctx, a: &ImportArgs) -> R<i32> {
+    if a.whole && !a.scope.is_empty() {
+        die!("--whole replaces every row; --scope replaces the rows it names: give one of them");
+    }
+    if a.whole && a.replace {
+        die!("--whole replaces every row, so no row is merged; --replace does not go with it");
+    }
+    let replacing = a.whole || !a.scope.is_empty();
+    // A scope needs a value: an empty one would match every row with an empty column, and a script whose id
+    // came out empty would wipe them. Rows with an empty value go with `delete`, on purpose.
+    for pair in &a.scope {
+        if let Some((col, val)) = pair.split_once('=') {
+            if val.trim().is_empty() {
+                die!("--scope {col}= has no value: a scope needs one. Rows with an empty {col} are removed with af data delete {} {col}=", a.ledger);
+            }
+        }
+    }
     let (_, first) = find_ledger(ctx, &a.ledger)?;
     let bytes = match std::fs::read(&a.csv) {
         Ok(b) => b,
@@ -565,8 +594,11 @@ fn cmd_import(ctx: &Ctx, a: &ImportArgs) -> R<i32> {
         die!("{} is empty; it needs a header row naming the columns it carries", a.csv);
     }
     let (_, header) = records.remove(0);
+    if a.whole && records.is_empty() {
+        die!("{} has no rows; --whole would empty the ledger. af data delete does that on purpose", a.csv);
+    }
     let path = first.path(ctx);
-    let (added, unchanged, replaced) = locked(&path, || {
+    let (removed, added, unchanged, replaced) = locked(&path, || {
         let (_, l) = find_ledger(ctx, &a.ledger)?;
         // Where each input column goes.
         let mut at: Vec<usize> = Vec::new();
@@ -583,7 +615,20 @@ fn cmd_import(ctx: &Ctx, a: &ImportArgs) -> R<i32> {
             die!("{} has no column '{k}', which ledger '{}' requires: it is part of the key", a.csv, l.name);
         }
         let raw = load_for_write(ctx, &l, "nothing was written")?;
-        let mut rows: Vec<Vec<String>> = raw.rows.iter().map(|(_, r)| r.clone()).collect();
+        // The scope: the columns and values a row must hold to be replaced. --whole is a scope that every row meets.
+        let scope = parse_given(&l, &a.scope)?;
+        let (scope_cols, scope_probe) = (given_cols(&scope), given_row(&scope));
+        // The ledger's rows that stay (with their physical lines, for the cut), and the lines that go.
+        let (mut kept_lines, mut cut_lines): (Vec<u64>, Vec<u64>) = (Vec::new(), Vec::new());
+        let mut rows: Vec<Vec<String>> = Vec::new();
+        for (line, r) in &raw.rows {
+            if replacing && l.same_in(r, &scope_probe, &scope_cols) {
+                cut_lines.push(*line);
+            } else {
+                kept_lines.push(*line);
+                rows.push(r.clone());
+            }
+        }
         let existing = rows.len();
         let index: HashMap<Vec<String>, usize> = rows.iter().enumerate().map(|(i, r)| (l.key_of(r), i)).collect();
         let (mut added, mut unchanged, mut replaced) = (0usize, 0usize, 0usize);
@@ -614,6 +659,11 @@ fn cmd_import(ctx: &Ctx, a: &ImportArgs) -> R<i32> {
                 continue;
             }
             let probe = given_row(&given);
+            if !l.same_in(&probe, &scope_probe, &scope_cols) {
+                let off: Vec<&str> = scope_cols.iter().filter(|&&i| !l.same_in(&probe, &scope_probe, &[i])).map(|&i| l.columns[i].name.as_str()).collect();
+                bad.push(format!("{}:{line}: is outside the scope ({} differs from {})", a.csv, off.join(", "), a.scope.join(" ")));
+                continue;
+            }
             let key = l.key_of(&probe);
             if let Some(first_line) = seen.get(&key) {
                 bad.push(format!("{}:{line}: the key {} repeats line {first_line} of the input", a.csv, l.key_text(&probe)));
@@ -630,6 +680,14 @@ fn cmd_import(ctx: &Ctx, a: &ImportArgs) -> R<i32> {
                         }
                     }
                 }
+                // Under --scope or --whole every row left in the index is outside the scope, so a clash is refused
+                // even when the rows are the same: the file may not take a key another part of the ledger holds.
+                Some(i) if replacing && !a.replace => bad.push(format!(
+                    "{}:{line}: the key {} is held by line {} of the ledger outside the scope; --replace replaces it",
+                    a.csv,
+                    l.key_text(&probe),
+                    kept_lines[i]
+                )),
                 Some(i) if l.same_in(&rows[i], &probe, &given_cols(&given)) => unchanged += 1,
                 Some(i) if a.replace => {
                     let merged = merged_row(&l, &rows[i], &given)?;
@@ -640,7 +698,7 @@ fn cmd_import(ctx: &Ctx, a: &ImportArgs) -> R<i32> {
                     "{}:{line}: the key {} is at line {} of the ledger with different values; --replace replaces it",
                     a.csv,
                     l.key_text(&probe),
-                    raw.rows[i].0
+                    kept_lines[i]
                 )),
             }
         }
@@ -651,12 +709,22 @@ fn cmd_import(ctx: &Ctx, a: &ImportArgs) -> R<i32> {
             let mut all = vec![header_of(&l)];
             all.extend(rows);
             rewrite(&path, &raw, &all)?;
+        } else if replacing {
+            if !cut_lines.is_empty() || added > 0 {
+                ledger::cut_and_append(&path, &l, &cut_lines, &rows[existing..], &rows)?;
+            }
         } else if added > 0 {
             append_records(&path, &raw, &rows[existing..])?;
         }
-        Ok((added, unchanged, replaced))
+        Ok((cut_lines.len(), added, unchanged, replaced))
     })?;
-    outln!("added {added}, unchanged {unchanged}, replaced {replaced}");
+    if replacing {
+        let merged = if replaced > 0 { format!(", replaced {replaced}") } else { String::new() };
+        let same = if unchanged > 0 { format!(", unchanged {unchanged}") } else { String::new() };
+        outln!("removed {removed}, added {added}{merged}{same}");
+    } else {
+        outln!("added {added}, unchanged {unchanged}, replaced {replaced}");
+    }
     render_after_write(ctx);
     Ok(0)
 }

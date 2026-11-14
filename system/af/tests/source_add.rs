@@ -578,3 +578,127 @@ fn eight_processes_filing_tagged_sources_at_once_each_keep_their_tags() {
         assert!(text.replace("\r\n", "\n").contains(&format!("verbatim: true\ntags: [{tag}]\n---\nsame input\n")), "{text}");
     }
 }
+
+// ------------------------------------------------------------------ --body-file - and a path that is not there
+
+fn add_stdin(fx: &Fx, slug: &str, stdin: &[u8]) -> (i32, String, String) {
+    let out = fx
+        .af()
+        .args(["source", "add", "--type", "note", "--date", DATE, "--slug", slug, "--summary", "a note", "--body-file", "-"])
+        .write_stdin(stdin.to_vec())
+        .output()
+        .unwrap();
+    (out.status.code().unwrap_or(-1), String::from_utf8_lossy(&out.stdout).into_owned(), String::from_utf8_lossy(&out.stderr).into_owned())
+}
+
+#[test]
+fn a_body_piped_on_standard_input_files_the_same_bytes_as_the_same_body_from_a_file() {
+    let fx = Fx::new();
+    layer(&fx);
+    let body: &[u8] = "  leading\r\nline two \u{e9}\r\n\r\n\r\n".as_bytes();
+    fx.ok(&["source", "add", "--type", "note", "--date", DATE, "--slug", "from-file", "--summary", "s", "--body-file", &body_file(&fx, "b.txt", body)]);
+    let (code, out, err) = add_stdin(&fx, "from-stdin", body);
+    assert_eq!(code, 0, "{out}{err}");
+    let from_file = std::fs::read(fx.path(&format!("workspace/life/sources/note-{DATE}-from-file.md"))).unwrap();
+    let from_stdin = std::fs::read(fx.path(&format!("workspace/life/sources/note-{DATE}-from-stdin.md"))).unwrap();
+    assert_eq!(&from_stdin[from_stdin.len() - body.len()..], body, "the body comes back byte for byte");
+    assert_eq!(&from_file[from_file.len() - body.len()..], body);
+    assert_eq!(from_stdin.len(), from_file.len(), "the same frontmatter, the id apart");
+    assert_eq!(ids(&fx), [format!("src-{DATE}-01"), format!("src-{DATE}-02")]);
+    // Bytes that are not UTF-8 are refused as a file's are, and take no id.
+    let before = fx.read("workspace/life/sources/INDEX.md");
+    let (code, _, err) = add_stdin(&fx, "binary", &[0xff, 0xfe, 0x00]);
+    assert_eq!(code, 1, "{err}");
+    assert!(err.contains("not UTF-8"), "{err}");
+    assert_eq!(fx.read("workspace/life/sources/INDEX.md"), before);
+}
+
+#[test]
+fn file_dash_and_move_with_a_dash_are_refused_and_nothing_is_written() {
+    let fx = Fx::new();
+    layer(&fx);
+    let out = fx
+        .af()
+        .args(["source", "add", "--type", "note", "--date", DATE, "--slug", "x", "--summary", "s", "--file", "-"])
+        .write_stdin(b"data".to_vec())
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("--file -"), "{err}");
+    let out = fx
+        .af()
+        .args(["source", "add", "--type", "note", "--date", DATE, "--slug", "x", "--summary", "s", "--body-file", "-", "--move"])
+        .write_stdin(b"data".to_vec())
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("--move goes with --file"), "{err}");
+    assert_eq!(files_in_sources(&fx), Vec::<String>::new());
+}
+
+#[test]
+fn a_missing_body_file_or_file_is_a_plain_refusal_that_takes_no_id_and_leaves_the_index_alone() {
+    let fx = Fx::new();
+    layer(&fx);
+    fx.ok(&["source", "add", "--type", "note", "--date", DATE, "--slug", "first", "--summary", "s", "--body-file", &body_file(&fx, "a.txt", b"one\n")]);
+    let index_before = std::fs::read(fx.path("workspace/life/sources/INDEX.md")).unwrap();
+    let files_before = files_in_sources(&fx);
+    let missing = fx.p("in/not-there.txt");
+    let (code, out, err) = fx.run(&["source", "add", "--type", "note", "--date", DATE, "--slug", "ghost", "--summary", "s", "--body-file", &missing]);
+    assert_eq!(code, 1, "{out}{err}");
+    assert!(err.contains("--body-file") && err.contains("not-there.txt"), "{err}");
+    assert!(!err.contains("CRASH"), "{err}");
+    let missing = fx.p("in/not-there.pdf");
+    let (code, out, err) = fx.run(&["source", "add", "--type", "receipt", "--date", DATE, "--slug", "ghost", "--summary", "s", "--file", &missing]);
+    assert_eq!(code, 1, "{out}{err}");
+    assert!(err.contains("--file") && err.contains("not-there.pdf"), "{err}");
+    assert!(!err.contains("CRASH"), "{err}");
+    // A folder where a file is named cannot be read either.
+    fx.mkdir("in/folder");
+    let (code, _, err) = fx.run(&["source", "add", "--type", "note", "--date", DATE, "--slug", "ghost", "--summary", "s", "--body-file", &fx.p("in/folder")]);
+    assert_eq!(code, 1, "{err}");
+    assert!(!err.contains("CRASH"), "{err}");
+    assert_eq!(std::fs::read(fx.path("workspace/life/sources/INDEX.md")).unwrap(), index_before);
+    assert_eq!(files_in_sources(&fx), files_before);
+    // The id was not taken: the next add is 02.
+    let (code, out, err) = add(&fx, "second", &[]);
+    assert_eq!(code, 0, "{err}");
+    assert!(out.starts_with(&format!("src-{DATE}-02")), "{out}");
+}
+
+#[test]
+fn nothing_on_standard_input_is_refused_with_no_id_taken_and_an_empty_file_by_path_is_as_before() {
+    let fx = Fx::new();
+    layer(&fx);
+    fx.ok(&["source", "add", "--type", "note", "--date", DATE, "--slug", "first", "--summary", "s", "--body-file", &body_file(&fx, "a.txt", b"one\n")]);
+    let index_before = std::fs::read(fx.path("workspace/life/sources/INDEX.md")).unwrap();
+    // An empty pipe.
+    let (code, out, err) = add_stdin(&fx, "empty", b"");
+    assert_eq!(code, 1, "{out}{err}");
+    assert!(err.contains("nothing arrived on standard input"), "{err}");
+    // A closed standard input (the null device).
+    let run = std::process::Command::new(assert_cmd::cargo::cargo_bin("af"))
+        .args(["source", "add", "--type", "note", "--date", DATE, "--slug", "closed", "--summary", "s", "--body-file", "-"])
+        .env("AF_ROOT", fx.root())
+        .env("CLAUDE_CONFIG_DIR", fx.path("no-claude-config"))
+        .env_remove("CLAUDE_CODE_SESSION_ID")
+        .current_dir(fx.dir.path())
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap();
+    assert_eq!(run.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&run.stderr).contains("nothing arrived on standard input"));
+    assert_eq!(std::fs::read(fx.path("workspace/life/sources/INDEX.md")).unwrap(), index_before);
+    assert_eq!(files_in_sources(&fx).len(), 2, "no file was made");
+    // The id was not taken.
+    let (code, out, err) = add_stdin(&fx, "second", b"two\n");
+    assert_eq!(code, 0, "{err}");
+    assert!(out.starts_with(&format!("src-{DATE}-02")), "{out}");
+    // An empty file given by path is filed, as before.
+    let (code, out, err) = fx.run(&["source", "add", "--type", "note", "--date", DATE, "--slug", "blank", "--summary", "s", "--body-file", &body_file(&fx, "z.txt", b"")]);
+    assert_eq!(code, 0, "{out}{err}");
+    // A terminal on standard input is refused with "pipe the body in"; a test cannot give the binary a terminal
+    // through a pipe, so that branch (std::io::IsTerminal) is not exercised here.
+}

@@ -56,6 +56,7 @@ Fix a repeated mistake at the highest level that holds: structure first (one own
 - Hook commands use `AF_ROOT="${CLAUDE_PROJECT_DIR}" af hook <event>`; `AF_ROOT` survives a drifted shell directory.
 - `.claude/settings.json` keeps `worktree.bgIsolation: none` so background sessions see the gitignored `workspace/`.
 - Prose for a reader takes one em dash a sentence at most, never a matched pair.
+- A wait over an hour on a large context: [`af session warm`](library/process/cache-warm.md).
 
 ## Builder Workflow
 

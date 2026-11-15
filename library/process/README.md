@@ -9,6 +9,7 @@ The harness review, `system/tools/harness_review.py`, runs every 14 days from th
 | Process | Owns | Load when |
 |---|---|---|
 | [`authoring.md`](authoring.md) | The process-file and deliverable-template shapes, the catalog-row rule, how a new deliverable type is born, and the size caps | Creating, reshaping, or retiring a process file or template, or adding a deliverable type (Builder) |
+| [`cache-warm.md`](cache-warm.md) | Keeping a chat's prompt cache alive through a wait over an hour with `af session warm`: when to arm it, what the wake's three lines mean, and when to compact or let the cache lapse instead | A chat over 150k tokens will wait over an hour on work it will return to |
 | [`career-harvest.md`](career-harvest.md) | Moving real wins into the career bank (proof-points, master-cv bullets, stories) with origin links | A project closes out, or the operator names a win or asks to update the resume bank |
 | [`deck-production.md`](deck-production.md) | Central Deck/PPTX route, PPT Master default, saved design-language handoff, and follow-up-pass versioning/round-trip rules | A deliverable needs deck-shaped output, a project names a design language, or a shared deck gets a revision pass |
 | [`deliverable-versioning.md`](deliverable-versioning.md) | First-draft scaffolding, row/nested-artifact addresses, immutable snapshots, and the version-before-every-content-change rule | Before the first write or rewrite to a kept project deliverable, including every resumed drafting context |

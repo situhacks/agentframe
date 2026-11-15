@@ -6,7 +6,7 @@ Owns keeping a chat's prompt cache alive through a long wait with `af session wa
 
 ## When To Load
 
-A chat is about to wait over an hour on work it will return to (an agent running past an hour, a queued job, "I'm going to bed, keep going") and its context is over 150k tokens. Also when the context nudge fires and the task in hand is not done.
+A chat is about to wait over an hour on work it will return to (an agent running past an hour, a queued job, "I'm going to bed, keep going") and its context is over 150k tokens.
 
 ## Procedure
 
@@ -16,9 +16,10 @@ The only trigger that starts a turn in an idle chat is a background command the 
 
 1. Arm it with the Bash tool's `run_in_background`, once, before the wait: `af session warm <name>`. Name is the chat's registry name. It waits until the chat has been idle for 55 minutes (any activity resets the count), prints three lines and exits, which wakes the chat.
 2. On the wake, read the lines. Still waiting on work you will return to: run the re-arm command it printed, in the background, and end the turn. Task done: run the compact command it printed instead.
-3. A line starting `stop:` means nothing was armed or the timer ended; its text says why and what to do. Do not re-arm after a stop unless the text says to.
+3. The timer counts only main-chat replies, so during a long foreground tool call or a foreground subagent it can fire mid-turn; that wake is queued until the turn ends and costs one small turn.
+4. A line starting `stop:` means nothing was armed or the timer ended; its text says why and what to do. Do not re-arm after a stop unless the text says to.
 
-Options carry into the re-arm line: `--minutes` (5 to 58, default 55), `--max-wakes` (default 12), `--min-tokens` (default 150000).
+Options carry into the re-arm line: `--minutes` (5 to 56, default 55), `--max-wakes` (default 12), `--min-tokens` (default 150000).
 
 Do not arm when:
 

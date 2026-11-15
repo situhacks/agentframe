@@ -178,7 +178,6 @@ class InstructionTopologyCharacterizationTests(unittest.TestCase):
         link = "[`af session warm`](library/process/cache-warm.md)"
         worker_line = next(line for line in text("AGENTS.md").splitlines() if line.startswith("- **Background worker**"))
         self.assertIn("A wait over an hour on a large context: " + link, worker_line)
-        self.assertIn(link, text("AGENTS.builder.md"))
         self.assertIn("(cache-warm.md)", text("library/process/README.md"))
         self.assertIn("af session warm", text("library/schema/sessions-registry.md"))
         process = text("library/process/cache-warm.md")
@@ -187,7 +186,7 @@ class InstructionTopologyCharacterizationTests(unittest.TestCase):
 
     def test_task_routers_stay_small_and_task_local(self):
         self.assertLessEqual(len(text("AGENTS.operator.md").split()), 1000)
-        self.assertLessEqual(len(text("AGENTS.builder.md").split()), 913)
+        self.assertLessEqual(len(text("AGENTS.builder.md").split()), 900)
         for rel in ("AGENTS.operator.md", "AGENTS.builder.md"):
             self.assertIn("task-local", text(rel), rel)
             self.assertIn("system/backlog.md", text(rel), rel)

@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 from desktop_fixtures import (FIXTURE, HEARTBEAT_LIMIT_SECONDS, NAMED_EXE, NAMED_EXE_LIFETIME_SECONDS,
-                              THIEF_LIFETIME_SECONDS)
+                              THIEF_LIFETIME_SECONDS, WPF_FIXTURE)
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "system" / "tools" / "desktop.ps1"
@@ -1514,3 +1514,78 @@ def test_the_live_module_uses_no_zero_idle_seconds_and_adopts_no_tick_it_read_it
     assert "note_own_action" not in text
     assert re.search(r"^AWAY = 3 ", text, re.M), "the stillness a run waits for, and the -IdleSeconds it passes, is 3"
     assert text.count("still_for()") >= 3 and "still_for()" in source_of("start_new_run")
+
+
+# What the live runs on the real desktop showed (WinForms controls are panes with no patterns; WPF ones are real).
+
+@needs_powershell
+def test_the_wpf_fixture_script_parses_and_closes_itself_without_a_heartbeat(tmp_path):
+    script = tmp_path / "wpf.ps1"
+    script.write_text(WPF_FIXTURE, encoding="utf-8")
+    code = ("$e=$null; [void][System.Management.Automation.Language.Parser]::ParseFile("
+            f"'{script}', [ref]$null, [ref]$e); $e | ForEach-Object {{ $_.ToString() }}; 'errors: ' + @($e).Count")
+    out = powershell("-Command", code)
+    assert out.stdout.strip().endswith("errors: 0"), out.stdout + out.stderr
+    assert f"-gt {HEARTBEAT_LIMIT_SECONDS} -or" in WPF_FIXTURE and "$w.Close()" in WPF_FIXTURE
+    for needed in ("param([string]$Title, [string]$StateFile, [string]$HeartbeatFile)", "System.Windows.Controls.Button",
+                   "Content = 'Press Me'", "System.Windows.Controls.TextBox", "$script:Pressed++"):
+        assert needed in WPF_FIXTURE, needed
+
+
+def test_the_live_module_opens_the_wpf_window_in_an_sta_process_after_checking_the_clock():
+    live = LIVE.read_text(encoding="utf-8")
+    body = live[live.index("class WpfFixture"):live.index("def element_bounds")]
+    assert '"-STA"' in body and "creationflags=NO_WINDOW" in body
+    assert body.index("check_away()") < body.index("subprocess.Popen") and "track(self.process)" in body
+    assert '"-HeartbeatFile", str(HEARTBEAT)' in body
+
+
+@needs_powershell
+def test_the_chords_the_live_tests_send_are_known_to_the_script(tmp_path):
+    cases = [{"id": "clear", "fn": "Get-Chords", "args": ["ctrl+home shift+ctrl+end delete"]},
+             {"id": "back", "fn": "Get-Chords", "args": ["backspace"]}]
+    rows = run_functions(tmp_path, cases, PURE + ["Get-Chords"])
+    clear = [(c["Text"], c["Codes"]) for c in rows["clear"]["value"]]
+    assert clear == [("ctrl+home", [0x11, 0x24]), ("shift+ctrl+end", [0x10, 0x11, 0x23]), ("delete", [0x2E])], clear
+    back = rows["back"]["value"]
+    assert back["Text"] == "backspace" and back["Codes"] in (0x08, [0x08])
+
+
+def test_the_limit_of_win32_and_winforms_apps_is_stated_in_the_header_and_the_doc():
+    text = SCRIPT.read_text(encoding="utf-8")
+    header = text[:text.index("[CmdletBinding")]
+    assert "classic Win32 and WinForms apps they see panes with no patterns" in header.replace("\n# ", " ")
+    assert "falls back to a click on a control found by its text" in header.replace("\n# ", " ")
+    doc = DOC.read_text(encoding="utf-8")
+    assert "classic Win32 and WinForms apps they see panes with no patterns" in doc
+    assert "`invoke` falls back to a click on a control found by its text" in doc
+    assert "WPF" in doc
+
+
+def test_the_live_helpers_ignore_trace_lines_so_the_whole_module_can_run_with_the_trace_on(monkeypatch, tmp_path):
+    live = load_live()
+    trace = "trace: SetForegroundWindow clock_moved=False ms=3 accepted=False\n"
+    refused = types.SimpleNamespace(returncode=3, stdout="", stderr=trace + trace + "refused: it is off limits")
+    live.assert_refused(refused, "off limits")
+    active = types.SimpleNamespace(returncode=4, stdout="", stderr=trace + "error: the operator is active (last input 3 s ago); nothing was sent; wait and retry\n")
+    live.assert_active(active)
+    assert live.tool_stderr(types.SimpleNamespace(stderr=trace + "error: x")) == "error: x"
+    # The trace of a call is written to AF_DESKTOP_TRACE_OUT when that is set, and nowhere otherwise.
+    target = tmp_path / "trace.txt"
+    monkeypatch.delenv("AF_DESKTOP_TRACE_OUT", raising=False)
+    live.record_trace("a call", trace)
+    assert not target.exists()
+    monkeypatch.setenv("AF_DESKTOP_TRACE_OUT", str(target))
+    live.record_trace("a call", trace + "error: not a trace line\n")
+    assert target.read_text(encoding="utf-8") == "a call\t" + trace
+
+
+def test_the_live_expectations_match_the_changes_the_runs_found():
+    live = LIVE.read_text(encoding="utf-8")
+    assert "is inside a repository" in live and "inside the repository" not in live
+    assert "is inside a repository, which is public" in SCRIPT.read_text(encoding="utf-8")
+    assert "ctrl+a delete" not in live and live.count("ctrl+home shift+ctrl+end delete") == 2
+    denied = source_of("test_a_denied_process_is_refused_under_a_neutral_title")
+    assert 'title not in desktop("windows").stdout' not in denied and 'r[2] == "denied"' in denied
+    assert "test_invoke_uses_the_pattern(wpf_form)" in live and "via=click" in live
+    assert "Pane name=" in live

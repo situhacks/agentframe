@@ -160,3 +160,56 @@ public static class NamedExe {
     }
 }
 """
+
+# A WPF window in its own PowerShell process (started with -STA): unlike a WinForms control, the managed UI
+# Automation client sees its button as ControlType.Button with an Invoke pattern, and its text box as Edit. It has
+# the same contract as FIXTURE where the tests need it: a state file (title, pressed count, text), the heartbeat
+# rule, and a self-close after HEARTBEAT_LIMIT_SECONDS without a heartbeat.
+WPF_FIXTURE = r"""
+param([string]$Title, [string]$StateFile, [string]$HeartbeatFile)
+Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
+
+$script:Pressed = 0
+$script:Started = Get-Date
+
+function Write-State {
+    $json = @{ title = $w.Title; pressed = $script:Pressed; text = $t.Text } | ConvertTo-Json -Compress
+    $temp = "$StateFile.tmp"
+    [IO.File]::WriteAllText($temp, $json)
+    for ($try = 0; $try -lt 10; $try++) {
+        try { Move-Item -LiteralPath $temp -Destination $StateFile -Force; return } catch { Start-Sleep -Milliseconds 20 }
+    }
+}
+
+$w = New-Object System.Windows.Window
+$w.Title = $Title
+$w.Width = 320
+$w.Height = 160
+$w.Left = 300
+$w.Top = 300
+$w.Topmost = $true
+$p = New-Object System.Windows.Controls.StackPanel
+$b = New-Object System.Windows.Controls.Button
+$b.Content = 'Press Me'
+$b.Height = 30
+$t = New-Object System.Windows.Controls.TextBox
+$t.Height = 30
+[void]$p.Children.Add($b)
+[void]$p.Children.Add($t)
+$w.Content = $p
+
+$b.Add_Click({ $script:Pressed++; Write-State })
+$t.Add_TextChanged({ Write-State })
+$w.Add_Loaded({ Write-State })
+
+# Closes the window when the test run stops touching the heartbeat file, or after 15 minutes whatever happens.
+$failsafe = New-Object System.Windows.Threading.DispatcherTimer
+$failsafe.Interval = [TimeSpan]::FromSeconds(2)
+$failsafe.Add_Tick({
+    $beat = $script:Started
+    if (Test-Path -LiteralPath $HeartbeatFile) { $beat = (Get-Item -LiteralPath $HeartbeatFile).LastWriteTime }
+    if (((Get-Date) - $beat).TotalSeconds -gt 30 -or ((Get-Date) - $script:Started).TotalMinutes -gt 15) { $w.Close() }
+})
+$failsafe.Start()
+[void]$w.ShowDialog()
+"""

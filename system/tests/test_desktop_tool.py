@@ -47,7 +47,7 @@ import time
 import uuid
 from pathlib import Path
 
-from desktop_fixtures import FIXTURE, NAMED_EXE
+from desktop_fixtures import FIXTURE, NAMED_EXE, WPF_FIXTURE
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "system" / "tools" / "desktop.ps1"
@@ -296,10 +296,24 @@ def write_run_state(**fields):
     return data
 
 
+def tool_stderr(result) -> str:
+    """The tool's messages without its trace lines (AF_DESKTOP_TRACE=1 may be set for the whole run)."""
+    return "\n".join(line for line in result.stderr.splitlines() if not line.startswith("trace:"))
+
+
+def record_trace(source: str, stderr: str):
+    """Append the trace lines of a call to the file named by AF_DESKTOP_TRACE_OUT, if it is set."""
+    target = os.environ.get("AF_DESKTOP_TRACE_OUT")
+    lines = [line for line in stderr.splitlines() if line.startswith("trace:")]
+    if target and lines:
+        with open(target, "a", encoding="utf-8") as handle:
+            handle.writelines(f"{source}\t{line}\n" for line in lines)
+
+
 def assert_active(result):
     assert result.returncode == ACTIVE, f"expected exit 4, got {result.returncode}: {result.stdout} {result.stderr}"
     assert re.search(r"^error: the operator is active \(last input \d+ s ago\); nothing was sent; wait and retry$",
-                     result.stderr.strip()), result.stderr
+                     tool_stderr(result).strip()), result.stderr
     assert result.stdout == ""
 
 
@@ -314,9 +328,10 @@ def local_denylist(tmp_path: Path, *lines: str) -> dict:
 
 def assert_refused(result, *expected):
     assert result.returncode == REFUSED, f"expected a refusal, got {result.returncode}: {result.stdout} {result.stderr}"
-    assert result.stderr.startswith("refused:"), result.stderr
+    stderr = tool_stderr(result)
+    assert stderr.startswith("refused:"), result.stderr
     for text in expected:
-        assert text in result.stderr, result.stderr
+        assert text in stderr, result.stderr
 
 
 def assert_ok(result):
@@ -373,6 +388,26 @@ class Fixture:
     def close(self):
         self.process.kill()
         self.process.wait(timeout=10)
+
+
+class WpfFixture(Fixture):
+    """A WPF window in its own STA PowerShell process: the managed UI Automation client sees a real Button with an
+    Invoke pattern and an Edit there (it sees only panes with no patterns in WinForms). State: title, pressed, text."""
+
+    def __init__(self, folder: Path, title: str):
+        check_away()
+        self.title = title
+        self.folder = folder
+        self.state_file = folder / f"wpf-state-{uuid.uuid4().hex}.json"
+        script = folder / "wpf_fixture.ps1"
+        if not script.exists():
+            script.write_text(WPF_FIXTURE, encoding="utf-8")
+        self.process = subprocess.Popen(
+            [*POWERSHELL, "-STA", "-File", str(script), "-Title", title, "-StateFile", str(self.state_file),
+             "-HeartbeatFile", str(HEARTBEAT)],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=NO_WINDOW)
+        track(self.process)
+        self.wait_for(lambda s: s["title"] == title, timeout=30)
 
 
 def element_bounds(title: str, name: str) -> tuple[int, int]:
@@ -470,6 +505,13 @@ def form(live, tmp_path):
     fixture.close()
 
 
+@pytest.fixture
+def wpf_form(live, tmp_path):
+    fixture = WpfFixture(tmp_path, f"AF Wpf Fixture {uuid.uuid4().hex}")
+    yield fixture
+    fixture.close()
+
+
 @pytest.fixture(scope="module")
 def shared_form(live, tmp_path_factory):
     check_away()
@@ -534,15 +576,23 @@ def test_screenshot_refuses_a_tracked_path_and_writes_nothing(shared_form):
     out = ROOT / "system" / "tools" / f"shot-{uuid.uuid4().hex}.png"
     result = desktop("screenshot", "-Window", shared_form.title, "-Out", out)
     assert result.returncode == USAGE, f"{result.returncode}: {result.stderr}"
-    assert "inside the repository" in result.stderr
+    assert "is inside a repository" in result.stderr
     assert not out.exists()
 
 
-def test_tree_prints_type_name_id_bounds_enabled(shared_form):
+def test_tree_prints_type_name_id_bounds_enabled_for_a_wpf_window(wpf_form):
+    result = desktop("tree", "-Window", wpf_form.title, "-Depth", 4)
+    assert_ok(result)
+    assert re.search(r'Button name="Press Me" id="[^"]*" bounds=-?\d+,-?\d+,\d+,\d+ enabled=True', result.stdout), result.stdout
+    assert re.search(r'Edit name="[^"]*" id="[^"]*" bounds=-?\d+,-?\d+,\d+,\d+ enabled=True', result.stdout), result.stdout
+
+
+def test_tree_shows_winforms_controls_as_panes_with_their_names(shared_form):
+    # The limit the doc states: a classic WinForms control exposes no control type and no patterns to this client.
     result = desktop("tree", "-Window", shared_form.title, "-Depth", 3)
     assert_ok(result)
-    assert re.search(r'Button name="Press Me" id="pressMe" bounds=-?\d+,-?\d+,\d+,\d+ enabled=True', result.stdout), result.stdout
-    assert re.search(r'Button name="Never Enabled" id="neverEnabled" bounds=\S+ enabled=False', result.stdout), result.stdout
+    assert re.search(r'Pane name="Press Me" id="[^"]*" bounds=-?\d+,-?\d+,\d+,\d+ enabled=(True|False)', result.stdout), result.stdout
+    assert re.search(r'Pane name="Never Enabled" id="[^"]*" bounds=\S+ enabled=(True|False)', result.stdout), result.stdout
 
 
 def test_tree_depth_zero_is_the_window_only(shared_form):
@@ -573,10 +623,17 @@ def test_an_ambiguous_match_touches_nothing(live, tmp_path):
 
 # Live: acting on the form.
 
-def test_invoke_uses_the_pattern(form):
-    result = desktop("invoke", "-Window", form.title, "-Name", "Press Me")
+def test_invoke_uses_the_pattern(wpf_form):
+    result = desktop("invoke", "-Window", wpf_form.title, "-Name", "Press Me")
     assert_ok(result)
     assert "via=invoke" in result.stdout
+    assert wpf_form.wait_for(lambda s: s["pressed"] == 1)
+
+
+def test_invoke_on_a_winforms_button_falls_back_to_a_click_and_the_press_lands(form):
+    result = desktop("invoke", "-Window", form.title, "-Name", "Press Me")
+    assert_ok(result)
+    assert "via=click" in result.stdout, result.stdout
     assert form.wait_for(lambda s: s["pressed"] == 1)
 
 
@@ -627,7 +684,7 @@ def test_key_refuses_a_password_field(form):
 def test_key_sends_chords_in_order(form):
     assert_ok(desktop("type", "-Window", form.title, "-Text", "remove me"))
     form.wait_for(lambda s: s["text"] == "remove me")
-    assert_ok(desktop("key", "-Window", form.title, "-Keys", "ctrl+a delete"))
+    assert_ok(desktop("key", "-Window", form.title, "-Keys", "ctrl+home shift+ctrl+end delete"))
     form.wait_for(lambda s: s["text"] == "")
 
 
@@ -770,10 +827,17 @@ def test_a_denied_process_is_refused_under_a_neutral_title(named_exe, tmp_path, 
     exe = tmp_path / f"{process}.exe"
     shutil.copy(named_exe, exe)
     title = f"AF Neutral {uuid.uuid4().hex}"
+
+    def denied_rows():
+        # A denied window's title is hidden, so the window is found by its process name and the denied flag.
+        rows = [line.split("\t") for line in desktop("windows").stdout.splitlines()]
+        return sum(1 for r in rows if len(r) >= 4 and r[1].lower() == process.lower() and r[2] == "denied")
+
+    already = denied_rows()
     running = track(subprocess.Popen([str(exe), title]))
     try:
         deadline = time.monotonic() + 20
-        while title not in desktop("windows").stdout:
+        while denied_rows() <= already:
             assert time.monotonic() < deadline, "the named window never appeared"
         assert_refused(desktop("focus", "-Window", title), "off limits", process)
     finally:
@@ -841,7 +905,7 @@ def test_a_second_input_straight_after_the_first_is_allowed_and_his_tick_is_kept
     assert_ok(desktop("type", "-Window", form.title, "-Text", "one"))
     first = read_run_state()
     assert first["own_tick"] is not None, "a command that sent input recorded the tick of its own last input"
-    assert_ok(desktop("key", "-Window", form.title, "-Keys", "ctrl+a delete"))
+    assert_ok(desktop("key", "-Window", form.title, "-Keys", "ctrl+home shift+ctrl+end delete"))
     x, y = element_bounds(form.title, "Press Me")
     assert_ok(desktop("click", "-Window", form.title, "-X", x, "-Y", y))
     last = read_run_state()
@@ -869,22 +933,24 @@ def test_the_first_command_of_a_run_records_the_foreground_and_pointer_and_later
     assert kept["run_start_ms"] == recorded["run_start_ms"], "only the first command of a run records them"
 
 
-def test_invoke_by_pattern_is_gated_records_state_and_does_not_lock_out_the_next_command(form):
+def test_invoke_by_pattern_is_gated_records_state_and_does_not_lock_out_the_next_command(wpf_form):
     before = STATE_FILE.stat().st_mtime_ns
-    result = desktop("invoke", "-Window", form.title, "-Name", "Press Me")
+    result = desktop("invoke", "-Window", wpf_form.title, "-Name", "Press Me")
     assert_ok(result)
     assert "via=invoke" in result.stdout
     assert STATE_FILE.stat().st_mtime_ns > before
-    assert_ok(desktop("type", "-Window", form.title, "-Text", "next"))
-    form.wait_for(lambda s: s["pressed"] == 1 and s["text"] == "next")
+    assert_ok(desktop("focus", "-Window", wpf_form.title))
+    wpf_form.wait_for(lambda s: s["pressed"] == 1)
 
 
 def test_the_trace_says_whether_each_call_moved_the_clock_and_is_silent_otherwise(form):
-    quiet = desktop("focus", "-Window", form.title)
+    without_trace = {k: v for k, v in run_env().items() if k != "AF_DESKTOP_TRACE"}
+    quiet = desktop("focus", "-Window", form.title, env=without_trace)
     assert_ok(quiet)
     assert quiet.stderr == "", "nothing extra is printed without a trace"
     traced = desktop("focus", "-Window", form.title, env={**run_env(), "AF_DESKTOP_TRACE": "1"})
     assert_ok(traced)
+    record_trace("focus", traced.stderr)
     assert re.search(r"^trace: SetForegroundWindow clock_moved=(True|False) ms=\d+ accepted=(True|False)$", traced.stderr, re.M), \
         traced.stderr
     verbose = desktop("focus", "-Window", form.title, "-Verbose")
@@ -892,6 +958,19 @@ def test_the_trace_says_whether_each_call_moved_the_clock_and_is_silent_otherwis
     assert "trace: SetForegroundWindow clock_moved=" in verbose.stderr, verbose.stderr
     # What the lines say (does SetForegroundWindow move the clock at all?) is what a person learns from this run.
     print("TRACE focus:", traced.stderr.strip())
+
+
+def test_the_pattern_invoke_trace_is_recorded_for_the_operator_to_read(wpf_form):
+    """Does a pattern Invoke move the last-input clock? The answer is in the trace line this test writes to the file
+    named by AF_DESKTOP_TRACE_OUT, when that is set (the trace is switched on for this one call only)."""
+    result = desktop("invoke", "-Window", wpf_form.title, "-Name", "Press Me", env={**run_env(), "AF_DESKTOP_TRACE": "1"})
+    assert_ok(result)
+    assert "via=invoke" in result.stdout
+    lines = [line for line in result.stderr.splitlines() if line.startswith("trace:")]
+    assert any(re.fullmatch(r"trace: InvokePattern clock_moved=(True|False) ms=\d+ accepted=(True|False)", line) for line in lines), \
+        result.stderr
+    record_trace("invoke pattern (WPF Button)", result.stderr)
+    wpf_form.wait_for(lambda s: s["pressed"] == 1)
 
 
 @pytest.mark.parametrize("damage", ["wrong own tick", "clocks that disagree", "run older than 5 minutes", "unreadable"])

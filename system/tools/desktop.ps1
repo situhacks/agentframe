@@ -29,6 +29,9 @@
 # ($ClockOwnLabels); for a raise or a pointer move a moved clock is his. Not seen: his input in the same
 # clock tick as a send (about 16 ms), and his input during a pattern Invoke that returns within 250 ms.
 # -Verbose or AF_DESKTOP_TRACE=1 prints, for each timed call, whether the clock moved.
+# tree and invoke see real controls only in apps that expose UI Automation themselves (WPF, newer
+# toolkits); in classic Win32 and WinForms apps they see panes with no patterns, and invoke falls back
+# to a click on a control found by its text.
 # Procedure and standing limits: library/process/desktop-tool.md.
 
 [CmdletBinding(PositionalBinding = $false)]

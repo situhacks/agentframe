@@ -1139,22 +1139,56 @@ def test_the_run_state_is_under_the_checkout_when_af_root_is_not_set(form):
     assert not default_state.exists()
 
 
-# The last test: it makes a change of the clock that is "his" on purpose, so nothing may run after it that needs the
-# tool's default guard.
+# The last tests: both stop a type that is under way by something of his. The pointer test leaves the clock the tool's
+# own and puts the pointer back; the last one makes the clock "his" on purpose, so nothing may run after it that needs
+# the tool's default guard.
 
 MOUSEEVENTF_MOVE = 1
 
 
+def start_typing(form, text):
+    check_away()
+    process = track(subprocess.Popen([*POWERSHELL, "-File", str(SCRIPT), "type", "-Window", form.title, "-Text", text],
+                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                     creationflags=NO_WINDOW, env=run_env()))
+    form.wait_for(lambda s: len(s["text"]) > 5, timeout=40)
+    return process
+
+
+def test_his_pointer_move_in_the_middle_of_a_type_stops_it_by_the_pointer_check(form):
+    text = "a" * 400
+    home = pointer()
+    first = start_typing(form, text)
+    try:
+        # SetCursorPos does not move the last-input clock (the traces of the live runs show it), so only the pointer
+        # check can see this move.
+        win32().SetCursorPos(home[0] + 7, home[1] + 5)
+    finally:
+        out, err = first.communicate(timeout=120)
+        win32().SetCursorPos(*home)  # his pointer back where it was
+    after = last_input_tick()
+    if after != tool_own_tick(None):
+        operator_returned("the clock moved during the pointer test and the tool did not make that move")
+    Watch.expected = after
+    Watch.pointer = pointer()
+    assert first.returncode == ACTIVE, f"{first.returncode}: {out} {err}"
+    match = re.search(r"the operator is active \(the pointer was moved\); (\d+) of 400 characters were sent; wait and retry", err)
+    assert match, err
+    sent = int(match.group(1))
+    assert 0 < sent < 400
+    time.sleep(0.3)
+    assert len(form.state()["text"]) == sent, "nothing more was typed after he moved the mouse"
+
+
 def test_his_input_in_the_middle_of_a_type_stops_it_with_exit_4_and_the_count(form):
     text = "a" * 400
-    check_away()
-    first = track(subprocess.Popen([*POWERSHELL, "-File", str(SCRIPT), "type", "-Window", form.title, "-Text", text],
-                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                                   creationflags=NO_WINDOW, env=run_env()))
+    first = start_typing(form, text)
     try:
-        form.wait_for(lambda s: len(s["text"]) > 5, timeout=40)
-        # A zero-distance mouse move is input like any other as far as the last-input clock is concerned.
-        win32().mouse_event(MOUSEEVENTF_MOVE, 0, 0, 0, 0)
+        # A real mouse move is a stream of events, not one: six zero-distance moves, 25 ms apart. Each is input as far
+        # as the last-input clock is concerned, and the tool types a character every few ticks.
+        for _ in range(6):
+            win32().mouse_event(MOUSEEVENTF_MOVE, 0, 0, 0, 0)
+            time.sleep(0.025)
     finally:
         out, err = first.communicate(timeout=120)
     Watch.expected = last_input_tick()

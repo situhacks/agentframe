@@ -256,8 +256,11 @@ using System;
 public static class AfDesktop {
     public static long Last, Now, Ms, Front = 777, Alive = 777, OwnTick = -2, Expected = -2, IntrudedTick = -1;
     public static int PX = 10, PY = 20, CursorX = -1, CursorY = -1;
-    public static bool CursorOk = true, FrontOk = true, Intruded;
-    public static void Arm(long tick) { Expected = tick; Intruded = false; }
+    public static bool CursorOk = true, FrontOk = true, Intruded, IntrudedByPointer;
+    public static int ExpX = int.MinValue, ExpY = int.MinValue;
+    public static void ExpectPointer(int x, int y) { ExpX = x; ExpY = y; }
+    public static bool PointerMoved() { return PX != ExpX || PY != ExpY; }
+    public static void Arm(long tick) { Expected = tick; Intruded = false; IntrudedByPointer = false; ExpX = PX; ExpY = PY; }
     public static void Accept(long tick) { OwnTick = tick; Expected = tick; }
     public static bool FakeCall(int ms, long bump, bool apply) { System.Threading.Thread.Sleep(ms); if (apply) Last = bump; return true; }
     public static long LastInput() { return Last; }
@@ -320,6 +323,8 @@ foreach ($s in $steps) {
     [AfDesktop]::OwnTick = -2
     [AfDesktop]::Expected = -2
     [AfDesktop]::Intruded = $false
+    [AfDesktop]::IntrudedByPointer = $false
+    [AfDesktop]::ExpX = [int]::MinValue
     Set-Fake $s.set
     $IdleSeconds = if ($null -ne (Get-StateField $s 'idle')) { [int]$s.idle } else { 120 }
     $Command = if ($null -ne (Get-StateField $s 'command')) { [string]$s.command } else { 'focus' }
@@ -355,6 +360,7 @@ foreach ($s in $steps) {
         if ($null -ne $calls) {
             foreach ($c in @($calls)) {
                 if ($null -ne (Get-StateField $c 'pre_bump')) { [AfDesktop]::Last = [long]$c.pre_bump }
+                if ($null -ne (Get-StateField $c 'pre_pointer')) { [AfDesktop]::PX = [int]$c.pre_pointer[0]; [AfDesktop]::PY = [int]$c.pre_pointer[1] }
                 $callMs = [int]$c.ms
                 $hasBump = $null -ne (Get-StateField $c 'bump')
                 $callBump = if ($hasBump) { [long]$c.bump } else { 0 }
@@ -366,6 +372,7 @@ foreach ($s in $steps) {
             Set-Fake (Get-StateField $s 'before_fail')
             [AfDesktop]::Intruded = $true
             [AfDesktop]::IntrudedTick = [long]$fail.tick
+            [AfDesktop]::IntrudedByPointer = (Get-StateField $fail 'pointer') -eq $true
             Stop-IfIntruded ([string]$fail.note)
         }
         Set-Fake (Get-StateField $s 'after')
@@ -591,6 +598,30 @@ def test_his_input_in_the_middle_of_a_send_stops_with_the_count_and_the_next_com
 
 
 @needs_powershell
+def test_his_pointer_move_with_an_unmoved_clock_stops_the_command(tmp_path):
+    stopped, fine = run_flow(tmp_path, [
+        guard_step("the pointer moves between the guard and a timed call, the clock does not", T + 1000, T - 600_000, M,
+                   calls=[{"label": "SetForegroundWindow", "ms": 0, "pre_pointer": [30, 40]}]),
+        guard_step("the same command with the pointer where the guard found it", T + 3000, T - 600_000, M + 3000, calls=[
+            {"label": "SetForegroundWindow", "ms": 0}]),
+    ])
+    assert stopped["exit"] == 4
+    assert "the operator is active (the pointer was moved); nothing more was sent; wait and retry" in stopped["stderr"]
+    assert fine["exit"] == 0
+
+
+@needs_powershell
+def test_his_pointer_move_in_the_middle_of_a_send_says_so_and_gives_the_count(tmp_path):
+    stopped, = run_flow(tmp_path, [
+        guard_step("type: the pointer moved after character 12", T + 3000, T - 600_000, M, before_fail={"OwnTick": T + 1000},
+                   send_fail={"tick": T - 600_000, "note": "12 of 40 characters were sent.", "pointer": True}),
+    ])
+    assert stopped["exit"] == 4
+    assert "the operator is active (the pointer was moved); 12 of 40 characters were sent; wait and retry" in stopped["stderr"]
+    assert stopped["state"]["own_tick"] == T + 1000
+
+
+@needs_powershell
 def test_the_reviewers_chain_no_command_passes_until_120_quiet_seconds_after_any_input(tmp_path):
     r = run_flow(tmp_path, [
         guard_step("1 invoke blocks on a modal; he closes it at +5 s", T, T - 600_000, M,
@@ -744,25 +775,34 @@ $script:calls = 0
 $script:ret = 0
 $script:clocks = @()
 $script:ci = 0
-$send = [AfDesktop+SendFn]{ param($events) $script:calls++; [uint32]$script:ret }
-$clock = [AfDesktop+ClockFn]{ $v = $script:clocks[$script:ci]; $script:ci++; [long]$v }
+$script:log = New-Object System.Collections.ArrayList
+$script:ptr = @(10, 20)
+$send = [AfDesktop+SendFn]{ param($events) $script:calls++; [void]$script:log.Add('send'); [uint32]$script:ret }
+$clock = [AfDesktop+ClockFn]{ [void]$script:log.Add('clock'); $v = $script:clocks[$script:ci]; $script:ci++; [long]$v }
+$pointer = [AfDesktop+PointerFn]{ [void]$script:log.Add('pointer'); , [int[]]@($script:ptr) }
+$pace = [AfDesktop+PaceFn]{ [void]$script:log.Add('pace') }
 $cases = [System.IO.File]::ReadAllText($CasesFile) | ConvertFrom-Json
 $results = foreach ($c in $cases) {
     [AfDesktop]::OwnTick = -2
     [AfDesktop]::Expected = [long]$c.expected
     [AfDesktop]::Intruded = $false
     [AfDesktop]::IntrudedTick = 0
+    [AfDesktop]::IntrudedByPointer = $false
+    [AfDesktop]::ExpectPointer(10, 20)
     $rows = foreach ($s in @($c.sends)) {
         $script:calls = 0
         $script:ret = [int]$s.returns
         $script:clocks = @($s.clocks)
         $script:ci = 0
+        $script:log.Clear()
+        $script:ptr = @(10, 20)
+        if ($null -ne $s.PSObject.Properties['pointer']) { $script:ptr = [int[]]@($s.pointer) }
         $events = [Array]::CreateInstance([AfDesktop+INPUT], [int]$s.events)
-        $r = [AfDesktop]::SendGuarded($events, $send, $clock)
-        [pscustomobject]@{ result = $r; called = $script:calls; clock_reads = $script:ci }
+        $r = [AfDesktop]::SendGuarded($events, $send, $clock, $pointer, $pace)
+        [pscustomobject]@{ result = $r; called = $script:calls; clock_reads = $script:ci; log = @($script:log) }
     }
     [pscustomobject]@{ id = $c.id; sends = @($rows); own = [AfDesktop]::OwnTick; expected = [AfDesktop]::Expected
-        intruded = [AfDesktop]::Intruded; intruded_tick = [AfDesktop]::IntrudedTick }
+        intruded = [AfDesktop]::Intruded; intruded_tick = [AfDesktop]::IntrudedTick; by_pointer = [AfDesktop]::IntrudedByPointer }
 }
 ConvertTo-Json -InputObject @($results) -Depth 6 -Compress
 """
@@ -781,6 +821,12 @@ SEND_CASES = [
     {"id": "an unreadable clock before a send stops it", "expected": 100, "sends": [{"events": 1, "returns": 1, "clocks": [-1]}]},
     {"id": "nothing accepted when the sender sent none", "expected": 100,
      "sends": [{"events": 1, "returns": 0, "clocks": [100, 130]}]},
+    {"id": "his pointer moved and the clock did not: nothing is sent", "expected": 100,
+     "sends": [{"events": 2, "returns": 2, "clocks": [100], "pointer": [30, 40]}]},
+    {"id": "an unreadable pointer is his move", "expected": 100,
+     "sends": [{"events": 2, "returns": 2, "clocks": [100], "pointer": []}]},
+    {"id": "his event in a tick after the paced wait is caught", "expected": 100, "sends": [
+        {"events": 2, "returns": 2, "clocks": [100, 110]}, {"events": 2, "returns": 2, "clocks": [111]}]},
     {"id": "an unreadable clock after a send is his input and later sends stop", "expected": 100, "sends": [
         {"events": 2, "returns": 2, "clocks": [100, -1]}, {"events": 2, "returns": 2, "clocks": [-1, -1]},
         {"events": 2, "returns": 2, "clocks": [130, 140]}]},
@@ -810,14 +856,15 @@ def test_send_with_the_guard_unarmed_sends_nothing(send_results):
 @needs_powershell
 def test_send_reads_the_clock_before_and_after_and_keeps_the_new_tick_as_its_own(send_results):
     row = send_results["the clock is still the expected tick: sent, and the new tick is the own tick"]
-    assert row["sends"][0] == {"result": True, "called": 1, "clock_reads": 2}
+    assert row["sends"][0] == {"result": True, "called": 1, "clock_reads": 2,
+                               "log": ["clock", "pointer", "send", "clock", "pace"]}
     assert (row["own"], row["expected"], row["intruded"]) == (108, 108, False)
 
 
 @needs_powershell
 def test_send_stops_when_the_clock_is_not_the_expected_tick(send_results):
     row = send_results["he touched the machine since: nothing is sent"]
-    assert row["sends"][0] == {"result": False, "called": 0, "clock_reads": 1}
+    assert row["sends"][0] == {"result": False, "called": 0, "clock_reads": 1, "log": ["clock"]}
     assert row["intruded"] is True and row["intruded_tick"] == 105
     assert (row["own"], row["expected"]) == (-2, 100), "the own and expected ticks stay as they were"
 
@@ -829,6 +876,27 @@ def test_send_stops_a_command_at_the_second_send_when_he_acts_between_two(send_r
     assert [s["called"] for s in row["sends"]] == [1, 1, 0]
     assert row["intruded"] is True and row["intruded_tick"] == 125
     assert (row["own"], row["expected"]) == (120, 120), "the last tick the tool made itself is kept"
+
+
+@needs_powershell
+def test_send_checks_the_pointer_after_the_clock_and_before_sending(send_results):
+    row = send_results["his pointer moved and the clock did not: nothing is sent"]
+    assert row["sends"][0] == {"result": False, "called": 0, "clock_reads": 1, "log": ["clock", "pointer"]}
+    assert row["intruded"] is True and row["by_pointer"] is True
+    assert (row["own"], row["expected"]) == (-2, 100), "the own and expected ticks stay as they were"
+    unreadable = send_results["an unreadable pointer is his move"]
+    assert unreadable["sends"][0]["called"] == 0 and unreadable["by_pointer"] is True
+    assert send_results["the clock is still the expected tick: sent, and the new tick is the own tick"]["by_pointer"] is False
+
+
+@needs_powershell
+def test_send_waits_for_the_pace_after_a_send_and_not_after_a_refusal(send_results):
+    row = send_results["his event in a tick after the paced wait is caught"]
+    first, second = row["sends"]
+    assert first["log"] == ["clock", "pointer", "send", "clock", "pace"], "the pace comes after the own tick is read"
+    assert second["result"] is False and second["log"] == ["clock"], "his event in a later tick is caught, nothing is sent or paced"
+    assert row["intruded"] is True and row["intruded_tick"] == 111 and row["by_pointer"] is False
+    assert (row["own"], row["expected"]) == (110, 110)
 
 
 @needs_powershell
@@ -852,6 +920,48 @@ def test_send_fails_closed_on_an_unreadable_clock_and_accepts_nothing_when_nothi
     assert unreadable["sends"][0]["called"] == 0 and unreadable["intruded"] is True
     none_sent = send_results["nothing accepted when the sender sent none"]
     assert none_sent["own"] == -2 and none_sent["expected"] == 100 and none_sent["intruded"] is False
+
+
+TICK_HARNESS = r"""
+param([string]$Path, [string]$CasesFile)
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+$text = [System.IO.File]::ReadAllText($Path)
+$m = [regex]::Match($text, "(?s)\`$NativeSource = @'\r?\n(.*?)\r?\n'@")
+Add-Type -TypeDefinition $m.Groups[1].Value -IgnoreWarnings
+$script:ticks = @(0)
+$script:ti = 0
+$tick = [AfDesktop+ClockFn]{ $v = $script:ticks[[Math]::Min($script:ti, $script:ticks.Count - 1)]; $script:ti++; [long]$v }
+$results = foreach ($c in ([System.IO.File]::ReadAllText($CasesFile) | ConvertFrom-Json)) {
+    $script:ticks = @($c.ticks)
+    $script:ti = 0
+    $watch = [System.Diagnostics.Stopwatch]::StartNew()
+    [AfDesktop]::WaitTicks([int]$c.wait, $tick)
+    [pscustomobject]@{ id = $c.id; reads = $script:ti; ms = $watch.ElapsedMilliseconds }
+}
+ConvertTo-Json -InputObject @($results) -Compress
+"""
+
+
+@needs_powershell
+def test_the_pace_waits_for_tick_advances_from_a_tick_source_not_for_a_fixed_time(tmp_path):
+    slow = [100] * 50 + [116] * 50 + [132] * 50 + [148] * 50  # the counter changes only every 50 reads
+    cases = [{"id": "two ticks, slow counter", "wait": 2, "ticks": slow},
+             {"id": "three ticks, slow counter", "wait": 3, "ticks": slow},
+             {"id": "two ticks, a counter that changes on every read", "wait": 2, "ticks": list(range(100, 130))},
+             {"id": "a counter that never advances", "wait": 2, "ticks": [100]}]
+    folder = tmp_path
+    (folder / "tick.ps1").write_text(TICK_HARNESS, encoding="utf-8")
+    (folder / "cases.json").write_text(json.dumps(cases), encoding="utf-8")
+    out = powershell("-File", folder / "tick.ps1", "-Path", SCRIPT, "-CasesFile", folder / "cases.json")
+    assert out.returncode == 0, out.stderr + out.stdout
+    rows = {row["id"]: row for row in json.loads(out.stdout)}
+    assert rows["two ticks, slow counter"]["reads"] == 101, "the start read, then until the second change at read 100"
+    assert rows["three ticks, slow counter"]["reads"] == 151, "one more tick, 50 more reads: it counts ticks"
+    assert rows["two ticks, a counter that changes on every read"]["reads"] == 3
+    assert rows["two ticks, slow counter"]["ms"] < 200, "no fixed sleep sits in the loop"
+    frozen = rows["a counter that never advances"]
+    assert 200 <= frozen["ms"] < 3000 and frozen["reads"] > 1, "a counter that never advances only stops the wait at the limit"
 
 
 # The screenshot path rule, with temp folders laid out as a main checkout and a worktree.
@@ -1199,6 +1309,21 @@ def test_every_call_that_may_move_the_clock_is_timed_and_every_send_checks_for_h
     assert "-IdleSeconds must be 0 or more" not in function_text("Enter-AwayGuard"), "one shared check, Assert-Usage"
 
 
+def test_the_pointer_is_checked_before_every_send_and_timed_call_and_the_tools_own_moves_are_expected():
+    source = SCRIPT.read_text(encoding="utf-8")
+    send = source[source.index("public static bool SendGuarded("):]
+    send = send[:send.index("\n    }") + 6]
+    assert send.index("before != Expected") < send.index("PointerMovedWith(pointer)") < send.index("send(events)")
+    assert send.index("Accept(after)") < send.index("pace()"), "the pace waits after the own tick is read"
+    assert "WaitTicks(PaceTicks, TickNow)" in source and re.search(r"public const int PaceTicks = 2;", source)
+    assert "about one event in four" in source and "not by a fixed time" in source, "the constant says why it is 2"
+    assert "PointerMoved()" in function_text("Invoke-Timed")
+    for name in ("Invoke-GuardedClick", "Invoke-Restore"):
+        body = function_text(name)
+        assert body.index("Invoke-Timed 'SetCursorPos'") < body.index("[AfDesktop]::ExpectPointer("), name
+    assert "int[] at = Pointer();" in source and "if (at.Length == 2) ExpectPointer(at[0], at[1]); else ExpectedX = int.MinValue;" in source
+
+
 def test_the_idle_seconds_check_is_shared_and_runs_before_anything_is_compiled_or_touched():
     text = SCRIPT.read_text(encoding="utf-8")
     main = text[text.index("$script:Bound = $PSBoundParameters"):]
@@ -1304,7 +1429,8 @@ def test_doc_names_the_away_guard_restore_exit_4_and_the_decided_findings():
     assert "A full-screen screenshot still captures" not in text
     assert "5 minutes" in text and "250 ms" in text and "AF_DESKTOP_TRACE" in text and "Before every send" in text
     assert "inside its run" in text
-    assert "pattern Invoke" in text and "same clock tick" in text and "junction" in text
+    assert "pattern Invoke" in text and "one time in four" in text and "junction" in text
+    assert "about 30 characters a second" in text and "His mouse is always seen" in text and "same clock tick" not in text
     assert "`system/logs/desktop/`" in text and "AfDesktop-" not in text
     assert "never lower `-idleseconds`" in text.lower()
     assert "away guard" in text.lower() and "away guard" in (ROOT / "library" / "process" / "README.md").read_text(encoding="utf-8")
@@ -1667,3 +1793,27 @@ def test_the_doc_says_a_label_inside_its_button_is_not_ambiguous():
     text = DOC.read_text(encoding="utf-8")
     assert "A label inside its own button does not make a name ambiguous; two sibling buttons with one name do." in text
     assert len(text.split()) <= 1500
+
+
+def test_the_two_last_live_tests_stop_a_type_by_a_stream_of_mouse_moves_and_by_the_pointer():
+    live = LIVE.read_text(encoding="utf-8")
+    names = re.findall(r"^def (test_\w+)\(", live, re.M)
+    assert names[-2:] == ["test_his_pointer_move_in_the_middle_of_a_type_stops_it_by_the_pointer_check",
+                          "test_his_input_in_the_middle_of_a_type_stops_it_with_exit_4_and_the_count"]
+    stream = source_of("test_his_input_in_the_middle_of_a_type_stops_it_with_exit_4_and_the_count")
+    assert "for _ in range(6):" in stream and "time.sleep(0.025)" in stream and "mouse_event(MOUSEEVENTF_MOVE, 0, 0, 0, 0)" in stream
+    pointer_test = source_of("test_his_pointer_move_in_the_middle_of_a_type_stops_it_by_the_pointer_check")
+    assert "SetCursorPos(home[0] + 7, home[1] + 5)" in pointer_test and "SetCursorPos(*home)" in pointer_test
+    assert "the pointer was moved" in pointer_test and "0 < sent < 400" in pointer_test and "0 < sent < 400" in stream
+
+
+def test_the_header_and_the_changelog_say_what_is_and_is_not_seen_while_typing():
+    header = SCRIPT.read_text(encoding="utf-8")
+    header = header[:header.index("[CmdletBinding")].replace("\n# ", " ")
+    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    for text in (header, changelog):
+        assert "about one time in four per event" in text
+        assert "His mouse is always seen" in text or "his mouse is always seen" in text
+        assert "same clock tick as a send (about 16 ms)" not in text
+    assert "about 30 characters a second" in header and "about 30 characters a second" in changelog
+    assert "The pointer is checked too" in header and "The pointer is checked too" in changelog

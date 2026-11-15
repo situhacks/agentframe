@@ -20,8 +20,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File system/tools/desktop.ps1 <co
 |---|---|
 | `windows` | Lists visible top-level windows: handle, process, `ok` or `denied`, title |
 | `focus -Window <match>` | Brings the window to the front |
-| `screenshot [-Window <match>] -Out <path.png> [-MaxWidth 1568]` | Captures one window, or all screens without `-Window`; prints the scale and origin |
-| `tree -Window <match> [-Depth 4]` | Prints control type, name, automation id, bounds, enabled; stops at 2,000 elements |
+| `screenshot [-Window <match>] -Out <path.png> [-MaxWidth 1568]` | Captures one window, or all screens without `-Window` |
+| `tree -Window <match> [-Depth 4]` | Prints control type, name, automation id, bounds, enabled |
 | `invoke -Window <match> -Name <name>` | Uses the Invoke pattern; clicks the element's centre when that is unavailable |
 | `click -Window <match> -X <x> -Y <y>` | Left-clicks a screen coordinate inside that window |
 | `type -Window <match> -Text <text>` | Types the text literally |
@@ -31,19 +31,20 @@ powershell -NoProfile -ExecutionPolicy Bypass -File system/tools/desktop.ps1 <co
 1. Run `windows`, then choose a `-Window` match that fits one title. An exact title wins; several matches exit 2.
 2. Prefer `tree` and `invoke` where the app exposes controls (see the limits below); use `click` for the rest. A label inside its own button does not make a name ambiguous; two sibling buttons with one name do.
 3. To click from a screenshot, map with its printed line: `screenX = originX + imageX / scale`, and the same for Y.
-4. Write screenshots to the scratchpad or `workspace/`; other paths inside the repository, and network paths, are refused.
+4. Write screenshots to the scratchpad or `workspace/`; other repository paths and network paths are refused.
 5. Exit codes: 0 done, 1 Windows rejected the action or the desktop cannot take input, 2 bad usage, nothing found, or an ambiguous match, 3 refused, 4 the operator is active.
-6. Exit 3 for an off-limits window, a password field, a blocked chord, or a full-screen capture is final: report it and never reach that window another way. Exit 3 for the foreground or a click point means something moved: run `windows`, retry once, then report.
-7. Exit 4 means he is at the computer or came back partway; the message says how much was sent. Wait a minute and retry; after a few tries, stop and tell him the job is waiting. Never lower `-IdleSeconds` below its default of 120 for a real job; a lower value is for the tests.
-8. A run lasts at most 5 minutes from its first command; aim for a minute or two. Split a longer job, or leave it to a session he starts.
-9. The last step of every job is `restore`, inside its run: after 5 minutes the record is ignored and there is nothing to put back. If it prints `could not restore`, tell him which of the two is not back, and why. A new run straight after `restore` waits for two quiet minutes.
+6. Exit 3 for an off-limits window, a password field, a blocked chord, or a full-screen capture is final: report it, never reach that window another way. Exit 3 for the foreground or a click point means something moved: retry once, then report.
+7. Exit 4 means he is at the computer or came back partway; the message says how much was sent. Wait a minute and retry; after a few tries tell him the job is waiting. Never lower `-IdleSeconds` below 120 for a real job; lower values are for the tests.
+8. A run lasts at most 5 minutes from its first command. Split a longer job, or leave it to a session he starts.
+9. The last step of every job is `restore`, inside its run (after 5 minutes there is nothing to put back). If it prints `could not restore`, tell him which of the two is not back, and why. A new run straight after waits for two quiet minutes.
 
 ### The away guard
 
 - `focus`, `invoke`, `click`, `type`, `key`, and `restore` run only when he has been away for `-IdleSeconds` (120 by default); otherwise they exit 4. `windows`, `tree`, and `screenshot` are not.
-- The tool's own clicks and keys reset the system's last-input clock, so a run keeps `system/logs/desktop/run.json` (never tracked; under `AF_ROOT` when set): the clock after the tool's last input, his last input before the run, when the run began, and the foreground and pointer found then. While nothing has touched the machine since the tool did, his idle time counts from his own last input. Any other input, a run older than 5 minutes, a damaged file, or one from before a reboot is ignored and replaced, and the clock alone decides: the tool itself must then stay off the machine for 120 seconds.
-- Before every send the tool reads that clock; if it is not the tool's own last reading, he touched the machine and the command stops with exit 4, saying how much was sent. The next command waits for 120 quiet seconds.
-- A call that sends no input is timed alone. Only the pattern Invoke may move the clock as the tool's own, and only if it returns within 250 ms; for a raise or a pointer move a moved clock is his, and a clock that cannot be read is his. Not seen: his input in the same clock tick as a send (about 16 ms), and during a pattern Invoke that returns within 250 ms. `-Verbose` or `AF_DESKTOP_TRACE=1` prints whether each such call moved the clock.
+- The tool's own clicks and keys reset the system's last-input clock, so a run keeps `system/logs/desktop/run.json`: the clock after the tool's last input, his last input before the run, when the run began, and the foreground and pointer found then. While nothing has touched the machine since the tool did, his idle time counts from his own last input. Any other input, a run older than 5 minutes, a damaged file, or one from before a reboot is ignored and replaced, and the clock alone decides: the tool itself must then stay off the machine for 120 seconds.
+- Before every send and timed call the tool reads the clock and the pointer; a clock that is not its own last reading, or a pointer not where it left it, means he touched the machine: exit 4, saying how much was sent. After a moved clock the next command waits for 120 quiet seconds.
+- A call that sends no input is timed alone. Only the pattern Invoke may move the clock as the tool's own (within 250 ms); for a raise or a pointer move a moved clock is his, and an unreadable clock is his. `-Verbose` or `AF_DESKTOP_TRACE=1` prints whether each such call moved it.
+- After each send `type` and `key` wait two clock ticks: about 30 characters a second, so a long text takes time, and a run is 5 minutes at most. Not seen: while the tool types, one key press of his, about one time in four per event, which lands in the window being typed into; his input during a pattern Invoke that returns within 250 ms. His mouse is always seen, as is anything between two commands.
 - The compiled native code is cached in `system/logs/desktop/` (never tracked).
 - Only one command that acts on the screen runs at a time; a second exits 1 and sends nothing. A negative `-IdleSeconds` exits 2.
 
@@ -57,10 +58,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File system/tools/desktop.ps1 <co
 
 ### What the script enforces
 
-- The denylist refuses every command that names a window (and `screenshot -Window`) on password managers, banks, brokerages, payment apps, Windows security and sign-in prompts, Settings, Control Panel, the management consoles, and Registry Editor. It checks a Store app's own process, not only its frame.
+- The denylist refuses every command that names a window (and `screenshot -Window`) on password managers, banks, brokerages, payment apps, Windows security and sign-in prompts, Settings, Control Panel, the management consoles, and Registry Editor.
 - `windows` and every refusal show `(off limits)` in place of a denied window's title; the process name and `denied` flag stay.
 - A full-screen screenshot is refused (exit 3) while an off-limits window is visible and not minimized; use `-Window`.
-- The tracked list at the top of the script is public: category words and well-known names only. An institution he uses that those miss goes in `workspace/life/systems/desktop-denylist.txt`: optional, never tracked, one .NET regex a line, `#` for comments. The script reads it under its own checkout and `AF_ROOT`, refuses an invalid line, and never repeats a local rule. Name no institution of his in a tracked file.
+- The tracked list in the script is public: category words and well-known names only. An institution he uses that those miss goes in `workspace/life/systems/desktop-denylist.txt`: never tracked, one .NET regex a line, `#` for comments. The script reads it under its own checkout and `AF_ROOT`, refuses an invalid line, and never repeats a local rule. Name no institution of his in a tracked file.
 - Raw input is refused unless the requested window is in the foreground at the moment of input; the refusal prints what was found. `type` checks window, title, and focused field before every character, `key` before every chord, and reports the count sent if one fails.
 - The password-field check fails closed: if the focused field cannot be read, nothing is sent. A click is refused over another process's window, the taskbar, or the desktop. `key` refuses the Windows key, Alt+Tab, and the Escape chords that switch windows.
 - Raw input and full-screen capture exit 1 while the screen is locked or disconnected.
@@ -79,7 +80,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File system/tools/desktop.ps1 <co
 
 ## Verification
 
-Confirm the effect with `tree` or a `-Window` screenshot: the tool reports input sent, not that the app did what was meant.
+Confirm the effect with `tree` or a `-Window` screenshot: the tool reports input sent, not that it worked.
 
 ## Boundaries
 

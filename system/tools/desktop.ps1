@@ -26,8 +26,12 @@
 # exit 4 (saying how much was sent) if it is not the tool's own last tick, so input he makes between
 # two sends is seen. A clock that cannot be read is treated as his input. A call that sends no input
 # counts as moving the clock itself only for the Invoke pattern, and only if it returned within 250 ms
-# ($ClockOwnLabels); for a raise or a pointer move a moved clock is his. Not seen: his input in the same
-# clock tick as a send (about 16 ms), and his input during a pattern Invoke that returns within 250 ms.
+# ($ClockOwnLabels); for a raise or a pointer move a moved clock is his. The pointer is checked too: before
+# every send and timed call it must be where the tool left it. Each send is followed by a wait of two clock
+# ticks (about 30 characters a second). Not seen: while the tool types, a single key press of his can go
+# unseen (about one time in four per event, when it lands in the same clock tick as a send, after it) and lands
+# in the window being typed into; his input during a pattern Invoke that returns within 250 ms. His mouse is
+# always seen, and anything he does between two commands is always seen.
 # -Verbose or AF_DESKTOP_TRACE=1 prints, for each timed call, whether the clock moved.
 # tree and invoke see real controls only in apps that expose UI Automation themselves (WPF, newer
 # toolkits); in classic Win32 and WinForms apps they see panes with no patterns, and invoke falls back
@@ -194,12 +198,54 @@ public static class AfDesktop {
     public static long Expected = -2;
     public static bool Intruded;
     public static long IntrudedTick;
+    public static bool IntrudedByPointer;
 
-    public static void Arm(long tick) { Expected = tick; Intruded = false; }
+    // Where the tool left the pointer: read when the guard arms, and set again after the tool's own SetCursorPos.
+    // A pointer anywhere else, or one that cannot be read, means he moved the mouse (a single event of his that
+    // lands in the same clock tick as a send leaves the clock unchanged, but the pointer shows it exactly).
+    public static int ExpectedX = int.MinValue, ExpectedY = int.MinValue;
+    public static void ExpectPointer(int x, int y) { ExpectedX = x; ExpectedY = y; }
+
+    public static void Arm(long tick) {
+        Expected = tick; Intruded = false; IntrudedByPointer = false;
+        int[] at = Pointer();
+        if (at.Length == 2) ExpectPointer(at[0], at[1]); else ExpectedX = int.MinValue;
+    }
     public static void Accept(long tick) { OwnTick = tick; Expected = tick; }
 
     public delegate uint SendFn(INPUT[] events);
     public delegate long ClockFn();
+    public delegate int[] PointerFn();
+    public delegate void PaceFn();
+
+    // After each send the tool waits until the system tick counter has advanced PaceTicks times, so that
+    // the next check of the clock comes in a later tick. The last-input clock has the resolution of that
+    // counter (about 16 ms); his event in the same tick as a send, after it, leaves the clock equal to the
+    // tool's own tick and is missed. With a send every few milliseconds nearly every tick holds a send, so
+    // one event would be missed most of the time. Waiting two ticks leaves only the stretch after a send
+    // inside its own tick (about one event in four), and a key press with its release, or a mouse move,
+    // lands in a later tick. The tick source is a parameter, and the wait ends by ticks, not by a fixed time
+    // (PaceLimitMs only stops a counter that never advances).
+    public const int PaceTicks = 2;
+    public const int PaceLimitMs = 250;
+
+    public static void WaitTicks(int ticks, ClockFn tick) {
+        System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
+        long last = tick();
+        int seen = 0;
+        while (seen < ticks && watch.ElapsedMilliseconds < PaceLimitMs) {
+            long now = tick();
+            if (now != last) { seen++; last = now; }
+            else System.Threading.Thread.Sleep(0);
+        }
+    }
+
+    static bool PointerMovedWith(PointerFn pointer) {
+        int[] at = pointer();
+        return at.Length != 2 || ExpectedX == int.MinValue || at[0] != ExpectedX || at[1] != ExpectedY;
+    }
+
+    public static bool PointerMoved() { return PointerMovedWith(Pointer); }
 
     public static int[] Pointer() {
         POINT p;
@@ -305,7 +351,8 @@ public static class AfDesktop {
     }
 
     static bool Send(INPUT[] events) {
-        return SendGuarded(events, delegate(INPUT[] e) { return SendInput((uint)e.Length, e, Marshal.SizeOf(typeof(INPUT))); }, LastInput);
+        return SendGuarded(events, delegate(INPUT[] e) { return SendInput((uint)e.Length, e, Marshal.SizeOf(typeof(INPUT))); },
+                           LastInput, Pointer, delegate() { WaitTicks(PaceTicks, TickNow); });
     }
 
     // Before every send the last-input tick must still be the one the tool expects. If it is not, the
@@ -313,17 +360,20 @@ public static class AfDesktop {
     // expected and own ticks stay as they were, so the next command finds a tick that is not the tool's own
     // and falls to the plain idle rule. After a send the clock is read at once and kept as the own tick. A
     // reading below 0 (Windows would not say), before or after a send, is treated as his input: the callers
-    // check Intruded after every send and stop. (The send and the clock are parameters so a test can run this
-    // with a scripted clock and no input.)
-    public static bool SendGuarded(INPUT[] events, SendFn send, ClockFn clock) {
+    // check Intruded after every send and stop. The pointer is checked too, and each send is followed by the pace
+    // wait. (The send, the clock, the pointer and the pace are parameters so a test can run this with a scripted
+    // clock and pointer and no input.)
+    public static bool SendGuarded(INPUT[] events, SendFn send, ClockFn clock, PointerFn pointer, PaceFn pace) {
         if (Expected == -2) { Intruded = true; IntrudedTick = -1; return false; }
         long before = clock();
         if (before < 0 || before != Expected) { Intruded = true; IntrudedTick = before; return false; }
+        if (PointerMovedWith(pointer)) { Intruded = true; IntrudedByPointer = true; IntrudedTick = before; return false; }
         uint sent = send(events);
         if (sent > 0) {
             long after = clock();
             if (after < 0) { Intruded = true; IntrudedTick = after; }
             else Accept(after);
+            pace();
         }
         return sent == (uint)events.Length;
     }
@@ -384,23 +434,27 @@ function Stop-Error([string]$Message) {
     Exit-Tool 1
 }
 
-function Stop-Active([int64]$IdleMs, [string]$Note = 'nothing was sent') {
+function Stop-Active([int64]$IdleMs, [string]$Note = 'nothing was sent', [string]$Detail = '') {
     $seconds = [int64][Math]::Floor($IdleMs / 1000)
-    [Console]::Error.WriteLine("error: the operator is active (last input $seconds s ago); $($Note.TrimEnd('.')); wait and retry")
+    $what = if ($Detail) { $Detail } else { "last input $seconds s ago" }
+    [Console]::Error.WriteLine("error: the operator is active ($what); $($Note.TrimEnd('.')); wait and retry")
     Exit-Tool 4
 }
 
 # He touched the machine after the tool's last event: stop at once. Complete-Run still rewrites the state, but
 # with the own tick as the tool last made it (never this tick), so the next command sees a last input that is
 # not the tool's own and waits for -IdleSeconds of quiet.
-function Stop-Intruded([int64]$Tick, [string]$Note) {
+function Stop-Intruded([int64]$Tick, [string]$Note, [string]$Detail = '') {
     $age = if ($Tick -lt 0) { 0 } else { Get-TickAge ([AfDesktop]::TickNow()) $Tick }
     if (-not $Note) { $Note = 'nothing was sent' }
-    Stop-Active $age $Note
+    Stop-Active $age $Note $Detail
 }
 
 function Stop-IfIntruded([string]$Note) {
-    if ([AfDesktop]::Intruded) { Stop-Intruded ([AfDesktop]::IntrudedTick) $Note }
+    if ([AfDesktop]::Intruded) {
+        $detail = if ([AfDesktop]::IntrudedByPointer) { 'the pointer was moved' } else { '' }
+        Stop-Intruded ([AfDesktop]::IntrudedTick) $Note $detail
+    }
 }
 
 # --- Away guard: pure functions (no Windows calls; the tests load these by name) ---
@@ -714,6 +768,7 @@ function Invoke-Timed([string]$Label, [scriptblock]$Call) {
     if ([AfDesktop]::Expected -eq -2) { return (& $Call) }
     $before = [AfDesktop]::LastInput()
     if ($before -lt 0 -or $before -ne [AfDesktop]::Expected) { Stop-Intruded $before 'nothing more was sent' }
+    if ([AfDesktop]::PointerMoved()) { Stop-Intruded $before 'nothing more was sent' 'the pointer was moved' }
     $watch = [System.Diagnostics.Stopwatch]::StartNew()
     $result = & $Call
     $ms = $watch.ElapsedMilliseconds
@@ -964,6 +1019,7 @@ function Invoke-GuardedClick($Target, [int]$ScreenX, [int]$ScreenY) {
         }
     }
     if (-not (Invoke-Timed 'SetCursorPos' { [AfDesktop]::SetCursorPos($ScreenX, $ScreenY) })) { Stop-Error "could not move the cursor to $ScreenX,$ScreenY" }
+    [AfDesktop]::ExpectPointer($ScreenX, $ScreenY)
     Assert-ReadyForInput $Target ''
     if (-not [AfDesktop]::SendLeftClick()) {
         Stop-IfIntruded 'no click was sent'
@@ -1297,6 +1353,7 @@ function Invoke-Restore {
     if ($null -eq $pointer) {
         'could not restore the pointer: its position was not recorded'
     } elseif (Invoke-Timed 'SetCursorPos' { [AfDesktop]::SetCursorPos([int]$pointer.x, [int]$pointer.y) }) {
+        [AfDesktop]::ExpectPointer([int]$pointer.x, [int]$pointer.y)
         "restored the pointer to $($pointer.x),$($pointer.y)"
     } else {
         $rejected = $true

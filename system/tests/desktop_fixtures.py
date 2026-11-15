@@ -170,10 +170,11 @@ param([string]$Title, [string]$StateFile, [string]$HeartbeatFile)
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
 
 $script:Pressed = 0
+$script:Twins = 0
 $script:Started = Get-Date
 
 function Write-State {
-    $json = @{ title = $w.Title; pressed = $script:Pressed; text = $t.Text } | ConvertTo-Json -Compress
+    $json = @{ title = $w.Title; pressed = $script:Pressed; twins = $script:Twins; text = $t.Text } | ConvertTo-Json -Compress
     $temp = "$StateFile.tmp"
     [IO.File]::WriteAllText($temp, $json)
     for ($try = 0; $try -lt 10; $try++) {
@@ -184,7 +185,7 @@ function Write-State {
 $w = New-Object System.Windows.Window
 $w.Title = $Title
 $w.Width = 320
-$w.Height = 160
+$w.Height = 240
 $w.Left = 300
 $w.Top = 300
 $w.Topmost = $true
@@ -196,6 +197,14 @@ $t = New-Object System.Windows.Controls.TextBox
 $t.Height = 30
 [void]$p.Children.Add($b)
 [void]$p.Children.Add($t)
+# Two sibling buttons with one name: invoke must refuse to choose between them.
+foreach ($n in 1..2) {
+    $twin = New-Object System.Windows.Controls.Button
+    $twin.Content = 'Twin'
+    $twin.Height = 30
+    $twin.Add_Click({ $script:Twins++; Write-State })
+    [void]$p.Children.Add($twin)
+}
 $w.Content = $p
 
 $b.Add_Click({ $script:Pressed++; Write-State })

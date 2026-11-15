@@ -33,7 +33,7 @@ needs_powershell = pytest.mark.skipif(sys.platform != "win32" or not shutil.whic
 # The functions the harness may load. None calls Windows; test_the_loaded_functions_call_no_windows_api checks it.
 PURE = ["Get-TickAge", "Get-StateField", "New-RunState", "Read-RunState", "Write-RunState", "Test-RunStateFresh",
         "Get-OperatorIdleMs", "Test-RunContinues", "Get-ShownTitle", "Get-ExposedDeniedCount", "Get-RepositoryRoots",
-        "Test-OutAllowed", "Get-NativeCacheName"]
+        "Test-OutAllowed", "Get-NativeCacheName", "Select-InvokeMatch"]
 
 HARNESS = r"""
 param([string]$Script, [string]$Names, [string]$CasesFile)
@@ -1589,3 +1589,81 @@ def test_the_live_expectations_match_the_changes_the_runs_found():
     assert 'title not in desktop("windows").stdout' not in denied and 'r[2] == "denied"' in denied
     assert "test_invoke_uses_the_pattern(wpf_form)" in live and "via=click" in live
     assert "Pane name=" in live
+
+
+# Which element invoke acts on when several carry the name (the live runs showed a WPF button's label is a child
+# element with the same name).
+
+def candidate(index, *, ancestors=(), enabled=True, can_invoke=False):
+    return {"Index": index, "Ancestors": list(ancestors), "Enabled": enabled, "CanInvoke": can_invoke}
+
+
+SELECT_CASES = {
+    "a button and its child label resolve to the button": (
+        [candidate(0, can_invoke=True), candidate(1, ancestors=[0])], ("chosen", 0)),
+    "the label comes first in the search and still loses": (
+        [candidate(0, ancestors=[1]), candidate(1, can_invoke=True)], ("chosen", 1)),
+    "a label two levels down loses to the button": (
+        [candidate(0, can_invoke=True), candidate(1, ancestors=[2, 0]), candidate(2, ancestors=[0])], ("chosen", 0)),
+    "two sibling buttons with one name stay ambiguous": (
+        [candidate(0, can_invoke=True), candidate(1, can_invoke=True)], ("ambiguous", [0, 1])),
+    "two sibling buttons, each with its own label, stay ambiguous with the buttons listed": (
+        [candidate(0, can_invoke=True), candidate(1, ancestors=[0]), candidate(2, can_invoke=True), candidate(3, ancestors=[2])],
+        ("ambiguous", [0, 2])),
+    "a text and an unrelated button: the one that supports Invoke": (
+        [candidate(0), candidate(1, can_invoke=True)], ("chosen", 1)),
+    "a text and an unrelated button that cannot invoke either: ambiguous": (
+        [candidate(0), candidate(1)], ("ambiguous", [0, 1])),
+    "two unrelated matches that can both invoke: ambiguous": (
+        [candidate(0, can_invoke=True), candidate(1, can_invoke=True), candidate(2)], ("ambiguous", [0, 1, 2])),
+    "a single match is unchanged, invokable or not": ([candidate(0)], ("chosen", 0)),
+    "no match is unchanged": ([], ("none", -1)),
+    "a single disabled match is disabled": ([candidate(0, enabled=False)], ("disabled", -1)),
+    "a disabled button with an enabled label is disabled, the label is not pressed": (
+        [candidate(0, enabled=False, can_invoke=True), candidate(1, ancestors=[0])], ("disabled", -1)),
+    "a disabled twin is left out of the choice": (
+        [candidate(0, enabled=False, can_invoke=True), candidate(1, can_invoke=True)], ("chosen", 1)),
+    "an ancestor that is not a match is ignored": ([candidate(0, ancestors=[99], can_invoke=True)], ("chosen", 0)),
+}
+
+
+@pytest.fixture(scope="module")
+def select_results(tmp_path_factory):
+    if sys.platform != "win32" or not shutil.which("powershell"):
+        pytest.skip("Windows PowerShell is needed")
+    cases = [{"id": name, "fn": "Select-InvokeMatch", "args": [candidates]} for name, (candidates, _) in SELECT_CASES.items()]
+    return run_functions(tmp_path_factory.mktemp("select"), cases)
+
+
+@needs_powershell
+@pytest.mark.parametrize("name", list(SELECT_CASES))
+def test_invoke_chooses_the_element_it_acts_on(select_results, name):
+    row = select_results[name]
+    assert row["ok"], row["value"]
+    status, detail = SELECT_CASES[name][1]
+    value = row["value"]
+    assert value["Status"] == status, value
+    if status == "chosen":
+        assert value["Chosen"] == detail
+    elif status == "ambiguous":
+        left = value["Left"]
+        assert sorted([left] if isinstance(left, int) else left) == detail
+
+
+def test_invoke_asks_the_pure_choice_and_no_longer_counts_matches_itself():
+    body = function_text("Invoke-Element")
+    assert "Select-InvokeMatch $candidates" in body and "GetParent(" in body and "-lt 5" in body, "ancestry is bounded to a few levels"
+    assert "$enabled.Count -gt 1" not in body
+    assert body.index("Select-InvokeMatch") < body.index("Enter-AwayGuard"), "choosing the element touches nothing"
+    assert "so none was touched" in body and "is disabled" in body
+
+
+def test_the_wpf_fixture_carries_two_sibling_buttons_with_one_name():
+    assert WPF_FIXTURE.count("'Twin'") == 1 and "foreach ($n in 1..2)" in WPF_FIXTURE and "$script:Twins++" in WPF_FIXTURE
+    assert "twins = $script:Twins" in WPF_FIXTURE
+
+
+def test_the_doc_says_a_label_inside_its_button_is_not_ambiguous():
+    text = DOC.read_text(encoding="utf-8")
+    assert "A label inside its own button does not make a name ambiguous; two sibling buttons with one name do." in text
+    assert len(text.split()) <= 1500

@@ -630,6 +630,18 @@ def test_invoke_uses_the_pattern(wpf_form):
     assert wpf_form.wait_for(lambda s: s["pressed"] == 1)
 
 
+def test_invoke_does_not_call_a_label_inside_its_own_button_ambiguous_but_still_refuses_two_sibling_buttons(wpf_form):
+    # Each WPF button has a child Text element with the same name; the label is not a second match. Two sibling
+    # buttons with one name are still ambiguous: the tool refuses (exit 2) and presses neither.
+    result = desktop("invoke", "-Window", wpf_form.title, "-Name", "Twin")
+    assert result.returncode == USAGE, f"{result.returncode}: {result.stderr}"
+    assert "'Twin' matches 2 elements, so none was touched" in tool_stderr(result)
+    time.sleep(0.3)
+    assert wpf_form.state()["twins"] == 0
+    assert_ok(desktop("invoke", "-Window", wpf_form.title, "-Name", "Press Me"))
+    assert wpf_form.wait_for(lambda s: s["pressed"] == 1)
+
+
 def test_invoke_on_a_winforms_button_falls_back_to_a_click_and_the_press_lands(form):
     result = desktop("invoke", "-Window", form.title, "-Name", "Press Me")
     assert_ok(result)

@@ -29,13 +29,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File system/tools/desktop.ps1 <co
 | `restore` | Puts the pointer and foreground window back and ends the run |
 
 1. Run `windows`, then choose a `-Window` match that fits one title. An exact title wins; several matches exit 2.
-2. Prefer `tree` and `invoke` where the app exposes controls (see the limits below); use `click` for the rest.
+2. Prefer `tree` and `invoke` where the app exposes controls (see the limits below); use `click` for the rest. A label inside its own button does not make a name ambiguous; two sibling buttons with one name do.
 3. To click from a screenshot, map with its printed line: `screenX = originX + imageX / scale`, and the same for Y.
 4. Write screenshots to the scratchpad or `workspace/`; other paths inside the repository, and network paths, are refused.
 5. Exit codes: 0 done, 1 Windows rejected the action or the desktop cannot take input, 2 bad usage, nothing found, or an ambiguous match, 3 refused, 4 the operator is active.
 6. Exit 3 for an off-limits window, a password field, a blocked chord, or a full-screen capture is final: report it and never reach that window another way. Exit 3 for the foreground or a click point means something moved: run `windows`, retry once, then report.
 7. Exit 4 means he is at the computer or came back partway; the message says how much was sent. Wait a minute and retry; after a few tries, stop and tell him the job is waiting. Never lower `-IdleSeconds` below its default of 120 for a real job; a lower value is for the tests.
-8. A run lasts at most 5 minutes from its first command; aim for a minute or two. Split a longer job, or leave it for a session he starts.
+8. A run lasts at most 5 minutes from its first command; aim for a minute or two. Split a longer job, or leave it to a session he starts.
 9. The last step of every job is `restore`, inside its run: after 5 minutes the record is ignored and there is nothing to put back. If it prints `could not restore`, tell him which of the two is not back, and why. A new run straight after `restore` waits for two quiet minutes.
 
 ### The away guard
@@ -44,7 +44,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File system/tools/desktop.ps1 <co
 - The tool's own clicks and keys reset the system's last-input clock, so a run keeps `system/logs/desktop/run.json` (never tracked; under `AF_ROOT` when set): the clock after the tool's last input, his last input before the run, when the run began, and the foreground and pointer found then. While nothing has touched the machine since the tool did, his idle time counts from his own last input. Any other input, a run older than 5 minutes, a damaged file, or one from before a reboot is ignored and replaced, and the clock alone decides: the tool itself must then stay off the machine for 120 seconds.
 - Before every send the tool reads that clock; if it is not the tool's own last reading, he touched the machine and the command stops with exit 4, saying how much was sent. The next command waits for 120 quiet seconds.
 - A call that sends no input is timed alone. Only the pattern Invoke may move the clock as the tool's own, and only if it returns within 250 ms; for a raise or a pointer move a moved clock is his, and a clock that cannot be read is his. Not seen: his input in the same clock tick as a send (about 16 ms), and during a pattern Invoke that returns within 250 ms. `-Verbose` or `AF_DESKTOP_TRACE=1` prints whether each such call moved the clock.
-- The compiled native code is cached in `system/logs/desktop/` (never tracked), so a command does not recompile it.
+- The compiled native code is cached in `system/logs/desktop/` (never tracked).
 - Only one command that acts on the screen runs at a time; a second exits 1 and sends nothing. A negative `-IdleSeconds` exits 2.
 
 ### Standing limits
@@ -83,4 +83,4 @@ Confirm the effect with `tree` or a `-Window` screenshot: the tool reports input
 
 ## Boundaries
 
-Does not own browser work (the Chrome tools), fetch routes ([`tool-routes.md`](tool-routes.md)), or Office rendering ([`native-office-render.md`](native-office-render.md)). It queues nothing for when he leaves. Raw input needs the signed-in, unlocked desktop session: run the tool from a chat or worker in it, never from a service.
+Does not own browser work (the Chrome tools), fetch routes ([`tool-routes.md`](tool-routes.md)), or Office rendering ([`native-office-render.md`](native-office-render.md)). Raw input needs the signed-in, unlocked desktop session: run the tool from a chat or worker in it, never from a service.

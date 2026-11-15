@@ -521,6 +521,28 @@ function Get-ExposedDeniedCount($Rows) {
     @($Rows | Where-Object { $_.Denied -and -not $_.Minimized }).Count
 }
 
+# Which of the elements that carry a name invoke acts on. Candidates are { Index, Ancestors, Enabled, CanInvoke },
+# where Ancestors lists the Index of every other match above it (a few levels). A match with another match as an
+# ancestor is a label inside its own button, so it is dropped. Of the enabled matches left, one is taken when it
+# alone supports Invoke; two siblings with the same name, or several that cannot be told apart, stay ambiguous.
+# Returns { Status: none | disabled | ambiguous | chosen, Chosen: index or -1, Left: the indexes still in play }.
+function Select-InvokeMatch($Candidates) {
+    $all = @($Candidates)
+    if ($all.Count -eq 0) { return [pscustomobject]@{ Status = 'none'; Chosen = -1; Left = @() } }
+    $indexes = @($all | ForEach-Object { [int]$_.Index })
+    $kept = @($all | Where-Object {
+        $mine = [int]$_.Index
+        $above = @(@($_.Ancestors) | Where-Object { $null -ne $_ -and [int]$_ -ne $mine -and $indexes -contains [int]$_ })
+        $above.Count -eq 0
+    })
+    $enabled = @($kept | Where-Object { $_.Enabled })
+    if ($enabled.Count -eq 0) { return [pscustomobject]@{ Status = 'disabled'; Chosen = -1; Left = @($kept | ForEach-Object { [int]$_.Index }) } }
+    if ($enabled.Count -eq 1) { return [pscustomobject]@{ Status = 'chosen'; Chosen = [int]$enabled[0].Index; Left = @([int]$enabled[0].Index) } }
+    $invokable = @($enabled | Where-Object { $_.CanInvoke })
+    if ($invokable.Count -eq 1) { return [pscustomobject]@{ Status = 'chosen'; Chosen = [int]$invokable[0].Index; Left = @([int]$invokable[0].Index) } }
+    [pscustomobject]@{ Status = 'ambiguous'; Chosen = -1; Left = @($enabled | ForEach-Object { [int]$_.Index }) }
+}
+
 # The roots that hold tracked files: this checkout, AF_ROOT, and the main repository of a worktree (the
 # parent of git's common directory, found by reading .git and commondir, never by running git).
 function Get-RepositoryRoots([string]$Checkout, [string]$AfRoot) {
@@ -1132,13 +1154,33 @@ function Invoke-Element {
         [System.Windows.Automation.PropertyConditionFlags]::IgnoreCase)
     $found = @($root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $named) | ForEach-Object { $_ })
     if ($found.Count -eq 0) { Stop-Failed "no element named '$Name' in $(Format-Window $target); the tree command lists them" }
-    $enabled = @($found | Where-Object { $_.Current.IsEnabled })
-    if ($enabled.Count -eq 0) { Stop-Failed "'$Name' is disabled: $(Format-Element $found[0])" }
-    if ($enabled.Count -gt 1) {
-        $list = ($enabled | ForEach-Object { Format-Element $_ }) -join '; '
-        Stop-Failed "'$Name' matches $($enabled.Count) elements, so none was touched; use the click command with coordinates from one of: $list"
+    # A label is usually a child element with the same name as its button: it is not a second match.
+    $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
+    $candidates = @(for ($i = 0; $i -lt $found.Count; $i++) {
+        $above = New-Object System.Collections.ArrayList
+        $up = $found[$i]
+        for ($level = 0; $level -lt 5; $level++) {
+            try { $up = $walker.GetParent($up) } catch { $up = $null }
+            if ($null -eq $up) { break }
+            for ($j = 0; $j -lt $found.Count; $j++) {
+                if ($j -ne $i -and [System.Windows.Automation.Automation]::Compare($up, $found[$j])) { [void]$above.Add($j) }
+            }
+        }
+        $held = $null
+        [pscustomobject]@{
+            Index     = $i
+            Ancestors = @($above)
+            Enabled   = [bool]$found[$i].Current.IsEnabled
+            CanInvoke = [bool]$found[$i].TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$held)
+        }
+    })
+    $pick = Select-InvokeMatch $candidates
+    if ($pick.Status -eq 'disabled') { Stop-Failed "'$Name' is disabled: $(Format-Element $found[0])" }
+    if ($pick.Status -eq 'ambiguous') {
+        $list = (@($pick.Left) | ForEach-Object { Format-Element $found[$_] }) -join '; '
+        Stop-Failed "'$Name' matches $(@($pick.Left).Count) elements, so none was touched; use the click command with coordinates from one of: $list"
     }
-    $element = $enabled[0]
+    $element = $found[$pick.Chosen]
     $reason = Get-DenyReason (Get-WindowInfo $target.Handle)
     if ($reason) { Stop-Refused "$(Format-Window $target) is off limits: $reason" }
     # The pattern may send no input at all, yet it presses a button he can see: it is gated like the rest.

@@ -10,7 +10,11 @@
 //! API response, so any activity (he typed, an agent finished) already refreshed the cache and pushes the
 //! fire time back by itself. One lock file per session (`system/logs/warm/<session id>.json`) allows one
 //! live timer; a dead process's lock is taken over, and the lock is removed on every exit path of the
-//! process that took it. Each run appends one line to `system/logs/warm/warm.log`.
+//! process that took it. The lock also records the shell that started the timer and `CLAUDE_PID`: when
+//! either ends nobody is left to wake, so the timer ends quietly (`orphaned`), and a lock whose shell or
+//! Claude Code is gone counts as left over. `--minutes` stops at 56 because the idle clock starts at the
+//! chat's last reply, which can trail the request that refreshed the cache by a couple of minutes, and the
+//! poll adds up to 30 seconds. Each run appends one line to `system/logs/warm/warm.log`.
 //!
 //! Test hook, not for use: `AF_WARM_MINUTE_SECONDS` is the length of a minute in seconds (default 60). It
 //! scales the minute, the 30-second poll and the 12-hour cap together, so a test runs in seconds.
@@ -29,7 +33,7 @@ use std::time::Duration;
 
 pub const DEFAULT_MINUTES: u64 = 55;
 pub const MIN_MINUTES: u64 = 5;
-pub const MAX_MINUTES: u64 = 58;
+pub const MAX_MINUTES: u64 = 56;
 pub const DEFAULT_MAX_WAKES: u32 = 12;
 pub const DEFAULT_MIN_TOKENS: u64 = 150_000;
 /// Seconds between two reads of the transcript.
@@ -67,17 +71,96 @@ fn lock_path(ctx: &Ctx, session_id: &str) -> PathBuf {
     warm_dir(ctx).join(format!("{safe}.json"))
 }
 
+/// A process the timer lives and dies with: its id, and when it started (so a reused id is not mistaken for it).
+#[derive(Clone, Copy)]
+struct Watched {
+    pid: u32,
+    start: Option<u64>,
+}
+
+impl Watched {
+    fn of(pid: u32) -> Option<Watched> {
+        (pid != 0 && panel::pid_alive(pid)).then(|| Watched { pid, start: panel::pid_start(pid) })
+    }
+
+    fn running(&self) -> bool {
+        panel::process_is(self.pid, self.start)
+    }
+}
+
+/// The process that started this one, when it is running now. A timer whose parent shell is gone has no
+/// one to wake, so it ends; a parent that was already gone at arming (a launcher that exits) is not tracked.
+fn watched_parent() -> Option<Watched> {
+    Watched::of(parent_pid()?)
+}
+
+/// The Claude Code process this command runs under (`CLAUDE_PID`, set in every Bash call), when it is running.
+fn watched_claude() -> Option<Watched> {
+    Watched::of(std::env::var("CLAUDE_PID").ok()?.trim().parse().ok()?)
+}
+
+#[cfg(windows)]
+fn parent_pid() -> Option<u32> {
+    #[repr(C)]
+    struct Basic {
+        exit_status: isize,
+        peb: usize,
+        affinity: usize,
+        base_priority: isize,
+        pid: usize,
+        parent: usize,
+    }
+    #[link(name = "ntdll")]
+    extern "system" {
+        fn NtQueryInformationProcess(handle: isize, class: u32, info: *mut Basic, len: u32, returned: *mut u32) -> i32;
+    }
+    extern "system" {
+        fn GetCurrentProcess() -> isize;
+    }
+    let mut b = Basic { exit_status: 0, peb: 0, affinity: 0, base_priority: 0, pid: 0, parent: 0 };
+    let mut returned = 0u32;
+    // SAFETY: the pseudo-handle of this process, one out-struct owned here and its exact size.
+    let status = unsafe { NtQueryInformationProcess(GetCurrentProcess(), 0, &mut b, std::mem::size_of::<Basic>() as u32, &mut returned) };
+    (status >= 0 && b.parent != 0).then(|| b.parent as u32)
+}
+
+#[cfg(not(windows))]
+fn parent_pid() -> Option<u32> {
+    let stat = std::fs::read_to_string("/proc/self/stat").ok()?;
+    stat.rsplit(')').next()?.split_whitespace().nth(1)?.parse().ok().filter(|p| *p != 0)
+}
+
+/// Whether the process the lock file records under these keys is gone. A lock that records none is not.
+fn recorded_gone(v: &Value, pid_key: &str, start_key: &str) -> bool {
+    let Some(pid) = v.get(pid_key).and_then(Value::as_u64).and_then(|p| u32::try_from(p).ok()) else { return false };
+    !panel::process_is(pid, panel::start_of(v, start_key))
+}
+
 /// This process's claim on a chat. Dropping it removes the file, but only while it still names this process.
 struct Lock {
     path: PathBuf,
+    parent: Option<Watched>,
+    claude: Option<Watched>,
+}
+
+impl Lock {
+    /// The file no longer names this process: a later arm judged this timer left over and took the chat.
+    fn superseded(&self) -> bool {
+        match std::fs::read_to_string(&self.path) {
+            Ok(t) => lock_pid(&t).is_some_and(|p| p != std::process::id()),
+            Err(e) => e.kind() == std::io::ErrorKind::NotFound,
+        }
+    }
+
+    /// The shell that started this timer, or Claude Code itself, has ended: nobody is left to wake.
+    fn orphaned(&self) -> bool {
+        self.parent.is_some_and(|p| !p.running()) || self.claude.is_some_and(|c| !c.running())
+    }
 }
 
 impl Drop for Lock {
     fn drop(&mut self) {
-        let mine = std::fs::read_to_string(&self.path)
-            .ok()
-            .and_then(|t| serde_json::from_str::<Value>(&t).ok())
-            .is_some_and(|v| v.get("pid").and_then(Value::as_u64) == Some(std::process::id() as u64));
+        let mine = std::fs::read_to_string(&self.path).ok().is_some_and(|t| lock_pid(&t) == Some(std::process::id()));
         if mine {
             let _ = std::fs::remove_file(&self.path);
         }
@@ -86,21 +169,39 @@ impl Drop for Lock {
 
 enum Take {
     Got(Lock),
-    /// A live timer holds it: its pid and when it was armed.
-    Held(u32, String),
+    /// A live timer holds it: its pid (None while the file is still being written) and when it was armed.
+    Held(Option<u32>, String),
 }
 
+/// A lock file shorter-lived than this that cannot be read or has no pid is another arm still writing it.
+const WRITING_SECS: u64 = 5;
+
+fn lock_pid(text: &str) -> Option<u32> {
+    let v: Value = serde_json::from_str(text).ok()?;
+    u32::try_from(v.get("pid").and_then(Value::as_u64)?).ok()
+}
+
+/// The holder of this lock when it is a live timer: its process runs, and so do the shell and Claude Code
+/// it was started under (a timer whose parents are gone is left over, whatever its own state).
 fn live_holder(text: &str) -> Option<(u32, String)> {
     let v: Value = serde_json::from_str(text).ok()?;
     let pid = u32::try_from(v.get("pid").and_then(Value::as_u64)?).ok()?;
-    if !panel::process_is(pid, panel::start_of(&v, "pid_start")) {
+    if !panel::process_is(pid, panel::start_of(&v, "pid_start")) || recorded_gone(&v, "parent", "parent_start") || recorded_gone(&v, "claude_pid", "claude_pid_start") {
         return None;
     }
     Some((pid, v.get("armed").and_then(Value::as_str).unwrap_or("").to_string()))
 }
 
-/// Create the lock file only when absent. A file left by a dead process is removed and the creation
-/// retried, so of two verbs started at the same moment exactly one creates it.
+fn younger_than_writing(path: &std::path::Path) -> bool {
+    std::fs::metadata(path)
+        .and_then(|m| m.modified())
+        .map(|t| t.elapsed().map(|e| e.as_secs() < WRITING_SECS).unwrap_or(true))
+        .unwrap_or(false)
+}
+
+/// Create the lock file only when absent. A file left by a dead timer is removed and the creation
+/// retried, so of two verbs started at the same moment exactly one creates it. A file that cannot be read,
+/// or holds no pid, is another arm in the middle of writing it for its first seconds, and counts as held.
 fn take_lock(ctx: &Ctx, session_id: &str, wake: u32) -> Result<Take, String> {
     use std::io::Write;
     let path = lock_path(ctx, session_id);
@@ -108,7 +209,18 @@ fn take_lock(ctx: &Ctx, session_id: &str, wake: u32) -> Result<Take, String> {
         std::fs::create_dir_all(dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
     }
     let me = std::process::id();
-    let body = json!({"pid": me, "pid_start": panel::pid_start(me), "armed": crate::core::now_iso(), "wake": wake}).to_string();
+    let (parent, claude) = (watched_parent(), watched_claude());
+    let body = json!({
+        "pid": me,
+        "pid_start": panel::pid_start(me),
+        "armed": crate::core::now_iso(),
+        "wake": wake,
+        "parent": parent.map(|p| p.pid),
+        "parent_start": parent.and_then(|p| p.start),
+        "claude_pid": claude.map(|c| c.pid),
+        "claude_pid_start": claude.and_then(|c| c.start),
+    })
+    .to_string();
     for _ in 0..4 {
         match std::fs::OpenOptions::new().write(true).create_new(true).open(&path) {
             Ok(mut f) => {
@@ -117,17 +229,20 @@ fn take_lock(ctx: &Ctx, session_id: &str, wake: u32) -> Result<Take, String> {
                     let _ = std::fs::remove_file(&path);
                     return Err(format!("cannot write {}: {e}", path.display()));
                 }
-                return Ok(Take::Got(Lock { path }));
+                return Ok(Take::Got(Lock { path, parent, claude }));
             }
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
             Err(e) => return Err(format!("cannot write {}: {e}", path.display())),
         }
-        let Ok(seen) = std::fs::read_to_string(&path) else { continue };
-        if let Some((pid, armed)) = live_holder(&seen) {
-            return Ok(Take::Held(pid, armed));
+        let seen = std::fs::read_to_string(&path).ok();
+        if let Some((pid, armed)) = seen.as_deref().and_then(live_holder) {
+            return Ok(Take::Held(Some(pid), armed));
+        }
+        if seen.as_deref().and_then(lock_pid).is_none() && younger_than_writing(&path) {
+            return Ok(Take::Held(None, String::new()));
         }
         // Left over: removed only when it is still what was judged left over.
-        if std::fs::read_to_string(&path).is_ok_and(|now| now == seen) {
+        if std::fs::read_to_string(&path).ok() == seen {
             let _ = std::fs::remove_file(&path);
         }
     }
@@ -219,6 +334,15 @@ pub fn cmd_warm(ctx: &Ctx, o: &Opts) -> R<i32> {
         )));
     };
     let name = o.name;
+    // Claude Code sets CLAUDE_CODE_SESSION_ID in every Bash call: a timer armed for another chat would wake the wrong one.
+    if let Some(mine) = std::env::var("CLAUDE_CODE_SESSION_ID").ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty()) {
+        if mine != row.session_id {
+            return Err(usage_error(format!(
+                "{name} belongs to another chat (session {}), and this chat is session {mine}: arm the timer with this chat's own registry name",
+                row.session_id
+            )));
+        }
+    }
 
     if o.wake > o.max_wakes {
         return stop(ctx, o, &format!("{} wakes reached; let the cache lapse, or compact if the task is done", o.max_wakes), None, None);
@@ -252,10 +376,13 @@ pub fn cmd_warm(ctx: &Ctx, o: &Opts) -> R<i32> {
         );
     }
 
-    let _lock = match take_lock(ctx, &row.session_id, o.wake) {
+    let lock = match take_lock(ctx, &row.session_id, o.wake) {
         Ok(Take::Got(l)) => l,
-        Ok(Take::Held(pid, armed)) => {
+        Ok(Take::Held(Some(pid), armed)) => {
             return stop(ctx, o, &format!("already armed since {} (pid {pid}); nothing started", clock(&armed)), None, Some(tokens));
+        }
+        Ok(Take::Held(None, _)) => {
+            return stop(ctx, o, "already armed a moment ago (its lock is still being written); nothing started", None, Some(tokens));
         }
         Err(m) => {
             log(ctx, o, &m, None, Some(tokens));
@@ -271,6 +398,15 @@ pub fn cmd_warm(ctx: &Ctx, o: &Opts) -> R<i32> {
     let fire_after = o.minutes as f64 * scale;
     let cap = ARMED_CAP_MINUTES * scale;
     loop {
+        // Nobody is left to wake, or a later arm took the chat: end without a word.
+        if lock.orphaned() {
+            log(ctx, o, "orphaned", None, Some(tokens));
+            return Ok(0);
+        }
+        if lock.superseded() {
+            log(ctx, o, "superseded", None, Some(tokens));
+            return Ok(0);
+        }
         let Some(last) = last_activity(&path) else {
             log(ctx, o, "its transcript is gone", None, Some(tokens));
             return Err(refuse(format!("{name}: its transcript {path} is gone; stopped warming")));

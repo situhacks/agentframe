@@ -69,7 +69,7 @@ type Out = (i32, String, String);
 
 fn command(fx: &Fx, scale: f64, args: &[&str]) -> assert_cmd::Command {
     let mut c = fx.af();
-    c.env("CLAUDE_CONFIG_DIR", fx.path("cfg")).env("AF_WARM_MINUTE_SECONDS", scale.to_string());
+    c.env("CLAUDE_CONFIG_DIR", fx.path("cfg")).env("AF_WARM_MINUTE_SECONDS", scale.to_string()).env_remove("CLAUDE_PID");
     let mut full = vec!["session", "warm", "system/x"];
     full.extend_from_slice(args);
     c.args(full);
@@ -87,12 +87,91 @@ fn warm(fx: &Fx, scale: f64, args: &[&str]) -> Out {
 
 /// Start it on a thread, so the test can change the transcript while it waits.
 fn spawn(fx: &Fx, scale: f64, args: &[&str]) -> std::thread::JoinHandle<(Out, Duration)> {
+    spawn_with(fx, scale, args, &[])
+}
+
+fn spawn_with(fx: &Fx, scale: f64, args: &[&str], env: &[(&str, String)]) -> std::thread::JoinHandle<(Out, Duration)> {
     let mut c = command(fx, scale, args);
+    for (k, v) in env {
+        c.env(k, v);
+    }
     std::thread::spawn(move || {
         let start = Instant::now();
         let out = done(c.output().unwrap());
         (out, start.elapsed())
     })
+}
+
+/// The lock file's JSON, read again until it is whole (the file is created, then written).
+fn lock_json(fx: &Fx) -> serde_json::Value {
+    let until = Instant::now() + Duration::from_secs(5);
+    loop {
+        if let Ok(v) = serde_json::from_str(&std::fs::read_to_string(fx.path(LOCK)).unwrap_or_default()) {
+            return v;
+        }
+        assert!(Instant::now() < until, "the lock never held JSON");
+        wait_ms(20);
+    }
+}
+
+fn wait_until(what: &str, mut ready: impl FnMut() -> bool) {
+    let until = Instant::now() + Duration::from_secs(15);
+    while !ready() {
+        assert!(Instant::now() < until, "timed out waiting for {what}");
+        wait_ms(25);
+    }
+}
+
+const STUB_SRC: &str = r##"
+fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match args.first().map(String::as_str) {
+        // run <program> <args...>: start it, wait for it, exit with its code.
+        Some("run") => {
+            let code = std::process::Command::new(&args[1]).args(&args[2..]).status().map(|s| s.code().unwrap_or(1)).unwrap_or(1);
+            std::process::exit(code);
+        }
+        // sleep <seconds>: a process that stays alive until it is killed.
+        Some("sleep") => std::thread::sleep(std::time::Duration::from_secs_f64(args[1].parse().unwrap())),
+        _ => {}
+    }
+}
+"##;
+
+/// A program that either runs another and waits (a stand-in for the shell above `af`) or just stays alive (a
+/// stand-in for Claude Code), compiled once for the whole test run.
+fn stub() -> &'static std::path::Path {
+    use std::sync::OnceLock;
+    static STUB: OnceLock<PathBuf> = OnceLock::new();
+    STUB.get_or_init(|| {
+        let target = std::env::current_exe().unwrap().parent().unwrap().parent().unwrap().to_path_buf();
+        let dir = target.join("af-test-stubs");
+        std::fs::create_dir_all(&dir).unwrap();
+        let src = dir.join("warm_stub.rs");
+        let exe = dir.join(if cfg!(windows) { "warm_stub.exe" } else { "warm_stub" });
+        std::fs::write(&src, STUB_SRC).unwrap();
+        let rustc = std::env::var("RUSTC").unwrap_or_else(|_| "rustc".into());
+        let status = std::process::Command::new(rustc).args(["--edition", "2021", "-o"]).arg(&exe).arg(&src).status().unwrap();
+        assert!(status.success(), "the warm stub did not compile");
+        exe
+    })
+}
+
+/// `af session warm system/x` started under a fake shell, which the test can kill: the shell is `af`'s parent.
+fn spawn_under_shell(fx: &Fx, scale: f64, args: &[&str]) -> std::process::Child {
+    let mut c = std::process::Command::new(stub());
+    c.arg("run").arg(assert_cmd::cargo::cargo_bin("af")).args(["session", "warm", "system/x"]).args(args);
+    c.env("AF_ROOT", fx.root())
+        .env("AF_PANEL_DRIVER", fx.path("no-such-panel-driver"))
+        .env("CLAUDE_CONFIG_DIR", fx.path("cfg"))
+        .env("AF_WARM_MINUTE_SECONDS", scale.to_string())
+        .env_remove("CLAUDE_PID")
+        .env_remove("CLAUDE_CODE_SESSION_ID")
+        .current_dir(fx.dir.path())
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    c.spawn().unwrap()
 }
 
 fn lines(out: &str) -> Vec<&str> {
@@ -297,10 +376,12 @@ fn stops_when_the_chat_compacts_after_the_timer_was_armed() {
 #[test]
 fn ends_after_twelve_hours_armed() {
     // A minute is 5 ms, so 12 hours are 3.6 s. The last reply is an hour in the future: it never counts as idle.
-    let fx = chat(&[reply(&ts(-3600.0), 312_000)]);
-    let start = Instant::now();
-    let out = warm(&fx, 0.005, &[]);
-    assert!(start.elapsed() >= Duration::from_millis(3000), "{:?}", start.elapsed());
+    let fx = chat(&[]);
+    fresh(&fx, &[reply(&ts(-3600.0), 312_000)]);
+    let run = spawn(&fx, 0.005, &[]);
+    wait_for_lock(&fx);
+    let (out, elapsed) = run.join().unwrap();
+    assert!(elapsed >= Duration::from_millis(3000), "{elapsed:?}");
     assert_stop(&fx, &out, "stop: armed 12 hours; ended");
 }
 
@@ -322,15 +403,122 @@ fn a_transcript_that_disappears_exits_1_and_still_frees_the_lock() {
     assert!(fx.read(LOG).contains("its transcript is gone"));
 }
 
+#[test]
+fn a_timer_whose_shell_is_gone_ends_quietly_and_frees_the_lock() {
+    let fx = chat(&[]);
+    fresh(&fx, &[reply(&ts(0.0), 312_000)]);
+    let mut shell = spawn_under_shell(&fx, 1.0, &["--minutes", "5"]);
+    wait_for_lock(&fx);
+    assert_eq!(lock_json(&fx)["parent"], shell.id(), "the lock records the shell that started the timer");
+    shell.kill().unwrap();
+    shell.wait().unwrap();
+    wait_until("the orphaned timer to end", || !fx.exists(LOCK));
+    assert!(fx.read(LOG).contains("outcome=orphaned"), "{}", fx.read(LOG));
+}
+
+#[test]
+fn a_timer_whose_claude_process_is_gone_ends_quietly_with_nothing_printed() {
+    let fx = chat(&[]);
+    fresh(&fx, &[reply(&ts(0.0), 312_000)]);
+    let mut claude = std::process::Command::new(stub()).args(["sleep", "120"]).spawn().unwrap();
+    let run = spawn_with(&fx, 1.0, &["--minutes", "5"], &[("CLAUDE_PID", claude.id().to_string())]);
+    wait_for_lock(&fx);
+    assert_eq!(lock_json(&fx)["claude_pid"], claude.id(), "the lock records CLAUDE_PID");
+    claude.kill().unwrap();
+    claude.wait().unwrap();
+    let ((code, out, err), elapsed) = run.join().unwrap();
+    assert_eq!((code, out.as_str()), (0, ""), "{err}");
+    assert!(elapsed < Duration::from_secs(4), "it ends at the next poll, not at the fire time: {elapsed:?}");
+    assert!(!fx.exists(LOCK));
+    assert!(fx.read(LOG).contains("outcome=orphaned"));
+}
+
+#[test]
+fn a_leftover_timer_does_not_block_arming_again() {
+    // The shell above a timer is killed, and the timer (still running) holds its lock. The next arm must take over.
+    let fx = chat(&[]);
+    fresh(&fx, &[reply(&ts(0.0), 312_000)]);
+    let mut shell = spawn_under_shell(&fx, 1.0, &["--minutes", "5"]);
+    wait_for_lock(&fx);
+    let leftover = lock_json(&fx)["pid"].as_u64().unwrap();
+    shell.kill().unwrap();
+    shell.wait().unwrap();
+    fresh(&fx, &[reply(&ts(60.0), 312_000)]);
+    let out = warm(&fx, 1.0, &["--minutes", "5"]);
+    assert_eq!(out.0, 0, "{out:?}");
+    assert!(out.1.starts_with("warm: wake 1 of 12 for system/x"), "a timer whose shell is gone is not a live timer: {out:?}");
+    assert_ne!(leftover, 0);
+    // The leftover timer ends by itself and leaves the new lock alone (there is none now: the new arm fired).
+    wait_until("the leftover timer to end", || fx.read(LOG).contains("outcome=orphaned"));
+    assert!(!fx.exists(LOCK));
+}
+
+#[test]
+fn a_name_that_belongs_to_another_chat_is_refused_with_exit_2() {
+    let fx = chat(&[]);
+    fresh(&fx, &[reply(&ts(60.0), 312_000)]);
+    let mut other = command(&fx, 1.0, &["--minutes", "5"]);
+    let (code, out, err) = done(other.env("CLAUDE_CODE_SESSION_ID", "sid-other").output().unwrap());
+    assert_eq!(code, 2, "{out}{err}");
+    assert!(err.contains("system/x belongs to another chat") && err.contains("sid-1") && err.contains("sid-other"), "{err}");
+    assert_eq!(out, "");
+    assert!(!fx.exists(LOCK) && !fx.exists(LOG), "nothing was armed or logged");
+    // Its own session id, or none, proceeds.
+    let mut own = command(&fx, 1.0, &["--minutes", "5"]);
+    let (code, out, err) = done(own.env("CLAUDE_CODE_SESSION_ID", "sid-1").output().unwrap());
+    assert_eq!(code, 0, "{out}{err}");
+    assert!(out.starts_with("warm: wake 1 of 12"), "{out}");
+    let out = warm(&fx, 1.0, &["--minutes", "5"]);
+    assert!(out.1.starts_with("warm: wake 1 of 12"), "{out:?}");
+}
+
+#[test]
+fn a_lock_still_being_written_counts_as_held_and_a_stale_unreadable_one_does_not() {
+    let fx = chat(&[]);
+    fresh(&fx, &[reply(&ts(60.0), 312_000)]);
+    // Empty, or not yet JSON, and just created: another arm is writing it.
+    for body in ["", "{\"pid\": 1"] {
+        fx.write(LOCK, body);
+        let out = warm(&fx, 1.0, &["--minutes", "5"]);
+        assert_eq!(out.0, 0, "{out:?}");
+        assert_eq!(lines(&out.1), vec!["stop: already armed a moment ago (its lock is still being written); nothing started"], "{out:?}");
+        assert_eq!(fx.read(LOCK), body, "another arm's lock is not this run's to remove");
+    }
+    // The same file ten seconds old is left over.
+    let old = std::time::SystemTime::now() - Duration::from_secs(10);
+    std::fs::OpenOptions::new().write(true).open(fx.path(LOCK)).unwrap().set_modified(old).unwrap();
+    let out = warm(&fx, 1.0, &["--minutes", "5"]);
+    assert!(out.1.starts_with("warm: wake 1 of 12"), "{out:?}");
+    assert!(!fx.exists(LOCK));
+}
+
+#[test]
+fn idle_time_is_read_when_the_newest_reply_lies_beyond_the_last_512_kb() {
+    // The reply is 60 s old, and more than 512 KB of other lines follow it: the first read sees no reply at all.
+    // Without the larger second read the idle time would fall back to the file's modified time (now).
+    let pad = json!({"type": "user", "message": {"content": "x".repeat(1000)}}).to_string();
+    let mut all = vec![reply(&ts(60.0), 312_000)];
+    all.extend(std::iter::repeat(pad).take(700));
+    let fx = chat(&[]);
+    fresh(&fx, &all);
+    assert!(std::fs::metadata(fx.path(TRANSCRIPT)).unwrap().len() > 700_000);
+    let start = Instant::now();
+    let out = warm(&fx, 1.0, &["--minutes", "5"]);
+    assert!(start.elapsed() < Duration::from_secs(4), "{:?}", start.elapsed());
+    assert_eq!(out.0, 0, "{out:?}");
+    assert!(lines(&out.1)[0].starts_with("warm: wake 1 of 12 for system/x · idle 6"), "{out:?}");
+    assert!(lines(&out.1)[0].ends_with("context 312k · cache 1h"), "{out:?}");
+}
+
 // ------------------------------------------------------------------ arguments
 
 #[test]
-fn minutes_outside_5_to_58_and_an_unknown_name_exit_2() {
+fn minutes_outside_5_to_56_and_an_unknown_name_exit_2() {
     let fx = chat(&[reply(&ts(0.0), 312_000)]);
-    for bad in ["4", "59"] {
+    for bad in ["4", "57", "59"] {
         let (code, out, err) = warm(&fx, 1.0, &["--minutes", bad]);
         assert_eq!(code, 2, "--minutes {bad}: {out}{err}");
-        assert!(err.contains("--minutes is 5 to 58"), "{err}");
+        assert!(err.contains("--minutes is 5 to 56"), "{err}");
     }
     let (code, out, err) = done(
         fx.af().env("CLAUDE_CONFIG_DIR", fx.path("cfg")).args(["session", "warm", "no/such-chat"]).output().unwrap(),

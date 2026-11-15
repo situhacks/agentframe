@@ -733,7 +733,7 @@ pub enum SessionCmd {
         /// which wake this will be, counting from 1 (the re-arm line it prints carries the next number)
         #[arg(long, default_value_t = 1)]
         wake: u32,
-        /// idle minutes before it fires, 5 to 58 (the cache lives one hour and any request that reads it resets the hour)
+        /// idle minutes before it fires, 5 to 56 (the cache lives one hour; the idle clock starts at the chat's last reply, which trails the request that refreshed the cache by up to a couple of minutes)
         #[arg(long, default_value_t = crate::warm::DEFAULT_MINUTES)]
         minutes: u64,
         /// stop after this many wakes

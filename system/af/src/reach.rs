@@ -176,15 +176,23 @@ pub fn transcript_path(session_id: &str) -> Option<String> {
 
 /// The last 512 KB of a transcript (all of it when shorter).
 pub fn tail(path: &str) -> Option<String> {
+    tail_of(path, MODE_TAIL)
+}
+
+/// The last `max` bytes of a transcript (all of it when shorter).
+pub fn tail_of(path: &str, max: u64) -> Option<String> {
     let mut f = std::fs::File::open(path).ok()?;
     let len = f.metadata().ok()?.len();
-    if len > MODE_TAIL {
-        f.seek(SeekFrom::Start(len - MODE_TAIL)).ok()?;
+    if len > max {
+        f.seek(SeekFrom::Start(len - max)).ok()?;
     }
     let mut buf = Vec::new();
     f.read_to_end(&mut buf).ok()?;
     Some(String::from_utf8_lossy(&buf).into_owned())
 }
+
+/// The sizes a transcript read grows through: the usual tail, then the most a read takes.
+pub const TAIL_SIZES: [u64; 2] = [MODE_TAIL, CONTEXT_TAIL_MAX];
 
 /// The permission mode of the transcript's last record that names one.
 pub fn last_mode(path: &str) -> Option<String> {
@@ -224,6 +232,61 @@ enum Scan {
     Nothing,
 }
 
+/// A usage object's context tokens: input plus cache read plus cache creation.
+fn usage_tokens(usage: &Value) -> u64 {
+    ["input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"]
+        .iter()
+        .map(|k| usage.get(*k).and_then(Value::as_u64).unwrap_or(0))
+        .sum()
+}
+
+/// The main-chain assistant lines of these lines that carry a usage, newest first. Sidechain
+/// lines, lines with no usage, an all-zero usage (an error stub) and lines that do not parse are skipped.
+fn main_replies(text: &str) -> impl Iterator<Item = Value> + '_ {
+    text.rsplit('\n').filter(|l| l.contains("\"usage\"")).filter_map(|l| serde_json::from_str::<Value>(l).ok()).filter(|rec| {
+        rec.get("type").and_then(Value::as_str) == Some("assistant")
+            && rec.get("isSidechain").and_then(Value::as_bool) != Some(true)
+            && rec.pointer("/message/usage").is_some_and(|u| usage_tokens(u) > 0)
+    })
+}
+
+/// The timestamp of the newest main-chain reply in these lines; None when there is none, or when it
+/// carries no timestamp that parses.
+pub fn last_reply_at(text: &str) -> Option<DateTime<Utc>> {
+    main_replies(text).next()?.get("timestamp").and_then(Value::as_str).and_then(parse_time)
+}
+
+/// Which prompt cache a chat writes, from its most recent reply that wrote one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CacheKind {
+    /// Writes with the 1-hour TTL.
+    OneHour,
+    /// Writes only with the 5-minute TTL.
+    FiveMinute,
+    /// No reply in these lines wrote the cache, or the one that did names no TTL.
+    Unknown,
+}
+
+/// The cache kind of the newest main-chain reply whose `cache_creation` is non-zero: only
+/// `ephemeral_5m_input_tokens` set means the 5-minute cache.
+pub fn cache_kind(text: &str) -> CacheKind {
+    for rec in main_replies(text) {
+        let Some(usage) = rec.pointer("/message/usage") else { continue };
+        let [five, hour] = ["ephemeral_5m_input_tokens", "ephemeral_1h_input_tokens"]
+            .map(|k| usage.pointer(&format!("/cache_creation/{k}")).and_then(Value::as_u64).unwrap_or(0));
+        let written = usage.get("cache_creation_input_tokens").and_then(Value::as_u64).unwrap_or(0).max(five + hour);
+        if written == 0 {
+            continue;
+        }
+        return match (five, hour) {
+            (0, 0) => CacheKind::Unknown,
+            (_, 0) => CacheKind::FiveMinute,
+            _ => CacheKind::OneHour,
+        };
+    }
+    CacheKind::Unknown
+}
+
 fn is_boundary(rec: &Value) -> bool {
     rec.get("type").and_then(Value::as_str) == Some("system")
         && rec.get("subtype").and_then(Value::as_str) == Some("compact_boundary")
@@ -250,10 +313,7 @@ fn scan_usage(text: &str, stop_at_boundary: bool) -> Scan {
             Some(u) => u,
             None => continue,
         };
-        let tokens: u64 = ["input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"]
-            .iter()
-            .map(|k| usage.get(*k).and_then(Value::as_u64).unwrap_or(0))
-            .sum();
+        let tokens = usage_tokens(usage);
         if tokens > 0 {
             let model = rec.pointer("/message/model").and_then(Value::as_str).map(str::to_string);
             let requested = rec.get("requestedModel").and_then(Value::as_str).map(str::to_string);

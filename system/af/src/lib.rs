@@ -35,6 +35,7 @@ pub mod reach;
 pub mod context;
 pub mod model_card;
 pub mod compact;
+pub mod warm;
 pub mod panel;
 pub mod backlog;
 pub mod page;

@@ -37,7 +37,7 @@ fn scope_replaces_the_rows_in_scope_and_leaves_the_others_byte_for_byte() {
     // w1 had two sets; the file has one changed set and one new one. The w1 set 2 row is absent: it goes.
     let f = csv(&fx, "workout,set_no,exercise,weight\nw1,1,Squat,110\nw1,3,Squat,115\n");
     let out = fx.ok(&["data", "import", "sets", "--csv", &f, "--scope", "workout=w1"]);
-    assert_eq!(out.trim_end(), "removed 2, added 2");
+    assert_eq!(out.trim_end(), "removed 2, added 2, unchanged 0");
     assert_eq!(
         bytes(&fx),
         b"workout,set_no,exercise,weight\n\"w2\",1,Bench,70\nw2,2,\"Bench\",75\nw1,1,Squat,110\nw1,3,Squat,115\n",
@@ -53,12 +53,12 @@ fn scope_takes_several_pairs_and_matches_by_typed_value() {
     // set_no=01 is the 1 stored; only the w1 row with set 1 is in scope.
     let f = csv(&fx, "workout,set_no,exercise,weight\nw1,01,Squat,120\n");
     let out = fx.ok(&["data", "import", "sets", "--csv", &f, "--scope", "workout=w1", "set_no=01"]);
-    assert_eq!(out.trim_end(), "removed 1, added 1");
+    assert_eq!(out.trim_end(), "removed 1, added 1, unchanged 0");
     assert_eq!(bytes(&fx), b"workout,set_no,exercise,weight\nw1,2,Squat,105\n\"w2\",1,Bench,70\nw2,2,\"Bench\",75\nw1,1,Squat,120\n");
     // The scope may also be written as repeated flags.
     let f = csv(&fx, "workout,set_no,exercise,weight\nw2,2,Bench,80\n");
     let out = fx.ok(&["data", "import", "sets", "--csv", &f, "--scope", "workout=w2", "--scope", "set_no=2"]);
-    assert_eq!(out.trim_end(), "removed 1, added 1");
+    assert_eq!(out.trim_end(), "removed 1, added 1, unchanged 0");
 }
 
 #[test]
@@ -94,12 +94,12 @@ fn a_header_only_file_with_scope_removes_the_rows_in_scope() {
     seeded(&fx);
     let f = csv(&fx, "workout,set_no,exercise,weight\n");
     let out = fx.ok(&["data", "import", "sets", "--csv", &f, "--scope", "workout=w2"]);
-    assert_eq!(out.trim_end(), "removed 2, added 0");
+    assert_eq!(out.trim_end(), "removed 2, added 0, unchanged 0");
     assert_eq!(bytes(&fx), b"workout,set_no,exercise,weight\nw1,1,Squat,100\nw1,2,Squat,105\n");
     // A scope that matches nothing, with a header-only file, writes nothing.
     let before = bytes(&fx);
     let out = fx.ok(&["data", "import", "sets", "--csv", &f, "--scope", "workout=w9"]);
-    assert_eq!(out.trim_end(), "removed 0, added 0");
+    assert_eq!(out.trim_end(), "removed 0, added 0, unchanged 0");
     assert_eq!(bytes(&fx), before);
 }
 
@@ -120,8 +120,8 @@ fn a_key_held_outside_the_scope_refuses_and_with_replace_merges() {
     assert_eq!(bytes(&fx), before);
     // With --replace the clashing row is merged, so it moves into the scope; the count says so.
     let out = fx.ok(&["data", "import", "sets", "--csv", &f, "--scope", "workout=w1", "--replace"]);
-    assert_eq!(out.trim_end(), "removed 1, added 1, replaced 1");
-    assert_eq!(bytes(&fx), b"workout,set_no,exercise,weight\nw1,1,Bench,72\nw2,2,Bench,75\nw1,1,Squat,100\n");
+    assert_eq!(out.trim_end(), "removed 0, added 0, unchanged 1, replaced 1");
+    assert_eq!(bytes(&fx), b"workout,set_no,exercise,weight\nw1,1,Squat,100\nw1,1,Bench,72\nw2,2,Bench,75\n");
 }
 
 #[test]
@@ -152,12 +152,13 @@ fn whole_makes_the_files_rows_the_ledger() {
     seeded(&fx);
     let f = csv(&fx, "workout,set_no,exercise,weight\nw2,1,Bench,70\nw3,1,Row,50\n");
     let out = fx.ok(&["data", "import", "sets", "--csv", &f, "--whole"]);
-    assert_eq!(out.trim_end(), "removed 4, added 2");
-    assert_eq!(bytes(&fx), b"workout,set_no,exercise,weight\nw2,1,Bench,70\nw3,1,Row,50\n");
-    // The same file again leaves the same rows.
+    // w2 set 1 is in the file as it is in the ledger (its quotes stay); the other three rows go; one is new.
+    assert_eq!(out.trim_end(), "removed 3, added 1, unchanged 1");
+    assert_eq!(bytes(&fx), b"workout,set_no,exercise,weight\n\"w2\",1,Bench,70\nw3,1,Row,50\n");
+    // The same file again changes nothing.
     let out = fx.ok(&["data", "import", "sets", "--csv", &f, "--whole"]);
-    assert_eq!(out.trim_end(), "removed 2, added 2");
-    assert_eq!(bytes(&fx), b"workout,set_no,exercise,weight\nw2,1,Bench,70\nw3,1,Row,50\n");
+    assert_eq!(out.trim_end(), "removed 0, added 0, unchanged 2");
+    assert_eq!(bytes(&fx), b"workout,set_no,exercise,weight\n\"w2\",1,Bench,70\nw3,1,Row,50\n");
 }
 
 #[test]
@@ -245,7 +246,122 @@ fn the_counts_printed_account_for_every_row_of_the_file() {
         out.split(", ").find_map(|p| p.trim().strip_prefix(word).and_then(|v| v.trim().parse().ok())).unwrap_or(0)
     };
     assert_eq!(n("added") + n("replaced") + n("unchanged"), file_rows, "{out}");
-    // With --whole every row of the file is added.
+    // With --whole the three rows of the file are already in the ledger; the fourth row goes.
     let out = fx.ok(&["data", "import", "sets", "--csv", &f, "--whole"]);
-    assert_eq!(out.trim_end(), format!("removed 4, added {file_rows}"));
+    assert_eq!(out.trim_end(), format!("removed 1, added 0, unchanged {file_rows}"));
+}
+
+// ------------------------------------------------------------------ rows the file repeats stay
+
+/// Five w1 sets (one written with quotes) and one w2 set, by hand, with weights written as `60`.
+fn many(fx: &Fx) {
+    new_sets(fx);
+    fx.write_bytes(
+        SETS,
+        b"workout,set_no,exercise,weight\nw1,1,Squat,60\n\"w1\",2,\"Squat\",65\nw1,3,Squat,70\nw1,4,Squat,75\nw1,5,Squat,80\nw2,1,Bench,50\n",
+    );
+}
+
+const W1_ROWS: &str = "workout,set_no,exercise,weight\nw1,1,Squat,60\nw1,2,Squat,65\nw1,3,Squat,70\nw1,4,Squat,75\nw1,5,Squat,80\n";
+
+fn mtime(fx: &Fx, rel: &str) -> std::time::SystemTime {
+    std::fs::metadata(fx.path(rel)).unwrap().modified().unwrap()
+}
+
+#[test]
+fn a_re_import_that_changes_nothing_writes_nothing_under_scope_and_under_whole() {
+    let fx = Fx::new();
+    many(&fx);
+    // A page that is stale on purpose: a re-render would put the real count in it.
+    fx.write("workspace/life/p.md", "<!-- af-data: select count(*) as n from sets -->\n<!-- /af-data -->\n");
+    fx.ok(&["data", "page", "p.md"]);
+    let page = fx.read("workspace/life/p.md").replace("| 6 |", "| 99 |");
+    assert!(page.contains("| 99 |"), "{page}");
+    fx.write("workspace/life/p.md", &page);
+    let (before, file_time, page_time) = (bytes(&fx), mtime(&fx, SETS), mtime(&fx, "workspace/life/p.md"));
+    std::thread::sleep(std::time::Duration::from_millis(60));
+    let f = csv(&fx, W1_ROWS);
+    let out = fx.ok(&["data", "import", "sets", "--csv", &f, "--scope", "workout=w1"]);
+    assert_eq!(out.trim_end(), "removed 0, added 0, unchanged 5");
+    assert_eq!(bytes(&fx), before);
+    assert_eq!(mtime(&fx, SETS), file_time, "the ledger file is not written");
+    assert_eq!(fx.read("workspace/life/p.md"), page, "the page is not rendered");
+    assert_eq!(mtime(&fx, "workspace/life/p.md"), page_time);
+    // --whole, with the file holding every row of the ledger.
+    let f = csv(&fx, &format!("{W1_ROWS}w2,1,Bench,50\n"));
+    let out = fx.ok(&["data", "import", "sets", "--csv", &f, "--whole"]);
+    assert_eq!(out.trim_end(), "removed 0, added 0, unchanged 6");
+    assert_eq!(bytes(&fx), before);
+    assert_eq!(mtime(&fx, SETS), file_time);
+    assert_eq!(fx.read("workspace/life/p.md"), page);
+    assert_eq!(mtime(&fx, "workspace/life/p.md"), page_time);
+}
+
+#[test]
+fn one_changed_row_among_many_moves_alone_and_the_other_lines_keep_their_bytes() {
+    let fx = Fx::new();
+    many(&fx);
+    // Set 3 changes weight; the rest of w1 is as it was.
+    let f = csv(&fx, &W1_ROWS.replace("w1,3,Squat,70", "w1,3,Squat,72"));
+    let out = fx.ok(&["data", "import", "sets", "--csv", &f, "--scope", "workout=w1"]);
+    assert_eq!(out.trim_end(), "removed 1, added 1, unchanged 4");
+    let want: &[u8] = b"workout,set_no,exercise,weight\nw1,1,Squat,60\n\"w1\",2,\"Squat\",65\nw1,4,Squat,75\nw1,5,Squat,80\nw2,1,Bench,50\nw1,3,Squat,72\n";
+    assert_eq!(bytes(&fx), want);
+    // --whole the same: one row of the file changes.
+    let fx = Fx::new();
+    many(&fx);
+    let f = csv(&fx, &format!("{}w2,1,Bench,50\n", W1_ROWS.replace("w1,3,Squat,70", "w1,3,Squat,72")));
+    let out = fx.ok(&["data", "import", "sets", "--csv", &f, "--whole"]);
+    assert_eq!(out.trim_end(), "removed 1, added 1, unchanged 5");
+    assert_eq!(bytes(&fx), want);
+}
+
+#[test]
+fn a_row_the_file_lacks_is_removed_and_a_row_it_adds_is_added() {
+    let fx = Fx::new();
+    many(&fx);
+    let f = csv(&fx, &W1_ROWS.replace("w1,5,Squat,80\n", ""));
+    let out = fx.ok(&["data", "import", "sets", "--csv", &f, "--scope", "workout=w1"]);
+    assert_eq!(out.trim_end(), "removed 1, added 0, unchanged 4");
+    assert_eq!(bytes(&fx), b"workout,set_no,exercise,weight\nw1,1,Squat,60\n\"w1\",2,\"Squat\",65\nw1,3,Squat,70\nw1,4,Squat,75\nw2,1,Bench,50\n");
+    let fx = Fx::new();
+    many(&fx);
+    let f = csv(&fx, &format!("{W1_ROWS}w1,6,Squat,85\n"));
+    let out = fx.ok(&["data", "import", "sets", "--csv", &f, "--scope", "workout=w1"]);
+    assert_eq!(out.trim_end(), "removed 0, added 1, unchanged 5");
+    assert_eq!(
+        bytes(&fx),
+        b"workout,set_no,exercise,weight\nw1,1,Squat,60\n\"w1\",2,\"Squat\",65\nw1,3,Squat,70\nw1,4,Squat,75\nw1,5,Squat,80\nw2,1,Bench,50\nw1,6,Squat,85\n"
+    );
+}
+
+#[test]
+fn equal_values_written_differently_or_in_another_column_order_are_the_same_row() {
+    let fx = Fx::new();
+    many(&fx);
+    let (before, file_time) = (bytes(&fx), mtime(&fx, SETS));
+    std::thread::sleep(std::time::Duration::from_millis(60));
+    // 60.0 is 60 by value; set 01 is set 1; the columns come in another order.
+    let f = csv(&fx, "weight,exercise,set_no,workout\n60.0,Squat,01,w1\n65,Squat,2,w1\n70.00,Squat,3,w1\n75,Squat,4,w1\n80,Squat,5,w1\n");
+    let out = fx.ok(&["data", "import", "sets", "--csv", &f, "--scope", "workout=w1"]);
+    assert_eq!(out.trim_end(), "removed 0, added 0, unchanged 5");
+    assert_eq!(bytes(&fx), before, "the ledger's own spelling stays");
+    assert_eq!(mtime(&fx, SETS), file_time);
+    // A row whose optional column the file leaves out is a different row from one that holds a value there.
+    let f = csv(&fx, "workout,set_no,exercise\nw1,1,Squat\n");
+    let out = fx.ok(&["data", "import", "sets", "--csv", &f, "--scope", "workout=w1", "set_no=1"]);
+    assert_eq!(out.trim_end(), "removed 1, added 1, unchanged 0");
+}
+
+#[test]
+fn a_fault_in_a_file_that_repeats_rows_leaves_the_ledger_byte_identical() {
+    let fx = Fx::new();
+    many(&fx);
+    let before = bytes(&fx);
+    // Repeated rows next to a bad one, a repeated key, and a row outside the scope: nothing is written.
+    for text in [format!("{W1_ROWS}w1,6,Squat,abc\n"), format!("{W1_ROWS}w1,5,Squat,81\n"), format!("{W1_ROWS}w2,1,Bench,50\n")] {
+        let f = csv(&fx, &text);
+        fx.refused(&["data", "import", "sets", "--csv", &f, "--scope", "workout=w1"]);
+        assert_eq!(bytes(&fx), before, "{text}");
+    }
 }

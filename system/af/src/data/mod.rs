@@ -618,17 +618,24 @@ fn cmd_import(ctx: &Ctx, a: &ImportArgs) -> R<i32> {
         // The scope: the columns and values a row must hold to be replaced. --whole is a scope that every row meets.
         let scope = parse_given(&l, &a.scope)?;
         let (scope_cols, scope_probe) = (given_cols(&scope), given_row(&scope));
-        // The ledger's rows that stay (with their physical lines, for the cut), and the lines that go.
-        let (mut kept_lines, mut cut_lines): (Vec<u64>, Vec<u64>) = (Vec::new(), Vec::new());
+        let all_cols: Vec<usize> = (0..l.columns.len()).collect();
+        // The ledger's rows outside the scope (with their physical lines), and the rows in scope by key: a
+        // scope row the file repeats exactly stays where it is; the others go.
+        let mut kept_lines: Vec<u64> = Vec::new();
         let mut rows: Vec<Vec<String>> = Vec::new();
-        for (line, r) in &raw.rows {
+        let mut in_scope: HashMap<Vec<String>, (u64, usize)> = HashMap::new();
+        let mut scope_lines: Vec<u64> = Vec::new();
+        for (n, (line, r)) in raw.rows.iter().enumerate() {
             if replacing && l.same_in(r, &scope_probe, &scope_cols) {
-                cut_lines.push(*line);
+                scope_lines.push(*line);
+                in_scope.insert(l.key_of(r), (*line, n));
             } else {
                 kept_lines.push(*line);
                 rows.push(r.clone());
             }
         }
+        let scope_set: std::collections::HashSet<u64> = scope_lines.iter().copied().collect();
+        let mut stays: std::collections::HashSet<u64> = std::collections::HashSet::new();
         let existing = rows.len();
         let index: HashMap<Vec<String>, usize> = rows.iter().enumerate().map(|(i, r)| (l.key_of(r), i)).collect();
         let (mut added, mut unchanged, mut replaced) = (0usize, 0usize, 0usize);
@@ -671,6 +678,11 @@ fn cmd_import(ctx: &Ctx, a: &ImportArgs) -> R<i32> {
             }
             seen.insert(key.clone(), *line);
             match index.get(&key).copied() {
+                // The same row, every column, is already in the scope: it stays, with its bytes.
+                None if in_scope.get(&key).is_some_and(|&(_, n)| l.same_in(&raw.rows[n].1, &probe, &all_cols)) => {
+                    stays.insert(in_scope[&key].0);
+                    unchanged += 1;
+                }
                 None => {
                     match l.columns.iter().zip(&probe).find(|(c, v)| c.required && v.is_empty()) {
                         Some((c, _)) => bad.push(format!("{}:{line}: {} is required for a new row, and this input has no column for it", a.csv, c.name)),
@@ -705,23 +717,41 @@ fn cmd_import(ctx: &Ctx, a: &ImportArgs) -> R<i32> {
         if !bad.is_empty() {
             return Err(refuse_faults(&bad, &format!("{} rows of the input fail; nothing was written", bad.len())));
         }
-        if replaced > 0 {
-            let mut all = vec![header_of(&l)];
-            all.extend(rows);
-            rewrite(&path, &raw, &all)?;
-        } else if replacing {
-            if !cut_lines.is_empty() || added > 0 {
-                ledger::cut_and_append(&path, &l, &cut_lines, &rows[existing..], &rows)?;
+        // What goes: the scope's rows the file lacks or changes. Nothing to remove, add or merge writes nothing.
+        let cut_lines: Vec<u64> = scope_lines.iter().copied().filter(|n| !stays.contains(n)).collect();
+        if replaced > 0 || (replacing && (!cut_lines.is_empty() || added > 0)) {
+            // The rows as the file will hold them: the ledger's own order (outside rows, merged ones included,
+            // and the scope rows that stay), then the added rows.
+            let mut outside = rows[..existing].iter();
+            let mut final_rows: Vec<Vec<String>> = Vec::new();
+            for (line, r) in &raw.rows {
+                if scope_set.contains(line) {
+                    if stays.contains(line) {
+                        final_rows.push(r.clone());
+                    }
+                } else if let Some(o) = outside.next() {
+                    final_rows.push(o.clone());
+                }
             }
-        } else if added > 0 {
+            final_rows.extend(rows[existing..].iter().cloned());
+            if replaced > 0 {
+                let mut all = vec![header_of(&l)];
+                all.extend(final_rows);
+                rewrite(&path, &raw, &all)?;
+            } else {
+                ledger::cut_and_append(&path, &l, &cut_lines, &rows[existing..], &final_rows)?;
+            }
+        } else if !replacing && added > 0 {
             append_records(&path, &raw, &rows[existing..])?;
         }
         Ok((cut_lines.len(), added, unchanged, replaced))
     })?;
     if replacing {
         let merged = if replaced > 0 { format!(", replaced {replaced}") } else { String::new() };
-        let same = if unchanged > 0 { format!(", unchanged {unchanged}") } else { String::new() };
-        outln!("removed {removed}, added {added}{merged}{same}");
+        outln!("removed {removed}, added {added}, unchanged {unchanged}{merged}");
+        if removed == 0 && added == 0 && replaced == 0 {
+            return Ok(0);
+        }
     } else {
         outln!("added {added}, unchanged {unchanged}, replaced {replaced}");
     }

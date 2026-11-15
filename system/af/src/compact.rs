@@ -70,7 +70,7 @@ fn shown(arg: &str) -> String {
 
 /// Whether a `compact_boundary` system line was appended after byte `from`, and the last
 /// assistant usage in what was appended.
-fn appended_since(path: &str, from: u64) -> (bool, Option<reach::Usage>) {
+pub(crate) fn appended_since(path: &str, from: u64) -> (bool, Option<reach::Usage>) {
     let read = || -> Option<String> {
         let mut f = std::fs::File::open(path).ok()?;
         let len = f.metadata().ok()?.len();

@@ -727,6 +727,22 @@ pub enum SessionCmd {
         #[arg(long, conflicts_with_all = ["model", "instructions", "force", "dry_run", "when_idle", "wait_minutes", "then_file", "waiter_job"])]
         cancel: bool,
     },
+    /// Keep this chat's prompt cache warm through a long wait: run it in the background; it waits until the chat has been idle, then exits, which wakes the chat
+    Warm {
+        name: String,
+        /// which wake this will be, counting from 1 (the re-arm line it prints carries the next number)
+        #[arg(long, default_value_t = 1)]
+        wake: u32,
+        /// idle minutes before it fires, 5 to 56 (the cache lives one hour; the idle clock starts at the chat's last reply, which trails the request that refreshed the cache by up to a couple of minutes)
+        #[arg(long, default_value_t = crate::warm::DEFAULT_MINUTES)]
+        minutes: u64,
+        /// stop after this many wakes
+        #[arg(long, default_value_t = crate::warm::DEFAULT_MAX_WAKES)]
+        max_wakes: u32,
+        /// do not warm a chat below this many context tokens: a cold restart rewrites little
+        #[arg(long, default_value_t = crate::warm::DEFAULT_MIN_TOKENS)]
+        min_tokens: u64,
+    },
     /// Type /rename into a chat through the VS Code panel; the default name is the registry name
     Rename {
         name: String,
@@ -902,6 +918,9 @@ pub fn run(ctx: &Ctx, cmd: SessionCmd) -> R<i32> {
                     cancel,
                 },
             )
+        }
+        SessionCmd::Warm { name, wake, minutes, max_wakes, min_tokens } => {
+            crate::warm::cmd_warm(ctx, &crate::warm::Opts { name: &name, wake, minutes, max_wakes, min_tokens })
         }
         SessionCmd::Archive { name, session_id, wait_minutes, dry_run } => {
             crate::panel::cmd_archive(ctx, name.as_deref(), session_id.as_deref(), wait_minutes, dry_run)

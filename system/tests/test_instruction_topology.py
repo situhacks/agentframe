@@ -30,7 +30,7 @@ class InstructionTopologyCharacterizationTests(unittest.TestCase):
             self.assertNotEqual(root, text(router))
             self.assertIn(f"[`{router}`]({router})", root)
         self.assertIn("If the task class changes, stop and read the new router.", root)
-        self.assertLessEqual(len(root.split()), 728)
+        self.assertLessEqual(len(root.split()), 739)
 
     def test_every_reply_ends_with_the_needs_line_and_due_loops_have_an_exit(self):
         root = text("AGENTS.md")
@@ -173,6 +173,16 @@ class InstructionTopologyCharacterizationTests(unittest.TestCase):
             self.assertIn("`af draft <project>", template, rel)
             self.assertIn("`af version <project>", template, rel)
             self.assertIn("voice/README.md", template, rel)
+
+    def test_cache_warm_is_loaded_from_main_builder_and_the_catalog(self):
+        link = "[`af session warm`](library/process/cache-warm.md)"
+        worker_line = next(line for line in text("AGENTS.md").splitlines() if line.startswith("- **Background worker**"))
+        self.assertIn("A wait over an hour on a large context: " + link, worker_line)
+        self.assertIn("(cache-warm.md)", text("library/process/README.md"))
+        self.assertIn("af session warm", text("library/schema/sessions-registry.md"))
+        process = text("library/process/cache-warm.md")
+        for heading in ("## Purpose", "## When To Load", "## Procedure", "## Verification", "## Boundaries"):
+            self.assertIn(heading, process)
 
     def test_task_routers_stay_small_and_task_local(self):
         self.assertLessEqual(len(text("AGENTS.operator.md").split()), 1000)

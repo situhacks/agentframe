@@ -21,7 +21,7 @@ Types: `date` (`YYYY-MM-DD`), `integer`, `number` (plain decimal, at most 12 sig
 - `af data new <name> --file <path> --column name:type[!]... --key a,b`: `!` marks required. An existing CSV is adopted if every row passes.
 - `af data column <ledger> name:type`: an optional column; run again to finish a half-added one.
 - `af data add <ledger> col=value...`; `--replace` merges into the row with that key: columns given are set (`col=` empties), the rest keep their values.
-- `af data import <ledger> --csv <file>`: any column order; a same row is skipped, a changed row refused unless `--replace`, which merges per row. A repeated key or bad row writes nothing. `--scope col=value...` replaces the rows matching every pair with the file's rows (each file row must match; an empty value is refused); `--whole` replaces every row.
+- `af data import <ledger> --csv <file>`: any column order; a same row is skipped, a changed row refused unless `--replace`, which merges per row. A repeated key or bad row writes nothing. `--scope col=value...` replaces the rows matching every pair with the file's rows (each file row must match; an empty value is refused); `--whole` replaces every row. Under both, an identical row stays (`unchanged`); with nothing to change, nothing is written.
 - `af data delete <ledger> col=value... [--dry-run]`: removes and lists rows matching every condition (by value); other lines keep their bytes.
 - `af data list [<ledger>]`; `af data sql "<select>" [--json|--csv] [--limit N]`: read-only, 200 rows, stopped after 10 seconds. It prints numbers to at most 12 significant digits; the file keeps what was written.
 

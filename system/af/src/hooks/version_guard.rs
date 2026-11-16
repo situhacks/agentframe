@@ -117,8 +117,9 @@ apply the rewrite as one Edit replacing the new head's body."
     Ok(None)
 }
 
-/// `decide(payload)`; None for no decision and for every exception the Python swallows.
-pub fn decide(h: &HookCtx, payload: &Value) -> Option<PyVal> {
+/// The tool and absolute path an Edit or Write payload names, as the guards read them:
+/// None for any other tool, any other event and any malformed shape.
+pub fn edit_target(h: &HookCtx, payload: &Value) -> Option<(String, String)> {
     let obj = payload.as_object()?;
     if !event_is(obj.get("hook_event_name"), "PreToolUse") {
         return None;
@@ -144,5 +145,11 @@ pub fn decide(h: &HookCtx, payload: &Value) -> Option<PyVal> {
         let base = str_or(obj.get("cwd"), &h.root)?;
         path = pjoin(base, &path);
     }
+    Some((tool.to_string(), path))
+}
+
+/// `decide(payload)`; None for no decision and for every exception the Python swallows.
+pub fn decide(h: &HookCtx, payload: &Value) -> Option<PyVal> {
+    let (tool, path) = edit_target(h, payload)?;
     decide_target(h, &path, tool == "Write").unwrap_or(None)
 }

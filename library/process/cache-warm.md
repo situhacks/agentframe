@@ -10,7 +10,7 @@ A chat is about to wait over an hour on work it will return to (an agent running
 
 ## Procedure
 
-Why it pays: Claude Code writes this project's chat caches with a 1-hour lifetime, and any request that reads the cache resets that hour. A cache write costs about twice a plain input token; a cache read costs a fraction of one. So rebuilding a lapsed cache costs 40 to 80 times what one read costs, and a night of hourly wakes costs less than one cold restart. A measured wake read 165,832 tokens from cache and wrote 1,861 (the notification and the reply).
+Why it pays: Claude Code writes this project's chat caches with a 1-hour lifetime, and any request that reads the cache resets that hour. A 1-hour cache write costs twice the model's input price; a cache read has its own price, far below the generic 0.1x on the current models (the cache-read prices in [`models.md`](../schema/models.md#the-models)). So rebuilding a lapsed cache costs about 40 times one read on Opus and Sonnet and 80 times on Fable (20 times at a 0.1x read price), and a night of hourly wakes costs less than one cold restart. A measured wake read 165,832 tokens from cache and wrote 1,861 (the notification and the reply).
 
 The only trigger that starts a turn in an idle chat is a background command the chat itself started: when it exits, Claude Code wakes the chat with the exact prompt prefix. A hook runs only on events, and a headless `claude -p --resume` sends a different system prompt, so it misses this chat's cache. `af session warm` is that background command.
 

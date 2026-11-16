@@ -23,14 +23,14 @@ A brief's `model` field, a registry row's `model` column and `--model` take one 
 
 ## The models
 
-| Alias | API id | Context / output | $ per million tokens, in / out | Anthropic says it is for |
+| Alias | API id | Context / output | $ per million tokens, in / out / cache read | Anthropic says it is for |
 |---|---|---|---|---|
-| `fable` | `claude-fable-5-2` | 1M / 128K | 8 / 40 | Demanding reasoning and long-horizon agentic work |
-| `opus` | `claude-opus-5-5` | 1M / 128K | 4 / 20 | Long-running agentic coding and knowledge work; the "start here" model |
-| `sonnet` | `claude-sonnet-5-5` | 1M / 128K | 2 / 10 | The best speed and intelligence mix for everyday coding and agent work |
+| `fable` | `claude-fable-5-2` | 1M / 128K | 8 / 40 / 0.20 | Demanding reasoning and long-horizon agentic work |
+| `opus` | `claude-opus-5-5` | 1M / 128K | 4 / 20 / 0.20 | Long-running agentic coding and knowledge work; the "start here" model |
+| `sonnet` | `claude-sonnet-5-5` | 1M / 128K | 2 / 10 / 0.10 | The best speed and intelligence mix for everyday coding and agent work |
 | `haiku` | `claude-haiku-5-5` | 1M / 128K | 0.10 / 0.50 (prompts over 100K: 0.50 / 2.50) | High-volume, latency-sensitive work: classification, extraction, routing, subagent tasks |
 
-Claude Code compacts a chat at about 967K tokens by default, and AgentFrame nudges a chat sooner by its class ([`sessions-registry.md`](sessions-registry.md#session-classes)). Claude Code's settings set no model window.
+Claude Code compacts a chat at about 967K tokens by default, and AgentFrame nudges a chat sooner by its class ([`sessions-registry.md`](sessions-registry.md#session-classes)).
 
 ## Briefing each model
 

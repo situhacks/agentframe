@@ -5,7 +5,8 @@ sweeps expired items, finishes any item a crashed run left firing, checks every 
 `af watch list --due --json`, raises a loop and sends a phone message for each one that is met, and
 writes system/logs/watch-batch/<date-time>.md. The first run from 09:55 each day also runs the
 morning jobs, once, in this order: the bills watch, the loop watch, the loop sweep, the harness review
-(it decides itself whether its 14 days are up), then the loop
+(it decides itself whether its 14 days are up), the transcript archive (a gzip copy of his chat transcripts
+before Claude Code deletes them; a failure is a Problem and stops nothing), then the loop
 push, which carries the queue's phone lines as its lead block, so the morning is one message. A run
 that started before 09:55 and ends after it does the morning jobs then, after the queue.
 Last on every run, after all of that, `af index update` refreshes the search index (240 seconds at most, no model
@@ -86,7 +87,7 @@ LOCK_HELD = "is held by another af process"
 # Each limit covers its old task's worst case. The loop watch stops itself at its deadline and still
 # writes its report; the kill at its limit is the backstop.
 MORNING = (("bills", "bills_watch.py", 130), ("loop-watch", "loop_watch.py", 105), ("loop-sweep", "loop_sweep.py", 30),
-           ("harness-review", "harness_review.py", 2))
+           ("harness-review", "harness_review.py", 2), ("transcript-archive", "transcript_archive.py", 15))
 PUSH = ("push", "push_due_loops.py", 10)
 # After every other step, on every run: `af index update`. Seconds, not minutes. It makes no model call and
 # can only add lines to the report (its step line, and a note when it fails): it never changes the run's exit
@@ -1023,7 +1024,7 @@ def render_report(rn: Run) -> str:
     out = [HEADER, f"Slot: {rn.slot}. Phone: {rn.phone or 'nothing to send'}.\n"]
     if rn.steps:
         out.append("## Steps\n\n" + "\n".join(
-            f"- {name}: " + ("not run" if code is None else "ok" if code == 0 and name == INDEX[0]
+            f"- {name}: " + ("not run" if code is None else "ok" if code == 0 and name in (INDEX[0], "transcript-archive")
                             else f"partial (exit {code})" if code == EXIT_PARTIAL and name in STEP_REPORT
                             else f"exit {code}") + (f" · {lw._code(foot)}" if foot else "")
             for name, code, foot in rn.steps) + "\n")

@@ -124,6 +124,33 @@ fn keyword_search_ranks_by_reciprocal_rank_and_boosts() {
 }
 
 #[test]
+fn the_transcript_archive_is_outside_the_corpus() {
+    let fx = vault();
+    let a = "workspace/_archive/transcripts/c--vault";
+    fx.write(&format!("{a}/notes.md"), "# Transcript note
+
+zebra launch in an archived transcript
+");
+    fx.write(&format!("{a}/sub/more.txt"), "zebra launch more
+");
+    fx.write(&format!("{a}/sid.jsonl.gz"), "not text, but a stray byte run: zebra launch
+");
+    let (code, _, err) = dead(&fx, &["index", "update"]);
+    assert_eq!(code, 0, "{err}");
+    let paths: Vec<String> = db(&fx)
+        .prepare("SELECT path FROM files ORDER BY path")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+    assert!(!paths.iter().any(|p| p.contains("_archive")), "{paths:?}");
+    let (_, out, _) = dead(&fx, &["search", "archived transcript", "--json"]);
+    let hits: Vec<serde_json::Value> = serde_json::from_str(&out).unwrap();
+    assert!(!hits.iter().any(|h| h["path"].as_str().unwrap().contains("_archive")), "{out}");
+}
+
+#[test]
 fn short_tokens_scan_by_like_and_text_output_reads_like_python() {
     let fx = vault();
     dead(&fx, &["index", "update"]);

@@ -408,3 +408,16 @@ fn the_needs_list_example_of_a_decision_made_as_him_is_not_about_money() {
         assert!(!example.to_lowercase().contains(money), "the Decided-as-you example mentions {money:?}: {example}");
     }
 }
+
+#[test]
+fn a_precedent_listed_only_in_the_sources_index_counts() {
+    // A receipt or other binary source has no frontmatter, only its row in sources/INDEX.md.
+    let fx = fixture();
+    start(&fx);
+    fx.write(
+        "workspace/life/sources/INDEX.md",
+        "# Source Index\n\n| ID | File | Date | Description |\n|---|---|---|---|\n| `src-2026-11-04-07` | [`receipt.pdf`](receipt.pdf) | 2026-11-04 | a receipt |\n",
+    );
+    fx.ok(&["needs", "close", "1", "--outcome", "Thursday, like the receipt src-2026-11-04-07", "--as-him"]);
+    assert!(log(&fx).contains("as him ["), "{}", log(&fx));
+}

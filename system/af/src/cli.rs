@@ -137,6 +137,11 @@ enum Cmd {
         #[command(subcommand)]
         cmd: crate::needs::NeedsCmd,
     },
+    /// Act as him when he hands over: start, stop, status, review what was decided in his name
+    Act {
+        #[command(subcommand)]
+        cmd: crate::act::ActCmd,
+    },
     /// The zero-token catch-up: due loops, needs, chats, backlog, boards
     Brief {
         #[arg(long)]
@@ -298,6 +303,7 @@ pub fn run(ctx: &Ctx, argv: &[String]) -> R<i32> {
         Cmd::Source { cmd } => crate::source::run(ctx, cmd),
         Cmd::Data { cmd } => crate::data::run(ctx, cmd),
         Cmd::Needs { cmd } => crate::needs::run(ctx, cmd),
+        Cmd::Act { cmd } => crate::act::run(ctx, cmd),
         Cmd::Brief { json, write } => crate::brief::cmd_brief(ctx, json, write),
         Cmd::Close { slug, force } => crate::close::cmd_close(ctx, &slug, force),
         Cmd::Index { cmd } => crate::index::cmd_index(&ctx.root, &cmd),

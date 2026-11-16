@@ -19,6 +19,7 @@ pub mod life;
 pub mod sessions;
 pub mod open;
 pub mod needs;
+pub mod act;
 pub mod loop_watch;
 pub mod watch;
 pub mod brief;

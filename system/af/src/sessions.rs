@@ -1256,6 +1256,10 @@ pub fn bundle_for_start(
         None if matches!(source, Some("compact") | Some("resume")) => parts.push(OFF_SYSTEM_REMINDER.to_string()),
         None => parts.push(off_system_directive(session_id, live_main(&reg, life::now()).as_ref())),
     }
+    // A handover reaches every chat that can act on it, registered or not; a worker runs one job.
+    if row.as_ref().map_or(true, |r| r.role != "worker") {
+        parts.extend(crate::act::session_line(ctx));
+    }
     let is_main = row.as_ref().map(|r| r.role == "main").unwrap_or(false);
     if is_main {
         if let Some((body, lines, cap)) = life::life_body(ctx)? {

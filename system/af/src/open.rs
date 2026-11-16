@@ -221,6 +221,7 @@ impl OpenDoc {
     pub fn save(&mut self, ctx: &Ctx) -> R<()> {
         self.file.set_lines(&self.lines);
         self.file.save_atomic(&self.path)?;
+        crate::act::settle_expired(ctx);
         crate::needs::refresh(ctx);
         Ok(())
     }

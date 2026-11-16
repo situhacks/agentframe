@@ -72,7 +72,7 @@ fn only_the_window_prints_and_the_newest_line_is_last() {
 
 #[test]
 fn a_window_with_nothing_in_it_says_so_and_exits_0() {
-    let fx = fixture(&[user(-300, "long ago")]);
+    let fx = fixture(&[user(-300, "long ago"), user(300, "much later")]);
     let (code, out, _) = transcript(&fx, &["project/demo", "--around", CENTER]);
     assert_eq!(code, 0);
     assert!(out.contains("nothing said or done in that window"), "{out}");
@@ -169,4 +169,85 @@ fn an_unknown_name_a_bad_time_and_a_missing_transcript_exit_2() {
     let (code, _, err) = transcript(&fx, &["project/ghost", "--around", CENTER]);
     assert_eq!(code, 2, "{err}");
     assert!(err.contains("no transcript on this machine for project/ghost"), "{err}");
+}
+
+#[test]
+fn an_oldest_line_that_mostly_fits_is_trimmed_not_dropped() {
+    let big = format!("FIRSTWORD {} LASTWORD", vec!["filler"; 2200].join(" "));
+    let para = vec!["word"; 500].join(" ");
+    let mut recs = vec![user(-15, &big)];
+    for i in 0..8 {
+        recs.push(user(-10 + i, &format!("later{i} {para}")));
+    }
+    let fx = fixture(&recs);
+    let (code, out, err) = transcript(&fx, &["project/demo", "--around", CENTER]);
+    assert_eq!(code, 0, "{err}");
+    let body: usize = out.lines().filter(|l| l.starts_with('[') || !l.starts_with("af session") && !l.starts_with("(over")).map(|l| l.split_whitespace().count()).sum();
+    assert!(body <= 6000, "{body} words");
+    assert!(out.contains("LASTWORD"), "the end of the old message stays: {out}");
+    assert!(!out.contains("FIRSTWORD"), "its start is the part cut");
+    assert!(out.contains("(trimmed: its first "), "the cut is marked: {out}");
+    assert!(out.contains("0 earlier lines left out"), "no whole line was dropped: {out}");
+    assert!(out.contains("later7") && out.contains("later0"), "{out}");
+}
+
+#[test]
+fn a_compaction_summary_is_not_printed_as_the_users_words() {
+    let fx = fixture(&[
+        user(-1, "a real message"),
+        json!({"type": "user", "isCompactSummary": true, "timestamp": at(0), "message": {"role": "user", "content": "This session is being continued... SUMMARY TEXT"}}),
+        text(1, "reply"),
+    ]);
+    let (_, out, _) = transcript(&fx, &["project/demo", "--around", CENTER]);
+    assert!(!out.contains("SUMMARY TEXT"), "{out}");
+    assert!(out.contains("user: a real message") && out.contains("assistant: reply"));
+}
+
+#[test]
+fn a_window_before_the_transcript_begins_says_so() {
+    let fx = fixture(&[user(0, "the first record")]);
+    let before = (center() - Duration::days(3)).format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let (code, out, _) = transcript(&fx, &["project/demo", "--around", &before]);
+    assert_eq!(code, 0);
+    assert!(out.contains("before this chat's transcript begins") && out.contains("latest session"), "{out}");
+    assert!(!out.contains("nothing said or done"), "{out}");
+    let after = (center() + Duration::days(3)).format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let (_, out, _) = transcript(&fx, &["project/demo", "--around", &after]);
+    assert!(out.contains("after this chat's last record"), "{out}");
+    let (_, out, _) = transcript(&fx, &["project/demo", "--around", CENTER, "--minutes", "1"]);
+    assert!(out.contains("the first record"));
+}
+
+#[test]
+fn a_huge_minutes_value_exits_2_instead_of_crashing() {
+    let fx = fixture(&[text(0, "x")]);
+    for m in ["9999999999999", "9223372036854775807"] {
+        let (code, _, err) = transcript(&fx, &["project/demo", "--around", CENTER, "--minutes", m]);
+        assert_eq!(code, 2, "{m}: {err}");
+        assert!(err.contains("--minutes"), "{err}");
+        assert!(!err.contains("panicked"), "{err}");
+    }
+}
+
+#[test]
+fn the_top_level_timestamp_decides_not_one_inside_a_tool_call() {
+    // The nested timestamp comes first in the line and lies far outside the window.
+    let rec = format!(
+        r#"{{"type":"assistant","message":{{"role":"assistant","content":[{{"type":"tool_use","id":"t","name":"Bash","input":{{"timestamp":"2001-01-01T00:00:00Z","command":"echo hi"}}}}]}},"timestamp":"{}"}}"#,
+        at(0)
+    );
+    let fx = Fx::new();
+    fx.write(&format!("cfg/projects/p/{SESSION}.jsonl"), &format!("{rec}
+"));
+    fx.ok(&["session", "register", "project/demo", "--session", SESSION]);
+    let (_, out, _) = transcript(&fx, &["project/demo", "--around", CENTER]);
+    assert!(out.contains("tool: Bash echo hi"), "{out}");
+}
+
+#[test]
+fn a_time_without_seconds_and_with_z_or_an_offset_is_accepted() {
+    assert_eq!(afcore::transcript::parse_around("2026-11-15T23:12Z"), Some(center()));
+    assert_eq!(afcore::transcript::parse_around("2026-11-15T23:12:00Z"), Some(center()));
+    assert_eq!(afcore::transcript::parse_around("2026-11-15T22:12-01:00"), Some(center()));
+    assert_eq!(afcore::transcript::parse_around("2026-11-15T23:12"), afcore::transcript::parse_around("2026-11-15 23:12"));
 }

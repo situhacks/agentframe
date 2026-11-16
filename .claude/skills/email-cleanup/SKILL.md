@@ -7,7 +7,7 @@ This sets the order and the approvals. How to drive each mail client is yours to
 
 ## 1. File the order
 
-File his instruction verbatim in `workspace/life/sources/orders/` per [`source-record.md`](../../../library/schema/source-record.md). Every loop and log below cites it.
+File his instruction verbatim with `af source add --type order` per [`source-record.md`](../../../library/schema/source-record.md). Every loop and log below cites it.
 
 ## 2. Census, then his marks
 

@@ -383,14 +383,32 @@ def norm_path(p: str) -> str:
     return p
 
 
+PATH_ROOTS = ("system", "library", "workspace", ".claude", ".github", "docs")
+PATH_TOKEN = re.compile(r"^[\w.@\-/\\]+$")
+FILE_EXT = re.compile(r"[\w\-]\.[A-Za-z0-9]{1,5}$")
+
+
+def is_path_like(tok: str) -> bool:
+    """A word that names a file or folder: it ends in a file extension or a slash, or it starts in a repo root."""
+    if not PATH_TOKEN.match(tok):
+        return False
+    tok = tok.replace("\\", "/")
+    return tok not in NOT_PATHS and (bool(FILE_EXT.search(tok)) or tok.endswith("/") or ("/" in tok and tok.split("/")[0] in PATH_ROOTS))
+
+
 def surface_paths(line: str) -> list[str]:
-    """The paths on a `Surfaces:` line: the backticked ones when there are any, else the first word of each
-    comma-separated piece."""
-    if "`" in line:
-        found = re.findall(r"`([^`]+)`", line)
-    else:
-        found = [piece.split()[0] for piece in re.split(r"[,;]", line) if piece.split()]
-    return [n for n in (norm_path(f) for f in found) if n]
+    """The paths on a `Surfaces:` line. Parenthetical prose goes first, backticks are only unwrapped, and a word
+    counts only when it looks like a path, so "(lifted, the old one)" and "or a new places.rs" invent none."""
+    line = re.sub(r"\([^)]*\)", " ", line).replace("`", " ")
+    found = []
+    for word in re.split(r"[\s,;]+", line):
+        word = word.lstrip("'\"").rstrip("'\".:")
+        if not is_path_like(word):
+            continue
+        n = norm_path(word)
+        if n and n not in found:
+            found.append(n)
+    return found
 
 
 def backlog_rows(text: str, done: bool) -> list[dict]:
@@ -409,20 +427,38 @@ def backlog_rows(text: str, done: bool) -> list[dict]:
     return rows
 
 
-# Touched by almost every fix, so a shared one says nothing: the test folders and the routers' and readmes' prose.
-COMMON_PATHS = ("system/tests/", "system/af/tests/", "AGENTS", "README.md", "CHANGELOG.md")
+# Touched by almost every fix, so a shared one says nothing. The report's header line names them.
+COMMON_FOLDERS = ("system/tests/", "system/af/tests/")
+COMMON_FILES = ("README.md", "CHANGELOG.md", "library/schema/README.md", "system/af/src/cli.rs", "system/af/src/lib.rs")
+NOT_PATHS = ("e.g", "i.e", "etc")
+
+
+def common(path: str) -> bool:
+    return path.startswith(COMMON_FOLDERS) or path in COMMON_FILES
+
+
+def is_folder(path: str) -> bool:
+    """A path with a trailing slash, or whose last part has no extension (`system/af`), is a folder."""
+    last = path.rstrip("/").rsplit("/", 1)[-1]
+    return path.endswith("/") or "." not in last
+
+
+def covers(folder: str, path: str) -> bool:
+    return path == folder or path.startswith(folder.rstrip("/") + "/")
 
 
 def shared_paths(a: list[str], b: list[str]) -> list[str]:
-    """Paths both lists name, the common ones left out; a path ending in `/` is a folder and covers what is under it."""
+    """Paths both lists name, the common ones left out. A folder covers what is under it, with or without its
+    trailing slash; the longer path is the one shown."""
     out = []
     for x in a:
         for y in b:
-            if x.startswith(COMMON_PATHS) or y.startswith(COMMON_PATHS):
+            if common(x) or common(y):
                 continue
-            hit = x == y or (y.endswith("/") and x.startswith(y)) or (x.endswith("/") and y.startswith(x))
-            if hit and (x if len(x) >= len(y) else y) not in out:
-                out.append(x if len(x) >= len(y) else y)
+            hit = x == y or (is_folder(y) and covers(y, x)) or (is_folder(x) and covers(x, y))
+            shown = x if len(x) >= len(y) else y
+            if hit and shown not in out:
+                out.append(shown)
     return out
 
 
@@ -466,7 +502,9 @@ def check_came_back(root: Path, today: dt.date) -> tuple[int, list[str]]:
         missing = [p for p in e["paths"] if not (root / p).exists()]
         if missing:
             gone.append(f"{e['id']} {e['title']}: guard path gone: " + ", ".join(f"`{m}`" for m in missing))
-    out = [f"**Rows since {start.isoformat()} that touch the same paths as a row completed before it ({len(pairs)})**",
+    out = ["Paths left out of the match, since almost every fix touches them: "
+           + ", ".join(f"`{p}`" for p in (*COMMON_FOLDERS, *COMMON_FILES)) + ".", "",
+           f"**Rows since {start.isoformat()} that touch the same paths as a row completed before it ({len(pairs)})**",
            *(bullets(pairs) or ["nothing"]), "",
            f"**Learnings entries whose guard path no longer exists ({len(gone)})**", *(bullets(gone) or ["nothing"])]
     if pairs or gone:

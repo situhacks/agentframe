@@ -620,10 +620,38 @@ class CameBackTests(Base):
         self.assertIn("`system/af/src/hooks/source_guard.rs`", self.came_back())
 
     def test_paths_every_fix_touches_are_not_a_reason_to_pair_two_rows(self):
-        shared = "system/tests/test_x.py, system/af/tests/, AGENTS.builder.md, README.md, CHANGELOG.md"
+        shared = "system/tests/test_x.py, system/af/tests/, README.md, CHANGELOG.md, system/af/src/cli.rs, system/af/src/lib.rs, library/schema/README.md"
         self.put("system/backlog-completed.md", "# Completed\n\n" + bb("BB-2026-10-01-01", "2026-10-01", shared + ", system/a.rs", done="2026-10-05"))
         self.put("system/backlog.md", "# Backlog\n\n" + bb("BB-2026-11-10-01", ago(4), shared + ", system/b.rs"))
-        self.assertRegex(self.came_back(), r"## 11\. Came back \(0\)")
+        sec = self.came_back()
+        self.assertRegex(sec, r"## 11\. Came back \(0\)")
+        for p in ("system/tests/", "system/af/tests/", "README.md", "CHANGELOG.md", "system/af/src/cli.rs"):
+            self.assertIn(f"`{p}`", sec.split("**")[0], "the header line names what is left out")
+
+    def test_a_repeated_router_is_the_classic_came_back_and_is_listed(self):
+        self.put("system/backlog-completed.md", "# Completed\n\n" + bb("BB-2026-10-01-01", "2026-10-01", "AGENTS.builder.md, system/a.rs", done="2026-10-05"))
+        self.put("system/backlog.md", "# Backlog\n\n" + bb("BB-2026-11-10-01", ago(4), "AGENTS.builder.md"))
+        self.assertIn("`AGENTS.builder.md`", self.came_back())
+
+    def test_surfaces_lines_shaped_like_the_real_backlog_give_only_paths(self):
+        sp = hr.surface_paths
+        self.assertEqual(sp("system/af/src/open.rs, library/schema/open-loops.md, system/tools/notify.py (new, lifted from groceries), "
+                            "system/tools/push-due-loops.ps1 and register-daily-reminders.ps1 (new), AGENTS.md"),
+                         ["system/af/src/open.rs", "library/schema/open-loops.md", "system/tools/notify.py",
+                          "system/tools/push-due-loops.ps1", "register-daily-reminders.ps1", "AGENTS.md"])
+        self.assertEqual(sp("AGENTS.md (dispatch section, the `claude --name` lines), system/af (session register / list, the hook output), system/sessions/registry.md"),
+                         ["AGENTS.md", "system/af", "system/sessions/registry.md"])
+        self.assertEqual(sp("system/af/src/cli.rs, system/af/src/life.rs or a new places.rs, system/af/tests/, .claude/agents/README.md if present"),
+                         ["system/af/src/cli.rs", "system/af/src/life.rs", "places.rs", "system/af/tests/", ".claude/agents/README.md"])
+        self.assertEqual(sp("`system/af/src/open.rs`, system/other.md, `library/a.md` (and the schema)"),
+                         ["system/af/src/open.rs", "system/other.md", "library/a.md"], "backticks and bare paths mix")
+        self.assertEqual(sp("the old way, e.g. a rewrite, and/or more"), [])
+
+    def test_a_folder_without_its_trailing_slash_covers_the_files_under_it(self):
+        self.put("system/backlog-completed.md", "# Completed\n\n" + bb("BB-2026-10-01-01", "2026-10-01", "system/af (session verbs)", done="2026-10-05"))
+        self.put("system/backlog.md", "# Backlog\n\n" + bb("BB-2026-11-10-01", ago(4), "system/af/src/sessions.rs"))
+        self.assertIn("`system/af/src/sessions.rs`", self.came_back())
+        self.assertEqual(hr.shared_paths(["system/afx/y.rs"], ["system/af"]), [], "a name that only starts the same is not under it")
 
     def test_a_learnings_entry_whose_guard_path_is_gone_is_listed_and_one_that_exists_is_not(self):
         self.put("system/tools/real.py", "x = 1\n")

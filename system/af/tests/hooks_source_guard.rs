@@ -121,3 +121,20 @@ fn test_dispatch_denies_a_write_and_nothing_is_written() {
     let ok = dispatch(&g.h, "pre-tool-use", &payload("Write", &g.fx.p("workspace/life/knowledge/x.md"), &g.h.root).to_string()).unwrap();
     assert!(ok.is_none());
 }
+
+#[test]
+fn test_the_inbox_staging_folder_is_not_denied_but_a_look_alike_is() {
+    let g = G::new();
+    for p in [
+        "workspace/life/sources/inbox/email-2026-11-15-thread.md",
+        "workspace/life/sources/inbox/order-2026-11-15-note.md",
+        "workspace/life/sources/inbox/deeper/x.md",
+    ] {
+        assert!(g.decide("Write", &g.fx.p(p)).is_none(), "{p}");
+    }
+    let rel = payload("Write", "workspace/life/sources/inbox/order-2026-11-15-note.md", &g.h.root);
+    assert!(source_guard::decide(&g.h, &rel).is_none(), "relative too");
+    assert_eq!(reason(&g.decide("Write", &g.fx.p("workspace/life/sources/inbox-extra/x.md"))).0, "deny");
+    assert_eq!(reason(&g.decide("Write", &g.fx.p("workspace/life/sources/orders/inbox/x.md"))).0, "deny");
+    assert_eq!(reason(&g.decide("Write", &g.fx.p("workspace/life/sources/inbox.md"))).0, "deny");
+}

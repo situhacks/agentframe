@@ -23,7 +23,7 @@ Watch: `system/tools/claude_panel.ps1`, any tool that drives a Claude Code or VS
 ## L-2026-11-15-01 · A source file was written by hand and took an id another chat held
 Seen: a main chat, 2026-11-15; order src-2026-11-15-08
 Root cause: the id was read from the folder and then written without a lock, so two chats picked the same number; `af source add` took the lock but nothing stopped the hand route.
-Guard: `system/af/src/hooks/source_guard.rs` denies a `Write` that would create a new file under workspace/life/sources/ and names `af source add`; edits to existing files and to the index stay allowed; test `system/af/tests/hooks_source_guard.rs`
+Guard: `system/af/src/hooks/source_guard.rs` denies a `Write` that would create a new file under workspace/life/sources/ and names `af source add`; edits to existing files and to the index stay allowed; the staging folder sources/inbox/ stays allowed for the file skill; not caught: a file made by a Bash or PowerShell command or through a UNC `localhost` share path, where the duplicate-id check in `af doctor` is the backstop; test `system/af/tests/hooks_source_guard.rs`
 Watch: `workspace/life/sources/`, `system/af/src/source.rs`, any verb that hands out the next id
 
 ## L-2026-11-15-02 · A clock time was written into a report from memory

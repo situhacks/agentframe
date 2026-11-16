@@ -17,4 +17,4 @@ Watch: `workspace/life/sources/`, `system/af/src/source.rs`
 - `Watch:` lists the paths or verbs where the same class of mistake could appear, in backticks.
 - Fix a repeated mistake at the highest level that holds ([`AGENTS.builder.md`](../../AGENTS.builder.md#enforcement)), then write the entry, Guard first. Update the entry when the mistake comes back; a mistake that can no longer happen is deleted, with its guard.
 - The harness review lists an entry whose `Guard:` path no longer exists. A test reads the real file and fails on a guard path that is missing.
-- A private log for project and life-layer mistakes takes the same shape under `workspace/`.
+- `workspace/learnings.md` is the private log for project and life-layer mistakes, in the same shape; `af new-project` creates it for a pack with `learnings: true`, and the harness review checks its guard paths too.

@@ -679,6 +679,40 @@ class CameBackTests(Base):
         self.assertIn("worth a look", self.report().splitlines()[0])
         self.assertEqual(len(self.fake.adds()), 1, "a came-back item raises the loop like any other")
 
+    def test_a_workspace_learnings_entry_with_a_missing_guard_path_is_listed_under_its_file(self):
+        self.put("system/tools/real.py", "x = 1\n")
+        self.put("system/learnings.md", "# Learnings\n\n" + learning("L-2026-11-01-01", "lost here", "`system/tools/gone.py`"))
+        self.put("workspace/learnings.md", "# Learnings\n\n"
+                 + learning("L-2026-11-04-01", "kept", "`system/tools/real.py`")
+                 + learning("L-2026-11-05-01", "lost there", "`workspace/projects/x/code/tests/gone.py`, `system/tools/real.py`"))
+        sec = self.came_back()
+        self.assertIn("`workspace/learnings.md` L-2026-11-05-01 lost there: guard path gone: `workspace/projects/x/code/tests/gone.py`", sec)
+        self.assertIn("`system/learnings.md` L-2026-11-01-01 lost here: guard path gone: `system/tools/gone.py`", sec)
+        self.assertNotIn("L-2026-11-04-01", sec)
+        self.assertRegex(sec, r"## 11\. Came back \(2\)")
+
+    def test_the_footer_names_the_file_of_each_listed_entry(self):
+        self.put("system/learnings.md", "# Learnings\n\n" + learning("L-2026-11-01-01", "lost here", "`system/tools/gone.py`"))
+        self.assertIn("Write each root cause into `system/learnings.md`, Guard first.", self.came_back())
+
+    def test_the_footer_names_only_the_workspace_log_when_only_its_entries_are_listed(self):
+        self.put("workspace/learnings.md", "# Learnings\n\n" + learning("L-2026-11-05-01", "lost there", "`workspace/x/gone.py`"))
+        sec = self.came_back()
+        self.assertIn("Write each root cause into `workspace/learnings.md`, Guard first.", sec)
+        self.assertNotIn("into `system/learnings.md`", sec)
+
+    def test_the_footer_names_both_files_when_both_list_entries(self):
+        self.put("system/learnings.md", "# Learnings\n\n" + learning("L-2026-11-01-01", "lost here", "`system/tools/gone.py`"))
+        self.put("workspace/learnings.md", "# Learnings\n\n" + learning("L-2026-11-05-01", "lost there", "`workspace/x/gone.py`"))
+        self.assertIn("Write each root cause into `system/learnings.md` and `workspace/learnings.md`, Guard first.", self.came_back())
+
+    def test_no_workspace_learnings_file_adds_nothing_to_the_section(self):
+        self.put("system/tools/real.py", "x = 1\n")
+        self.put("system/learnings.md", "# Learnings\n\n" + learning("L-2026-11-01-01", "kept", "`system/tools/real.py`"))
+        sec = self.came_back()
+        self.assertNotIn("workspace/learnings.md", sec)
+        self.assertRegex(sec, r"## 11\. Came back \(0\)")
+
     def test_the_real_learnings_file_parses_and_every_guard_path_exists(self):
         entries = hr.parse_learnings((ROOT / "system/learnings.md").read_text(encoding="utf-8"))
         self.assertTrue(5 <= len(entries) <= 8, [e["id"] for e in entries])

@@ -391,6 +391,33 @@ pub fn binary_head_notes(ctx: &Ctx, cdir: &str) -> R<Vec<String>> {
     Ok(notes)
 }
 
+/// A `.git` file or folder inside a project's `code/` folder: `af save` would store the nested
+/// repository as one opaque entry, and the project's diff would show nothing of its changes.
+pub fn nested_repo_issues(ctx: &Ctx, cdir: &str) -> R<Vec<String>> {
+    let mut issues = Vec::new();
+    let code = join(cdir, "code");
+    if !pyos::isdir(&code) {
+        return Ok(issues);
+    }
+    let mut found: Vec<String> = Vec::new();
+    pyos::walk(&code, &mut |dir: &str, dirs: &mut Vec<String>, files: &[String]| {
+        if dirs.iter().any(|d| d == ".git") || files.iter().any(|f| f == ".git") {
+            found.push(join(dir, ".git"));
+        }
+        dirs.retain(|d| d != ".git" && !SKIP_DIRS_ANYWHERE_DOCTOR.contains(&d.as_str()));
+    });
+    found.sort();
+    for f in found {
+        issues.push(format!(
+            "{}: a .git inside a project's code/ folder; code/ holds plain files, so copy the files without .git (history stays in the original repo), then remove this one",
+            ctx.rel(&f)?
+        ));
+    }
+    Ok(issues)
+}
+
+const SKIP_DIRS_ANYWHERE_DOCTOR: [&str; 4] = ["node_modules", ".venv", "venv", "target"];
+
 /// Folders directly under workspace/projects/ that carry no project.md: invisible to every
 /// button, guard, and check, so they are an issue. `completed/` and dot-folders are skipped.
 pub fn stray_project_folder_issues(ctx: &Ctx) -> R<Vec<String>> {
@@ -1150,6 +1177,7 @@ pub fn cmd_doctor(ctx: &Ctx, project: Option<&str>) -> R<i32> {
     let (mut all_issues, mut notes) = (Vec::new(), Vec::new());
     for d in &dirs {
         all_issues.extend(check_project(ctx, d)?);
+        all_issues.extend(nested_repo_issues(ctx, d)?);
         if let Some(n) = activity_size_note(ctx, d)? {
             notes.push(n);
         }

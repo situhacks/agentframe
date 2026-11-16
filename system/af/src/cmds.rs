@@ -466,6 +466,16 @@ pub fn cmd_new_project(ctx: &Ctx, slug: &str, domain: &str, name: Option<&str>) 
     if pyos::exists(&cdir) {
         die!("{cdir} already exists");
     }
+    // Everything that can refuse runs before the first write, so a refusal leaves no folder.
+    let (pack_dirs, pack_learnings) = pack_plan(&desc, domain)?;
+    let name = match nonempty(name) {
+        Some(n) => n.to_string(),
+        None => pyos::py_title(&slug.replace('-', " ")),
+    };
+    let text = core::py_format(
+        &read(&skel_path)?,
+        &[("name", &name), ("slug", slug), ("date", &today()), ("domain", domain), ("ts", &now_iso())],
+    )?;
     pyos::makedirs(&cdir)?;
     for sub in ["sources", "knowledge"] {
         pyos::makedirs(&join(&cdir, sub))?;
@@ -477,20 +487,90 @@ pub fn cmd_new_project(ctx: &Ctx, slug: &str, domain: &str, name: Option<&str>) 
         &pyos::join_all(&[&cdir, "sources", "INDEX.md"]),
         "# Source Index\n\n| ID | File | Date | Description |\n|---|---|---|---|\n",
     )?;
-    let name = match nonempty(name) {
-        Some(n) => n.to_string(),
-        None => pyos::py_title(&slug.replace('-', " ")),
-    };
-    let text = core::py_format(
-        &read(&skel_path)?,
-        &[("name", &name), ("slug", slug), ("date", &today()), ("domain", domain), ("ts", &now_iso())],
-    )?;
     write(&join(&cdir, "project.md"), &text)?;
+    for dir in &pack_dirs {
+        pyos::makedirs(&join(&cdir, dir))?;
+    }
+    copy_scaffold(&join(&pack_dir, "scaffold"), &cdir)?;
+    let mut learnings_made = false;
+    if pack_learnings {
+        let log = pyos::join_all(&[&ctx.root, "workspace", "learnings.md"]);
+        if !pyos::exists(&log) {
+            write(&log, LEARNINGS_STUB)?;
+            learnings_made = true;
+        }
+    }
     append_activity(&cdir, &format!("project_started: {name} scaffolded ({domain})"))?;
 
     outln!("af new-project: workspace/projects/{slug}/ scaffolded ({domain})");
+    if learnings_made {
+        outln!("af new-project: workspace/learnings.md created");
+    }
     outln!("\nJudgment (stays with the agent):");
     outln!("  - Load library/process/project-flow.md and run its kickoff: propose the plan");
     outln!("    (objective, phases if any, runway, parked) for the operator to narrow.");
+    if pyos::isfile(&join(&pack_dir, "production.md")) {
+        outln!("  - Load library/domains/{domain}/production.md: it is this domain's runbook.");
+    }
     Ok(())
+}
+
+/// The `dirs` and `learnings` fields of a pack descriptor, checked whole. A field that is
+/// present but malformed, or a `dirs` name that is not a plain folder inside the project
+/// (absolute, a drive, a UNC path or a `..` step), is refused naming the field.
+pub fn pack_plan(desc: &str, domain: &str) -> R<(Vec<String>, bool)> {
+    let mut dirs = Vec::new();
+    if fm::has_field(desc, "dirs") {
+        let raw = get_scalar(desc, "dirs").unwrap_or_default();
+        dirs = fm::fm_list(desc, "dirs");
+        let bracketed = raw.starts_with('[') && raw.ends_with(']');
+        let empty_list = bracketed && raw[1..raw.len() - 1].trim().is_empty();
+        let list_like = if raw.is_empty() { !dirs.is_empty() } else { bracketed && (empty_list || !dirs.is_empty()) };
+        if !list_like {
+            die!("domain '{domain}': pack.md field 'dirs' must be a list of folder names, like dirs: [code]");
+        }
+    }
+    for dir in &dirs {
+        let escapes = dir.trim().is_empty()
+            || dir.starts_with(['/', '\\'])
+            || dir.contains(':')
+            || dir.split(['/', '\\']).any(|part| part == "..");
+        if escapes {
+            die!("domain '{domain}': pack.md field 'dirs' entry '{dir}' must be a relative folder name inside the project");
+        }
+    }
+    let learnings = match get_scalar(desc, "learnings").as_deref() {
+        None | Some("false") => false,
+        Some("true") => true,
+        Some(other) => die!("domain '{domain}': pack.md field 'learnings' must be true or false, not '{other}'"),
+    };
+    Ok((dirs, learnings))
+}
+
+const LEARNINGS_STUB: &str = "# Learnings\n\nMistakes from projects and the life layer that came back or cost a real failure, and the guards that now stop them. The shape of an entry is in library/schema/learnings.md.\n";
+
+/// Copy every file under `src` into `dst` at the same relative path, never over an existing file.
+/// A missing `src` copies nothing. Returns the relative paths copied.
+pub fn copy_scaffold(src: &str, dst: &str) -> R<Vec<String>> {
+    let mut found: Vec<String> = Vec::new();
+    pyos::walk(src, &mut |dir: &str, _dirs: &mut Vec<String>, files: &[String]| {
+        for f in files {
+            let rel = pyos::relpath(&join(dir, f), src).unwrap_or_default().replace('\\', "/");
+            found.push(rel);
+        }
+    });
+    found.sort();
+    let mut copied = Vec::new();
+    for rel in found {
+        let to = join(dst, &rel);
+        if pyos::lexists(&to) {
+            continue;
+        }
+        if let Some(parent) = std::path::Path::new(&to).parent() {
+            pyos::makedirs(&parent.to_string_lossy())?;
+        }
+        std::fs::copy(join(src, &rel), &to).map_err(|e| pyos::os_error(&e, &to))?;
+        copied.push(rel);
+    }
+    Ok(copied)
 }

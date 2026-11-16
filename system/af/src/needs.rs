@@ -818,6 +818,10 @@ fn cmd_add_unlocked(ctx: &Ctx, a: &NewNeed) -> R<i32> {
     if text.is_empty() {
         die!("a needs item needs its question");
     }
+    crate::act::refuse_mark("the question", &text)?;
+    for v in a.rec.iter().copied().chain(a.why).chain(a.options.iter().map(String::as_str)) {
+        crate::act::refuse_mark("a field", v)?;
+    }
     for t in [" · need ", " · detail ", " · rec: ", " · options: ", " · why: ", " · more: "] {
         if text.contains(t) {
             die!("the question may not contain '{}' (it is a field separator on the line); reword it: {text}", t.trim());
@@ -879,6 +883,9 @@ fn cmd_set(ctx: &Ctx, target: &str, c: &Changes) -> R<i32> {
 fn cmd_set_unlocked(ctx: &Ctx, target: &str, c: &Changes) -> R<i32> {
     if c.rec.is_none() && c.options.is_empty() && c.why.is_none() && c.more.is_none() && !c.drop_detail {
         die!("af needs set needs at least one of --rec, --option, --why, --more, --drop-detail");
+    }
+    for v in c.rec.iter().copied().chain(c.why).chain(c.options.iter().map(String::as_str)) {
+        crate::act::refuse_mark("a field", v)?;
     }
     let mut doc = match OpenDoc::load(ctx)? {
         Some(d) => d,
@@ -966,7 +973,7 @@ fn cmd_close_unlocked(ctx: &Ctx, target: &str, outcome: &str, as_him: bool) -> R
         None => die!("{OPEN_REL} not found"),
     };
     let hit = find_item(&doc, target)?;
-    let outcome = if as_him { crate::act::as_him_outcome(ctx, outcome)? } else { outcome.to_string() };
+    let outcome = if as_him { crate::act::as_him_outcome(ctx, outcome)? } else { crate::act::plain_close_outcome(ctx, outcome)? };
     open::close_loop(ctx, &mut doc, &hit, &outcome, false, "af needs close")
 }
 

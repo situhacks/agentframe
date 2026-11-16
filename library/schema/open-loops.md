@@ -35,7 +35,7 @@ Due loops print at the start of every registered interactive chat and after comp
 | Verb | Effect |
 |---|---|
 | `af open add "<text>" [--nudge <date or +Nd>] [--every <monthly, weekly, or Nd>] [--from <id>] [--section "<heading>"]` | Appends a line with today's date (default section `Waiting on the operator`); `--every` needs `--nudge` |
-| `af open close <n or text prefix> --outcome "<text>" [--final]` | Moves the loop to the month log, or re-dates a recurring one a period on; `--final` ends a recurring loop; refuses an ambiguous prefix; a needs item closes as `af needs close` does |
+| `af open close <n or text prefix> --outcome "<text>" [--final]` | Moves the loop to the month log, or re-dates a recurring one a period on; `--final` ends a recurring loop; refuses an ambiguous prefix; refuses a needs item and points at `af needs close` |
 | `af open redate <n or text prefix> --nudge <date or +Nd>` | Changes the nudge date in place; opened date, text, period, section, and source stay; the log records it |
 | `af open due [--json]` | Loops nudged today or earlier and dated needs items from their date, oldest first, with their age and period; the JSON gives each loop's nearest heading as `section` and its enclosing `##` as `top`, and a needs item also carries `need` and `detail` |
 | `af open watch-reviewed` | Marks the [loop watch](loop-watch.md) report as read |

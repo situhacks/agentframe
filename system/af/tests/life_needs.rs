@@ -207,13 +207,16 @@ fn a_closed_detail_never_overwrites_an_earlier_one() {
 }
 
 #[test]
-fn open_close_on_a_marked_loop_does_the_same_and_an_unmarked_loop_leaves_the_view_alone() {
+fn open_close_refuses_a_marked_loop_and_an_unmarked_loop_leaves_the_view_alone() {
     let fx = with_item("q", "Decide?", "yes");
     fx.ok(&["open", "add", "plain loop"]);
     let view = fx.read(VIEW);
     fx.ok(&["open", "close", "plain", "--outcome", "done"]);
     assert_eq!(fx.read(VIEW), view);
-    fx.ok(&["open", "close", "Decide", "--outcome", "decided"]);
+    let e = fail(&fx, &["open", "close", "Decide", "--outcome", "decided"]);
+    assert!(e.contains("af needs close"), "{e}");
+    assert!(fx.read(VIEW).contains("## Now (1)"));
+    fx.ok(&["needs", "close", "Decide", "--outcome", "decided"]);
     assert!(fx.read(VIEW).contains("## Now (0)"));
     assert!(fx.path("workspace/life/needs/closed/q.md").exists());
     assert_eq!(issues(&fx), Vec::<String>::new());

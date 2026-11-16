@@ -11,7 +11,7 @@ use chrono::{NaiveDateTime, Timelike};
 
 pub const LIFE_CAP_DEFAULT: usize = 200;
 pub const INDEX_STALE_HOURS: i64 = 24;
-pub const LOG_KINDS: [&str; 5] = ["closed", "decision", "event", "project_closed", "session_ended"];
+pub const LOG_KINDS: [&str; 7] = ["closed", "decision", "event", "project_closed", "session_ended", "act_as_me_ended", "act_review"];
 
 // ------------------------------------------------------------------ paths
 

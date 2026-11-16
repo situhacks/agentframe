@@ -221,6 +221,7 @@ impl OpenDoc {
     pub fn save(&mut self, ctx: &Ctx) -> R<()> {
         self.file.set_lines(&self.lines);
         self.file.save_atomic(&self.path)?;
+        crate::act::settle_expired(ctx);
         crate::needs::refresh(ctx);
         Ok(())
     }
@@ -347,6 +348,7 @@ fn add_loop_unlocked(
     if text.is_empty() {
         die!("an open loop needs text");
     }
+    crate::act::refuse_mark("the loop text", &text)?;
     let nudge = match nudge {
         Some(v) => match parse_nudge(v, today) {
             Some(d) => Some(d),
@@ -458,6 +460,10 @@ fn cmd_close_unlocked(ctx: &Ctx, target: &str, outcome: &str, final_: bool) -> R
         None => die!("{OPEN_REL} not found"),
     };
     let hit = find_target(&doc, target)?;
+    if hit.need.is_some() {
+        die!("'{}' is on the needs list; close it with af needs close (a decision made in his name uses --as-him)", hit.text);
+    }
+    crate::act::refuse_mark("--outcome", outcome)?;
     close_loop(ctx, &mut doc, &hit, outcome, final_, "af open close")
 }
 

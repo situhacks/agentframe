@@ -371,13 +371,16 @@ pub struct Lists {
     /// others owe. Main reviews and closes the rest, so what stays here is his to do.
     pub todo: Vec<Loop>,
     pub later: Vec<Item>,
+    /// Closes made as him that he has not yet reviewed (`af act review`).
+    pub decided: Vec<crate::act::Decided>,
 }
 
 impl Lists {
     pub fn of(ctx: &Ctx, doc: Option<&OpenDoc>) -> Lists {
         let today = today_date();
+        let decided = crate::act::unseen(ctx);
         let Some(doc) = doc else {
-            return Lists { now: Vec::new(), todo: Vec::new(), later: Vec::new() };
+            return Lists { now: Vec::new(), todo: Vec::new(), later: Vec::new(), decided };
         };
         let (now, later) = items(ctx, doc, today);
         let todo = doc
@@ -386,11 +389,11 @@ impl Lists {
             .map(|(l, _)| l)
             .filter(|l| l.need.is_none() && l.top != OTHERS_SECTION && l.section != OTHERS_SECTION)
             .collect();
-        Lists { now, todo, later }
+        Lists { now, todo, later, decided }
     }
 
     fn is_empty(&self) -> bool {
-        self.now.is_empty() && self.todo.is_empty() && self.later.is_empty()
+        self.now.is_empty() && self.todo.is_empty() && self.later.is_empty() && self.decided.is_empty()
     }
 }
 
@@ -515,6 +518,10 @@ fn view_text(lists: &Lists) -> String {
     s.push_str(&section("Do", &["To do", "Due", "Waiting since"], lists.todo.iter().map(do_row).collect(), Vec::new()));
     let later_blocks = lists.later.iter().filter_map(block).collect();
     s.push_str(&section("Later", &["When", "Decision", "Recommendation", "More"], lists.later.iter().map(later_row).collect(), later_blocks));
+    if !lists.decided.is_empty() {
+        let rows = lists.decided.iter().map(|d| vec![d.when.clone(), cell(&d.question), cell(&d.outcome)]).collect();
+        s.push_str(&section("Decided as you", &["When", "Decision", "What I chose"], rows, Vec::new()));
+    }
     s
 }
 
@@ -550,10 +557,11 @@ pub fn refresh(ctx: &Ctx) {
 /// The one line a reply to him ends with, and what every surface leads with.
 pub fn summary(lists: &Lists) -> String {
     let (now, todo, later) = (lists.now.len(), lists.todo.len(), lists.later.len());
+    let decided = if lists.decided.is_empty() { String::new() } else { format!(", {} decided as you", lists.decided.len()) };
     if now == 0 && todo == 0 {
-        return format!("needs you: none now, {later} later ({VIEW_REL})");
+        return format!("needs you: none now, {later} later{decided} ({VIEW_REL})");
     }
-    format!("needs you: {now} now, {todo} to do, {later} later ({VIEW_REL})")
+    format!("needs you: {now} now, {todo} to do, {later} later{decided} ({VIEW_REL})")
 }
 
 /// ` · <where>` for what an item links: its old detail file, else its `more:` document.
@@ -592,7 +600,8 @@ pub fn brief_parts(ctx: &Ctx, doc: Option<&OpenDoc>) -> (Option<String>, Value) 
     if lists.is_empty() {
         return (None, js);
     }
-    let mut s = format!("## Needs you ({} now, {} to do, {} later)", now.len(), lists.todo.len(), later.len());
+    let decided = if lists.decided.is_empty() { String::new() } else { format!(", {} decided as you", lists.decided.len()) };
+    let mut s = format!("## Needs you ({} now, {} to do, {} later{decided})", now.len(), lists.todo.len(), later.len());
     for i in now {
         s.push('\n');
         s.push_str(&surface_line(i));
@@ -695,6 +704,9 @@ pub enum NeedsCmd {
         target: String,
         #[arg(long)]
         outcome: String,
+        /// decided in his name under a handover (af act); the outcome must name the precedent it leaned on
+        #[arg(long)]
+        as_him: bool,
     },
     /// Change an item's state; a trigger that fired moves it with --now
     Move {
@@ -732,7 +744,7 @@ pub fn run(ctx: &Ctx, cmd: NeedsCmd) -> R<i32> {
             let s = Changes { rec: rec.as_deref(), options: &options, why: why.as_deref(), more: more.as_deref(), drop_detail };
             cmd_set(ctx, &target, &s)
         }
-        NeedsCmd::Close { target, outcome } => cmd_close(ctx, &target, &outcome),
+        NeedsCmd::Close { target, outcome, as_him } => cmd_close(ctx, &target, &outcome, as_him),
         NeedsCmd::Move { target, now, on, when } => cmd_move(ctx, &target, now, on.as_deref(), when.as_deref()),
         NeedsCmd::List => cmd_list(ctx),
         NeedsCmd::Render => {
@@ -806,6 +818,10 @@ fn cmd_add_unlocked(ctx: &Ctx, a: &NewNeed) -> R<i32> {
     if text.is_empty() {
         die!("a needs item needs its question");
     }
+    crate::act::refuse_mark("the question", &text)?;
+    for v in a.rec.iter().copied().chain(a.why).chain(a.options.iter().map(String::as_str)) {
+        crate::act::refuse_mark("a field", v)?;
+    }
     for t in [" · need ", " · detail ", " · rec: ", " · options: ", " · why: ", " · more: "] {
         if text.contains(t) {
             die!("the question may not contain '{}' (it is a field separator on the line); reword it: {text}", t.trim());
@@ -867,6 +883,9 @@ fn cmd_set(ctx: &Ctx, target: &str, c: &Changes) -> R<i32> {
 fn cmd_set_unlocked(ctx: &Ctx, target: &str, c: &Changes) -> R<i32> {
     if c.rec.is_none() && c.options.is_empty() && c.why.is_none() && c.more.is_none() && !c.drop_detail {
         die!("af needs set needs at least one of --rec, --option, --why, --more, --drop-detail");
+    }
+    for v in c.rec.iter().copied().chain(c.why).chain(c.options.iter().map(String::as_str)) {
+        crate::act::refuse_mark("a field", v)?;
     }
     let mut doc = match OpenDoc::load(ctx)? {
         Some(d) => d,
@@ -944,17 +963,18 @@ fn find_item(doc: &OpenDoc, target: &str) -> R<Loop> {
     Ok(hit)
 }
 
-fn cmd_close(ctx: &Ctx, target: &str, outcome: &str) -> R<i32> {
-    open::locked(ctx, || cmd_close_unlocked(ctx, target, outcome))
+fn cmd_close(ctx: &Ctx, target: &str, outcome: &str, as_him: bool) -> R<i32> {
+    open::locked(ctx, || cmd_close_unlocked(ctx, target, outcome, as_him))
 }
 
-fn cmd_close_unlocked(ctx: &Ctx, target: &str, outcome: &str) -> R<i32> {
+fn cmd_close_unlocked(ctx: &Ctx, target: &str, outcome: &str, as_him: bool) -> R<i32> {
     let mut doc = match OpenDoc::load(ctx)? {
         Some(d) => d,
         None => die!("{OPEN_REL} not found"),
     };
     let hit = find_item(&doc, target)?;
-    open::close_loop(ctx, &mut doc, &hit, outcome, false, "af needs close")
+    let outcome = if as_him { crate::act::as_him_outcome(ctx, outcome)? } else { crate::act::plain_close_outcome(ctx, outcome)? };
+    open::close_loop(ctx, &mut doc, &hit, &outcome, false, "af needs close")
 }
 
 fn cmd_move(ctx: &Ctx, target: &str, now: bool, on: Option<&str>, when: Option<&str>) -> R<i32> {

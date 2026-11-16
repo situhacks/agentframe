@@ -30,12 +30,12 @@ Due loops print at the start of every registered interactive chat and after comp
 - Every list item under any heading must parse; `af doctor` reports one that does not, and any `[x]` line left in the file.
 - Nothing closed stays in `open.md`. `af open close` appends `- YYYY-MM-DD HH:MM · closed: <text> → <outcome>` to the month log, then removes the line; on a recurring loop it re-dates the line one period on instead and the log line ends `(next nudge YYYY-MM-DD)`, and `--final` ends it, the log line ending `(final)`.
 - Monthly is the same day next month, clamped to the month's last day; a loop dated the 29th to 31st settles on the 28th after a short month, so put bills on the 28th or earlier.
-- The month log is append-only: `- YYYY-MM-DD HH:MM · <kind>: <text>`, kind one of `closed`, `redated`, `decision`, `event`, `project_closed`, `session_ended`.
+- The month log is append-only: `- YYYY-MM-DD HH:MM · <kind>: <text>`, kind one of `closed`, `redated`, `decision`, `event`, `project_closed`, `session_ended`, `act_as_me_ended`, `act_review`. A close made as him ends `→ as him [<order id>]: <outcome>`; see [`needs-list.md`](needs-list.md).
 
 | Verb | Effect |
 |---|---|
 | `af open add "<text>" [--nudge <date or +Nd>] [--every <monthly, weekly, or Nd>] [--from <id>] [--section "<heading>"]` | Appends a line with today's date (default section `Waiting on the operator`); `--every` needs `--nudge` |
-| `af open close <n or text prefix> --outcome "<text>" [--final]` | Moves the loop to the month log, or re-dates a recurring one a period on; `--final` ends a recurring loop; refuses an ambiguous prefix; a needs item closes as `af needs close` does |
+| `af open close <n or text prefix> --outcome "<text>" [--final]` | Moves the loop to the month log, or re-dates a recurring one a period on; `--final` ends a recurring loop; refuses an ambiguous prefix; refuses a needs item and points at `af needs close` |
 | `af open redate <n or text prefix> --nudge <date or +Nd>` | Changes the nudge date in place; opened date, text, period, section, and source stay; the log records it |
 | `af open due [--json]` | Loops nudged today or earlier and dated needs items from their date, oldest first, with their age and period; the JSON gives each loop's nearest heading as `section` and its enclosing `##` as `top`, and a needs item also carries `need` and `detail` |
 | `af open watch-reviewed` | Marks the [loop watch](loop-watch.md) report as read |

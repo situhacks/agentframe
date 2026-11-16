@@ -28,6 +28,25 @@ Re-measured on 1.4.7 (2026-10-23, same clip shape, `gemini-3.8-flash-medium`):
 | shipped fence, prompt asks for a description, a file write, and `dir` | write landed only in the discarded workspace, RunCommand denied, source folder untouched; **`response` empty**: a denied command now ends the turn with `no output produced` in `stderr_tail`: 10 s, ~24k tokens |
 | shipped fence, describe-only prompt | correct description, nothing denied, no leftovers: 9 s, ~16k tokens |
 
+## Web search (`--web`), measured 2026-11-15 on 1.5.9, `gemini-4-hydrogen-low` unless noted
+
+Run Hydrogen through `agy_call.py`, never as a bare `agy -p` in the repo, because print mode does not gate file writes.
+
+Built-in tools in the `init` event of `--output-format stream-json` (the plain `json` envelope never names tools on a success): `search_web` and `read_url_content` are listed beside `run_command`, `write_to_file`, the `browser_*` tools and `call_mcp_tool`. The model reports `read_url_content` as not available in print mode, so there is no page fetch and no video-from-URL: only `search_web` ran. Its sources come back as `vertexaisearch.cloud.google.com/grounding-api-redirect/...` links labelled with a site name, not as page URLs; a caller opens or searches for each source itself.
+
+| Try (all in the fenced temp workspace) | Result | Tokens, time |
+|---|---|---|
+| no preamble, search-shaped question ("what changed in the latest stable Rust release, with URLs") | `search_web` ran, answer correct, nothing denied | ~11k, 12 s |
+| no preamble, fetch-shaped task ("fetch the full text of the Rust blog index") | `run_command` (`Invoke-WebRequest`) attempted, denied, `response` empty. This is the 2026-11-15 failure | ~11k, 10 s |
+| preamble naming only `search_web`, same fetch-shaped task | four `search_web` calls, no shell, a correct answer saying no page could be fetched | ~11k per turn, 22 s |
+| `--mode accept-edits`, preamble, search question | worked; same as default mode (`init` still showed `permission_mode: request-review`) | 13.7k, 11 s |
+| default mode, preamble, search question | worked | 13.7k, 13 s |
+| `--mode auto` + `--settings '{"permissions":{"allow":["search_web"]}}'`, no preamble, fetch-shaped task | `run_command` ran as a step in state DONE (not ERROR) while `denied_actions` still listed `Bash` and the response was empty. Unclear whether the command executed; the allow-list did not stop the attempt | ~11k, 8 s |
+| public YouTube URL, "describe the first 20 seconds" | "I cannot view video from a URL." | ~11k, 7 s |
+| shipped `--web` through `agy_call.py`, `gemini-4-hydrogen-high`, the fetch-shaped task | no shell, a correct list of the five newest posts with site, title, date | 22.9k, 38 s |
+
+Conclusion: web search needs no mode and no settings. The fence plus a prompt preamble that names `search_web` as the only web tool and forbids shell, MCP, browser and file writes is enough, and a fetch-shaped task without it goes to `run_command`. `--web` sets exactly that preamble and nothing else, never passes `--dangerously-skip-permissions`, and refuses `--allow-commands`. Never use `--mode auto` for this. Native video and page reading need the file or media saved first and passed with `--file`. The bare `agy -p ... --mode accept-edits` call that also got web results ran unfenced in the real repo; its success came from the prompt, and the missing fence is what this wrapper exists to supply.
+
 ## Refresh
 
-`agy update`, then run the fence check as two calls on a staged clip: (1) a prompt that asks the agent to describe the clip, write a file, and run `dir`; expect `workspace_leftovers` listing the file, `RunCommand` in `denied_actions`, and the source folder untouched (an empty `response` is the 1.4.7 behaviour); (2) a describe-only prompt; expect a correct description. Then update the model table from `agy models` and run `python -m pytest system/tests/test_tools_media.py -q -p no:cacheprovider`.
+`agy update`, then run the fence check as two calls on a staged clip: (1) a prompt that asks the agent to describe the clip, write a file, and run `dir`; expect `workspace_leftovers` listing the file, `RunCommand` in `denied_actions`, and the source folder untouched (an empty `response` is the 1.4.7 behaviour); (2) a describe-only prompt; expect a correct description; (3) `--web` on a fetch-shaped task such as "fetch the full text of a blog index"; expect `search_web` only and no `Bash` in `denied_actions`. Then update the model table from `agy models` and run `python -m pytest system/tests/test_tools_media.py -q -p no:cacheprovider`.

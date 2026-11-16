@@ -7,7 +7,7 @@ for judgment. Runs on the operator's Antigravity login (Google AI Pro); nothing 
 
 Usage:
     python system/tools/agy_call.py --prompt "..." [--file PATH ...] [--schema JSON|path] [--model SLUG]
-                                    [--timeout 5m] [--out result.json] [--allow-commands]
+                                    [--timeout 5m] [--out result.json] [--allow-commands | --web]
 
 Prints the structured output (when a schema is given) or the response text to stdout; the full
 envelope (status, usage, conversation_id, denied_actions) goes to --out when asked.
@@ -24,6 +24,12 @@ The fence, and why it is shaped this way (measurements in agy_call.VENDOR.md):
     re-ask without the step that needed a command, or pass --allow-commands if it is required.
   * Media is handed over by naming its ABSOLUTE PATH in the prompt. The `@file` syntax does not
     attach media in print mode; it makes the agent search the filesystem and burn tokens.
+  * --web is web search through the agent's own `search_web` tool, nothing broader. It adds a prompt
+    preamble that names that one tool and forbids shell, MCP, browser and file writes; it sets no
+    --mode, no --settings and no skip flag (measured: the preamble is what steers a fetch-shaped task
+    off `run_command`, and --mode auto let a command through). The fence stays. There is no page-fetch
+    or video-from-URL tool in print mode; sources come back as Google redirect links, so the caller
+    opens each one itself. --web and --allow-commands are refused together.
   * Effort lives in the model slug suffix (…-low|medium|high); passing --effort as well is rejected.
 Provenance and refresh: agy_call.VENDOR.md.
 """
@@ -46,6 +52,11 @@ CANDIDATES = (
     os.path.expanduser("~/.local/bin/agy"),
 )
 LARGE_FILE_MB = 1024
+WEB_PREAMBLE = (
+    "Web research rules: your only web tool is search_web (there is no page-fetch tool and no video-from-URL). "
+    "Do not run shell commands (no curl, no run_command), do not use any MCP tool or browser, and write no files. "
+    "If a page cannot be read, say so and rely on search results. Name each source by site, title and date."
+)
 
 
 def die(msg, code=1):
@@ -64,13 +75,14 @@ def find_agy():
         "(Windows) or curl -fsSL https://antigravity.google/cli/install.sh | bash, then run `agy` once to sign in.")
 
 
-def build_prompt(prompt, staged):
-    """Name each staged file by absolute path, up front, so the agent opens it instead of searching."""
-    if not staged:
-        return prompt
-    lines = ["Open and view these files with your file-viewing tool (absolute paths; do not search, do not run shell commands):"]
-    lines += [f"- {p}" for p in staged]
-    return "\n".join(lines) + "\n\n" + prompt
+def build_prompt(prompt, staged, web=False):
+    """Name each staged file by absolute path, up front, so the agent opens it instead of searching.
+    With web, the web-only rules lead the prompt."""
+    if staged:
+        lines = ["Open and view these files with your file-viewing tool (absolute paths; do not search, do not run shell commands):"]
+        lines += [f"- {p}" for p in staged]
+        prompt = "\n".join(lines) + "\n\n" + prompt
+    return WEB_PREAMBLE + "\n\n" + prompt if web else prompt
 
 
 def build_command(agy, prompt, workdir, schema, model, timeout, allow_commands):
@@ -110,15 +122,17 @@ def _rm_rw(func, path, _):
     func(path)
 
 
-def run(prompt, files=(), schema=None, model=DEFAULT_MODEL, timeout=DEFAULT_TIMEOUT, allow_commands=False):
+def run(prompt, files=(), schema=None, model=DEFAULT_MODEL, timeout=DEFAULT_TIMEOUT, allow_commands=False, web=False):
     """Return the parsed envelope dict (status, response, structured_output, usage, denied_actions, ...)."""
+    if web and allow_commands:
+        die("--web and --allow-commands cannot be combined: web search never runs with shell commands allowed")
     agy = find_agy()
     if schema and os.path.isfile(schema):
         schema = open(schema, encoding="utf-8").read()
     workdir = tempfile.mkdtemp(prefix="agy-call-")
     try:
         staged = stage(files, workdir)
-        cmd = build_command(agy, build_prompt(prompt, staged), workdir, schema, model, timeout, allow_commands)
+        cmd = build_command(agy, build_prompt(prompt, staged, web), workdir, schema, model, timeout, allow_commands)
         r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=workdir)
         leftovers = sorted(set(os.listdir(workdir)) - {os.path.basename(p) for p in staged})
     finally:
@@ -143,6 +157,7 @@ def main():
     ap.add_argument("--model", default=DEFAULT_MODEL, help="agy model slug, effort in the suffix (see `agy models`)")
     ap.add_argument("--timeout", default=DEFAULT_TIMEOUT, help="print-mode wait, e.g. 5m")
     ap.add_argument("--allow-commands", action="store_true", help="let the agent run shell commands (off by default)")
+    ap.add_argument("--web", action="store_true", help="allow web search (the agent's search_web tool) and nothing else; refuses --allow-commands")
     ap.add_argument("--out", help="write the full JSON envelope here")
     args = ap.parse_args()
     for stream in (sys.stdout, sys.stderr):
@@ -152,7 +167,7 @@ def main():
             pass
     prompt = args.prompt or (open(args.prompt_file, encoding="utf-8").read() if args.prompt_file else None)
     prompt or die("--prompt or --prompt-file is required")
-    env = run(prompt, args.file, args.schema, args.model, args.timeout, args.allow_commands)
+    env = run(prompt, args.file, args.schema, args.model, args.timeout, args.allow_commands, args.web)
     if args.out:
         with open(args.out, "w", encoding="utf-8", newline="\n") as fh:
             json.dump(env, fh, indent=1, ensure_ascii=False)

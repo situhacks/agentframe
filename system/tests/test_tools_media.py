@@ -142,12 +142,21 @@ class TestAgyCallWeb(unittest.TestCase):
         self.assertLess(p.index("search_web"), p.index("/tmp/w/a.pdf"))
 
     def test_web_run_adds_only_the_preamble(self):
-        cmd, _ = self._run_mocked(web=True)
-        prompt = cmd[cmd.index("-p") + 1]
-        self.assertIn(agy_call.WEB_PREAMBLE, prompt)
-        for flag in ("--dangerously-skip-permissions", "--mode", "--settings"):
-            self.assertNotIn(flag, cmd)
-        self.assertIn("--add-dir", cmd)   # the fence stays
+        web_cmd, _ = self._run_mocked(web=True)
+        plain_cmd, _ = self._run_mocked()
+        web_prompt = web_cmd[web_cmd.index("-p") + 1]
+        plain_prompt = plain_cmd[plain_cmd.index("-p") + 1]
+        self.assertEqual(web_prompt, agy_call.WEB_PREAMBLE + "\n\n" + plain_prompt)
+
+        def without_prompt(cmd):
+            i = cmd.index("-p")
+            rest = cmd[:i + 1] + cmd[i + 2:]
+            # the temp workspace path differs per run
+            j = rest.index("--add-dir")
+            return rest[:j + 1] + rest[j + 2:]
+
+        self.assertEqual(without_prompt(web_cmd), without_prompt(plain_cmd))
+        self.assertIn("--add-dir", web_cmd)   # the fence stays
 
     def test_default_run_has_no_web_preamble(self):
         cmd, _ = self._run_mocked()
@@ -165,17 +174,32 @@ class TestAgyCallWeb(unittest.TestCase):
         import sys
         from unittest import mock
         with mock.patch.object(agy_call, "run", return_value={"status": "SUCCESS", "response": "x"}) as r, \
+                mock.patch.object(agy_call.subprocess, "run") as sp, \
                 mock.patch.object(sys, "argv", ["agy_call.py", "--prompt", "q", "--web"]):
             with self.assertRaises(SystemExit) as ex:
                 agy_call.main()
         self.assertEqual(ex.exception.code, 0)
         self.assertIs(r.call_args.args[-1], True)   # web
         self.assertIs(r.call_args.args[-2], False)  # allow_commands
+        sp.assert_not_called()
+        # a regression must never reach a real agy with --dangerously-skip-permissions
         with mock.patch.object(agy_call, "find_agy", return_value="agy"), \
+                mock.patch.object(agy_call.subprocess, "run") as sp, \
                 mock.patch.object(sys, "argv", ["agy_call.py", "--prompt", "q", "--web", "--allow-commands"]):
             with self.assertRaises(SystemExit) as ex:
                 agy_call.main()
         self.assertNotEqual(ex.exception.code, 0)
+        sp.assert_not_called()
+
+    def test_the_docs_say_what_is_blocked_and_what_is_only_steered(self):
+        doc = agy_call.__doc__
+        src = open(agy_call.__file__, encoding="utf-8").read()
+        self.assertNotIn("nothing broader", doc)
+        self.assertNotIn("and nothing else", src)
+        self.assertNotIn("let a command through", doc)
+        self.assertIn("What is blocked: shell commands", doc)
+        self.assertIn("only steered", doc)
+        self.assertIn("deny list had no effect", doc)
 
 
 if __name__ == "__main__":

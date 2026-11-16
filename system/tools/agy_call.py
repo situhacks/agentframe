@@ -24,12 +24,15 @@ The fence, and why it is shaped this way (measurements in agy_call.VENDOR.md):
     re-ask without the step that needed a command, or pass --allow-commands if it is required.
   * Media is handed over by naming its ABSOLUTE PATH in the prompt. The `@file` syntax does not
     attach media in print mode; it makes the agent search the filesystem and burn tokens.
-  * --web is web search through the agent's own `search_web` tool, nothing broader. It adds a prompt
-    preamble that names that one tool and forbids shell, MCP, browser and file writes; it sets no
-    --mode, no --settings and no skip flag (measured: the preamble is what steers a fetch-shaped task
-    off `run_command`, and --mode auto let a command through). The fence stays. There is no page-fetch
-    or video-from-URL tool in print mode; sources come back as Google redirect links, so the caller
-    opens each one itself. --web and --allow-commands are refused together.
+  * --web is web search through the agent's own `search_web` tool. What is blocked: shell commands,
+    as always (a command is denied and ends the turn). What is only steered: a prompt preamble names
+    `search_web` as the one web tool and forbids shell, MCP, browser and file writes. `read_url_content`,
+    `browser_*` and `call_mcp_tool` are in the agent's tool list; the model reported them unavailable on
+    every try, but nothing here enforces that, and a `--settings` permissions deny list had no effect
+    (it did not stop `search_web` when it was named). So --web sets no --mode, no --settings and no skip
+    flag (--mode auto was unclear on whether a command ran). The fence stays. There is no page-fetch or
+    video-from-URL tool in print mode; sources come back as Google redirect links, so the caller opens
+    each one itself. --web and --allow-commands are refused together.
   * Effort lives in the model slug suffix (…-low|medium|high); passing --effort as well is rejected.
 Provenance and refresh: agy_call.VENDOR.md.
 """
@@ -157,7 +160,7 @@ def main():
     ap.add_argument("--model", default=DEFAULT_MODEL, help="agy model slug, effort in the suffix (see `agy models`)")
     ap.add_argument("--timeout", default=DEFAULT_TIMEOUT, help="print-mode wait, e.g. 5m")
     ap.add_argument("--allow-commands", action="store_true", help="let the agent run shell commands (off by default)")
-    ap.add_argument("--web", action="store_true", help="allow web search (the agent's search_web tool) and nothing else; refuses --allow-commands")
+    ap.add_argument("--web", action="store_true", help="web search through the agent's search_web tool; shell stays denied and the prompt steers it off every other tool; refuses --allow-commands")
     ap.add_argument("--out", help="write the full JSON envelope here")
     args = ap.parse_args()
     for stream in (sys.stdout, sys.stderr):

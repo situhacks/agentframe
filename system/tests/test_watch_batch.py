@@ -893,13 +893,13 @@ class MorningTests(Base):
     def test_the_morning_steps_run_once_a_day_in_order_and_a_failing_step_does_not_stop_the_rest(self):
         steps = StubSteps(self.root, {"loop-watch": 1})
         code = self.run_main([], now=MORNING, steps=steps, slot="auto")
-        self.assertEqual(steps.names, ["bills", "loop-watch", "loop-sweep", "harness-review", "transcript-archive", "push"])
+        self.assertEqual(steps.names, ["bills", "loop-watch", "loop-sweep", "transcript-archive", "harness-review", "push"])
         self.assertEqual(code, 1, "a failed step fails the run")
         self.assertEqual(json.loads((self.root / wb.STATE).read_text(encoding="utf-8")),
-                         {"date": "2026-11-16", "done": ["bills", "loop-watch", "loop-sweep", "harness-review", "transcript-archive", "push"]})
+                         {"date": "2026-11-16", "done": ["bills", "loop-watch", "loop-sweep", "transcript-archive", "harness-review", "push"]})
         for c in steps.calls:
             self.assertIn(c["name"], c["done_when_started"], "the step is recorded just before it starts")
-        self.assertEqual([c["timeout"] for c in steps.calls], [130 * 60, 105 * 60, 30 * 60, 120, 15 * 60, 600])
+        self.assertEqual([c["timeout"] for c in steps.calls], [130 * 60, 105 * 60, 30 * 60, 15 * 60, 120, 600])
         self.assertEqual(steps.calls[1]["args"], ["loop_watch.py", "--deadline-minutes", "90"],
                          "the loop watch stops itself at 90 minutes and writes its report; the kill at 105 is the backstop")
         self.assertEqual(steps.calls[2]["args"], ["loop_sweep.py"], "report-only unless asked")
@@ -914,8 +914,8 @@ class MorningTests(Base):
     def test_the_harness_review_runs_after_the_other_morning_steps_and_its_failure_stops_nothing(self):
         steps = StubSteps(self.root, {"harness-review": 2})
         code = self.run_main([], now=MORNING, steps=steps, slot="auto")
-        self.assertEqual(steps.names[-3:], ["harness-review", "transcript-archive", "push"], "the push still runs, and carries any loop it raised")
-        call = steps.calls[-3]
+        self.assertEqual(steps.names[-2:], ["harness-review", "push"], "the push still runs, and carries any loop it raised")
+        call = steps.calls[-2]
         self.assertEqual((call["args"], call["timeout"]), (["harness_review.py"], 120))
         self.assertEqual(code, 1, "a failed step fails the run, like any other")
         report = self.report()
@@ -929,7 +929,7 @@ class MorningTests(Base):
         self.assertEqual(wb.EXIT_PARTIAL, lw.EXIT_PARTIAL)
         steps = StubSteps(self.root, {"loop-watch": wb.EXIT_PARTIAL})
         code = self.run_main([], now=MORNING, steps=steps, slot="auto")
-        self.assertEqual(steps.names, ["bills", "loop-watch", "loop-sweep", "harness-review", "transcript-archive", "push"])
+        self.assertEqual(steps.names, ["bills", "loop-watch", "loop-sweep", "transcript-archive", "harness-review", "push"])
         self.assertEqual(code, 0, "nothing else failed")
         report = self.report()
         self.assertIn("- loop-watch: partial (exit 3) · loop-watch finished", report)
@@ -962,7 +962,7 @@ class MorningTests(Base):
         steps = StubSteps(self.root, {"transcript-archive": 1})
         code = self.run_main([], now=MORNING, steps=steps, slot="auto")
         self.assertEqual(code, 1)
-        self.assertEqual(steps.names[-2:], ["transcript-archive", "push"], "the push still runs")
+        self.assertEqual(steps.names[-3:], ["transcript-archive", "harness-review", "push"], "the review and the push still run")
         self.assertEqual(steps.order[-1], "index-refresh")
         report = self.report()
         self.assertIn("- transcript-archive: exit 1", report)
@@ -970,7 +970,7 @@ class MorningTests(Base):
 
     def test_exit_3_is_partial_only_for_a_step_with_its_own_report(self):
         self.assertEqual(list(wb.STEP_REPORT), ["loop-watch"])
-        for name in ("bills", "loop-sweep", "harness-review", "transcript-archive", "push"):
+        for name in ("bills", "loop-sweep", "transcript-archive", "harness-review", "push"):
             with self.subTest(step=name):
                 steps = StubSteps(self.root, {name: 3})
                 (self.root / wb.STATE).unlink(missing_ok=True)
@@ -1003,7 +1003,7 @@ class MorningTests(Base):
     def test_a_missed_morning_makes_the_next_run_do_the_steps(self):
         steps = StubSteps(self.root)
         self.run_main([], now=dt.datetime(2026, 11, 16, 15, 5), steps=steps, slot="auto")
-        self.assertEqual(steps.names, ["bills", "loop-watch", "loop-sweep", "harness-review", "transcript-archive", "push"])
+        self.assertEqual(steps.names, ["bills", "loop-watch", "loop-sweep", "transcript-archive", "harness-review", "push"])
 
     def test_an_explicit_slot_overrides_the_clock(self):
         steps = StubSteps(self.root)
@@ -1016,7 +1016,7 @@ class MorningTests(Base):
         steps = StubSteps(self.root)
         self.run_main([], "--sweep-live", now=MORNING, steps=steps, slot="morning")
         self.assertEqual({c["name"]: c["args"] for c in steps.calls}["loop-sweep"], ["loop_sweep.py", "--live"])
-        self.assertEqual([c["args"] for c in steps.calls if c["name"] not in ("loop-sweep", "harness-review", "transcript-archive", "push")],
+        self.assertEqual([c["args"] for c in steps.calls if c["name"] not in ("loop-sweep", "transcript-archive", "harness-review", "push")],
                          [["bills_watch.py"], ["loop_watch.py", "--deadline-minutes", "90"]])
 
     def test_a_catch_up_run_that_crosses_0955_does_the_morning_after_the_queue(self):
@@ -1025,13 +1025,13 @@ class MorningTests(Base):
         code = self.run_main([mkrow(do="notify", code_met=True, say="Return the library books")], now=start, steps=steps,
                              slot="auto", clock=lambda: dt.datetime(2026, 11, 16, 10, 1))
         self.assertEqual(code, 0)
-        self.assertEqual(steps.names, ["bills", "loop-watch", "loop-sweep", "harness-review", "transcript-archive", "push"])
+        self.assertEqual(steps.names, ["bills", "loop-watch", "loop-sweep", "transcript-archive", "harness-review", "push"])
         self.assertEqual(steps.calls[-1]["lead"], "## Watch\n\n- Return the library books\n", "still one message")
         self.assertEqual(self.sent(), [])
         order = [e[1] for e in self.events if e[0] == "af"]
         self.assertTrue(any(x.startswith("watch result w-20261113-01 met") for x in order))
         self.assertEqual(json.loads((self.root / wb.STATE).read_text(encoding="utf-8"))["done"],
-                         ["bills", "loop-watch", "loop-sweep", "harness-review", "transcript-archive", "push"])
+                         ["bills", "loop-watch", "loop-sweep", "transcript-archive", "harness-review", "push"])
 
     def test_a_run_that_ends_before_0955_leaves_the_morning_alone(self):
         steps = StubSteps(self.root)
@@ -1064,7 +1064,7 @@ class MorningTests(Base):
 
     def test_a_push_that_already_ran_leaves_the_lines_to_go_alone(self):
         (self.root / wb.STATE).parent.mkdir(parents=True, exist_ok=True)
-        (self.root / wb.STATE).write_text(json.dumps({"date": "2026-11-16", "done": ["bills", "loop-watch", "loop-sweep", "harness-review", "transcript-archive", "push"]}),
+        (self.root / wb.STATE).write_text(json.dumps({"date": "2026-11-16", "done": ["bills", "loop-watch", "loop-sweep", "transcript-archive", "harness-review", "push"]}),
                                            encoding="utf-8")
         steps = StubSteps(self.root)
         self.run_main([mkrow(do="notify", code_met=True)], now=AFTERNOON, steps=steps, slot="auto")
@@ -1351,7 +1351,7 @@ class IndexRefreshTests(Base):
         steps = StubSteps(self.root)
         code = self.run_main([], now=MORNING, steps=steps, slot="auto")
         self.assertEqual(code, 0)
-        self.assertEqual(steps.order, ["bills", "loop-watch", "loop-sweep", "harness-review", "transcript-archive", "push", "index-refresh"])
+        self.assertEqual(steps.order, ["bills", "loop-watch", "loop-sweep", "transcript-archive", "harness-review", "push", "index-refresh"])
         self.assertEqual(steps.index_calls, [{"args": ["index_update.py"], "timeout": 240}])
         self.assertEqual(wb.INDEX, ("index-refresh", "index_update.py", 240))
         self.assertNotIn("search index", self.report(), "a good refresh adds no failure note")
@@ -1372,7 +1372,7 @@ class IndexRefreshTests(Base):
         self.assertEqual(code, 0)
         lines = self.steps_section(self.report())
         names = [x.split(":", 1)[0] for x in lines]
-        self.assertEqual(names, ["- bills", "- loop-watch", "- loop-sweep", "- harness-review", "- transcript-archive", "- push", "- index-refresh"])
+        self.assertEqual(names, ["- bills", "- loop-watch", "- loop-sweep", "- transcript-archive", "- harness-review", "- push", "- index-refresh"])
         self.assertEqual(lines[-1], f"- index-refresh: ok · {summary}")
         self.assertEqual(self.lines_with(self.report(), self.LINE), [], "a good refresh has no failure note")
         # An afternoon run has no morning steps; the index is the only step listed.
@@ -1445,7 +1445,7 @@ class IndexRefreshTests(Base):
         report = self.report()
         self.assertIn("morning step bills exited 1", report)
         self.assertEqual(len(self.lines_with(report, self.LINE)), 1)
-        self.assertEqual(steps.names, ["bills", "loop-watch", "loop-sweep", "harness-review", "transcript-archive", "push"], "the other steps all ran")
+        self.assertEqual(steps.names, ["bills", "loop-watch", "loop-sweep", "transcript-archive", "harness-review", "push"], "the other steps all ran")
 
     def test_a_run_that_stops_early_still_refreshes_the_index(self):
         fake = FakeAf(self.root, AFTERNOON, [], self.events)

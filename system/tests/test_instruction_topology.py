@@ -217,5 +217,34 @@ class InstructionTopologyCharacterizationTests(unittest.TestCase):
             self.assertRegex(frontmatter(rel), r"(?m)^description:\s*(\||\S)", rel)
         self.assertIn("Do not use for a quick lookup", text(".claude/skills/deep-research/SKILL.md"))
 
+class LearningsRoutingTests(unittest.TestCase):
+    """A builder reads the learnings log before a fix and writes to it after, and a fix reads its origin."""
+
+    def test_the_builder_router_and_agent_send_a_fix_through_the_learnings_log(self):
+        router, agent = text("AGENTS.builder.md"), text(".claude/agents/builder.md")
+        self.assertIn("system/learnings.md", router)
+        self.assertIn(".claude/agents/builder.md", router, "the router points at the agent file that holds the steps")
+        for needle in ("system/learnings.md", "`Watch:`", "Guard first"):
+            self.assertIn(needle, agent)
+        self.assertIn("a source is filed by `af source add`", router, "the enforcement table names the new guard")
+        self.assertIn("af session transcript <name> --around", agent)
+        self.assertIn("af search <id>", agent)
+        researcher = text(".claude/agents/researcher.md")
+        self.assertIn("af source add --type note", researcher)
+        self.assertIn("--body-file -", researcher)
+        self.assertNotIn("`workspace/life/sources/`)", researcher, "the source guard refuses a hand-written file there")
+        self.assertIn("af source add --type order", text(".claude/skills/email-cleanup/SKILL.md"))
+        self.assertIn("sources/inbox/", text(".claude/skills/file/SKILL.md"), "the staging folder the guard leaves open")
+        self.assertTrue((ROOT / "library/schema/learnings.md").is_file())
+        self.assertIn("(learnings.md)", text("library/schema/README.md"))
+
+    def test_the_builder_router_keeps_the_lines_that_came_from_real_incidents(self):
+        router = text("AGENTS.builder.md")
+        for phrase in ("and no system-local deadlines file", "Operator-owned", "`AF_ROOT` survives a drifted shell directory",
+                       "so background sessions see the gitignored `workspace/`"):
+            self.assertIn(phrase, router)
+        self.assertLessEqual(len(router.split()), 900)
+
+
 if __name__ == "__main__":
     unittest.main()

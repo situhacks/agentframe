@@ -10,6 +10,7 @@ pub mod ppt_guard;
 pub mod publish_guard;
 pub mod push_guard;
 pub mod shlex;
+pub mod source_guard;
 pub mod version_guard;
 pub mod voice_guard;
 
@@ -122,7 +123,10 @@ pub fn dispatch(h: &HookCtx, event: &str, stdin_text: &str) -> Result<Option<PyV
     let tool = payload.get("tool_name").and_then(Value::as_str).unwrap_or("");
     let mut results = Vec::new();
     match (event, tool) {
-        ("pre-tool-use", "Edit" | "Write") => results.extend(version_guard::decide(h, &payload)),
+        ("pre-tool-use", "Edit" | "Write") => {
+            results.extend(version_guard::decide(h, &payload));
+            results.extend(source_guard::decide(h, &payload));
+        }
         ("pre-tool-use" | "post-tool-use", "Bash" | "PowerShell") => {
             if event == "pre-tool-use" {
                 results.extend(push_guard::decide(&payload));

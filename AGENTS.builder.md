@@ -1,7 +1,5 @@
 # AgentFrame - Builder Router
 
-> **PRODUCT:** AgentFrame
->
 > The task-local router for system construction. Drafting, iterating, or reviewing a deliverable routes to `AGENTS.operator.md`; stop and read it.
 
 You are the operator's system architect. Keep the system small enough that agents can use it.
@@ -41,7 +39,7 @@ Fix a repeated mistake at the highest level that holds: structure first (one own
 
 | Rule | Enforced by |
 |---|---|
-| Version before editing a deliverable head; voice hard findings block ready; PPT Master projects stage outside the vendor tree; a Substack push needs a ready row | `af hook pre-tool-use` |
+| Version before editing a deliverable head; voice hard findings block ready; PPT Master projects stage outside the vendor tree; a Substack push needs a ready row; a source is filed by `af source add` | `af hook pre-tool-use` |
 | Size caps, dead links, state truth, project shape | `af doctor` |
 | A registered chat writes its handoff before stopping | `af hook stop` |
 | Button refusals stay visible | `system/logs/af-runs.jsonl`, counted by `af doctor` |
@@ -49,7 +47,7 @@ Fix a repeated mistake at the highest level that holds: structure first (one own
 ## Behavioral Defaults
 
 - Look for the weakness first; if there is none, say so and leave the file alone.
-- Make surgical changes. Prefer state-shaped rules over phrase lists.
+- Make surgical changes.
 - Prefer inline agent work over scripts unless determinism, auth, or repeatability makes code the smaller system.
 - A system's dates are open loops (`af open add`, `--every` to recur; [rule](library/schema/open-loops.md#the-loop-rule)); timed checks: `af watch`; its phone messages go through `system/tools/notify.py` (boards: `discord_board.py`); nothing else, and no system-local deadlines file.
 - When a wrong outcome is cheaply reversible, use judgment and one batched review, not counts, gates, or per-item questions; thresholds go only where mechanics need them.
@@ -59,7 +57,7 @@ Fix a repeated mistake at the highest level that holds: structure first (one own
 
 ## Builder Workflow
 
-1. Plan in "step, then verify" shape.
+1. Plan in "step, then verify" shape. Read `system/learnings.md` before a fix and update it after one that came back ([`builder.md`](.claude/agents/builder.md)).
 2. When a name is retired, renamed, or moved, sweep every reference in the same change; a deferred pocket gets a backlog row.
 3. Run the cheapest useful verification: a search, a lint, the tests, or a smoke test.
 
@@ -67,16 +65,15 @@ Group related changes into one commit. A commit that retires a template or chang
 
 ## Backlog
 
-`system/backlog.md` is private; anyone appends rows shaped by [`library/schema/backlog.md`](library/schema/backlog.md); `/upgrade` moves a fixed row to `system/backlog-completed.md` on merge.
+`system/backlog.md` is private; anyone appends rows shaped by [`library/schema/backlog.md`](library/schema/backlog.md); `/upgrade` moves a merged row to `system/backlog-completed.md`.
 
 ## Workspace Map
 
 | Path | Job |
 |---|---|
 | `workspace/` | Life layer, projects, the careers pipeline, the creator studio; Operator-owned |
-| `library/deliverables/`, `library/domains/` | Shared templates and the `_meta` shape; the four packs |
+| `library/deliverables/`, `library/domains/` | Shared templates and the `_meta` shape |
 | `library/process/`, `library/schema/`, `library/assets/` | Procedures; public shapes of the private `workspace/life/`; design languages and media |
 | `system/af/` | The `af` crate: buttons, hooks, search over the derived cache in `system/index/`, voice bundle and lint |
 | `system/tools/` | Media, render, diagram, export, and phone-notify tools |
-| `system/vendor/`, `.claude/skills/` | Vendored runtimes; AgentFrame-owned skills |
 | Gate | `cargo test` in `system/af/`; `python -m pytest system/tests -q -p no:cacheprovider` for the tools |

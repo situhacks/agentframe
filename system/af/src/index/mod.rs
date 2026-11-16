@@ -22,6 +22,9 @@ pub const INDEX_DIR: [&str; 2] = ["system", "index"];
 pub const DB_NAME: &str = "vault.db";
 pub const GOLDEN_NAME: &str = "golden-set.yaml";
 pub const CORPUS_ROOTS: [&str; 3] = ["workspace", "library/assets", ".claude/plans"];
+/// Single tracked files searched with the corpus: the log of mistakes that came back, which a builder
+/// finds by the path it is about to change.
+pub const CORPUS_FILES: [&str; 1] = ["system/learnings.md"];
 pub const SKIP_DIRS_ANYWHERE: [&str; 14] = [
     "_archive", "_scratch", "__pycache__", "node_modules", "snapshots", "runs", "cache", "local", "dist", "out", "source",
     "references", ".claude", ".git",

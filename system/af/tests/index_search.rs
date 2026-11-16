@@ -382,3 +382,22 @@ fn a_source_and_a_knowledge_page_tagged_x_both_come_back_from_a_tag_search() {
     got.sort();
     assert_eq!(got, vec!["note-2026-11-01-lease.md", "plain.md"]);
 }
+
+#[test]
+fn the_learnings_log_is_searched_and_the_rest_of_system_is_not() {
+    let fx = vault();
+    fx.write("system/learnings.md", "# Learnings\n\n## L-2026-11-15-01 · quokka filed by hand\nGuard: `system/af/src/hooks/source_guard.rs`\n");
+    fx.write("system/backlog.md", "# Backlog\n\n## BB-2026-11-15-01 · quokka row\n");
+    fx.write("system/notes.md", "# Notes\n\nquokka notes\n");
+    let (code, _, err) = dead(&fx, &["index", "update"]);
+    assert_eq!(code, 0, "{err}");
+    let (_, out, _) = dead(&fx, &["search", "quokka", "--json"]);
+    let hits: Vec<serde_json::Value> = serde_json::from_str(&out).unwrap();
+    let paths: Vec<&str> = hits.iter().map(|h| h["path"].as_str().unwrap()).collect();
+    assert_eq!(paths, ["system/learnings.md"], "{out}");
+    fx.remove("system/learnings.md");
+    let (code, _, err) = dead(&fx, &["index", "update"]);
+    assert_eq!(code, 0, "{err}");
+    let (_, out, _) = dead(&fx, &["search", "quokka", "--json"]);
+    assert_eq!(out, "[]\n", "a removed log leaves the index");
+}

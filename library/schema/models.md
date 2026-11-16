@@ -47,4 +47,4 @@ The harness review flags this file when `checked` is more than 60 days old; a bu
 
 ## Other models
 
-Gemini 4 Hydrogen is good at prose. For a second draft or a rewrite to compare, run `python system/tools/agy_call.py --model gemini-4-hydrogen-high --prompt-file <file>`; the operator judges the result.
+Gemini 4 Hydrogen: second drafts, second-opinion reviews and long reading in research, to spread usage across his subscriptions. Call it through `system/tools/agy_call.py --model gemini-4-hydrogen-high`; limits are in `agy_call.VENDOR.md`.

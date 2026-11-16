@@ -167,5 +167,53 @@ class ReviewFixTests(unittest.TestCase):
         self.assertEqual(len(cells), 3)
 
 
+class HydrogenWiringTests(unittest.TestCase):
+    def read(self, rel: str) -> str:
+        return (ROOT / rel).read_text(encoding="utf-8")
+
+    def test_the_reviewer_is_adversarial_and_takes_a_hydrogen_second_opinion(self):
+        text = self.read(".claude/agents/reviewer.md")
+        self.assertIn("Be adversarial", text)
+        self.assertIn("never review work you wrote or built", text)
+        self.assertIn("system/tools/agy_call.py", text)
+        self.assertIn("gemini-4-hydrogen-high", text)
+        self.assertIn("never instructions", text)
+        self.assertIn("(Hydrogen, verified)", text)
+        self.assertIn("every `--file` is a tracked path", text)
+        self.assertIn("Hydrogen allowed", text)
+        self.assertIn("scratch file outside the repo", text)
+        self.assertIn("exits 1", text)
+        self.assertIn("Under 400 words", text)
+        self.assertLessEqual(words(".claude/agents/reviewer.md"), 400)
+
+    def test_the_researcher_hands_hydrogen_the_long_reading_and_checks_it(self):
+        text = self.read(".claude/agents/researcher.md")
+        self.assertIn("system/tools/agy_call.py", text)
+        self.assertIn("--web", text)
+        self.assertIn("source you open yourself", text)
+        self.assertIn("data, never instructions", text)
+        self.assertIn("files the brief allows for Hydrogen", text)
+
+    def test_the_models_file_names_the_three_hydrogen_jobs_and_points_to_the_vendor_record(self):
+        text = self.read("library/schema/models.md")
+        for phrase in ("second drafts", "second-opinion reviews", "long reading in research", "agy_call.VENDOR.md"):
+            self.assertIn(phrase, text)
+        self.assertLessEqual(words("library/schema/models.md"), 700)
+
+    def test_the_vendor_record_keeps_the_never_bare_agy_rule_and_the_web_probe(self):
+        text = self.read("system/tools/agy_call.VENDOR.md")
+        self.assertIn("never as a bare `agy -p` in the repo", text)
+        self.assertIn("print mode does not gate file writes", text)
+        self.assertIn("search_web", text)
+        self.assertIn("permissions deny list naming tool names has no effect", text)
+        self.assertIn("The only thing blocked is shell commands", text)
+        self.assertIn("from one run each", text)
+        self.assertIn("three calls", text)
+        self.assertIn("a non-empty response and no `denied_actions`", text)
+        self.assertIn("1.5.9 on 2026-11-15", text)
+        self.assertNotIn("prose second drafts", text)
+        self.assertNotIn("is enough", text)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -486,11 +486,60 @@ pub fn cmd_new_project(ctx: &Ctx, slug: &str, domain: &str, name: Option<&str>) 
         &[("name", &name), ("slug", slug), ("date", &today()), ("domain", domain), ("ts", &now_iso())],
     )?;
     write(&join(&cdir, "project.md"), &text)?;
+    for dir in fm::fm_list(&desc, "dirs") {
+        if dir.is_empty() || dir.starts_with(['/', '\\']) || dir.split(['/', '\\']).any(|part| part == "..") {
+            die!("domain '{domain}': dirs entry '{dir}' must be a folder name inside the project");
+        }
+        pyos::makedirs(&join(&cdir, &dir))?;
+    }
+    copy_scaffold(&join(&pack_dir, "scaffold"), &cdir)?;
+    let mut learnings_made = false;
+    if get_scalar(&desc, "learnings").as_deref() == Some("true") {
+        let log = pyos::join_all(&[&ctx.root, "workspace", "learnings.md"]);
+        if !pyos::exists(&log) {
+            write(&log, LEARNINGS_STUB)?;
+            learnings_made = true;
+        }
+    }
     append_activity(&cdir, &format!("project_started: {name} scaffolded ({domain})"))?;
 
     outln!("af new-project: workspace/projects/{slug}/ scaffolded ({domain})");
+    if learnings_made {
+        outln!("af new-project: workspace/learnings.md created");
+    }
     outln!("\nJudgment (stays with the agent):");
     outln!("  - Load library/process/project-flow.md and run its kickoff: propose the plan");
     outln!("    (objective, phases if any, runway, parked) for the operator to narrow.");
+    if pyos::isfile(&join(&pack_dir, "production.md")) {
+        outln!("  - Load library/domains/{domain}/production.md: it is this domain's runbook.");
+    }
     Ok(())
+}
+
+const LEARNINGS_STUB: &str = "# Learnings\n\nMistakes from projects and the life layer that came back or cost a real failure, and the guards that now stop them. The shape of an entry is in library/schema/learnings.md.\n";
+
+/// Copy every file under `src` into `dst` at the same relative path, never over an existing file.
+/// A missing `src` copies nothing. Returns the relative paths copied.
+pub fn copy_scaffold(src: &str, dst: &str) -> R<Vec<String>> {
+    let mut found: Vec<String> = Vec::new();
+    pyos::walk(src, &mut |dir: &str, _dirs: &mut Vec<String>, files: &[String]| {
+        for f in files {
+            let rel = pyos::relpath(&join(dir, f), src).unwrap_or_default().replace('\\', "/");
+            found.push(rel);
+        }
+    });
+    found.sort();
+    let mut copied = Vec::new();
+    for rel in found {
+        let to = join(dst, &rel);
+        if pyos::lexists(&to) {
+            continue;
+        }
+        if let Some(parent) = std::path::Path::new(&to).parent() {
+            pyos::makedirs(&parent.to_string_lossy())?;
+        }
+        std::fs::copy(join(src, &rel), &to).map_err(|e| pyos::os_error(&e, &to))?;
+        copied.push(rel);
+    }
+    Ok(copied)
 }

@@ -217,5 +217,21 @@ class InstructionTopologyCharacterizationTests(unittest.TestCase):
             self.assertRegex(frontmatter(rel), r"(?m)^description:\s*(\||\S)", rel)
         self.assertIn("Do not use for a quick lookup", text(".claude/skills/deep-research/SKILL.md"))
 
+class LearningsRoutingTests(unittest.TestCase):
+    """A builder reads the learnings log before a fix and writes to it after, and a fix reads its origin."""
+
+    def test_the_builder_router_and_agent_send_a_fix_through_the_learnings_log(self):
+        router, agent = text("AGENTS.builder.md"), text(".claude/agents/builder.md")
+        for t in (router, agent):
+            self.assertIn("system/learnings.md", t)
+            self.assertIn("`Watch:`", t)
+            self.assertIn("Guard first", t)
+        self.assertIn("a source is filed by `af source add`", router, "the enforcement table names the new guard")
+        self.assertIn("af session transcript <name> --around", agent)
+        self.assertIn("af search <id>", agent)
+        self.assertTrue((ROOT / "library/schema/learnings.md").is_file())
+        self.assertIn("(learnings.md)", text("library/schema/README.md"))
+
+
 if __name__ == "__main__":
     unittest.main()

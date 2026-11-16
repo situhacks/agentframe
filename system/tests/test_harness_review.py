@@ -560,6 +560,107 @@ class SafetyAndSizeTests(Base):
         self.assertLess(len(text.split()), 1500)
 
 
+def bb(bid, surfaced, surfaces, done=None, title="a row"):
+    text = f"## {bid} · {title}\nSurfaced: main, {surfaced}, evidence\nFix: a fix\nSurfaces: {surfaces}\nVerify: a test\n"
+    return text + (f"Done: {done} · abc1234\n" if done else "") + "\n"
+
+
+def learning(lid, title, guard):
+    return f"## {lid} · {title}\nSeen: somewhere\nRoot cause: a reason\nGuard: {guard}\nWatch: `system/x.rs`\n\n"
+
+
+class CameBackTests(Base):
+    """Section 11: rows in the window over the paths of a row completed before it, and learnings whose guard is gone."""
+
+    def came_back(self):
+        self.commit()
+        self.assertEqual(self.run_review(), 0, self.err)
+        return self.section(self.report(), 11)
+
+    def test_a_row_in_the_window_on_the_paths_of_an_earlier_completed_row_is_listed_with_both_ids_and_the_shared_path(self):
+        self.put("system/backlog-completed.md", "# Completed\n\n" + bb("BB-2026-10-01-01", "2026-10-01", "system/af/src/open.rs, library/a.md", done="2026-10-05"))
+        self.put("system/backlog.md", "# Backlog\n\n" + bb("BB-2026-11-10-02", ago(4), "`system/af/src/open.rs`, `system/other.md`"))
+        sec = self.came_back()
+        line = next(x for x in sec.splitlines() if "BB-2026-11-10-02" in x)
+        self.assertIn("BB-2026-10-01-01", line)
+        self.assertIn("`system/af/src/open.rs`", line)
+        self.assertNotIn("library/a.md", line)
+        self.assertIn("open, surfaced 2026-11-10", line)
+        self.assertRegex(sec, r"## 11\. Came back \(1\)")
+
+    def test_a_completed_row_in_the_window_counts_and_says_completed(self):
+        self.put("system/backlog-completed.md", "# Completed\n\n" + bb("BB-2026-10-01-01", "2026-10-01", "system/a.rs", done="2026-10-05")
+                 + bb("BB-2026-11-08-01", "2026-11-08", "system/a.rs", done="2026-11-09"))
+        line = next(x for x in self.came_back().splitlines() if "BB-2026-11-08-01" in x)
+        self.assertIn("completed, surfaced 2026-11-08", line)
+        self.assertIn("BB-2026-10-01-01 (done 2026-10-05)", line)
+
+    def test_rows_outside_the_pairing_rules_are_not_listed(self):
+        self.put("system/backlog-completed.md", "# Completed\n\n"
+                 + bb("BB-2026-10-01-01", "2026-10-01", "system/a.rs", done="2026-10-05")
+                 + bb("BB-2026-11-05-01", "2026-11-05", "system/b.rs", done="2026-11-06"))
+        self.put("system/backlog.md", "# Backlog\n\n"
+                 + bb("BB-2026-10-02-01", "2026-10-02", "system/a.rs")        # surfaced before the window
+                 + bb("BB-2026-11-09-01", ago(5), "system/c.rs")              # no shared path
+                 + bb("BB-2026-11-12-01", ago(2), "system/b.rs"))             # the earlier row was done inside the window
+        sec = self.came_back()
+        for bid in ("BB-2026-10-02-01", "BB-2026-11-09-01", "BB-2026-11-12-01"):
+            self.assertNotIn(bid, sec)
+        self.assertRegex(sec, r"## 11\. Came back \(0\)")
+
+    def test_a_row_never_pairs_with_itself_and_an_open_copy_of_a_done_row_is_ignored(self):
+        self.put("system/backlog-completed.md", "# Completed\n\n" + bb("BB-2026-10-01-01", "2026-10-01", "system/a.rs", done="2026-10-05"))
+        self.put("system/backlog.md", "# Backlog\n\n" + bb("BB-2026-10-01-01", "2026-10-01", "system/a.rs"))
+        self.assertRegex(self.came_back(), r"## 11\. Came back \(0\)")
+
+    def test_a_folder_path_covers_the_files_under_it_and_backslashes_match(self):
+        self.put("system/backlog-completed.md", "# Completed\n\n" + bb("BB-2026-10-01-01", "2026-10-01", "system/af/src/hooks/", done="2026-10-05"))
+        back = "\\".join(["system", "af", "src", "hooks", "source_guard.rs"])
+        self.put("system/backlog.md", "# Backlog\n\n" + bb("BB-2026-11-10-01", ago(4), back))
+        self.assertIn("`system/af/src/hooks/source_guard.rs`", self.came_back())
+
+    def test_paths_every_fix_touches_are_not_a_reason_to_pair_two_rows(self):
+        shared = "system/tests/test_x.py, system/af/tests/, AGENTS.builder.md, README.md, CHANGELOG.md"
+        self.put("system/backlog-completed.md", "# Completed\n\n" + bb("BB-2026-10-01-01", "2026-10-01", shared + ", system/a.rs", done="2026-10-05"))
+        self.put("system/backlog.md", "# Backlog\n\n" + bb("BB-2026-11-10-01", ago(4), shared + ", system/b.rs"))
+        self.assertRegex(self.came_back(), r"## 11\. Came back \(0\)")
+
+    def test_a_learnings_entry_whose_guard_path_is_gone_is_listed_and_one_that_exists_is_not(self):
+        self.put("system/tools/real.py", "x = 1\n")
+        self.put("system/learnings.md", "# Learnings\n\n"
+                 + learning("L-2026-11-01-01", "kept", "`system/tools/real.py::test_it` and a test named in prose")
+                 + learning("L-2026-11-02-01", "lost", "`system/tools/gone.py`, `system/tools/real.py`")
+                 + learning("L-2026-11-03-01", "prose one", "prose: `AGENTS.builder.md`"))
+        sec = self.came_back()
+        self.assertIn("L-2026-11-02-01 lost: guard path gone: `system/tools/gone.py`", sec)
+        self.assertNotIn("L-2026-11-01-01", sec)
+        self.assertIn("L-2026-11-03-01 prose one: guard path gone: `AGENTS.builder.md`", sec, "the file is absent in this repo")
+        self.assertRegex(sec, r"## 11\. Came back \(2\)")
+
+    def test_no_backlog_and_no_learnings_file_is_a_section_of_nothing_and_no_loop(self):
+        self.commit()
+        self.assertEqual(self.run_review(), 0, self.err)
+        sec = self.section(self.report(), 11)
+        self.assertRegex(sec, r"Came back \(0\)")
+        self.assertEqual(sec.count("nothing"), 2)
+
+    def test_the_count_joins_the_reports_total(self):
+        self.put("system/backlog-completed.md", "# Completed\n\n" + bb("BB-2026-10-01-01", "2026-10-01", "system/a.rs", done="2026-10-05"))
+        self.put("system/backlog.md", "# Backlog\n\n" + bb("BB-2026-11-10-01", ago(4), "system/a.rs"))
+        self.came_back()
+        self.assertIn("worth a look", self.report().splitlines()[0])
+        self.assertEqual(len(self.fake.adds()), 1, "a came-back item raises the loop like any other")
+
+    def test_the_real_learnings_file_parses_and_every_guard_path_exists(self):
+        entries = hr.parse_learnings((ROOT / "system/learnings.md").read_text(encoding="utf-8"))
+        self.assertTrue(5 <= len(entries) <= 8, [e["id"] for e in entries])
+        for e in entries:
+            self.assertRegex(e["id"], r"^L-\d{4}-\d{2}-\d{2}-\d{2}$")
+            self.assertTrue(e["paths"], f"{e['id']} names no guard path")
+            for path in e["paths"]:
+                self.assertTrue((ROOT / path).exists(), f"{e['id']}: {path}")
+
+
 class RepositoryDocTests(unittest.TestCase):
     """The four stale lines, and the cap the first one states."""
 

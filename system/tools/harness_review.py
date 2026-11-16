@@ -6,9 +6,12 @@ run (watch_batch.py) starts it every day; its own state decides whether it does 
 younger than 14 days means "not due" and exit 0. When a report is written and it holds items worth
 a look, it raises one loop for main, unless a loop from `harness-review` is already open.
 
-It finds and lists; a builder chat acts on the report. Ten checks: the words each chat loads at
+It finds and lists; a builder chat acts on the report. Eleven checks: the words each chat loads at
 its start, pages with items to fix, git branches and worktrees, session rows and folders, skills,
-tools, process files, the backlog, scratch folders, and the age of the model facts.
+tools, process files, the backlog, scratch folders, the age of the model facts, and what came back:
+backlog rows in the window that touch the same paths as a row completed before it, and learnings
+entries whose guard path is gone. The chat that reads the report writes the root cause into
+system/learnings.md.
 
     python system/tools/harness_review.py [--root <repo>] [--out <file>] [--force]
 """
@@ -31,6 +34,8 @@ STATE = "system/logs/harness-review-state.json"
 REGISTRY = "system/sessions/registry.md"
 SESSIONS = "system/sessions"
 BACKLOG = "system/backlog.md"
+BACKLOG_DONE = "system/backlog-completed.md"
+LEARNINGS = "system/learnings.md"
 MODELS = "library/schema/models.md"
 SCRATCH_GLOB = r"C:\tmp\af-*"
 LOOP_FROM = "harness-review"
@@ -365,6 +370,110 @@ def check_models(root: Path, today: dt.date) -> tuple[int, list[str]] | None:
     return 1, [f"The model facts were checked {d.isoformat()}, {age} days ago. A builder chat reads Anthropic's model pages again."]
 
 
+# --- What came back ---------------------------------------------------------------------
+
+ROW_HEAD = re.compile(r"(?m)^## (BB-\d{4}-\d{2}-\d{2}-\d{2})\s*·?\s*(.*)$")
+LEARNING_HEAD = re.compile(r"(?m)^## (L-\d{4}-\d{2}-\d{2}-\d{2})\s*·?\s*(.*)$")
+
+
+def norm_path(p: str) -> str:
+    p = p.strip().strip("`").replace("\\", "/")
+    while p.startswith("./"):
+        p = p[2:]
+    return p
+
+
+def surface_paths(line: str) -> list[str]:
+    """The paths on a `Surfaces:` line: the backticked ones when there are any, else the first word of each
+    comma-separated piece."""
+    if "`" in line:
+        found = re.findall(r"`([^`]+)`", line)
+    else:
+        found = [piece.split()[0] for piece in re.split(r"[,;]", line) if piece.split()]
+    return [n for n in (norm_path(f) for f in found) if n]
+
+
+def backlog_rows(text: str, done: bool) -> list[dict]:
+    """Rows of one backlog file: id, title, the date it surfaced (else the id's), `Done:` date, `Surfaces:` paths."""
+    heads = list(ROW_HEAD.finditer(text))
+    rows = []
+    for i, h in enumerate(heads):
+        block = text[h.end():heads[i + 1].start() if i + 1 < len(heads) else len(text)]
+        sm = re.search(r"(?m)^Surfaced:(.*)$", block)
+        dm = re.search(r"(?m)^Done:(.*)$", block)
+        pm = re.search(r"(?m)^Surfaces:(.*)$", block)
+        surfaced = (first_date(sm.group(1)) if sm else None) or first_date(h.group(1))
+        rows.append({"id": h.group(1), "title": h.group(2).strip(), "surfaced": surfaced, "completed": done,
+                     "done": (first_date(dm.group(1)) if dm else None) or (surfaced if done else None),
+                     "paths": surface_paths(pm.group(1)) if pm else []})
+    return rows
+
+
+# Touched by almost every fix, so a shared one says nothing: the test folders and the routers' and readmes' prose.
+COMMON_PATHS = ("system/tests/", "system/af/tests/", "AGENTS", "README.md", "CHANGELOG.md")
+
+
+def shared_paths(a: list[str], b: list[str]) -> list[str]:
+    """Paths both lists name, the common ones left out; a path ending in `/` is a folder and covers what is under it."""
+    out = []
+    for x in a:
+        for y in b:
+            if x.startswith(COMMON_PATHS) or y.startswith(COMMON_PATHS):
+                continue
+            hit = x == y or (y.endswith("/") and x.startswith(y)) or (x.endswith("/") and y.startswith(x))
+            if hit and (x if len(x) >= len(y) else y) not in out:
+                out.append(x if len(x) >= len(y) else y)
+    return out
+
+
+def parse_learnings(text: str) -> list[dict]:
+    """Entries of system/learnings.md (shape: library/schema/learnings.md): id, title, the Guard line and its paths.
+    A guard path is a backticked word with a folder in it or a known file extension, minus a trailing `::name` or `#anchor`."""
+    heads = list(LEARNING_HEAD.finditer(text))
+    out = []
+    for i, h in enumerate(heads):
+        block = text[h.end():heads[i + 1].start() if i + 1 < len(heads) else len(text)]
+        gm = re.search(r"(?m)^Guard:(.*)$", block)
+        guard = gm.group(1).strip() if gm else ""
+        paths = []
+        for tok in re.findall(r"`([^`]+)`", guard):
+            tok = norm_path(re.split(r"::|#", tok)[0])
+            if tok and " " not in tok and ("/" in tok or tok.endswith(TEXT_EXT)) and tok not in paths:
+                paths.append(tok)
+        out.append({"id": h.group(1), "title": h.group(2).strip(), "guard": guard, "paths": paths})
+    return out
+
+
+def check_came_back(root: Path, today: dt.date) -> tuple[int, list[str]]:
+    start = today - dt.timedelta(days=DUE_DAYS)
+    done_rows = backlog_rows(read(root / BACKLOG_DONE), True)
+    seen = {r["id"] for r in done_rows}
+    open_rows = [r for r in backlog_rows(read(root / BACKLOG), False) if r["id"] not in seen]
+    window = [r for r in [*open_rows, *done_rows] if r["surfaced"] and r["surfaced"] >= start]
+    before = [r for r in done_rows if r["done"] and r["done"] < start]
+    pairs = []
+    for new in window:
+        for old in before:
+            if new["id"] == old["id"]:
+                continue
+            common = shared_paths(new["paths"], old["paths"])
+            if common:
+                pairs.append(f"{new['id']} ({'completed' if new['completed'] else 'open'}, surfaced {new['surfaced'].isoformat()}) "
+                             f"touches what {old['id']} (done {old['done'].isoformat()}) fixed: "
+                             + ", ".join(f"`{c}`" for c in common))
+    gone = []
+    for e in parse_learnings(read(root / LEARNINGS)):
+        missing = [p for p in e["paths"] if not (root / p).exists()]
+        if missing:
+            gone.append(f"{e['id']} {e['title']}: guard path gone: " + ", ".join(f"`{m}`" for m in missing))
+    out = [f"**Rows since {start.isoformat()} that touch the same paths as a row completed before it ({len(pairs)})**",
+           *(bullets(pairs) or ["nothing"]), "",
+           f"**Learnings entries whose guard path no longer exists ({len(gone)})**", *(bullets(gone) or ["nothing"])]
+    if pairs or gone:
+        out += ["", f"Write each root cause into `{LEARNINGS}`, Guard first."]
+    return len(pairs) + len(gone), out
+
+
 # --- The report -------------------------------------------------------------------------
 
 def build(root: Path, today: dt.date, run_af, scratch_glob: str) -> tuple[int, str]:
@@ -381,6 +490,7 @@ def build(root: Path, today: dt.date, run_af, scratch_glob: str) -> tuple[int, s
         ("Backlog", check_backlog(root, today)),
         ("Scratch folders", check_scratch(today, scratch_glob)),
         ("Model facts", check_models(root, today)),
+        ("Came back", check_came_back(root, today)),
     ]
     total = sum(s[1][0] for s in sections if s[1])
     out = [f"# Harness review {today.isoformat()}: {total} item{'' if total == 1 else 's'} worth a look", "",

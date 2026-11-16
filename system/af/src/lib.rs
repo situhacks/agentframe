@@ -32,6 +32,7 @@ pub mod save;
 pub mod tags;
 pub mod places;
 pub mod reach;
+pub mod transcript;
 pub mod context;
 pub mod model_card;
 pub mod compact;

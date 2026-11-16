@@ -3,7 +3,7 @@
 use super::chunk::{breadcrumb, chunk_markdown, file_heads, split_frontmatter_raw, version_of};
 use super::embed::{EmbedErr, Embedder, EMBED_BATCH, EMBED_MAX_CHARS, EMBED_MODEL};
 use super::pynum::{fsum, st_mtime};
-use super::{read_text, sql, CORPUS_ROOTS, DB_NAME, INDEX_DIR, SKIP_DIRS_ANYWHERE};
+use super::{read_text, sql, CORPUS_FILES, CORPUS_ROOTS, DB_NAME, INDEX_DIR, SKIP_DIRS_ANYWHERE};
 use crate::error::R;
 use crate::fm::fm_list_values;
 use crate::out;
@@ -143,6 +143,11 @@ pub fn iter_corpus(root: &str) -> R<Vec<String>> {
                 out.push(pyos::join(&rel_dir, name).replace('\\', "/"));
             }
         });
+    }
+    for rel in CORPUS_FILES {
+        if pyos::isfile(&pyos::join(root, rel)) {
+            out.push(rel.to_string());
+        }
     }
     match err {
         Some(e) => Err(e),

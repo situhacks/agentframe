@@ -798,6 +798,16 @@ pub enum SessionCmd {
         #[arg(long)]
         session: String,
     },
+    /// The conversation around one time in a registered chat: user and assistant text, one line per tool call, no tool output, no sidechains
+    Transcript {
+        name: String,
+        /// the moment: `2026-11-15 23:12` (local) or an RFC 3339 time
+        #[arg(long)]
+        around: String,
+        /// minutes either side of --around (default 20)
+        #[arg(long, allow_negative_numbers = true)]
+        minutes: Option<i64>,
+    },
     /// Whether a message reaches this chat and starts a turn, and what to do; --confirm checks one arrived
     Reach {
         name: String,
@@ -899,6 +909,7 @@ pub fn run(ctx: &Ctx, cmd: SessionCmd) -> R<i32> {
         SessionCmd::Stop { name, session } => cmd_stop(ctx, name.as_deref(), session.as_deref()),
         SessionCmd::Tidy { name, check, all } => page::cmd_tidy(ctx, name.as_deref(), check, all),
         SessionCmd::End { name, session, reason } => cmd_end(ctx, name.as_deref(), session.as_deref(), &reason),
+        SessionCmd::Transcript { name, around, minutes } => crate::transcript::cmd_transcript(ctx, &name, &around, minutes),
         SessionCmd::Reach { name, from, confirm, since, json } => {
             crate::reach::cmd_reach(ctx, &name, from.as_deref(), confirm.as_deref(), since.as_deref(), json)
         }

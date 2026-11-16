@@ -1,11 +1,13 @@
 # Registers the Task Scheduler job "AgentFrame night mute": night_mute.ps1 daily at 23:30, only while
-# the operator is logged on. It watches until 06:00 and mutes the default speakers once he has been idle
-# 20 minutes (every active output device); it never unmutes. A start the machine slept through runs when it wakes, and the script
+# the operator is logged on. It watches until 06:00 and mutes every active output device once he has been idle
+# 20 minutes; it never unmutes. A start the machine slept through runs when it wakes, and the script
 # exits at once if that is outside the window. Rerunning replaces it. Remove with:
 #   Unregister-ScheduledTask -TaskName 'AgentFrame night mute' -Confirm:$false
 param([string]$At = '23:30', [int]$IdleMinutes = 20)
 
 $ErrorActionPreference = 'Stop'
+try { [void][datetime]::ParseExact($At, 'HH:mm', [System.Globalization.CultureInfo]::InvariantCulture) }
+catch { throw "-At must be a 24-hour time written HH:mm, such as 23:30; got '$At'" }
 
 $vault = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $script = Join-Path $PSScriptRoot 'night_mute.ps1'
@@ -24,7 +26,7 @@ $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatt
     -ExecutionTimeLimit (New-TimeSpan -Hours 8) -MultipleInstances IgnoreNew
 
 Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal `
-    -Settings $settings -Description "Mutes the speakers at night once he has been idle $IdleMinutes minutes; never unmutes" -Force | Out-Null
+    -Settings $settings -Description "Mutes every output device at night once he has been idle $IdleMinutes minutes; never unmutes" -Force | Out-Null
 
 $info = Get-ScheduledTaskInfo -TaskName $taskName
 Write-Output "Registered '$taskName' for $user, daily at $At, working directory $vault"

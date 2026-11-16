@@ -184,6 +184,18 @@ class InstructionTopologyCharacterizationTests(unittest.TestCase):
         for heading in ("## Purpose", "## When To Load", "## Procedure", "## Verification", "## Boundaries"):
             self.assertIn(heading, process)
 
+    def test_re_distill_is_linked_from_the_catalog_and_the_models_file_and_names_its_origin_material(self):
+        self.assertIn("(re-distill.md)", text("library/process/README.md"))
+        self.assertIn("(../process/re-distill.md)", text("library/schema/models.md"))
+        self.assertLessEqual(len(text("library/schema/models.md").split()), 700)
+        process = text("library/process/re-distill.md")
+        for heading in ("## Purpose", "## When To Load", "## Procedure", "## Verification", "## Boundaries"):
+            self.assertIn(heading, process)
+        for named in ("workspace/life/sources/orders/", "workspace/_archive/transcripts/", "transcript_archive.py",
+                      "af version", "workspace/life/voice/", "never be married to a process", "cleanupPeriodDays"):
+            self.assertIn(named, process)
+        self.assertTrue((ROOT / "system" / "tools" / "transcript_archive.py").is_file())
+
     def test_task_routers_stay_small_and_task_local(self):
         self.assertLessEqual(len(text("AGENTS.operator.md").split()), 1000)
         self.assertLessEqual(len(text("AGENTS.builder.md").split()), 900)

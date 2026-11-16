@@ -968,9 +968,20 @@ class MorningTests(Base):
         self.assertIn("- transcript-archive: exit 1", report)
         self.assertIn("morning step transcript-archive exited 1", report)
 
+    def test_a_transcript_archive_that_copied_what_it_could_is_a_note_not_a_failure(self):
+        line = "transcript-archive: 4 new, 0 updated, 9 unchanged · 1.0 MB archived · 2 failed"
+        steps = StubSteps(self.root, {"transcript-archive": 3}, {"transcript-archive": line})
+        code = self.run_main([], now=MORNING, steps=steps, slot="auto")
+        self.assertEqual(code, 0, "partial is not a failure")
+        report = self.report()
+        self.assertIn("- transcript-archive: partial (exit 3) · " + line.replace(chr(0xb7), ";"), report)
+        self.assertIn("morning step transcript-archive finished partly (exit 3)", report)
+        self.assertNotIn("## Problems", report)
+        self.assertEqual(steps.names[-2:], ["harness-review", "push"])
+
     def test_exit_3_is_partial_only_for_a_step_with_its_own_report(self):
         self.assertEqual(list(wb.STEP_REPORT), ["loop-watch"])
-        for name in ("bills", "loop-sweep", "transcript-archive", "harness-review", "push"):
+        for name in ("bills", "loop-sweep", "harness-review", "push"):
             with self.subTest(step=name):
                 steps = StubSteps(self.root, {name: 3})
                 (self.root / wb.STATE).unlink(missing_ok=True)

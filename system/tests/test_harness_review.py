@@ -691,6 +691,21 @@ class CameBackTests(Base):
         self.assertNotIn("L-2026-11-04-01", sec)
         self.assertRegex(sec, r"## 11\. Came back \(2\)")
 
+    def test_the_footer_names_the_file_of_each_listed_entry(self):
+        self.put("system/learnings.md", "# Learnings\n\n" + learning("L-2026-11-01-01", "lost here", "`system/tools/gone.py`"))
+        self.assertIn("Write each root cause into `system/learnings.md`, Guard first.", self.came_back())
+
+    def test_the_footer_names_only_the_workspace_log_when_only_its_entries_are_listed(self):
+        self.put("workspace/learnings.md", "# Learnings\n\n" + learning("L-2026-11-05-01", "lost there", "`workspace/x/gone.py`"))
+        sec = self.came_back()
+        self.assertIn("Write each root cause into `workspace/learnings.md`, Guard first.", sec)
+        self.assertNotIn("into `system/learnings.md`", sec)
+
+    def test_the_footer_names_both_files_when_both_list_entries(self):
+        self.put("system/learnings.md", "# Learnings\n\n" + learning("L-2026-11-01-01", "lost here", "`system/tools/gone.py`"))
+        self.put("workspace/learnings.md", "# Learnings\n\n" + learning("L-2026-11-05-01", "lost there", "`workspace/x/gone.py`"))
+        self.assertIn("Write each root cause into `system/learnings.md` and `workspace/learnings.md`, Guard first.", self.came_back())
+
     def test_no_workspace_learnings_file_adds_nothing_to_the_section(self):
         self.put("system/tools/real.py", "x = 1\n")
         self.put("system/learnings.md", "# Learnings\n\n" + learning("L-2026-11-01-01", "kept", "`system/tools/real.py`"))

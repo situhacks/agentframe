@@ -92,14 +92,117 @@ fn copy_scaffold_copies_nested_files_skips_existing_ones_and_tolerates_no_scaffo
     assert!(copy_scaffold(&fx.p("nothing-here"), &fx.p("dst")).unwrap().is_empty());
 }
 
+/// A copy of the code pack named `name` whose pack.md has `from` replaced by `to`.
+fn pack_with(fx: &Fx, name: &str, from: &str, to: &str) {
+    fx.copy_pack("code", name);
+    let pack = fx.read(&format!("library/domains/{name}/pack.md"));
+    assert!(pack.contains(from), "{from} not in pack.md");
+    fx.write(&format!("library/domains/{name}/pack.md"), &pack.replace(from, to));
+}
+
+/// The refusal names the field and leaves nothing behind: no project folder, no learnings log.
+fn refused_cleanly(fx: &Fx, pack: &str, slug: &str, field: &str) {
+    let out = fx.refused(&["new-project", slug, "--domain", pack]);
+    assert!(out.contains(field), "the refusal names '{field}': {out}");
+    assert!(!fx.exists(&format!("workspace/projects/{slug}")), "a refused pack left a project folder");
+    assert!(!fx.exists("workspace/learnings.md"), "a refused pack left a learnings log");
+}
+
 #[test]
-fn a_dirs_entry_that_leaves_the_project_is_refused() {
+fn a_dirs_entry_that_leaves_the_project_is_refused_before_anything_is_written() {
+    for (i, bad) in ["../outside", "/abs", "\\\\server\\share", "C:/x", "C:x", "D:\\x", "a/../../b"].iter().enumerate() {
+        let fx = code_fx();
+        pack_with(&fx, "escape", "dirs: [code]", &format!("dirs: [\"{bad}\"]"));
+        refused_cleanly(&fx, "escape", &format!("w{i}"), "dirs");
+        assert!(!fx.exists("workspace/projects/outside"));
+    }
+}
+
+#[test]
+fn a_bad_dirs_entry_after_a_good_one_leaves_no_half_made_project() {
     let fx = code_fx();
-    fx.copy_pack("code", "escape");
-    let pack = fx.read("library/domains/escape/pack.md").replace("dirs: [code]", "dirs: [../outside]");
-    fx.write("library/domains/escape/pack.md", &pack);
-    fx.refused(&["new-project", "w", "--domain", "escape"]);
-    assert!(!fx.exists("workspace/projects/outside"));
+    pack_with(&fx, "late", "dirs: [code]", "dirs: [code, C:/x]");
+    refused_cleanly(&fx, "late", "w", "dirs");
+}
+
+#[test]
+fn a_dirs_field_that_is_not_a_list_is_refused_naming_the_field() {
+    for (i, bad) in ["dirs: code", "dirs: [code", "dirs: code]", "dirs:"].iter().enumerate() {
+        let fx = code_fx();
+        pack_with(&fx, "badlist", "dirs: [code]", bad);
+        refused_cleanly(&fx, "badlist", &format!("w{i}"), "dirs");
+    }
+}
+
+#[test]
+fn an_empty_dirs_list_and_a_block_list_are_accepted() {
+    let fx = code_fx();
+    pack_with(&fx, "nodirs", "dirs: [code]", "dirs: []");
+    fx.ok(&["new-project", "a", "--domain", "nodirs"]);
+    assert!(fx.path("workspace/projects/a/code/.gitignore").is_file(), "the scaffold still copies");
+    pack_with(&fx, "block", "dirs: [code]", "dirs:\n  - code\n  - docs");
+    fx.ok(&["new-project", "b", "--domain", "block"]);
+    assert!(fx.path("workspace/projects/b/docs").is_dir());
+}
+
+#[test]
+fn a_learnings_field_that_is_not_true_or_false_is_refused_naming_the_field() {
+    for (i, bad) in ["learnings: yes", "learnings: 1", "learnings: ", "learnings: maybe"].iter().enumerate() {
+        let fx = code_fx();
+        pack_with(&fx, "badflag", "learnings: true", bad);
+        refused_cleanly(&fx, "badflag", &format!("w{i}"), "learnings");
+    }
+}
+
+#[test]
+fn learnings_false_creates_no_log() {
+    let fx = code_fx();
+    pack_with(&fx, "nolog", "learnings: true", "learnings: false");
+    fx.ok(&["new-project", "a", "--domain", "nolog"]);
+    assert!(!fx.exists("workspace/learnings.md"));
+}
+
+#[test]
+fn a_skeleton_that_cannot_render_is_refused_before_anything_is_written() {
+    let fx = code_fx();
+    fx.copy_pack("code", "badskel");
+    fx.write("library/domains/badskel/skeleton.md", "---\nname: {nope}\n---\n");
+    let (code, _, _) = fx.run(&["new-project", "w", "--domain", "badskel"]);
+    assert_ne!(code, 0);
+    assert!(!fx.exists("workspace/projects/w"), "a refused render left a project folder");
+    assert!(!fx.exists("workspace/learnings.md"));
+}
+
+#[test]
+fn doctor_reports_a_git_folder_or_file_under_a_projects_code_folder() {
+    let fx = code_fx();
+    for slug in ["clean", "cloned", "worktree"] {
+        fx.ok(&["new-project", slug, "--domain", "code"]);
+    }
+    let out = fx.ok(&["doctor", "clean"]);
+    assert!(out.contains("books clean"), "{out}");
+    fx.write("workspace/projects/cloned/code/.git/HEAD", "ref: refs/heads/main
+");
+    fx.write("workspace/projects/worktree/code/sub/.git", "gitdir: ../elsewhere
+");
+    let (code, out, _) = fx.run(&["doctor", "cloned"]);
+    assert_eq!(code, 1, "{out}");
+    assert!(out.contains("workspace/projects/cloned/code/.git: a .git inside a project's code/ folder"), "{out}");
+    let (code, out, _) = fx.run(&["doctor", "worktree"]);
+    assert_eq!(code, 1, "{out}");
+    assert!(out.contains("workspace/projects/worktree/code/sub/.git: a .git inside"), "a .git file counts: {out}");
+    let (_, out, _) = fx.run(&["doctor", "clean"]);
+    assert!(!out.contains(".git:"), "{out}");
+}
+
+#[test]
+fn doctor_leaves_a_git_folder_inside_ignored_dependency_folders_alone() {
+    let fx = code_fx();
+    fx.ok(&["new-project", "deps", "--domain", "code"]);
+    fx.write("workspace/projects/deps/code/node_modules/pkg/.git/HEAD", "x
+");
+    let out = fx.ok(&["doctor", "deps"]);
+    assert!(out.contains("books clean"), "{out}");
 }
 
 #[test]
@@ -138,4 +241,26 @@ fn production_runbook_stays_within_600_words() {
     let text = std::fs::read_to_string(repo_root().join("library/domains/code/production.md")).unwrap();
     let words = text.split_whitespace().count();
     assert!(words <= 600, "production.md is {words} words");
+}
+
+#[test]
+fn production_runbook_states_the_rules_a_review_asked_for() {
+    let text = std::fs::read_to_string(repo_root().join("library/domains/code/production.md")).unwrap();
+    let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    for needle in [
+        "never a `.git`",
+        "copy its files without `.git`",
+        "start at the vault root",
+        "workspace/projects/<slug>/code/tests/test_x.py",
+        "Review findings go back to the same builder.",
+        "fails its tests or its review is rebuilt on Opus, then on Fable",
+        "it says the code is private",
+        "only if the chat's own brief carries that line",
+    ] {
+        assert!(flat.contains(needle), "production.md lacks: {needle}");
+    }
+    assert!(!flat.contains("same test twice"), "models.md has no such rule");
+    let pack = std::fs::read_to_string(repo_root().join("library/domains/code/pack.md")).unwrap();
+    assert!(!pack.contains("holds the repository"));
+    assert!(pack.contains("never a `.git`"));
 }

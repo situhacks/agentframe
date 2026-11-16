@@ -498,11 +498,13 @@ def check_came_back(root: Path, today: dt.date) -> tuple[int, list[str]]:
                 pairs.append(f"{new['id']} ({'completed' if new['completed'] else 'open'}, surfaced {new['surfaced'].isoformat()}) "
                              f"touches what {old['id']} (done {old['done'].isoformat()}) fixed: "
                              + ", ".join(f"`{c}`" for c in common))
-    gone = []
+    gone, logs = [], []
     for log in (LEARNINGS, WORKSPACE_LEARNINGS):
         for e in parse_learnings(read(root / log)):
             missing = [p for p in e["paths"] if not (root / p).exists()]
             if missing:
+                if log not in logs:
+                    logs.append(log)
                 gone.append(f"`{log}` {e['id']} {e['title']}: guard path gone: " + ", ".join(f"`{m}`" for m in missing))
     out = ["Paths left out of the match, since almost every fix touches them: "
            + ", ".join(f"`{p}`" for p in (*COMMON_FOLDERS, *COMMON_FILES)) + ".", "",
@@ -510,7 +512,10 @@ def check_came_back(root: Path, today: dt.date) -> tuple[int, list[str]]:
            *(bullets(pairs) or ["nothing"]), "",
            f"**Learnings entries whose guard path no longer exists ({len(gone)})**", *(bullets(gone) or ["nothing"])]
     if pairs or gone:
-        out += ["", f"Write each root cause into `{LEARNINGS}`, Guard first."]
+        # Rows that came back belong in the tracked log; a listed entry belongs in its own file.
+        files = [LEARNINGS] if pairs else []
+        files += [f for f in logs if f not in files]
+        out += ["", "Write each root cause into " + " and ".join(f"`{f}`" for f in files) + ", Guard first."]
     return len(pairs) + len(gone), out
 
 

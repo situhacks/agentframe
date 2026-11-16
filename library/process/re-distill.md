@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Owns rebuilding a written rule, skill, router section or model card from the material it was first drawn from, when a newer model makes the old text a weaker guide than a fresh one. His rule: "you should never be married to a process because in a few months, when new models get released... your written prompts and skills become more and more useless". The written rules are derived; the origin material is the truth.
+Owns rebuilding a written rule, skill, router section or model card from the material it was first drawn from, when a newer model makes the old text a weaker guide than a fresh one. His rule: "you should never be married to one or two to a process because in a few months, when new models get released and models get smarter, your written prompts and skills and stuff become more and more useless." The written rules are derived; the origin material is the truth.
 
 ## When To Load
 
@@ -15,7 +15,7 @@ Owns rebuilding a written rule, skill, router section or model card from the mat
 The origin material:
 
 - His orders and instructions: `workspace/life/sources/orders/`, verbatim and immutable. Other inputs: `workspace/life/sources/`.
-- Chat transcripts: `workspace/_archive/transcripts/<Claude Code project folder>/<path>.jsonl.gz`, gzip copies that `system/tools/transcript_archive.py` makes each morning before Claude Code deletes the originals. `af search` does not index them. Read one through a `reader` agent or `gzip -dc`.
+- Chat files: `workspace/_archive/transcripts/<Claude Code project folder>/<path>.gz`, gzip copies of everything in the vault's Claude Code project folders (transcripts, `subagents/`, the saved `tool-results/` a transcript points at) that `system/tools/transcript_archive.py` makes each morning before Claude Code deletes the originals. A source that shrank keeps its old copy, with the new content beside it as `<name>.<yyyymmddHHMMSS>.gz`. The batch's own temp-folder runs (`...Temp-agentframe-*`) are left out on purpose. `af search` does not index the archive. Read one file through a `reader` agent or `gzip -dc`.
 - Deliverables: every `af version` of a project file under `workspace/projects/<slug>/`.
 - His voice: the corpus under `workspace/life/voice/`.
 

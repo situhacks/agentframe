@@ -192,7 +192,9 @@ class InstructionTopologyCharacterizationTests(unittest.TestCase):
         for heading in ("## Purpose", "## When To Load", "## Procedure", "## Verification", "## Boundaries"):
             self.assertIn(heading, process)
         for named in ("workspace/life/sources/orders/", "workspace/_archive/transcripts/", "transcript_archive.py",
-                      "af version", "workspace/life/voice/", "never be married to a process", "cleanupPeriodDays"):
+                      "af version", "workspace/life/voice/", "you should never be married to one or two to a process because in a few months, when new models get "
+                      "released and models get smarter, your written prompts and skills and stuff become more and more "
+                      "useless.", "cleanupPeriodDays", "tool-results/", "Temp-agentframe-"):
             self.assertIn(named, process)
         self.assertTrue((ROOT / "system" / "tools" / "transcript_archive.py").is_file())
 

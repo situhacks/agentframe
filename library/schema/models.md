@@ -43,7 +43,7 @@ A model card in [`library/models/`](../models/) is a short list of instructions 
 
 ## Keeping this file true
 
-The harness review flags this file when `checked` is more than 60 days old; a builder then rereads Anthropic's model pages, updates the table, cards and date, and [re-distills](../process/re-distill.md) what the new model needs.
+The harness review flags this file when `checked` is over 60 days old; a builder then rereads Anthropic's pages, updates the table, cards and date, and [re-distills](../process/re-distill.md) what the new model needs.
 
 ## Other models
 

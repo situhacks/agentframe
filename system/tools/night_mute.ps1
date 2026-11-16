@@ -39,7 +39,9 @@ function Note([string]$m) {
     } catch { }
 }
 
+$dryNoted = $false
 if (-not ('NightMute.Audio' -as [type])) {
+try {
 Add-Type -TypeDefinition @'
 using System;
 using System.Collections.Generic;
@@ -76,6 +78,8 @@ namespace NightMute {
         [PreserveSig] int GetMute(out int mute);
     }
     public static class Audio {
+        // Active output devices that could not be opened at the last listing.
+        public static int Unopened = 0;
         // Every active output device (speakers, monitor audio, headphones), not only the default one.
         static List<IAudioEndpointVolume> Endpoints() {
             var e = (IMMDeviceEnumerator)new MMDeviceEnumeratorCom();
@@ -87,31 +91,36 @@ namespace NightMute {
             if (hr < 0) throw new Exception("cannot count the output devices (0x" + hr.ToString("X8") + ")");
             var list = new List<IAudioEndpointVolume>();
             Guid iid = typeof(IAudioEndpointVolume).GUID;
+            Unopened = 0;
             for (uint i = 0; i < n; i++) {
                 IMMDevice d;
-                if (c.Item(i, out d) < 0) continue;
+                if (c.Item(i, out d) < 0) { Unopened++; continue; }
                 object o;
-                if (d.Activate(ref iid, 23 /* CLSCTX_ALL */, IntPtr.Zero, out o) < 0) continue;
+                if (d.Activate(ref iid, 23 /* CLSCTX_ALL */, IntPtr.Zero, out o) < 0) { Unopened++; continue; }
                 list.Add((IAudioEndpointVolume)o);
             }
             return list;
         }
-        // { active output devices, how many of them are not muted }
+        // { active output devices, how many are not muted or could not be read }
         public static int[] Count() {
             var eps = Endpoints();
             int unmuted = 0;
-            foreach (var v in eps) { int m; if (v.GetMute(out m) >= 0 && m == 0) unmuted++; }
+            foreach (var v in eps) { int m; if (v.GetMute(out m) < 0 || m == 0) unmuted++; }
             return new int[] { eps.Count, unmuted };
         }
-        // Mutes every active output device that is not muted; returns how many it muted.
+        // Mutes every active output device that is not muted, carrying on past a device that fails.
+        // Returns how many it muted; Failures holds one line per device that could not be muted.
+        public static List<string> Failures = new List<string>();
         public static int MuteAll() {
-            int done = 0;
+            Failures.Clear();
+            int done = 0, i = 0;
             foreach (var v in Endpoints()) {
+                i++;
                 int m;
                 if (v.GetMute(out m) >= 0 && m != 0) continue;
                 // S_FALSE (1) means the state was already that: success.
                 int hr = v.SetMute(1, IntPtr.Zero);
-                if (hr < 0) throw new Exception("cannot mute an output device (0x" + hr.ToString("X8") + ")");
+                if (hr < 0) { Failures.Add("device " + i + ": 0x" + hr.ToString("X8")); continue; }
                 done++;
             }
             return done;
@@ -128,15 +137,17 @@ namespace NightMute {
     }
 }
 '@
+} catch { Note "error: the audio code did not compile: $($_.Exception.Message)"; Write-Output "error: the audio code did not compile"; exit 1 }
 }
 
-function ClockNow { if ($Now) { [datetime]::ParseExact($Now, 'HH:mm', $null) } else { Get-Date } }
+$inv = [System.Globalization.CultureInfo]::InvariantCulture
+function ClockNow { if ($Now) { [datetime]::ParseExact($Now, 'HH:mm', $inv) } else { Get-Date } }
 function IdleNow { if ($IdleSeconds -ge 0) { [double]$IdleSeconds } else { [NightMute.Idle]::Seconds() } }
 
 # The window runs from Start to End and may cross midnight. Returns the end of the window that holds $t, or $null.
 function WindowEnd([datetime]$t) {
-    $s = [datetime]::ParseExact($Start, 'HH:mm', $null).TimeOfDay
-    $e = [datetime]::ParseExact($End, 'HH:mm', $null).TimeOfDay
+    $s = [datetime]::ParseExact($Start, 'HH:mm', $inv).TimeOfDay
+    $e = [datetime]::ParseExact($End, 'HH:mm', $inv).TimeOfDay
     $tod = $t.TimeOfDay
     if ($s -eq $e) { return $null }
     if ($s -lt $e) {
@@ -178,14 +189,18 @@ while ($true) {
         } else {
             $idleBroken = $false
             if ($idle -ge ($IdleMinutes * 60)) {
-                $c = [NightMute.Audio]::Count()
-                if ($c[1] -gt 0) {
-                    if ($DryRun) {
-                        Note ("would mute {0} of {1} output devices: idle {2:N0} min" -f $c[1], $c[0], ($idle / 60))
-                        Write-Output 'would mute'
-                    } else {
+                if ($DryRun) {
+                    # A dry run reads no device, so its result does not depend on his speakers' state.
+                    if (-not $dryNoted) { Note ("would mute: idle {0:N0} min" -f ($idle / 60)); Write-Output 'would mute' }
+                    $dryNoted = $true
+                } else {
+                    $c = [NightMute.Audio]::Count()
+                    if ($c[1] -gt 0) {
                         $n = [NightMute.Audio]::MuteAll()
-                        Note ("muted {0} of {1} output devices: idle {2:N0} min" -f $n, $c[0], ($idle / 60))
+                        $extra = ''
+                        if ([NightMute.Audio]::Failures.Count -gt 0) { $extra += "; could not mute " + ([NightMute.Audio]::Failures -join ', ') }
+                        if ([NightMute.Audio]::Unopened -gt 0) { $extra += "; $([NightMute.Audio]::Unopened) device(s) could not be opened" }
+                        Note ("muted {0} of {1} output devices: idle {2:N0} min{3}" -f $n, $c[0], ($idle / 60), $extra)
                         Write-Output 'muted'
                     }
                 }

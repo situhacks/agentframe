@@ -146,6 +146,12 @@ fn close_as_him_refuses_without_a_handover_and_without_a_precedent_and_marks_the
     let e = fx.refused(&["needs", "close", "1", "--outcome", "cheaper, as in src-2026-11-04-02", "--as-him"]);
     assert!(e.contains("needs a handover in force"), "{e}");
     assert!(fx.read(OPEN).contains("Which plan to take?"), "a refused close leaves the item");
+    // A handover past its time is no handover.
+    write_state(&fx, -5);
+    let e = fx.refused(&["needs", "close", "1", "--outcome", "cheaper, as in src-2026-11-04-02", "--as-him"]);
+    assert!(e.contains("needs a handover in force"), "{e}");
+    assert!(fx.read(OPEN).contains("Which plan to take?"));
+    fx.remove(STATE);
 
     start(&fx);
     let e = fx.refused(&["needs", "close", "1", "--outcome", "the cheaper plan", "--as-him"]);

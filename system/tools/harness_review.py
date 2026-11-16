@@ -36,6 +36,7 @@ SESSIONS = "system/sessions"
 BACKLOG = "system/backlog.md"
 BACKLOG_DONE = "system/backlog-completed.md"
 LEARNINGS = "system/learnings.md"
+WORKSPACE_LEARNINGS = "workspace/learnings.md"  # the private log of project and life-layer mistakes; absent on a fresh clone
 MODELS = "library/schema/models.md"
 SCRATCH_GLOB = r"C:\tmp\af-*"
 LOOP_FROM = "harness-review"
@@ -498,10 +499,11 @@ def check_came_back(root: Path, today: dt.date) -> tuple[int, list[str]]:
                              f"touches what {old['id']} (done {old['done'].isoformat()}) fixed: "
                              + ", ".join(f"`{c}`" for c in common))
     gone = []
-    for e in parse_learnings(read(root / LEARNINGS)):
-        missing = [p for p in e["paths"] if not (root / p).exists()]
-        if missing:
-            gone.append(f"{e['id']} {e['title']}: guard path gone: " + ", ".join(f"`{m}`" for m in missing))
+    for log in (LEARNINGS, WORKSPACE_LEARNINGS):
+        for e in parse_learnings(read(root / log)):
+            missing = [p for p in e["paths"] if not (root / p).exists()]
+            if missing:
+                gone.append(f"`{log}` {e['id']} {e['title']}: guard path gone: " + ", ".join(f"`{m}`" for m in missing))
     out = ["Paths left out of the match, since almost every fix touches them: "
            + ", ".join(f"`{p}`" for p in (*COMMON_FOLDERS, *COMMON_FILES)) + ".", "",
            f"**Rows since {start.isoformat()} that touch the same paths as a row completed before it ({len(pairs)})**",

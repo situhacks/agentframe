@@ -69,12 +69,13 @@ Three ideas hold it together.
 
 ### Domain packs
 
-Three packs sit on top of a neutral default. A project's `domain` picks one.
+Four packs sit on top of a neutral default. A project's `domain` picks one.
 
 | Pack | Used for |
 |---|---|
 | `project-mgmt` | The default. No extra fields and no fixed phases. Research, planning, writing, analysis. |
 | `marketing` | Campaigns and posts: research, copy, visuals, decks, Substack, performance capture. |
+| `code` | A software project: the code in the project's `code/` folder, built by a Sonnet agent and reviewed by the chat, with a private learnings log. |
 | `careers` | Job applications on a pipeline board (`af pipe`): JD mapping, tailored resumes, ATS-safe exports, interview rounds. |
 | `creator` | A short-form video channel on a calendar (`af studio`): recordings in, edits and posts out. |
 
@@ -183,7 +184,7 @@ agentframe/
 │   └── skills/               # AgentFrame-owned skills
 ├── library/
 │   ├── deliverables/         # shared templates and the deliverable shape
-│   ├── domains/              # project-mgmt, marketing, careers, creator
+│   ├── domains/              # project-mgmt, marketing, code, careers, creator
 │   ├── process/              # on-demand procedures, cataloged in README.md
 │   ├── schema/               # public shapes of the private context files
 │   └── assets/               # design languages, logos, media shelf (instances gitignored)

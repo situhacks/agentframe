@@ -30,7 +30,7 @@ Due loops print at the start of every registered interactive chat and after comp
 - Every list item under any heading must parse; `af doctor` reports one that does not, and any `[x]` line left in the file.
 - Nothing closed stays in `open.md`. `af open close` appends `- YYYY-MM-DD HH:MM · closed: <text> → <outcome>` to the month log, then removes the line; on a recurring loop it re-dates the line one period on instead and the log line ends `(next nudge YYYY-MM-DD)`, and `--final` ends it, the log line ending `(final)`.
 - Monthly is the same day next month, clamped to the month's last day; a loop dated the 29th to 31st settles on the 28th after a short month, so put bills on the 28th or earlier.
-- The month log is append-only: `- YYYY-MM-DD HH:MM · <kind>: <text>`, kind one of `closed`, `redated`, `decision`, `event`, `project_closed`, `session_ended`.
+- The month log is append-only: `- YYYY-MM-DD HH:MM · <kind>: <text>`, kind one of `closed`, `redated`, `decision`, `event`, `project_closed`, `session_ended`, `act_as_me_ended`, `act_review`. A close made as him ends `→ as him [<order id>]: <outcome>`; see [`needs-list.md`](needs-list.md).
 
 | Verb | Effect |
 |---|---|

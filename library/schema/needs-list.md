@@ -69,6 +69,16 @@ You use about 3 GB a month, and the cheaper plan covers 10.
 | the quote arrives | Accept the quote? | wait for it |  |
 ```
 
+After Later, `## Decided as you (N)` lists the closes made with `--as-him` since the last `af act review`: a table of When, Decision and What I chose. With none, the section is left out. `af act review` marks them seen, and `af needs list`'s first line ends `, N decided as you` before the link until then.
+
+```
+## Decided as you (1)
+
+| When | Decision | What I chose |
+|---|---|---|
+| 2026-11-16 02:10 | Which plan to take? | the cheaper plan, as in src-2026-11-04-02 |
+```
+
 A cell is one line, and a `|` or `\` in its text is escaped so it cannot split the row. More is empty when the line has no `more:` and no old detail file; a `more:` document that is gone reads `missing: <path>`, and an old detail file that is gone reads `detail file missing: needs/<slug>.md`. `af needs list`, session start, and `af brief` print plain lines (the question and its recommendation), not tables or blocks; the recommendation comes from the line, and from the old file's frontmatter only for an old-style line without a `rec:`.
 
 Every `af` read or write of the loops rewrites it, `af open due` and `af brief` among them, so a date that passes reaches it with no change to `open.md`; the daily phone push runs one even when no chat does. Session start prints the count and the Now items to a main chat, and `af brief` carries the same section.
@@ -81,7 +91,7 @@ Every `af` read or write of the loops rewrites it, `af open due` and `af brief` 
 |---|---|
 | `af needs add "<question>" --rec "<few words>" [--option "<text>"]... [--why "<text>"] [--more <path[#anchor]>] [--on <date or +Nd> \| --when "<trigger>"] [--from <id>]` | Appends a marked line under `## Decisions needed` and makes no file; refuses a missing `--rec`, a value over its cap (saying the cap and the count), a forbidden ` · ` or `;`, or a `--more` that does not exist or sits under `needs/`. The old `--detail needs/<slug>.md` form is still accepted, with a note that it is the old form |
 | `af needs set <n, slug, or text prefix> [--rec ...] [--option ...]... [--why ...] [--more ...] [--drop-detail]` | Changes the fields of an open item in place; fields not named stay as they are; `--option` given at all replaces the whole list, and an empty `--why`, `--more` or lone `--option ""` clears it. `--drop-detail` removes the old `detail` reference and moves that file to `needs/closed/`; it refuses unless the line has (or is given) a `rec:`, prints where the file went (a `-2` name after a clash), logs a `folded:` line in the month log, and when the file cannot move changes nothing. The slug form matches old-style lines only |
-| `af needs close <n, slug, or text prefix> --outcome "<text>"` | Moves the loop to the month log, and an old detail file, if the item has one, to `needs/closed/`; refuses anything not on the list |
+| `af needs close <n, slug, or text prefix> --outcome "<text>" [--as-him]` | Moves the loop to the month log, and an old detail file, if the item has one, to `needs/closed/`; refuses anything not on the list. `--as-him` is for a decision made in his name under a [handover](../process/act-as-me.md): it refuses with no handover in force, or an outcome that names neither a source id (`src-YYYY-MM-DD-NN`) nor `log YYYY-MM-DD`, and writes the log line as `closed: <question> → as him [<order id>]: <outcome>` |
 | `af needs move <n, slug, or text prefix> --now \| --on <date or +Nd> \| --when "<trigger>"` | Changes the state in place; the log records it. `af open redate` refuses a marked loop and points here |
 | `af needs list` | The counts, then each item with the number `af open close` takes |
 | `af needs render` | Rewrites the view from `open.md` and any old detail files |

@@ -45,8 +45,8 @@ fn test_completed_and_dot_folders_are_not_projects_to_check() {
 fn test_new_project_folder_passes() {
     let fx = Fx::with_packs(&["project-mgmt"]);
     fx.ok(&["new-project", "proper", "--domain", "project-mgmt"]);
-    fx.ok(&["draft", "proper", "eulogy", "--file", "eulogy-en-v1.md"]);
-    fx.ok(&["version", "proper", "eulogy"]);
+    fx.ok(&["draft", "proper", "essay", "--file", "essay-en-v1.md"]);
+    fx.ok(&["version", "proper", "essay"]);
     assert!(doctor::stray_project_folder_issues(&fx.ctx()).unwrap().is_empty());
     let cdir = fx.p("workspace/projects/proper");
     assert!(doctor::unchained_draft_notes(&fx.ctx(), &cdir).unwrap().is_empty());
@@ -58,16 +58,16 @@ fn test_new_project_folder_passes() {
 fn test_stray_drafting_file_in_a_project_is_noted() {
     let fx = Fx::with_packs(&["project-mgmt"]);
     fx.ok(&["new-project", "proper", "--domain", "project-mgmt"]);
-    fx.ok(&["draft", "proper", "eulogy", "--file", "eulogy-en-v1.md"]);
-    fx.write("workspace/projects/proper/draft-yue.md", DRAFT);
+    fx.ok(&["draft", "proper", "essay", "--file", "essay-en-v1.md"]);
+    fx.write("workspace/projects/proper/draft-fr.md", DRAFT);
     fx.write("workspace/projects/proper/notes-scratchpad.md", DRAFT);
     fx.write("workspace/projects/proper/sources/raw.md", DRAFT);
     let cdir = fx.p("workspace/projects/proper");
     let notes = doctor::unchained_draft_notes(&fx.ctx(), &cdir).unwrap();
     assert_eq!(
         notes,
-        ["workspace/projects/proper/draft-yue.md: drafting file outside the version chain; af adopt it or name it {name}-v{N}.md"]
+        ["workspace/projects/proper/draft-fr.md: drafting file outside the version chain; af adopt it or name it {name}-v{N}.md"]
     );
     let out = fx.ok(&["doctor", "proper"]);
-    assert!(out.contains("draft-yue.md: drafting file outside the version chain"));
+    assert!(out.contains("draft-fr.md: drafting file outside the version chain"));
 }

@@ -1,10 +1,10 @@
 ---
 name: price-read
-description: The Thursday logged-in price read. In the operator's own Chrome, reads Metro Moi offers, PC Optimum offers, and Costco.ca bulk items against the groceries watch list, and appends price rows through read_prices.py.
+description: The weekly logged-in price read. In the operator's own Chrome, reads the store offer pages listed in the groceries system against the groceries watch list, and appends price rows through read_prices.py.
 disable-model-invocation: true
 ---
 
-Price-read mode. The groceries system lives in `workspace/life/systems/groceries/` (call it GRO). It runs on Thursday, after the flyer check.
+Price-read mode. The groceries system lives in `workspace/life/systems/groceries/` (call it GRO). It runs weekly, after the flyer check.
 
 ## 1. Check the browser first
 
@@ -12,15 +12,14 @@ Load the `anthropic-skills:chrome-browser` skill, then run ToolSearch for "chrom
 
 ## 2. Read the watch list
 
-Read `GRO/watch.json`. Each item has `match` and `exclude` keywords, a `basis` (`lb` or `unit`), and the `good` and `stock_up` thresholds. The Costco items are the ones carrying `"bulk": true`; if none does, skip Costco and say so in the report.
+Read `GRO/watch.json`. Each item has `match` and `exclude` keywords, a `basis` (`lb` or `unit`), and the `good` and `stock_up` thresholds. The bulk-store items are the ones carrying `"bulk": true`; if none does, skip the bulk store and say so in the report.
 
 ## 3. Read the three pages
 
 In his Chrome, signed in as he already is:
 
-- **Metro-Moi**: the Moi personalized coupons and offers page.
-- **PC Optimum**: the offers page.
-- **Costco.ca**: a search for each bulk item.
+- **Each loyalty store**: its personalized offers page, as listed in `GRO/stores.md`.
+- **The bulk store**: a search for each bulk item.
 
 Keep only offers that match a watch item: a `match` keyword in the offer name and no `exclude` keyword. For each one, read the pack weight or volume and the unit price the page prints (per lb, per kg, per 100 g, per can). Never record a headline price alone: a case of 8 × 796 ml at $30 is $3.75 a can, and that per-can figure is what gets judged.
 
@@ -33,7 +32,7 @@ One row per matched offer, with exactly these keys:
 | Key | Value |
 |---|---|
 | `seen` | today, `YYYY-MM-DD` |
-| `store` | `Metro-Moi`, `PC Optimum`, or `Costco.ca` |
+| `store` | the store name as `GRO/stores.md` writes it |
 | `valid_from`, `valid_to` | the offer dates as `YYYY-MM-DD`; empty when the page shows none |
 | `watch_item` | the watch.json key |
 | `flyer_line` | the offer name as printed |

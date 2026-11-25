@@ -17,7 +17,7 @@ Owns how a chat decides his open decisions in his name when he has handed them o
 
 **Never, whatever the scope.** Each of these stays on the list with a recommendation, for him:
 
-- Money: paying, buying, transferring, trades, securities orders. He does not want "a version of me to do my money and my trades and stuff without me calling it."
+- Money: paying, buying, transferring, trades, securities orders. He does not want "a version of me to do my money ... without me calling it."
 - Anything signed or legally binding.
 - Deleting an account.
 - A first message to someone new in his name.

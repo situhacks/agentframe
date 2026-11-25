@@ -48,3 +48,5 @@ The harness review flags this file when `checked` is over 60 days old; a builder
 ## Other models
 
 Gemini 4 Hydrogen: second drafts, second-opinion reviews and long reading in research, to spread usage across his subscriptions. Call it through `system/tools/agy_call.py --model gemini-4-hydrogen-high`; limits are in `agy_call.VENDOR.md`.
+
+Gemini 4 Neon (`gemini-4-neon-{low,medium,high,xhigh}`, plus `gemini-pro-orchestrator-neon`) is also served since 2026-11-22. It works through the same call, but nothing routes to it yet; Hydrogen stays the default until a builder compares the two.
